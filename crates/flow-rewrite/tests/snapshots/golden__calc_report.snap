@@ -3,7 +3,20 @@ source: crates/flow-rewrite/tests/golden.rs
 expression: "format!(\"{:#?}\", res.report)"
 ---
 RewriteReport {
-    rounds: 1,
-    applied: [],
+    rounds: 4,
+    applied: [
+        (
+            Inline,
+            5,
+        ),
+        (
+            ConstFold,
+            80,
+        ),
+        (
+            Dce,
+            5,
+        ),
+    ],
     skipped_non_canonical: false,
 }
