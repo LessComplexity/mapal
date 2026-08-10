@@ -17,7 +17,7 @@ use std::{
     ptr,
     sync::{
         Arc, Condvar, Mutex, MutexGuard, OnceLock,
-        atomic::{AtomicI64, AtomicPtr, AtomicU64, Ordering},
+        atomic::{AtomicI64, AtomicPtr, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
     thread,
 };
@@ -112,36 +112,75 @@ struct TaskDef {
     width: u32,
 }
 
+/// Task lifecycle, stored as a `u8` in [`TaskRt::state`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 enum TaskState {
-    Building,
-    Waiting,
-    Running,
-    Done,
+    Waiting = 0,
+    Running = 1,
+    Done = 2,
 }
 
-struct Task {
+impl TaskState {
+    fn of(raw: u8) -> Self {
+        match raw {
+            0 => Self::Waiting,
+            1 => Self::Running,
+            _ => Self::Done,
+        }
+    }
+}
+
+/// A task while it is being registered. Pre-launch only, single-threaded by
+/// contract (`mapal_par_begin` .. `mapal_par_launch` is the emitter's host
+/// spine), and the mutex here is only what makes that contract checkable.
+struct TaskBuild {
     def: Option<TaskDef>,
     dependents: Vec<usize>,
-    deps_left: u32,
-    state: TaskState,
-    slices_left: usize,
-    watermark: AtomicI64,
+    deps: u32,
     pinned: bool,
 }
 
-struct RunState {
-    tasks: Vec<Task>,
-    launched: bool,
-    remaining: usize,
-    epoch: u64,
+/// A task while the run executes (plan-s50 P2).
+///
+/// THE SPLIT IS THE POINT. `def`, `dependents` and `pinned` are decided before
+/// launch and never written again — the run graph is a compile-time constant
+/// the emitter replays — so after `seal` they are read with no lock at all.
+/// Only the four counters move, and each is an atomic.
+///
+/// What this replaces: ONE `Mutex<RunState>` taken twice per slice (once in
+/// `execute` to flip `Running`, once in `complete_slice` to decrement), plus a
+/// `dependents.clone()` heap allocation on every task completion. With 64
+/// slices across 14 lanes that is ~128 acquisitions of one mutex per task, and
+/// it got worse exactly where S50 measured a regression: `nn2x2` on the 32-lane
+/// i9, where two independent chains put four sites' completions through one
+/// lock that used to be four separate nested-run locks.
+struct TaskRt {
+    def: TaskDef,
+    dependents: Box<[usize]>,
+    pinned: bool,
+    deps_left: AtomicU32,
+    /// A [`TaskState`] discriminant.
+    state: AtomicU8,
+    slices_left: AtomicUsize,
+    watermark: AtomicI64,
 }
 
 struct Run {
     pool: Arc<Pool>,
     frame: AtomicPtr<u8>,
     trap: AtomicU64,
-    state: Mutex<RunState>,
+    /// Registration state; consumed by `seal` at launch.
+    build: Mutex<Vec<TaskBuild>>,
+    /// Sealed at launch. `Some` IS "launched", so there is no separate flag to
+    /// keep in agreement with it.
+    tasks: OnceLock<Box<[TaskRt]>>,
+    remaining: AtomicUsize,
+    epoch: AtomicU64,
+    /// The condvar's companion, and nothing else. Every value a waiter tests is
+    /// an atomic; this exists so a wake cannot be lost between the test and the
+    /// wait.
+    gate: Mutex<()>,
     changed: Condvar,
 }
 
@@ -161,17 +200,99 @@ struct Work {
     hi: i64,
 }
 
-struct Pool {
-    threads: usize,
-    queues: Vec<Mutex<VecDeque<Work>>>,
-    wake_epoch: Mutex<u64>,
+/// One lane's parking spot (plan-s50 P0b).
+///
+/// There used to be ONE `wake_epoch`/`wake` pair for the whole pool, and
+/// `enqueue` ended in `notify_all` — so a dispatch carrying four slices woke
+/// fourteen threads, ten of which locked every queue in `take_any`, found
+/// nothing, and re-parked contending on that one mutex. Measured: an empty
+/// pooled dispatch cost 0.42 us at 2 lanes and 9.8 us at 10, for the same zero
+/// work (`examples/dispatch_cost.rs`).
+///
+/// A per-lane spot lets `enqueue` wake EXACTLY the lanes it filled, which is
+/// exact rather than tuned — the placement loop already decides that set. Lanes
+/// it did not fill stay asleep, and the lanes it did fill still steal from each
+/// other through `take_any`, so balance inside the working set is unchanged.
+/// That matters: S33 measured that work stealing absorbing core heterogeneity
+/// is the whole of mapal's edge over OpenBLAS on a hybrid part (4P+4E: 1.65x
+/// ahead, while 8 uniform P-cores put OpenBLAS 41% ahead).
+struct LanePark {
+    epoch: Mutex<u64>,
     wake: Condvar,
 }
 
+struct Pool {
+    threads: usize,
+    queues: Vec<Mutex<VecDeque<Work>>>,
+    parks: Vec<LanePark>,
+    /// Total items queued across every lane (plan-s50 P1).
+    ///
+    /// A spinning executor needs a work-available test that is ONE relaxed load.
+    /// `take_any`'s miss path locks every lane in turn, so spinning on it would
+    /// replace a sleep with `threads` mutex acquisitions per iteration. This
+    /// counter is advisory — the parking path below is still the authority — so
+    /// a stale read costs at most one wasted `take_any`.
+    pending: AtomicUsize,
+    /// Spin iterations an executor burns before it parks. `0` = park at once.
+    spin: u32,
+}
+
+/// How long the HOST spins before sleeping, and when it must not spin at all.
+///
+/// **Workers do not spin, and that is a measured result, not an omission.**
+/// `examples/handoff_floor.rs` said a spinning wave costs ~1 us against 11-41 us
+/// parked, a 30-40x prize. It did not transfer, and the instrument is why: it
+/// gave EVERY thread work on EVERY wave. A real dispatch does not — `nn4` at
+/// d=128 cuts four slices for fourteen lanes — so spinning workers are *idle*
+/// threads burning the cores the four working lanes need, and every idle one
+/// that sees the shared `pending` counter move races into `take_any`, which
+/// locks every queue. Measured with workers spinning (M4, MAPAL_PAR=14, median
+/// of 31, against the same tree with the spin removed): `nn4_512` **0.80x**,
+/// `nn2x2_512` 0.87x, `matmul1024` 0.88x, `nn4_1024` 0.93x. Swept 16..4096 and
+/// no budget recovered it. Refuted and recorded.
+///
+/// The host is the exception, and structurally so: there is exactly one of it,
+/// it publishes the dispatch and it is what learns the wave finished, so it is
+/// on the wave's critical path and cannot herd. Host-only, same conditions:
+/// `nn4_128` **1.18x**, everything else 0.98-1.02.
+///
+/// THE BUDGET IS DERIVED FROM THE THING IT REPLACES. Spinning is only ever worth
+/// it up to what a park-and-wake would have cost — 11-41 us measured — because
+/// past that you would have been better off asleep. At roughly 1 ns per
+/// `spin_loop`, 8192 iterations is ~8 us, the low end of that band. The sweep
+/// agrees: `nn4_128` reads 1.12x at 256, 1.18x at 2048, 1.14x at 8192, 1.19x at
+/// 32768 — a plateau, not a peak, so the smallest value on it is the honest
+/// choice rather than the largest.
+///
+/// AND IT MUST BE ZERO WHEN THE POOL IS OVERSUBSCRIBED. `handoff_floor` at the
+/// boundary: 13 executors 1.083 us, 14 executors **1640.917 us** — a 1500x
+/// cliff, because the spinners and the host fight over the same cores. That is a
+/// correctness bound on a performance knob, not a preference. `MAPAL_SPIN`
+/// overrides for sweeping, like `MAPAL_SLICE`.
+fn spin_iters(threads: usize) -> u32 {
+    static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
+    if let Some(forced) = *OVERRIDE.get_or_init(|| {
+        std::env::var("MAPAL_SPIN")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+    }) {
+        return forced;
+    }
+    let cores = thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    // `Pool::new` spawns `threads - 1` workers and the host is the last
+    // executor, so `threads` IS the runnable count.
+    if threads <= cores { 8192 } else { 0 }
+}
+
+/// plan-s50 P0: there is one placement rule now. `Local(lane)` — put a
+/// dep-unlocked task on the lane that finished its producer — was affinity for
+/// scalar glue and a serialization hazard for anything bulk, which is what a
+/// packed tile site's matmul became once it stopped hiding in a nested run.
 #[derive(Clone, Copy)]
 enum Placement {
     Seed,
-    Local(usize),
 }
 
 /// How many pieces a dispatch is cut into, and therefore whether work stealing
@@ -487,8 +608,19 @@ pub extern "C" fn mapal_rt_free_all() {
 
 impl Pool {
     fn new(threads: usize) -> Arc<Self> {
-        let workers = if threads == 1 { 0 } else { threads };
-        Self::with_workers(threads, workers)
+        // plan-s50 P1: ONE EXECUTOR PER LANE, counting the host.
+        //
+        // This used to spawn `threads` workers while the host stayed an
+        // additional help-first executor, so `MAPAL_PAR=14` on a 14-core part ran
+        // 15 runnable threads. `help_until` already gives the host lane
+        // `threads - 1`, so that lane always had two claimants. Oversubscription
+        // is what makes spinning catastrophic (1.083 us -> 1640.9 us per wave at
+        // the boundary), and it was measurably costing time before spinning
+        // existed: `nn4_128` ran 0.2483 ms at `MAPAL_PAR=8` against 0.3675 at 14.
+        //
+        // `MAPAL_PAR` now means total executors, which is what a user asking for
+        // "14 threads" on a 14-core machine means.
+        Self::with_workers(threads, threads.saturating_sub(1))
     }
 
     fn with_workers(threads: usize, workers: usize) -> Arc<Self> {
@@ -497,8 +629,14 @@ impl Pool {
         let pool = Arc::new(Self {
             threads,
             queues: (0..threads).map(|_| Mutex::new(VecDeque::new())).collect(),
-            wake_epoch: Mutex::new(0),
-            wake: Condvar::new(),
+            parks: (0..threads)
+                .map(|_| LanePark {
+                    epoch: Mutex::new(0),
+                    wake: Condvar::new(),
+                })
+                .collect(),
+            pending: AtomicUsize::new(0),
+            spin: spin_iters(threads),
         });
 
         // MAPAL_PAR=1 is the thread-free sequential lever. With a real pool the
@@ -520,23 +658,47 @@ impl Pool {
         if work.is_empty() {
             return;
         }
+        // plan-s50 P0b: remember which lanes actually received work, and wake
+        // only those. The set is exact — `Run::schedule` just chose it.
+        let mut filled = vec![false; self.threads];
+        let count = work.len();
         for (lane, item) in work {
             lock(&self.queues[lane]).push_back(item);
+            filled[lane] = true;
         }
-        let mut epoch = lock(&self.wake_epoch);
+        self.pending.fetch_add(count, Ordering::AcqRel);
+        for (lane, got) in filled.into_iter().enumerate() {
+            if got {
+                self.notify_lane(lane);
+            }
+        }
+    }
+
+    fn notify_lane(&self, lane: usize) {
+        let park = &self.parks[lane];
+        let mut epoch = lock(&park.epoch);
         *epoch = epoch.wrapping_add(1);
         drop(epoch);
-        self.wake.notify_all();
+        park.wake.notify_all();
+    }
+
+    /// Record that one queued item left the pool. `pending` is only a hint for
+    /// the spin loops, so it is decremented on the way out of every taker.
+    fn claimed(&self, work: Option<Work>) -> Option<Work> {
+        if work.is_some() {
+            self.pending.fetch_sub(1, Ordering::AcqRel);
+        }
+        work
     }
 
     fn take_any(&self, lane: usize) -> Option<Work> {
         if let Some(work) = lock(&self.queues[lane]).pop_front() {
-            return Some(work);
+            return self.claimed(Some(work));
         }
         for offset in 1..self.threads {
             let victim = (lane + offset) % self.threads;
             if let Some(work) = lock(&self.queues[victim]).pop_back() {
-                return Some(work);
+                return self.claimed(Some(work));
             }
         }
         None
@@ -551,12 +713,16 @@ impl Pool {
                 .filter(|(_, work)| Arc::ptr_eq(&work.run, run))
                 .min_by_key(|(_, work)| (work.task, work.lo))
                 .map(|(position, _)| position)?;
-            return queue.remove(position);
+            let work = queue.remove(position);
+            drop(queue);
+            return self.claimed(work);
         }
 
         let mut own = lock(&self.queues[lane]);
         if let Some(position) = own.iter().position(|work| Arc::ptr_eq(&work.run, run)) {
-            return own.remove(position);
+            let work = own.remove(position);
+            drop(own);
+            return self.claimed(work);
         }
         drop(own);
 
@@ -564,7 +730,9 @@ impl Pool {
             let victim = (lane + offset) % self.threads;
             let mut queue = lock(&self.queues[victim]);
             if let Some(position) = queue.iter().rposition(|work| Arc::ptr_eq(&work.run, run)) {
-                return queue.remove(position);
+                let work = queue.remove(position);
+                drop(queue);
+                return self.claimed(work);
             }
         }
         None
@@ -573,19 +741,20 @@ impl Pool {
     fn worker_loop(&self, lane: usize) {
         loop {
             if let Some(work) = self.take_any(lane) {
-                execute(work, lane);
+                execute(work);
                 continue;
             }
 
-            let mut epoch = lock(&self.wake_epoch);
+            let park = &self.parks[lane];
+            let mut epoch = lock(&park.epoch);
             if let Some(work) = self.take_any(lane) {
                 drop(epoch);
-                execute(work, lane);
+                execute(work);
                 continue;
             }
             let seen = *epoch;
             while *epoch == seen {
-                epoch = self.wake.wait(epoch).unwrap();
+                epoch = park.wake.wait(epoch).unwrap();
             }
         }
     }
@@ -597,82 +766,178 @@ impl Run {
             pool,
             frame: AtomicPtr::new(ptr::null_mut()),
             trap: AtomicU64::new(0),
-            state: Mutex::new(RunState {
-                tasks: (0..n_tasks)
-                    .map(|_| Task {
+            build: Mutex::new(
+                (0..n_tasks)
+                    .map(|_| TaskBuild {
                         def: None,
                         dependents: Vec::new(),
-                        deps_left: 0,
-                        state: TaskState::Building,
-                        slices_left: 0,
-                        watermark: AtomicI64::new(-1),
+                        deps: 0,
                         pinned: false,
                     })
                     .collect(),
-                launched: false,
-                remaining: 0,
-                epoch: 0,
-            }),
+            ),
+            tasks: OnceLock::new(),
+            remaining: AtomicUsize::new(0),
+            epoch: AtomicU64::new(0),
+            gate: Mutex::new(()),
             changed: Condvar::new(),
         })
     }
 
+    /// The sealed graph. Every read after launch goes through here and takes no
+    /// lock.
+    fn tasks(&self) -> &[TaskRt] {
+        self.tasks.get().expect("run is not launched")
+    }
+
+    fn launched(&self) -> bool {
+        self.tasks.get().is_some()
+    }
+
+    /// Freeze registration into the executing form. Called once, from launch.
+    fn seal(&self) {
+        let build = std::mem::take(&mut *lock(&self.build));
+        assert!(
+            build.iter().all(|task| task.def.is_some()),
+            "parallel run has unregistered tasks"
+        );
+        self.remaining.store(build.len(), Ordering::Release);
+        let tasks: Box<[TaskRt]> = build
+            .into_iter()
+            .map(|task| TaskRt {
+                def: task.def.expect("registered"),
+                dependents: task.dependents.into_boxed_slice(),
+                pinned: task.pinned,
+                deps_left: AtomicU32::new(task.deps),
+                state: AtomicU8::new(TaskState::Waiting as u8),
+                slices_left: AtomicUsize::new(0),
+                watermark: AtomicI64::new(-1),
+            })
+            .collect();
+        self.tasks
+            .set(tasks)
+            .unwrap_or_else(|_| panic!("parallel run launched twice"));
+    }
+
+    /// Publish progress and release anyone waiting on it. The epoch is bumped
+    /// BEFORE the gate is taken, so a waiter that already read the old value
+    /// cannot miss it: it either sees the new epoch and skips its wait, or it
+    /// holds the gate and this call blocks until it is parked.
     fn bump(&self) {
-        let mut state = lock(&self.state);
-        state.epoch = state.epoch.wrapping_add(1);
-        drop(state);
+        self.epoch.fetch_add(1, Ordering::AcqRel);
+        let _gate = lock(&self.gate);
         self.changed.notify_all();
     }
 
-    fn schedule(self: &Arc<Self>, mut ready: Vec<usize>, placement: Placement) {
+    /// Retire `task_idx` and return the dependents it unlocked. The caller must
+    /// have won the right to do this — either by taking the task's last slice or
+    /// by being the thread that found it empty.
+    fn retire(&self, task_idx: usize) -> Vec<usize> {
+        let tasks = self.tasks();
+        // ORDER IS LOAD-BEARING: unlock the dependents FIRST, publish `Done`
+        // LAST (plan-s50 P1).
+        //
+        // `Done` is what a waiter observes, so storing it before the dependents'
+        // counters had been decremented let a host that saw it run ahead of this
+        // thread — `mapal_par_run_pinned` then hit its own
+        // `deps_left == 0` assertion with the count still at 1. It is a race, so
+        // it was survivable while the host always PARKED and was only released
+        // by the `bump` after this function returned; giving the host a spin
+        // (P1) made it observe `Done` immediately and it fired on `conv2d_1024`
+        // within seconds. Release/Acquire on `state` now orders the whole
+        // unlock behind it.
+        let mut ready = Vec::new();
+        for &dependent in tasks[task_idx].dependents.iter() {
+            let task = &tasks[dependent];
+            // Exactly one thread sees the count fall to zero, so a task is
+            // scheduled exactly once with no lock and no re-check.
+            //
+            // A pinned dependent is never queued: the host spine runs it via
+            // `mapal_par_run_pinned` at its topo position, and the `bump` that
+            // follows releases the host's wait on this completion. The
+            // zero-length-dispatch path used to omit this filter and could hand
+            // a pinned task to a worker, where `execute` asserts — one rule now,
+            // both paths (plan-s50 P2).
+            if task.deps_left.fetch_sub(1, Ordering::AcqRel) == 1 && !task.pinned {
+                ready.push(dependent);
+            }
+        }
+        tasks[task_idx]
+            .state
+            .store(TaskState::Done as u8, Ordering::Release);
+        self.remaining.fetch_sub(1, Ordering::AcqRel);
+        ready
+    }
+
+    /// `inline_ok` is false at launch. `mapal_par_launch` MUST only seed — the
+    /// emitted host runs its own spine work between launch and finish, and the
+    /// clock fence (plan-s33b) is expressed as dependency edges evaluated from
+    /// that spine. A launch that executed tasks itself would run bracketed work
+    /// before the host reached the pinned clock read. Mid-run unlocks have no
+    /// such constraint: the calling thread is already inside the run.
+    fn schedule(self: &Arc<Self>, mut ready: Vec<usize>, placement: Placement, inline_ok: bool) {
         let mut queued = Vec::new();
+        let mut inline: Vec<(usize, i64, i64)> = Vec::new();
         let mut cursor = 0;
+        let mut progressed = false;
 
         while !ready.is_empty() {
-            {
-                let state = lock(&self.state);
-                match placement {
-                    Placement::Seed if self.pool.threads > 1 => ready.sort_by(|&a_idx, &b_idx| {
-                        let a = state.tasks[a_idx].def.unwrap();
-                        let b = state.tasks[b_idx].def.unwrap();
-                        b.rank.cmp(&a.rank).then_with(|| a_idx.cmp(&b_idx))
-                    }),
-                    _ => ready.sort_unstable(),
-                }
+            // `def` is immutable after `seal`, so the rank sort reads it with no
+            // lock (plan-s50 P2).
+            let tasks = self.tasks();
+            match placement {
+                Placement::Seed if self.pool.threads > 1 => ready.sort_by(|&a_idx, &b_idx| {
+                    tasks[b_idx]
+                        .def
+                        .rank
+                        .cmp(&tasks[a_idx].def.rank)
+                        .then_with(|| a_idx.cmp(&b_idx))
+                }),
+                _ => ready.sort_unstable(),
             }
 
             let batch = std::mem::take(&mut ready);
             for task_idx in batch {
                 let (ranges, unlocked, width) = {
-                    let mut state = lock(&self.state);
-                    if state.tasks[task_idx].state != TaskState::Waiting
-                        || state.tasks[task_idx].deps_left != 0
-                    {
-                        continue;
-                    }
-                    let def = state.tasks[task_idx].def.unwrap();
+                    let def = tasks[task_idx].def;
                     let ranges = slice_ranges(def, self.pool.threads);
 
                     if ranges.is_empty() {
-                        state.tasks[task_idx].state = TaskState::Done;
-                        state.remaining -= 1;
-                        state.epoch = state.epoch.wrapping_add(1);
-                        let dependents = state.tasks[task_idx].dependents.clone();
-                        let mut unlocked = Vec::new();
-                        for dependent in dependents {
-                            state.tasks[dependent].deps_left -= 1;
-                            if state.tasks[dependent].deps_left == 0 {
-                                unlocked.push(dependent);
-                            }
-                        }
+                        // An empty dispatch retires immediately; whoever unlocked
+                        // it is the single owner of that transition.
+                        let unlocked = self.retire(task_idx);
+                        self.epoch.fetch_add(1, Ordering::AcqRel);
                         (Vec::new(), unlocked, 0)
                     } else {
-                        state.tasks[task_idx].slices_left = ranges.len();
+                        tasks[task_idx]
+                            .slices_left
+                            .store(ranges.len(), Ordering::Release);
+                        tasks[task_idx]
+                            .state
+                            .store(TaskState::Running as u8, Ordering::Release);
                         (ranges, Vec::new(), def.width)
                     }
                 };
 
                 ready.extend(unlocked);
+                // plan-s50 P3 — DO NOT DISPATCH WHAT CANNOT BE SHARED.
+                //
+                // A task cut into exactly one slice has no parallelism to give
+                // away: queueing it buys a wave (11-41 us parked) and one lane's
+                // worth of work, which is the work the calling thread was going
+                // to be able to do anyway. Every scalar-glue task in a plan is
+                // this shape — `nn2_128`'s plan has fifteen tasks and eight of
+                // them are capture tuples and print cones — and each one was
+                // costing a full dispatch.
+                //
+                // This needs no threshold and no work model: "one slice" is
+                // decided by `slice_ranges`, which the compiler's quantum and the
+                // lane count already determine between them.
+                if inline_ok && ranges.len() == 1 {
+                    let (lo, hi) = ranges[0];
+                    inline.push((task_idx, lo, hi));
+                    continue;
+                }
                 for (lo, hi) in ranges {
                     let lane = match placement {
                         Placement::Seed => {
@@ -690,7 +955,6 @@ impl Run {
                             cursor += 1;
                             lane
                         }
-                        Placement::Local(lane) => lane,
                     };
                     queued.push((
                         lane,
@@ -703,94 +967,147 @@ impl Run {
                     ));
                 }
             }
+
+            // Hand the pool its work BEFORE running anything here, so the
+            // workers are already moving while this thread does the inline part.
+            if !queued.is_empty() {
+                self.pool.enqueue(std::mem::take(&mut queued));
+                self.bump();
+                progressed = true;
+            }
+            for (task_idx, lo, hi) in std::mem::take(&mut inline) {
+                self.run_inline(task_idx, lo, hi);
+                ready.extend(self.complete_slice_ready(task_idx));
+                progressed = true;
+            }
         }
 
-        if !queued.is_empty() {
-            self.pool.enqueue(queued);
-            self.bump();
-        } else {
+        if !progressed {
             self.changed.notify_all();
         }
     }
 
-    fn complete_slice(self: &Arc<Self>, task_idx: usize, lane: usize) {
-        let mut ready = Vec::new();
-        let terminal = {
-            let mut state = lock(&self.state);
-            let task = &mut state.tasks[task_idx];
-            if task.state == TaskState::Done {
-                return;
-            }
-            task.slices_left -= 1;
-            if task.slices_left != 0 {
-                false
-            } else {
-                task.state = TaskState::Done;
-                state.remaining -= 1;
-                let dependents = state.tasks[task_idx].dependents.clone();
-                for dependent in dependents {
-                    state.tasks[dependent].deps_left -= 1;
-                    // Pinned dependents are never queued: the host spine runs
-                    // them via mapal_par_run_pinned; the epoch bump below wakes
-                    // any host wait on this completion.
-                    if state.tasks[dependent].deps_left == 0 && !state.tasks[dependent].pinned {
-                        ready.push(dependent);
-                    }
-                }
-                state.epoch = state.epoch.wrapping_add(1);
-                true
-            }
-        };
-
-        if terminal {
-            self.changed.notify_all();
+    /// Take one slice off `task_idx` and, if it was the last, retire it and
+    /// return what that unlocked. Split out of `complete_slice` so the inline
+    /// path can fold the result back into its own worklist instead of recursing
+    /// into `schedule` (plan-s50 P3).
+    fn complete_slice_ready(self: &Arc<Self>, task_idx: usize) -> Vec<usize> {
+        let task = &self.tasks()[task_idx];
+        if task.state.load(Ordering::Acquire) == TaskState::Done as u8 {
+            return Vec::new();
         }
+        // Only the thread that takes the LAST slice retires the task. Every
+        // other slice is one atomic and no lock (plan-s50 P2).
+        if task.slices_left.fetch_sub(1, Ordering::AcqRel) != 1 {
+            return Vec::new();
+        }
+        let ready = self.retire(task_idx);
+        self.bump();
+        ready
+    }
+
+    /// Run a whole task on the calling thread. The TLS run stack is what
+    /// `mapal_par_trap` and `mapal_par_watermark` read, so it is pushed here
+    /// exactly as `execute` does for a pooled slice.
+    fn run_inline(self: &Arc<Self>, task_idx: usize, lo: i64, hi: i64) {
+        let def = self.tasks()[task_idx].def;
+        CURRENT_RUNS.with(|runs| {
+            runs.borrow_mut().push(CurrentRun {
+                run: Arc::as_ptr(self),
+                task: task_idx,
+            });
+        });
+        (def.f)(lo, hi, self.frame.load(Ordering::Acquire));
+        CURRENT_RUNS.with(|runs| {
+            runs.borrow_mut().pop().unwrap();
+        });
+    }
+
+    fn complete_slice(self: &Arc<Self>, task_idx: usize) {
+        let ready = self.complete_slice_ready(task_idx);
         if !ready.is_empty() {
-            self.schedule(ready, Placement::Local(lane));
+            // plan-s50 P0: a dep-unlocked task is SEEDED, not placed on the lane
+            // that happened to finish its producer.
+            //
+            // `Local` was chosen when the only dep-unlocked tasks were scalar
+            // glue, where running next to the value just written is affinity.
+            // Once a packed tile site became two outer tasks (pack -> matmul),
+            // the thing being unlocked is a many-slice bulk dispatch, and
+            // `Local` gave it one lane's deque plus an index-order sort instead
+            // of the rank-sorted spread across `width` that the same task gets
+            // at launch. S43 §7 predicted exactly this and it is why it kept the
+            // nested runs.
+            //
+            // Measured, M4 Pro, 41 cycles, parallel leg, median ms:
+            //   nn2_128    Local 0.1290  Seed 0.0839   (1.54x)
+            //   nn4_128    Local 0.2447  Seed 0.1550   (1.58x)
+            //   nn2x2_128  Local 0.1813  Seed 0.1215   (1.49x)
+            //   nn2x2_512  Local 0.6097  Seed 0.5821   (1.05x, and it removes a
+            //                                           regression against S49)
+            self.schedule(ready, Placement::Seed, true);
         }
     }
 
-    fn help_until(self: &Arc<Self>, done: impl Fn(&RunState) -> bool) {
+    fn help_until(self: &Arc<Self>, done: impl Fn(&Self) -> bool) {
         let lane = WORKER_LANE
             .with(|lane| lane.get())
             .unwrap_or_else(|| self.pool.threads - 1);
-        loop {
-            let seen = {
-                let state = lock(&self.state);
-                if done(&state) {
-                    return;
-                }
-                state.epoch
-            };
+        'outer: loop {
+            if done(self) {
+                return;
+            }
+            let seen = self.epoch.load(Ordering::Acquire);
 
             if let Some(work) = self.pool.take_for(self, lane) {
-                execute(work, lane);
+                execute(work);
                 continue;
             }
 
-            let mut state = lock(&self.state);
-            if done(&state) {
+            // plan-s50 P1: the host is half the wave. It publishes the dispatch
+            // and it is what learns the wave finished, so parking it costs the
+            // same 11-41 us as parking a worker. Spin on the completion
+            // predicate first; the budget is zero when the pool is
+            // oversubscribed (`spin_iters`).
+            for _ in 0..self.pool.spin {
+                if done(self) {
+                    return;
+                }
+                if self.epoch.load(Ordering::Acquire) != seen {
+                    continue 'outer;
+                }
+                if self.pool.pending.load(Ordering::Acquire) > 0
+                    && let Some(work) = self.pool.take_for(self, lane)
+                {
+                    execute(work);
+                    continue 'outer;
+                }
+                std::hint::spin_loop();
+            }
+
+            let mut gate = lock(&self.gate);
+            if done(self) {
                 return;
             }
-            while state.epoch == seen {
-                state = self.changed.wait(state).unwrap();
+            // Re-tested under the gate, so a `bump` that lands between the read
+            // above and this wait cannot be lost — it must take the gate to
+            // notify, and by then the epoch has already moved.
+            while self.epoch.load(Ordering::Acquire) == seen {
+                gate = self.changed.wait(gate).unwrap();
             }
         }
     }
 }
 
-fn execute(work: Work, lane: usize) {
+fn execute(work: Work) {
+    // plan-s50 P2: no lock. `pinned` and `def` are immutable after `seal`, and
+    // `schedule` already published `Running` before the slice was queued.
     let task = {
-        let mut state = lock(&work.run.state);
-        let task = &mut state.tasks[work.task];
-        assert!(!task.pinned, "pinned task reached a pool worker");
-        match task.state {
-            TaskState::Waiting => task.state = TaskState::Running,
-            TaskState::Running => {}
-            TaskState::Done => return,
-            TaskState::Building => panic!("flow scheduler queued an unready task"),
+        let entry = &work.run.tasks()[work.task];
+        assert!(!entry.pinned, "pinned task reached a pool worker");
+        if entry.state.load(Ordering::Acquire) == TaskState::Done as u8 {
+            return;
         }
-        task.def.unwrap()
+        entry.def
     };
 
     CURRENT_RUNS.with(|runs| {
@@ -804,7 +1121,7 @@ fn execute(work: Work, lane: usize) {
         runs.borrow_mut().pop().unwrap();
     });
 
-    work.run.complete_slice(work.task, lane);
+    work.run.complete_slice(work.task);
 }
 
 unsafe fn run_handle<'a>(handle: *mut FlowParRun) -> &'a FlowParRun {
@@ -849,9 +1166,9 @@ pub unsafe extern "C" fn mapal_par_task(
     width: u32,
 ) {
     let run = &unsafe { run_handle(handle) }.run;
-    let mut state = lock(&run.state);
-    assert!(!state.launched, "cannot register a task after launch");
-    let task = &mut state.tasks[idx as usize];
+    assert!(!run.launched(), "cannot register a task after launch");
+    let mut build = lock(&run.build);
+    let task = &mut build[idx as usize];
     assert!(task.def.is_none(), "task registered twice");
     assert!(kind <= 1, "unknown parallel task kind");
     assert!(
@@ -877,12 +1194,12 @@ pub unsafe extern "C" fn mapal_par_task(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mapal_par_dep(handle: *mut FlowParRun, before: u32, after: u32) {
     let run = &unsafe { run_handle(handle) }.run;
-    let mut state = lock(&run.state);
-    assert!(!state.launched, "cannot register a dependency after launch");
+    assert!(!run.launched(), "cannot register a dependency after launch");
+    let mut build = lock(&run.build);
     assert_ne!(before, after, "task cannot depend on itself");
-    state.tasks[before as usize].dependents.push(after as usize);
-    state.tasks[after as usize].deps_left = state.tasks[after as usize]
-        .deps_left
+    build[before as usize].dependents.push(after as usize);
+    build[after as usize].deps = build[after as usize]
+        .deps
         .checked_add(1)
         .expect("task dependency count overflow");
 }
@@ -898,26 +1215,17 @@ pub unsafe extern "C" fn mapal_par_dep(handle: *mut FlowParRun, before: u32, aft
 pub unsafe extern "C" fn mapal_par_launch(handle: *mut FlowParRun, frame: *mut u8) {
     let run = Arc::clone(&unsafe { run_handle(handle) }.run);
     run.frame.store(frame, Ordering::Release);
-    let ready = {
-        let mut state = lock(&run.state);
-        assert!(!state.launched, "parallel run launched twice");
-        assert!(
-            state.tasks.iter().all(|task| task.def.is_some()),
-            "parallel run has unregistered tasks"
-        );
-        state.launched = true;
-        state.remaining = state.tasks.len();
-        for task in &mut state.tasks {
-            task.state = TaskState::Waiting;
-        }
-        state
-            .tasks
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, task)| (task.deps_left == 0 && !task.pinned).then_some(idx))
-            .collect()
-    };
-    run.schedule(ready, Placement::Seed);
+    assert!(!run.launched(), "parallel run launched twice");
+    run.seal();
+    let ready = run
+        .tasks()
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, task)| {
+            (task.deps_left.load(Ordering::Acquire) == 0 && !task.pinned).then_some(idx)
+        })
+        .collect();
+    run.schedule(ready, Placement::Seed, false);
 }
 
 /// Mark task `idx` as host-pinned before launch: the scheduler never queues it;
@@ -928,9 +1236,8 @@ pub unsafe extern "C" fn mapal_par_launch(handle: *mut FlowParRun, frame: *mut u
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mapal_par_pin(handle: *mut FlowParRun, idx: u32) {
     let run = &unsafe { run_handle(handle) }.run;
-    let mut state = lock(&run.state);
-    assert!(!state.launched, "cannot pin a task after launch");
-    state.tasks[idx as usize].pinned = true;
+    assert!(!run.launched(), "cannot pin a task after launch");
+    lock(&run.build)[idx as usize].pinned = true;
 }
 
 /// Help this run until every packed wait entry is satisfied.
@@ -952,21 +1259,18 @@ pub unsafe extern "C" fn mapal_par_wait(handle: *mut FlowParRun, entries: *const
         assert!(!entries.is_null(), "null parallel wait entry list");
         unsafe { std::slice::from_raw_parts(entries, len as usize) }
     };
-    {
-        let state = lock(&run.state);
-        assert!(state.launched, "cannot wait before launch");
-        assert!(
-            entries
-                .iter()
-                .all(|&entry| (entry >> 32) < state.tasks.len() as u64),
-            "parallel wait task index out of range"
-        );
-    }
-    run.help_until(|state| {
+    assert!(run.launched(), "cannot wait before launch");
+    assert!(
+        entries
+            .iter()
+            .all(|&entry| (entry >> 32) < run.tasks().len() as u64),
+        "parallel wait task index out of range"
+    );
+    run.help_until(|run| {
         entries.iter().all(|&entry| {
-            let task = &state.tasks[(entry >> 32) as usize];
+            let task = &run.tasks()[(entry >> 32) as usize];
             let threshold = entry as u32;
-            task.state == TaskState::Done
+            task.state.load(Ordering::Acquire) == TaskState::Done as u8
                 || (threshold != u32::MAX
                     && task.watermark.load(Ordering::Acquire) >= i64::from(threshold))
         })
@@ -1041,22 +1345,15 @@ pub extern "C" fn mapal_par_watermark(topo: i64) {
             .expect("mapal_par_watermark called outside a parallel task")
     });
     let run = unsafe { &*current.run };
-    let mut state = lock(&run.state);
-    let task = &state.tasks[current.task];
+    let task = &run.tasks()[current.task];
+    assert_eq!(task.def.kind, 0, "only scalar tasks publish watermarks");
     assert_eq!(
-        task.def.unwrap().kind,
-        0,
-        "only scalar tasks publish watermarks"
-    );
-    assert_eq!(
-        task.state,
+        TaskState::of(task.state.load(Ordering::Acquire)),
         TaskState::Running,
         "watermark task is not running"
     );
     task.watermark.store(topo, Ordering::Release);
-    state.epoch = state.epoch.wrapping_add(1);
-    drop(state);
-    run.changed.notify_all();
+    run.bump();
 }
 
 /// Execute one ready task inline on the calling host-spine thread.
@@ -1069,19 +1366,23 @@ pub unsafe extern "C" fn mapal_par_run_pinned(handle: *mut FlowParRun, idx: u32)
     let run = Arc::clone(&unsafe { run_handle(handle) }.run);
     let task_idx = idx as usize;
     let (def, ranges) = {
-        let mut state = lock(&run.state);
-        assert!(state.launched, "cannot run a pinned task before launch");
-        let task = &mut state.tasks[task_idx];
-        let def = task.def.expect("pinned task is not registered");
+        assert!(run.launched(), "cannot run a pinned task before launch");
+        let task = &run.tasks()[task_idx];
         assert!(task.pinned, "mapal_par_run_pinned on an unpinned task");
-        assert_eq!(task.deps_left, 0, "pinned task dependencies are incomplete");
-        assert!(
-            task.state == TaskState::Waiting,
+        assert_eq!(
+            task.deps_left.load(Ordering::Acquire),
+            0,
+            "pinned task dependencies are incomplete"
+        );
+        assert_eq!(
+            TaskState::of(task.state.load(Ordering::Acquire)),
+            TaskState::Waiting,
             "pinned task has already started"
         );
-        task.state = TaskState::Running;
-        task.slices_left = 1;
-        (def, slice_ranges(def, run.pool.threads))
+        task.state
+            .store(TaskState::Running as u8, Ordering::Release);
+        task.slices_left.store(1, Ordering::Release);
+        (task.def, slice_ranges(task.def, run.pool.threads))
     };
 
     CURRENT_RUNS.with(|runs| {
@@ -1098,10 +1399,7 @@ pub unsafe extern "C" fn mapal_par_run_pinned(handle: *mut FlowParRun, idx: u32)
         runs.borrow_mut().pop().unwrap();
     });
 
-    let lane = WORKER_LANE
-        .with(|lane| lane.get())
-        .unwrap_or(run.pool.threads - 1);
-    run.complete_slice(task_idx, lane);
+    run.complete_slice(task_idx);
 }
 
 /// Help until every task is complete, deliver any recorded trap, and free the
@@ -1114,8 +1412,8 @@ pub unsafe extern "C" fn mapal_par_finish(handle: *mut FlowParRun) {
     assert!(!handle.is_null(), "null flow parallel run");
     let handle = unsafe { Box::from_raw(handle) };
     let run = Arc::clone(&handle.run);
-    assert!(lock(&run.state).launched, "cannot finish before launch");
-    run.help_until(|state| state.remaining == 0);
+    assert!(run.launched(), "cannot finish before launch");
+    run.help_until(|run| run.remaining.load(Ordering::Acquire) == 0);
     check_trap(&run, i64::MAX);
     drop(handle);
 }

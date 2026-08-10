@@ -258,11 +258,23 @@ fn sme_rung_is_a_contract_face_realization() {
     assert_no_sme(&emit_at(ATTN_32, "apple-m4-sme", false), "exact face");
 }
 
-/// `apple-m4-sme` is `apple-m` plus one capability, so wherever the rung does
-/// not fire the two profiles must emit the same bytes. Four ways of not
-/// firing, one assertion each: the exact face, two partial panels, and f64.
+/// `apple-m4-sme` is `apple-m` plus TWO declared capabilities — the SME unit,
+/// and (plan-s50 P3) the measured dispatch economics. Wherever the SME rung does
+/// not fire, the only thing that may differ is the dispatch threshold's verdict,
+/// which is the `kind` argument of a task registration and nothing else.
+///
+/// So the assertion normalises exactly that one field and demands byte identity
+/// everywhere else. A change to the SME rung that leaked into a declining shape
+/// still fails; so does a threshold that moved anything other than a `kind`.
+/// Four ways of not firing: the exact face, two partial panels, and f64.
 #[test]
-fn sme_profile_is_byte_identical_to_apple_m_wherever_the_rung_declines() {
+fn sme_profile_differs_from_apple_m_only_in_dispatch_kind_where_the_rung_declines() {
+    // A task registration is
+    // `mapal_par_task(ptr %h, i32 IDX, i32 KIND, ptr @task…`, so this touches
+    // the kind and can touch nothing else.
+    fn normalize_kind(ll: &str) -> String {
+        ll.replace(", i32 1, ptr @task", ", i32 0, ptr @task")
+    }
     for (src, contract, why) in [
         (ATTN_32, false, "exact face"),
         (ATTN_24, true, "24 is not a whole 32-wide panel"),
@@ -271,6 +283,35 @@ fn sme_profile_is_byte_identical_to_apple_m_wherever_the_rung_declines() {
     ] {
         let sme = emit_at(src, "apple-m4-sme", contract);
         assert_no_sme(&sme, why);
-        assert_eq!(sme, emit_at(src, "apple-m", contract), "{why}");
+        assert_eq!(
+            normalize_kind(&sme),
+            normalize_kind(&emit_at(src, "apple-m", contract)),
+            "{why}"
+        );
     }
+}
+
+/// The other half of the claim above, stated positively: on these shapes the
+/// difference is REAL and it is the threshold. Every one of them is a 16-32
+/// wide attention — far under the 30 us a dispatch costs on the measured part —
+/// so `apple-m4-sme` must inline what `apple-m`, which has no measured
+/// economics, still hands to the pool.
+#[test]
+fn the_dispatch_threshold_is_what_separates_the_two_profiles_here() {
+    let sme = emit_at(ATTN_32, "apple-m4-sme", true);
+    let plain = emit_at(ATTN_32, "apple-m", true);
+    let kinds = |ll: &str| {
+        ll.lines()
+            .filter(|l| l.contains("mapal_par_task(ptr %h"))
+            .filter(|l| l.contains(", ptr @task"))
+            .filter(|l| l.contains(", i32 1, ptr @task"))
+            .count()
+    };
+    assert!(
+        kinds(&plain) > kinds(&sme),
+        "a part with measured dispatch costs must dispatch strictly fewer of \
+         these tiny tasks: apple-m has {} split registrations, apple-m4-sme {}",
+        kinds(&plain),
+        kinds(&sme)
+    );
 }

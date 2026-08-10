@@ -7,10 +7,15 @@
 //! `bounds_proof`-proven `Index` elides its statically-dead guard), and floats
 //! are IEEE at width.
 //!
-//! Emission is deterministic (L2): all names come from per-function ordinals and
-//! a rising counter, never slotmap bits. The one capability gap (L3) is the
-//! non-canonical loop shape (multi-merge SCC), rejected as
-//! [`EmitError::Unsupported`] — the same scope boundary as interp M1 / rewrite.
+//! Emission is deterministic **per resolved profile** (L2): all names come from
+//! per-function ordinals and a rising counter, never slotmap bits, so one `(IR,
+//! EmitOpts, TargetProfile)` triple always yields the same text. The default
+//! target is `native` (S46, ratified ADR-0038): it reads host facts, so default
+//! emitted text is machine-dependent *by design* — reproducible emission names a
+//! profile explicitly, and [`emit_detailed`] reports which profile was resolved.
+//! The one capability gap (L3) is the non-canonical loop shape (multi-merge
+//! SCC), rejected as [`EmitError::Unsupported`] — the same scope boundary as
+//! interp M1 / rewrite.
 
 mod func;
 mod loops;
@@ -130,11 +135,16 @@ pub struct EmitOpts {
     /// values are bit-identical, which the differential suite enforces.
     pub move_panel: MovePanel,
     /// The machine facts the emitter tiles against, selected **by name**
-    /// (plan-s31-target-profiles): `generic` (the default — today's literals,
-    /// byte-identical), `apple-m`, `zen3`, `raptorlake`. Nothing probes the host
-    /// unless asked (`native`, S41); a box run
-    /// names `zen3` rather than inheriting whatever machine the build happened
-    /// on, so emission stays reproducible and cross-compilable.
+    /// (plan-s31-target-profiles): `generic` (the pre-S46 literals, byte-
+    /// identical on every host), `apple-m`, `apple-m4-sme`, `zen3`,
+    /// `raptorlake`, `cuda-ada`.
+    ///
+    /// **The default is `native` (S46, ratified ADR-0038): probe the host, and
+    /// fall back to `generic` when a fact cannot be read.** Default emission is
+    /// therefore machine-dependent *by design* — anything that needs
+    /// reproducible emitted text across machines (structural tests, artifact
+    /// hashes) pins a profile by name, and [`emit_detailed`] reports which
+    /// profile was resolved.
     ///
     /// A pure ADR-0032 D4 performance tailor: every profile field is
     /// value-invariant, which the differential suite enforces by running under
@@ -161,14 +171,38 @@ impl Default for EmitOpts {
     }
 }
 
+/// One emitted translation unit **plus the profile it was emitted against**
+/// (ADR-0038 D2). The default target is `native`, so the text alone does not
+/// say which machine facts shaped it — `profile` is the resolved profile's
+/// name (`"native"` when detection succeeded, `"generic"` on fallback or by
+/// name, or the named profile), and artifact identity is
+/// `(source, EmitOpts, profile)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Emission {
+    /// The `.ll` text — the translation unit itself (ADR-0020).
+    pub text: String,
+    /// The resolved [`TargetProfile`]'s name.
+    pub profile: &'static str,
+}
+
 /// Emit one LLVM translation unit for `ir` (ADR-0020 §1). `Ok` is the `.ll`
-/// text; `Err(Unsupported)` for a non-canonical loop (L3).
+/// text; `Err(Unsupported)` for a non-canonical loop (L3). Uses
+/// [`EmitOpts::default()`] — target `native` (S46); [`emit_detailed`] reports
+/// which profile that resolved to on this host.
 pub fn emit(ir: &CategoryIr) -> Result<String, EmitError> {
     emit_with_opts(ir, &EmitOpts::default())
 }
 
-/// [`emit`] with options (see [`EmitOpts`]).
+/// [`emit`] with options (see [`EmitOpts`]); the text half of [`emit_detailed`].
 pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitError> {
+    Ok(emit_detailed(ir, opts)?.text)
+}
+
+/// [`emit_with_opts`] with the resolved profile named in the artifact
+/// (ADR-0038 D2). This is the honest signature of the transform: the profile
+/// is an *input* — ambient when the target is `native`, explicit otherwise —
+/// and naming it in the output is what makes the input visible.
+pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitError> {
     // Machine facts, by name (plan-s31-target-profiles rule 3). An unknown name
     // is an error, never a silent fall back to `generic` — a typo that quietly
     // emits the default profile's numbers is the exact failure the table exists
@@ -344,7 +378,10 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
         }
     }
     out.push_str(&emit_main_wrapper(ir));
-    Ok(out)
+    Ok(Emission {
+        text: out,
+        profile: profile.name,
+    })
 }
 
 fn path_plan_is_acyclic(plan: &PathPlan) -> bool {

@@ -422,6 +422,31 @@ fn l1406_guard_scrutinee_type() {
 }
 
 #[test]
+fn l1000_mixed_guard_block_is_loud_not_filtered() {
+    // B2 end-to-end (2026-08-01 review): a guard block with a tail used to
+    // reach lower as a clean two-arm Guard with `999` silently deleted.
+    // The parser now retains the complete block as a StmtBlock (P0006+P0115
+    // at parse), and lower rejects a StmtBlock stage with L1000 — loud, no
+    // source loss. Not parse-clean by construction, so not via assert_rejects.
+    let src =
+        "fn f(b: bool) -> i32 { b -> { -true-> 1; -false-> 2; 999 } -> ret; }\nfn main() {}\n";
+    let po = mapal_syntax::parse(src);
+    assert!(
+        po.diagnostics.iter().any(|d| d.code.0 == "P0006"),
+        "parse names the tail mixing: {:?}",
+        po.diagnostics
+    );
+    let Err(ds) = mapal_lower::lower(src, &po.program) else {
+        panic!("a mixed guard block must not lower");
+    };
+    assert!(
+        ds.iter().any(|d| d.code.0 == "L1000"),
+        "lower rejects the retained block loudly: {:?}",
+        ds.iter().map(|d| &d.code.0).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn l1407_routing_guard_shape() {
     // a routing guard that is not the loop body's final item.
     let src = r#"fn f(n: i32) -> i32 {

@@ -46,11 +46,19 @@ expression: "render_tree(&src, &out.program)"
 34:5         Chain
 34:5           head
 34:5             Var ‹c›
-34:9           -> Guard
-35:9             arm ‹-true->› (true)
-35:17               Chain
-35:17                 head
-35:17                   Var ‹a›
+34:9           -> StmtBlock
+34:12             Block
+35:9               arm ‹-true->› (true)
+35:17                 Chain
+35:17                   head
+35:17                     Var ‹a›
+36:9               Stmt::Chain
+36:9                 Chain
+36:9                   head
+36:9                     Unary Neg
+36:11                       Int 7 ‹7›
+36:13                   -> Expr
+36:16                     Var ‹b›
 37:7           -> Ret
 41:1   Fn ‹p0007›
 41:12     Block

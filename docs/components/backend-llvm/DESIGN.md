@@ -26,7 +26,8 @@ Three payoffs. (1) **§8.5 piecewise correctness is the code shape**: `emit` wal
 
 | Pass | `t_from → t_to` | Notes |
 |---|---|---|
-| `emit` | `&CategoryIr → TargetText ⊕ EmitError` | ADR-0020 signature; deterministic (L2) |
+| `emit` | `&CategoryIr → TargetText ⊕ EmitError` | ADR-0020 signature; deterministic per resolved profile (L2); delegates to `emit_detailed` |
+| `emit_detailed` | `&CategoryIr × &EmitOpts → Emission ⊕ EmitError` | ADR-0038 D2: the artifact names the resolved profile (`Emission.profile`), making the host-facts input explicit when the target is `native` (S46 default) |
 | `emit_fn` | `(CategoryIr × FuncId) → 𝕊` | one LLVM internal function per `FuncDef` (incl. Map/Fold bodies) |
 | `emit_morphism` | per `topo_order` step | §2 op table; the piecewise functor application |
 | `emit_loop` | per canonical quartet | §3; ADR-0016 CFG |
@@ -78,7 +79,7 @@ hold for it unchanged:
 ### Composition rules
 
 - **L1 — oracle parity (ADR-0020 §3).** For every program the harness runs: `Done` ⟺ exit 0 ∧ stdout byte-equal to `RunResult.output`; `Trapped(_)` ⟺ exit 101 (⊥-identified per rewrite R1); classes never cross. Integer `Add/Sub/Mul/Neg` wrap (**no `nsw`** — the spec §8.1 `nsw` is illustrative; ADR-0020); `Div/Mod` zero-guard → `mapal_trap(div_zero)`, and signed `MIN / -1` guard → **Div result `MIN`, Mod result `0`** (parity with `wrapping_div` and `wrapping_rem` respectively — `x.wrapping_rem(-1)` is always 0; S13 review blocker); `Index`/`Update` bounds-guard → `mapal_trap(index_oob)` with **type-directed index extension** (u8 `zext`+`ult`, signed `sext`+two-sided — §2); floats IEEE at width; all text via `mapal-rt`.
-- **L2 — determinism.** Byte-identical `.ll` for the same sealed IR; names derived from deterministic per-dump ordinals (`f{i}o{j}` scheme like Mermaid), never slotmap bits.
+- **L2 — determinism.** Byte-identical `.ll` for the same sealed IR **and the same resolved profile**; names derived from deterministic per-dump ordinals (`f{i}o{j}` scheme like Mermaid), never slotmap bits. The default target is `native` (S46, ratified ADR-0038): default emitted text is machine-dependent by design, and reproducible emission pins a profile by name.
 - **L3 — capability totality on Core.** Every §5.1 op emits; the ✋ row of the capability matrix stays empty for llvm **except** non-canonical loop shapes (multi-merge nested SCC) → `Unsupported { "nested loops" }` — same scope boundary as interp M1 and rewrite R6 (the whole toolchain is honest about the one degenerate shape; lifting it is one recorded increment across all three).
 - **L4 — token erasure.** `IoToken` has no runtime representation; effect order is the token chain's topo order, already linear (ir I4). A token-bearing tuple materializes only its non-token components; `Print` emits a `mapal_rt` call at its topo position; token-only objects get no slot.
 

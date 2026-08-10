@@ -9,6 +9,7 @@ P0004 779..802 21:5 stray guard arrow outside a guard block; `-7-> x` reads as a
     fix 779..802 "-99999999999999999999 ->" — add a space inside the would-be guard arrow
 P0005 923..932 27:9 guard arrows are written without interior spaces
     fix 923..932 "-true->" — remove the spaces inside the guard arrow
+P0115 1053..1097 34:12 anonymous block stage (`-> { … }` with statements/tail) is out of Mapal-Core (HANDOFF §4); user-guide §8.3 full-language form. Planned for Core+1
 P0006 1082..1091 36:9 statement mixed with guard arms in the same block; a guard block contains only arms. If you meant a guard arm, remove the space: `-7->`
 P0007 1193..1194 42:11 comparison operators are non-associative; parenthesize (e.g. `(a < b) < c`)
 P0008 1282..1284 47:12 only one `<-` binding per statement (W17); chained `<-` is not Mapal-Core

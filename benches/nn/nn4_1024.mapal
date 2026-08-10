@@ -1,0 +1,35 @@
+fn main() {
+    1048576 -> iota -> ta;
+    ta -> map { t -> (t * 7 + 13) % 9 + 1 -> widen_f32 } -> x;
+    ta -> map { t -> (t * 5 + 29) % 9 + 1 -> widen_f32 } -> w1;
+    ta -> map { t -> (t * 3 + 41) % 9 + 1 -> widen_f32 } -> w2;
+    ta -> map { t -> (t * 11 + 7) % 9 + 1 -> widen_f32 } -> w3;
+    ta -> map { t -> (t * 13 + 17) % 9 + 1 -> widen_f32 } -> w4;
+    1024 -> iota -> kr;
+    () -> time -> t0;
+    ta -> map { t ->
+        t / 1024 -> i;
+        t % 1024 -> j;
+        (0.0, kr) -> fold { acc, k -> acc + x[i * 1024 + k] * w1[k * 1024 + j] }
+    } -> h1;
+    ta -> map { t ->
+        t / 1024 -> i;
+        t % 1024 -> j;
+        (0.0, kr) -> fold { acc, k -> acc + h1[i * 1024 + k] * w2[k * 1024 + j] }
+    } -> h2;
+    ta -> map { t ->
+        t / 1024 -> i;
+        t % 1024 -> j;
+        (0.0, kr) -> fold { acc, k -> acc + h2[i * 1024 + k] * w3[k * 1024 + j] }
+    } -> h3;
+    ta -> map { t ->
+        t / 1024 -> i;
+        t % 1024 -> j;
+        (0.0, kr) -> fold { acc, k -> acc + h3[i * 1024 + k] * w4[k * 1024 + j] }
+    } -> h4;
+    () -> time -> t1;
+    h4[0] -> println;
+    h4[1048575] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}
