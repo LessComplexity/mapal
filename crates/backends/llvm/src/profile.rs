@@ -740,6 +740,55 @@ impl TargetProfile {
         working_set > self.l2_bytes
     }
 
+    /// How deep a k block the A pack should copy at a time, or `None` to copy
+    /// the whole k axis in one pass — which is what shipped before this existed.
+    ///
+    /// **The A pack's waste is on the STORE side, and it is conditional.** The
+    /// emitted pack is row-outer / k-inner (S42), so reads walk a row
+    /// contiguously — that side is already right. The stores go to
+    /// `ap[pk·panel_rows + pi]`, and consecutive `pk` are `panel_rows` elements
+    /// apart, which at f32 with a 2×2 block is 128 B — **exactly one cache line,
+    /// of which each store writes 4 bytes.** The next row then comes back and
+    /// writes the next 4 bytes of those same lines.
+    ///
+    /// That costs nothing *if* the lines are still resident when the next row
+    /// arrives, i.e. if `ap` = `panel_rows · kc · sizeof` fits L1D. Past that,
+    /// every line is evicted before its other 31 rows fill it, and the pack pays
+    /// 32× the line traffic it uses.
+    ///
+    /// Measured (`benches/sme/packconflict.c`, the loops the emitter actually
+    /// emits, best of 7, checksum-gated across arms — and the gate verified to
+    /// fail on an injected bug before the run was trusted):
+    ///
+    /// | N | `ap` | 32×32 blocked vs shipped |
+    /// | ---: | ---: | ---: |
+    /// | 128–512 | ≤ 64 KB | 1.000–1.051× — **flat, nothing to win** |
+    /// | 1024 | 128 KB = L1D | 1.612×, but that cell is **VOID** (drift 1.507×) |
+    /// | 2048 | 256 KB | **2.752×** |
+    /// | 4096 | 512 KB | 1.771× |
+    ///
+    /// So the gate is exactly "does `ap` fit L1D", and the block is one cache
+    /// line's worth of `k` — `line_bytes / sizeof` — which makes both sides
+    /// local: `panel_rows` read lines and `block` write lines live at once,
+    /// independent of `k`.
+    ///
+    /// **Not a swept constant.** Both numbers are detected machine facts
+    /// (`hw.pagesize`-class `sysctl` reads in [`L1d`]); a profile with no L1D
+    /// geometry gets `None` and keeps today's single-pass copy.
+    ///
+    /// Note what this does NOT do: it does not revert S42. The pre-S42 k-outer
+    /// order is 1.455× *faster* than what ships at N=2048 and ~2× slower at
+    /// N≤512; blocking beats both (1.89× over the pre-S42 order at N=2048), so
+    /// the answer is to block the traversal, not to swap the loops back.
+    pub fn pack_block(&self, panel_rows: u64, kc: u64, elem: &Ty) -> Option<u64> {
+        let l1d = self.l1d.as_ref()?;
+        let width = elem_bytes(elem);
+        if panel_rows.saturating_mul(kc).saturating_mul(width) <= l1d.bytes {
+            return None;
+        }
+        Some((l1d.line_bytes / width.max(1)).max(1))
+    }
+
     pub fn sme_kc(&self, elem: &Ty) -> Option<u64> {
         let sme = self.sme.as_ref()?;
         // A detected machine fact times a SWEPT policy ratio — see
@@ -1297,6 +1346,30 @@ mod tests {
     /// reproduces the swept optimum — `plan-s31-deduced-blocking.md`'s rule.
     /// `512` appears in no source file; it falls out of 128 KB / 256 B.
     #[test]
+    /// plan-s51 H2 — the A pack's block depth, and the two ways it declines.
+    ///
+    /// The pack's stores land one cache line apart, so a line is filled 4 bytes
+    /// at a time across the `panel_rows` rows that revisit it. Free while `ap`
+    /// is resident, 32x the line traffic once it is not — so the decision is
+    /// exactly "does `32 · k · sizeof` fit L1D", and 1024 is the last `k` that
+    /// does on this part.
+    ///
+    /// The depth is `line_bytes / sizeof` — one line's worth of `k` — and both
+    /// numbers are DETECTED, so nothing here is swept.
+    #[test]
+    fn pack_block_fires_only_once_the_pack_buffer_leaves_l1d() {
+        // 32 x 1024 x 4 = 131072 = L1D exactly. Fits, so no block.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 1024, &F32), None);
+        // One k-block deeper and it does not fit.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 1056, &F32), Some(32));
+        assert_eq!(APPLE_M4_SME.pack_block(32, 4096, &F32), Some(32));
+        // f64 halves the elements per line, so the block halves with it.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 4096, &F64), Some(16));
+        // A profile with no L1D geometry cannot decide and must keep the
+        // single-pass copy — the same contract every other derived factor has.
+        assert_eq!(GENERIC.pack_block(32, 4096, &F32), None);
+    }
+
     fn sme_kc_reproduces_the_measured_optimum() {
         assert_eq!(
             APPLE_M4_SME.sme_kc(&F32),
