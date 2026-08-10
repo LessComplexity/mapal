@@ -1929,18 +1929,26 @@ impl<'a> Parser<'a> {
             return StageKind::Guard(arms);
         }
         if has_arm {
-            // Arms mixed with non-arms: GuardBlock + P0006 (already reported by
-            // parse_block_body's check_arm_mixing). Keep the arms, drop the
-            // statements into the guard for recovery.
-            let arms: Vec<GuardArm> = items
-                .into_iter()
-                .filter_map(|i| match i {
-                    BlockItem::Arm(a) => Some(a),
-                    BlockItem::Stmt(_) => None,
-                })
-                .collect();
-            return StageKind::Guard(arms);
+            // A tail among arms draws no P0006 from `check_arm_mixing` — it
+            // scans items, and a tail is not an item. Name the mixing at the
+            // tail's own span (B2).
+            if let Some(t) = &tail {
+                self.diagnostics.push(Diagnostic::error(
+                    "P0006",
+                    t.span,
+                    "block tail mixed with guard arms in the same block; \
+                     a guard block contains only arms and no tail",
+                ));
+            }
         }
+        // Arms mixed with statements and/or a tail (B2, 2026-08-01 review):
+        // NEVER recover by filtering — the old branch kept the arms and
+        // dropped the rest, and a tail vanished with no diagnostic at all:
+        // `{ -true-> 1; -false-> 2; 999 }` lost `999` from the AST while
+        // parsing cleanly. Fall through to the StmtBlock arm instead: the
+        // complete parsed block is retained, P0006 names the mixing, P0115
+        // marks it out of Core, and lower rejects a StmtBlock stage loudly.
+        // No accepted source loses data.
 
         // Fanout if all items are headless chains with no tail; else StmtBlock.
         let all_headless = !items.is_empty()

@@ -622,7 +622,7 @@ generic block, then classifies:
 | ≥1 item and all items guard arms | **GuardBlock** | arm order preserved (lowering: Phi slots) |
 | ≥1 item, all items headless chains, no tail | **Fanout** (plain / `void`⟦P0113⟧) | branches = the chains |
 | anything else (headed statements and/or tail) | **StmtBlock** ⟦P0115⟧ | the user-guide §8.3 anonymous-block form; not in HANDOFF §4.1 |
-| arms mixed with non-arms | GuardBlock + **P0006** | the spaced-int case gets the bidirectional hint (§16) |
+| arms mixed with non-arms and/or a tail | **StmtBlock** + **P0006** (+ **P0115**) | never filtered — the complete block is retained (B2, S48: a tail among arms used to vanish silently) and lower rejects the StmtBlock stage loudly; the spaced-int case gets the bidirectional hint (§16) |
 | empty `{}` | Fanout(0) + **P0010** | |
 
 **`seq` is not classified (ADR-0019).** `seq { … }` does **not** go through this

@@ -2267,6 +2267,88 @@ fn path_diamond_has_independent_maps_and_dataflow_join() {
     assert!(!plan.is_single_path());
 }
 
+/// plan-s49. Every consumer of a `PathPlan` needs it to be a DAG; the backend
+/// silently demotes a cyclic plan to a fully sequential emission
+/// (`llvm/src/lib.rs::path_plan_is_acyclic`), and `path_plan`'s own
+/// `debug_assert` is compiled out of release. So assert it here.
+fn assert_acyclic(plan: &PathPlan) {
+    let mut remaining: Vec<usize> = plan.tasks.iter().map(|t| t.deps.len()).collect();
+    let mut order: Vec<usize> = remaining
+        .iter()
+        .enumerate()
+        .filter_map(|(id, &n)| (n == 0).then_some(id))
+        .collect();
+    let mut cursor = 0;
+    while cursor < order.len() {
+        let before = order[cursor];
+        cursor += 1;
+        for (after, task) in plan.tasks.iter().enumerate() {
+            if task.deps.contains(&before) {
+                remaining[after] -= 1;
+                if remaining[after] == 0 {
+                    order.push(after);
+                }
+            }
+        }
+    }
+    assert_eq!(
+        order.len(),
+        plan.tasks.len(),
+        "path_plan produced a CYCLIC task graph; {} of {} tasks are unreachable",
+        plan.tasks.len() - order.len(),
+        plan.tasks.len()
+    );
+}
+
+/// plan-s49 regression. Two bulk ops chained through a scalar glue that BOTH
+/// read one shared object — the shape of every multi-layer net, where each
+/// matmul's capture tuple captures the same `k` range. Grouping scalar
+/// morphisms by "shares an object in any role" fused the two glue groups into
+/// one task, which then sat both before and after the first bulk op: a cycle,
+/// and the whole program fell back to sequential emission. Glue is grouped by
+/// dataflow and co-writing only, so the two groups stay apart.
+#[test]
+fn path_chained_bulk_ops_do_not_fuse_their_scalar_glue() {
+    let mut b = IrBuilder::new();
+    let fold_body = add_fold_body(&mut b);
+    let f = b
+        .declare(FuncKind::Named, "chained", i32_arr(8), Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let input = fb.input();
+        let zero = fb.constant(Value::I32(0), L).unwrap();
+        // Glue 1 and glue 2 share a read of `input` and of nothing else.
+        let first_in = fb.pack(&[zero, input], Dest::Fresh(None), L).unwrap();
+        let first = fb.fold(fold_body, first_in, Dest::Fresh(None), L).unwrap();
+        let second_in = fb.pack(&[first, input], Dest::Fresh(None), L).unwrap();
+        fb.fold(fold_body, second_in, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    let plan = ir.path_plan(f);
+    assert_acyclic(&plan);
+
+    let folds = func_ops(&ir, f, |op| matches!(op, Operation::Fold { .. }));
+    assert_eq!(folds.len(), 2);
+    let pairs = func_ops(&ir, f, |op| matches!(op, Operation::Pair { .. }));
+    let glue1 = task_for(&plan, pairs[0]);
+    let glue2 = task_for(&plan, *pairs.last().expect("pair morphisms"));
+    assert_ne!(
+        glue1, glue2,
+        "sibling readers of one object were fused into a single scalar task"
+    );
+
+    // The chain is intact and one-directional: fold1 -> glue2 -> fold2.
+    let fold1 = task_for(&plan, folds[0]);
+    let fold2 = task_for(&plan, folds[1]);
+    assert!(plan.tasks[fold1].deps.contains(&glue1));
+    assert!(plan.tasks[glue2].deps.contains(&fold1));
+    assert!(plan.tasks[fold2].deps.contains(&glue2));
+    assert!(!plan.tasks[glue1].deps.contains(&fold1));
+}
+
 #[test]
 fn path_fold_and_independent_map_have_no_edge() {
     let mut b = IrBuilder::new();
@@ -2525,10 +2607,16 @@ fn path_wait_uses_max_threshold_and_data_completion_wins() {
         let token = fb.input();
         let lhs = fb.constant(Value::I32(1), L).unwrap();
         let rhs = fb.constant(Value::I32(0), L).unwrap();
-        fb.binop(Operation::Div, lhs, rhs, Dest::Fresh(None), L)
+        // plan-s49: the two divisions must be CHAINED, not siblings. This test is
+        // about one task carrying two trap sites at different topo positions, and
+        // scalar components are dataflow components — two `Div`s that merely read
+        // the same two constants have no order between them and are now two tasks,
+        // correctly. Feeding the first into the second is what puts them in one.
+        let first = fb
+            .binop(Operation::Div, lhs, rhs, Dest::Fresh(None), L)
             .unwrap();
         let second = fb
-            .binop(Operation::Div, lhs, rhs, Dest::Fresh(None), L)
+            .binop(Operation::Div, first, rhs, Dest::Fresh(None), L)
             .unwrap();
         let token = fb.print(token, rhs, L).unwrap();
         let token = fb.print(token, second, L).unwrap();

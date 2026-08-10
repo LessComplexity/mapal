@@ -146,8 +146,8 @@ pub struct Gpu {
 ///
 /// A hand-written value is therefore the *cross-compilation* case — describing a
 /// machine you are not sitting on — and
-/// `native_reproduces_the_hand_written_profile` asserts the two agree on the
-/// machine you are.
+/// `native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts`
+/// asserts the two agree on the documented part (ADR-0038 D4).
 ///
 /// `Machine` stays `Cpu`: SME is a **unit inside a CPU core**, not a machine
 /// class. One thread owns the whole tile, there is no cooperation and no
@@ -213,6 +213,27 @@ pub struct Sme {
     pub panel_l1d_ratio: u64,
 }
 
+/// What a parallel dispatch costs on this part, and how fast ONE lane runs —
+/// enough for the backend to decide whether a task is worth dispatching at all
+/// (plan-s50 P3).
+///
+/// **Only a profile whose numbers were measured on the part carries this.**
+/// `None` means "dispatch everything", which is exactly the behaviour every
+/// profile had before this existed, so an unmeasured part cannot be made worse
+/// by a number nobody took.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DispatchCost {
+    /// Compute-bound rate of one lane, in flops per nanosecond (== GFLOP/s).
+    pub flops_per_ns: u64,
+    /// Memory-bound rate of one lane, in bytes per nanosecond (== GB/s).
+    pub bytes_per_ns: u64,
+    /// What handing one task to the pool and getting it back costs, in
+    /// nanoseconds. A task whose estimated serial time is under this is worth
+    /// more run inline than dispatched: the dispatch buys one lane's share of
+    /// the work and pays a whole wave for it.
+    pub dispatch_ns: u64,
+}
+
 /// One target's machine facts, plus the two policy ratios that are honestly
 /// search space rather than facts (see the field docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,6 +279,9 @@ pub struct TargetProfile {
     /// Stack ceiling policy: an entry-block block at least this large is placed
     /// in the `mapal_rt_alloc` arena instead of the stack.
     pub heap_min_bytes: u64,
+    /// Measured dispatch economics, when someone has measured them. `None`
+    /// keeps the pre-plan-s50 behaviour: dispatch every task.
+    pub dispatch: Option<DispatchCost>,
     /// The streaming matrix unit, when the part has one. `None` for every
     /// profile that existed before S41 — which is exactly what keeps their
     /// emission byte-identical: the SME realization cannot be selected without
@@ -282,7 +306,7 @@ pub struct TargetProfile {
 /// accumulator, the seed and the map target), so the non-numeric arm is
 /// unreachable; it returns the f32 width rather than panicking because a wrong
 /// tile width is a slow kernel, never a wrong answer.
-fn elem_bytes(elem: &Ty) -> u64 {
+pub(crate) fn elem_bytes(elem: &Ty) -> u64 {
     match elem {
         Ty::Int { bits, .. } | Ty::Float { bits } => u64::from(*bits).div_ceil(8).max(1),
         _ => 4,
@@ -698,6 +722,11 @@ pub const GENERIC: TargetProfile = TargetProfile {
     // profile, so `--target=generic` stays byte-identical for all 171 swept
     // cells. Firing needs a profile that describes a real part.
     l1d: None,
+    // No measured rates ⇒ every task is dispatched, which is what every profile
+    // did before this field existed. `apple-m` and `zen3` inherit it because
+    // nobody has measured them either; `raptorlake`'s numbers are OWED and were
+    // not taken because the box was unreachable this session.
+    dispatch: None,
 };
 
 /// Apple M-series: NEON at 16 B × 32 registers, but a 16 MB L2 **shared by five
@@ -804,9 +833,10 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     // Both facts are `hw.optional.arm.sme_max_svl_b` and
     // `hw.perflevel0.l1dcachesize` on this M4 Pro, and `native` reads both — so
     // this profile is now the *cross-compilation* spelling of a machine you are
-    // not sitting on, and `native_reproduces_the_hand_written_profile` asserts
-    // detection agrees with it here. The tile count is absent because it is an
-    // ISA rule, derived in `sme_block`.
+    // not sitting on, and
+    // `native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts`
+    // asserts detection agrees with it on the documented part (ADR-0038 D4).
+    // The tile count is absent because it is an ISA rule, derived in `sme_block`.
     sme: Some(Sme {
         svl_bytes: 64,
         l1d_bytes: 128 * 1024,
@@ -819,6 +849,36 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
         bytes: 128 * 1024,
         line_bytes: 128,
         sets: 128,
+    }),
+    // MEASURED ON THIS PART, all three (plan-s50 P3):
+    //
+    // `flops_per_ns` — the SME rung's one-lane rate. `nn4_1024` at MAPAL_PAR=1
+    //   runs 986 GF/s and `nn4_2048` 939; 1000 is the plateau.
+    // `bytes_per_ns` — the streaming rate one lane reaches. `saxpy_1048576` at
+    //   MAPAL_PAR=1 moves 12.58 MB in 0.0991 ms = 127 B/ns.
+    // `dispatch_ns` — THE MARGINAL COST OF ONE DISPATCH IN THIS RUNTIME, which
+    //   is NOT the parked-wave figure. `handoff_floor` measures a parked wave at
+    //   22.6-41.2 us, and the first version of this constant used 30 us — but
+    //   plan-s50's P0/P0b/P2/P1 and the single-slice inline rule made a real
+    //   dispatch far cheaper than a cold park. Measured directly instead:
+    //   `nn4_128` opens 8 dispatches and runs 0.1449 ms with them and 0.0788 ms
+    //   with all eight inlined, so one dispatch costs (144.9 - 78.8)/8 = 8.3 us.
+    //
+    //   Using the parked figure cost three cells: `conv2d_512` 0.805x,
+    //   `matmul512` 0.944x and `nn4_512` 0.945x, all of them things that pay for
+    //   their dispatch at 8 us and do not at 30. The constant has to track the
+    //   runtime it describes, and that is why it is derived from a program the
+    //   runtime actually ran rather than from a microbenchmark.
+    //
+    // The estimates it separates are 4.2 us (`nn4_128` layer), 4.1 us (its
+    // pack), 16.5 us (`nn4_512`/`matmul512` pack), 21 us (`conv2d_512`), 34 us
+    // (`nn4_256` layer) and 84 us (`conv2d_1024`) — so the boundary sits in a
+    // clear gap between 4.2 and 16.5, and any value in it answers every measured
+    // cell the same way.
+    dispatch: Some(DispatchCost {
+        flops_per_ns: 1000,
+        bytes_per_ns: 127,
+        dispatch_ns: 8_300,
     }),
     ..APPLE_M
 };
@@ -981,6 +1041,16 @@ fn detect() -> Option<TargetProfile> {
         }),
         vec_bytes: vec_geometry().0,
         vec_regs: vec_geometry().1,
+        // `native` is the DEFAULT target, so the dispatch economics have to
+        // reach it or the rule only fires under an explicit
+        // `--target=apple-m4-sme`. Inherited ONLY when the detected part is the
+        // one they were measured on — SME with a 64-byte SVL — and `None`
+        // otherwise, because a threshold is a machine fact and guessing it for
+        // an unmeasured part is what this design refuses.
+        dispatch: match sysctl_u64("hw.optional.arm.sme_max_svl_b") {
+            Some(64) if sysctl_u64("hw.optional.arm.FEAT_SME") == Some(1) => APPLE_M4_SME.dispatch,
+            _ => None,
+        },
         ..GENERIC
     })
 }
@@ -1221,27 +1291,94 @@ mod tests {
         }
     }
 
-    /// **The genericity gate.** On this host, detection must reproduce the
-    /// hand-written profile *exactly* — same SVL, same L1D, same derived tile
-    /// side, same derived block, same derived k-panel. If it does not, then one
-    /// of the two is wrong and the hand-written numbers were never facts about
-    /// this machine.
+    /// One `sysctl` string — the sibling of `sysctl_u64` for the one key whose
+    /// value is text. The part gates below read the brand string, because
+    /// ADR-0038 D4 gates *exactness* on the part, loudly: an exact check that
+    /// can only run on the documented machine must say so in its name, and must
+    /// say out loud when it did not run.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn sysctl_string(key: &str) -> Option<String> {
+        let out = std::process::Command::new("/usr/sbin/sysctl")
+            .args(["-n", key])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        Some(String::from_utf8(out.stdout).ok()?.trim().to_owned())
+    }
+
+    /// **ADR-0038 D4, the machine-independent half of the genericity gate.**
+    /// Detection must succeed, the matrix unit must be recorded iff the part
+    /// reports one, and every derived SME quantity must be a pure function of
+    /// the recorded facts: the rebuild below freezes every input the
+    /// derivations may not read at the hand-written profile's value, so a
+    /// derivation that grows a hidden host read diverges here. This runs on
+    /// ANY Apple-silicon Mac.
+    ///
+    /// What it does NOT assert is agreement with the hand-written numbers —
+    /// that held on a base M4 only because SVL, the P-core L1D and the 16 MB
+    /// cluster L2 happen to be constant across the M4 family, and a fact that
+    /// happens to hold on every runner is luck, not a gate. Exactness is the
+    /// part-gated test below.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn native_sme_profile_is_consistent() {
+        let native = native().expect("detection must succeed on macOS");
+        assert_eq!(
+            native.sme().is_some(),
+            sysctl_u64("hw.optional.arm.FEAT_SME") == Some(1),
+            "the unit is recorded iff the part reports it — an absent key reads \
+             as None, not 0, so pre-SME parts land here cleanly rather than \
+             failing a Some(0) assertion"
+        );
+        let Some(nsme) = native.sme() else {
+            // No matrix unit on this part: nothing to compare, and the fallback
+            // is the pre-S41 behaviour. Not a failure.
+            return;
+        };
+        let l1d = native.l1d.expect("macOS detection records L1D geometry");
+        assert_eq!(
+            nsme.l1d_bytes, l1d.bytes,
+            "both rungs read the same P-core L1D (`l1d_and_sme_agree_on_the_l1d`, \
+             for the detected profile)"
+        );
+        let rebuilt = TargetProfile {
+            sme: native.sme,
+            ..APPLE_M4_SME
+        };
+        for elem in [F32, F64] {
+            assert_eq!(native.sme_tile_side(&elem), rebuilt.sme_tile_side(&elem));
+            assert_eq!(native.sme_block(&elem), rebuilt.sme_block(&elem));
+            assert_eq!(native.sme_kc(&elem), rebuilt.sme_kc(&elem));
+        }
+    }
+
+    /// **ADR-0038 D4, the exact half — gated on the documented part, loudly.**
+    /// On the documented M4 Pro, detection must reproduce the hand-written
+    /// profile *exactly* — same SVL, same L1D, same derived tile side, same
+    /// derived block, same derived k-panel. If it does not, then one of the
+    /// two is wrong and the hand-written numbers were never facts about this
+    /// machine. On any other part the exact check has nothing to say, and the
+    /// skip names the part it skipped.
     ///
     /// This is what makes `apple-m4-sme` a **cross-compilation** spelling rather
     /// than the only way to describe the machine under the keyboard: the numbers
     /// in it are no longer load-bearing here, they are checked against the part.
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     #[test]
-    fn native_reproduces_the_hand_written_profile() {
-        let Some(native) = native() else {
-            panic!("detection must succeed on macOS")
-        };
-        let Some(nsme) = native.sme() else {
-            // A Mac without SME: nothing to compare, and the fallback is the
-            // pre-S41 behaviour. Not a failure.
-            assert_eq!(sysctl_u64("hw.optional.arm.FEAT_SME"), Some(0));
+    fn native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts() {
+        let part = sysctl_string("machdep.cpu.brand_string")
+            .unwrap_or_else(|| "<brand string unreadable>".to_owned());
+        if !part.contains("M4 Pro") {
+            eprintln!(
+                "native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts: \
+                 SKIP — the exact facts are the documented M4 Pro's; this part is `{part}`"
+            );
             return;
-        };
+        }
+        let native = native().expect("detection must succeed on macOS");
+        let nsme = native.sme().expect("the documented M4 Pro has SME");
         let hand = APPLE_M4_SME.sme().expect("hand-written profile has SME");
         assert_eq!(nsme.svl_bytes, hand.svl_bytes, "SVL: detected vs written");
         assert_eq!(nsme.l1d_bytes, hand.l1d_bytes, "L1D: detected vs written");
@@ -1255,7 +1392,7 @@ mod tests {
             assert_eq!(native.sme_kc(&elem), APPLE_M4_SME.sme_kc(&elem));
         }
         // And the number the whole S42 campaign turns on, arrived at with no
-        // constant written anywhere: 131072 / ((2+2)*16*4) = 512.
+        // constant written anywhere: 2*131072 / ((2+2)*16*4 = 256) = 1024.
         assert_eq!(native.sme_kc(&F32), Some(1024));
     }
 
@@ -1422,14 +1559,68 @@ mod tests {
         }
     }
 
-    /// **The genericity gate, extended to S45's facts.** Detection on this host
-    /// must reproduce the hand-written L1D geometry and L2 sharing *exactly*,
-    /// and therefore reach the same fire/decline verdict and the same block. If
-    /// it does not, one of the two is wrong and the hand-written numbers were
-    /// never facts about this machine.
+    /// **ADR-0038 D4, the machine-independent half.** `move_block`'s verdict
+    /// must be a pure function of the recorded facts: the rebuild below copies
+    /// everything the derivation may legitimately read (`l1d`, `l2_bytes`,
+    /// `l2_cores`) and freezes every other field at the hand-written profile's
+    /// value, so a verdict that grows a hidden host read — or starts consulting
+    /// a field it has no business with — diverges. This runs on ANY
+    /// Apple-silicon Mac, including a base M4 whose `cpusperl2` is 3 where the
+    /// documented part's is 5.
+    ///
+    /// No exact fire/decline verdict is asserted here: `l1d: Some` and
+    /// `l2_cores >= 1` do not imply one. Whether side 1024 fires turns on the
+    /// 4 MB read array against the per-core L2 share — a fact of the part — so
+    /// exactness belongs to the part-gated test below.
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     #[test]
-    fn native_reproduces_the_hand_written_move_geometry() {
+    fn native_move_geometry_is_consistent() {
+        let native = native().expect("detection must succeed on macOS");
+        assert!(
+            native.l1d.is_some(),
+            "macOS detection always records L1D geometry"
+        );
+        assert!(native.l2_cores >= 1, "the sharing factor is clamped at 1");
+        let rebuilt = TargetProfile {
+            l1d: native.l1d,
+            l2_cores: native.l2_cores,
+            l2_bytes: native.l2_bytes,
+            ..APPLE_M4_SME
+        };
+        for side in [128_u64, 512, 1024, 1025, 2048] {
+            assert_eq!(
+                native.move_block(&transpose(side)),
+                rebuilt.move_block(&transpose(side)),
+                "side {side}: the verdict must be a pure function of the recorded facts"
+            );
+        }
+    }
+
+    /// **ADR-0038 D4, the exact half — gated on the documented part, loudly.**
+    /// The hand-written geometry is the M4 Pro's: FIVE P-cores sharing the
+    /// 16 MB cluster L2. A base M4 shares it 3 ways, which flips the side-1024
+    /// verdict (the 4 MB read array overflows the 3.36 MB per-core share but
+    /// fits the 5.46 MB one) — that flip is the hosted-CI failure this split
+    /// repairs, not a bug in either profile. Exactness therefore runs only on
+    /// the part it describes, and the skip names the part it skipped.
+    ///
+    /// On the documented M4 Pro, detection must reproduce the hand-written L1D
+    /// geometry and L2 sharing *exactly*, and therefore reach the same
+    /// fire/decline verdict and the same block. If it does not, one of the two
+    /// is wrong and the hand-written numbers were never facts about this
+    /// machine.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn native_on_the_documented_m4_pro_reproduces_hand_written() {
+        let part = sysctl_string("machdep.cpu.brand_string")
+            .unwrap_or_else(|| "<brand string unreadable>".to_owned());
+        if !part.contains("M4 Pro") {
+            eprintln!(
+                "native_on_the_documented_m4_pro_reproduces_hand_written: SKIP — \
+                 the exact geometry is the documented M4 Pro's; this part is `{part}`"
+            );
+            return;
+        }
         let native = native().expect("detection must succeed on macOS");
         assert_eq!(
             native.l1d, APPLE_M4_SME.l1d,
@@ -1521,22 +1712,30 @@ mod tests {
         assert_eq!(APPLE_M4_SME.sme_block(&F64), Some((2, 4)), "8 tiles at f64");
     }
 
-    /// The SME profile moves EXACTLY one field off `apple-m`. Every derived
-    /// tile factor is unchanged, so a site that falls back to the NEON rung
-    /// under `apple-m4-sme` emits what `apple-m` emits — the negative control
-    /// the golden test pins at the text level.
+    /// The SME profile moves only DECLARED-CAPABILITY fields off `apple-m`.
+    /// Every derived tile factor is unchanged, so a site that falls back to the
+    /// NEON rung under `apple-m4-sme` emits what `apple-m` emits — the negative
+    /// control the golden test pins at the text level.
     #[test]
-    fn apple_m4_sme_moves_only_the_sme_field() {
-        // S45 adds `l1d` alongside `sme`: the same part, one more capability
-        // declared. Every DERIVED tile factor below must still be `apple-m`'s.
+    fn apple_m4_sme_moves_only_declared_capability_fields() {
+        // S45 adds `l1d` alongside `sme`, plan-s50 adds `dispatch`: the same
+        // part, more capability declared. Each is an `Option` that is `None` on
+        // `apple-m`, so a rung that needs one cannot fire without it and every
+        // DERIVED tile factor below must still be `apple-m`'s.
         assert_eq!(
             APPLE_M4_SME,
             TargetProfile {
                 name: APPLE_M4_SME.name,
                 sme: APPLE_M4_SME.sme,
                 l1d: APPLE_M4_SME.l1d,
+                dispatch: APPLE_M4_SME.dispatch,
                 ..APPLE_M
             }
+        );
+        assert!(
+            APPLE_M.dispatch.is_none(),
+            "an unmeasured part must carry no dispatch economics, so the \
+             threshold cannot fire on a number nobody took"
         );
         assert_eq!(APPLE_M4_SME.tile_j(&F32), APPLE_M.tile_j(&F32));
         assert_eq!(APPLE_M4_SME.tile_i(), APPLE_M.tile_i());

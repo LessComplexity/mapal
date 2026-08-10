@@ -1795,79 +1795,99 @@ impl CategoryIr {
                 continue;
             }
 
-            let (kind, weight) = if let Some(loop_id) =
-                loop_of.get(m).copied().filter(|&id| !gated_loop[id])
-            {
-                if loop_seen[loop_id] {
-                    continue;
-                }
-                loop_seen[loop_id] = true;
-                let morphisms: Vec<_> = topo
-                    .iter()
-                    .copied()
-                    .filter(|&candidate| loop_of.get(candidate).copied() == Some(loop_id))
-                    .collect();
-                (TaskKind::Seq { morphisms }, 1)
-            } else {
-                match self.morphisms[m].op {
-                    // plan-s39: a gated bulk op falls through to the scalar
-                    // component (`_` arm) — it joins its Phi's Seq task, since
-                    // a Split site is dispatched at launch, before the guard
-                    // condition's value exists.
-                    Operation::Map { .. }
-                    | Operation::Zip
-                    | Operation::Enumerate
-                    | Operation::Iota
-                    | Operation::Fill
-                        if !gated.contains_key(m) && loop_of.get(m).is_none() =>
-                    {
-                        let n = self.bulk_element_count(m);
-                        (
-                            TaskKind::Split { site: m, n },
-                            n.min(u32::MAX as u64) as u32,
-                        )
+            let (kind, weight) =
+                if let Some(loop_id) = loop_of.get(m).copied().filter(|&id| !gated_loop[id]) {
+                    if loop_seen[loop_id] {
+                        continue;
                     }
-                    Operation::Fold { .. }
-                        if !gated.contains_key(m) && loop_of.get(m).is_none() =>
-                    {
-                        let n = self.bulk_element_count(m);
-                        (
-                            TaskKind::Seq { morphisms: vec![m] },
-                            n.min(u32::MAX as u64) as u32,
-                        )
-                    }
-                    // plan-s33b: the read alone, never grouped with the scalar
-                    // arithmetic around it — the whole point is that its edges
-                    // fence work, and a shared task would drag that work inside.
-                    Operation::TimeMs => (TaskKind::Seq { morphisms: vec![m] }, 1),
-                    _ => {
-                        if scalar_seen.contains_key(m) {
-                            continue;
+                    loop_seen[loop_id] = true;
+                    let morphisms: Vec<_> = topo
+                        .iter()
+                        .copied()
+                        .filter(|&candidate| loop_of.get(candidate).copied() == Some(loop_id))
+                        .collect();
+                    (TaskKind::Seq { morphisms }, 1)
+                } else {
+                    match self.morphisms[m].op {
+                        // plan-s39: a gated bulk op falls through to the scalar
+                        // component (`_` arm) — it joins its Phi's Seq task, since
+                        // a Split site is dispatched at launch, before the guard
+                        // condition's value exists.
+                        Operation::Map { .. }
+                        | Operation::Zip
+                        | Operation::Enumerate
+                        | Operation::Iota
+                        | Operation::Fill
+                            if !gated.contains_key(m) && loop_of.get(m).is_none() =>
+                        {
+                            let n = self.bulk_element_count(m);
+                            (
+                                TaskKind::Split { site: m, n },
+                                n.min(u32::MAX as u64) as u32,
+                            )
                         }
-                        let mut component: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
-                        let mut stack = vec![m];
-                        scalar_seen.insert(m, ());
-                        while let Some(current) = stack.pop() {
-                            component.insert(current, ());
-                            let morph = &self.morphisms[current];
-                            for &o in &[morph.source, morph.target] {
-                                for &neighbor in self.in_edges(o).iter().chain(self.out_edges(o)) {
+                        Operation::Fold { .. }
+                            if !gated.contains_key(m) && loop_of.get(m).is_none() =>
+                        {
+                            let n = self.bulk_element_count(m);
+                            (
+                                TaskKind::Seq { morphisms: vec![m] },
+                                n.min(u32::MAX as u64) as u32,
+                            )
+                        }
+                        // plan-s33b: the read alone, never grouped with the scalar
+                        // arithmetic around it — the whole point is that its edges
+                        // fence work, and a shared task would drag that work inside.
+                        Operation::TimeMs => (TaskKind::Seq { morphisms: vec![m] }, 1),
+                        _ => {
+                            if scalar_seen.contains_key(m) {
+                                continue;
+                            }
+                            let mut component: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+                            let mut stack = vec![m];
+                            scalar_seen.insert(m, ());
+                            while let Some(current) = stack.pop() {
+                                component.insert(current, ());
+                                let morph = &self.morphisms[current];
+                                // plan-s49: adjacency is DATAFLOW plus CO-WRITING, and
+                                // deliberately NOT "shares an object in any role".
+                                //   in_edges(source)  — who produced my input   (chain)
+                                //   out_edges(target) — who reads my output     (chain)
+                                //   in_edges(target)  — who else writes my output:
+                                //                       product slot writers ARE one
+                                //                       producer and must share a task
+                                // What is dropped is `out_edges(source)`: two morphisms
+                                // that merely READ one object are siblings, not a chain.
+                                // Merging siblings merges work with no order between it,
+                                // and once one sibling's cone consumes a bulk output the
+                                // other sibling feeds, that single task is both before
+                                // and after the bulk task — a CYCLE. A cyclic plan is
+                                // silently demoted to fully sequential emission by the
+                                // backend (`path_plan_is_acyclic`), so the symptom is
+                                // lost parallelism, not a crash. Two chained matmuls
+                                // sharing one `k` range is the whole reproducer: every
+                                // multi-layer net emitted single-threaded.
+                                for &neighbor in self
+                                    .in_edges(morph.source)
+                                    .iter()
+                                    .chain(self.in_edges(morph.target))
+                                    .chain(self.out_edges(morph.target))
+                                {
                                     if is_scalar(neighbor) && !scalar_seen.contains_key(neighbor) {
                                         scalar_seen.insert(neighbor, ());
                                         stack.push(neighbor);
                                     }
                                 }
                             }
+                            let morphisms = topo
+                                .iter()
+                                .copied()
+                                .filter(|candidate| component.contains_key(*candidate))
+                                .collect();
+                            (TaskKind::Seq { morphisms }, 1)
                         }
-                        let morphisms = topo
-                            .iter()
-                            .copied()
-                            .filter(|candidate| component.contains_key(*candidate))
-                            .collect();
-                        (TaskKind::Seq { morphisms }, 1)
                     }
-                }
-            };
+                };
 
             let task_id = tasks.len();
             let members: &[MorphismId] = match &kind {

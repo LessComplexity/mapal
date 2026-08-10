@@ -536,7 +536,18 @@ fn main() {
 #[test]
 fn golden_tile_map_shapes() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let tiled = emit(&ir).unwrap();
+    // ADR-0038 D4: shape assertions bind to a named profile, never the ambient
+    // default — every constant below (TJ=16, TI=4, the [64 x float] scratch) is
+    // `generic`'s NEON geometry, and a detected AVX2/AVX-512 profile tiles
+    // differently.
+    let tiled = emit_with_opts(
+        &ir,
+        &EmitOpts {
+            target: "generic",
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
     let tiled_fn = function_containing(&tiled, " = alloca [64 x float]");
     // Rows run in TI=4 register blocks, so the accumulator is one flat
     // entry-block scratch of TI×TJ elems (subrow r at r*16 + lane).
@@ -664,6 +675,7 @@ fn golden_tile_map_shapes() {
         &ir,
         &EmitOpts {
             tiling: false,
+            target: "generic",
             ..EmitOpts::default()
         },
     )
@@ -683,7 +695,14 @@ fn golden_tile_map_shapes() {
     insta::assert_snapshot!("untiled_map_shape", untiled_fn);
 
     let f64_ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_F64_SRC)).ir;
-    let f64 = emit(&f64_ir).unwrap();
+    let f64 = emit_with_opts(
+        &f64_ir,
+        &EmitOpts {
+            target: "generic",
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
     let f64_fn = function_containing(&f64, " = alloca [32 x double]");
     assert!(
         f64_fn.contains(" = alloca [32 x double]")
@@ -890,7 +909,15 @@ fn tile_contract_flags_are_opt_in() {
 #[test]
 fn golden_tile_map_shape_1d() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_FIR_SRC)).ir;
-    let tiled = emit(&ir).unwrap();
+    // ADR-0038 D4: the TJ=16 lane bounds below are `generic`'s geometry.
+    let tiled = emit_with_opts(
+        &ir,
+        &EmitOpts {
+            target: "generic",
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
     let tiled_fn = function_containing(&tiled, " = alloca [64 x float]");
     // The S28 window rung: TI=4 register blocks over the lane axis, so the
     // accumulator is one flat entry-block scratch of TI×TJ elems (subrow r at
@@ -1014,7 +1041,15 @@ fn main() {
 #[test]
 fn golden_tile_map_shape_conv() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_CONV_SRC)).ir;
-    let tiled = emit(&ir).unwrap();
+    // ADR-0038 D4: the `<16 x float>` counts below are `generic`'s geometry.
+    let tiled = emit_with_opts(
+        &ir,
+        &EmitOpts {
+            target: "generic",
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
     let tiled_fn = function_containing(&tiled, " = alloca [16 x float]");
     // The S28 conv rung cashed the k-split record as an unrolled (kq, kr) tap
     // nest. S31 added two things on top (plan-s31-deduced-blocking):
@@ -1779,10 +1814,14 @@ fn profile_closes_the_kc_gate_by_derivation() {
         "apple-m (16 MB L2) must close the KC gate by derivation at K=300"
     );
 
+    // ADR-0038 D4: this leg IS the generic reference — name it, or a detected
+    // non-NEON profile emits a different j-outer nest and the byte-equality
+    // below fails on a healthy machine.
     let generic_kc_off = emit_with_opts(
         &ir,
         &EmitOpts {
             contract: true,
+            target: "generic",
             ..EmitOpts::default()
         },
     )
@@ -1832,7 +1871,20 @@ fn unknown_profile_is_an_error_not_a_silent_default() {
 #[test]
 fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let ll = emit(&ir).unwrap();
+    // `generic` BY NAME (S46). This is a structural pin, and the default target
+    // is `native`; on a part that carries measured dispatch economics the
+    // plan-s50 P3 threshold correctly INLINES this 4x4 matmul, which is the
+    // subject of `tiny_tile_site_is_inlined_when_the_part_has_measured_costs`
+    // below. `generic` has no measured economics, so it dispatches everything
+    // and this test sees the shape it is about.
+    let ll = emit_with_opts(
+        &ir,
+        &EmitOpts {
+            target: "generic",
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap();
 
     let pack = regex_lite_find(&ll, "_pack, i64 ")
         .expect("the packed wrapper must register a parallel pack task (@task{n}_pack)");
@@ -1863,26 +1915,104 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
         "slice_elems=0 silently collapses the pack to ONE slice (GRAIN=4096):\n{pack}"
     );
 
-    let wrapper = function_containing(&ll, "_pack, i64 ");
+    // plan-s50 P0: the pack and the matmul are two tasks in the OUTER run,
+    // joined by a dep edge — NOT a wrapper opening two nested runs. The nested
+    // form cost 36.8 us per inner run at 14 lanes, per site, per invocation,
+    // inside the timed region (`mapal-rt/examples/dispatch_cost.rs`).
     assert_eq!(
-        wrapper.matches("@mapal_par_begin(i32 1)").count(),
+        ll.matches("@mapal_par_begin").count(),
         2,
-        "the wrapper opens TWO nested single-task runs — pack, then matmul:\n{wrapper}"
+        "one declaration and ONE run — a nested `mapal_par_begin` is the \
+         per-invocation cost this shape exists to remove:\n{ll}"
     );
-    let pack_at = wrapper.find("_pack, i64 ").expect("pack call");
-    let slice_at = wrapper.find("_slice, i64 ").expect("slice call");
+    let pack_task: u32 = args[1]
+        .trim_start_matches("i32 ")
+        .parse()
+        .expect("the pack's task index");
+    // `@task{n}_pack` names the matmul task it feeds.
+    let matmul_task: u32 = pack
+        .rsplit_once("@task")
+        .expect("the pack body is named after its site")
+        .1
+        .split_once("_pack")
+        .expect("_pack suffix")
+        .0
+        .parse()
+        .expect("the matmul's task index");
+    assert_ne!(pack_task, matmul_task, "the pack is its own task:\n{pack}");
     assert!(
-        pack_at < slice_at,
-        "the pack must be dispatched and finished BEFORE the matmul reads it:\n{wrapper}"
+        ll.contains(&format!(
+            "call void @mapal_par_dep(ptr %h, i32 {pack_task}, i32 {matmul_task})"
+        )),
+        "the dep edge IS the happens-before from every pack store to every \
+         matmul load — it replaced the nested run's `finish`:\n{ll}"
+    );
+    // The matmul is now dispatched by the outer run, so it must be a SPLIT with
+    // the region's own sizing; registering it `kind = 0` would run the whole
+    // matmul on one lane with every gate still green.
+    let matmul = regex_lite_find(&ll, "_slice, i64 ").expect("the matmul registration");
+    let margs: Vec<&str> = matmul
+        .rsplit_once('(')
+        .expect("a call")
+        .1
+        .trim_end_matches(further_paren)
+        .split(", ")
+        .collect();
+    assert_eq!(
+        margs[2], "i32 1",
+        "the matmul must stay a SPLIT dispatch:\n{matmul}"
     );
     assert!(
-        wrapper[pack_at..slice_at].contains("@mapal_par_finish"),
-        "a finish must separate the two runs — that is the happens-before edge:\n{wrapper}"
+        margs[6].trim_start_matches("i64 ").parse::<u64>().unwrap() > 0,
+        "the matmul keeps its region quantum:\n{matmul}"
     );
     // The pack body is a real loop over [%lo, %hi), not the old [0, tiles).
     assert!(
         ll.contains("store i64 %lo, ptr") && ll.contains(", %hi\n"),
         "the pack function must walk the j-tile range it was handed:\n{ll}"
+    );
+}
+
+/// plan-s50 P3: a task that cannot pay for its own dispatch is registered
+/// `kind = 0`, which `mapal-rt` runs on the calling thread instead of queueing.
+///
+/// `TILE_MATMUL_SRC` is 4x4 — sixteen output elements over a reduction of four.
+/// Dispatching it costs a wave (30 us on the measured part) to buy one lane's
+/// share of ~128 flops. Measured at scale, the same mistake costs 1.8x: `nn4` at
+/// d=128 runs 0.0790 ms on one thread and 0.1448 ms on fourteen.
+///
+/// The negative control is the point of the second half: a profile with no
+/// MEASURED dispatch economics must keep dispatching, so no part can be made
+/// worse by a number nobody took.
+#[test]
+fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
+    let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
+    let kind_of = |target: &'static str| {
+        let ll = emit_with_opts(
+            &ir,
+            &EmitOpts {
+                target,
+                ..EmitOpts::default()
+            },
+        )
+        .unwrap();
+        let call = regex_lite_find(&ll, "_slice, i64 ").expect("a registered tile task");
+        call.split(", ")
+            .nth(2)
+            .expect("the kind argument")
+            .to_string()
+    };
+    assert_eq!(
+        kind_of("apple-m4-sme"),
+        "i32 0",
+        "a 4x4 matmul must not be handed to the pool on a part whose dispatch \
+         cost is known"
+    );
+    assert_eq!(
+        kind_of("generic"),
+        "i32 1",
+        "a profile with no measured dispatch economics must dispatch exactly as \
+         it did before the threshold existed"
     );
 }
 

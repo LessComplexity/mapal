@@ -9,6 +9,13 @@
 //! accidentally-relied-on LLVM-level UB would surface). `clang` absent ⇒ the
 //! whole harness skips-with-reason (never a faked pass). Open-mode testgen
 //! (`i32 → i32`) is excluded — no native `@main` analog (BL8).
+//!
+//! Profile policy (ADR-0038 D4): every emission here pins a profile by name —
+//! `generic`, whose NEON-derived geometry is what the tile-shape assertions
+//! bind — because S46 made `EmitOpts::default().target` the host-detected
+//! `native`, and a detected AVX2/AVX-512/L2 yields different tile constants.
+//! The ONE leg that intentionally floats on the ambient default is
+//! `differential_native_profile_is_value_correct` (values only, no shape).
 
 #![allow(clippy::type_complexity)]
 
@@ -81,7 +88,7 @@ fn clang() -> Option<String> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
 
     // `MAPAL_REQUIRE_CLANG` turns skip-with-reason into a hard failure. Every one of
-    // this file's nine skip sites goes through here, so the guard belongs here and
+    // this file's skip sites goes through here, so the guard belongs here and
     // nowhere else. CI sets it: a suite that skips itself proves nothing, and the
     // workflow used to prove otherwise by running the whole 1,280-case differential a
     // SECOND time with `--nocapture` and grepping for "skip" — ~25 min on a two-core
@@ -237,7 +244,17 @@ fn assert_parity(clang: &str, ir: &CategoryIr, rr: &RunResult, tag: &str) {
     let Some((want_out, want_code)) = expect_native(ir, rr) else {
         return; // diverged — skip
     };
-    let ll = mapal_backend_llvm::emit(ir).unwrap_or_else(|e| panic!("{tag}: emit failed: {e:?}"));
+    // ADR-0038 D4: value legs pin `generic` by name too, for uniformity — the
+    // ONE ambient/native leg in this file is
+    // differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap_or_else(|e| panic!("{tag}: emit failed: {e:?}"));
     for opt in ["-O0", "-O2"] {
         let tag_o = format!("{tag}/{opt}");
         let (got_out, got_code) = compile_run(clang, &ll, &tag_o, opt)
@@ -422,7 +439,16 @@ fn main() {
         rr.outcome
     );
 
-    let ll = mapal_backend_llvm::emit(&ir).expect("emit");
+    // ADR-0038 D4: value legs pin `generic` for uniformity — the ONE ambient/
+    // native leg in this file is differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .expect("emit");
     for opt in ["-O0", "-O2"] {
         let (out, code) =
             compile_run(&clang, &ll, "trap_prefix", opt).expect("native run timed out");
@@ -656,7 +682,16 @@ fn judge(run: Option<(Vec<u8>, i32)>, j: &Job, opt: &str, out: &mut Vec<String>)
 /// Build a job from an `ir` + its oracle run. `None` if the run diverged (skip).
 fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
     let (want_out, want_code) = expect_native(ir, rr)?;
-    let ll = mapal_backend_llvm::emit(ir).unwrap_or_else(|e| panic!("{tag}: emit: {e:?}"));
+    // ADR-0038 D4: the sweep's value legs pin `generic` by name, like every
+    // other leg but differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap_or_else(|e| panic!("{tag}: emit: {e:?}"));
     Some(Job {
         tag,
         ll,
@@ -893,7 +928,16 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("matmul oracle completes") else {
         panic!("matmul oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     // S26 nest: flat [TILE_I * TILE_J] acc scratch, the head/interior/tail row
     // split (biased-`lo` + direct-`hi` udivs bound the interior full-window
     // rows), and a constant-TILE_J lane bound on the main j body. SSA tmp names
@@ -914,6 +958,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -975,7 +1022,16 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("helper matmul oracle completes") else {
         panic!("helper matmul oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled
             .lines()
@@ -989,6 +1045,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1029,7 +1088,17 @@ fn differential_default_rewritten_matmul4_lifts_and_tiles() {
 
     let rr = run(&ir, BUDGET);
     assert_eq!(rr.output, "-275\n3748\n", "interp oracle contract");
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46). The value legs below
+    // (default pool and MAPAL_PAR=1) stay on this same pinned emission.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         ll.lines()
             .any(|line| line.ends_with(" = alloca [64 x float], align 64")),
@@ -1079,7 +1148,16 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("FIR oracle completes") else {
         panic!("FIR oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [64 x float]")
             && tiled
@@ -1092,6 +1170,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1145,7 +1226,16 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("FIR remainder oracle completes") else {
         panic!("FIR remainder oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [64 x float]")
             && tiled
@@ -1157,6 +1247,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1196,7 +1289,16 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("FIR split oracle completes") else {
         panic!("FIR split oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [64 x float]"),
         "split case must contain the window nest:\n{tiled}"
@@ -1205,6 +1307,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1285,6 +1390,9 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
         ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1293,11 +1401,23 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
 }
 
 fn emit_tiled_and_untiled(ir: &CategoryIr) -> (String, String) {
-    let tiled = mapal_backend_llvm::emit(ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     let untiled = mapal_backend_llvm::emit_with_opts(
         ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1465,7 +1585,16 @@ fn main() {
     else {
         panic!("matmul r5_c20_k7 oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [64 x float]")
             && tiled.contains(" = udiv i64 %lo, 20")
@@ -1476,6 +1605,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1541,7 +1673,16 @@ fn main() {
     else {
         panic!("matmul r6_c32_k5 oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [64 x float]")
             && tiled.contains(" = udiv i64 %lo, 32")
@@ -1552,6 +1693,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1596,7 +1740,16 @@ fn main() {
     else {
         panic!("matmul r6_c20_k5_f64 oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: shape constants are generic-derived — pin the profile by
+    // name, never the ambient default (native since S46).
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         tiled.contains(" = alloca [32 x double]")
             && tiled.contains(" = alloca [120 x double], align 64")
@@ -1607,6 +1760,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1615,6 +1771,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             packing: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1698,7 +1857,16 @@ fn main() {
     else {
         panic!("loop-carried pack oracle must complete");
     };
-    let tiled = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: pack-frame and parallel task structure are generic-derived
+    // shape — pin the profile by name, never the ambient default.
+    let tiled = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     let entry = tiled
         .split("define internal void @mapal_main(")
         .nth(1)
@@ -1724,6 +1892,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1804,6 +1975,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -1869,6 +2043,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -2043,6 +2220,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -2051,6 +2231,9 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             packing: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
@@ -2354,7 +2537,16 @@ fn main() {
 "#;
     let ir = lower_src(src);
     let rr = run(&ir, BUDGET);
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: the split-task structure this asserts is profile shape
+    // (grain sizes are profile fields) — pin the profile by name.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(
         ll.contains("i32 1, ptr @task") && ll.contains("i64 65536"),
         "the large map must use a split task:\n{ll}"
@@ -2386,7 +2578,16 @@ fn differential_heap_lowered_arrays() {
         );
         let ir = lower_src(&src);
         let rr = run(&ir, BUDGET);
-        let ll = mapal_backend_llvm::emit(&ir).unwrap();
+        // ADR-0038 D4: the arena threshold (`heap_min_bytes`) is a profile
+        // field, so placement structure is profile shape — pin the name.
+        let ll = mapal_backend_llvm::emit_with_opts(
+            &ir,
+            &mapal_backend_llvm::EmitOpts {
+                target: "generic",
+                ..mapal_backend_llvm::EmitOpts::default()
+            },
+        )
+        .unwrap();
         assert_eq!(
             ll.contains("%frame = call ptr @mapal_rt_alloc(i64 "),
             heap,
@@ -2429,7 +2630,16 @@ fn main() {
     )
     .output;
     assert_eq!(prefix, "0\n");
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: pin the profile by name (the parallel-plan shape is
+    // profile-derived; the value legs pin alongside for uniformity).
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     assert!(ll.contains("call void @mapal_par_trap(i64 "));
     for opt in ["-O0", "-O2"] {
         let (_dir, exe) = compile_exe(&clang, &ll, "parallel_trap_order", opt);
@@ -2465,7 +2675,16 @@ fn differential_parallel_env_matrix() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("oracle completes") else {
         panic!("parallel env fixture must complete");
     };
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: value legs pin `generic` for uniformity — the ONE ambient/
+    // native leg in this file is differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     for opt in ["-O0", "-O2"] {
         let (_dir, exe) = compile_exe(&clang, &ll, "parallel_env_matrix", opt);
         for mapal_par in [Some("1"), Some("8"), None] {
@@ -2525,7 +2744,16 @@ fn main() {
     )
     .output;
     assert_eq!(untimed, "49147\n");
-    let ll = mapal_backend_llvm::emit(&lower_src(src)).unwrap();
+    // ADR-0038 D4: value legs pin `generic` for uniformity — the ONE ambient/
+    // native leg in this file is differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &lower_src(src),
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     for opt in ["-O0", "-O2"] {
         let (_dir, exe) = compile_exe(&clang, &ll, "time_bracket", opt);
         for mapal_par in [None, Some("1")] {
@@ -2564,7 +2792,16 @@ fn differential_parallel_run_twice() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("oracle completes") else {
         panic!("parallel repeat fixture must complete");
     };
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: value legs pin `generic` for uniformity — the ONE ambient/
+    // native leg in this file is differential_native_profile_is_value_correct.
+    let ll = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     for opt in ["-O0", "-O2"] {
         let (_dir, exe) = compile_exe(&clang, &ll, "parallel_run_twice", opt);
         let first = run_exe(&exe, TIMEOUT_SECS, None)
@@ -2624,7 +2861,18 @@ fn main() {
         panic!("zen3 shape oracle must complete");
     };
 
-    let generic = mapal_backend_llvm::emit(&ir).unwrap();
+    // ADR-0038 D4: `emit`'s default target is `native` (S46), so on a
+    // zen3-like runner the ambient emission IS ≈zen3 and the assert_ne below
+    // would compare a profile against itself. Pin the reference profile by
+    // name — that is what makes the comparison machine-independent.
+    let generic = mapal_backend_llvm::emit_with_opts(
+        &ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            ..mapal_backend_llvm::EmitOpts::default()
+        },
+    )
+    .unwrap();
     let zen3 = mapal_backend_llvm::emit_with_opts(
         &ir,
         &mapal_backend_llvm::EmitOpts {
@@ -2642,10 +2890,65 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             tiling: false,
+            // ADR-0038 D4: the comparison's other leg pins `generic` by name —
+            // keep both legs inside the one profile.
+            target: "generic",
             ..mapal_backend_llvm::EmitOpts::default()
         },
     )
     .unwrap();
     assert_tiled_parity(&clang, &generic, &untiled, &want, "profile_generic");
     assert_tiled_parity(&clang, &zen3, &untiled, &want, "profile_zen3");
+}
+
+/// ADR-0038 D4: the ONE differential leg that intentionally floats on the host
+/// profile — every other test pins a profile by name. `emit`'s default target
+/// is `native` (S46), so this asserts that whatever this machine detects, the
+/// emitted code computes the interp oracle's values. If this fails on a host,
+/// detection or emission is value-divergent there — a real bug, not a shape
+/// mismatch.
+#[test]
+fn differential_native_profile_is_value_correct() {
+    let Some(clang) = clang() else {
+        return;
+    };
+    // The same 4×4 map+fold matmul shape as differential_tiled_matmul: small
+    // enough for the interp budget, matmul-shaped so the tile nest fires under
+    // whatever geometry the host profile derives. ZERO shape assertions — the
+    // shape pins live in the generic-pinned twin above.
+    let src = r#"
+fn main() {
+    [ -37.0, -30.0, -23.0, -16.0, -9.0, -2.0, 5.0, 12.0,
+      19.0, 26.0, 33.0, 40.0, 47.0, -47.0, -40.0, -33.0] -> a: [f32; 16];
+    [7.0, 14.0, 21.0, 28.0, 35.0, 42.0, 49.0, -45.0,
+     -38.0, -31.0, -24.0, -17.0, -10.0, -3.0, 4.0, 11.0] -> b: [f32; 16];
+    16 -> iota -> cells;
+    4 -> iota -> ks;
+    cells -> map { cell ->
+        cell / 4 -> i;
+        cell % 4 -> j;
+        (0.0, ks) -> fold { acc, k -> acc + a[i * 4 + k] * b[k * 4 + j] }
+    } -> c;
+    c[0] -> println;
+    c[15] -> println;
+}
+"#;
+    let ir = rewrite(lower_src(src)).ir;
+    let rr = run(&ir, BUDGET);
+    let (Some(want), 0) = expect_native(&ir, &rr).expect("native oracle completes") else {
+        panic!("native oracle must complete");
+    };
+    // The only ambient `emit` left in this file — the host-detected default is
+    // the whole point of this leg.
+    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    for opt in ["-O0", "-O2"] {
+        let (out, code) = compile_run(&clang, &ll, &format!("native_profile/{opt}"), opt)
+            .unwrap_or_else(|| panic!("native_profile/{opt}: run timed out"));
+        assert_eq!(code, 0, "native_profile/{opt}: exit code");
+        assert_eq!(
+            String::from_utf8_lossy(&out),
+            want,
+            "native_profile/{opt}: oracle stdout"
+        );
+    }
 }

@@ -87,11 +87,11 @@ Method, machine specs, raw logs: [`docs/performance/`](docs/performance/).
 
 |    N |       Mapal |   NumPy |                 |
 | ---: | ----------: | ------: | --------------- |
-| 1024 |     0.81 ms | 0.67 ms | NumPy 1.21×     |
-| 2048 |     5.17 ms | 5.30 ms | tie             |
-| 4096 | **38.6 ms** | 43.9 ms | **Mapal 1.14×** |
+| 1024 |     0.72 ms | 0.67 ms | NumPy 1.07×     |
+| 2048 | **5.03 ms** | 5.33 ms | **Mapal 1.06×** |
+| 4096 | **38.7 ms** | 44.1 ms | **Mapal 1.14×** |
 
-3,562 GFLOP/s vs 3,128 at 4096, disjoint. Naive threaded C++: 33,439 ms.
+3,556 GFLOP/s vs 3,115 at 4096, disjoint. Naive threaded C++: 33,439 ms.
 Single-threaded NumPy is ~2× ahead
 ([why](docs/performance/s43-residency-and-the-thermal-artifact.md)).
 
@@ -99,12 +99,15 @@ Single-threaded NumPy is ~2× ahead
 
 | workload               | Mapal FMA off | Mapal FMA on | C++ naive-mt | NumPy 1t |
 | ---------------------- | ------------: | -----------: | -----------: | -------: |
-| FIR filter, 1M         |      0.372 ms | **0.292 ms** |         1.50 |     6.35 |
-| conv2d 3×3, 1024²      |  **0.114 ms** |     0.115 ms |         0.16 |     1.72 |
-| saxpy, 1M              |  **0.085 ms** |            - |         0.12 |     0.18 |
-| sum reduction, 1M      |      0.564 ms |            - |         0.92 | **0.11** |
-| transpose, 1024²       |  **0.162 ms** |            - |         0.26 |     0.86 |
-| gather `x[idx[i]]`, 1M |      0.167 ms |            - |     **0.16** |     2.19 |
+| FIR filter, 1M         |      0.305 ms | **0.289 ms** |         1.50 |     6.35 |
+| conv2d 3×3, 1024²      |      0.084 ms | **0.083 ms** |         0.16 |     1.72 |
+| saxpy, 1M              |      0.070 ms | **0.067 ms** |         0.12 |     0.18 |
+| sum reduction, 1M      |  **0.560 ms** |     0.562 ms |         0.92 | **0.11** |
+| transpose, 1024²       |      0.137 ms | **0.124 ms** |         0.26 |     0.86 |
+| gather `x[idx[i]]`, 1M |      0.139 ms | **0.137 ms** |         0.16 |     2.19 |
+
+Every row above moved this session, 1.00–1.31×, from scheduling alone — the kernels
+are unchanged ([what changed](docs/performance/s50e-the-roofline-threshold.md)).
 
 ### The same shapes on an i9-14900F, threaded
 
@@ -136,6 +139,34 @@ The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
 | 8 E-cores (uniform) | 5.89 ms |  5.59 | NumPy 5%      |
 | 8 P-cores (uniform) | 2.44 ms |  1.72 | **NumPy 41%** |
 | 4 P + 4 E (mixed)   | 3.38 ms |  5.57 | **Mapal 65%** |
+
+### Linear neural networks - M4 Pro, threaded
+
+Forward pass only, square (batch = width = `d`), every layer `d×d`. Values are
+bit-identical to NumPy's on every cell. NumPy is the better of its 1-thread and
+multi-thread legs. One run, 41 interleaved cycles
+([full table + noise spreads](docs/performance/s50e-the-roofline-threshold.md)).
+
+| d | 4-layer net | NumPy | | 2 nets at once | NumPy | |
+| ---: | ---: | ---: | --- | ---: | ---: | --- |
+| 128 | 0.081 ms | **0.023** | NumPy 3.5× | 0.076 ms | **0.023** | NumPy 3.3× |
+| 256 | 0.261 ms | **0.092** | NumPy 2.8× | 0.192 ms | **0.091** | NumPy 2.1× |
+| 512 | **0.633 ms** | 0.645 | tie | **0.473 ms** | 0.644 | **Mapal 1.36×** |
+| 1024 | **2.930 ms** | 3.764 | **Mapal 1.28×** | **2.771 ms** | 4.064 | **Mapal 1.47×** |
+| 2048 | **20.36 ms** | 24.97 | **Mapal 1.23×** | **19.68 ms** | 25.65 | **Mapal 1.30×** |
+
+Two independent nets are the same total work as one 4-layer net. Nothing in the
+source says "run these in parallel"
+([why that is free](docs/performance/s49-two-nets-and-the-cyclic-plan.md)).
+
+| d | one 4-layer net | two 2-layer nets | gain from the graph alone |
+| ---: | ---: | ---: | ---: |
+| 256 | 0.261 ms | 0.192 ms | **1.36×** |
+| 512 | 0.633 ms | 0.473 ms | **1.34×** |
+| 1024 | 2.930 ms | 2.771 ms | 1.06× |
+
+Small sizes are now a single-thread kernel gap, not a scheduling one
+([breakdown](docs/performance/s50d-dont-dispatch-what-cannot-be-shared.md)).
 
 ### Three builds
 

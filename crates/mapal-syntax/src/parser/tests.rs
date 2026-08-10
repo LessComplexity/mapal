@@ -1366,6 +1366,57 @@ fn mixing_statement_among_arms_p0006() {
     );
 }
 
+#[test]
+fn guard_block_with_tail_retains_the_tail_b2() {
+    // B2 negative control (2026-08-01 review): `999` must survive in the AST
+    // and the block must NOT classify as a clean two-arm guard. The old
+    // recovery filtered to arms; the tail vanished with no diagnostic at all
+    // (tails are not items, so check_arm_mixing never saw one).
+    let src = "fn m() { true -> { -true-> 1; -false-> 2; 999 } -> ret; }";
+    let pc = pcodes(src);
+    assert!(pc.contains(&"P0006"), "tail mixing named: {pc:?}");
+    assert!(
+        pc.contains(&"P0115"),
+        "StmtBlock marked out of Core: {pc:?}"
+    );
+    let f = parse_one_fn(src);
+    let c = first_chain(&f);
+    match &c.stages[0].kind {
+        StageKind::StmtBlock(b) => {
+            assert_eq!(
+                b.items
+                    .iter()
+                    .filter(|i| matches!(i, BlockItem::Arm(_)))
+                    .count(),
+                2,
+                "both arms retained: {:?}",
+                b.items
+            );
+            assert!(b.tail.is_some(), "the `999` tail is retained, not deleted");
+        }
+        other => panic!("arms + tail must classify as StmtBlock, got {other:?}"),
+    }
+}
+
+#[test]
+fn guard_block_mixed_statement_retained_as_stmtblock() {
+    // The statement-among-arms case takes the same retain-everything path:
+    // P0006 (item mixing, from check_arm_mixing) + P0115, StmtBlock keeps
+    // the arm AND the statement — nothing is filtered out.
+    let src = "fn m() { (a) -> { -true-> x; - 7 -> y; } -> ret; }";
+    let pc = pcodes(src);
+    assert!(pc.contains(&"P0006"), "P0006 present: {pc:?}");
+    assert!(pc.contains(&"P0115"), "P0115 present: {pc:?}");
+    let f = parse_one_fn(src);
+    let c = first_chain(&f);
+    match &c.stages[0].kind {
+        StageKind::StmtBlock(b) => {
+            assert_eq!(b.items.len(), 2, "arm and statement both retained");
+        }
+        other => panic!("arms + statement must classify as StmtBlock, got {other:?}"),
+    }
+}
+
 // ======================================================================
 // category recovery, `i<-1`, pinned regressions
 // ======================================================================

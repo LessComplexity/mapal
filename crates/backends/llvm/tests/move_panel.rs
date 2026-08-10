@@ -85,16 +85,25 @@ fn the_rung_fires_when_the_panel_tiles_the_geometry() {
     );
 }
 
-/// Default OFF is what `EmitOpts::default()` emits, character for character.
-/// This is the byte-identity argument at the type level: the gate reads the
-/// `Option` before any text diverges, so `None` cannot reach the permutation.
+/// Under `generic`, DEDUCED is what `MovePanel::Off` emits, character for
+/// character. This is the byte-identity argument at the type level: the gate
+/// reads the `Option` before any text diverges, so `None` cannot reach the
+/// permutation. ADR-0038 D4: shape assertions bind to a named profile, never
+/// the ambient default — post-S46 the default DETECTS, and whether a detected
+/// L1D fires at 16x16 is the part's business; only `generic` provably has no
+/// L1D geometry, so only there is the deduction provably silent.
 #[test]
 fn default_off_is_character_identical() {
     let ir = mapal_rewrite::rewrite(lower_src(TRANSPOSE_16)).ir;
-    let default = emit_with_opts(&ir, &EmitOpts::default()).expect("emits");
+    let opts = |move_panel| EmitOpts {
+        target: "generic",
+        move_panel,
+        ..EmitOpts::default()
+    };
+    let deduced = emit_with_opts(&ir, &opts(MovePanel::default())).expect("emits");
     assert_eq!(
-        default,
-        emit_with(TRANSPOSE_16, MovePanel::Off),
+        deduced,
+        emit_with_opts(&ir, &opts(MovePanel::Off)).expect("emits"),
         "under `generic` the DEDUCED default must be exactly the OFF emission: \
          the profile carries no L1D geometry, so the rung cannot fire"
     );
@@ -293,7 +302,8 @@ fn the_deduction_fires_without_a_flag_and_declines_without_a_reason() {
         small, off,
         "a shape with nothing to win must emit today's text"
     );
-    // And the DEFAULT target cannot fire at all — rule 1, at the type level.
+    // And `generic` — the reference profile every shape assertion binds to —
+    // cannot fire at all: rule 1, at the type level.
     assert_eq!(
         emit_target(TRANSPOSE_1024, "generic"),
         {
@@ -301,6 +311,7 @@ fn the_deduction_fires_without_a_flag_and_declines_without_a_reason() {
             emit_with_opts(
                 &ir,
                 &EmitOpts {
+                    target: "generic",
                     move_panel: MovePanel::Off,
                     ..EmitOpts::default()
                 },

@@ -5,6 +5,55 @@
 use super::*;
 
 impl<'a> FnEmit<'a> {
+    /// Whether a split task's estimated SERIAL time is under what one dispatch
+    /// costs — in which case the pool is a net loss and it should run inline
+    /// (plan-s50 P3).
+    ///
+    /// A roofline, not an operation count: `max(flops / flops_per_ns,
+    /// bytes / bytes_per_ns)`. The compute term alone gets `conv2d` wrong by
+    /// 3.7x in the wrong direction, because half the flops of an `nn4_256` layer
+    /// take nearly four times as long when the kernel is memory-bound.
+    ///
+    /// `None` dispatch economics — every profile except the one part these were
+    /// measured on — means this always answers false, i.e. exactly the
+    /// behaviour before the rule existed.
+    pub(super) fn under_dispatch_cost(&self, task: &mapal_ir::Task) -> bool {
+        let Some(cost) = self.profile.dispatch else {
+            return false;
+        };
+        let TaskKind::Split { site, n } = &task.kind else {
+            return false;
+        };
+        let n = *n;
+        // ONLY A RECOGNISED TILE SITE IS ESTIMATED, and the reason is that a
+        // wrong verdict is not symmetric: dispatching something small costs one
+        // wave, while inlining something large costs the whole parallel
+        // speedup. The first build estimated elementwise maps too, as
+        // `3 * n * width` bytes at the streaming rate, and got two of fourteen
+        // shapes wrong in exactly that expensive direction — `transpose_512`
+        // (estimated 25 us, real serial 142 us, parallel is 1.85x) because a
+        // permutation does not run at streaming rate, and `fir_65536`
+        // (estimated 6 us, real 91 us, parallel is 1.38x) because a 64-tap
+        // window reads far more than three values per output.
+        //
+        // A tile record carries `rows`, `c`, `k` and `elem`, which is exactly
+        // what the roofline needs. Without one there is no basis, so there is no
+        // verdict — the task is dispatched, as it was before this rule.
+        let Some(record) = self.tile_plan.as_ref().and_then(|p| p.sites.get(*site)) else {
+            return false;
+        };
+        let width = crate::profile::elem_bytes(&record.elem);
+        // `k` multiply-adds per output element; each operand panel and the
+        // output walked once.
+        let flops = 2u64.saturating_mul(n).saturating_mul(record.k);
+        let bytes = (record.rows.saturating_mul(record.k)
+            + record.k.saturating_mul(record.c)
+            + record.rows.saturating_mul(record.c))
+        .saturating_mul(width);
+        let ns = (flops / cost.flops_per_ns.max(1)).max(bytes / cost.bytes_per_ns.max(1));
+        ns < cost.dispatch_ns
+    }
+
     /// Emit the function body: prologue store, the topo walk, epilogue return.
     pub fn emit(mut self) -> String {
         let fd = self.ir.func(self.f).expect("func resolves");
@@ -241,9 +290,70 @@ impl<'a> FnEmit<'a> {
         {
             host.line(format!("store {t} %arg, ptr {slot}"));
         }
+        // plan-s50 P0: a packed tile site is TWO TASKS IN THIS RUN — the B pack
+        // and the tile matmul, joined by a dep edge — not a `kind = 0` wrapper
+        // that opens two nested runs of its own.
+        //
+        // The nested form cost 36.8 us per inner run at 14 lanes
+        // (`mapal-rt/examples/dispatch_cost.rs`), paid per site per invocation
+        // INSIDE the timed region: `nn2` opened four of them and spent ~95% of
+        // its d=128 parallel wall in the runtime. Two outer tasks pay the outer
+        // run's dispatch, which is already being paid.
+        //
+        // S43 §7 rejected exactly this shape, and the reason has now been
+        // removed rather than ignored: a dep-unlocked task was scheduled
+        // `Placement::Local(lane)`, which would have put every matmul slice on
+        // one deque instead of spreading it. `mapal-rt`'s `schedule` now keeps
+        // `Local` only for a SINGLE-piece task and spreads a multi-piece one
+        // from its producer's lane, so the matmul's placement survives the move.
+        //
+        // The pack inherits the matmul's dependencies because it reads the same
+        // operand; `mapal_par_dep(pack, matmul)` is the happens-before edge that
+        // `mapal_par_finish` used to provide by returning.
+        let packed_sites: Vec<(usize, u64, u64)> = plan
+            .tasks
+            .iter()
+            .enumerate()
+            .filter_map(|(task_id, task)| {
+                let TaskKind::Split { site, .. } = &task.kind else {
+                    return None;
+                };
+                let elided = host
+                    .ir
+                    .morphism(*site)
+                    .is_some_and(|m| host.elided_arrays.contains_key(m.target));
+                if elided || !host.packing {
+                    return None;
+                }
+                let record = host.tile_plan.as_ref()?.sites.get(*site)?;
+                if !packing_site(record) {
+                    return None;
+                }
+                // The pack's range is j-tiles, a different axis in different
+                // units from the matmul's `ti·t·c` — see `emit_task`.
+                let tiles = record.c.div_ceil(profile.tile_j(&record.elem));
+                // plan-s50 P3, the pack half: a pure copy, so its cost is bytes
+                // over the streaming rate with no compute term at all. At d=128
+                // that is a 128 KB copy, ~1 us against a 30 us wave, and handing
+                // it to the pool cannot pay. At N=4096 it is 33 MB and S43
+                // measured it at 30.2% of the threaded wall, so it must still
+                // dispatch.
+                let pack_bytes = 2u64
+                    .saturating_mul(record.k)
+                    .saturating_mul(record.c)
+                    .saturating_mul(crate::profile::elem_bytes(&record.elem));
+                Some((task_id, tiles, pack_bytes))
+            })
+            .collect();
+        let pack_task_of: std::collections::HashMap<usize, usize> = packed_sites
+            .iter()
+            .enumerate()
+            .map(|(k, (task_id, ..))| (*task_id, plan.tasks.len() + k))
+            .collect();
+
         host.line(format!(
             "%h = call ptr @mapal_par_begin(i32 {})",
-            plan.tasks.len()
+            plan.tasks.len() + packed_sites.len()
         ));
         for (task_id, task) in plan.tasks.iter().enumerate() {
             let (kind, n) = match &task.kind {
@@ -264,18 +374,34 @@ impl<'a> FnEmit<'a> {
                 {
                     (0, 1)
                 }
-                TaskKind::Split { site, n }
-                    if host
-                        .tile_plan
-                        .as_ref()
-                        .and_then(|plan| plan.sites.get(*site))
-                        .is_some_and(packing_site)
-                        && host.packing =>
-                {
-                    (0, *n)
-                }
                 TaskKind::Split { n, .. } => (1, *n),
                 TaskKind::Seq { morphisms } => (0, morphisms.len().max(1) as u64),
+            };
+            // plan-s50 P3 — DO NOT DISPATCH WHAT CANNOT PAY FOR ITS OWN WAVE.
+            //
+            // A dispatch buys one lane's share of the task and costs a whole
+            // wave (`DispatchCost::dispatch_ns`). Below that the pool is a net
+            // loss, and it is measurably so: `nn4` at d=128 runs 0.0790 ms on
+            // one thread and 0.1448 ms on fourteen — parallel is 1.8x SLOWER —
+            // and `conv2d_512` is 0.0476 against 0.0569. BLAS has had this
+            // threshold forever (`GEMM_MULTITHREAD_THRESHOLD`); it is why numpy
+            // wins these sizes with no scheduler at all.
+            //
+            // Registering the task `kind = 0` is the whole mechanism: a kind-0
+            // task is one slice, and `mapal-rt` already runs a one-slice task on
+            // the calling thread instead of queueing it. So the decision lives
+            // here, in the backend, per backend, and `mapal-ir` never learns it.
+            //
+            // A PURE OPERATION COUNT CANNOT MAKE THIS CALL, which is why the
+            // estimate is a roofline. `conv2d_1024` has HALF the flops of an
+            // `nn4_256` layer (1.9e7 vs 3.4e7) and takes 3.7x LONGER (250 us vs
+            // 68 us) because one is memory-bound and the other compute-bound;
+            // they must go opposite ways, so no threshold on flops exists.
+            // `max(flops/rate, bytes/rate)` orders all six measured cells.
+            let kind = if kind == 1 && host.under_dispatch_cost(task) {
+                0
+            } else {
+                kind
             };
             // plan-s32 step 2: the region's slice sizing, decided here because
             // both inputs are compile-time facts — the recorded reuse structure
@@ -289,9 +415,30 @@ impl<'a> FnEmit<'a> {
                     .map_or((0, 0), |site| host.slice_sizing(site)),
                 TaskKind::Seq { .. } => (0, 0),
             };
+            // plan-s50 P0: a packed site's own body is now `@task{id}_slice`;
+            // `@task{id}` no longer exists, because the wrapper it named is gone.
+            let body = if pack_task_of.contains_key(&task_id) {
+                format!("@task{task_id}_slice")
+            } else {
+                format!("@task{task_id}")
+            };
             host.line(format!(
-                "call void @mapal_par_task(ptr %h, i32 {task_id}, i32 {kind}, ptr @task{task_id}, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 0)",
+                "call void @mapal_par_task(ptr %h, i32 {task_id}, i32 {kind}, ptr {body}, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 0)",
                 task.rank
+            ));
+        }
+        for (task_id, tiles, pack_bytes) in &packed_sites {
+            let pack_id = pack_task_of[task_id];
+            let pack_kind = profile.dispatch.map_or(1, |cost| {
+                u64::from(pack_bytes / cost.bytes_per_ns.max(1) >= cost.dispatch_ns)
+            });
+            // `slice_elems = 0` would be the silent-nothing bug: `slice_ranges`
+            // would fall back to `min(T, ceil(n/4096))`, which at 256 tiles is
+            // ONE slice — the pack stays serial and nothing fails. The quantum
+            // is one j-tile; `oversub = 4` reproduces the nested form exactly.
+            host.line(format!(
+                "call void @mapal_par_task(ptr %h, i32 {pack_id}, i32 {pack_kind}, ptr @task{task_id}_pack, i64 {tiles}, i32 {}, i64 1, i32 4, i32 0)",
+                plan.tasks[*task_id].rank
             ));
         }
         for (task_id, task) in plan.tasks.iter().enumerate() {
@@ -305,6 +452,19 @@ impl<'a> FnEmit<'a> {
                     "call void @mapal_par_dep(ptr %h, i32 {before}, i32 {after})"
                 ));
             }
+        }
+        for (task_id, ..) in &packed_sites {
+            let pack_id = pack_task_of[task_id];
+            // The pack reads the same operand the matmul does, so it waits on
+            // exactly what the matmul waited on — and the matmul now waits on it.
+            for &before in &plan.tasks[*task_id].deps {
+                host.line(format!(
+                    "call void @mapal_par_dep(ptr %h, i32 {before}, i32 {pack_id})"
+                ));
+            }
+            host.line(format!(
+                "call void @mapal_par_dep(ptr %h, i32 {pack_id}, i32 {task_id})"
+            ));
         }
         host.line("call void @mapal_par_launch(ptr %h, ptr %frame)");
         host.walk_filtered(&assigned, false);
@@ -374,8 +534,21 @@ impl<'a> FnEmit<'a> {
 
         for (task_id, task) in plan.tasks.iter().enumerate() {
             out.push_str(&Self::emit_task(
-                ir, f, fnames, strings, attrs, &frame, task_id, task, tiling, packing, contract,
-                kc_nest, move_panel, profile,
+                ir,
+                f,
+                fnames,
+                strings,
+                attrs,
+                &frame,
+                task_id,
+                task,
+                tiling,
+                packing,
+                contract,
+                kc_nest,
+                move_panel,
+                profile,
+                pack_task_of.contains_key(&task_id),
             ));
             out.push('\n');
         }
@@ -407,6 +580,7 @@ impl<'a> FnEmit<'a> {
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
+        outer_pack: bool,
     ) -> String {
         if let TaskKind::Split { site: m, n } = &task.kind
             && let Some(site) = tiling
@@ -453,6 +627,15 @@ impl<'a> FnEmit<'a> {
                 "define internal void @task{task_id}_pack(i64 %lo, i64 %hi, ptr %frame) {{\nentry:\n{}{}{}}}\n",
                 pack.allocas, pack.frame_geps, pack.body
             );
+
+            // plan-s50 P0: when the driver registered this site as two OUTER
+            // tasks, there is no wrapper — the pack and the matmul are dispatched
+            // by the outer run and joined by a `mapal_par_dep` edge. The two
+            // nested runs below cost 36.8 us each at 14 lanes, per site, per
+            // invocation, inside the timed region.
+            if outer_pack {
+                return format!("{slice_fn}\n{pack_fn}");
+            }
 
             let mut emit = FnEmit::new(
                 ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
