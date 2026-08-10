@@ -142,3 +142,25 @@ BL5 amendment (2026-07-21, suggestion #8): the internal ABI is no longer
 travel as `ptr` (observably read-only parameters), products/scalars still by value;
 nested products-in-products stay by value (recorded limitation). `internal` linkage and
 the `@main` wrapper are unchanged.
+
+---
+
+## S51 — the pack threshold (plan-s51 H1)
+
+| Object / morphism | What it is | Realising code | State |
+| --- | --- | --- | --- |
+| `pack_pays : (rows, c, k, elem) → 𝔹` | The size half of the packing decision. `pack_b` computes nothing — it exists only to give `b` a second `DataLoc` in a friendlier layout (FRAMEWORK §4.2), so its price is a `Trm` cost of `2·k·c·sizeof` bytes against a benefit that exists only while `b`'s re-reads miss. Cost is O(N²), the `panel` it serves is O(N³) ⇒ below some size it is pure loss. Measured (plan-s51 H1): a **1.46–1.52× loss at d=128**, break-even at d=1024, a **1.53× win at d=2048**. The rule is `working_set > l2_bytes` — an **already-recorded field**, and the crossover lands on the 8–12 MB shared-L2 knee S43 measured with a different instrument | `src/profile.rs:TargetProfile::pack_pays` | built |
+| `packing_site : (TileSite, TargetProfile, contract) → 𝔹` | Shape **and** size, in one predicate read by six call sites — the pack buffer's existence, the copy that fills it, the slice fn that owns it, the prefetch declaration, the SME load-width clause, and the copy's own assertion. A site packed by one and not another is a kernel reading a layout nobody wrote (FRAMEWORK §5). The size half applies **only where the site takes the SME rung**, because that is the only kernel the crossover was measured on | `src/func/mod.rs:packing_site` | built |
+| `sme_shape : (TileSite, TargetProfile, contract) → 𝔹` | Clauses 1–7 of `sme_tile_site`, split out to break a cycle: clause 8 asks `packing_site`, and `packing_site` now needs to know whether the SME rung takes this site. The shape half cannot depend on packing, so it is the cut. Residue recorded in the doc comment: a site passing `sme_shape` but failing clause 8 still gets the threshold, and in that case the threshold says "pack", which is what would have happened anyway | `src/func/sme.rs:sme_shape` | built |
+
+**Gates.** `--target=generic` emission **0 of 174 cells moved**. `nn4`/`nn2x2` at d≤1024 emit
+byte-identically to the old `--no-pack` arm (so the measured arm *is* the shipped emission) and
+at d=2048 byte-identically to the old default (so the pack's 1.53× win there cannot have been
+lost). Values bit-identical on all 40 measured legs. `cargo test --workspace --release`
+**1056 / 0**, the S50 count exactly.
+
+**Test repointed, not re-pinned:** `golden_ll.rs:tiny_tile_site_is_inlined_when_the_part_has_measured_costs`
+located the tile task by the `_slice` suffix — an artifact of *packing*, not of the dispatch
+threshold it tests. A 4×4's working set is 192 bytes, so that function no longer exists on
+`apple-m4-sme`. It now keys on the **region quantum**, which is what actually says "this is the
+bulk tile task", on either profile and whether or not it packs.

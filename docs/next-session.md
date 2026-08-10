@@ -1,129 +1,154 @@
-# Next Session (S51)
+# Next Session (S52)
 
-Written: 2026-08-10 · end of S49–S50 · by: Claude (orchestrator; category-architect)
-Session log: `sessions/2026-08-10-s49-s50-the-scheduler-was-the-kernel.md` — **read it**
-Records that govern S51: `performance/s50e-the-roofline-threshold.md` and
-`components/runtime/{ARCHITECTURE,STATUS,suggestions}.md` (**new component**).
-Previous handoff: S48 (below, still open and untouched).
+Written: 2026-08-10 · end of S51 · by: Claude (category-architect)
+Session log: `sessions/2026-08-10-s51-the-pack-is-o-n-squared.md` — **read it**
+Records that govern S52: `performance/s51-the-pack-is-o-n-squared.md` and
+`components/backend-llvm/plans/plan-s51-the-one-thread-kernel.md` **§9** (what the plan got
+wrong, so S52 does not repeat it).
+Previous handoff: S49–S50, `sessions/2026-08-10-s49-s50-the-scheduler-was-the-kernel.md`.
 
 ## READ THIS FIRST
 
-**Everything is UNCOMMITTED on `main` @ `680ce44`, which is in sync with origin.** Two
-independent bodies of work sit in the tree together:
+**S51's work is UNCOMMITTED on `main` @ `c78c9af`**, which is in sync with origin. S49/S50 and
+S48 all landed together in `c78c9af` and were pushed, so that P0 is closed; the tree now holds
+only S51's diff plus the deliberate `oainotes.md`.
 
-| batch | files | state |
-| --- | --- | --- |
-| **S48** (not this session's) | `backends/llvm/src/{lib,profile}.rs`, `differential.rs`, `golden_ll.rs`, `move_panel.rs`, `mapal-syntax/parser*`, `mapal-lower/tests/rejection.rs`, `ADR-0038`, the two `plan-s48-*` | untouched by S49/S50 |
-| **S49–S50** | `mapal-ir/src/algo.rs`, `mapal-rt/src/lib.rs`, `backends/llvm/src/{func/drive.rs, profile.rs}`, `sme_rung.rs`, 4 goldens, `benches/nn/`, `components/runtime/`, 7 `performance/s49*-s50*` | this session |
+**A published instrument was measuring code that is not in the binary, and it cost this session
+a wrong projection.** `benches/sme/packcost.c` says it *"replicates the EMITTED nest exactly"*
+and replicates the **pre-S42** A pack — S42 reordered that pack row-outer and the comment was
+never updated. Its 8.46 ms is a pre-S42 number; three documents cite it. It is marked STALE in
+place (its provenance is worth more than a fix) and `benches/sme/packconflict.c` measures what
+ships. **Measurement rule 28** was added for this.
 
-The gate is green on the **combination** (1056 / 0). Nobody has run either batch alone.
+**`pack_pays` is scoped to the SME rung ON PURPOSE.** The crossover was measured on that kernel
+and no other, so an f64 or exact-face site on `apple-m4-sme` still packs unconditionally through
+the NEON rung. That scoping is not an oversight and a test enforces it
+(`sme_profile_differs_from_apple_m_only_in_dispatch_kind_where_the_rung_declines`, which caught
+the first, wider version).
 
-**`MAPAL_PAR` changed meaning.** It is now TOTAL executors including the host —
-`Pool::new` spawns `threads - 1` workers, because `help_until` already claimed lane
-`threads - 1`. Measured neutral (0.99–1.02×), but **every historical number taken at a
-given `MAPAL_PAR` was taken with one more runnable thread than the same flag gives
-today.** Needs Sapir's sign-off or a revert.
+**`MAPAL_PAR` is still undecided.** Sapir's position at S51 open: *"I think it should be worker
+count, and also an `auto` version for optimal detection — I'm confused about this and need to
+think about it."* It ships today as **total executors including the host**. Nothing was changed.
 
-**Spinning workers are REFUTED. Do not retry as specified.** `handoff_floor` predicts
-30–40× and delivers 0.80–0.93× on real shapes, at every budget from 16 to 4096, because
-it gives every thread work every wave and a real dispatch does not. Host-only spin is
-what ships.
+**The arch box `100.81.226.103` is INTERMITTENT.** Sapir enabled Tailscale at S51b; it came up,
+ran the whole NN ladder, then went unreachable again before the constants run (4 retries over
+60 s, all timeout). `raptorlake` now has **`flops_per_ns = 144` measured** and still owes
+`bytes_per_ns` and `dispatch_ns` — see `sessions/2026-08-10-s51b-the-i9-leg.md`.
 
-**A profile with no MEASURED dispatch economics carries `None` and dispatches
-everything.** Verified: 0 of 174 cells move under `--target=generic`. Only
-`apple-m4-sme` (and `native` when it detects that part) carries `Some`.
+**A RENTED STAND-IN WAS TRIED FOR THE TWO OWED CONSTANTS AND REFUSED ITS OWN CONTROL.**
+S51c rented an i9-14900K on vast.ai (whole machine, 32/32 effective, $0.09 total, destroyed).
+`flops_per_ns` is the built-in control: the arch box reads **144.2 / 143.4** at d=1024/2048,
+agreeing to 0.6%; the rental read **149.2 / 157.7**, disagreeing with *itself* by 5.7%. Cause
+found, not guessed: the host runs the **`powersave` governor** (load 0.26, so not neighbours),
+the artifact S33/S36b already recorded for this CPU class. The target constant came out
+**13.0 µs from medians and 1.5 µs from minima — 9x apart** — because the signal
+(dispatch − inline ≈ 0.1 ms) sits under ±0.6 ms of jitter, and a 41-cycle re-run moved the
+medians 5x. **Nothing from that box was written into `raptorlake`.**
 
-**`dispatch_ns` tracks the RUNTIME, not the machine.** 30 µs was right when
-`handoff_floor` measured it and wrong four changes later, costing three cells 5–20%. The
-shipped 8.3 µs is `(144.9 − 78.8) / 8` from `nn4_128` with and without its dispatches.
-**Re-derive it after any change to the handoff.**
+> **29. A timing constant may only be taken on a stand-in machine if the stand-in reproduces
+> the target's own control.** `flops_per_ns` existed in this recipe as a cross-check and is what
+> caught it; without it, a `dispatch_ns` off by 9x would have been written into the profile that
+> compiles for the real box. And note what does NOT transfer even in principle: `bytes_per_ns`
+> is a DRAM-configuration property and `dispatch_ns` is a runtime-and-scheduler property —
+> neither is a property of "an i9-14900".
 
-**The arch box `100.81.226.103` went DOWN mid-session** and never came back. Everything
-on it is stale, `raptorlake` never got its three dispatch numbers, and the i9 half of the
-final measurements is missing.
+**If `nn4_128` looks that noisy on the arch box too, the recipe needs a bigger program.** At
+0.18 ms it may be too small to carry a ~0.1 ms difference on a `powersave` machine; the fix is a
+larger d or more flipped dispatches, not more cycles.
 
-## S51 opens on — the single-thread kernel
+**THERE IS A MEASUREMENT SCRATCH PROFILE IN THE TREE THAT MUST NOT SHIP.**
+`profile.rs:RAPTORLAKE_INLINE` is `raptorlake` with `dispatch_ns = 1_000_000_000`, so the
+roofline answers "inline" for every site. It exists only because `dispatch_ns` can be measured
+only as a **difference** (dispatch-everything vs inline-everything, over the tasks that flip).
+It is reachable only by explicit `--target=raptorlake-inline` and shows up in the resolver's
+name list, which is the tripwire. **Delete it the moment the constants land** — it is the
+`kc_nest` mistake in miniature, and this repo already carries a P1 to delete that one.
 
-### 1. P0 — it is now the only term that matters
+**Threaded headroom on this part is bounded and small.** d=2048 threaded already runs
+≈3374 GF/s against a measured ~4100 aggregate ceiling — **82% of the machine**. At most ≈1.22×
+remains threaded on the M4, ever. Size any future threaded claim against that.
 
-Scheduling is spent. At d=128 the parallel time is within 20% of the one-thread time;
-`s50e` §5 shows d ≥ 1024 at 3–8% spread and 1.23–1.47× ahead of NumPy. What is left:
+## S52 opens on — H2, which is measured and unbuilt
 
-| | mapal | NumPy | ratio |
-| --- | ---: | ---: | ---: |
-| M4, 4-layer d=128 | 212 GF/s | 691 | **0.31** |
-| M4, d=1024 | 986 | 1364 | 0.72 |
-| M4, d=2048 | 939 | 1546 | 0.61 |
-| i9, d=2048 | 144 | 166 | 0.87 |
+### 1. P0 — block the A pack's traversal
 
-**Two different gaps.** The i9's is flat and small — a micro-kernel quality gap against
-the same AVX2 units. The M4's is large and size-dependent, and **its size is already
-accounted for**: S43's operand-residency instrument measured **+71% at one thread**,
-assembly-verified, and 939 × 1.71 = 1606 against Accelerate's 1546. It is unclaimed
-because `kc` is +6.1% at 1t and **−25.5% threaded** and `nc` is +18.7% at 1t and parity —
-so it needs a **reuse-structure** change, not another blocking level. Unchanged since S48.
+Everything needed is taken. The emitted pack (`func/sme.rs`, row-outer / k-inner since S42)
+reads `a` contiguously and **stores `ap[pk·32 + pi]`, one 4 B store per 128 B line**. Whether
+that costs anything is one question: does `ap = 32·k·sizeof` fit L1D (128 KB)?
+
+| N | `ap` | blocked / ships | pre-S42 order / ships |
+| ---: | ---: | ---: | ---: |
+| 128–512 | ≤ 64 KB | 1.000–1.051× — **flat, nothing to win** | 0.50–0.61× |
+| 1024 | 128 KB = L1D | 1.612× — **cell VOID**, drift 1.507× | 1.046× |
+| 2048 | 256 KB | **2.752×** | **1.455× — the reorder REGRESSES here** |
+| 4096 | 512 KB | 1.771× | 1.140× |
+
+**Build:** a 32×32 tile over `(pi, pk)` in `emit_tiled_map_sme`, gated on
+`32·k·sizeof > l1d_bytes` so it is a byte-identical no-op below the boundary. Value-identical
+by construction (same stores, different order of the same loop nest). **Worth ~5–8% integrated
+at d≥1024 and nothing below** — the A pack is 12–17% of the wall, not the 60% the stale
+instrument implied.
+
+**Do not "fix" this by reverting S42.** The pre-S42 order is faster at N≥2048 and ~2× slower at
+N≤512; blocking beats both (1.89× over the pre-S42 order at N=2048).
+
+**Rule 24, pre-registered:** a per-core cost ⇒ the win should hold or grow threaded.
 
 ### 2. P1 — the queue
 
-- **The dispatch threshold cannot decide for elementwise maps.** It only fires where a
-  tile record supplies `rows`/`c`/`k`/`elem`. The obvious estimate (`3·n·width` bytes at
-  the streaming rate) is measurably wrong two ways — `fir_65536` by 15× on the **byte
-  count** (a 64-tap window reads 65 values per output, not 3) and `transpose_512` by
-  5.7× on the **rate** (a permutation strides, ~15 B/ns not 127). Both under-estimate,
-  so both would be inlined and both would lose their real 1.85×/1.38×. What is needed:
-  a per-element read count and an achieved-rate class the emitter can derive from the
-  graph. **`elem_plan` already records what `out[i]` IS** — start there.
-- **`raptorlake` owes three numbers.** `dispatch_cost` + `handoff_floor` on the box,
-  then `flops_per_ns`/`bytes_per_ns`/`dispatch_ns` in `profile.rs`. Recipe in `s50e` §2.
-- **`path_plan_is_acyclic` is still load-bearing.** S49 removed the sibling-merge cycle
-  class, not the general one, and a cyclic plan is still silently demoted to sequential
-  emission — the failure mode that hid every chained matmul for nine sessions. Enforce
-  the DAG contract or make the demotion loud (`runtime/suggestions.md` #4).
-- **Sequential emission has no clock fence.** A program that falls back self-times
-  garbage. Both new NN harnesses hard-error on an emission with no `mapal_par_task`, but
-  the emitter does not.
-- The six `runtime/ARCHITECTURE.md` §4 composition rules have no automated pin; rule 1
-  was violated for all of P2 and surfaced only because P1 made the host fast enough to
-  see it.
-- Carried from S48, all still open: `examples/vector.mapal` does not parse (3 of 177
-  sweep cells) · delete or justify `kc_nest` · executing SME value check in `cargo test`.
+- **H3, the residency term** (the S51 handoff's original prescription). Pack A once globally —
+  the same one-shot parallel pack S43 §4d already built for B — then `jc` outside, which
+  removes the `c/nc` re-pack that made `nc` lose. Priced from the measured sweep at **≈1.45× at
+  one thread**; S43 measured residency at **≤5% threaded** and rule 24 says a shared bottleneck
+  shrinks. Costs a second full-size packed buffer (64 MB at N=4096). **Take it for the 1t number
+  and the i9, not as a threaded win.**
+- **`pack_pays` on the NEON rung is unmeasured.** Either measure that crossover or leave it
+  scoped; do not transplant the SME threshold on the strength of an argument.
+- **`path_plan_is_acyclic` is still load-bearing** — a cyclic plan is still silently demoted to
+  sequential emission, the failure mode that hid every chained matmul for nine sessions.
+- **Sequential emission has no clock fence** — a program that falls back self-times garbage.
+- Six `runtime/ARCHITECTURE.md` §4 composition rules have no automated pin.
+- Carried and still open: `examples/vector.mapal` does not parse (3 of 174 sweep cells) ·
+  `kc_nest` · executing SME value check in `cargo test` · 12 prunable worktrees.
 
-### 3. Measurement rules — S49–S50 added three
+### 3. What S51 proved about how to open a session
 
-> **25. A microbenchmark that gives every thread work every wave does not model a
-> dispatch.** Price a runtime change on real shapes before believing the instrument.
-
-> **26. A constant derived from the runtime must be re-derived when the runtime
-> changes.**
-
-> **27. Label every table with the run it came from.** Absolutes and A/B ratios are not
-> interchangeable across runs; a ratio is valid within a run even when the absolute is
-> not. Three quotes of one `nn4_128` cell from three runs read as a regression.
-
-Rules 1–24 stand. The one that earned most here is **22 — a sweep needs a control arm
-that should NOT move**: the `nn4` chain is what proved the `nn2x2` gain was the DAG and
-not the machine, and NumPy's own control is what proved its 1.8× "overlap" was an
-OpenBLAS threading artifact.
+The P0 was handed over as one item and was **three**, and its own prescription fitted only the
+regime its number did not name. Two things caught that before any code was written: reading
+`FRAMEWORK.md` §4 and writing the placement out as `Trn`/`Loc`/`Trm` (which made the packs
+visible as **`Trm` prices that no record had taken**), and reading the refuted-candidates list
+in the prior records (which killed the streaming-mode hypothesis in one grep — `smcost.c`,
+7.6 ns/call, 0.6% of the wall).
 
 ## FIRST commands
 
 ```sh
 cargo test --workspace --release                  # 1056 passed / 0 failed
 cargo fmt --all --check
-git status --short                                # two uncommitted batches, see above
-ssh -o ConnectTimeout=8 100.81.226.103 nproc      # box was DOWN at close
-CYCLES=41 ./benches/perflock.sh bash benches/nn/nn_ab.sh
+git status --short                                # S51's diff, uncommitted
+ssh -o ConnectTimeout=8 100.81.226.103 nproc      # INTERMITTENT
+bash benches/nn/raptorlake_constants.sh 100.81.226.103 21   # the two owed constants
+
+# reproduce S51's two measurements
+CYCLES=15 bash benches/perflock.sh bash benches/nn/pack_ab.sh
+clang -O2 -march=armv8-a -o /tmp/pc benches/sme/packconflict.c && bash benches/perflock.sh /tmp/pc
+
+# the gate that must NOT move for unmeasured profiles
+bash benches/emit_sweep_ab.sh target/release/examples/emit /tmp/post.hashes --target=generic
 ```
 
 ## Live state at close
 
 | Type | Handle | State | Inspect | Cleanup |
 | --- | --- | --- | --- | --- |
-| branch | `main` @ `680ce44` | in sync with origin; **everything uncommitted** | `git status -sb` | Sapir's call |
-| machine | arch box `100.81.226.103` | **DOWN** since mid-session | `ssh … nproc` | — |
-| artifact | `~/mapal-s49`, `-s50`, `-s50p1`, `-s50p2` on the box | scratch, size unknown | `ssh … du -sh ~/mapal-s5*` | delete when up |
+| branch | `main` @ `c78c9af` | in sync with origin; **S51 uncommitted** | `git status -sb` | Sapir's call |
+| machine | arch box `100.81.226.103` | **INTERMITTENT** — ran the S51b ladder, then dropped | `ssh -o ConnectTimeout=8 … nproc` | — |
+| **code debt** | `RAPTORLAKE_INLINE` in `profile.rs` | **scratch, must not ship** | the resolver's name list | delete after the constants |
+| artifact | `benches/results-s51-i9/i9/` | 90 files, the i9 ladder | `ls benches/results-s51-i9/i9` | keep |
+| artifact | `benches/results-s51/` | untracked, the H1 samples | `ls benches/results-s51` | keep |
+| artifact | `target/tmp/{emit_pre,packconflict}` | scratch | — | discardable |
 | worktree ×12 | `.claude/worktrees/agent-*` + 3 pre-rename | prunable, unchanged since S47 | `git worktree list` | `git worktree prune` |
-| results | `benches/results-s49/ … -s50final/` | untracked; **`-s50final` is what the README quotes** | `ls benches/results-s50final` | keep `-s49`, `-s50final` |
+| results | `benches/results-s49/`, `-s50final/` | untracked; **`-s50final` is what the README quotes** | `ls benches/results-s50final` | keep both |
 | file | `oainotes.md` | untracked, deliberately | — | Sapir's call |
 
 **Nothing is running.** No background job, no server, no port. Measurement mutex free.
@@ -132,31 +157,30 @@ CYCLES=41 ./benches/perflock.sh bash benches/nn/nn_ab.sh
 
 | Priority | Item | Reference | Next action | Done when |
 | --- | --- | --- | --- | --- |
-| **P0** | single-thread kernel 0.28–0.35× of NumPy below d=512 | §1 | reuse-structure change, not another blocking level | 1t GF/s moves off ~950 |
-| **P0** | `MAPAL_PAR` semantics changed | READ THIS FIRST | Sapir sign-off or revert | decided |
-| **P0** | two uncommitted batches in one tree | READ THIS FIRST | separate or land together | committed |
-| P1 | threshold cannot decide for elementwise maps | §2 | per-element read count + rate class via `elem_plan` | `transpose`/`fir` within 2× |
-| P1 | `raptorlake` owes 3 dispatch numbers | §2 | run the two instruments on the box | profile carries `Some` |
+| **P0** | H2 — block the A pack traversal | §1 | 32×32 tile gated on `32·k·sizeof > l1d_bytes` | d≥1024 improves, d≤512 byte-identical |
+| **P0** | `MAPAL_PAR` semantics | READ THIS FIRST | Sapir leans worker-count + `auto`; undecided | decided |
+| P1 | H3 — pack A once, then `jc` | §2 | the `mc` rung | 1t ≈1.45× |
+| P1 | `pack_pays` unmeasured on the NEON rung | §2 | measure or leave scoped | either |
+| **P0** | delete `RAPTORLAKE_INLINE` scratch profile | S51b §2a | remove once the constants land | gone from `profile.rs` |
+| **P0** | `raptorlake` owes `bytes_per_ns` + `dispatch_ns` (`flops_per_ns` = 144 is taken) | S51b §2 | `bash benches/nn/raptorlake_constants.sh 100.81.226.103 21` | profile carries `Some` |
+| P1 | i9 scaling hole at d=1024 — 6.15× between 8.12× and 9.37×, overlap factor 0.730 | S51b §1d | diagnose | explained or recorded |
 | P1 | `path_plan_is_acyclic` load-bearing | §2 | enforce or make loud | fallback deletable |
 | P1 | sequential emission has no clock fence | §2 | fence, or refuse to self-time | honest bracket |
 | P2 | ARCHITECTURE §4 rules unpinned | `runtime/suggestions.md` #3 | one test per rule | 6 pins |
-| P2 | `Work` holds an `Arc<Run>`; `take_any` miss is O(N) | `runtime/suggestions.md` #1–2 | — | — |
-| P2 | box scratch · 12 worktrees · `vector.mapal` · `kc_nest` · SME value check | S48 | — | — |
+| P2 | `vector.mapal` · `kc_nest` · SME value check · 12 worktrees · box scratch | S48/S43 | — | — |
 
 ## Standing direction (Sapir — unchanged)
 
 - Compute-only legs; NumPy in every verdict table; scale everything up.
 - Parallel-first by construction — **threaded is the configuration that ships.**
-- Backend-genericity contract (ADR-0032): **mapal-ir never learns machine facts.**
-  Scheduling and comptime structuring belong in the backend, per backend, so the IR's
-  geometry analysis stays generic. Held through all of S49/S50 — checkable by
-  `git diff -- crates/mapal-ir/`.
-- **Keep stuff generic, not hardcoded** — and when a constant is swept rather than
-  derived, say so.
+- Backend-genericity contract (ADR-0032): **mapal-ir never learns machine facts.** Held through
+  S51 — its whole diff is `backends/llvm` plus benches and docs.
+- **Keep stuff generic, not hardcoded** — and when a constant is swept rather than derived, say
+  so. S51 added **no constant**: the pack threshold is `working_set > l2_bytes`, an existing
+  recorded field.
 - Query, not rewrite: record that something *could* be skipped; never delete it.
 - Compile time decides the SIZES, runtime decides the ASSIGNMENT.
 - Nothing goes in the README that a default build does not deliver.
 - Proof over suggestion — a change arrives with the measurement of what it did.
-- **The README is results, not method.** Tables and a pointer; explanations live in
-  `docs/`.
+- **The README is results, not method.** Tables and a pointer; explanations live in `docs/`.
 - Speak simply, base claims on empirical results. **Give absolute ms, not only ratios.**

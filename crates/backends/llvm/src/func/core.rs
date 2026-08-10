@@ -504,7 +504,7 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
         packed: &PackedBuffer,
     ) {
-        debug_assert!(packing_site(site));
+        debug_assert!(packing_site(site, self.profile, self.contract));
         let source_ty = self.obj_ty(source);
         let b_ty = source_ty
             .component_ty(site.b.slot)

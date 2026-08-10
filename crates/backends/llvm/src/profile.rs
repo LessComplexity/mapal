@@ -691,6 +691,55 @@ impl TargetProfile {
     /// The caller gates on `site.k > sme_kc`, so at shallow k the nest disables
     /// itself by derivation — which is correct, because the probe shows blocking
     /// is a **loss** at K ≤ 512 where the panel already fits.
+    /// Does packing `b` pay at a site of this size? `true` keeps today's
+    /// unconditional pack.
+    ///
+    /// **The pack computes nothing.** It exists only to give `b` a second
+    /// `DataLoc` in a friendlier layout (FRAMEWORK §4.2), so its cost is a
+    /// transmission price — `2·k·c·sizeof` bytes moved — against a benefit that
+    /// exists only while `b`'s re-reads actually miss. The cost is O(N²) and the
+    /// matmul it serves is O(N³), so below some size the pack is pure loss.
+    ///
+    /// **Measured, plan-s51 H1** (`benches/nn/pack_ab.sh`, M4 Pro, 15
+    /// interleaved cycles, values bit-identical on every arm, and a
+    /// byte-identical control arm carried through every cell as the noise
+    /// floor — 0.990–1.071×, all overlapping):
+    ///
+    /// | d | working set | `--no-pack` / pack, 1 thread | threaded |
+    /// | ---: | ---: | ---: | ---: |
+    /// | 128 | 0.2 MB | **1.46–1.52× faster WITHOUT** | 1.45–1.51× |
+    /// | 256 | 0.8 MB | 1.20–1.21× | **1.41–1.46×** |
+    /// | 512 | 3.1 MB | 1.13× | 1.23–1.32× |
+    /// | 1024 | **12.6 MB** | **1.000× / 0.992× — the crossover** | ~1.0 |
+    /// | 2048 | 50 MB | 0.65× — packing WINS 1.53× | 0.66–0.67× |
+    ///
+    /// **The crossover was not fitted; it lands on a knee measured by a
+    /// different instrument.** S43's `loadlevel.c` put this part's one real
+    /// cache boundary — shared L2 → DRAM — between 8 and 12 MB, and the sign
+    /// flip is at a 12.6 MB working set. Three sizes below and one above are
+    /// all predicted correctly by `working_set > l2_bytes`, so that is the rule,
+    /// and `l2_bytes` is already a recorded field. No constant is added.
+    ///
+    /// The data does not separate this from `k·c·sizeof > l2_bytes` (B alone) —
+    /// both predicates are right at all five measured sizes. The whole working
+    /// set is chosen because A and the output really do compete with `b` for the
+    /// same L2, which is the mechanism; if a later size ever separates them,
+    /// that measurement decides.
+    ///
+    /// **Scope is the CALLER's job, and it is narrower than "this profile has an
+    /// SME unit".** [`crate::func::packing_site`] asks this only for sites that
+    /// take the SME rung, because that is the only kernel the crossover was
+    /// measured on. An f64 or exact-face site on this very profile runs the NEON
+    /// packing rung and packs exactly as it did before — nobody has taken its
+    /// crossover, and a threshold is not transplanted between kernels on the
+    /// strength of an argument. That scoping is what keeps `generic`
+    /// byte-identical, and it is S50's rule in the same words: **no part is made
+    /// worse by a number nobody took.**
+    pub fn pack_pays(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> bool {
+        let working_set = (rows * k + k * c + rows * c) * elem_bytes(elem);
+        working_set > self.l2_bytes
+    }
+
     pub fn sme_kc(&self, elem: &Ty) -> Option<u64> {
         let sme = self.sme.as_ref()?;
         // A detected machine fact times a SWEPT policy ratio — see
@@ -790,6 +839,32 @@ pub const RAPTORLAKE: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
+/// **MEASUREMENT SCRATCH — S51b, DELETE AFTER USE. Not a machine.**
+///
+/// `raptorlake` with one field changed: a `dispatch_ns` so large that
+/// [`FnEmit::under_dispatch_cost`]'s roofline answers "inline" for every tile
+/// site in the program. It exists to make the `dispatch_ns` A/B possible at all,
+/// because that constant can only be measured as a DIFFERENCE — dispatch
+/// everything (`raptorlake`, `dispatch: None`) against inline everything (this)
+/// — divided by the number of dispatches that flipped.
+///
+/// `flops_per_ns` is the real measured 144; `bytes_per_ns` is a placeholder and
+/// is not read for any decision here, because `ns < dispatch_ns` holds for every
+/// site at this `dispatch_ns` whatever the rate. Only the huge value matters.
+///
+/// **Do not ship a program built against this.** It is the `kc_nest` mistake in
+/// miniature — a measurement lever that must not outlive its measurement — and
+/// the repo already carries a P1 to delete that one.
+pub const RAPTORLAKE_INLINE: TargetProfile = TargetProfile {
+    name: "raptorlake-inline",
+    dispatch: Some(DispatchCost {
+        flops_per_ns: 144,
+        bytes_per_ns: 100,
+        dispatch_ns: 1_000_000_000,
+    }),
+    ..RAPTORLAKE
+};
+
 /// NVIDIA Ada (`sm_89`) — the box GPU, an RTX 4070 Ti (compute capability 8.9,
 /// driver 610.43.03, 12 GB). plan-s41 step 1.
 ///
@@ -883,13 +958,14 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 6] = [
+const PROFILES: [&TargetProfile; 7] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
     &CUDA_ADA,
     &APPLE_M4_SME,
     &RAPTORLAKE,
+    &RAPTORLAKE_INLINE,
 ];
 
 /// Resolve a profile by name. `None` for an unknown name — never a silent
