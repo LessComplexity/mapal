@@ -169,7 +169,7 @@ bash benches/emit_sweep_ab.sh target/release/examples/emit /tmp/post.hashes --ta
 
 | Priority | Item | Reference | Next action | Done when |
 | --- | --- | --- | --- | --- |
-| P1 | the reversed pack's 2.0–2.6× padding win is UNEXPLAINED, and padded-reversed beats shipped blocking (3.167 vs 5.168 ms at N=4096) | `s51` §5f | try a BLOCKED REVERSED order; the emitter cannot pad `A` | measured either way |
+| P1 | the reversed pack's 2.0–2.6× padding win is UNEXPLAINED; padded-reversed beats shipped blocking (3.154 vs 5.167 ms at N=4096) and **no traversal reaches it** — a 24-cell tile sweep got to 0.684× | `s51` §5f, §5g | the read-set SIZE is refuted (R=4 ≡ R=32); only the stride VALUE matters. Untested candidate: page/DRAM-bank aliasing — at N=4096 the stride is exactly the 16 KB page | mechanism identified, or dropped |
 | **P0** | `MAPAL_PAR` semantics | READ THIS FIRST | Sapir leans worker-count + `auto`; undecided | decided |
 | **P0** | H3 — pack A once, then `jc` — the last term | §2 | the `mc` rung | 1t ≈1.45× |
 | P1 | `pack_pays` unmeasured on the NEON rung | §2 | measure or leave scoped | either |
