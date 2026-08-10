@@ -315,3 +315,76 @@ fn the_dispatch_threshold_is_what_separates_the_two_profiles_here() {
         kinds(&sme)
     );
 }
+
+/// A matmul-shaped SME site whose `k` is `K`, at 32×32 outputs — so the A pack
+/// buffer is `32 · K · 4` bytes and `K` alone decides whether it fits L1D.
+fn pack_shape(k: u64) -> String {
+    format!(
+        r#"
+fn main() {{
+    1024 -> iota -> tout;
+    {ab} -> iota -> tab;
+    tab -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    tab -> map {{ t -> (t * 5 + 29) % 101 - 50 -> widen_f32 }} -> b;
+    {k} -> iota -> kr;
+    tout -> map {{ t ->
+        t / 32 -> i;
+        t % 32 -> j;
+        (0.0, kr) -> fold {{ acc, k -> acc + a[i * {k} + k] * b[k * 32 + j] }}
+    }} -> o;
+    o[0] -> println;
+    o[1023] -> println;
+}}
+"#,
+        ab = 32 * k,
+        k = k
+    )
+}
+
+/// plan-s51 H2 — the A pack is blocked exactly when its buffer stops fitting L1D.
+///
+/// **The pack's waste is on the STORE side.** Since S42 the pack is row-outer /
+/// k-inner, so reads walk a row contiguously; the stores go to
+/// `ap[pk·32 + pi]`, which puts consecutive `pk` one 128 B line apart and writes
+/// 4 bytes of each. The next row returns for the next 4. That is free while `ap`
+/// is still resident and costs 32× the line traffic once it is not, so the whole
+/// decision is `32 · k · sizeof > l1d_bytes` — 1024 is the last `k` that fits.
+///
+/// Measured on the loops the emitter actually emits
+/// (`benches/sme/packconflict.c`): flat 1.000–1.051× at `ap` ≤ 64 KB, **2.752×
+/// at 256 KB**, 1.771× at 512 KB. Integrated on `nn4_2048`, **1.092× at one
+/// thread, disjoint**.
+///
+/// Both halves are asserted, because only the pair is a gate: a change that
+/// blocked unconditionally would still pass the positive assertion alone, and
+/// blocking below the boundary is a measured LOSS of nothing plus real code.
+#[test]
+fn the_a_pack_is_blocked_exactly_when_it_stops_fitting_l1d() {
+    // k = 1024 -> ap = 131072 = L1D exactly, so it still fits and must not block.
+    let fits = emit_at(&pack_shape(1024), "apple-m4-sme", true);
+    // k = 1056 -> ap = 135168 > L1D.
+    let over = emit_at(&pack_shape(1056), "apple-m4-sme", true);
+
+    // Both must actually be taking the SME rung, or the test proves nothing
+    // about the pack. (The rung's own markers are asserted elsewhere; here it is
+    // enough that the kernel is present.)
+    for (ll, why) in [(&fits, "k=1024"), (&over, "k=1056")] {
+        assert!(
+            ll.contains("@mapal_sme_panel"),
+            "{why}: the SME rung did not fire, so this test is vacuous"
+        );
+    }
+
+    // The block loop's fingerprint is its clamp: the final block is ragged, so
+    // the emitted bound is `select over, kc, pk0 + block` with `kc` literal.
+    assert!(
+        over.contains(", i64 1056, i64 %"),
+        "k=1056: ap is 132 KB against a 128 KB L1D and the pack must be blocked \
+         — no clamp against the k bound found"
+    );
+    assert!(
+        !fits.contains(", i64 1024, i64 %"),
+        "k=1024: ap is exactly L1D, so the pack still fits and must emit the \
+         single-pass copy — found a block clamp"
+    );
+}

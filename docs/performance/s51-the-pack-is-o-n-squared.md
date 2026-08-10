@@ -127,7 +127,7 @@ timing run — the same argument S39 and S40 used to show no perf run was owed.
 *(The sweep reports 3 of 174 emissions FAILED on both sides: `examples/vector.mapal` does not
 parse. Pre-existing since S43, identical on both arms, still open.)*
 
-## 5. H2 — the A pack. A real traversal win, measured, NOT built
+## 5. H2 — the A pack. Measured, then BUILT (see §5e for what shipped)
 
 ### 5a. The instrument that was measuring code that is not in the binary
 
@@ -190,6 +190,49 @@ Real, clean, value-identical, no constant — and **~5–8% integrated at d ≥ 
 scoped and ready; it is not this session's headline and it was not built on the way past.
 S44's rule 3 applies to those projections: a probe over-priced its integrated win by 1.7×
 last time, so they are projections until measured in the pipeline.
+
+### 5e. BUILT — and it refuted this plan's own rule-24 pre-registration
+
+`TargetProfile::pack_block` + a 32×32 block over `(pi, pk)` in
+`emit_tiled_map_sme`. The gate is `panel_rows · kc · sizeof > l1d_bytes` and the
+depth is `line_bytes / sizeof` — **two detected facts, no swept constant**. When the
+buffer already fits, not one slot or label is minted and the pack emits the pre-S51
+text exactly.
+
+Integrated A/B against the committed baseline, 15 interleaved cycles, values
+bit-identical at both widths on every arm:
+
+| cell | width | base | H2 | saved | | |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `nn4_2048` | 1 thread | 74.0476 | **67.8328** | 6.21 ms | **1.092×** | DISJOINT |
+| `nn2x2_2048` | 1 thread | 74.0091 | **68.7045** | 5.30 ms | **1.077×** | DISJOINT |
+| `nn4_2048` | 14 | 20.4061 | 19.9660 | 0.44 ms | 1.022× | overlap |
+| `nn2x2_2048` | 14 | 19.8828 | 19.4390 | 0.44 ms | 1.023× | overlap |
+
+**The threaded prediction written into §4 was wrong.** Rule 24 classifies a pack as a
+per-core cost, and this plan pre-registered "holds or grows threaded". It **shrank** —
+1.09× at one thread to 1.02× and not resolvable on fourteen.
+
+> **30. Rule 24's "per-core resource" category needs a second question: is the WORK
+> divisible?** `move_panel`'s conflict grew threaded because every core swept all of A
+> regardless of which rows it owned, so the pressure did not dilute. The A pack is a
+> per-core *rate* but a divisible *quantity* — each lane packs only its own panels — so
+> its share of the wall falls with thread count like any other parallel term. Per-core
+> is necessary for a win to grow threaded; it is not sufficient.
+
+So H2 ships as what it is: **a 1-thread result, 1.08–1.09× and disjoint, threaded
+neutral.** Which is the term the session's P0 named.
+
+Coverage: the `k > 1024` path had **none** — the differential cannot reach the SME rung
+at all, because `fmopa` fuses and the rung's output is deliberately not bit-equal to the
+interpreter oracle. Pinned instead by
+`sme_rung.rs::the_a_pack_is_blocked_exactly_when_it_stops_fitting_l1d` (both halves — a
+change that blocked unconditionally would pass the positive assertion alone) and
+`profile.rs::pack_block_fires_only_once_the_pack_buffer_leaves_l1d`. Both were verified
+to **fail** on an injected bug before being trusted.
+
+Gate: **1058 passed / 0 failed**, fmt clean, `--target=generic` 0 of 174 cells moved,
+and `nn4_{128,512,1024}` byte-identical to the baseline — only `ap > L1D` sites move.
 
 ## 6. The table that changes
 
