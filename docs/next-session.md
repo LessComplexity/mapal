@@ -68,9 +68,21 @@ name list, which is the tripwire. **Delete it the moment the constants land** �
 ≈3374 GF/s against a measured ~4100 aggregate ceiling — **82% of the machine**. At most ≈1.22×
 remains threaded on the M4, ever. Size any future threaded claim against that.
 
-## S52 opens on — H2, which is measured and unbuilt
+## S52 opens on — H3, the last term. H2 SHIPPED in S51
 
-### 1. P0 — block the A pack's traversal
+### 0. H2 is DONE — `ac13439`
+
+Blocked the A pack once `ap = panel_rows·kc·sizeof` leaves L1D. **`nn4_2048` 1 thread
+74.0476 → 67.8328 ms, 1.092×, disjoint**; threaded 1.022×, overlap. Gate 1058/0, generic
+unmoved, `nn4_{128,512,1024}` byte-identical.
+
+**Its threaded prediction was WRONG and that is the lesson (rule 30).** The plan
+pre-registered "per-core cost ⇒ holds or grows threaded" on rule 24, and it shrank
+(1.09× → 1.02×). Rule 24 needs a second question: **is the work divisible?**
+`move_panel` grew threaded because every core swept all of A whatever rows it owned;
+each lane packs only its own panels, so this dilutes like any parallel term.
+
+### 1. What H2 was (kept for the record)
 
 Everything needed is taken. The emitted pack (`func/sme.rs`, row-outer / k-inner since S42)
 reads `a` contiguously and **stores `ap[pk·32 + pi]`, one 4 B store per 128 B line**. Whether
@@ -157,9 +169,8 @@ bash benches/emit_sweep_ab.sh target/release/examples/emit /tmp/post.hashes --ta
 
 | Priority | Item | Reference | Next action | Done when |
 | --- | --- | --- | --- | --- |
-| **P0** | H2 — block the A pack traversal | §1 | 32×32 tile gated on `32·k·sizeof > l1d_bytes` | d≥1024 improves, d≤512 byte-identical |
 | **P0** | `MAPAL_PAR` semantics | READ THIS FIRST | Sapir leans worker-count + `auto`; undecided | decided |
-| P1 | H3 — pack A once, then `jc` | §2 | the `mc` rung | 1t ≈1.45× |
+| **P0** | H3 — pack A once, then `jc` — the last term | §2 | the `mc` rung | 1t ≈1.45× |
 | P1 | `pack_pays` unmeasured on the NEON rung | §2 | measure or leave scoped | either |
 | **P0** | delete `RAPTORLAKE_INLINE` scratch profile | S51b §2a | remove once the constants land | gone from `profile.rs` |
 | **P0** | `raptorlake` owes `bytes_per_ns` + `dispatch_ns` (`flops_per_ns` = 144 is taken) | S51b §2 | `bash benches/nn/raptorlake_constants.sh 100.81.226.103 21` | profile carries `Some` |
