@@ -326,7 +326,7 @@ impl<'a> FnEmit<'a> {
                     return None;
                 }
                 let record = host.tile_plan.as_ref()?.sites.get(*site)?;
-                if !packing_site(record) {
+                if !packing_site(record, profile, host.contract) {
                     return None;
                 }
                 // The pack's range is j-tiles, a different axis in different
@@ -587,7 +587,7 @@ impl<'a> FnEmit<'a> {
                 .then(|| ir.tile_plan(f))
                 .and_then(|plan| plan.sites.get(*m).cloned())
             && packing
-            && packing_site(&site)
+            && packing_site(&site, profile, contract)
         {
             let mut slice = FnEmit::new(
                 ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,

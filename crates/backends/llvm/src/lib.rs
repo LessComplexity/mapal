@@ -273,7 +273,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             ir.tile_plan(f)
                 .sites
                 .iter()
-                .any(|(_, site)| packing_site(site))
+                .any(|(_, site)| packing_site(site, profile, opts.contract))
         });
 
     // Functions first: the arena declarations are gated on the emitted text

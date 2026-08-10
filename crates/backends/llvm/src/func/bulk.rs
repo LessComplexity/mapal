@@ -102,7 +102,7 @@ impl<'a> FnEmit<'a> {
             .filter(|site| (site.a.ksplit.is_none() && site.b.ksplit.is_none()) || conv_site(site))
             .cloned()
         {
-            let packed = if self.packing && packing_site(&site) {
+            let packed = if self.packing && packing_site(&site, self.profile, self.contract) {
                 let needs_pack = self
                     .frame
                     .as_ref()

@@ -355,10 +355,33 @@ pub(crate) struct FnEmit<'a> {
     heap_used: bool,
 }
 
-pub(crate) fn packing_site(site: &TileSite) -> bool {
+/// Should this site's `b` be packed — shape AND size.
+///
+/// **One predicate, six call sites, because they must not disagree.** The pack
+/// buffer's existence (`frame.rs`), the copy that fills it (`bulk.rs`), the
+/// slice function that owns it (`drive.rs`), the prefetch declaration
+/// (`lib.rs`), the SME kernel's load-width clause (`sme.rs`) and the copy's own
+/// assertion (`core.rs`) all read this. A site packed by one and not another is
+/// a kernel reading a layout nobody wrote (FRAMEWORK §5 — one source of truth
+/// for shared structure).
+///
+/// The `profile`/`contract` arguments are what made this a two-part question:
+/// shape decides whether a packed layout can *represent* the site, size decides
+/// whether it *pays* (plan-s51 H1 — [`TargetProfile::pack_pays`]).
+///
+/// **The size half applies only to sites that take the SME rung**, because that
+/// is the only kernel the crossover was measured on. A site that runs the NEON
+/// packing rung packs exactly as it did before the threshold existed — nobody
+/// has taken its crossover, and a threshold is not transplanted between kernels
+/// on the strength of an argument.
+pub(crate) fn packing_site(site: &TileSite, profile: &TargetProfile, contract: bool) -> bool {
     // k-split sites never pack: the packed panel layout has no encoding for
     // the (k÷div, k%div) decomposition.
-    site.rows > 1 && site.b.ci == 0 && site.b.ksplit.is_none()
+    site.rows > 1
+        && site.b.ci == 0
+        && site.b.ksplit.is_none()
+        && (!crate::func::sme::sme_shape(site, profile, contract)
+            || profile.pack_pays(site.rows, site.c, site.k, &site.elem))
 }
 
 /// FIR-style 1-D sliding-window sites: a single-row map whose unit-stride

@@ -23,6 +23,44 @@
 
 use super::*;
 use crate::PanelWrite;
+use crate::profile::TargetProfile;
+
+/// Clauses 1–7 of [`FnEmit::sme_tile_site`] — everything about the site's own
+/// shape, and nothing about whether `b` will be packed.
+///
+/// **Split out to break a cycle, and the cycle is worth naming.** Clause 8 asks
+/// "if we pack, is the packed width the kernel's load width?", so it consults
+/// [`packing_site`]; and since plan-s51 H1, `packing_site` needs to know whether
+/// this site takes the SME rung, because the pack threshold was measured on
+/// that kernel and on no other. Asking the whole predicate from inside itself
+/// does not terminate. The shape half is what the threshold actually needs to
+/// know, it cannot depend on packing, and so it is the natural cut.
+///
+/// The residue is stated rather than hidden: a site with `sme_shape` that fails
+/// clause 8 does not take the SME rung, yet the threshold still applies to it.
+/// That can only happen when the site is big enough to pack AND the profile's
+/// `tile_j` differs from its SME tile side — and in that case the threshold says
+/// "pack", which is what would have happened anyway. On this part the two widths
+/// are both 16, so the case is unreachable here.
+pub(crate) fn sme_shape(site: &TileSite, profile: &TargetProfile, contract: bool) -> bool {
+    let (Some(t), Some((ti, tj))) = (
+        profile.sme_tile_side(&site.elem),
+        profile.sme_block(&site.elem),
+    ) else {
+        return false;
+    };
+    contract
+        && site.elem == Ty::f32()
+        && site.a.ksplit.is_none()
+        && site.b.ksplit.is_none()
+        && site.a.clane == 0
+        && site.b.clane == 1
+        && site.b.ci == 0
+        && matches!(&site.seed, Value::F32(z) if z.to_bits() == 0)
+        && site.rows.is_multiple_of(ti * t)
+        && site.c.is_multiple_of(tj * t)
+        && site.k >= t
+}
 
 impl<'a> FnEmit<'a> {
     /// Is this tile site legal for, and shaped for, the SME rung?
@@ -73,24 +111,12 @@ impl<'a> FnEmit<'a> {
     ///    **portability** item, not a performance one: S42 measured that the rung
     ///    already takes the packed path on this profile (1.560× at 2048).
     pub(super) fn sme_tile_site(&self, site: &TileSite) -> bool {
-        let (Some(t), Some((ti, tj))) = (
-            self.profile.sme_tile_side(&site.elem),
-            self.profile.sme_block(&site.elem),
-        ) else {
+        let Some(t) = self.profile.sme_tile_side(&site.elem) else {
             return false;
         };
-        self.contract
-            && site.elem == Ty::f32()
-            && site.a.ksplit.is_none()
-            && site.b.ksplit.is_none()
-            && site.a.clane == 0
-            && site.b.clane == 1
-            && site.b.ci == 0
-            && matches!(&site.seed, Value::F32(z) if z.to_bits() == 0)
-            && site.rows.is_multiple_of(ti * t)
-            && site.c.is_multiple_of(tj * t)
-            && site.k >= t
-            && (!(self.packing && packing_site(site)) || self.profile.tile_j(&site.elem) == t)
+        sme_shape(site, self.profile, self.contract)
+            && (!(self.packing && packing_site(site, self.profile, self.contract))
+                || self.profile.tile_j(&site.elem) == t)
     }
 
     /// The panel height in output rows — `ti · t`, the quantum every i-grid

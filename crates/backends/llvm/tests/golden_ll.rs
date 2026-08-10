@@ -1984,10 +1984,23 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
 /// The negative control is the point of the second half: a profile with no
 /// MEASURED dispatch economics must keep dispatching, so no part can be made
 /// worse by a number nobody took.
+///
+/// **The locator changed in S51.** This used to find the tile task by the
+/// `_slice` suffix, which only a PACKED site has — so it was keyed on an
+/// artifact of packing rather than on the thing under test. plan-s51 H1 made
+/// packing conditional on size, and a 4x4's working set is 192 bytes against a
+/// 16 MB L2, so on `apple-m4-sme` there is no `_slice` function any more. The
+/// region quantum is the property that actually says "this is the bulk tile
+/// task", on either profile and whether or not it packs.
 #[test]
 fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let kind_of = |target: &'static str| {
+    // The BULK TILE task, on either profile: of the registrations that carry a
+    // region quantum (argument 7 — a scalar/Seq task carries `i64 0`), the one
+    // with the largest. On `generic` that separates the matmul (64) from the
+    // b-pack task the same site registers (1); on `apple-m4-sme` the site does
+    // not pack at this size and the matmul is the only one.
+    let tile_kind = |target: &'static str| -> String {
         let ll = emit_with_opts(
             &ir,
             &EmitOpts {
@@ -1996,20 +2009,35 @@ fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
             },
         )
         .unwrap();
-        let call = regex_lite_find(&ll, "_slice, i64 ").expect("a registered tile task");
+        let quantum = |l: &str| -> u64 {
+            l.split(", ")
+                .nth(6)
+                .and_then(|a| a.trim_start_matches("i64 ").parse().ok())
+                .unwrap_or(0)
+        };
+        let call = ll
+            .lines()
+            .filter(|l| l.contains("call void @mapal_par_task("))
+            .max_by_key(|l| quantum(l))
+            .expect("a registered task");
+        assert!(
+            quantum(call) > 0,
+            "no task carries a region quantum, so none of them is the tile \
+             site:\n{ll}"
+        );
         call.split(", ")
             .nth(2)
             .expect("the kind argument")
             .to_string()
     };
     assert_eq!(
-        kind_of("apple-m4-sme"),
+        tile_kind("apple-m4-sme"),
         "i32 0",
         "a 4x4 matmul must not be handed to the pool on a part whose dispatch \
          cost is known"
     );
     assert_eq!(
-        kind_of("generic"),
+        tile_kind("generic"),
         "i32 1",
         "a profile with no measured dispatch economics must dispatch exactly as \
          it did before the threshold existed"

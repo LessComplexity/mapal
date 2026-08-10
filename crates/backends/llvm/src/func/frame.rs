@@ -204,7 +204,7 @@ impl<'a> FnEmit<'a> {
             for task in &path_plan.tasks {
                 if let TaskKind::Split { site: m, .. } = &task.kind
                     && let Some(site) = tile_plan.sites.get(*m)
-                    && packing_site(site)
+                    && packing_site(site, self.profile, self.contract)
                 {
                     packed.insert(
                         *m,
