@@ -234,6 +234,52 @@ to **fail** on an injected bug before being trusted.
 Gate: **1058 passed / 0 failed**, fmt clean, `--target=generic` 0 of 174 cells moved,
 and `nn4_{128,512,1024}` byte-identical to the baseline — only `ap > L1D` sites move.
 
+### 5f. The set-conflict explanation for the REVERSED order — REFUTED
+
+§5e left the residual unexplained and offered set conflict as a hypothesis.
+`benches/sme/packsets.c` tests it S44's way — hold the traversal and the byte
+count fixed, pad the row stride by 128 B so `gcd(lda·4/128, 128) = 1` and all
+128 sets become reachable. Best of 7, every arm checksum-gated against
+`row_outer` before timing, and the gate verified to fail on an injected bug.
+
+| N | sets reachable | reversed | reversed +pad | gain | row-outer | row-outer +pad | gain | blocked | drift |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 512 | 8 | 0.205 | 0.099 | **2.071×** | 0.107 | 0.108 | 0.991× | 0.097 | 0.951× |
+| 1024 | 4 | 0.568 | 0.283 | 2.007× | 0.718 | 0.729 | 0.985× | 0.268 | **0.864×** |
+| 2048 | 2 | 1.790 | 0.682 | **2.625×** | 2.332 | 2.162 | 1.079× | 0.782 | 0.931× |
+| 4096 | 1 | 8.214 | 3.167 | 2.594× | 9.216 | 9.126 | 1.010× | 5.168 | 0.996× |
+
+**Two of three pre-registered conditions passed and the third failed, so the
+hypothesis is refuted as stated.** ≥1.5× at N=2048/4096: **PASS** (2.625×,
+2.594×). The negative control — padding must do nothing to the row-outer order,
+whose reads are one contiguous stream: **PASS** (0.985–1.079×, all inside the
+drift column). Within noise at N=512: **FAIL** — the set model says 8 reachable
+sets and 4 rows per set, comfortably inside 8-way, and padding still won 2.071×.
+
+**What survives, and what does not.** The negative control passing is what makes
+this a real result rather than a padding artifact: the effect is specific to the
+reversed order's 32 strided reads. A power-of-two row stride costs that pattern
+**2.0–2.6×** and breaking the stride recovers it, at every size measured. What
+does **not** survive is the mechanism: L1 set count does not predict where the
+effect appears. Candidates not measured here — L2 set geometry, page aliasing,
+a prefetcher declining 32 aliasing streams. Named as unexplained rather than
+resolved by choosing one.
+
+> **31. A treatment that works everywhere refutes a predictor that says it should
+> work somewhere.** This is the second mechanism model in one session to fit the
+> retrodictions and fail its first genuinely out-of-sample cell (§5e's rule 30
+> was the first). Both times the treatment was real and the story was wrong; the
+> cost of keeping the story would have been sizing a future change by it.
+
+**And a bound on what H2 achieved, stated because it is uncomfortable rather than
+in spite of it:** padded-reversed beats the blocked form that shipped — 0.682 vs
+0.782 at N=2048 and **3.167 vs 5.168 at N=4096**. If the emitter could pad `A`'s
+row stride, that would be the better fix. It cannot: `A` is the program's own
+array and its stride is the program's, which is exactly the limitation S44
+recorded for `move_panel`'s `w`. **H2 is the best AVAILABLE option, not the best
+one**, and the gap is 1.6× at N=4096 on the pack. Whether a *blocked reversed*
+order captures it is unmeasured and is the open question this leaves.
+
 ## 6. The table that changes
 
 Threaded, `nn4` vs NumPy, from §3's ratios applied to the S50 `-s50final` run. **Projected,
