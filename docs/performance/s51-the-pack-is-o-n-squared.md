@@ -280,6 +280,52 @@ recorded for `move_panel`'s `w`. **H2 is the best AVAILABLE option, not the best
 one**, and the gap is 1.6× at N=4096 on the pack. Whether a *blocked reversed*
 order captures it is unmeasured and is the open question this leaves.
 
+### 5g. The row-block idea — swept, and it does not reach padded either
+
+§5f left one shipping-relevant question: padded-reversed beats H2, the emitter
+cannot pad, so is there a traversal that reaches it? `benches/sme/packtile.c`
+sweeps a two-level tile — `R` rows × `B` k, both inner orders, R ∈ {4,8,16,32},
+B ∈ {32,64,128} — 24 cells × 2 sizes, every one checksum-gated before timing.
+
+**First, what was NOT tested and why.** "Blocked reversed" is a no-op: blocking a
+two-level nest's outer loop without changing the inner index is the identical
+iteration order, and the reversed order already has a 32-line read working set
+(consecutive `pk` are 4 bytes apart, so the same 32 row-lines serve 32 `pk`).
+The untried axis was the ROW block, which neither shipped order does.
+
+N=4096 — shipped H2 **5.167**, reversed unpadded 7.768, **padded-reversed 3.154**:
+
+| R | B | row-inner | k-inner | vs H2 | vs padded |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 32 | 4.681 | 6.133 | 1.104× | 0.674× |
+| 8 | 32 | 4.758 | 5.131 | 1.086× | 0.663× |
+| **16** | **64** | **4.612** | 6.072 | **1.120×** | 0.684× |
+| 32 | 32 | 4.646 | 8.258 | 1.112× | 0.679× |
+
+At N=2048 every cell is 0.678–0.790× of shipped H2 — all worse.
+
+**The result kills the remaining aliasing story.** R=4 keeps four strided
+addresses in flight instead of thirty-two and measures **4.681 against R=32's
+4.646** — no difference at all. If the unexplained 2.0–2.6× were contention
+*among* the concurrent strided streams, that cell had to move. It did not. **The
+live read-set size is irrelevant; only the stride VALUE has ever mattered.**
+
+**Nothing reaches padded-reversed**: best of 24 cells is 0.684× of it.
+
+**A candidate, explicitly not claimed.** At N=4096 the row stride is 16384 B —
+exactly this part's 16 KB page — so all 32 rows sit at the same page offset, and
+a 128 B pad breaks that. It would point at page/TLB or DRAM-bank aliasing rather
+than anything in L1. It does not explain N=512 (2 KB stride, whole array inside
+L2, padding still won 2.071×), so it is not one mechanism either. **Three
+mechanism stories have now failed in this session; this one is recorded as a
+candidate and not pursued.**
+
+**Shipping decision: no change.** `R=16,B=64` is 1.120× at N=4096 and 0.790× at
+N=2048 — it trades one size for another. And H2's own shape through the generic
+runtime-bounded body measured 4.646 against the specialized 5.167, so a chunk of
+the spread is C codegen rather than memory behaviour. Not a basis for touching
+the emitter.
+
 ## 6. The table that changes
 
 Threaded, `nn4` vs NumPy, from §3's ratios applied to the S50 `-s50final` run. **Projected,
