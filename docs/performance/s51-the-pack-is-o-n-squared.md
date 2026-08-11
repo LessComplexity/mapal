@@ -326,6 +326,65 @@ runtime-bounded body measured 4.646 against the specialized 5.167, so a chunk of
 the spread is C codegen rather than memory behaviour. Not a basis for touching
 the emitter.
 
+### 5h. CORRECTION — the set model was refuted on a bad test, and it is monotone
+
+§5f and §5g refuted "L1 set conflict" on the grounds that d=512 reaches 8 sets
+with 4 rows each, which fits 8 ways, so there was supposedly nothing to win. That
+threshold test was **too crude, and the refutation was wrong.**
+
+`benches/sme/stridesets.c` isolates the read side and varies ONLY the stride,
+holding rows, elements per row, bytes touched, loop body and the VALUES read
+constant (the array is filled as `f(row, col)`, so every arm sums the same
+numbers and the checksum is a real gate). Set count is `128/gcd(step,128)`, so
+different strides can share one — which is what separates the two candidates.
+
+| step | stride B | sets | rows/set | pow2 | ms | vs best |
+| ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| 17 | 2176 | **128** | 1 | no | **0.166** | 1.01× |
+| 129 | 16512 | **128** | 1 | no | **0.164** | 1.00× |
+| 112 | 14336 | 8 | 4 | no | 0.314 | 1.91× |
+| 80 | 10240 | 8 | 4 | no | 0.343 | 2.09× |
+| 48 | 6144 | 8 | 4 | no | 0.378 | 2.30× |
+| 16 | 2048 | 8 | 4 | **YES** | 0.506 | 3.09× |
+| 192 | 24576 | 2 | 16 | no | 0.496 | 3.02× |
+| 64 | 8192 | 2 | 16 | **YES** | 0.615 | 3.75× |
+| 384 | 49152 | 1 | 32 | no | 0.570 | 3.48× |
+| 128 | 16384 | 1 | 32 | **YES** | 0.623 | 3.80× |
+
+**Two separable effects, both real.** Set count dominates and is monotone —
+128 sets 0.165, 8 sets 0.31–0.51, 2 sets 0.50–0.62, 1 set 0.57–0.62. And within
+every group the power-of-two member is the slowest, a second and smaller penalty.
+
+**Step 16 IS d=512's stride, and it is 3.09× slower than a coprime one.** So the
+penalty was severe there all along; §5f's "4 rows per set fits 8 ways" only
+counted the 32 rows and ignored everything else competing for those same 8 sets.
+
+The reading that fits: a stream does not get the whole 128 KB — it gets
+`sets_reached × ways` lines. At 8 sets that is **64 lines = 8 KB of a 128 KB
+cache**. Still flagged as incomplete: 32 live lines against 64 usable slots
+should not thrash on paper, so something inflates demand, and hardware prefetch
+over 32 concurrent streams is the obvious unmeasured suspect.
+
+> **32. A threshold test can refute a true model.** "Rows per set ≤ ways ⇒ fine"
+> killed the set explanation twice in this session, and it was the test that was
+> wrong, not the model. When a mechanism is graded, testing it at one cliff and
+> declaring it dead is how a real cause gets discarded — sweep the parameter and
+> look for monotonicity before refuting.
+
+**Two instruments were VOID before this one produced a number**, both documented
+in the file so the class is not repeated: the first eliminated the whole loop by
+CSE (all ten arms read 0.000 ms), and the second summed into one accumulator, a
+serial FP dependency chain that measured 5.7 GB/s on a part that does ~250 —
+timing the adder, not the memory, and returning a flat 1.17× band that would have
+read as "no effect". Fixed with a volatile sink, a memory barrier, a per-rep poke
+and 32 independent accumulators.
+
+**None of this changes what shipped.** The emitter still cannot pad `A`, and §5g
+showed no traversal reaches the padded number. What changes is the explanation
+carried forward: the stride's set coverage is the dominant term, which makes
+"allocate 2-D arrays with a coprime row stride" a better-motivated S52 candidate
+than it looked in §5f.
+
 ## 6. The table that changes
 
 Threaded, `nn4` vs NumPy, from §3's ratios applied to the S50 `-s50final` run. **Projected,
