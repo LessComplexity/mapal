@@ -385,6 +385,49 @@ carried forward: the stride's set coverage is the dominant term, which makes
 "allocate 2-D arrays with a coprime row stride" a better-motivated S52 candidate
 than it looked in §5f.
 
+### 5i. The prefetch question — counters blocked, proxy too weak. STILL OPEN.
+
+§5h left one hole: 32 live lines against `8 sets × 8 ways` = 64 usable slots
+should not thrash, so something inflates demand, and hardware prefetch over 32
+streams was the candidate.
+
+**The counters exist on this silicon and are not reachable from a script.**
+`/usr/share/kpep` lists `L1D_CACHE_MISS_LD` and `L1D_CACHE_MISS_LD_NONSPEC` —
+their difference IS the speculative/prefetch portion, which is exactly the
+measurement. But `xctrace record` has no event-selection flag; the stock
+`CPU Counters` template is pinned to Guided/"CPU Bottlenecks" (cycles and
+bottleneck categories only); and although the recorded trace's own metadata
+lists an **`l1d_miss_sampling`** counting mode, the template is an
+`NSKeyedArchiver` archive and only the GUI selects the mode. **Recorded as a
+tooling limit, not a dead end**: saving a custom `.tracetemplate` once from
+Instruments makes `xctrace --template <path>` scriptable thereafter.
+
+`benches/sme/streamcount.c` substituted a behavioural test — hold the stride,
+vary how many rows interleave, same total reads:
+
+| P | step 16 (8 sets) | step 17 (128 sets) | ratio |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.969 | 0.681 | 1.42× |
+| 2 | 0.738 | 0.404 | 1.83× |
+| 4 | 0.511 | 0.327 | 1.56× |
+| 8 | 0.528 | 0.422 | 1.25× |
+| 16 | 0.423 | 0.368 | 1.15× |
+| 32 | 0.345 | 0.289 | 1.19× |
+
+It argues *against* prefetch-over-many-streams — the gap **shrinks** as streams
+grow, and a **1.42× gap already exists at P=1**, where no row can contend with
+another. **But its power is low and that is why nothing is concluded from it:**
+at P=32 it reproduces a 1.19× stride gap where the compile-time-`PANEL` version
+measures 3.05×, because making `P` runtime blocked the unrolling and washed the
+effect out. A null from an instrument that only shows a third of the phenomenon
+is not a refutation.
+
+**State of the mechanism, honestly.** Established: monotone in sets reached, plus
+a second smaller power-of-two penalty (§5h). Not established: why the thrash
+happens below the nominal way limit. Prefetch is less likely and not excluded.
+Closing it needs the two `L1D_CACHE_MISS_LD*` counters — one GUI step here, or
+Linux `perf` on the arch box, which exposes them directly.
+
 ## 6. The table that changes
 
 Threaded, `nn4` vs NumPy, from §3's ratios applied to the S50 `-s50final` run. **Projected,

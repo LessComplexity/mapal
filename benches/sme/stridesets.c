@@ -84,8 +84,10 @@ int main(void) {
     int reps = getenv("REPS") ? atoi(getenv("REPS")) : 9;
 
     // step in LINES, and what each model predicts about it
-    const long steps[] = {16, 48, 80, 112, 64, 192, 128, 384, 17, 129};
-    const int n = sizeof(steps) / sizeof(steps[0]);
+    long steps[] = {16, 48, 80, 112, 64, 192, 128, 384, 17, 129};
+    int n = sizeof(steps) / sizeof(steps[0]);
+    // Single-step mode, for running one arm under a profiler.
+    if (getenv("ONLY_STEP")) { steps[0] = atol(getenv("ONLY_STEP")); n = 1; }
 
     printf("plan-s51 H2 follow-up #3 -- SET COUNT or POWER OF TWO?\n");
     printf("32 rows, %d elements each, 1 MB touched, best of %d. Only the stride varies.\n\n",
