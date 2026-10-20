@@ -1,3 +1,15 @@
+# Next Session (S53)
+
+**S52 is logged in `sessions/2026-10-20-s52-the-ptx-leg.md` — read it first.** Branch `s52-ptx-leg`
+(local). The GPU leg exists and is measured on RTX 4090 / H100 / RTX 5090; the S53 queue is at the
+end of that log. An optimization workflow (review → design → build → measure, per the log's queue)
+was launched at S52 close; its plan lands in
+`components/backend-nvptx/plans/plan-s53-gpu-optimizations.md`.
+
+---
+
+(S52's handoff, kept below for the CPU-side items it still carries.)
+
 # Next Session (S52)
 
 Written: 2026-08-10 · end of S51 · by: Claude (category-architect)
