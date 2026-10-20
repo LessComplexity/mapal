@@ -116,18 +116,186 @@ pub enum Machine {
 /// decide which are actually read, and any fact a GPU realization needs but
 /// cannot find here is an ADR-0033 D4(b) finding to report rather than a value
 /// to invent.
+///
+/// **S52: every field is a device-query attribute** (`cuDeviceGetAttribute`,
+/// printed by `benches/gpu/devquery.cu`), so a hand-written profile is the
+/// cross-compilation spelling of a part and the probe on the part is its check
+/// — the ADR-0038 D4 pattern the SME facts follow. Nothing here is swept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Gpu {
     /// Threads per warp — the cooperation quantum. 32 on every NVIDIA part.
     pub warp: u64,
-    /// Shared memory addressable by one block, in bytes. The budget the staged
-    /// panel is sized against — the GPU reading of `l2_bytes`.
-    pub smem_bytes: u64,
     /// The launch-geometry ceiling: threads in one block.
     pub max_threads_per_block: u64,
     /// The PTX target architecture, e.g. `sm_89`. Verified against the device
     /// rather than assumed: the box GPU reports compute capability 8.9.
     pub arch: &'static str,
+    /// Streaming multiprocessors — how many blocks one wave holds, per
+    /// resident slot. A property of the part, not the architecture.
+    pub sms: u64,
+    /// 32-bit registers one thread may address (255 on every part since
+    /// Kepler). The accumulator budget — the GPU reading of `vec_regs`.
+    pub regs_per_thread: u64,
+    /// 32-bit registers one SM holds. With the per-thread estimate it bounds
+    /// how many threads are resident at once.
+    pub regs_per_sm: u64,
+    /// Shared memory one SM holds, in bytes — split between its resident
+    /// blocks. The staged panels are sized against a block's share of it.
+    pub smem_per_sm: u64,
+    /// Shared memory one block may opt in to, in bytes (above 48 KB a launch
+    /// must raise `CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES`).
+    pub smem_per_block: u64,
+    /// Shared memory the driver reserves per resident block (1 KB on sm_80+).
+    pub smem_reserved_per_block: u64,
+    /// Resident threads per SM.
+    pub max_threads_per_sm: u64,
+    /// Resident blocks per SM.
+    pub max_blocks_per_sm: u64,
+}
+
+/// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
+/// An ISA rule on every NVIDIA part, so it is not a profile field.
+pub const GPU_VEC_BYTES: u64 = 16;
+
+/// The GPU tile geometry for one tile site (any `map` folding affine reads over `k`), every number derived from
+/// [`Gpu`] facts and the site's own extents by [`TargetProfile::gpu_tile`].
+///
+/// One block computes a `bm × bn` tile of the output (`bm = ty·tm`,
+/// `bn = tx·tn`); each of its `tx·ty` threads owns a `tm × tn` register tile;
+/// the reduction axis is staged through shared memory `bk` deep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuTile {
+    pub tm: u64,
+    pub tn: u64,
+    pub tx: u64,
+    pub ty: u64,
+    pub bk: u64,
+    /// Blocks resident on one SM at this geometry.
+    pub blocks_per_sm: u64,
+    /// Shared-memory panel buffers: 1 for the register-staged kernel, ≥ 2 when
+    /// panels stream in with `cp.async` ([`TargetProfile::gpu_tile_async`]).
+    pub stages: u64,
+    /// Words of padding on each transposed-`a` panel row (async staging only).
+    pub pad_a: u64,
+}
+
+impl Gpu {
+    /// The compute capability as a number: `sm_89` → 89. The capability
+    /// table below is read off it — ISA rules, not part facts.
+    pub fn sm(&self) -> u64 {
+        self.arch
+            .trim_start_matches("sm_")
+            .trim_end_matches('a')
+            .parse()
+            .unwrap_or(0)
+    }
+
+    /// `mma.sync` with TF32 operands and `cp.async` both arrived at sm_80.
+    pub fn has_mma_sync(&self) -> bool {
+        self.sm() >= 80
+    }
+}
+
+/// The tensor-core tile geometry for one tile site on the TF32 face (S52):
+/// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
+/// shared-memory buffers. Derived by [`TargetProfile::gpu_mma_tile`].
+///
+/// A warp owns a `wm × wn` output tile of `mt × nt` m16n8 tiles; the block is
+/// `warps_y × warps_x` warps. Panels are row-major in shared memory with their
+/// rows padded (`pad_a`, `pad_b` words) so a fragment load hits 32 banks once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuMmaTile {
+    pub mt: u64,
+    pub nt: u64,
+    pub warps_x: u64,
+    pub warps_y: u64,
+    pub bk: u64,
+    pub stages: u64,
+    pub pad_a: u64,
+    pub pad_b: u64,
+    pub blocks_per_sm: u64,
+}
+
+/// Registers a tensor-core thread spends on addresses and loop state, beyond
+/// accumulators and fragments. Policy, read off ptxas reports (S52): the
+/// 64×32 kernel used 120 registers for 64 accumulators and 24 fragments.
+pub const MMA_ADDR_REGS: u64 = 32;
+
+/// `mma.sync.m16n8k8`'s shape — an ISA rule.
+pub const MMA_M: u64 = 16;
+pub const MMA_N: u64 = 8;
+pub const MMA_K: u64 = 8;
+
+impl GpuMmaTile {
+    pub fn wm(&self) -> u64 {
+        self.mt * MMA_M
+    }
+    pub fn wn(&self) -> u64 {
+        self.nt * MMA_N
+    }
+    pub fn bm(&self) -> u64 {
+        self.warps_y * self.wm()
+    }
+    pub fn bn(&self) -> u64 {
+        self.warps_x * self.wn()
+    }
+    pub fn threads(&self, warp: u64) -> u64 {
+        self.warps_x * self.warps_y * warp
+    }
+    pub fn lda(&self) -> u64 {
+        self.bk + self.pad_a
+    }
+    pub fn ldb(&self) -> u64 {
+        self.bn() + self.pad_b
+    }
+    /// 32-bit words one stage holds: the `bm × bk` A panel and the `bk × bn`
+    /// B panel, each at its padded row length.
+    pub fn stage_words(&self) -> u64 {
+        self.bm() * self.lda() + self.bk * self.ldb()
+    }
+    pub fn smem_bytes(&self) -> u64 {
+        self.stages * self.stage_words() * 4
+    }
+}
+
+/// The smallest row padding, in 32-bit words and a multiple of four (so every
+/// row stays 16-byte aligned for `cp.async`), under which one warp's fragment
+/// load touches each of the 32 banks once. `lane → (row, col)` is the
+/// fragment's access pattern; this is the bank-geometry deduction the CPU's
+/// move-panel rung makes for cache sets, applied to shared memory.
+pub(crate) fn conflict_free_pad(ld: u64, pattern: impl Fn(u64) -> (u64, u64)) -> Option<u64> {
+    (0..32).step_by(4).find(|pad| {
+        let mut banks = [false; 32];
+        (0..32).all(|lane| {
+            let (row, col) = pattern(lane);
+            let bank = ((row * (ld + pad) + col) % 32) as usize;
+            !std::mem::replace(&mut banks[bank], true)
+        })
+    })
+}
+
+impl GpuTile {
+    pub fn bm(&self) -> u64 {
+        self.ty * self.tm
+    }
+    pub fn bn(&self) -> u64 {
+        self.tx * self.tn
+    }
+    pub fn threads(&self) -> u64 {
+        self.tx * self.ty
+    }
+    /// Words one transposed-`a` panel row (one `k`) spans in shared memory.
+    pub fn sa(&self) -> u64 {
+        self.bm() + self.pad_a
+    }
+    /// Elements one stage holds: the transposed A panel and the B panel.
+    pub fn stage_elems(&self) -> u64 {
+        self.bk * (self.sa() + self.bn())
+    }
+    /// Dynamic shared memory one block uses, every stage.
+    pub fn smem_bytes(&self, elem_bytes: u64) -> u64 {
+        self.stages.max(1) * self.stage_elems() * elem_bytes
+    }
 }
 
 /// The ARM SME facts a profile carries, when the part has a streaming matrix
@@ -597,6 +765,267 @@ impl TargetProfile {
         }
     }
 
+    /// **The `cp.async` panel pipeline for an FMA tile (sm_80+).** Panels stream
+    /// into `stages` shared-memory buffers while earlier ones are consumed, so
+    /// the prefetch holds no registers. `a` is copied element by element into
+    /// its transposed panel — `GPU_VEC_BYTES / elem` lanes along `k` per row,
+    /// so four lanes read one 16-byte global run — and its rows are padded by
+    /// [`conflict_free_pad`] for exactly that copy pattern. `bk` is the largest
+    /// power of two for which two stages fit a block's share of shared memory
+    /// and every thread copies whole units; then as many stages as fit, up to
+    /// the number of panels. `None` on a part without `cp.async`.
+    pub fn gpu_tile_async(&self, g: GpuTile, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let gpu = self.gpu()?;
+        if !gpu.has_mma_sync() {
+            return None;
+        }
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let (bm, bn, threads) = (g.bm(), g.bn(), g.threads());
+        let pad_a = conflict_free_pad(bm, |l| (l % lanes, l / lanes))?;
+        let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let mut best = None;
+        let mut bk = lanes;
+        while bk <= k {
+            let geom = GpuTile {
+                bk,
+                stages: 2,
+                pad_a,
+                ..g
+            };
+            if geom.smem_bytes(e) > share {
+                break;
+            }
+            let whole =
+                (bm * bk).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads);
+            if k.is_multiple_of(bk) && whole {
+                best = Some(geom);
+            }
+            bk *= 2;
+        }
+        let geom = best?;
+        let stages = (share / (geom.stage_elems() * e)).min(k / geom.bk).max(2);
+        Some(GpuTile { stages, ..geom })
+    }
+
+    /// **The tensor-core geometry for a `rows × c × k` f32 site on the TF32
+    /// face** — [`Self::gpu_tile`]'s rules with an `m16n8` tile as the unit.
+    ///
+    /// 1. **Warp tile.** Each m16n8 tile holds 4 f32 accumulators per thread;
+    ///    the most tiles (a power of two) whose accumulators fit half of
+    ///    `regs_per_thread`, square-most: 255 registers ⇒ 16 tiles ⇒ 4 × 4,
+    ///    a 64 × 32 warp tile.
+    /// 2. **Warps per block** from `regs_per_sm` over twice the accumulators,
+    ///    split across [`GPU_RESIDENT_BLOCKS`]; halved while the grid has fewer
+    ///    blocks than SMs.
+    /// 3. **Padding** from the fragment access patterns ([`conflict_free_pad`]).
+    /// 4. **Panel depth and stages.** `bk` is the largest power of two (≥ the
+    ///    mma's k) for which two stages fit a block's share of shared memory
+    ///    and every thread copies whole 16-byte chunks; then as many stages as
+    ///    the share holds, up to the number of panels.
+    ///
+    /// `wide` (S52 rung, the SASS review's rule): instead of "accumulators ≤
+    /// half the file", count what a thread actually holds — accumulators, both
+    /// buffers of its A and B fragments (`2·(4·mt + 2·nt)`), and
+    /// [`MMA_ADDR_REGS`] of addresses — against the whole file. 255 registers
+    /// ⇒ 32 tiles, 4 × 8 = a 64 × 64 warp tile (CUTLASS's), 224 registers.
+    pub fn gpu_mma_tile(&self, rows: u64, c: u64, k: u64, wide: bool) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        if !g.has_mma_sync() {
+            return None;
+        }
+        let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
+        let (mt, nt, regs_est) = if wide {
+            // nt = 2·mt keeps the warp tile square (16·mt = 8·nt).
+            let held = |mt: u64| {
+                let nt = 2 * mt;
+                acc_per_tile * mt * nt + 2 * (4 * mt + 2 * nt) + MMA_ADDR_REGS
+            };
+            let mut mt = 1;
+            while held(2 * mt) <= g.regs_per_thread {
+                mt *= 2;
+            }
+            (mt, 2 * mt, held(mt))
+        } else {
+            let budget = g.regs_per_thread / 2;
+            let mut tiles = 1;
+            while 2 * tiles * acc_per_tile <= budget {
+                tiles *= 2;
+            }
+            let mut mt = 1;
+            while mt * mt < tiles {
+                mt *= 2;
+            }
+            (mt, tiles / mt, 2 * tiles * acc_per_tile)
+        };
+        let resident_threads = g.regs_per_sm / regs_est;
+        let warps = (resident_threads / GPU_RESIDENT_BLOCKS / g.warp).max(1);
+        // Square-most block tile: warps_y·wm ≈ warps_x·wn.
+        let (wm, wn) = (mt * MMA_M, nt * MMA_N);
+        let aspect = |wy: u64| {
+            let (h, w) = (wy * wm, warps / wy * wn);
+            h.max(w) / h.min(w)
+        };
+        let mut warps_y = (0..=warps.ilog2())
+            .map(|p| 1u64 << p)
+            .min_by_key(|&wy| aspect(wy))
+            .unwrap_or(1);
+        let mut warps_x = warps / warps_y;
+        let mut halve_x = true;
+        while (rows / (warps_y * wm)) * (c / (warps_x * wn)) < g.sms && warps_x * warps_y > 1 {
+            if halve_x && warps_x > 1 {
+                warps_x /= 2;
+            } else if warps_y > 1 {
+                warps_y /= 2;
+            }
+            halve_x = !halve_x;
+        }
+        let (bm, bn) = (warps_y * wm, warps_x * wn);
+        if rows % bm != 0 || c % bn != 0 {
+            return None;
+        }
+        let threads = warps_x * warps_y * g.warp;
+        let blocks_per_sm = (resident_threads / threads)
+            .min(g.max_threads_per_sm / threads)
+            .min(g.max_blocks_per_sm)
+            .max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+
+        // Fragment patterns of m16n8k8 (PTX ISA): lane = 4·group + t.
+        // A (row-major): row = group, col = t.  B (k × n): row = t, col = group.
+        let pad_b = conflict_free_pad(bn, |l| (l % 4, l / 4))?;
+        let mut best = None;
+        let mut bk = MMA_K;
+        while bk <= k {
+            let pad_a = conflict_free_pad(bk, |l| (l / 4, l % 4))?;
+            let geom = GpuMmaTile {
+                mt,
+                nt,
+                warps_x,
+                warps_y,
+                bk,
+                stages: 2,
+                pad_a,
+                pad_b,
+                blocks_per_sm,
+            };
+            let whole =
+                (bm * bk / 4).is_multiple_of(threads) && (bk * bn / 4).is_multiple_of(threads);
+            if geom.smem_bytes() > share {
+                break;
+            }
+            if k.is_multiple_of(bk) && whole {
+                best = Some(geom);
+            }
+            bk *= 2;
+        }
+        let geom = best?;
+        let stages = (share / (geom.stage_words() * 4)).min(k / geom.bk).max(2);
+        Some(GpuMmaTile { stages, ..geom })
+    }
+
+    /// **The GPU tile geometry for a `rows × c × k` site — the same three
+    /// budgets the CPU rungs read, at their GPU locations.** `None` when the
+    /// site does not divide into any geometry this derives; the emitter then
+    /// takes the one-thread-per-cell kernel, which is slower and never wrong.
+    ///
+    /// | CPU rule | GPU reading here |
+    /// | --- | --- |
+    /// | [`Self::tile_i`]: half the vector file holds accumulators | half of `regs_per_thread` holds the `tm × tn` register tile |
+    /// | [`Self::tile_kc`]: half of L2 holds one packed panel | a block's share of `smem_per_sm` holds the `bk`-deep A and B panels |
+    /// | the parallel driver's slice count | blocks: at least one per SM |
+    ///
+    /// Steps, each a fact or a stated policy:
+    /// 1. **Register tile.** The largest square power-of-two `t`, at least one
+    ///    vector wide, with `t² · regs(elem) ≤ regs_per_thread / 2` (the CPU's
+    ///    half-the-file headroom). f32 on 255 registers: `8 × 8`.
+    /// 2. **Threads per block.** Registers per thread are estimated at twice
+    ///    the accumulators; `regs_per_sm` over that is the resident-thread
+    ///    budget, split across [`GPU_RESIDENT_BLOCKS`] blocks so one computes
+    ///    while another waits at the barrier. 65 536 / 128 / 2 = 256 = 16 × 16.
+    /// 3. **Fill the machine.** While the grid has fewer blocks than SMs, halve
+    ///    the thread grid (x then y), down to one warp — a block left idle is a
+    ///    whole SM idle, which no tile shape wins back.
+    /// 4. **Panel depth.** Blocks per SM = the tightest of registers, threads
+    ///    and the block-slot limit; `bk` is the largest power of two whose two
+    ///    panels fit one block's share of shared memory, dividing `k`, at least
+    ///    one vector deep, and loadable in whole vectors by every thread.
+    pub fn gpu_tile(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let g = self.gpu()?;
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let regs_per_elem = e.div_ceil(4);
+
+        let budget = g.regs_per_thread / 2;
+        let mut t = lanes;
+        while (2 * t) * (2 * t) * regs_per_elem <= budget {
+            t *= 2;
+        }
+        let (tm, tn) = (t, t);
+        let regs_est = 2 * tm * tn * regs_per_elem;
+
+        let resident_threads = g.regs_per_sm / regs_est;
+        let threads = (resident_threads / GPU_RESIDENT_BLOCKS).min(g.max_threads_per_block);
+        // Square-most power-of-two split of the thread grid, x the wider.
+        let mut tx = 1;
+        while tx * tx < threads {
+            tx *= 2;
+        }
+        let mut ty = (threads / tx).max(1);
+
+        let mut halve_x = true;
+        while (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
+            if halve_x && tx > 1 {
+                tx /= 2;
+            } else if ty > 1 {
+                ty /= 2;
+            }
+            halve_x = !halve_x;
+        }
+
+        let geom = |bk| GpuTile {
+            tm,
+            tn,
+            tx,
+            ty,
+            bk,
+            blocks_per_sm: 0,
+            stages: 1,
+            pad_a: 0,
+        };
+        let (bm, bn, threads) = (geom(0).bm(), geom(0).bn(), tx * ty);
+        if rows % bm != 0 || c % bn != 0 {
+            return None;
+        }
+        let blocks_per_sm = (resident_threads / threads)
+            .min(g.max_threads_per_sm / threads)
+            .min(g.max_blocks_per_sm)
+            .max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+
+        let loads_whole = |bk: u64| {
+            (bm * bk / lanes).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads)
+        };
+        let mut bk = lanes;
+        let mut best = None;
+        while bk <= k && (bm + bn) * bk * e <= share {
+            if k.is_multiple_of(bk) && loads_whole(bk) {
+                best = Some(bk);
+            }
+            bk *= 2;
+        }
+        Some(GpuTile {
+            blocks_per_sm,
+            ..geom(best?)
+        })
+    }
+
     /// The streaming matrix unit's facts, when this part has one. Same seam
     /// discipline as [`TargetProfile::gpu`]: a profile without SME reaching an
     /// SME-only path is a `None`, never a wrong constant.
@@ -915,32 +1344,96 @@ pub const RAPTORLAKE_INLINE: TargetProfile = TargetProfile {
 };
 
 /// NVIDIA Ada (`sm_89`) — the box GPU, an RTX 4070 Ti (compute capability 8.9,
-/// driver 610.43.03, 12 GB). plan-s41 step 1.
+/// driver 610.43.03, 12 GB). plan-s41 step 1; S52 gave it the facts the tile
+/// geometry reads ([`TargetProfile::gpu_tile`]).
 ///
-/// **No realization consumes this yet.** It exists so the GPU class is
-/// expressible and the resolver knows the name; steps 3–4 build the realization
-/// that reads it. The CPU-shaped fields are inherited from [`GENERIC`] and are
-/// **placeholders, not GPU measurements** — `vec_bytes`/`vec_regs`/`l2_bytes`
-/// describe a vector register file and a cache hierarchy, and their GPU
-/// readings (per-thread registers, shared memory) are the open question S38
-/// already flagged: *"`<TJ x elem>` means SIMD lanes on CPU and per-thread
-/// registers on GPU — one record field, two readings."* Which of them a GPU
-/// realization actually reads, and which need their own value, is ADR-0033
-/// D4(a)/(b) and is answered by building, not here.
+/// The CPU-shaped fields are inherited from [`GENERIC`]: on a GPU profile they
+/// describe the **host** that runs everything outside an offloaded site, and
+/// no GPU realization reads them. S52 deliberately did NOT give them GPU
+/// readings (plan-s41 §2.1 proposed `vec_bytes` → per-thread registers,
+/// `l2_bytes` → shared memory): one field with two readings is the `l2_bytes`
+/// per-core/shared ambiguity that cost S45 a session, so every GPU quantity is
+/// its own [`Gpu`] field.
 ///
-/// `sm_89` has 4th-generation tensor cores but no MXFP block-scale (that is
-/// `sm_100`), so those intrinsics are emittable and not runnable on this part.
-/// Irrelevant to the S41 leg — `mma` is out of scope (plan-s41 §7).
+/// `sm_89` has 4th-generation tensor cores; `mma` is the precision-face rung
+/// (ADR-0032 D1/D3), not this one.
 pub const CUDA_ADA: TargetProfile = TargetProfile {
     name: "cuda-ada",
+    machine: Machine::Gpu(ADA_SM),
+    ..GENERIC
+};
+
+/// The `sm_89` per-SM facts (CUDA C Programming Guide, compute capability 8.9),
+/// with the RTX 4070 Ti's 60 SMs.
+const ADA_SM: Gpu = Gpu {
+    warp: 32,
+    max_threads_per_block: 1024,
+    arch: "sm_89",
+    sms: 60,
+    regs_per_thread: 255,
+    regs_per_sm: 65536,
+    smem_per_sm: 100 * 1024,
+    smem_per_block: 99 * 1024,
+    smem_reserved_per_block: 1024,
+    max_threads_per_sm: 1536,
+    max_blocks_per_sm: 24,
+};
+
+/// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
+/// cross-compilation spelling, `benches/gpu/devquery.cu` on the box is its check.
+pub const RTX_4090: TargetProfile = TargetProfile {
+    name: "rtx-4090",
+    machine: Machine::Gpu(Gpu { sms: 128, ..ADA_SM }),
+    ..GENERIC
+};
+
+/// H100 SXM5 — Hopper (`sm_90`), 132 SMs, 228 KB shared memory per SM.
+pub const H100: TargetProfile = TargetProfile {
+    name: "h100",
     machine: Machine::Gpu(Gpu {
-        warp: 32,
-        smem_bytes: 48 * 1024,
-        max_threads_per_block: 1024,
-        arch: "sm_89",
+        arch: "sm_90",
+        sms: 132,
+        smem_per_sm: 228 * 1024,
+        smem_per_block: 227 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        ..ADA_SM
     }),
     ..GENERIC
 };
+
+/// H100 PCIe — the same Hopper SM as [`H100`], 114 of them.
+pub const H100_PCIE: TargetProfile = TargetProfile {
+    name: "h100-pcie",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_90",
+        sms: 114,
+        smem_per_sm: 228 * 1024,
+        smem_per_block: 227 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// RTX 5090 — consumer Blackwell (`sm_120`, not the datacenter `sm_100`),
+/// 170 SMs.
+pub const RTX_5090: TargetProfile = TargetProfile {
+    name: "rtx-5090",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_120",
+        sms: 170,
+        max_blocks_per_sm: 32,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// How many blocks the thread budget is split across on one SM: two, so one
+/// computes while the other waits at the panel barrier. Policy, like
+/// [`Sme::panel_l1d_ratio`] — not a property of the silicon.
+pub const GPU_RESIDENT_BLOCKS: u64 = 2;
 
 /// Apple M4 with the streaming matrix unit enabled: [`APPLE_M`] plus the SME
 /// facts measured on the part (`benches/sme/svl.c` — SVL 64 B, 4 f32 tiles;
@@ -1007,11 +1500,15 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 7] = [
+const PROFILES: [&TargetProfile; 11] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
     &CUDA_ADA,
+    &RTX_4090,
+    &H100,
+    &H100_PCIE,
+    &RTX_5090,
     &APPLE_M4_SME,
     &RAPTORLAKE,
     &RAPTORLAKE_INLINE,
@@ -1993,8 +2490,68 @@ mod tests {
             "verified against the device: compute capability 8.9 (RTX 4070 Ti)"
         );
         assert!(
-            g.smem_bytes < CUDA_ADA.l2_bytes,
-            "smem is the smaller budget"
+            g.smem_per_block <= g.smem_per_sm,
+            "a block cannot opt in to more than its SM holds"
+        );
+    }
+
+    /// The GPU tile geometry is arithmetic over device facts — these pins are
+    /// the derivation worked by hand, so a changed rule shows up as a changed
+    /// number here rather than as a slower kernel on a box.
+    #[test]
+    fn gpu_tile_geometry_is_derived_from_device_facts() {
+        let f32 = Ty::f32();
+        let g = |p: &TargetProfile, n| {
+            let x = p.gpu_tile(n, n, n, &f32).expect("divisible square site");
+            (x.bm(), x.bn(), x.threads(), x.bk, x.blocks_per_sm)
+        };
+        // 255 registers ⇒ 8×8 accumulators; 65 536 / 128 / 2 ⇒ 256 threads;
+        // 4090 4096²: 1024 blocks ≥ 128 SMs, 2 per SM ⇒ 49 KB ⇒ bk 32.
+        assert_eq!(g(&RTX_4090, 4096), (128, 128, 256, 32, 2));
+        // 1024²: 64 blocks < 128 SMs ⇒ halve x once ⇒ 128 blocks.
+        assert_eq!(g(&RTX_4090, 1024), (128, 64, 128, 32, 4));
+        // H100's 228 KB per SM doubles the panel depth.
+        assert_eq!(g(&H100, 4096), (128, 128, 256, 64, 2));
+        // 132 SMs: 128 blocks is still short ⇒ halve y too.
+        assert_eq!(g(&H100, 1024), (64, 64, 64, 32, 8));
+        // A CPU profile has no GPU geometry, and an indivisible site has none.
+        assert_eq!(GENERIC.gpu_tile(4096, 4096, 4096, &f32), None);
+        assert_eq!(RTX_4090.gpu_tile(1000, 1000, 1000, &f32), None);
+    }
+
+    /// The tensor-core geometry, worked by hand from the device facts.
+    #[test]
+    fn gpu_mma_tile_is_derived_from_device_facts() {
+        let t = |p: &TargetProfile, n| {
+            let x = p
+                .gpu_mma_tile(n, n, n, false)
+                .expect("divisible square site");
+            (
+                x.wm(),
+                x.wn(),
+                x.bm(),
+                x.bn(),
+                x.bk,
+                x.stages,
+                x.pad_a,
+                x.pad_b,
+            )
+        };
+        // 255 regs ⇒ 16 m16n8 tiles = 64×32 warp tile; 65 536 / 128 / 2 ⇒ 8
+        // warps ⇒ 2×4 ⇒ 128×128. Pads: A rows of bk+4 words put the 8 fragment
+        // rows 4 banks apart; B rows of 128+8 put the 4 k-rows 8 banks apart.
+        // 4090: 49 KB per block ⇒ bk 16 (two 18.4 KB stages), 2 stages.
+        assert_eq!(t(&RTX_4090, 4096), (64, 32, 128, 128, 16, 2, 4, 8));
+        // H100: 113 KB per block ⇒ bk 32 (35.8 KB) ⇒ 3 stages.
+        assert_eq!(t(&H100, 4096), (64, 32, 128, 128, 32, 3, 4, 8));
+        // Pre-sm_80 has no `mma.sync` TF32; a CPU has no tile at all.
+        assert_eq!(GENERIC.gpu_mma_tile(4096, 4096, 4096, false), None);
+        // The wide rule: 4×8 tiles (64×64 warp, 224 registers) ⇒ 292 resident
+        // threads ⇒ 4 warps per block ⇒ 2×2 warps = 128×128 (CUTLASS's).
+        let w = RTX_4090.gpu_mma_tile(4096, 4096, 4096, true).expect("wide");
+        assert_eq!(
+            (w.wm(), w.wn(), w.bm(), w.bn(), w.bk, w.stages),
+            (64, 64, 128, 128, 16, 2)
         );
     }
 

@@ -40,6 +40,14 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
         packed: Option<PackedBuffer>,
     ) {
+        // S52 GPU realization (plan-s41 steps 2–5): on a GPU profile, a float
+        // site with plain affine reads runs on the device (`func/gpu.rs` — the
+        // whole realization, selected here and nowhere else).
+        if gpu::gpu_site(site, self.profile) {
+            self.emit_tiled_map_gpu(source, target, site);
+            return;
+        }
+
         // S41 SME rung: on a part with a streaming matrix unit, on the contract
         // face, a matmul-shaped f32 site's leaf becomes one ZA outer product
         // per k instead of TI×TJ FMAs (`func/sme.rs` — the whole realization,
