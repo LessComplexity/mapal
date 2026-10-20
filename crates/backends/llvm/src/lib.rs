@@ -61,6 +61,62 @@ pub enum MovePanel {
     Force(u64, u64),
 }
 
+/// The GPU tile kernel's rungs (S52). **All on is the shipped path.** Each can be
+/// turned off only so its effect can be measured on a part — an A/B needs an
+/// OFF arm of the same compiler, the `MovePanel::Off` precedent — and a rung
+/// that shows no effect on any part is deleted, not kept as a knob.
+/// Values are identical either way: every rung moves operands, never the order
+/// a cell folds them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuRungs {
+    /// Space a thread's register-tile chunks by the bank geometry.
+    pub interleave: bool,
+    /// Fully unroll the panel's `bk` register steps.
+    pub unroll: bool,
+    /// Emit `.minnctapersm` from the derived blocks per SM.
+    pub min_blocks: bool,
+    /// Shape each warp's threads by the shared-memory wavefront.
+    pub warp: bool,
+    /// Load the next panel into registers while this one is computed.
+    pub prefetch: bool,
+    /// On a reduced face, take the tensor-core realization (`mma.sync`).
+    pub mma: bool,
+    /// Stream FMA-tile panels through shared memory with `cp.async` (sm_80+).
+    pub cp_async: bool,
+    /// Tensor-core warp tile from the whole-thread register count (64×64).
+    pub wide: bool,
+    /// Load tensor-core A fragments with `ldmatrix.x4`.
+    pub ldmatrix: bool,
+}
+
+impl Default for GpuRungs {
+    fn default() -> Self {
+        Self {
+            interleave: true,
+            unroll: true,
+            min_blocks: true,
+            warp: true,
+            prefetch: true,
+            mma: true,
+            cp_async: true,
+            wide: true,
+            ldmatrix: true,
+        }
+    }
+}
+
+/// A reduced-precision face — ADR-0032 D1's lattice below `contract`. Unlike
+/// every rung, it **changes values**, by the declared bound of its format, and
+/// is what admits the tensor-core realizations: they cannot reproduce an f32
+/// fold bit for bit. Interim form of the type-level contract (the `--contract`
+/// precedent); the oracle check for it is a bound, not bit-equality.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reduced {
+    /// f32 storage, operands rounded to TF32 (10-bit mantissa, `cvt.rna`),
+    /// f32 accumulation — `mma.sync.m16n8k8.tf32` on sm_80+.
+    Tf32,
+}
+
 /// Emission options. [`emit`] delegates to these product defaults.
 #[derive(Clone, Copy, Debug)]
 pub struct EmitOpts {
@@ -150,6 +206,10 @@ pub struct EmitOpts {
     /// value-invariant, which the differential suite enforces by running under
     /// a non-default profile.
     pub target: &'static str,
+    /// The GPU tile kernel's rungs; see [`GpuRungs`].
+    pub gpu: GpuRungs,
+    /// A reduced-precision face, when the program admits one; see [`Reduced`].
+    pub reduced: Option<Reduced>,
 }
 
 impl Default for EmitOpts {
@@ -167,6 +227,8 @@ impl Default for EmitOpts {
             // `native` falls back to `generic` when detection fails, and tests
             // that must be reproducible across machines pin `generic` by name.
             target: "native",
+            gpu: GpuRungs::default(),
+            reduced: None,
         }
     }
 }
@@ -181,6 +243,10 @@ impl Default for EmitOpts {
 pub struct Emission {
     /// The `.ll` text — the translation unit itself (ADR-0020).
     pub text: String,
+    /// The **device** translation unit (`nvptx64`), when the profile is a GPU
+    /// and some tile site offloads: `llc` turns it into the PTX the runtime
+    /// loads (`MAPAL_PTX`). `None` on every CPU profile.
+    pub device: Option<String>,
     /// The resolved [`TargetProfile`]'s name.
     pub profile: &'static str,
 }
@@ -259,9 +325,13 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     let path_plan = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ir.path_plan(entry)))
         .ok()
         .filter(path_plan_is_acyclic);
-    let parallel = path_plan
-        .as_ref()
-        .is_some_and(|plan| !plan.is_single_path());
+    // On a GPU profile the device is the parallelism: the host runs the program
+    // around the offloaded sites sequentially. ponytail: host threads alongside
+    // the device is co-execution (ADR-0035) — add when a program needs both.
+    let parallel = profile.gpu().is_none()
+        && path_plan
+            .as_ref()
+            .is_some_and(|plan| !plan.is_single_path());
     let body_sites = if parallel {
         parallel_body_sites(ir, entry, path_plan.as_ref().expect("parallel plan"))
     } else {
@@ -313,6 +383,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             if id == entry {
                 fe.set_perf_timing(opts.perf_timing);
             }
+            fe.set_gpu_rungs(opts.gpu, opts.reduced);
             if let Some(&site) = body_sites.get(id) {
                 fe.set_task_body_site(site);
             }
@@ -347,6 +418,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Two kernels, detected independently: `@mapal_sme_panel(` cannot match
     // `@mapal_sme_panel_acc(` because of the paren, so the KC variant appears
     // only where the KC nest actually called it.
+    if funcs.contains("@mapal_gpu_tile(") {
+        out.push_str(crate::func::gpu::GPU_DECLS);
+    }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
@@ -378,8 +452,15 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         }
     }
     out.push_str(&emit_main_wrapper(ir));
+    let device = opts
+        .tiling
+        .then(|| {
+            crate::func::gpu::device_module(ir, profile, opts.contract, opts.gpu, opts.reduced)
+        })
+        .flatten();
     Ok(Emission {
         text: out,
+        device,
         profile: profile.name,
     })
 }

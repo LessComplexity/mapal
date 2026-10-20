@@ -67,7 +67,18 @@ impl<'a> FnEmit<'a> {
             profile,
             heap_ok: false,
             heap_used: false,
+            gpu_rungs: crate::GpuRungs::default(),
+            reduced: None,
         }
+    }
+
+    pub(crate) fn set_gpu_rungs(
+        &mut self,
+        rungs: crate::GpuRungs,
+        reduced: Option<crate::Reduced>,
+    ) {
+        self.gpu_rungs = rungs;
+        self.reduced = reduced;
     }
 
     pub(crate) fn set_perf_timing(&mut self, perf_timing: bool) {

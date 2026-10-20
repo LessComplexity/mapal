@@ -353,6 +353,10 @@ pub(crate) struct FnEmit<'a> {
     /// This emitter lowered at least one block to the arena ⟹ it owes a
     /// teardown.
     heap_used: bool,
+    /// The GPU kernel rungs (S52) — the host needs them because a rung can
+    /// change the launch (the prefetch rung's panel depth).
+    gpu_rungs: crate::GpuRungs,
+    reduced: Option<crate::Reduced>,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -380,6 +384,9 @@ pub(crate) fn packing_site(site: &TileSite, profile: &TargetProfile, contract: b
     site.rows > 1
         && site.b.ci == 0
         && site.b.ksplit.is_none()
+        // A GPU site stages its panels in shared memory on the device; a host
+        // pack would be copied across the bus and never read.
+        && !gpu::gpu_site(site, profile)
         && (!crate::func::sme::sme_shape(site, profile, contract)
             || profile.pack_pays(site.rows, site.c, site.k, &site.elem))
 }
@@ -608,6 +615,7 @@ mod conv;
 mod core;
 mod drive;
 mod frame;
+pub(crate) mod gpu;
 mod ops;
 mod packed;
 mod sme;

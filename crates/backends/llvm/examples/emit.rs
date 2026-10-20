@@ -1,5 +1,5 @@
 //! Emit textual LLVM IR for a `.mapal` file (ADR-0020; dev tool — the future
-//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>]`
+//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>]`
 //! (writes `<file>.ll` next to the source, `<file>_perf.ll` with `--perf`, or
 //! stdout with `-`; `--rewrite` rewrites the lowered IR before emission).
 
@@ -9,12 +9,13 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
         eprintln!(
-            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>]"
+            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>]"
         );
         return ExitCode::from(2);
     };
     let mut to_stdout = false;
     let mut rewrite = false;
+    let mut device_out: Option<String> = None;
     let mut opts = mapal_backend_llvm::EmitOpts::default();
     for a in args {
         match a.as_str() {
@@ -55,12 +56,44 @@ fn main() -> ExitCode {
             // Machine facts by name (plan-s31-target-profiles): `generic` is
             // the default and reproduces today's literals; `apple-m` and
             // `zen3` differ. Never probed — a box run names its machine.
+            // S52: where the device (nvptx64) translation unit goes on a GPU
+            // profile. Required when one is produced — a GPU program whose
+            // kernels were silently dropped would fail only at launch.
+            // S52: measurement-only OFF arms for the GPU rungs (an A/B needs
+            // the same compiler with one rung off). Unknown names are errors.
+            _ if a.starts_with("--gpu-off=") => {
+                for rung in a["--gpu-off=".len()..].split(',') {
+                    match rung {
+                        "interleave" => opts.gpu.interleave = false,
+                        "unroll" => opts.gpu.unroll = false,
+                        "min-blocks" => opts.gpu.min_blocks = false,
+                        "warp" => opts.gpu.warp = false,
+                        "prefetch" => opts.gpu.prefetch = false,
+                        "mma" => opts.gpu.mma = false,
+                        "async" => opts.gpu.cp_async = false,
+                        "wide" => opts.gpu.wide = false,
+                        "ldmatrix" => opts.gpu.ldmatrix = false,
+                        other => {
+                            eprintln!(
+                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix)"
+                            );
+                            return ExitCode::from(2);
+                        }
+                    }
+                }
+            }
+            // A reduced-precision face (ADR-0032 D1): changes values by the
+            // format's bound and admits the tensor cores.
+            "--precision=tf32" => opts.reduced = Some(mapal_backend_llvm::Reduced::Tf32),
+            _ if a.starts_with("--device-out=") => {
+                device_out = Some(a["--device-out=".len()..].to_owned());
+            }
             _ if a.starts_with("--target=") => {
                 opts.target = a["--target=".len()..].to_owned().leak();
             }
             other => {
                 eprintln!(
-                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>])"
+                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>])"
                 );
                 return ExitCode::from(2);
             }
@@ -91,8 +124,20 @@ fn main() -> ExitCode {
     } else {
         ir
     };
-    match mapal_backend_llvm::emit_with_opts(&ir, &opts) {
-        Ok(ll) => {
+    match mapal_backend_llvm::emit_detailed(&ir, &opts) {
+        Ok(em) => {
+            match (&em.device, &device_out) {
+                (Some(dev), Some(p)) => std::fs::write(p, dev).expect("write device .ll"),
+                (Some(_), None) => {
+                    eprintln!(
+                        "emit: target `{}` offloads tile sites; pass --device-out=<file.ll>",
+                        em.profile
+                    );
+                    return ExitCode::from(2);
+                }
+                (None, _) => {}
+            }
+            let ll = em.text;
             if to_stdout {
                 print!("{ll}");
             } else {
