@@ -1,0 +1,517 @@
+Warning: Permanently added '[137.175.22.196]:60103' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+== rtx-3090 sm_86 2026-10-21T11:27:00Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA GeForce RTX 3090, 580.173.02, 2100 MHz, 210 MHz, 220.00 W, 30, Enabled
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- differential (GPU stdout vs oracle)
+PASS at_256 -305.0057 -120.666664 -19.317451 
+PASS at_256.off-l2-window -305.0057 -120.666664 -19.317451 
+PASS at_256_c -305.059 -120.66669 -19.317453 
+PASS at_256_c.off-l2-window -305.059 -120.66669 -19.317453 
+PASS bt_256 713.7606 -73.47622 -147.7619 
+PASS bt_256_c 713.7606 -73.47622 -147.7619 
+PASS deep_4096x1024x8192 -42.25009 120.28557 -226.92068 
+PASS deep_4096x1024x8192.off-raster -42.25009 120.28557 -226.92068 
+PASS deep_4096x1024x8192_c -74.48213 120.28546 -226.92055 
+PASS deep_4096x1024x8192_c.off-raster -74.48213 120.28546 -226.92055 
+PASS fmod_64 23.55564 -0.15554532 1.9555535 
+PASS fmod_64.off-l2-window 23.55564 -0.15554532 1.9555535 
+PASS fmod_64_c 23.555641 -0.1555446 1.9555538 
+PASS fmod_64_c.off-l2-window 23.555641 -0.1555446 1.9555538 
+PASS odd_100 66.56736 21.77776 11.936509 
+PASS odd_100.off-l2-window 66.56736 21.77776 11.936509 
+PASS odd_100_c 66.57021 21.77777 11.936512 
+PASS odd_100_c.off-l2-window 66.57021 21.77777 11.936512 
+PASS px_bias_128 -267.8275 26.498428 -53.08889 
+PASS px_bias_128.off-l2-window -267.8275 26.498428 -53.08889 
+PASS px_bias_128_c -267.82483 26.498428 -53.088882 
+PASS px_bias_128_c.off-l2-window -267.82483 26.498428 -53.088882 
+PASS px_diamond_128 5919.462 3438.9448 -452.9649 
+PASS px_diamond_128.off-l2-window 5919.462 3438.9448 -452.9649 
+PASS px_diamond_128_c 5919.354 3438.9443 -452.96567 
+PASS px_diamond_128_c.off-l2-window 5919.354 3438.9443 -452.96567 
+PASS px_epi_128 16390.85 14.849215 -25.944445 
+PASS px_epi_128.off-l2-window 16390.85 14.849215 -25.944445 
+PASS px_epi_128_c 16390.848 14.849215 -25.94444 
+PASS px_epi_128_c.off-l2-window 16390.848 14.849215 -25.94444 
+PASS px_ew_128 297.26965 -9.238095 -20.174603 
+PASS px_ew_128_c 297.26965 -9.238095 -20.174603 
+PASS px_fanout_128 13.769611 27.69843 -53.88889 16390.85 14.849215 -25.944445 6666.5313 233.31743 -93.42579 
+PASS px_fanout_128.off-l2-window 13.769611 27.69843 -53.88889 16390.85 14.849215 -25.944445 6666.5313 233.31743 -93.42579 
+PASS px_fanout_128_c 13.777302 27.69843 -53.88888 16390.848 14.849215 -25.94444 6666.472 233.31702 -93.42625 
+PASS px_fanout_128_c.off-l2-window 13.777302 27.69843 -53.88888 16390.848 14.849215 -25.94444 6666.472 233.31702 -93.42625 
+PASS px_indep_128 98.1268 45.138992 10.271946 
+PASS px_indep_128.off-l2-window 98.1268 45.138992 10.271946 
+PASS px_indep_128_c 98.13161 45.138985 10.271954 
+PASS px_indep_128_c.off-l2-window 98.13161 45.138985 10.271954 
+PASS px_loop_256 111330.02 0 0 
+PASS px_loop_256.off-l2-window 111330.02 0 0 
+PASS px_loop_256_c 111329.97 0 0 
+PASS px_loop_256_c.off-l2-window 111329.97 0 0 
+PASS px_mlp2_128 169301.19 -808.24786 395.66037 -1640.2864 -34.659378 278.81058 
+PASS px_mlp2_128.off-l2-window 169301.19 -808.24786 395.66037 -1640.2864 -34.659378 278.81058 
+PASS px_mlp2_128_c 169301.31 -808.24805 395.6601 -1640.3129 -34.659283 278.8107 
+PASS px_mlp2_128_c.off-l2-window 169301.31 -808.24805 395.6601 -1640.3129 -34.659283 278.8107 
+PASS px_mlp_128 3333.2656 116.658714 -46.712894 
+PASS px_mlp_128.off-l2-window 3333.2656 116.658714 -46.712894 
+PASS px_mlp_128_c 3333.236 116.65851 -46.713123 
+PASS px_mlp_128_c.off-l2-window 3333.236 116.65851 -46.713123 
+PASS px_pro_128 3.4424028 6.9246073 -13.472222 
+PASS px_pro_128.off-l2-window 3.4424028 6.9246073 -13.472222 
+PASS px_pro_128_c 3.4443254 6.9246073 -13.47222 
+PASS px_pro_128_c.off-l2-window 3.4443254 6.9246073 -13.47222 
+PASS px_residual_128 -1.3742638 22.412716 -52.603176 
+PASS px_residual_128.off-l2-window -1.3742638 22.412716 -52.603176 
+PASS px_residual_128_c -1.3667259 22.412716 -52.60317 
+PASS px_residual_128_c.off-l2-window -1.3667259 22.412716 -52.60317 
+PASS px_rowsum_128 13.770172 -114.03167 164.57156 
+PASS px_rowsum_128.off-l2-window 13.770172 -114.03167 164.57156 
+PASS px_rowsum_128_c 13.776337 -114.03165 164.57149 
+PASS px_rowsum_128_c.off-l2-window 13.776337 -114.03165 164.57149 
+PASS rm_128_f64 13.76190476188507 27.698412698412707 -53.88888888888889 
+PASS rm_128_f64.off-l2-window 13.76190476188507 27.698412698412707 -53.88888888888889 
+PASS rm_128_f64_c 13.761904761886747 27.69841269841266 -53.88888888888892 
+PASS rm_128_f64_c.off-l2-window 13.761904761886747 27.69841269841266 -53.88888888888892 
+PASS rm_128x384x96 -24.066116 -48.190468 226.60318 
+PASS rm_128x384x96.off-l2-window -24.066116 -48.190468 226.60318 
+PASS rm_128x384x96_c -24.068176 -48.19047 226.60318 
+PASS rm_128x384x96_c.off-l2-window -24.068176 -48.19047 226.60318 
+PASS rm_256 623.73267 -136.60313 11.9365 
+PASS rm_256.off-l2-window 623.73267 -136.60313 11.9365 
+PASS rm_256_c 623.6497 -136.60312 11.93653 
+PASS rm_256_c.off-l2-window 623.6497 -136.60312 11.93653 
+PASS wide_2048x2048x64 12.6833515 -225.71428 23.460325 
+PASS wide_2048x2048x64.off-l2-window 12.6833515 -225.71428 23.460325 
+PASS wide_2048x2048x64_c 11.990871 -225.71425 23.460327 
+PASS wide_2048x2048x64_c.off-l2-window 11.990871 -225.71425 23.460327 
+differential: 80 pass, 0 fail
+TRAP-PASS e2e_trap rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap.off-l2-window rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap_c rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap_c.off-l2-window rc=101 mapal trap: div_zero
+-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals
+floor prog=e2e_1024 rep=1 program n=1024 gemms=1 ops=2 ctx_ms=227.440 handle_ms=34.220 alloc_ms=0.595 gen_ms=0.383 gemm_ms=76.002 d2h_ms=0.045 after_ctx_ms=111.246 total_ms=338.686 value=13216
+floor prog=e2e_1024 rep=2 program n=1024 gemms=1 ops=2 ctx_ms=232.667 handle_ms=17.161 alloc_ms=0.601 gen_ms=0.408 gemm_ms=53.262 d2h_ms=0.051 after_ctx_ms=71.482 total_ms=304.149 value=13216
+floor prog=e2e_1024 rep=3 program n=1024 gemms=1 ops=2 ctx_ms=227.080 handle_ms=15.912 alloc_ms=0.588 gen_ms=0.375 gemm_ms=54.193 d2h_ms=0.056 after_ctx_ms=71.124 total_ms=298.204 value=13216
+floor prog=e2e_4096 rep=1 program n=4096 gemms=1 ops=2 ctx_ms=225.789 handle_ms=15.988 alloc_ms=0.700 gen_ms=0.509 gemm_ms=55.612 d2h_ms=0.043 after_ctx_ms=72.853 total_ms=298.643 value=13517
+floor prog=e2e_4096 rep=2 program n=4096 gemms=1 ops=2 ctx_ms=226.066 handle_ms=15.761 alloc_ms=0.659 gen_ms=0.507 gemm_ms=55.533 d2h_ms=0.041 after_ctx_ms=72.501 total_ms=298.567 value=13517
+floor prog=e2e_4096 rep=3 program n=4096 gemms=1 ops=2 ctx_ms=228.228 handle_ms=16.384 alloc_ms=0.641 gen_ms=0.585 gemm_ms=58.277 d2h_ms=0.044 after_ctx_ms=75.932 total_ms=304.161 value=13517
+floor prog=mm_share_1024 rep=1 program n=1024 gemms=2 ops=3 ctx_ms=211.173 handle_ms=17.190 alloc_ms=0.738 gen_ms=0.393 gemm_ms=55.059 d2h_ms=0.053 after_ctx_ms=73.432 total_ms=284.605 value=-2.98851e+06
+floor prog=mm_share_1024 rep=2 program n=1024 gemms=2 ops=3 ctx_ms=227.630 handle_ms=15.881 alloc_ms=0.724 gen_ms=0.364 gemm_ms=54.782 d2h_ms=0.051 after_ctx_ms=71.801 total_ms=299.432 value=-2.98851e+06
+floor prog=mm_share_1024 rep=3 program n=1024 gemms=2 ops=3 ctx_ms=232.273 handle_ms=16.150 alloc_ms=0.741 gen_ms=0.387 gemm_ms=55.413 d2h_ms=0.054 after_ctx_ms=72.745 total_ms=305.018 value=-2.98851e+06
+floor prog=mm_chain_2048 rep=1 program n=2048 gemms=2 ops=3 ctx_ms=227.234 handle_ms=17.048 alloc_ms=0.802 gen_ms=0.474 gemm_ms=53.630 d2h_ms=0.044 after_ctx_ms=71.998 total_ms=299.232 value=2.24559e+06
+floor prog=mm_chain_2048 rep=2 program n=2048 gemms=2 ops=3 ctx_ms=228.251 handle_ms=16.153 alloc_ms=0.807 gen_ms=0.406 gemm_ms=50.974 d2h_ms=0.045 after_ctx_ms=68.384 total_ms=296.634 value=2.24559e+06
+floor prog=mm_chain_2048 rep=3 program n=2048 gemms=2 ops=3 ctx_ms=228.813 handle_ms=16.511 alloc_ms=0.814 gen_ms=0.414 gemm_ms=53.502 d2h_ms=0.042 after_ctx_ms=71.282 total_ms=300.095 value=2.24559e+06
+floor prog=e2e_chain_4096 rep=1 program n=4096 gemms=2 ops=3 ctx_ms=228.492 handle_ms=16.227 alloc_ms=0.802 gen_ms=0.582 gemm_ms=60.137 d2h_ms=0.035 after_ctx_ms=77.783 total_ms=306.275 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=2 program n=4096 gemms=2 ops=3 ctx_ms=227.141 handle_ms=16.555 alloc_ms=0.785 gen_ms=0.641 gemm_ms=63.561 d2h_ms=0.041 after_ctx_ms=81.582 total_ms=308.724 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=3 program n=4096 gemms=2 ops=3 ctx_ms=234.415 handle_ms=16.095 alloc_ms=0.794 gen_ms=0.591 gemm_ms=60.644 d2h_ms=0.043 after_ctx_ms=78.167 total_ms=312.582 value=-1.91245e+06
+floor prog=loop_mm_1024_8 rep=1 program n=1024 gemms=8 ops=2 ctx_ms=238.775 handle_ms=17.496 alloc_ms=0.609 gen_ms=0.416 gemm_ms=59.024 d2h_ms=0.055 after_ctx_ms=77.600 total_ms=316.376 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=2 program n=1024 gemms=8 ops=2 ctx_ms=229.790 handle_ms=16.051 alloc_ms=0.600 gen_ms=0.365 gemm_ms=54.509 d2h_ms=0.054 after_ctx_ms=71.580 total_ms=301.370 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=3 program n=1024 gemms=8 ops=2 ctx_ms=226.362 handle_ms=16.342 alloc_ms=0.596 gen_ms=0.441 gemm_ms=58.166 d2h_ms=0.044 after_ctx_ms=75.589 total_ms=301.951 value=-1.28729e+27
+copy_rate mb=64 reps=10 h2d_pageable_ms=5.089 h2d_pageable_gbps=13.19 h2d_pinned_ms=4.991 h2d_pinned_gbps=13.45 d2h_pageable_ms=6.650 d2h_pageable_gbps=10.09 d2h_pinned_ms=5.084 d2h_pinned_gbps=13.20
+-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)
+probe prog=pt_diamond_2048 face=_exact arm=on rep=1 wall_us=570515 traced_wall_us=361560 out=[7078.077 84.026306 iter ms=13.893616999999999 ] mapal_gpu_trace_total flags=1 load_ms=138.505 lead_ms=87.340 init_ms=86.233 ctx_ms=138.833 module_ms=0.573 alloc_ms=1.749 h2d_ms=0.000 kernel_ms=4.202 gen_ms=0.144 d2h_ms=3.692 free_ms=2.222 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=1 wall_us=712406 traced_wall_us=372233 out=[7078.0957 84.03949 iter ms=12.760553999999999 ] mapal_gpu_trace_total flags=1 load_ms=142.025 lead_ms=87.729 init_ms=87.470 ctx_ms=141.450 module_ms=0.609 alloc_ms=2.106 h2d_ms=0.000 kernel_ms=2.621 gen_ms=0.175 d2h_ms=3.726 free_ms=2.305 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=2 wall_us=369466 traced_wall_us=374057 out=[7078.077 84.026306 iter ms=13.349416000000002 ] mapal_gpu_trace_total flags=1 load_ms=140.053 lead_ms=89.403 init_ms=85.951 ctx_ms=142.780 module_ms=0.527 alloc_ms=1.865 h2d_ms=0.000 kernel_ms=4.561 gen_ms=0.155 d2h_ms=3.728 free_ms=2.486 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=2 wall_us=373313 traced_wall_us=375963 out=[7078.0957 84.03949 iter ms=11.807173999999998 ] mapal_gpu_trace_total flags=1 load_ms=147.613 lead_ms=86.016 init_ms=88.462 ctx_ms=144.384 module_ms=0.603 alloc_ms=1.838 h2d_ms=0.000 kernel_ms=2.625 gen_ms=0.148 d2h_ms=3.740 free_ms=2.494 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=3 wall_us=383483 traced_wall_us=378853 out=[7078.077 84.026306 iter ms=14.653782999999999 ] mapal_gpu_trace_total flags=1 load_ms=146.361 lead_ms=88.215 init_ms=89.143 ctx_ms=144.666 module_ms=0.545 alloc_ms=1.928 h2d_ms=0.000 kernel_ms=4.563 gen_ms=0.155 d2h_ms=3.782 free_ms=2.543 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=3 wall_us=405747 traced_wall_us=371565 out=[7078.0957 84.03949 iter ms=12.803065 ] mapal_gpu_trace_total flags=1 load_ms=158.939 lead_ms=74.865 init_ms=84.968 ctx_ms=148.068 module_ms=0.570 alloc_ms=1.868 h2d_ms=0.000 kernel_ms=2.618 gen_ms=0.154 d2h_ms=3.772 free_ms=2.332 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=4 wall_us=373025 traced_wall_us=379342 out=[7078.077 84.026306 iter ms=14.513320000000002 ] mapal_gpu_trace_total flags=1 load_ms=152.839 lead_ms=84.787 init_ms=87.611 ctx_ms=149.264 module_ms=0.509 alloc_ms=1.878 h2d_ms=0.000 kernel_ms=4.563 gen_ms=0.157 d2h_ms=3.738 free_ms=2.377 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=4 wall_us=383154 traced_wall_us=367061 out=[7078.0957 84.03949 iter ms=12.520938999999998 ] mapal_gpu_trace_total flags=1 load_ms=142.301 lead_ms=85.437 init_ms=85.071 ctx_ms=141.874 module_ms=0.587 alloc_ms=1.866 h2d_ms=0.000 kernel_ms=2.622 gen_ms=0.155 d2h_ms=3.782 free_ms=2.302 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=5 wall_us=382549 traced_wall_us=366887 out=[7078.077 84.026306 iter ms=14.620522000000001 ] mapal_gpu_trace_total flags=1 load_ms=140.805 lead_ms=85.279 init_ms=83.688 ctx_ms=141.686 module_ms=0.517 alloc_ms=1.879 h2d_ms=0.000 kernel_ms=4.566 gen_ms=0.165 d2h_ms=3.828 free_ms=2.527 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=5 wall_us=377882 traced_wall_us=378082 out=[7078.0957 84.03949 iter ms=12.59093 ] mapal_gpu_trace_total flags=1 load_ms=162.773 lead_ms=76.090 init_ms=86.137 ctx_ms=151.948 module_ms=0.582 alloc_ms=1.971 h2d_ms=0.000 kernel_ms=2.621 gen_ms=0.171 d2h_ms=3.773 free_ms=2.246 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=diamond n=2048 leg=eager values=7078.07422,84.0203857 gate=pass vs_mapal=1.574e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=2048 leg=streams values=7078.07422,84.0203857 gate=pass vs_mapal=1.574e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=2048 leg=lt values=7078.07422,84.0203857 gate=pass vs_mapal=1.574e-06 vs_eager=5.194e-07
+chain_values probe=diamond n=2048 leg=cutlass values=7078.0957,84.0394897 gate=pass vs_mapal=3.506e-06 vs_eager=1.292e-05
+chain probe=diamond n=2048 leg=eager launches=4 reps=30 min_ms=2.3327 med_ms=3.4109 max_ms=4.0878
+chain_samples probe=diamond n=2048 leg=eager ms=2.3429,2.3327,2.3716,2.3736,4.0878,3.9076,3.5482,3.4560,3.4580,3.4560,3.4109,3.4140,3.4120,3.4089,3.4099,3.3280,3.3700,3.3976,3.4109,3.3720,3.3700,3.4140,3.4109,3.4140,3.3290,3.4140,3.4109,3.4109,3.3260,3.3659
+chain probe=diamond n=2048 leg=streams launches=4 reps=30 min_ms=2.2835 med_ms=3.3710 max_ms=4.0540
+chain_samples probe=diamond n=2048 leg=streams ms=2.2835,2.2917,2.3214,4.0540,3.9506,3.8021,3.5062,3.4212,3.4181,3.4180,3.3710,3.3710,3.3781,3.3710,3.3474,3.2911,3.3300,3.3761,3.3403,3.3311,3.3311,3.3690,3.3772,3.3710,3.2942,3.3720,3.3710,3.3403,3.2850,3.3341
+chain probe=diamond n=2048 leg=lt launches=3 reps=30 min_ms=2.3286 med_ms=3.3874 max_ms=4.0622
+chain_samples probe=diamond n=2048 leg=lt ms=2.3286,2.3613,2.3624,4.0622,3.8820,3.5246,3.5092,3.4376,3.4355,3.4232,3.3905,3.3915,3.3915,3.3935,3.3055,3.3085,3.3495,3.3874,3.3505,3.3485,3.3495,3.3884,3.3905,3.3731,3.3096,3.3864,3.3915,3.3055,3.3065,3.3464
+chain probe=diamond n=2048 leg=cutlass launches=3 reps=30 min_ms=2.6440 med_ms=4.0694 max_ms=4.9480
+chain_samples probe=diamond n=2048 leg=cutlass ms=2.6440,2.6890,2.6891,4.9480,4.7145,4.2455,4.1267,4.1267,4.1257,4.0704,4.0714,4.0714,4.0714,4.0684,3.9619,4.0161,4.0151,4.0704,4.0161,4.0151,4.0274,4.0694,4.0704,3.9619,4.0335,4.0704,4.0714,3.9629,4.0151,4.0172
+probe prog=pt_diamond_4096 face=_exact arm=on rep=1 wall_us=676316 traced_wall_us=536852 out=[7792.082 -4408.107 iter ms=60.325357000000004 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=308.130 init_ms=90.161 ctx_ms=146.800 module_ms=0.552 alloc_ms=2.970 h2d_ms=0.000 kernel_ms=30.812 gen_ms=0.372 d2h_ms=13.248 free_ms=5.285 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=1 wall_us=798432 traced_wall_us=536163 out=[7792.0693 -4408.1167 iter ms=47.629814 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=316.522 init_ms=91.740 ctx_ms=145.655 module_ms=0.653 alloc_ms=2.988 h2d_ms=0.000 kernel_ms=17.759 gen_ms=0.370 d2h_ms=13.244 free_ms=5.324 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=2 wall_us=531303 traced_wall_us=558450 out=[7792.082 -4408.107 iter ms=58.698763 ] mapal_gpu_trace_total flags=1 load_ms=0.006 lead_ms=306.562 init_ms=91.238 ctx_ms=142.478 module_ms=0.545 alloc_ms=2.939 h2d_ms=0.000 kernel_ms=29.081 gen_ms=0.376 d2h_ms=13.162 free_ms=4.544 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=2 wall_us=529357 traced_wall_us=524296 out=[7792.0693 -4408.1167 iter ms=46.94967 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=306.337 init_ms=89.596 ctx_ms=139.950 module_ms=0.636 alloc_ms=2.978 h2d_ms=0.000 kernel_ms=17.390 gen_ms=0.377 d2h_ms=13.138 free_ms=5.350 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=3 wall_us=531758 traced_wall_us=542506 out=[7792.082 -4408.107 iter ms=59.875216 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=311.132 init_ms=88.591 ctx_ms=148.220 module_ms=0.525 alloc_ms=2.980 h2d_ms=0.000 kernel_ms=29.345 gen_ms=0.370 d2h_ms=13.179 free_ms=4.577 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=3 wall_us=536643 traced_wall_us=529888 out=[7792.0693 -4408.1167 iter ms=45.534819999999996 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=311.530 init_ms=91.707 ctx_ms=151.376 module_ms=0.611 alloc_ms=2.948 h2d_ms=0.000 kernel_ms=17.483 gen_ms=0.371 d2h_ms=13.188 free_ms=4.579 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=4 wall_us=543470 traced_wall_us=535283 out=[7792.082 -4408.107 iter ms=58.726912000000006 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=305.166 init_ms=83.627 ctx_ms=151.302 module_ms=0.529 alloc_ms=2.935 h2d_ms=0.000 kernel_ms=30.808 gen_ms=0.371 d2h_ms=13.146 free_ms=5.385 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=4 wall_us=534842 traced_wall_us=534684 out=[7792.0693 -4408.1167 iter ms=46.873437 ] mapal_gpu_trace_total flags=1 load_ms=0.006 lead_ms=315.349 init_ms=90.132 ctx_ms=144.583 module_ms=0.609 alloc_ms=2.991 h2d_ms=0.000 kernel_ms=17.141 gen_ms=0.376 d2h_ms=13.264 free_ms=5.309 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=5 wall_us=530433 traced_wall_us=541163 out=[7792.082 -4408.107 iter ms=57.365055000000005 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=311.555 init_ms=88.284 ctx_ms=146.047 module_ms=0.527 alloc_ms=2.974 h2d_ms=0.000 kernel_ms=29.714 gen_ms=0.372 d2h_ms=13.282 free_ms=5.366 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=5 wall_us=538129 traced_wall_us=530155 out=[7792.0693 -4408.1167 iter ms=47.705255 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=313.397 init_ms=94.426 ctx_ms=145.206 module_ms=0.608 alloc_ms=2.975 h2d_ms=0.000 kernel_ms=17.577 gen_ms=0.361 d2h_ms=13.266 free_ms=5.316 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=diamond n=4096 leg=eager values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=streams values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=lt values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=cutlass values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain probe=diamond n=4096 leg=eager launches=4 reps=30 min_ms=16.7670 med_ms=27.7105 max_ms=30.2162
+chain_samples probe=diamond n=4096 leg=eager ms=16.7670,26.8524,26.9527,27.3285,25.0757,27.7166,28.4989,27.3848,27.0418,30.1261,28.6157,29.4400,27.4299,27.1411,27.5528,27.2804,27.6132,28.6802,29.3007,29.0550,29.7124,27.8497,26.9947,27.7105,27.5937,27.2271,28.2409,30.2162,28.9935,28.9526
+chain probe=diamond n=4096 leg=streams launches=4 reps=30 min_ms=18.6358 med_ms=24.6272 max_ms=26.7889
+chain_samples probe=diamond n=4096 leg=streams ms=18.6358,24.3958,24.7767,24.4460,24.4603,24.3128,24.7050,24.4746,25.7260,25.4976,24.9672,25.2907,24.5494,24.3149,26.7889,24.0558,23.9217,25.1453,25.5119,25.0890,25.1986,24.5842,24.0189,24.1213,24.5063,24.6272,24.5893,25.4751,24.7101,25.0102
+chain probe=diamond n=4096 leg=lt launches=3 reps=30 min_ms=23.8776 med_ms=24.6139 max_ms=33.9886
+chain_samples probe=diamond n=4096 leg=lt ms=25.7434,24.3620,24.2749,24.2545,24.3651,24.6477,24.3569,24.4531,33.9886,25.0030,24.8228,24.5545,24.6845,24.8494,25.4792,23.9360,23.8776,26.1499,25.6348,24.6139,24.2422,24.4296,24.3456,24.3026,24.0527,25.2140,24.7757,24.7685,25.0511,24.5617
+chain probe=diamond n=4096 leg=cutlass launches=3 reps=30 min_ms=24.3272 med_ms=24.8115 max_ms=33.9917
+chain_samples probe=diamond n=4096 leg=cutlass ms=25.8744,24.8986,24.7316,24.4644,24.9436,24.8115,24.5330,24.7532,33.9917,25.8816,24.7736,24.6825,24.9590,24.9313,24.4654,24.3272,24.4685,27.2968,26.0844,25.2191,24.5115,24.4193,24.4695,24.6856,24.6815,24.5770,25.5672,25.7812,25.9215,25.1720
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=1 wall_us=596946 traced_wall_us=378225 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=22.31322 ] mapal_gpu_trace_total flags=1 load_ms=101.909 lead_ms=119.031 init_ms=85.366 ctx_ms=134.743 module_ms=0.614 alloc_ms=3.198 h2d_ms=3.325 kernel_ms=5.601 gen_ms=0.209 d2h_ms=3.928 free_ms=4.240 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=1 wall_us=747068 traced_wall_us=399416 out=[2977.885 1891.8231 476.01334 754.756 iter ms=20.480402 ] mapal_gpu_trace_total flags=1 load_ms=124.501 lead_ms=117.534 init_ms=91.707 ctx_ms=149.446 module_ms=0.646 alloc_ms=3.379 h2d_ms=3.306 kernel_ms=3.521 gen_ms=0.215 d2h_ms=3.721 free_ms=4.203 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=2 wall_us=393475 traced_wall_us=396759 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=23.283151000000004 ] mapal_gpu_trace_total flags=1 load_ms=111.829 lead_ms=122.268 init_ms=86.998 ctx_ms=146.326 module_ms=0.564 alloc_ms=3.361 h2d_ms=3.306 kernel_ms=6.249 gen_ms=0.213 d2h_ms=3.738 free_ms=4.256 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=2 wall_us=421269 traced_wall_us=398107 out=[2977.885 1891.8231 476.01334 754.756 iter ms=20.788109 ] mapal_gpu_trace_total flags=1 load_ms=121.112 lead_ms=120.258 init_ms=90.549 ctx_ms=149.974 module_ms=0.622 alloc_ms=3.237 h2d_ms=3.301 kernel_ms=3.523 gen_ms=0.211 d2h_ms=3.741 free_ms=4.202 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=3 wall_us=396302 traced_wall_us=417070 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=23.415463 ] mapal_gpu_trace_total flags=1 load_ms=115.845 lead_ms=118.269 init_ms=92.197 ctx_ms=141.128 module_ms=0.573 alloc_ms=3.248 h2d_ms=3.307 kernel_ms=6.115 gen_ms=0.213 d2h_ms=3.693 free_ms=4.216 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=3 wall_us=393953 traced_wall_us=397581 out=[2977.885 1891.8231 476.01334 754.756 iter ms=20.749138000000002 ] mapal_gpu_trace_total flags=1 load_ms=112.819 lead_ms=122.709 init_ms=91.835 ctx_ms=142.843 module_ms=0.604 alloc_ms=3.305 h2d_ms=3.356 kernel_ms=3.530 gen_ms=0.221 d2h_ms=3.728 free_ms=4.237 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=4 wall_us=390846 traced_wall_us=396123 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=23.198418 ] mapal_gpu_trace_total flags=1 load_ms=116.890 lead_ms=117.948 init_ms=88.891 ctx_ms=145.158 module_ms=0.588 alloc_ms=3.252 h2d_ms=3.282 kernel_ms=6.118 gen_ms=0.204 d2h_ms=3.712 free_ms=4.217 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=4 wall_us=398223 traced_wall_us=389428 out=[2977.885 1891.8231 476.01334 754.756 iter ms=20.696846999999998 ] mapal_gpu_trace_total flags=1 load_ms=125.886 lead_ms=107.005 init_ms=90.779 ctx_ms=141.300 module_ms=0.618 alloc_ms=3.262 h2d_ms=3.386 kernel_ms=3.520 gen_ms=0.214 d2h_ms=3.747 free_ms=4.251 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=5 wall_us=397978 traced_wall_us=398144 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=23.062926 ] mapal_gpu_trace_total flags=1 load_ms=115.403 lead_ms=120.475 init_ms=91.045 ctx_ms=144.058 module_ms=0.560 alloc_ms=3.347 h2d_ms=3.337 kernel_ms=6.118 gen_ms=0.214 d2h_ms=3.721 free_ms=4.252 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=5 wall_us=393246 traced_wall_us=395593 out=[2977.885 1891.8231 476.01334 754.756 iter ms=20.768868 ] mapal_gpu_trace_total flags=1 load_ms=117.583 lead_ms=118.878 init_ms=86.714 ctx_ms=148.894 module_ms=0.637 alloc_ms=3.464 h2d_ms=3.300 kernel_ms=3.529 gen_ms=0.219 d2h_ms=3.724 free_ms=4.241 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=mlp2 n=2048 leg=eager values=2977.86011,1891.81177,476.012329,754.754211 gate=pass vs_mapal=6.902e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=streams values=2977.86011,1891.81177,476.012329,754.754211 gate=pass vs_mapal=6.902e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=lt values=2977.85986,1891.81079,476.012329,754.754333 gate=pass vs_mapal=6.967e-06 vs_eager=1.356e-06
+chain_values probe=mlp2 n=2048 leg=lt2 values=2977.85986,1891.81079,476.012329,754.754333 gate=pass vs_mapal=6.967e-06 vs_eager=1.356e-06
+chain_values probe=mlp2 n=2048 leg=cutlass values=2977.88501,1891.82312,476.013336,754.755981 gate=pass vs_mapal=1.999e-06 vs_eager=9.429e-06
+chain probe=mlp2 n=2048 leg=eager launches=6 reps=30 min_ms=3.1314 med_ms=4.6111 max_ms=5.7262
+chain_samples probe=mlp2 n=2048 leg=eager ms=3.1314,3.1324,5.7262,5.0657,4.6664,4.5486,4.7872,4.6080,4.6121,4.5599,4.7299,4.6039,4.6141,4.5588,4.5527,4.6735,4.6111,4.5476,4.7288,4.6111,4.6060,4.6828,4.7319,4.6080,4.6049,4.7421,4.6653,4.6060,4.5496,4.7247
+chain probe=mlp2 n=2048 leg=streams launches=6 reps=30 min_ms=2.9768 med_ms=4.4943 max_ms=5.4006
+chain_samples probe=mlp2 n=2048 leg=streams ms=2.9768,2.9860,5.4006,4.8978,4.5097,4.4380,4.6305,4.4513,4.4452,4.4728,4.5660,4.4524,4.4329,4.3950,4.4431,4.5076,4.4349,4.5517,4.5701,4.4442,4.4493,4.6940,4.5681,4.4483,4.4943,4.6336,4.5076,4.4483,4.5670,4.5691
+chain probe=mlp2 n=2048 leg=lt launches=4 reps=30 min_ms=3.0525 med_ms=4.5947 max_ms=5.4661
+chain_samples probe=mlp2 n=2048 leg=lt ms=3.0525,3.0536,5.4661,4.9900,4.4851,4.5373,4.7247,4.5394,4.4861,4.5998,4.6623,4.5435,4.4831,4.4749,4.5947,4.5916,4.4820,4.6633,4.6633,4.5404,4.5363,4.7913,4.6602,4.5373,4.5957,4.7227,4.5967,4.4780,4.6633,4.6664
+chain probe=mlp2 n=2048 leg=lt2 launches=4 reps=30 min_ms=2.8621 med_ms=4.4216 max_ms=5.3402
+chain_samples probe=mlp2 n=2048 leg=lt2 ms=2.8621,4.4995,5.3402,4.5691,4.3418,4.4012,4.5793,4.3899,4.3366,4.4544,4.5138,4.3981,4.3397,4.3418,4.4585,4.3959,4.3356,4.5240,4.4728,4.3950,4.3878,4.6469,4.4216,4.3930,4.4513,4.5773,4.3971,4.3387,4.5189,4.5251
+chain probe=mlp2 n=2048 leg=cutlass launches=4 reps=30 min_ms=3.5338 med_ms=5.5030 max_ms=6.9448
+chain_samples probe=mlp2 n=2048 leg=cutlass ms=3.5338,6.9448,6.4051,5.5788,5.4272,5.5020,5.5050,5.5009,5.4272,5.5849,5.5020,5.5030,5.4272,5.4282,5.5798,5.5040,5.4272,5.6586,5.5020,5.5020,5.5020,5.7139,5.5009,5.5030,5.5798,5.5880,5.5030,5.4282,5.6596,5.6586
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=1 wall_us=745674 traced_wall_us=720145 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=90.56237699999998 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=428.323 init_ms=83.704 ctx_ms=141.713 module_ms=0.583 alloc_ms=5.555 h2d_ms=10.492 kernel_ms=36.955 gen_ms=0.544 d2h_ms=13.370 free_ms=10.316 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=1 wall_us=868634 traced_wall_us=714478 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=76.81016299999999 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=430.842 init_ms=94.565 ctx_ms=148.123 module_ms=0.661 alloc_ms=5.145 h2d_ms=10.446 kernel_ms=22.895 gen_ms=0.526 d2h_ms=13.271 free_ms=10.239 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=2 wall_us=732695 traced_wall_us=751702 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=93.580218 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=430.378 init_ms=89.201 ctx_ms=151.417 module_ms=0.581 alloc_ms=5.122 h2d_ms=10.500 kernel_ms=39.694 gen_ms=0.544 d2h_ms=13.373 free_ms=9.571 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=2 wall_us=708758 traced_wall_us=693576 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=77.18402999999999 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=420.472 init_ms=93.396 ctx_ms=147.767 module_ms=0.672 alloc_ms=5.131 h2d_ms=10.453 kernel_ms=23.705 gen_ms=0.533 d2h_ms=13.274 free_ms=10.497 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=3 wall_us=714413 traced_wall_us=730529 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=92.469965 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=432.162 init_ms=91.215 ctx_ms=149.990 module_ms=0.593 alloc_ms=5.105 h2d_ms=10.498 kernel_ms=39.950 gen_ms=0.539 d2h_ms=13.260 free_ms=10.326 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=3 wall_us=712206 traced_wall_us=711015 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=76.72687 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=435.731 init_ms=94.217 ctx_ms=148.563 module_ms=0.647 alloc_ms=5.124 h2d_ms=10.508 kernel_ms=23.116 gen_ms=0.557 d2h_ms=13.261 free_ms=9.421 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=4 wall_us=716039 traced_wall_us=734243 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=91.32663099999999 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=433.566 init_ms=89.382 ctx_ms=150.930 module_ms=0.575 alloc_ms=5.092 h2d_ms=10.482 kernel_ms=39.017 gen_ms=0.537 d2h_ms=13.199 free_ms=9.401 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=4 wall_us=713601 traced_wall_us=709186 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=75.543676 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=431.679 init_ms=90.732 ctx_ms=146.826 module_ms=0.643 alloc_ms=5.131 h2d_ms=10.472 kernel_ms=23.151 gen_ms=0.540 d2h_ms=13.263 free_ms=9.410 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=5 wall_us=727315 traced_wall_us=715490 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=91.429742 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=417.580 init_ms=90.753 ctx_ms=140.679 module_ms=0.591 alloc_ms=5.109 h2d_ms=10.501 kernel_ms=39.318 gen_ms=0.530 d2h_ms=13.345 free_ms=9.414 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=5 wall_us=708616 traced_wall_us=716346 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=75.407683 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=436.756 init_ms=86.882 ctx_ms=145.965 module_ms=0.683 alloc_ms=5.097 h2d_ms=10.469 kernel_ms=22.978 gen_ms=0.531 d2h_ms=13.340 free_ms=9.433 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=mlp2 n=4096 leg=eager values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=streams values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=lt values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=lt2 values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=cutlass values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain probe=mlp2 n=4096 leg=eager launches=6 reps=30 min_ms=22.4840 med_ms=36.4831 max_ms=40.1121
+chain_samples probe=mlp2 n=4096 leg=eager ms=22.4840,36.3459,35.9823,36.4831,35.4550,36.5681,36.3540,35.8175,35.9864,36.2465,35.8820,40.1121,37.1630,35.9444,36.8374,36.0612,37.7897,38.1379,36.7739,37.0176,35.7878,36.4001,38.8465,38.2300,36.8957,36.2588,36.3837,37.5593,38.2505,37.5603
+chain probe=mlp2 n=4096 leg=streams launches=6 reps=30 min_ms=25.8775 med_ms=29.9909 max_ms=44.0852
+chain_samples probe=mlp2 n=4096 leg=streams ms=25.8775,30.6493,29.6172,29.3898,29.0908,44.0852,29.2813,29.9561,29.7462,29.7554,29.8783,32.1782,29.9909,29.9131,29.8097,29.5219,31.9867,31.3866,30.0984,29.6028,29.4625,30.8019,31.1194,30.8470,30.5459,29.8598,30.3370,30.6668,31.1951,30.9596
+chain probe=mlp2 n=4096 leg=lt launches=4 reps=30 min_ms=33.3015 med_ms=35.4109 max_ms=44.7846
+chain_samples probe=mlp2 n=4096 leg=lt ms=38.4717,33.3015,33.7336,34.3951,35.0065,44.7846,35.4171,33.5176,34.1084,35.1345,36.5629,36.1994,35.7714,33.9732,34.7116,35.1785,37.3934,35.7868,35.2532,34.6716,35.6116,35.4109,37.2931,36.4442,34.6030,35.4540,34.7433,36.8835,36.6684,35.1375
+chain probe=mlp2 n=4096 leg=lt2 launches=4 reps=30 min_ms=28.4600 med_ms=29.2915 max_ms=32.4485
+chain_samples probe=mlp2 n=4096 leg=lt2 ms=29.2413,28.5676,28.5891,28.4600,28.9516,29.2915,29.0970,28.6382,28.9567,28.5317,32.4485,29.8977,29.1758,28.7498,28.4600,29.2874,30.7231,29.9930,29.4543,29.2280,29.5690,30.0646,30.0175,30.0288,29.2516,29.2946,29.3181,30.8142,30.0677,29.6899
+chain probe=mlp2 n=4096 leg=cutlass launches=4 reps=30 min_ms=34.7494 med_ms=36.3469 max_ms=41.1105
+chain_samples probe=mlp2 n=4096 leg=cutlass ms=36.3469,34.9655,34.9747,35.8031,34.7494,36.3520,35.1222,35.4099,35.4314,36.0663,41.1105,36.9951,35.4263,35.7632,36.2291,36.9920,39.1895,37.7672,35.6444,36.1503,35.6803,38.1563,37.3637,36.3530,36.5967,35.9803,36.4554,37.2234,37.4610,36.5292
+probe prog=pt_mlp_2048 face=_exact arm=on rep=1 wall_us=566916 traced_wall_us=357342 out=[1620.1987 538.179 iter ms=11.2138 ] mapal_gpu_trace_total flags=1 load_ms=146.853 lead_ms=78.152 init_ms=85.005 ctx_ms=139.192 module_ms=0.580 alloc_ms=1.620 h2d_ms=1.833 kernel_ms=2.811 gen_ms=0.118 d2h_ms=1.990 free_ms=1.934 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=1 wall_us=708631 traced_wall_us=377607 out=[1620.2026 538.1848 iter ms=10.21907 ] mapal_gpu_trace_total flags=1 load_ms=177.708 lead_ms=63.913 init_ms=92.463 ctx_ms=148.332 module_ms=0.635 alloc_ms=1.757 h2d_ms=1.797 kernel_ms=1.761 gen_ms=0.119 d2h_ms=2.006 free_ms=2.082 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=2 wall_us=391394 traced_wall_us=366359 out=[1620.1987 538.179 iter ms=11.752922000000002 ] mapal_gpu_trace_total flags=1 load_ms=149.052 lead_ms=77.069 init_ms=85.656 ctx_ms=139.725 module_ms=0.569 alloc_ms=1.742 h2d_ms=1.787 kernel_ms=3.066 gen_ms=0.119 d2h_ms=1.974 free_ms=2.078 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=2 wall_us=369088 traced_wall_us=380738 out=[1620.2026 538.1848 iter ms=10.22957 ] mapal_gpu_trace_total flags=1 load_ms=167.739 lead_ms=70.155 init_ms=94.199 ctx_ms=142.905 module_ms=0.580 alloc_ms=1.807 h2d_ms=1.580 kernel_ms=1.761 gen_ms=0.125 d2h_ms=2.036 free_ms=2.073 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=3 wall_us=343479 traced_wall_us=358910 out=[1620.1987 538.179 iter ms=11.315732 ] mapal_gpu_trace_total flags=1 load_ms=158.371 lead_ms=65.320 init_ms=79.612 ctx_ms=143.299 module_ms=0.566 alloc_ms=1.807 h2d_ms=1.992 kernel_ms=3.060 gen_ms=0.136 d2h_ms=2.023 free_ms=2.096 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=3 wall_us=381339 traced_wall_us=366687 out=[1620.2026 538.1848 iter ms=10.403814 ] mapal_gpu_trace_total flags=1 load_ms=156.379 lead_ms=73.792 init_ms=88.292 ctx_ms=141.042 module_ms=0.631 alloc_ms=1.535 h2d_ms=1.980 kernel_ms=1.763 gen_ms=0.114 d2h_ms=1.994 free_ms=2.240 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=4 wall_us=382275 traced_wall_us=374707 out=[1620.1987 538.179 iter ms=12.801954000000002 ] mapal_gpu_trace_total flags=1 load_ms=154.038 lead_ms=78.970 init_ms=89.568 ctx_ms=142.654 module_ms=0.541 alloc_ms=1.793 h2d_ms=1.988 kernel_ms=3.062 gen_ms=0.137 d2h_ms=1.966 free_ms=2.078 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=4 wall_us=378296 traced_wall_us=367487 out=[1620.2026 538.1848 iter ms=10.534727 ] mapal_gpu_trace_total flags=1 load_ms=147.329 lead_ms=78.888 init_ms=81.715 ctx_ms=143.669 module_ms=0.630 alloc_ms=1.663 h2d_ms=1.973 kernel_ms=1.902 gen_ms=0.115 d2h_ms=2.003 free_ms=2.132 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=5 wall_us=381875 traced_wall_us=363928 out=[1620.1987 538.179 iter ms=11.550667 ] mapal_gpu_trace_total flags=1 load_ms=147.152 lead_ms=78.466 init_ms=82.197 ctx_ms=142.626 module_ms=0.568 alloc_ms=1.923 h2d_ms=2.016 kernel_ms=3.201 gen_ms=0.136 d2h_ms=2.202 free_ms=2.087 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=5 wall_us=385673 traced_wall_us=372365 out=[1620.2026 538.1848 iter ms=10.635508999999999 ] mapal_gpu_trace_total flags=1 load_ms=156.067 lead_ms=78.199 init_ms=85.766 ctx_ms=147.642 module_ms=0.622 alloc_ms=1.681 h2d_ms=1.965 kernel_ms=1.775 gen_ms=0.127 d2h_ms=1.966 free_ms=2.089 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=mlp n=2048 leg=eager values=1620.19202,538.178467 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp n=2048 leg=lt values=1620.19202,538.178467 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp n=2048 leg=cutlass values=1620.20264,538.184814 gate=pass vs_mapal=3.835e-06 vs_eager=1.159e-05
+chain probe=mlp n=2048 leg=eager launches=3 reps=30 min_ms=1.5565 med_ms=2.1934 max_ms=2.6051
+chain_samples probe=mlp n=2048 leg=eager ms=1.5626,1.5596,1.5606,1.5565,1.5565,1.5606,2.6051,2.6030,2.5672,2.5692,2.5641,2.3357,2.3306,2.2180,2.2190,2.1996,2.1924,2.1903,2.1914,2.1955,2.1914,2.1914,2.1924,2.1944,2.1924,2.1934,2.1914,2.1934,2.1965,2.1934
+chain probe=mlp n=2048 leg=lt launches=2 reps=30 min_ms=1.5155 med_ms=2.1514 max_ms=2.5641
+chain_samples probe=mlp n=2048 leg=lt ms=1.5155,1.5165,1.5186,1.5165,1.5165,1.5165,2.5631,2.5641,2.5252,2.5283,2.2907,2.2917,2.2815,2.1770,2.1780,2.1494,2.1514,2.1545,2.1494,2.1494,2.1555,2.1524,2.1514,2.2180,2.1484,2.1524,2.1504,2.1504,2.1494,2.1514
+chain probe=mlp n=2048 leg=cutlass launches=2 reps=30 min_ms=1.7592 med_ms=2.6061 max_ms=3.1406
+chain_samples probe=mlp n=2048 leg=cutlass ms=1.7592,1.7603,1.7592,1.7613,1.7592,2.0101,3.1406,3.1406,3.0915,3.0925,2.7884,2.7884,2.6563,2.6399,2.6399,2.6061,2.6061,2.6051,2.6061,2.6071,2.6061,2.6061,2.6061,2.6051,2.6061,2.6061,2.6061,2.6051,2.6061,2.6071
+probe prog=pt_mlp_4096 face=_exact arm=on rep=1 wall_us=665922 traced_wall_us=502174 out=[-1379.8322 1141.1628 iter ms=41.705068 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=283.877 init_ms=86.520 ctx_ms=146.217 module_ms=0.587 alloc_ms=2.484 h2d_ms=5.244 kernel_ms=18.562 gen_ms=0.303 d2h_ms=7.278 free_ms=5.237 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=1 wall_us=804847 traced_wall_us=483999 out=[-1379.831 1141.1611 iter ms=35.274005 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=277.417 init_ms=91.510 ctx_ms=147.078 module_ms=0.654 alloc_ms=2.370 h2d_ms=5.235 kernel_ms=11.694 gen_ms=0.294 d2h_ms=7.240 free_ms=4.153 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=2 wall_us=479428 traced_wall_us=485554 out=[-1379.8322 1141.1628 iter ms=43.02174399999999 ] mapal_gpu_trace_total flags=1 load_ms=0.010 lead_ms=267.808 init_ms=92.815 ctx_ms=140.789 module_ms=0.551 alloc_ms=2.414 h2d_ms=5.602 kernel_ms=19.543 gen_ms=0.307 d2h_ms=7.189 free_ms=5.161 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=2 wall_us=482052 traced_wall_us=483030 out=[-1379.831 1141.1611 iter ms=35.01643 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=274.306 init_ms=82.401 ctx_ms=151.169 module_ms=0.642 alloc_ms=2.354 h2d_ms=5.261 kernel_ms=11.453 gen_ms=0.290 d2h_ms=7.192 free_ms=4.121 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=3 wall_us=484411 traced_wall_us=479777 out=[-1379.8322 1141.1628 iter ms=43.152447 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=264.750 init_ms=89.053 ctx_ms=143.019 module_ms=0.494 alloc_ms=2.226 h2d_ms=5.252 kernel_ms=19.536 gen_ms=0.285 d2h_ms=6.732 free_ms=4.102 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=3 wall_us=471457 traced_wall_us=476440 out=[-1379.831 1141.1611 iter ms=35.04735 ] mapal_gpu_trace_total flags=1 load_ms=0.010 lead_ms=271.904 init_ms=87.017 ctx_ms=144.182 module_ms=0.600 alloc_ms=2.342 h2d_ms=5.213 kernel_ms=11.461 gen_ms=0.296 d2h_ms=7.228 free_ms=4.131 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=4 wall_us=485913 traced_wall_us=481329 out=[-1379.8322 1141.1628 iter ms=43.03766399999999 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=266.623 init_ms=85.997 ctx_ms=147.494 module_ms=0.543 alloc_ms=2.375 h2d_ms=5.243 kernel_ms=19.487 gen_ms=0.294 d2h_ms=7.264 free_ms=5.184 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=4 wall_us=468012 traced_wall_us=474310 out=[-1379.831 1141.1611 iter ms=35.0383 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=266.813 init_ms=90.277 ctx_ms=145.695 module_ms=0.649 alloc_ms=2.411 h2d_ms=5.308 kernel_ms=11.682 gen_ms=0.307 d2h_ms=7.309 free_ms=4.125 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=5 wall_us=478514 traced_wall_us=459975 out=[-1379.8322 1141.1628 iter ms=43.586566000000005 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=251.490 init_ms=86.622 ctx_ms=151.274 module_ms=0.545 alloc_ms=2.418 h2d_ms=5.206 kernel_ms=19.534 gen_ms=0.305 d2h_ms=7.220 free_ms=5.193 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=5 wall_us=453450 traced_wall_us=444554 out=[-1379.831 1141.1611 iter ms=35.747344 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=244.171 init_ms=88.613 ctx_ms=146.332 module_ms=0.618 alloc_ms=2.370 h2d_ms=5.175 kernel_ms=11.669 gen_ms=0.299 d2h_ms=7.220 free_ms=5.171 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+device name="NVIDIA GeForce RTX 3090" cc=8.6
+chain_values probe=mlp n=4096 leg=eager values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain_values probe=mlp n=4096 leg=lt values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain_values probe=mlp n=4096 leg=cutlass values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain probe=mlp n=4096 leg=eager launches=3 reps=30 min_ms=11.1872 med_ms=17.2534 max_ms=27.1759
+chain_samples probe=mlp n=4096 leg=eager ms=11.1872,18.1463,16.3645,16.7916,17.3363,16.6523,17.6579,16.9892,16.5724,17.4275,16.8479,17.6097,17.3517,16.6175,17.8053,17.2288,16.5745,27.1759,18.1320,16.8632,18.1125,17.4981,16.8243,18.0521,17.2534,16.7864,17.8688,16.7956,16.7905,17.4100
+chain probe=mlp n=4096 leg=lt launches=2 reps=30 min_ms=11.1442 med_ms=17.3537 max_ms=20.6592
+chain_samples probe=mlp n=4096 leg=lt ms=11.1442,18.4965,16.2017,17.0373,17.1295,17.3117,17.1203,18.0869,17.0506,17.1653,17.9671,17.3537,17.9261,17.0793,18.0531,16.9933,20.0151,20.6592,18.8508,17.3148,17.7306,18.4054,17.0813,17.4746,18.4402,17.0783,17.2278,18.2129,17.0281,17.4551
+chain probe=mlp n=4096 leg=cutlass launches=2 reps=30 min_ms=14.6258 med_ms=16.8888 max_ms=22.1307
+chain_samples probe=mlp n=4096 leg=cutlass ms=14.6258,17.1274,17.1725,16.8888,16.7352,16.7352,16.7332,17.1284,16.8899,16.8745,16.7332,16.7363,17.0629,16.7741,18.2794,16.7332,22.1307,17.9773,17.6394,16.7619,16.8868,17.2851,16.7537,16.7629,17.3210,16.7926,16.7444,17.1684,16.8919,17.1069
+-- timing vs cuBLAS / CUTLASS (f32, reps=30)
+# n=1024 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2916603ae2979e36 grid=16x8 block=256 smem=12544 regs=66 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1925 med_ms=0.1935 max_ms=0.2836 tflops_med=11.10
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1116 med_ms=0.1137 max_ms=0.1526 tflops_med=18.89
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1055 med_ms=0.1065 max_ms=0.1577 tflops_med=20.16
+ratio mapal_vs_cublas=0.587 mapal_vs_cutlass=0.550 (>1 = mapal faster, medians)
+samples mapal=0.1946,0.1935,0.1935,0.1946,0.1925,0.1926,0.1925,0.1935,0.1925,0.1935,0.1935,0.1935,0.1935,0.1935,0.1926,0.1925,0.1935,0.1926,0.1935,0.1935,0.1935,0.1935,0.1935,0.2816,0.2826,0.2836,0.2836,0.2816,0.2826,0.2816 cublas=0.1137,0.1137,0.1137,0.1116,0.1126,0.1126,0.1137,0.1147,0.1126,0.1126,0.1147,0.1126,0.1147,0.1147,0.1137,0.1137,0.1147,0.1137,0.1137,0.1136,0.1147,0.1116,0.1137,0.1516,0.1526,0.1516,0.1526,0.1526,0.1526,0.1516 cutlass=0.1055,0.1065,0.1065,0.1075,0.1065,0.1075,0.1055,0.1065,0.1065,0.1075,0.1065,0.1075,0.1065,0.1065,0.1055,0.1065,0.1065,0.1075,0.1055,0.1075,0.1065,0.1065,0.1055,0.1577,0.1567,0.1577,0.1567,0.1577,0.1567,0.1577
+# n=1024 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=256 smem=12544 regs=79 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1352 med_ms=0.1372 max_ms=0.2028 tflops_med=15.65
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1106 med_ms=0.1147 max_ms=0.1526 tflops_med=18.72
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1055 med_ms=0.1065 max_ms=0.1577 tflops_med=20.16
+ratio mapal_vs_cublas=0.836 mapal_vs_cutlass=0.776 (>1 = mapal faster, medians)
+samples mapal=0.1372,0.1372,0.1382,0.1362,0.1372,0.1372,0.1382,0.1372,0.1382,0.1372,0.1362,0.1372,0.1372,0.1372,0.1372,0.1372,0.1372,0.1372,0.1372,0.1352,0.1372,0.1372,0.1382,0.1372,0.1372,0.2028,0.2007,0.2007,0.2007,0.2017 cublas=0.1116,0.1126,0.1137,0.1126,0.1147,0.1126,0.1147,0.1126,0.1137,0.1126,0.1157,0.1126,0.1188,0.1126,0.1137,0.1157,0.1157,0.1116,0.1137,0.1126,0.1147,0.1157,0.1157,0.1106,0.1147,0.1516,0.1526,0.1526,0.1526,0.1526 cutlass=0.1065,0.1065,0.1055,0.1065,0.1055,0.1065,0.1055,0.1065,0.1065,0.1065,0.1065,0.1065,0.1055,0.1075,0.1065,0.1065,0.1055,0.1065,0.1055,0.1075,0.1065,0.1075,0.1065,0.1065,0.1567,0.1577,0.1567,0.1577,0.1567,0.1577
+# n=1024 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_259382a2b468f871 grid=8x16 block=256 smem=41472 regs=74 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0993 med_ms=0.1004 max_ms=0.1024 tflops_med=21.40
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0891 max_ms=0.0901 tflops_med=24.11
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0881 max_ms=0.0911 tflops_med=24.39
+ratio mapal_vs_cublas=0.888 mapal_vs_cutlass=0.878 (>1 = mapal faster, medians)
+samples mapal=0.1004,0.0993,0.0993,0.0993,0.0993,0.0993,0.1003,0.0993,0.0993,0.0993,0.0993,0.1004,0.0993,0.0993,0.1004,0.0993,0.1004,0.1004,0.1004,0.0993,0.1024,0.1014,0.1014,0.1014,0.1004,0.1004,0.1014,0.1014,0.1004,0.1004 cublas=0.0891,0.0881,0.0891,0.0881,0.0891,0.0881,0.0891,0.0870,0.0881,0.0881,0.0881,0.0881,0.0881,0.0881,0.0891,0.0870,0.0881,0.0871,0.0881,0.0871,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901 cutlass=0.0881,0.0891,0.0870,0.0891,0.0881,0.0881,0.0881,0.0881,0.0881,0.0891,0.0881,0.0881,0.0870,0.0891,0.0881,0.0881,0.0870,0.0881,0.0870,0.0881,0.0891,0.0901,0.0901,0.0891,0.0891,0.0901,0.0891,0.0911,0.0891,0.0901
+# n=2048 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_079fef36984affa9 grid=16x16 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=3.830e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.466e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=1.5145 med_ms=1.9773 max_ms=2.0500 tflops_med=8.69
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.7619 med_ms=0.9718 max_ms=0.9984 tflops_med=17.68
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.8806 med_ms=1.1551 max_ms=1.1960 tflops_med=14.87
+ratio mapal_vs_cublas=0.491 mapal_vs_cutlass=0.584 (>1 = mapal faster, medians)
+samples mapal=1.5165,1.5155,1.5145,1.5165,1.5165,1.6753,1.6753,1.6763,1.6742,1.6753,2.0480,2.0449,2.0500,2.0449,2.0204,2.0224,2.0214,2.0193,1.9784,1.9773,1.9763,1.9773,1.9773,1.9773,1.9784,1.9773,1.9773,1.9784,1.9784,1.9630 cublas=0.7628,0.7619,0.7690,0.7660,0.7660,0.8387,0.8356,0.8346,0.8407,0.9728,0.9974,0.9964,0.9984,0.9861,0.9892,0.9892,0.9892,0.9687,0.9718,0.9708,0.9718,0.9708,0.9708,0.9810,0.9728,0.9738,0.9728,0.9697,0.9718,0.9615 cutlass=0.8806,0.8806,0.8806,0.8817,0.8806,0.9759,0.9748,0.9759,0.9759,1.1960,1.1960,1.1960,1.1950,1.1817,1.1807,1.1817,1.1807,1.1540,1.1540,1.1571,1.1551,1.1551,1.1551,1.1551,1.1541,1.1561,1.1551,1.1551,1.1540,1.1418
+# n=2048 face=_exact.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_079fef36984affa9 grid=16x16 block=256 smem=16640 regs=128 local_bytes=16
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=3.830e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.466e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=1.4326 med_ms=2.1053 max_ms=2.3296 tflops_med=8.16
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.7219 med_ms=0.9974 max_ms=1.0947 tflops_med=17.23
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.8325 med_ms=1.1950 max_ms=1.3220 tflops_med=14.38
+ratio mapal_vs_cublas=0.474 mapal_vs_cutlass=0.568 (>1 = mapal faster, medians)
+samples mapal=1.4367,1.4346,1.4346,1.4326,1.5124,1.5114,1.5104,1.5104,1.5114,2.2180,2.3296,2.3224,2.3142,2.2415,2.2405,2.2364,2.1053,2.1064,2.1074,2.1064,2.1074,2.1074,2.1084,2.1033,2.1053,2.0378,2.0449,2.0398,2.0408,2.0398 cublas=0.7219,0.7260,0.7260,0.7240,0.7434,0.7424,0.7444,0.7455,0.7455,1.0947,1.0916,1.0916,1.0598,1.0547,1.0619,1.0527,1.0025,0.9994,1.0035,1.0097,1.0015,0.9974,1.0015,1.0004,0.9830,0.9759,0.9820,0.9738,0.9779,0.9759 cutlass=0.8325,0.8325,0.8346,0.8529,0.8591,0.8602,0.8591,0.8602,0.8571,1.3220,1.3210,1.3220,1.2708,1.2718,1.2708,1.2718,1.1960,1.1960,1.1960,1.1960,1.1950,1.1960,1.1960,1.1960,1.1643,1.1592,1.1561,1.1602,1.1571,1.1602
+# n=2048 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_1a22fa58c50c7414 grid=16x16 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=3.830e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.8192 med_ms=1.2216 max_ms=1.5790 tflops_med=14.06
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.7158 med_ms=1.0312 max_ms=1.3066 tflops_med=16.66
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.8233 med_ms=1.2401 max_ms=1.5985 tflops_med=13.85
+ratio mapal_vs_cublas=0.844 mapal_vs_cutlass=1.015 (>1 = mapal faster, medians)
+samples mapal=0.8294,0.8192,0.8305,0.8233,0.8284,0.9032,0.8888,0.8909,0.8919,0.8909,0.8909,1.5770,1.5729,1.5739,1.5790,1.4152,1.4141,1.4141,1.4152,1.2718,1.2657,1.2667,1.2667,1.2186,1.2216,1.2196,1.2237,1.2216,1.2186,1.2186 cublas=0.7188,0.7188,0.7209,0.7219,0.7158,0.7793,0.7793,0.7803,0.7834,0.7823,0.7864,1.3046,1.3066,1.3015,1.2841,1.1786,1.1796,1.1807,1.0895,1.0701,1.0680,1.0691,1.0639,1.0301,1.0312,1.0281,1.0322,1.0271,1.0312,1.0322 cutlass=0.8397,0.8274,0.8233,0.8356,0.8294,0.9052,0.9042,0.9052,0.9042,0.9052,1.3117,1.5985,1.5974,1.5964,1.4356,1.4356,1.4356,1.4367,1.2861,1.2872,1.2861,1.2872,1.2564,1.2401,1.2390,1.2401,1.2390,1.2401,1.2390,1.2411
+# n=2048 face=_c.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_1a22fa58c50c7414 grid=16x16 block=128 smem=16640 regs=255 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=3.830e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.8120 med_ms=1.1735 max_ms=1.3107 tflops_med=14.64
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.7629 med_ms=1.0537 max_ms=1.1745 tflops_med=16.30
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.8837 med_ms=1.2708 max_ms=1.4162 tflops_med=13.52
+ratio mapal_vs_cublas=0.898 mapal_vs_cutlass=1.083 (>1 = mapal faster, medians)
+samples mapal=0.8202,0.8120,0.8151,0.8151,0.8151,0.8131,0.8120,0.8192,1.1336,1.1325,1.1325,1.1305,1.3087,1.3107,1.3107,1.3087,1.2216,1.2227,1.2186,1.2216,1.2206,1.1745,1.1735,1.1745,1.1786,1.1725,1.1756,1.1766,1.1725,1.1735 cublas=0.7700,0.7670,0.7680,0.7629,0.7649,0.7639,0.7660,1.0322,1.0230,1.0230,1.0209,1.0260,1.1715,1.1622,1.1745,1.1663,1.0947,1.1008,1.0947,1.0916,1.0557,1.0557,1.0537,1.0547,1.0527,1.0516,1.0578,1.0598,1.0537,1.0435 cutlass=0.8837,0.8858,0.8847,0.8858,0.8838,0.8858,0.8837,1.2257,1.2247,1.2247,1.2257,1.2257,1.4152,1.4162,1.4152,1.4152,1.3220,1.3220,1.3210,1.3210,1.2708,1.2728,1.2708,1.2718,1.2708,1.2708,1.2708,1.2718,1.2718,1.2564
+# n=2048 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_5f7a8fc39e64263c grid=16x16 block=128 smem=37888 regs=194 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.269e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.269e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.269e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.6185 med_ms=0.7895 max_ms=0.8161 tflops_med=21.76
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5642 med_ms=0.7209 max_ms=0.7444 tflops_med=23.83
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.5663 med_ms=0.7219 max_ms=0.7455 tflops_med=23.80
+ratio mapal_vs_cublas=0.913 mapal_vs_cutlass=0.914 (>1 = mapal faster, medians)
+samples mapal=0.6216,0.6205,0.6226,0.6195,0.6195,0.6205,0.6195,0.6216,0.6185,0.6216,0.6205,0.6205,0.8069,0.8069,0.8079,0.8049,0.8059,0.8049,0.8131,0.8161,0.8131,0.8131,0.8141,0.8151,0.7977,0.7885,0.7895,0.7905,0.7895,0.7895 cublas=0.5652,0.5642,0.5664,0.5652,0.5663,0.5642,0.5652,0.5652,0.5652,0.5652,0.5652,0.5663,0.7342,0.7352,0.7352,0.7332,0.7342,0.7342,0.7414,0.7404,0.7444,0.7414,0.7434,0.7434,0.7209,0.7198,0.7219,0.7199,0.7209,0.7199 cutlass=0.5663,0.5673,0.5683,0.5683,0.5683,0.5673,0.5663,0.5673,0.5673,0.5693,0.5663,0.6840,0.7352,0.7373,0.7363,0.7363,0.7373,0.7383,0.7434,0.7434,0.7455,0.7434,0.7444,0.7455,0.7219,0.7219,0.7229,0.7219,0.7209,0.7219
+# n=2048 face=_tf.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_5f7a8fc39e64263c grid=16x16 block=128 smem=37888 regs=191 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.269e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.269e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.269e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.6287 med_ms=0.7905 max_ms=0.7997 tflops_med=21.73
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5734 med_ms=0.7209 max_ms=0.7291 tflops_med=23.83
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.5755 med_ms=0.7240 max_ms=0.7311 tflops_med=23.73
+ratio mapal_vs_cublas=0.912 mapal_vs_cutlass=0.916 (>1 = mapal faster, medians)
+samples mapal=0.6298,0.6287,0.6287,0.6287,0.6298,0.6298,0.6287,0.6298,0.6318,0.6287,0.6308,0.6298,0.7997,0.7987,0.7987,0.7997,0.7987,0.7987,0.7987,0.7977,0.7987,0.7987,0.7977,0.7987,0.7936,0.7895,0.7926,0.7895,0.7905,0.7905 cublas=0.5764,0.5745,0.5755,0.5745,0.5755,0.5745,0.5755,0.5734,0.5734,0.5734,0.5765,0.5734,0.7281,0.7260,0.7281,0.7270,0.7281,0.7270,0.7281,0.7281,0.7291,0.7250,0.7260,0.7260,0.7209,0.7209,0.7219,0.7209,0.7199,0.7199 cutlass=0.5766,0.5765,0.5755,0.5765,0.5755,0.5765,0.5755,0.5765,0.5755,0.5765,0.5775,0.7301,0.7291,0.7301,0.7281,0.7311,0.7301,0.7311,0.7301,0.7311,0.7301,0.7281,0.7281,0.7301,0.7219,0.7240,0.7240,0.7229,0.7209,0.7219
+# n=4096 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=8.9559 med_ms=14.0943 max_ms=20.1656 tflops_med=9.75
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.4917 med_ms=8.3180 max_ms=13.2936 tflops_med=16.52
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.6607 med_ms=8.4818 max_ms=12.3136 tflops_med=16.20
+ratio mapal_vs_cublas=0.590 mapal_vs_cutlass=0.602 (>1 = mapal faster, medians)
+samples mapal=8.9559,13.5639,15.9171,14.1988,14.2019,13.8721,14.0257,14.0370,13.8383,14.6637,14.0124,14.0319,13.9991,13.8281,14.4763,14.0288,14.1926,13.9059,14.0298,14.0257,14.0943,14.3790,15.6795,15.6109,14.6156,14.1363,14.0186,20.1656,17.1377,14.3903 cublas=5.4917,9.5805,8.7798,8.2104,8.2125,8.3169,8.0978,8.4296,8.2668,8.4265,8.2094,8.1029,8.4316,8.1644,8.3180,8.1951,8.2104,8.4275,8.1060,8.1039,8.2708,8.3169,11.1002,8.6579,8.3384,8.4275,9.7065,13.2936,9.1607,8.4951 cutlass=5.6607,9.6328,8.6723,8.3671,8.1777,8.4787,8.1551,8.4818,8.7112,8.3732,8.3671,8.1562,8.5903,8.5955,8.3640,8.3692,8.1572,8.5944,8.2616,8.2596,8.4777,8.8934,10.2820,8.8320,8.2596,8.4818,10.9629,12.3136,9.2662,8.8320
+# n=4096 face=_exact.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=24
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=9.1515 med_ms=14.5500 max_ms=22.7809 tflops_med=9.45
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.2306 med_ms=8.3190 max_ms=11.7176 tflops_med=16.52
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.4548 med_ms=8.3917 max_ms=12.4641 tflops_med=16.38
+ratio mapal_vs_cublas=0.572 mapal_vs_cutlass=0.577 (>1 = mapal faster, medians)
+samples mapal=9.1515,13.5311,17.6445,14.5510,14.0042,14.6330,14.3718,14.3636,14.0524,14.3903,14.4937,15.1409,14.5992,14.1332,14.3954,14.5480,14.3647,14.5500,14.0964,14.9422,14.2459,15.5699,18.8457,14.7436,14.7425,14.3657,17.3353,22.7809,14.9361,14.6258 cublas=5.2306,11.7176,9.3020,8.2125,7.9677,8.3190,8.1070,8.1060,8.3190,8.0845,8.5422,8.5422,8.2094,8.4275,8.1418,8.2094,8.1920,8.2074,8.4306,8.4275,8.3180,10.3629,9.2979,8.3159,8.3190,8.7183,11.3295,10.0362,8.4275,8.2074 cutlass=5.4548,11.1677,8.3917,8.3579,8.3681,8.3814,8.2596,8.1111,8.4808,8.1541,8.7101,8.4931,8.0660,8.5965,8.3681,8.3200,8.3671,8.0620,8.5944,8.2739,8.7009,10.6414,9.4904,8.4808,8.3384,8.9559,12.4641,9.5263,8.5934,8.1562
+# n=4096 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=5.5040 med_ms=9.1167 max_ms=12.7334 tflops_med=15.08
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.2101 med_ms=8.7910 max_ms=12.9260 tflops_med=15.63
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.4344 med_ms=9.2150 max_ms=14.9381 tflops_med=14.91
+ratio mapal_vs_cublas=0.964 mapal_vs_cutlass=1.011 (>1 = mapal faster, medians)
+samples mapal=5.5040,5.5195,12.7334,9.7147,9.0276,9.1105,8.8852,9.4157,9.1238,9.0132,9.1167,8.8924,9.4013,9.1116,9.0071,9.5089,8.8852,9.4075,9.1136,9.1361,9.1075,8.8893,9.5539,9.0829,9.8263,9.2826,8.7695,9.5242,9.3788,12.6065 cublas=5.2101,8.9405,11.2753,9.0286,8.7910,8.7808,8.6600,9.0665,8.7788,8.8095,8.7808,8.6569,9.0808,8.7788,8.7818,8.9027,8.6610,9.0675,8.7788,8.9027,8.7798,8.6579,9.1044,8.7788,9.4351,8.7788,8.5565,9.0286,9.1597,12.9260 cutlass=5.4344,12.2337,10.2543,9.0931,9.0829,8.9600,9.2201,9.2150,8.9539,9.0839,8.9549,9.1310,9.2150,8.9569,9.1709,9.0767,9.2334,9.2160,8.9917,9.0839,8.9559,9.3645,9.2160,9.3317,9.4894,8.9119,9.4884,9.2180,11.8927,14.9381
+# n=4096 face=_c.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=5.3760 med_ms=8.9743 max_ms=11.2067 tflops_med=15.31
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.5050 med_ms=8.7808 max_ms=10.9865 tflops_med=15.65
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.6381 med_ms=9.0829 max_ms=11.1514 tflops_med=15.13
+ratio mapal_vs_cublas=0.978 mapal_vs_cutlass=1.012 (>1 = mapal faster, medians)
+samples mapal=5.3760,5.6340,11.2067,11.0100,8.9743,8.6426,8.9764,8.9119,8.6149,9.2436,8.9283,8.7316,9.1013,8.7460,9.1064,9.1034,9.0153,8.8535,8.7500,8.7296,9.0767,8.7337,9.2355,8.8412,8.9774,8.9539,8.9539,9.2355,9.0696,8.9743 cublas=5.5091,5.5050,10.9865,10.9056,8.6866,8.5432,8.9047,8.6579,8.5453,9.1628,8.6600,8.6589,8.9037,8.6569,9.0307,9.0317,8.7798,8.7808,8.6610,8.6579,8.9037,8.6579,9.0696,8.6569,8.9057,8.7788,8.9037,9.1597,8.9037,8.9016 cutlass=5.6381,7.2182,11.1514,9.8826,8.8320,8.8904,9.0829,8.8330,9.2068,9.3501,8.8330,9.2150,9.0829,9.0767,9.2140,9.2160,8.9559,8.9559,8.8320,8.9262,9.0655,9.2805,9.2160,8.9354,9.0849,8.9559,9.2979,9.3501,9.0829,9.0849
+# n=4096 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_62294f9299787c39 grid=32x32 block=128 smem=37888 regs=194 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=4.3346 med_ms=5.2398 max_ms=5.4067 tflops_med=26.23
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=4.3110 med_ms=5.2511 max_ms=5.3668 tflops_med=26.17
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=4.0264 med_ms=4.9009 max_ms=5.0186 tflops_med=28.04
+ratio mapal_vs_cublas=1.002 mapal_vs_cutlass=0.935 (>1 = mapal faster, medians)
+samples mapal=4.3357,4.3346,5.4067,5.4036,5.4036,5.3463,5.2879,5.2357,5.1825,5.1845,5.1814,5.2910,5.2910,5.2347,5.2091,5.1814,5.2920,5.2910,5.2398,5.1948,5.1855,5.3053,5.2890,5.2869,5.2388,5.2142,5.1825,5.2900,5.2910,5.2357 cublas=4.3121,4.3110,5.3668,5.3668,5.3176,5.2849,5.2593,5.2019,5.1528,5.1466,5.1855,5.2562,5.2582,5.2009,5.1436,5.2398,5.2572,5.2531,5.1968,5.1456,5.2582,5.2593,5.2531,5.2521,5.2029,5.1476,5.2101,5.2531,5.2511,5.1988 cutlass=4.0264,4.1267,5.0186,5.0186,4.9664,4.9162,4.8753,4.8640,4.8128,4.8169,4.9183,4.9132,4.8968,4.8620,4.8128,4.9183,4.9121,4.8865,4.8630,4.8179,4.9132,4.9172,4.9152,4.9060,4.8650,4.8148,4.9142,4.9132,4.9009,4.8630
+# n=4096 face=_tf.off-l2-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_62294f9299787c39 grid=32x32 block=128 smem=37888 regs=191 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=3.9036 med_ms=5.2367 max_ms=5.6863 tflops_med=26.25
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.8851 med_ms=5.2531 max_ms=5.6709 tflops_med=26.16
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=3.6372 med_ms=4.8978 max_ms=5.3064 tflops_med=28.06
+ratio mapal_vs_cublas=1.003 mapal_vs_cutlass=0.935 (>1 = mapal faster, medians)
+samples mapal=3.9322,3.9036,5.3473,5.5542,5.6863,5.4641,5.2920,5.2910,5.2367,5.2122,5.1825,5.2920,5.2910,5.2367,5.1927,5.1876,5.2921,5.2931,5.2347,5.1825,5.1825,5.1825,5.3514,5.3473,5.2367,5.2111,5.1814,5.2931,5.2910,5.2357 cublas=3.8892,3.8851,5.3156,5.6709,5.4282,5.3146,5.2603,5.2531,5.2009,5.1466,5.2347,5.2582,5.2572,5.2009,5.1487,5.2562,5.2603,5.2531,5.1999,5.1466,5.1425,5.2296,5.3125,5.3125,5.2029,5.1487,5.2582,5.2552,5.2511,5.2040 cutlass=3.6372,3.7847,4.9633,5.3064,5.0770,4.9142,4.9132,4.8957,4.8650,4.8148,4.9132,4.9162,4.8978,4.8630,4.8108,4.9132,4.9172,4.8712,4.8671,4.8118,4.8108,4.9633,4.9664,4.9285,4.8650,4.8138,4.9142,4.9142,4.8824,4.8599
+# n=8192 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_d6fd794311b2e653 grid=64x64 block=256 smem=16640 regs=128 local_bytes=24
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=2.151e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.424e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=109.9192 med_ms=120.0353 max_ms=149.6740 tflops_med=9.16
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=58.0270 med_ms=64.1260 max_ms=69.7989 tflops_med=17.15
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=80.0625 med_ms=85.7969 max_ms=94.2141 tflops_med=12.82
+ratio mapal_vs_cublas=0.534 mapal_vs_cutlass=0.715 (>1 = mapal faster, medians)
+samples mapal=109.9192,117.0586,117.4835,149.6740,117.8819,117.9187,118.4532,120.8637,118.0989,117.9023,124.3628,120.4675,118.9048,119.2622,121.9901,119.9319,119.0810,120.7368,121.0798,120.0353,119.2929,120.9754,121.0542,119.6759,120.4081,121.3635,120.7388,119.9032,120.5524,120.9518 cublas=65.7254,58.0270,60.9505,61.1123,61.8035,61.4687,69.7989,63.8116,62.4783,61.6643,66.7771,64.1260,63.3518,64.3133,64.9923,64.3011,62.9053,64.7281,64.5192,64.0317,63.4716,64.8325,64.6246,63.8321,64.5089,64.9114,63.9662,64.0993,64.6042,64.8233 cutlass=80.0625,81.2401,82.0726,83.8492,82.1156,81.3312,94.2141,84.8179,84.0151,85.0862,88.2739,85.2388,83.7478,88.1981,87.2806,85.7969,85.2449,87.8367,86.8936,84.7432,86.4768,87.1526,86.2894,85.6668,86.7543,87.5633,85.8225,85.5992,86.8280,86.7840
+# n=8192 face=_exact.off-raster
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_d6fd794311b2e653 grid=64x64 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=2.151e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.424e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=105.9359 med_ms=127.6836 max_ms=152.5381 tflops_med=8.61
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=63.5587 med_ms=66.3542 max_ms=74.8483 tflops_med=16.57
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=80.8356 med_ms=86.0457 max_ms=92.8563 tflops_med=12.78
+ratio mapal_vs_cublas=0.520 mapal_vs_cutlass=0.674 (>1 = mapal faster, medians)
+samples mapal=105.9359,123.0193,122.6537,152.5381,123.5988,123.5282,125.6366,130.3153,124.1774,123.5323,133.9802,126.9074,124.0105,130.1391,130.4289,126.3555,125.3284,131.7161,128.2488,125.6540,129.8575,128.9318,126.0892,127.2781,129.7418,128.7055,127.6836,129.6230,128.7915,127.7061 cublas=63.5699,63.5587,63.6140,67.3761,64.4618,64.4465,74.8483,66.3255,64.4751,65.6435,68.9377,65.5892,64.4567,69.3412,66.7750,65.4029,66.8969,68.1206,66.3542,65.6701,68.3325,67.3260,65.3568,67.3075,67.3260,66.7505,66.3521,67.4099,67.0280,66.3419 cutlass=81.9057,80.8356,81.9712,86.1675,82.6368,81.8463,92.8563,84.6746,82.9143,90.0772,87.9555,83.9987,83.8666,90.1755,85.4569,83.7642,88.7511,87.3206,84.4257,85.6545,88.5974,86.9652,84.9869,87.6288,86.0457,84.9828,86.2679,87.6780,86.3068,86.1010
+# n=8192 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_46c1989e36b78c5e grid=64x64 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=2.151e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=48.9687 med_ms=78.5633 max_ms=83.5379 tflops_med=14.00
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=69.1456 med_ms=70.1962 max_ms=81.9753 tflops_med=15.66
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=81.3445 med_ms=83.9434 max_ms=113.6742 tflops_med=13.10
+ratio mapal_vs_cublas=0.893 mapal_vs_cutlass=1.068 (>1 = mapal faster, medians)
+samples mapal=48.9687,76.4887,76.8410,76.8092,76.6454,76.7181,76.7355,77.5916,83.5379,78.7179,77.7001,75.8825,82.5395,77.9786,77.8424,77.6110,81.4049,79.4327,78.7272,78.2715,80.0840,80.5325,79.1839,78.2520,80.0502,80.7352,79.4112,78.5633,79.4204,79.9140 cublas=81.9753,69.9791,69.3637,80.1249,69.2869,69.8235,70.1174,79.6201,70.9386,70.9816,69.1988,71.3902,72.1951,69.8450,69.4405,69.7743,71.7138,70.4287,69.5419,69.1456,71.1526,70.6458,70.1962,69.4313,69.7600,71.6012,70.0682,69.5665,70.2945,70.7492 cutlass=82.5129,82.6778,82.0388,113.6742,82.5190,82.6450,82.6757,96.1454,84.3192,83.9434,81.3445,88.6395,83.6690,82.6020,81.6384,86.4277,85.3484,83.0577,82.1094,85.0422,85.5859,83.3024,82.8641,84.8087,85.5859,84.2721,82.9266,85.1405,84.8855,84.9981
+# n=8192 face=_c.off-raster
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_46c1989e36b78c5e grid=64x64 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=2.151e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=78.2100 med_ms=91.0387 max_ms=102.6673 tflops_med=12.08
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=70.8751 med_ms=71.8305 max_ms=94.2868 tflops_med=15.31
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=80.8223 med_ms=83.5850 max_ms=86.5004 tflops_med=13.15
+ratio mapal_vs_cublas=0.789 mapal_vs_cutlass=0.918 (>1 = mapal faster, medians)
+samples mapal=78.2100,87.8459,88.0947,96.5724,89.3553,89.4075,88.7378,102.6673,91.1964,90.0045,88.4828,96.9841,92.1221,90.0803,89.7137,94.1609,91.3981,90.8083,89.2652,93.3550,91.1585,91.0387,90.1089,92.6618,92.1395,90.9322,91.5476,91.9603,92.2235,90.2758 cublas=72.5371,72.2371,72.5883,94.2868,72.4828,72.2094,71.2796,75.2957,71.4854,70.8751,71.1619,73.7546,71.2929,71.0932,71.7158,73.3450,71.8305,71.5325,71.7752,72.7869,71.5981,71.9299,72.2852,72.5094,71.7844,71.1434,71.7599,72.6180,71.8121,71.4844 cutlass=82.3675,82.4013,82.4443,84.6121,83.0761,83.0925,82.2006,85.0903,80.8223,81.5718,86.2341,85.5132,82.7085,81.7930,86.5004,85.7190,83.1560,82.1299,85.9392,85.3821,83.0741,82.4668,86.0099,84.2353,84.2291,82.8518,85.2388,84.2127,84.6377,83.5850
+# n=8192 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c1fa5a272d585c86 grid=64x64 block=128 smem=37888 regs=191 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.551e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.551e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.551e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=34.5170 med_ms=53.5716 max_ms=55.4793 tflops_med=20.52
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=38.8137 med_ms=39.2110 max_ms=41.0880 tflops_med=28.04
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=40.1797 med_ms=43.8252 max_ms=45.7124 tflops_med=25.09
+ratio mapal_vs_cublas=0.732 mapal_vs_cutlass=0.818 (>1 = mapal faster, medians)
+samples mapal=34.5170,54.0723,50.4842,51.2266,53.2460,52.6889,55.3175,54.7809,52.4431,51.5092,53.1476,53.6719,53.6136,54.5475,49.4776,52.5220,52.8026,53.5716,54.2761,54.3744,54.0375,50.4463,52.8957,53.2183,54.3560,55.4793,54.0815,50.9450,53.6105,53.7129 cublas=41.0880,39.2530,38.8137,38.8966,39.2929,39.3175,39.1424,39.3728,39.4639,39.1291,39.0697,39.4322,38.9601,39.2980,38.9530,39.3953,40.2790,39.1639,39.0943,39.3216,39.9596,39.0451,39.6083,38.9140,39.2110,39.3462,39.1629,39.0840,39.1055,39.0932 cutlass=41.2467,44.3300,45.1512,44.4590,44.6116,41.3051,40.1797,42.3588,45.1594,45.1543,43.2937,43.2691,40.4849,44.7396,45.7124,45.6253,43.9747,42.4837,41.0266,40.6252,44.4744,45.2854,44.2614,42.2554,40.5535,40.7173,44.4590,43.8252,42.9384,41.2262
+# n=8192 face=_tf.off-raster
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c1fa5a272d585c86 grid=64x64 block=128 smem=37888 regs=194 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.551e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.551e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.551e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=31.3344 med_ms=53.9884 max_ms=60.3279 tflops_med=20.37
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=41.8008 med_ms=42.8646 max_ms=61.3089 tflops_med=25.65
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=40.2412 med_ms=41.9174 max_ms=43.2476 tflops_med=26.23
+ratio mapal_vs_cublas=0.794 mapal_vs_cutlass=0.776 (>1 = mapal faster, medians)
+samples mapal=31.3344,54.6089,55.0533,53.9208,53.6013,53.9177,60.3279,55.1639,56.1777,56.2442,55.6503,55.1608,54.5772,53.5685,53.9884,54.7420,54.1184,53.1026,53.0668,54.1235,53.9013,53.9648,53.6228,53.4436,53.7620,54.0641,54.2013,53.4876,53.7190,53.7549 cublas=61.3089,42.0424,42.4407,42.7080,42.8257,42.9537,41.8008,42.1294,42.0229,42.2902,42.4663,42.5830,42.9251,43.1114,42.8227,42.8605,43.2056,43.2097,43.2036,43.2026,42.9210,42.8247,43.2404,43.1340,42.8646,43.3859,43.0397,42.7684,42.8759,42.7530 cutlass=43.1913,40.5330,41.4689,42.1540,41.8601,42.3434,40.4265,40.6927,40.4644,40.2412,40.3773,40.5228,42.0557,41.7270,41.6737,41.5826,42.2021,43.2476,41.9174,41.9482,41.8816,42.4632,42.3352,42.1724,41.7382,42.5329,42.1253,41.9963,42.8401,41.7567
+== done
+# recovered from the box's box_run stdout (run-rtx-3090.out): the post-profile fetch lost the connection and vast_run.sh overwrote results-rtx-3090.txt with an empty file
