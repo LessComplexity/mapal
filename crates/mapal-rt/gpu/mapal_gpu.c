@@ -105,6 +105,12 @@ static CUstream streams[MAPAL_GPU_STREAMS + 1];
 static unsigned long long legacy_ops, joined[MAPAL_GPU_STREAMS + 1];
 /* Whether the last operation enqueued on a slot was a kernel (`pdl`). */
 static int last_kernel[MAPAL_GPU_STREAMS + 1];
+/* A chain stream may hold work the host has not waited for: the next free
+ * waits for the device once, then frees run as on one stream. */
+static int chains_busy;
+/* One reusable event per recording slot (a wait captures the event's state
+ * when it is enqueued, so re-recording it later is safe). */
+static CUevent evs[MAPAL_GPU_STREAMS + 1];
 static unsigned slot_of(uint32_t s) {
   return s ? 1 + (s - 1) % MAPAL_GPU_STREAMS : 0;
 }
@@ -271,12 +277,12 @@ void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
 /* `wait` waits for everything `record` has enqueued so far. */
 static void event(unsigned record, unsigned wait, int automatic) {
   double t0 = now_ms();
-  CUevent ev;
-  CK(cuEventCreate(&ev, CU_EVENT_DISABLE_TIMING));
-  CK(cuEventRecord(ev, streams[record]));
-  CK(cuStreamWaitEvent(streams[wait], ev, 0));
-  CK(cuEventDestroy(ev)); /* released once it completes */
+  if (!evs[record])
+    CK(cuEventCreate(&evs[record], CU_EVENT_DISABLE_TIMING));
+  CK(cuEventRecord(evs[record], streams[record]));
+  CK(cuStreamWaitEvent(streams[wait], evs[record], 0));
   last_kernel[wait] = 0;
+  chains_busy = 1;
   tot.n_event++;
   if (trace)
     fprintf(stderr, "mapal_gpu_trace op=event record=%u wait=%u auto=%d ms=%.3f\n",
@@ -329,6 +335,8 @@ static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
   last_kernel[k] = 1;
   if (!k)
     legacy_ops++;
+  else
+    chains_busy = 1;
   if (trace)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
@@ -454,8 +462,10 @@ void mapal_gpu_free(uint64_t *slot) {
   /* A chain stream may still read the buffer: free only when every stream
    * is done (cuMemFree's own wait is not documented to cover non-blocking
    * streams). The emitter moves frees past the last chained launch. */
-  if (flags & STREAMS)
+  if (chains_busy) {
     CK(cuCtxSynchronize());
+    chains_busy = 0;
+  }
   CK(cuMemFree((CUdeviceptr)*slot));
   *slot = 0;
   double ms = now_ms() - t0;
@@ -472,6 +482,7 @@ void mapal_gpu_sync(void) {
     CK(cuCtxSynchronize());
     for (int i = 0; i <= MAPAL_GPU_STREAMS; i++)
       joined[i] = legacy_ops;
+    chains_busy = 0;
   }
 }
 

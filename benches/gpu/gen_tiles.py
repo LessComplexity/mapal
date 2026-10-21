@@ -394,3 +394,14 @@ for n in (512, 1024):
     for name, spec in probes(n).items():
         if name in ('indep', 'diamond', 'mlp2', 'fanout', 'mlp'):
             (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))
+# `twin`: indep with its join left out — two independent sites whose outputs are
+# read at the corners only, so nothing crosses whole and no host loop runs: the
+# device-only form indep takes once its join is placed on the device (R1/R2).
+# What streams can buy on a part, with no host work in the way.
+def twin(n):
+    return ('abef', site('c', 'a', 'b', n) + site('d', 'e', 'f', n), [('c', n * n), ('d', n * n)])
+
+
+(out / "px_twin_128.mapal").write_text(probe_program(128, twin(128), False))
+for n in (512, 1024, 2048):
+    (out / f"pt_twin_{n}.mapal").write_text(probe_program(n, twin(n), True))

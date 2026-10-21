@@ -273,16 +273,53 @@ fn every_off_arm_is_the_one_stream_pageable_text() {
         let dev = emit(&src, H100, all_off).device.expect("a device unit");
         assert!(!dev.contains("griddepcontrol"));
     }
-    // Streams off alone: one stream, pins still placed.
+    // Streams off alone: one stream; pins are a separate rung.
     let ll = host(&indep(64), H100, off(&["streams"]));
-    assert!(!ll.contains("@mapal_gpu_launchv(") && ll.contains("@mapal_gpu_pin("));
+    assert!(!ll.contains("@mapal_gpu_launchv("));
+    let ll = host(&relu_loop(64), H100, off(&["streams"]));
+    assert!(ll.contains("@mapal_gpu_pin("));
+}
+
+/// `x ← relu(x · w)` three times, the relu on the host (gen_tiles `loop`):
+/// the site's output comes down and the next state goes up every iteration.
+fn relu_loop(n: u64) -> String {
+    format!(
+        "fn main() {{
+    {nn} -> iota -> ta;
+    {n} -> iota -> krange;
+{a}{w}    mut x: [f32; {nn}] <- a;
+    mut it: i32 <- 0;
+    loop {{
+        (it < 3) -> {{
+            -true-> {{
+{s}                y -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> x;
+                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    out[0] -> println;
+    out[{last}] -> println;
+}}
+",
+        nn = n * n,
+        last = n * n - 1,
+        a = operand("a", 7),
+        w = operand("w", 11),
+        s = site("y", "x", "w", n),
+    )
 }
 
 #[test]
-fn pins_are_the_arrays_that_cross_the_bus() {
-    // devgen off: every operand is uploaded; `g` is read whole on the host
-    // (copied out), the corners of `g` are host reads of a host array.
+fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
+    // Straight-line copies run once: never pinned (devgen off, so a, b, e, f
+    // go up and c, d come down — six single crossings).
     let ll = host(&indep(64), H100, off(&["devgen", "streams"]));
+    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_h2d(").count(), 4);
+    assert!(!ll.contains("@mapal_gpu_pin("));
+    // In the loop, each pin sits right before the copy of the array it pins.
+    let ll = host(&relu_loop(64), H100, on());
     let main = mapal_main(&ll);
     let lines: Vec<&str> = main.lines().collect();
     let mut pinned = Vec::new();
@@ -295,20 +332,15 @@ fn pins_are_the_arrays_that_cross_the_bus() {
             .next()
             .expect("ptr");
         pinned.push(p.to_owned());
-        // The next transfer moves exactly the pinned array.
         let next = lines[i + 1..]
             .iter()
             .find(|x| x.contains("@mapal_gpu_h2d(") || x.contains("@mapal_gpu_d2h("))
             .expect("a copy after the pin");
         assert!(next.contains(&format!("ptr {p},")), "{l} then {next}");
     }
-    // a, b, e, f up; c, d down.
-    assert_eq!(pinned.len(), 6, "{pinned:?}");
-    assert_eq!(main.matches("@mapal_gpu_h2d(").count(), 4);
+    // y down and x up, every iteration; the loop's entry and exit run once.
+    assert_eq!(pinned.len(), 2, "{pinned:?}\n{main}");
     assert!(main.contains("call void @mapal_gpu_unpin()"));
-    // devgen on: nothing goes up, the two outputs come down.
-    let ll = host(&indep(64), H100, off(&["streams"]));
-    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_pin(").count(), 2);
 }
 
 #[test]
