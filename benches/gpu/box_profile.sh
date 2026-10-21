@@ -34,15 +34,30 @@ else
     echo "nsys unavailable" > prof/kern.csv
 fi
 
+# The e2e programs with each host-runtime rung flipped (S53): process wall time
+# and the trace phases, interleaved (the arm order rotates every round). Every
+# line lands in results-<profile>.txt as it is produced.
+ARMS=(on off-eager-init on-pool)
 for n in 1024 4096; do
     for face in "" _c; do
-        b=e2e_$n$face
-        cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
-            -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null || continue
-        for r in 1 2 3; do
-            t0=$(date +%s.%N)
-            MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" >> "prof/$b.out" 2>&1
-            echo "wall_s=$(echo "$(date +%s.%N) - $t0" | bc)" >> "prof/$b.out"
+        for arm in "${ARMS[@]}"; do
+            b=e2e_$n$face; [ "$arm" = on ] || b=$b.$arm
+            cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
+                -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null
+        done
+        for r in $(seq "${ROUNDS:-9}"); do
+            for i in "${!ARMS[@]}"; do
+                arm=${ARMS[$(( (i + r) % ${#ARMS[@]} ))]}
+                b=e2e_$n$face; [ "$arm" = on ] || b=$b.$arm
+                [ -x "prof/$b" ] || continue
+                t0=$(date +%s%N)
+                out=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" 2>&1)
+                t1=$(date +%s%N)
+                echo "$out" >> "prof/$b.out"
+                echo "e2e n=$n face=${face:-_exact} arm=$arm r=$r wall_us=$(( (t1 - t0) / 1000 ))" \
+                    "value=$(grep -v mapal_gpu <<< "$out" | head -1)" \
+                    "$(grep mapal_gpu_trace <<< "$out" | sed 's/^mapal_gpu_trace //')" | tee -a "results-$PROF.txt"
+            done
         done
     done
 done

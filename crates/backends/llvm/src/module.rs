@@ -347,14 +347,16 @@ fn escape_bytes(bytes: &[u8]) -> String {
 
 /// The public `@main` wrapper (DESIGN §4, BL8). Calls the entry body `@mapal_main`
 /// and returns exit 0; a non-erased return is printed through `mapal-rt` so the
-/// differential observes it (the `Unit → i32` closed shape).
-pub(crate) fn emit_main_wrapper(ir: &CategoryIr) -> String {
+/// differential observes it (the `Unit → i32` closed shape). `prologue` (whole
+/// lines) runs before the entry body: the GPU runtime's init.
+pub(crate) fn emit_main_wrapper(ir: &CategoryIr, prologue: &str) -> String {
     let entry = ir.entry();
     let fd = ir.func(entry).expect("sealed graph: entry resolves");
     let input_ty = &ir.object(fd.input).expect("input resolves").ty;
     let output_ty = &ir.object(fd.output).expect("output resolves").ty;
 
     let mut out = String::from("define i32 @main() {\nentry:\n");
+    out.push_str(prologue);
 
     // Build the argument list. Closed entries (Unit / IoToken input) pass none;
     // any other shape is not a native-observable closed program (BL8) but still
