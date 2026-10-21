@@ -77,7 +77,7 @@ def bench(n):
 """
 
 
-for n in (1024, 2048, 4096, 8192):
+for n in (1024, 1536, 2048, 3072, 4096, 8192):
     (out / f"mm_{n}.mapal").write_text(bench(n))
 
 

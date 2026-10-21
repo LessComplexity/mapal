@@ -51,11 +51,15 @@ for spec in "$@"; do
         # and the TF32 face (tensor cores).
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            for rung in wide ldmatrix; do
+            for rung in wide ldmatrix warp-fill; do
                 emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
             done
-            for rung in interleave unroll min-blocks warp async; do
+            for rung in interleave unroll min-blocks warp async warp-fill; do
                 emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
+            done
+            # Rungs that change the geometry the exact face runs too.
+            for rung in warp-fill; do
+                emit_one "$f" "$d/${b}.off-$rung" "$prof" "$sm" "--gpu-off=$rung"
             done
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
             for prev in ${PREV:-}; do
