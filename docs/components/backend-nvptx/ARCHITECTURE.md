@@ -189,6 +189,14 @@ policy from `l2_bytes`). OFF is today's text byte for byte. A rung's fill key is
 ends up in: the host kernel for an epilogue, its own grid for a cell kernel, the union for
 streams (`profile.rs:Fill`).
 
+The table is a rung too (`arch-rungs`; `emit --gpu-off=arch-select`): OFF ships every rung ON,
+the S52 text, so ON vs OFF prices the per-part selection on every kernel and probe. A row's face
+key is the kernel the rung folds into: `Exact`, `Contract` (the FMA tile, and TF32 with it — a
+contract face), `Tf32` (the `mma` kernel alone; S54: the 3090's `.minnctapersm` pays on the FMA
+tile and costs 11% on `mma`). `benches/gpu/rungs.py` decides a rung measured for the first time
+by the plan's rule (ON iff some size is > 1% faster in every session) and flips a decided row only
+when every session measures the other sign; host-read rungs (`gpu.rs:host_rungs`) key fill `Any`.
+
 ## 8. What is not placed here
 
 - The whole float sum on the device (ADR-0028 D4; the canonical-tree re-pin is Sapir's call).
