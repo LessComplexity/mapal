@@ -53,6 +53,12 @@ declare double @llvm.fma.f64(double, double, double)\n";
 pub(crate) const GPU_DECLS: &str =
     "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
 
+/// The clock fence's device half: a `time` read on a GPU profile waits for
+/// every launch before it (`FnEmit::emit_time_ms`). Declared only beside a
+/// tile call, so a clock-free module's text is what it was before the fence.
+pub(crate) const GPU_SYNC: &str = "call void @mapal_gpu_sync()";
+pub(crate) const GPU_SYNC_DECL: &str = "declare void @mapal_gpu_sync()\n";
+
 /// Threads per block of the one-thread-per-cell kernel.
 /// ponytail: a literal, not derived — the fallback is a correctness path; derive
 /// it when an untiled site turns out to matter for speed.

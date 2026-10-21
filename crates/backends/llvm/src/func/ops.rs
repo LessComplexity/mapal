@@ -499,7 +499,15 @@ impl<'a> FnEmit<'a> {
     /// IS its component) — so the call result is the target object's value and
     /// no pair is materialized. Emission position in the block IS the ordering
     /// the token models.
+    ///
+    /// On a GPU profile the read first waits for the device (plan-s53
+    /// `clock-fence`): a launch returns before its kernel ends, so without the
+    /// sync the clock would close over work still running. `lib.rs` drops the
+    /// call again from a module with no GPU site — nothing to wait for.
     pub(super) fn emit_time_ms(&mut self, target: ObjectId) {
+        if self.profile.gpu().is_some() {
+            self.line(gpu::GPU_SYNC);
+        }
         let r = self.tmp();
         self.line(format!("{r} = call double @mapal_time_ms()"));
         self.store_obj(target, "double", &r);
