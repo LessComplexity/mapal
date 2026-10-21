@@ -87,6 +87,17 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// S53 `fma-regs` (four rungs, FMA and one-thread-per-cell kernels):
+    /// index arithmetic in `i32` when every index the kernel forms fits.
+    pub idx32: bool,
+    /// Panel copy `p` addressed as copy 0 plus a constant from the lane
+    /// map's period: one base register per operand.
+    pub affine: bool,
+    /// Register-staged transposed-A store: the lane map and row pad under
+    /// which one warp's stores hit 32 banks.
+    pub pad: bool,
+    /// FMA register tile from the whole-thread register count (8×16).
+    pub wide_fma: bool,
 }
 
 impl Default for GpuRungs {
@@ -101,6 +112,10 @@ impl Default for GpuRungs {
             cp_async: true,
             wide: true,
             ldmatrix: true,
+            idx32: true,
+            affine: true,
+            pad: true,
+            wide_fma: true,
         }
     }
 }

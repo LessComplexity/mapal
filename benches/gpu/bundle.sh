@@ -47,15 +47,29 @@ for spec in "$@"; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        # S53: the differential also runs register staging (async off), the
+        # path the async-only shipped kernel never exercises.
+        case $b in mm_*|e2e_*) ;; *)
+            emit_one "$f" "$d/$b.sync" "$prof" "$sm" --gpu-off=async
+            emit_one "$f" "$d/${b}_c.sync" "$prof" "$sm" --contract --gpu-off=async
+            ;;
+        esac
         # Measurement arms (S52): the shipped kernel with one rung off, FMA face;
-        # and the TF32 face (tensor cores).
+        # and the TF32 face (tensor cores). A comma joins rungs (file tag `+`).
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             for rung in wide ldmatrix; do
                 emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
             done
-            for rung in interleave unroll min-blocks warp async; do
-                emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
+            for rung in interleave unroll min-blocks warp async \
+                fma-regs idx32 affine wide-fma \
+                async,fma-regs async,idx32 async,affine async,pad async,wide-fma; do
+                emit_one "$f" "$d/${b}_c.off-${rung//,/+}" "$prof" "$sm" --contract "--gpu-off=$rung"
+            done
+            # S53: the exact face (the differential gate) gets the fma-regs arms too.
+            for rung in async fma-regs idx32 affine wide-fma \
+                async,fma-regs async,idx32 async,affine async,pad async,wide-fma; do
+                emit_one "$f" "$d/$b.off-${rung//,/+}" "$prof" "$sm" "--gpu-off=$rung"
             done
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
             for prev in ${PREV:-}; do

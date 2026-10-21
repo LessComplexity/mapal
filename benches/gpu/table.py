@@ -8,7 +8,11 @@ for path in sys.argv[1:]:
     for l in open(path):
         m = re.match(r'# n=(\d+) face=(\S+)', l)
         if m:
-            cur = {'n': m[1], 'face': {'_exact': 'exact', '_c': 'FMA SHIPPED', '_tf': 'TF32 tensor'}.get(m[2], ('tf32 ' + m[2].removeprefix('_tf.')) if m[2].startswith('_tf.') else 'fma ' + m[2].removeprefix('_c.'))}
+            f = m[2]
+            cur = {'n': m[1], 'face': {'_exact': 'exact', '_c': 'FMA SHIPPED', '_tf': 'TF32 tensor'}.get(f,
+                   'tf32 ' + f.removeprefix('_tf.') if f.startswith('_tf.') else
+                   'exact ' + f.removeprefix('_exact.') if f.startswith('_exact.') else
+                   'fma ' + f.removeprefix('_c.'))}
             continue
         m = re.match(r'mapal kernel=\S+ grid=(\S+) block=(\d+) smem=(\d+) regs=(\d+) local_bytes=(\d+)', l)
         if m:

@@ -73,9 +73,20 @@ fn main() -> ExitCode {
                         "async" => opts.gpu.cp_async = false,
                         "wide" => opts.gpu.wide = false,
                         "ldmatrix" => opts.gpu.ldmatrix = false,
+                        "idx32" => opts.gpu.idx32 = false,
+                        "affine" => opts.gpu.affine = false,
+                        "pad" => opts.gpu.pad = false,
+                        "wide-fma" => opts.gpu.wide_fma = false,
+                        // S53: the four together — the FMA kernel before the item.
+                        "fma-regs" => {
+                            opts.gpu.idx32 = false;
+                            opts.gpu.affine = false;
+                            opts.gpu.pad = false;
+                            opts.gpu.wide_fma = false;
+                        }
                         other => {
                             eprintln!(
-                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix)"
+                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix, idx32, affine, pad, wide-fma, fma-regs)"
                             );
                             return ExitCode::from(2);
                         }
