@@ -1,0 +1,10 @@
+{
+  "archive": ".claude/worktrees/_archive-s54-20261021/s58-allocation-candidate",
+  "evidence_files": 262,
+  "evidence_bytes": 8776631,
+  "candidate_emitter_sha256": "61351468b9e59ce0859ded91007f15b5d37ea2a4f6603533202855452d074231",
+  "copy_verified": true,
+  "hardware_validated": false,
+  "shared_candidate_applied": false,
+  "recovery_manifest_sha256": "a2bdcc0acd22415c4393ec8a5fcf612a2a2d1426649f7745d9f44c51698b5712"
+}

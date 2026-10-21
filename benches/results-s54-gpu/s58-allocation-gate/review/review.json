@@ -1,0 +1,37 @@
+{
+  "verdict": "no remaining blocker in fixed v2 future packet; not execution authorization",
+  "packet": "/private/tmp/mapal-s58-allocation-gate/packet-v2",
+  "packet_manifest_sha256": "32d618492a233f3c32708cc8c028a752dd4997413529e487ac4d0f07c8d18a87",
+  "v1_rejected_findings": [
+    "Outer phase group kill did not reach independently sessioned compiler/GPU child; actual outer SIGTERM bypassed Python cleanup.",
+    "Nested/symlink output directories could write inside packet and reach subprocess launch before later inventory rejection."
+  ],
+  "v2_fixed_locations": {
+    "outer_term_propagation_and_grace": "run_gate.py:13-18,24-45",
+    "inner_term_cleanup_and_wait": "box_ordering.py:33-70",
+    "resolved_output_containment_before_write": "run_gate.py:20-23"
+  },
+  "prerequisites": {
+    "no_time_or_clang_command_dependency": true,
+    "cc_objdump_path_and_cc_version": "box_ordering.py:142-149",
+    "cuda_header_stub_runtime_link_and_disassembly_all_16_before_gpu": "box_ordering.py:155-181",
+    "actual_linux_cuda_link_execution_tested_here": false
+  },
+  "separation_and_scope": {
+    "ordinary_exact_bytes_status_hash_inventory": "verify_results.py:21-75",
+    "trace_after_both_verified_ordinary_revisions": "run_gate.py:50-55; counters.py:23-34",
+    "trace_oracle_and_binary_ptx_binding": "verify_gate.py:25-29",
+    "ordered_requests_requested_bytes_allocation_free_counts": "counters.py:8-20",
+    "scope": "640 corner-observation ordinary processes and28 separately instrumented straight-line counter processes; no full-array, universal-race, speedup or VRAM claim"
+  },
+  "independent_checks": [
+    "check-only packet hash/inventory validation passed",
+    "real detached child dead and reaped after forced ordinary phase timeout",
+    "actual CLI SIGTERM killed and reaped outer phase and detached fake compiler child",
+    "equal/nested/symlink output rejected before child launch or new output writes",
+    "same independent probes reproduce v1 defects",
+    "only six v2 payload files differ: cancellation orchestration, three runner copies and two runner manifests; LLVM/PTX/runtime/fixtures/oracles/counter predictions unchanged"
+  ],
+  "no_gpu_network_rental": true,
+  "all_fixture_processes_stopped": true
+}

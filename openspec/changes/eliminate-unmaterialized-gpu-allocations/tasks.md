@@ -21,6 +21,14 @@ not future allocation elimination. See `docs/performance/s58-parallel-developmen
 - [ ] 2.4 After the completion obligations pass, omit raw chain-prologue allocations only when the selected group does not store the raw output; preserve live member allocation positions and runtime ownership.
 - [ ] 2.5 Verify generated pointer, allocation/free and ordering changes across independent, diamond, MLP2, twin and single-chain controls for Exact and Contract modes. Include stored raw fanout and host observation.
 
+S58 prepares tasks 2.4–2.5 in an isolated snapshot of `3a0d435`: a three-line
+`store_out` skip, old-code failing regression, 51 focused and 59 backend-library passes,
+28 unchanged device LLVM units and surviving-host-body equivalence after removing only
+proved unread allocations. Root independently rehashed the packet. These tasks stay
+unchecked until independent review and the candidate's own no-clock GPU gate establish
+the boundary after incidental free-time waits disappear. The shared allocator is unchanged;
+no speedup or runtime allocation count is inferred from static call/byte differences.
+
 ## 3. Validate correctness and measure the change
 
 - [x] 3.1 Run focused regressions and the required-clang workspace suite; retain failure output and final results.

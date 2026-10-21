@@ -1,0 +1,17 @@
+--- /private/tmp/mapal-s58-gpu/combined-v62/staging/run_combined.py	2026-10-21 18:46:56
++++ /private/tmp/mapal-s58-gpu/time-prerequisite-preparation/run_combined.py	2026-10-21 19:08:44
+@@ -47,6 +47,14 @@
+    if sha(ROOT/n)!=h:raise ValueError('Sealed input changed: '+n)
+   if not run('smallm-payload-check',[sys.executable,ROOT/'smallm-packet/run_packet.py','--bundle',ROOT/'smallm-packet','--profile','rtx-5090','--check-only'],60):raise ValueError('SmallM packet check failed')
+   if not run('matrix-payload-check',[sys.executable,ROOT/'matrix-upload/check_payload.py'],60):raise ValueError('Frozen matrix payload check failed')
++  for name,args,cap in [
++   ('apt-update-benchmark-prerequisite',['apt-get','update'],90),
++   ('apt-install-time',['apt-get','install','-y','--no-install-recommends','time'],90),
++   ('time-version',['/usr/bin/time','--version'],15),
++   ('time-package',['dpkg-query','-W','-f','${Package}\t${Version}\n','time'],15),
++  ]:
++   if not run(name,args,cap):raise ValueError('Benchmark prerequisite failed: '+name)
++  if 'GNU Time' not in (OUT/'time-version/stdout').read_text():raise ValueError('Explicit GNU time version gate failed')
+   idle('gpu-idle-before-smallm');cap=min(1100,remaining()-10)
+   if cap<720:raise ValueError('Insufficient absolute lease time for smallM; no GPU phases admitted')
+   smallm_ok=run('smallm',[sys.executable,ROOT/'smallm-packet/run_packet.py','--bundle',ROOT/'smallm-packet','--profile','rtx-5090','--results',OUT/'smallm-values','--host-hourly-rate',str(lease['host_hourly_rate']),'--total-timeout',str(cap)],cap+10)

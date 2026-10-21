@@ -82,7 +82,14 @@ device LLVM units support the runtime/API completion proof. A renewed RTX 5090 a
 passed 200 ordinary processes on the frozen revision and 200 on the correction, with
 independent raw-output validation after retrieval. Both passed; there is no observed race
 failure or measured speedup. Required-clang workspace: **1,188 passed / 0 failed / 1 ignored**.
-Allocation elimination remains deferred; the arena guard stays.
+Allocation elimination remains unintegrated; the arena guard stays. S58's isolated
+`chain_prologue` candidate reuses selected-group `store_out` to omit only raw storage
+already unused by the launch. Its old-code regression fails, 51 focused and 59 backend
+library tests pass, and all 28 emitted device LLVM units match. The isolated full
+required-clang workspace passes 1,190 tests with zero failures and one ignored. Surviving host bodies
+preserve allocation positions and dependencies. Its own ordinary GPU gate remains
+required because an omitted allocation also removes an incidental wait in its free.
+See the [candidate evidence](../../performance/s58-parallel-development.md).
 
 The [large/composed preparation](../../performance/s57-large-composed-evidence.md) adds
 96 successful temporary primitive emissions and small arithmetic certification.
@@ -92,8 +99,10 @@ sampled value gates pass. This is separate from the frozen matrix.
 The recurrent checkpoint replay panic is now repaired through existing loop-driver facts.
 All eight previously failing GPU emissions complete and full interpreter checkpoints
 match. S58 small-matrix correctness passes for Mapal, handwritten CUDA/cuBLAS and PyTorch
-eager; compiled PyTorch stopped at missing `Python.h`, before a numeric verdict. This is
-not a composed timing result. Native large emission still reaches a bounded timeout.
+eager. The first compiled PyTorch attempt stopped at missing `Python.h`; after an explicit
+development-header installation, a later run passes. Root rechecked its 1,024 checkpoint
+and 128 final values against both frozen numerical budgets. This is small-matrix
+correctness, not a composed timing result. Native large emission still reaches a bounded timeout.
 
 ## Continuing performance work
 

@@ -8,7 +8,7 @@
 
 - [x] 2.1 Independently review prototype and integrate a concrete repository tooling path; verify reviewed diff and dependency boundary.
 - [x] 2.2 Map every integrated morphism into component IMPLEMENTATION.md, reconcile ARCHITECTURE.md then component/root STATUS.md, and record section4.5 review; verify mapped symbols exist and docs describe actual integration.
-- [ ] 2.3 Run supercharge drift, fix/record dead rows and write immutable session continuity; verify checks before archiving.
+- [x] 2.3 Run supercharge drift, fix/record dead rows and write immutable session continuity; verify checks before archiving.
 
 ## 3. Separately authorized future GPU proof
 
@@ -19,3 +19,8 @@ S58 integration: `benches/gpu/capture_images/` and sanitized evidence under
 `benches/results-s54-gpu/s58-executed-image-capture/`. Independent review reproduced
 and then rejected wrong resource context and launch geometry. Fresh relocated real-header
 compilation and eleven local test groups pass; GPU proof remains unexecuted.
+The later optional hardware phase correctly reports unvalidated because its prerequisite
+ordinary small-M run was incomplete; no callback/cubin/SASS claim follows from its exit0.
+S58 closes local continuity with drift 0 dead / 571 refs, strict OpenSpec 7/0 and
+`docs/sessions/2026-10-21-s58-parallel-proof-and-validation.md`. Hardware duties remain
+unchecked, so the change stays in flight.

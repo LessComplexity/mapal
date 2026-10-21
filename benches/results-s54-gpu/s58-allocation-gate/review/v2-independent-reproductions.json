@@ -1,0 +1,22 @@
+{
+  "nested_child_dead_after_outer_phase_timeout": true,
+  "path_checks": {
+    "nested": {
+      "rejected_before_child_launch": true,
+      "error": "ValueError",
+      "new_result_directory_created": false
+    },
+    "equal": {
+      "rejected_before_child_launch": true,
+      "error": "ValueError",
+      "new_result_directory_created": false
+    },
+    "symlink": {
+      "rejected_before_child_launch": true,
+      "error": "ValueError",
+      "new_result_directory_created": false
+    }
+  },
+  "no_gpu_network_rental": true,
+  "all_fixture_processes_stopped": true
+}

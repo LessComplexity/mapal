@@ -1,0 +1,1094 @@
+[
+  {
+    "variant": "before",
+    "case": "independent",
+    "face": "exact",
+    "actual_allocation_requests": 7,
+    "successful_free_operations": 7,
+    "requested_bytes_total": 114688,
+    "static_peak_requested_live_bytes": 114688,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "independent",
+    "face": "contract",
+    "actual_allocation_requests": 7,
+    "successful_free_operations": 7,
+    "requested_bytes_total": 114688,
+    "static_peak_requested_live_bytes": 114688,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "diamond",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "diamond",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "mlp2",
+    "face": "exact",
+    "actual_allocation_requests": 12,
+    "successful_free_operations": 12,
+    "requested_bytes_total": 196608,
+    "static_peak_requested_live_bytes": 196608,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "mlp2",
+    "face": "contract",
+    "actual_allocation_requests": 12,
+    "successful_free_operations": 12,
+    "requested_bytes_total": 196608,
+    "static_peak_requested_live_bytes": 196608,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "single-chain",
+    "face": "exact",
+    "actual_allocation_requests": 1,
+    "successful_free_operations": 1,
+    "requested_bytes_total": 81920,
+    "static_peak_requested_live_bytes": 81920,
+    "requests": [
+      [
+        "arena",
+        81920
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "single-chain",
+    "face": "contract",
+    "actual_allocation_requests": 1,
+    "successful_free_operations": 1,
+    "requested_bytes_total": 81920,
+    "static_peak_requested_live_bytes": 81920,
+    "requests": [
+      [
+        "arena",
+        81920
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "materialized-raw",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "materialized-raw",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "omitted-raw",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "omitted-raw",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "forked-tile",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "before",
+    "case": "forked-tile",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "independent",
+    "face": "exact",
+    "actual_allocation_requests": 6,
+    "successful_free_operations": 6,
+    "requested_bytes_total": 98304,
+    "static_peak_requested_live_bytes": 98304,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "independent",
+    "face": "contract",
+    "actual_allocation_requests": 6,
+    "successful_free_operations": 6,
+    "requested_bytes_total": 98304,
+    "static_peak_requested_live_bytes": 98304,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "diamond",
+    "face": "exact",
+    "actual_allocation_requests": 7,
+    "successful_free_operations": 7,
+    "requested_bytes_total": 114688,
+    "static_peak_requested_live_bytes": 114688,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "diamond",
+    "face": "contract",
+    "actual_allocation_requests": 7,
+    "successful_free_operations": 7,
+    "requested_bytes_total": 114688,
+    "static_peak_requested_live_bytes": 114688,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "mlp2",
+    "face": "exact",
+    "actual_allocation_requests": 10,
+    "successful_free_operations": 10,
+    "requested_bytes_total": 163840,
+    "static_peak_requested_live_bytes": 163840,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "mlp2",
+    "face": "contract",
+    "actual_allocation_requests": 10,
+    "successful_free_operations": 10,
+    "requested_bytes_total": 163840,
+    "static_peak_requested_live_bytes": 163840,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "single-chain",
+    "face": "exact",
+    "actual_allocation_requests": 1,
+    "successful_free_operations": 1,
+    "requested_bytes_total": 81920,
+    "static_peak_requested_live_bytes": 81920,
+    "requests": [
+      [
+        "arena",
+        81920
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "single-chain",
+    "face": "contract",
+    "actual_allocation_requests": 1,
+    "successful_free_operations": 1,
+    "requested_bytes_total": 81920,
+    "static_peak_requested_live_bytes": 81920,
+    "requests": [
+      [
+        "arena",
+        81920
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "materialized-raw",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "materialized-raw",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "omitted-raw",
+    "face": "exact",
+    "actual_allocation_requests": 6,
+    "successful_free_operations": 6,
+    "requested_bytes_total": 98304,
+    "static_peak_requested_live_bytes": 98304,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "omitted-raw",
+    "face": "contract",
+    "actual_allocation_requests": 6,
+    "successful_free_operations": 6,
+    "requested_bytes_total": 98304,
+    "static_peak_requested_live_bytes": 98304,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "forked-tile",
+    "face": "exact",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  },
+  {
+    "variant": "after",
+    "case": "forked-tile",
+    "face": "contract",
+    "actual_allocation_requests": 8,
+    "successful_free_operations": 8,
+    "requested_bytes_total": 131072,
+    "static_peak_requested_live_bytes": 131072,
+    "requests": [
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ],
+      [
+        "alloc",
+        16384
+      ]
+    ]
+  }
+]

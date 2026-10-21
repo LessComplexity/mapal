@@ -18,6 +18,13 @@
 - [ ] 3.4 Add PyTorch eager and compiled full-recompute/incremental references with pinned runtime precision and reported graph scope/mode; validate outputs and expose unsupported compilation or eager fallback explicitly.
 - [ ] 3.5 Verify matched cold/warm/device timing and reset boundaries, process statuses, allocation/transfer counts and allocated/reserved-memory reporting; preserve meaningful negative controls for incomplete output and asynchronous timing.
 
+S58 supplies partial matrix-only evidence for 3.1–3.4: Mapal, handwritten naive CUDA,
+cuBLAS and PyTorch eager pass the prepared small case. A later PyTorch 2.13.0/cu130
+Inductor fullgraph run also passes after explicit Python development headers are
+installed; 1,024 checkpoint and 128 final values independently recheck against both
+frozen numerical budgets. Recurrent/incremental and matched timing duties remain open,
+so these tasks are not marked complete from the small matrix result.
+
 ## 4. Measure composition and reconcile
 
 - [ ] 4.1 Run matrix and recurrent compositions at the admitted sizes with all matched implementations; retain ordinary timings, separate profiling, intermediate value evidence and rental cleanup receipts.

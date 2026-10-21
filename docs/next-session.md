@@ -1,38 +1,49 @@
 # Current continuation — S58 parallel development and validation
 
-## Live S58 work (2026-10-21)
+## Closed S58 work (2026-10-21)
 
 The user authorized parallel GPT-6.1-sol coding/testing/disassembly agents and machines.
-Root reviews and integrates; workers use isolated git-archive snapshots, not worktrees.
-The shared ordering correction is applied over `a14feda`; small-M selection remains isolated.
-See [current evidence table](performance/s58-parallel-development.md).
+Root reviews and integrates; workers used isolated git-archive snapshots, not worktrees.
+The shared ordering correction is committed as `3a0d435`; small-M and allocation
+candidates remain isolated. See the [current evidence table](performance/s58-parallel-development.md)
+and [immutable S58 handoff](sessions/2026-10-21-s58-parallel-proof-and-validation.md).
 
-| Owner | Scope and location | Current state |
-| --- | --- | --- |
-| `ordering_codegen` | `/private/tmp/mapal-s58-ordering/` | Reviewed correction integrated; workspace 1,188/0/1 ignored, 200 frozen + 200 corrected ordinary GPU processes pass. No allocation removal. Independently reviewed small-M and observer candidates. |
-| `smallm_kernel` | `/private/tmp/mapal-s58-smallm/`, `/private/tmp/mapal-s58-smallm-bench/` | Final geometry candidate preserves all previous valid selections in 2,440 cases; 164 newly legal. Final sealed packet has 114 combined/isolated PTX identities, 13 harness checks and combined workspace 1,190/0/1 ignored. GPU performance pending. |
-| `gpu_measurement` | `/private/tmp/mapal-s58-gpu/` | Correctness instance57118557 closed/independently absent22:21:34UTC. Mapal/naive/cuBLAS/PyTorch eager values pass; compiled blocked by Python.h. First combined instance57121897 failed before SSH/upload; absent22:43:37UTC. Replacement57122410 is loading/intended running on machine154241/host303447 at22:49:02UTC. Agent owns polling/cleanup; deadline23:18:04UTC. |
-| `executed_image_capture` | `/private/tmp/mapal-s58-capture/` | Standalone prototype passed real-header compilation and 11 local test groups; independent context/geometry attacks now reject. Repository prototype saved; optional post-timing proof is sealed, actual GPU capture untested. |
+| Work | Result and continuation |
+| --- | --- |
+| Ordering | Integrated; workspace 1,188/0/1 ignored, 200 frozen + 200 corrected ordinary GPU processes pass. No observed old-code race or speedup. |
+| Small-M | Candidate preserves all previous valid selections in 2,440 geometry cases; 164 newly legal. Combined isolated workspace 1,190/0/1 ignored; 114 combined/isolated PTX identities. GPU attempt stopped before the first primary process: `/usr/bin/time` absent. No new timings admitted. Install/check this prerequisite before a fresh bound attempt. |
+| Allocation | Three-line `store_out` skip prepared over `3a0d435`; 28 unchanged device LLVM units and independently checked surviving-host-body/slot equivalence. Candidate workspace 1,190/0/1 ignored. Its own ordinary GPU gate is required before integration. |
+| Matrix references | Mapal, handwritten naive CUDA/cuBLAS and PyTorch eager pass the small matrix gates. PyTorch compiled now passes after explicit headers installation; 1,024 checkpoint + 128 final values independently rechecked. No matched composed timing. |
+| Executed images | Repository CUPTI prototype passes local compilation/negative tests. Optional GPU proof skipped because ordinary small-M comparison was incomplete. Actual executed SASS remains unvalidated. |
 
-After the combined pre-upload failure, cumulative planning cost is $0.5137256 including
-failed-attempt and transfer reserves, leaving $0.4862744 under the original $1 cap.
-The reviewed replacement57122410 is live at $0.6161111111/hour. Creation22:48:04UTC;
-absolute cleanup deadline23:18:04UTC. Cumulative maximum planning reservation is
-$0.9217811121. The six static payload files exactly match the reviewed failed attempt.
-Root independently reran all16 launcher guards and preserved the new digest-bound review
-in `/private/tmp/mapal-s58-gpu/combined-v62/root-review.json`. Never rerun either the new
-consumed `combined-v62/launch_once.py` or the
-consumed `run_once_v59.py` launcher. Public exact receipts are under
-`benches/results-s54-gpu/s58-correctness-pilot/`; full raw trace and payload recovery are
-under ignored `.claude/worktrees/_archive-s54-20261021/s58-correctness-20261021/`.
+All task rentals are closed. Instance 57118557 was independently absent at 22:21:34 UTC;
+failed reservation 57121897 at 22:43:37; final instance 57122410 at 23:02:58, before
+its 23:18:04 deadline. Cumulative conservative planning cost is **$0.7667982573**,
+including failed-attempt and transfer reserves; **$0.2332017427 remains** under the
+original $1 cap. These are not invoices. A final same-host-only 600-second feasibility
+query found no eligible offer, so no further rental/upload occurred. Never rerun the
+consumed v59/v61/v62 launchers. Never touch unrelated instances `57065574` or `57100404`.
 
-Combined candidate source: `/private/tmp/mapal-s58-combined/source`, emitter
-`/private/tmp/mapal-s58-combined/bin/emit` (SHA256
-`ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307`).
-The provenance JSON binds current HEAD, ordering/small-M patches and all3,343 source files.
-Shared ordering workspace and combined isolated workspace testing finished; no host test process remains live. Raw create responses
-can contain credentials and stay private. User renewed machine/run authorization after
-S57's exhausted two-attempt limit; the historical section below is not current authority.
+Preserved continuation inputs:
+
+- `/private/tmp/mapal-s58-combined/source`, emitter `/private/tmp/mapal-s58-combined/bin/emit`
+  SHA `ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307`.
+- `/private/tmp/mapal-s58-smallm-bench-payload.tgz`: sealed unchanged benchmark packet;
+  exact final patch/evidence under `benches/results-s54-gpu/s58-smallm-candidate/`.
+- `/private/tmp/mapal-s58-gpu/time-prerequisite-preparation/`: tested dependency repair;
+  public diff/tests under `benches/results-s54-gpu/s58-combined-pilot/`.
+- `/private/tmp/mapal-s58-allocation-gate/README.md`: prepared 640 ordinary processes and
+  28 separate traced counter processes. Recovery archive and hashes under
+  `benches/results-s54-gpu/s58-allocation-gate/recovery.json`; no GPU execution yet.
+- Full raw private recovery under ignored `.claude/worktrees/_archive-s54-20261021/`;
+  public compiled and failed-performance evidence under `s58-combined-pilot/` and
+  `s58-smallm-failed-attempt-analysis/`. Private API/create records may contain credentials.
+
+First inspect the current handoff and `openspec list --json`. Continue by reviewing the
+allocation gate's independent findings and the timing-utility prerequisite, then bind
+any future hardware run to fresh cost/time/physical-host checks. Existing user machine
+authorization persists within its caps; closed one-use launchers are not reusable.
+The frozen `target/release/examples/emit` remains untouched. Preserve `oainotes.md`.
 
 ## S57 completed baseline
 
@@ -40,7 +51,7 @@ The only checkout is `s54-gpu-fusion`. Frozen GPU measurements bind source `b415
 the completed validation records are locally committed as `0ca0507`. Preserve the ignored recovery archives
 under `.claude/worktrees/_archive-s54-20261021/` and untracked `oainotes.md`. Do not push.
 The shared source includes the proved loop-route replay repair, locally committed as `627a17c`.
-The newest immutable checkpoint is
+The historical S57 checkpoint is
 [S57 proof work closed](sessions/2026-10-21-s57-proof-work-closed.md).
 Earlier checkpoints remain historical; this mutable continuation tracks later work.
 
@@ -131,7 +142,7 @@ Keep numerical success, arithmetic-route proof and timing admission distinct.
    Benchmark success does not close targeted ordering duties.
 2. Read-only diagnosis of both pre-upload allocation failures is complete without a proved
    cause. Both S57 attempts are exhausted and their launchers remain closed. The user has
-   since renewed machine/run authorization; the new bound S58 attempt is described above.
+   since renewed machine/run authorization; the completed bound S58 attempts are described above.
    Payloads and exact validators remain under `ordering-runtime/`, `large-composed/`
    and `correctness-pair/` in the operational base. Timeout aborts all later phases.
 3. **Replay repair complete:** `repair-loop-route-replay` is archived. Exact diagnostics
@@ -154,7 +165,8 @@ Keep numerical success, arithmetic-route proof and timing admission distinct.
    passes 50 focused checks and preserves all 14 device LLVM units. S58 integrated this
    correction after 200 ordinary GPU processes per revision and the full workspace passed.
    Preserve the arena guard. A nonzero free currently synchronizes; omitting an allocation
-   can remove that incidental wait. No allocation removal or measured gain is claimed.
+   can remove that incidental wait. The isolated `store_out` candidate and no-clock gate
+   are preserved above; no shared allocation removal or measured gain is claimed.
 5. Continue `benchmark-large-composed-gpu-workloads`: full recurrent checkpoints after
    replay repair; matched numerical contracts and clocks across Mapal, naive/handwritten,
    cuBLAS and PyTorch eager/compiled; then retention/allocation controls across families.
