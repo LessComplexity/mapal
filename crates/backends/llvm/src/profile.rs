@@ -3503,6 +3503,14 @@ mod tests {
         assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
         // 5090 under-filled: async paid on the S52 tile, not on warp-fill's.
         assert!(!RTX_5090.gpu_rungs(0, true).cp_async);
+        // S54: `devmap` and `cell-law` measured positive on all five parts
+        // (`devmap-<part>.txt`; the evidence is on the `GpuRungs` fields).
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
+                assert!(r.devmap && r.cell_law, "{}", p.name);
+            }
+        }
 
         let measured = GPU_MEASURED;
         for d in GPU_RUNGS_OFF {

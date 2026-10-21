@@ -132,11 +132,26 @@ pub struct GpuRungs {
     /// already in device memory runs as its own one-thread-per-cell kernel
     /// instead of a host loop behind a whole copy-out. Off: every per-cell map
     /// on the host (the S53 placement).
+    ///
+    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): arm
+    /// `off-devmap` iter / ON iter, medians of 5, every multi-computation probe
+    /// (bias, diamond, epi, fanout, indep, loop, mlp, residual) at 2048 and 4096
+    /// on both faces, `benches/results-s54-gpu/devmap-<part>.txt`: RTX 3090
+    /// 1.76–3.51, A100 1.30–2.53, RTX 4090 1.89–4.03, H100 PCIe 1.32–15.5, RTX
+    /// 5090 1.76–4.76; `ew` 7–121 (the host loops it replaces).
     pub devmap: bool,
     /// S54 `cell-law`, under `devmap`: a captured array whose producer is
     /// closed-form in the index (`devgen`'s law) and which a cell reads only at
     /// its own index is evaluated in the cell, never stored or loaded. Off: the
     /// cell loads it from its `devgen` buffer.
+    ///
+    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): `ew`, arm
+    /// `off-cell-law` iter / ON iter at 4096 exact / contract, `devmap-<part>.txt`:
+    /// RTX 3090 6.15 / 7.00, A100 1.27 / 1.19 (`-confirm.txt`, another box,
+    /// 2.12 / 2.20), RTX 4090 8.70 / 9.32, H100 PCIe 1.11 / 3.16 (`-confirm.txt`
+    /// 1.31 / 1.42), RTX 5090 1.99 / 1.99. On `residual` (the operand is also a
+    /// tile site's, so it is built either way) no effect: 0.98–1.02 wherever the
+    /// ranges are not swamped by the box's outliers.
     pub cell_law: bool,
 }
 
