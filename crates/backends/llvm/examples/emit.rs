@@ -75,9 +75,10 @@ fn main() -> ExitCode {
                         "ldmatrix" => opts.gpu.ldmatrix = false,
                         "wgmma-hopper" => opts.gpu.wgmma = false,
                         "wgmma-reg-stage" => opts.gpu.wgmma_reg_stage = false,
+                        "wgmma-overlap" => opts.gpu.wgmma_overlap = false,
                         other => {
                             eprintln!(
-                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix, wgmma-hopper, wgmma-reg-stage)"
+                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix, wgmma-hopper, wgmma-reg-stage, wgmma-overlap)"
                             );
                             return ExitCode::from(2);
                         }
