@@ -758,41 +758,15 @@ impl Kernel<'_> {
     /// The block's `(column, row)` in the grid: `ctaid.x`, `ctaid.y`, remapped
     /// by [`raster_block`] when the derived group height is above 1.
     fn block_ids(&mut self) -> (String, String) {
+        let bx = self.sreg("ctaid.x");
+        let by = self.sreg("ctaid.y");
         let (gx, h) = self.raster;
-        if h > 1 {
-            self.line(format!("; raster: {h} block-rows per group"));
-        }
-        self.grid_ids(gx, h, false)
-    }
-
-    /// `fresh`: read `ctaid` through a side-effecting move, so CSE cannot fold
-    /// this remap back into the head's (`ctaid` reads are `readnone`).
-    fn grid_ids(&mut self, gx: u64, h: u64, fresh: bool) -> (String, String) {
-        let (bx, by) = if fresh {
-            (self.sreg_fresh("ctaid.x"), self.sreg_fresh("ctaid.y"))
-        } else {
-            (self.sreg("ctaid.x"), self.sreg("ctaid.y"))
-        };
         if h < 2 {
             return (bx, by);
         }
+        self.line(format!("; raster: {h} block-rows per group"));
         let (c, r) = raster_block(self, &bx, &by, gx, h);
         (self.opaque(&c), self.opaque(&r))
-    }
-
-    /// The block's output origin again at the epilogue, from fresh `ctaid`
-    /// reads, when the grid is remapped: an `sreg` read is rematerialised
-    /// where it is used, the remapped origin is not, so carrying it across the
-    /// panel loop held registers the row-major kernel never holds (3090 exact
-    /// at 8192: 24 bytes of spill at the 128-register cap,
-    /// `l2-raster-rtx-3090-run2.txt`). Row-major: the head's values, no text.
-    fn reorigin(&mut self, row0: String, col0: String, bm: u64, bn: u64) -> (String, String) {
-        let (gx, h) = self.raster;
-        if h < 2 {
-            return (row0, col0);
-        }
-        let (bx, by) = self.grid_ids(gx, h, true);
-        (self.op("mul", &by, bm), self.op("mul", &bx, bn))
     }
 
     /// `v` through a register move LLVM cannot see into. The remap bounds a
@@ -816,20 +790,6 @@ impl Kernel<'_> {
     fn sreg(&mut self, reg: &str) -> String {
         let r32 = self.tmp();
         self.line(format!("{r32} = call i32 @llvm.nvvm.read.ptx.sreg.{reg}()"));
-        if self.idx == "i32" {
-            return r32;
-        }
-        let r = self.tmp();
-        self.line(format!("{r} = zext i32 {r32} to i64"));
-        r
-    }
-
-    /// [`Self::sreg`] through `asm sideeffect`: a read CSE keeps separate.
-    fn sreg_fresh(&mut self, reg: &str) -> String {
-        let r32 = self.tmp();
-        self.line(format!(
-            "{r32} = call i32 asm sideeffect \"mov.u32 $0, %{reg};\", \"=r\"()"
-        ));
         if self.idx == "i32" {
             return r32;
         }
@@ -1311,7 +1271,6 @@ impl Kernel<'_> {
         self.line(format!("br i1 {fin}, label %done, label %kt"));
 
         self.out.push_str("done:\n");
-        let (row0, col0) = self.reorigin(row0, col0, bm, bn);
         self.asm("wgmma.wait_group.sync.aligned 0;");
         let er = self.op("mul", &t4, 2);
         let er = self.op("add", &er, &row0);
@@ -1574,7 +1533,6 @@ impl Kernel<'_> {
 
         // C fragments: (g, 2t..2t+1) and (g+8, 2t..2t+1) of every m16n8 tile.
         self.out.push_str("done:\n");
-        let (row0, col0) = self.reorigin(row0, col0, bm, bn);
         let orow = self.op("mul", &wr, g.wm());
         let orow = self.op("add", &orow, &row0);
         let orow = self.op("add", &orow, &grp);
@@ -1985,7 +1943,6 @@ impl Kernel<'_> {
 
         // --- one vector store per `lanes` columns of each owned row
         self.out.push_str("done:\n");
-        let (row0, col0) = self.reorigin(row0, col0, bm, bn);
         for i in 0..tm {
             let r = self.op("add", &row0, &a_frag0);
             let r = self.op("add", &r, (i / lanes) * a_chunk + i % lanes);
