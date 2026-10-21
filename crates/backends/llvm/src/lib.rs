@@ -133,6 +133,11 @@ pub struct GpuRungs {
     /// laid out by interval coloring over `LastUsePlan` positions, and a
     /// device-only object gets no host slot. Off: one `cuMemAlloc` /
     /// `cuMemFree` per object and a host slot for every array (S53).
+    /// Ships ON on all five measured parts (no `GPU_RUNGS_OFF` row):
+    /// `benches/results-s54-gpu/arena-<part>.txt` + `-confirm.txt`, iter ms
+    /// stable+ on 38–44 of 50 rows per part and stable- on none; e2e_chain_4096
+    /// wall OFF/ON 1.17/1.09 (3090), 1.03/1.06 (A100), 1.16/1.23 (4090),
+    /// 1.04/1.06 (H100 PCIe), 1.06/1.30 (5090), exact face, ms in the files.
     pub arena: bool,
 }
 

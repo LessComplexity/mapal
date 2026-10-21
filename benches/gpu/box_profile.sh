@@ -29,6 +29,7 @@ fi
 if command -v nsys >/dev/null; then
     # 1024 and 8192 too (S53): which kernel cuBLAS picks at each end.
     for n in 1024 4096 8192; do
+        [ -f "$PROF/mm_${n}_c.launch" ] || continue # an ONLY= bundle without the kernel benches
         read -r k gx gy blk sm < "$PROF/mm_${n}_c.launch"
         # S53: nsys hung for 21 min on one 4090 host; never let it hold a rented box.
         timeout 300 nsys profile -o "prof/run-$n" --force-overwrite true -t cuda \
