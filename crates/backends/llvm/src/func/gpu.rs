@@ -471,7 +471,10 @@ fn kernel_text(
 ) -> String {
     let l = launch(site, profile, contract, arms, reduced);
     let rungs = l.rungs;
-    let idx = if rungs.idx32 && l.mma.is_none() && max_index(site, &l) < 1 << 31 {
+    // `idx32` is an FMA / one-thread-per-cell rung: the tensor-core kernels
+    // (`mma.sync`, `wgmma`) form their indices in `i64`.
+    let tensor = l.mma.is_some() || l.wgmma.is_some();
+    let idx = if rungs.idx32 && !tensor && max_index(site, &l) < 1 << 31 {
         "i32"
     } else {
         "i64"

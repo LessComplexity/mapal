@@ -91,7 +91,7 @@ for spec in "$@"; do
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             case $b in mm_1536|mm_3072) ;; *)
                 arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- \
-                    wide ldmatrix warp-fill wgmma-hopper arch-rungs
+                    wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs
                 arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
                 arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
                 ;;
