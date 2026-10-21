@@ -1,4 +1,5 @@
 /target
+/graphify-out/
 __pycache__/
 .DS_Store
 

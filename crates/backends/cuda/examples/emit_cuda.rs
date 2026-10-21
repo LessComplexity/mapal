@@ -1,5 +1,5 @@
 //! Emit textual CUDA C++ for a `.mapal` file (ADR-0020; dev tool — the future
-//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-cuda --example emit -- <file.mapal> [-] [--perf] [--rewrite]`
+//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-cuda --example emit_cuda -- <file.mapal> [-] [--perf] [--rewrite]`
 //! (writes `<file>.cu` next to the source, or stdout with `-`; `--rewrite`
 //! rewrites the lowered IR before emission; `--perf` instruments every kernel
 //! launch with CUDA-event timing — suggestions.md #19a, the `MAPAL_PERF launch=`
@@ -10,7 +10,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
-        eprintln!("usage: emit <file.mapal> [-] [--perf] [--rewrite]");
+        eprintln!("usage: emit_cuda <file.mapal> [-] [--perf] [--rewrite]");
         return ExitCode::from(2);
     };
     let mut to_stdout = false;
@@ -23,7 +23,7 @@ fn main() -> ExitCode {
             "--rewrite" => rewrite = true,
             other => {
                 eprintln!(
-                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--rewrite])"
+                    "unknown flag: {other} (usage: emit_cuda <file.mapal> [-] [--perf] [--rewrite])"
                 );
                 return ExitCode::from(2);
             }

@@ -27,14 +27,9 @@ EXTRA="$*"
 [ -x "$BIN" ] || { echo "emit_sweep_ab: '$BIN' is not executable" >&2; exit 2; }
 
 # PREFLIGHT — the third silent-pass path, and it is the nastiest.
-# `crates/backends/cuda/examples/emit.rs` and `crates/backends/llvm/examples/emit.rs`
-# BOTH build to `target/release/examples/emit`; cargo warns ("consider changing
-# their names to be unique") and whichever crate built last wins. Point this script
-# at that path after a plain `cargo build --example emit` and you may get the CUDA
-# emitter, which REJECTS `--contract` — so the `con` face fails on every source, and
-# a stale-vs-fresh comparison then differs on ~all cells for a reason that has
-# nothing to do with the change under test. Build with `-p mapal-backend-llvm` and
-# verify the binary actually understands the flags before hashing anything.
+# The CUDA example is now `emit_cuda`, but an old build or an explicit BIN can
+# still select the wrong emitter. Verify its flags before hashing anything:
+# hashing a rejected `--contract` face would compare failed emissions.
 for probe in "--rewrite" "--contract" $EXTRA; do
   case $probe in -*) ;; *) continue ;; esac
   if "$BIN" --help 2>&1 | grep -q -- "unknown flag" ||

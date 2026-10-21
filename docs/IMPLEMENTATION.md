@@ -45,7 +45,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 > `elem_plan` fails the suite. New component: `components/backend-nvptx/` — planned,
 > no crate, grounded by a ratified plan (`plans/plan-s41-the-nvptx-leg.md`).
 
-| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`algo.rs:1747`); consumed by llvm in-place `Update` (`llvm/func/ops.rs:update_in_place_source`) + cuda back-edge freeing/arena coloring (`cuda/func.rs:393`) | deduced (recomputed, never stored) |
+| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`crates/mapal-ir/src/algo.rs`); consumed by llvm in-place `Update` (`crates/backends/llvm/src/func/ops.rs:FnEmit::update_in_place_source`) + cuda in-place `Update` and back-edge freeing (`crates/backends/cuda/src/func.rs:in_place_update`, `crates/backends/cuda/src/func.rs:FnEmit::emit_back_edge_frees`); CUDA arena last-use coloring remains planned (`crates/backends/cuda/src/arena.rs` module documentation) | deduced (recomputed, never stored) |
 
 ## System entry points
 
@@ -53,7 +53,8 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 | --- | --- | --- | --- |
 | `mapal` CLI | build/run/dump-ir/test | `crates/mapal-cli/src/main.rs:main` | stub (exits 1) |
 | `dump_ir` example | file → lex→parse→lower → Mermaid | `crates/mapal-lower/examples/dump_ir.rs` | built |
-| `emit` examples | file → lex→parse→lower → `.ll` / `.cu` text (dev tools — the `mapal build` embryo) | `crates/backends/{llvm,cuda}/examples/emit.rs` | built (S16) |
+| LLVM `emit` example | file → lex→parse→lower → `.ll` text (dev tool — the `mapal build` embryo) | `crates/backends/llvm/examples/emit.rs` | built (S16) |
+| CUDA `emit_cuda` example | file → lex→parse→lower → `.cu` text (dev tool — distinct Cargo target prevents the LLVM output collision) | `crates/backends/cuda/examples/emit_cuda.rs` | built (S16; target renamed S55) |
 | `run` example / test pipeline | parse→lower→`run` (fueled) | `mapal-interp` tests + example (see [interp map](components/interp/IMPLEMENTATION.md)) | built |
 | `cargo test --workspace` | the whole `Alg` under golden/property/differential harnesses | per-crate `tests/` | built (673 green, S15) |
 

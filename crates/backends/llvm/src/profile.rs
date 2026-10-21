@@ -3106,10 +3106,6 @@ mod tests {
         );
     }
 
-    /// The SME k-panel depth is **derived from L1D**, and the derivation
-    /// reproduces the swept optimum — `plan-s31-deduced-blocking.md`'s rule.
-    /// `512` appears in no source file; it falls out of 128 KB / 256 B.
-    #[test]
     /// plan-s51 H2 — the A pack's block depth, and the two ways it declines.
     ///
     /// The pack's stores land one cache line apart, so a line is filled 4 bytes
@@ -3134,6 +3130,10 @@ mod tests {
         assert_eq!(GENERIC.pack_block(32, 4096, &F32), None);
     }
 
+    /// The SME k-panel depth is **derived from L1D**, and the derivation
+    /// reproduces the swept optimum — `plan-s31-deduced-blocking.md`'s rule.
+    /// The 1024-step depth follows from (2 × 128 KB) / 256 B.
+    #[test]
     fn sme_kc_reproduces_the_measured_optimum() {
         assert_eq!(
             APPLE_M4_SME.sme_kc(&F32),

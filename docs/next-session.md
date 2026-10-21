@@ -1,36 +1,17 @@
-# Next Session (S55)
+# Current continuation — S56
 
-**Read `sessions/2026-10-21-s55-worktree-consolidation.md` first**, then
-`sessions/2026-10-21-s54-fusion-placement.md` for the original results and verifier conflicts.
-The main checkout is now on `s54-gpu-fusion`; it is the only registered worktree.
-All historical branches remain. Dirty experiments and raw data from removed worktrees are preserved in
-`.claude/worktrees/_archive-s54-20261021/` (manifest, binary patches, tar archives, complete git bundle, restore README).
-Keep this ignored local archive until its experiments are no longer needed. `oainotes.md` remains untracked.
+Read [S56 validation baseline](sessions/2026-10-21-s56-validation-baseline.md), then [S55 consolidation](sessions/2026-10-21-s55-worktree-consolidation.md) and the original [S54 handoff](sessions/2026-10-21-s54-fusion-placement.md).
+The single checkout is `s54-gpu-fusion`. Preserve `.claude/worktrees/_archive-s54-20261021/` and the untracked `oainotes.md`.
 
-S54 built fusion as placement (epilogue, devmap, rowfold, arena, retain-resident/delta-h2d, streams, l2-raster) and
-Ampere profiles; measured on RTX 3090 / A100 SXM4 / RTX 4090 / H100 PCIe / RTX 5090. The workflow stopped before
-final verification and integration. Consolidation recovered two later l2-raster result/citation commits
-(`a613f53`, `4db1f48`); they do not change rung selections. The final integrated table remains provisional.
+Item 1 is complete: unique LLVM `emit` / CUDA `emit_cuda` executables, repaired profile test registration, guard-preserving ConstFold repair, and six stale mappings resolved. Host release tests pass twice: **1176 / 0 / 1 ignored**; drift **0 / 460**.
 
-Fresh validation: **1172 passed / 0 failed / 1 ignored twice** with normal host access and
-`MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1`.
-Sandbox runs encountered denied hardware queries and execution timeouts; see the consolidation log for evidence.
+Continue the ready OpenSpec change `verify-s54-gpu-selection` in order:
+1. Finish the small GPU harness patch review and run fresh differential-only smoke on the historical arena failure cases. Saved integrated prefixes contain pre-fix failures; the post-fix run never completed.
+2. Resolve 5090 streams, H100 retain-resident and raster/L2-window conflicts using current integrated A/Bs and conservative treatment of noisy gains. The only currently offered H100 PCIe is prior machine81035; it cannot count as a third independent host.
+3. Complete final RTX3090/A100 SXM4/RTX4090/H100 PCIe/RTX5090 measurements and independent 4090/5090 confirmations. H100 uses **sm_90a**. Build fresh bundles with current oracles; the rewriter changed, so old oracles are not automatically reusable.
+4. Write `performance/s54-gpu-fusion.md` and `s54-per-arch-selection.md`, including losses, then reconcile component mappings/model/status and root status; drift must pass before archive.
 
-Start here:
-1. Inspect the consolidation log's fresh test results. Stabilize the test/build baseline: the two `emit` examples
-   collide, a duplicated `#[test]` remains in `profile.rs`, and S54's earlier 20 failures are unexplained.
-   The collision is confirmed; it is not a proven cause of those failures. Use normal host access for hardware-detection tests.
-2. Before code changes, initialize OpenSpec with the supercharge rules (this repository has no OpenSpec root),
-   then propose/apply the validation and selection work there. Keep the existing S54 model and plan as source context.
-3. Resolve the three table-versus-verifier conflicts: RTX 5090 streams, H100 retain-resident, and l2-raster.
-4. Run one complete integrated five-part measurement with `PROFILE=1`, including final 4090/5090 confirmations.
-   Use **`h100-pcie:sm_90a`**, correcting `sm_90` in the immutable S54 log. Build the runtime (native + x86 Linux),
-   interpreter `run`, then LLVM `emit` last after workspace tests; `bundle.sh` assumes these already exist.
-   Exact commands and evidence requirements are in the consolidation log.
-5. Write `performance/s54-gpu-fusion.md` + `performance/s54-per-arch-selection.md` (results only, every loss),
-   reconcile component implementation/model/status and root status, and resolve the six recorded drift findings.
-6. Then attack the largest losses: pt_mlp2_4096 on 4090 (Mapal 55.1 ms vs cuBLASLt 11.4 ms), decode loop
-   0.05–0.12× library, exact face 0.34–0.66× cuBLAS, A100/H100 TF32 0.55–0.69×. ADR-0039 remains Sapir's decision.
+After verification, prioritize 4090 `pt_mlp2_4096` and decode's library gap. Numerical precision policy and ADR-0039 remain Sapir's decision. The historical CPU handoff below remains relevant to its own open items.
 
 ---
 

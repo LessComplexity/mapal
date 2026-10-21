@@ -32,6 +32,7 @@ pub fn analyze_const_fold(ir: &CategoryIr) -> RewritePlan {
     // as a root — the resolved guard would still trap.
     let mut guard_arms: SecondaryMap<MorphismId, (Vec<ObjectId>, Vec<ObjectId>)> =
         SecondaryMap::new();
+    let mut guarded_work: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
     // plan-s40: a Phi whose arm owns a loop (a LoopEnter handle in its
     // own-list) is not folded at all — dropping a whole loop unit is replay
     // surgery this pass has no business doing, and the loop's internals are
@@ -46,6 +47,24 @@ pub fn analyze_const_fold(ir: &CategoryIr) -> RewritePlan {
             .filter(GuardSite::gated)
             .collect();
         for site in &sites {
+            for &m in site.on_true.own.iter().chain(site.on_false.own.iter()) {
+                let morph = ir.morphism(m).expect("own edge");
+                guarded_work.insert(morph.target, ());
+                // Ownership compresses a loop unit to its enter handle. Its
+                // non-SCC driver payloads must keep their dependencies too.
+                if morph.op == Operation::LoopEnter
+                    && let Some(loop_plan) = ir.loop_plan(f, morph.target)
+                {
+                    for &member in loop_plan
+                        .decide_order
+                        .iter()
+                        .chain(&loop_plan.advance_order)
+                        .chain(&loop_plan.exits)
+                    {
+                        guarded_work.insert(ir.morphism(member).expect("loop member").target, ());
+                    }
+                }
+            }
             // Transitive like `all_work` below: an arm gating a loop-armed
             // nested site inherits the mark — its transitive drop would reach
             // the nested handle. Sites arrive in topo order, nested first.
@@ -111,6 +130,11 @@ pub fn analyze_const_fold(ir: &CategoryIr) -> RewritePlan {
         // P2: keys sit outside every loop SCC (loop-carried arithmetic is left
         // alone; loop-invariants sit outside the SCC and still fold).
         if scc.contains_key(o) {
+            continue;
+        }
+        // Folding an arm member can detach its trapping/loop dependencies and
+        // make them unconditional. Defer until its enclosing guard resolves.
+        if guarded_work.contains_key(o) {
             continue;
         }
         let m = match op_edge(ir, o) {
