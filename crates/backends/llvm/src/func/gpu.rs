@@ -2257,6 +2257,40 @@ mod tests {
             .collect()
     }
 
+    /// `devmap`: one thread per cell, the block the naive kernel's, the grid
+    /// the fewest blocks that cover the extent; a cell's id never names a gen
+    /// kernel of the same body (different key, different prefix anyway).
+    #[test]
+    fn cell_grid_covers_the_extent_one_thread_per_cell() {
+        for n in [1, 255, 256, 257, 128 * 128, 4096 * 4096] {
+            let (gx, block) = cell_grid(n);
+            assert_eq!(block, NAIVE_THREADS);
+            assert!(gx * block >= n && (gx - 1) * block < n, "n={n}");
+        }
+        let p = crate::profile::resolve("rtx-4090").expect("profile");
+        assert_ne!(cell_id("fn2", 16384, p), gen_id("fn2", 16384, p));
+        let caps = [None, Some(("fn3".to_string(), "float".to_string()))];
+        let k = cell_kernel_text(
+            1,
+            "fn2_cell",
+            300,
+            "float",
+            "{ ptr, ptr, i32 }",
+            None,
+            &caps,
+        );
+        assert!(
+            k.contains("(ptr addrspace(1) %o, ptr addrspace(1) %c0)"),
+            "{k}"
+        );
+        assert!(k.contains("%v1 = call float @fn3(i32 %e)"), "{k}");
+        assert!(
+            k.contains("@fn2_cell({ ptr, ptr, i32 } %a, float %v1)"),
+            "{k}"
+        );
+        assert!(k.contains("icmp ult i64 %i, 300"), "{k}");
+    }
+
     /// `idx32`: every S52 site indexes in `i32`; an operand past 2³¹ elements
     /// keeps `i64`.
     #[test]

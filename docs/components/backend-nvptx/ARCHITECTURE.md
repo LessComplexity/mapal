@@ -61,7 +61,7 @@ body, no `Call`/`Map`/`Fold`, no float `%`) plus every `Index` proven.
 | `Trn` | `t_from → t_to` | realizations (`TrnLoc` rows) |
 | --- | --- | --- |
 | tile site | `(a, b) → out` | host nest (`tile.rs`); device `naive` / `tiled` / `mma` / `wgmma` (`gpu.rs`) |
-| per-cell morphism | `(x₁…xₙ) → out` | host loop (`bulk.rs:emit_map`); `devgen` kernel (captures 0, closed form); **S54: epilogue in a site's store; `cell` kernel** |
+| per-cell morphism | `(x₁…xₙ) → out` | host loop (`bulk.rs:emit_map`); `devgen` kernel (captures 0, closed form); **S54: epilogue in a site's store; `cell` kernel (`resident.rs:Cell`, the host body called with device pointers); `cell-law`: a closed-form `Same` capture evaluated in the cell (`fnN_cell`, the capture as a value)** |
 | row fold | `x → r` | host nest; **S54: `rowfold` kernel, one thread per row** |
 | whole float fold | `x → scalar` | host only (ADR-0028 D4: one in-order chain; one device thread is slower than the copy-out) |
 | element read | `x → T` | host load; one-element `d2h` (`resident.rs:Use::Elem`) |
@@ -119,6 +119,13 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   that needs the whole array at `Host` (a whole fold, a print, an escape) forces `d2h`; then `m`
   runs where the bytes it moves are fewest — on the device when its operands are already there
   (one `d2h` either way), on the host when they are not.
+  *As built (`resident.rs:cell_sites`)*: "already there" = a site's or an earlier cell's
+  output, a carried state, a tile site's operand (copied in for it anyway), or closed-form; the
+  device is taken when some operand lives only there or no host reader needs the output whole
+  (an all-closed-form `ew` read whole stays on the host, byte for byte). Cells and carries decide
+  each other, so the pair is the greatest fixed point from every candidate. A capture that is
+  closed-form and read only at the cell's own index (`Same`) is evaluated in the cell, never
+  stored (`cell-law`): `ew` is one kernel that reads nothing.
 - **R3 (kernel boundary).** A reader whose footprint is `Panel` or `Whole` of a device output
   needs every block's store: `Gmem` plus a grid-wide wait — a `launch`. This is amendment 9's
   sentence with the fact that decides it. The output stays in `Gmem` (`resident`); the reader
@@ -182,7 +189,7 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 
 Every placement clause is a measurement-only arm (`GpuRungs` field, `emit --gpu-off=<name>`,
 an arm in `bundle.sh`), shipped ON per part only by a `GPU_RUNGS_OFF` row whose cite names the
-probe program and the ON/OFF medians: `epilogue` (R1), `devmap` (R2), `rowfold` and
+probe program and the ON/OFF medians: `epilogue` (R1), `devmap` and `cell-law` (R2), `rowfold` and
 `rowfold-layout` (R0 for folds, the store order), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
 policy from `l2_bytes`). OFF is today's text byte for byte. A rung's fill key is the grid it
