@@ -87,6 +87,11 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// S53 retention at part-of-object scope: a row-local site over a carried
+    /// array whose iteration writes one row ([`mapal_ir::Delta::Rows`])
+    /// recomputes only that row into its retained output (`func/retain.rs`).
+    /// GPU profiles only — the only parts it was measured on.
+    pub retain_delta: bool,
 }
 
 impl Default for GpuRungs {
@@ -101,6 +106,7 @@ impl Default for GpuRungs {
             cp_async: true,
             wide: true,
             ldmatrix: true,
+            retain_delta: true,
         }
     }
 }

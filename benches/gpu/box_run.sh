@@ -24,7 +24,9 @@ pass=0; fail=0
 for o in "$PROF"/*.host.o; do
     b=$(basename "$o" .host.o)
     case $b in mm_*|e2e_*) continue ;; esac
-    base=${b%_c}; exp="tiles/$base.expect"; [ "$b" != "$base" ] && exp="tiles/${base}_c.expect"
+    # A rung's OFF arm (`<prog>[_c].off-<rung>`) has its program's oracle.
+    stem=${b%%.off-*}
+    base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
     cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "prog_$b" 2>&1 | tail -3
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
@@ -34,6 +36,37 @@ for o in "$PROF"/*.host.o; do
     fi
 done
 say "differential: $pass pass, $fail fail"
+
+# S53 retain-delta: the decode program end to end, rung ON vs OFF, both faces,
+# 3 processes each, interleaved. wall_s is the whole process (context and PTX
+# JIT included, the same in both arms); the trace gives the launches per kernel
+# (out=<bytes>: rows = out / (4 * 256)) and every phase summed over the run.
+if [ -x prog_decode_1024_256 ]; then
+    say "-- decode e2e (T=1024 d=256): ON vs OFF, MAPAL_GPU_TRACE=1"
+    mkdir -p trace
+    for r in 1 2 3; do
+        for face in "" _c; do
+            for arm in "" .off-retain-delta; do
+                b=decode_1024_256$face$arm
+                t0=$(date +%s.%N)
+                MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" > "trace/$b.$r.out" 2> "trace/$b.$r.trace"
+                rc=$?
+                t1=$(date +%s.%N)
+                say "decode prog=$b rep=$r rc=$rc wall_s=$(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.3f", b - a }') out=[$(tr '\n' ' ' < "trace/$b.$r.out")]"
+                awk -v P="decode_trace prog=$b rep=$r" '/^mapal_gpu_trace/ {
+                    for (i = 2; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
+                    n[v["kernel"] " out=" v["bytes_out"]]++
+                    for (f in v) if (f ~ /_ms$/) s[f] += v[f]
+                  } END {
+                    for (k in n) printf "%s launch kernel=%s n=%d\n", P, k, n[k]
+                    printf "%s phases", P; for (f in s) printf " %s=%.2f", f, s[f]; printf "\n"
+                  }' "trace/$b.$r.trace" | tee -a "$LOG"
+            done
+        done
+    done
+    say "-- decode floor: hand-written cuBLAS sgemv KV cache (tile_bench --decode)"
+    ./tile_bench --decode 1024 256 "$REPS" 2>&1 | tee -a "$LOG"
+fi
 
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
 bench() { # <n> <stem> <label> [--contract]

@@ -28,6 +28,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     // entry: init → merge.slot (init is loop-invariant, already computed by the
     // topo LoopEnter deferral — ir §13).
     fe.copy_obj(plan.init, plan.merge);
+    fe.retain_reset(plan.merge);
 
     let header = fe.label();
     let advance = fe.label();

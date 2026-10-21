@@ -69,6 +69,9 @@ impl<'a> FnEmit<'a> {
             heap_used: false,
             gpu_rungs: crate::GpuRungs::default(),
             reduced: None,
+            retain: SecondaryMap::new(),
+            retain_flags: SecondaryMap::new(),
+            row_bounds: None,
         }
     }
 
@@ -79,6 +82,9 @@ impl<'a> FnEmit<'a> {
     ) {
         self.gpu_rungs = rungs;
         self.reduced = reduced;
+        if self.tile_plan.is_some() {
+            self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
+        }
     }
 
     pub(crate) fn set_perf_timing(&mut self, perf_timing: bool) {
@@ -396,6 +402,27 @@ impl<'a> FnEmit<'a> {
                 Some((out_llt, v))
             }
         }
+    }
+
+    /// The slot and type of a product value at least `heap_min_bytes` big, for
+    /// a `memcpy` in place of a first-class aggregate `load`/`store` (S53: clang
+    /// -O2 did not finish in 10 minutes on one 1 MB `{ [262144 x float], … }`
+    /// load — the shape every loop carrying a big array next to a counter has).
+    /// Same bytes either way; `None` keeps the load/store, so every program
+    /// below the arena threshold is byte-identical.
+    pub(super) fn big_value(&mut self, o: ObjectId) -> Option<(String, String)> {
+        let obj = self.ir.object(o).expect("object resolves");
+        if obj.kind == ObjectKind::Constant
+            || self.ptr_resident.contains_key(o)
+            || matches!(&self.byref, Some((input, ..)) if *input == o)
+        {
+            return None;
+        }
+        let llt = lower_ty(&obj.ty)?;
+        if llt_bytes(&llt) < self.profile.heap_min_bytes {
+            return None;
+        }
+        Some((self.slot(o)?, llt))
     }
 
     /// Store `(llt, val)` into object `o`'s slot, if it has one.
@@ -922,6 +949,9 @@ impl<'a> FnEmit<'a> {
     }
 
     pub(super) fn bulk_bounds(&self, n: u64) -> (String, String) {
+        if let Some((lo, hi)) = &self.row_bounds {
+            return (lo.clone(), hi.clone());
+        }
         if self.split_range {
             ("%lo".into(), "%hi".into())
         } else {

@@ -40,6 +40,23 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
         packed: Option<PackedBuffer>,
     ) {
+        // S53 retention (`func/retain.rs`): before any realization is chosen —
+        // the restricted pass picks its own by the same gates below.
+        if let Some(r) = self.retain.get(target).cloned() {
+            self.emit_retained(source, target, site, packed, &r);
+            return;
+        }
+        self.emit_tiled_map_realize(source, target, site, packed);
+    }
+
+    /// The realization ladder: the first rung whose gate admits the site.
+    pub(super) fn emit_tiled_map_realize(
+        &mut self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        packed: Option<PackedBuffer>,
+    ) {
         // S52 GPU realization (plan-s41 steps 2–5): on a GPU profile, a float
         // site with plain affine reads runs on the device (`func/gpu.rs` — the
         // whole realization, selected here and nowhere else).

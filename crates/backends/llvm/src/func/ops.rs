@@ -29,6 +29,12 @@ impl<'a> FnEmit<'a> {
                     } else {
                         self.emit_memcpy(&dst, &src, &sllt);
                     }
+                } else if let Some((src, sllt)) = self.big_value(source) {
+                    let (dllt, dst) = self
+                        .component_ptr(target, slot)
+                        .expect("Pair big target ptr");
+                    debug_assert_eq!(dllt, sllt);
+                    self.emit_memcpy(&dst, &src, &sllt);
                 } else if let Some((sllt, sval)) = self.load_whole(source)
                     && let Some((_, ptr)) = self.component_ptr(target, slot)
                 {
