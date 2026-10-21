@@ -1,0 +1,153 @@
+{
+  "API_proof": {
+    "bytes": 9114,
+    "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/producer-completion-proof.md",
+    "sha256": "3363ed2659b4c05278fcd8997b84eda184278567c372638b14ff7a457ba1c38c"
+  },
+  "LLVM_evidence": {
+    "cases": 7,
+    "commands": {
+      "bytes": 16173,
+      "path": "/private/tmp/mapal-ordering-fix/evidence/fixed-emission-commands.json",
+      "sha256": "d5e1a25a1e3dd4b5a4c7851f8417127ead3db00c0edc43fd710c466231932535"
+    },
+    "device_LLVM_units_byte_identical_to_old": 14,
+    "faces": [
+      "Exact",
+      "Contract"
+    ],
+    "full_proof": {
+      "bytes": 189099,
+      "path": "/private/tmp/mapal-ordering-fix/evidence/ordering-proof.json",
+      "sha256": "b9cd66ab7a39ba74d58a990c63a1b96f830d7d60d1090a87d7a86ff715c3f229"
+    },
+    "materialized_fork_capture_alloc_free_call_counts_unchanged": true,
+    "variants": 14
+  },
+  "author": "/root/audit_s54_worktrees",
+  "baseline_head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "boundaries": {
+    "GPU_execution_by_this_task": false,
+    "active_task_jobs": [],
+    "allocation_DCE": false,
+    "arena_guard_change": false,
+    "chain_prologue_change": false,
+    "observed_wrong_GPU_output_claimed": false,
+    "ordinary_baseline1_3_pending": true,
+    "performance_claimed": false,
+    "runtime_source_or_ABI_change": false,
+    "shared_apply": false
+  },
+  "changed_files": [
+    "crates/backends/llvm/src/func/resident.rs",
+    "crates/backends/llvm/tests/streams.rs"
+  ],
+  "copies": [
+    {
+      "bytes": 15475,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/ordering-only.patch",
+      "sha256": "0813872210b157aabc1887ece05e7d72d68744f420a07ef2efd0b8b29c5fbbbe",
+      "source": "/private/tmp/mapal-ordering-fix/ordering-only.patch"
+    },
+    {
+      "bytes": 9114,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/producer-completion-proof.md",
+      "sha256": "3363ed2659b4c05278fcd8997b84eda184278567c372638b14ff7a457ba1c38c",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/producer-completion-proof.md"
+    },
+    {
+      "bytes": 3330,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/old-final-tests.log",
+      "sha256": "d7faea23ff11e840f485728cea0b417f183a9ca73021996f2d10049ee7ecba70",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/old-final-tests.log"
+    },
+    {
+      "bytes": 1309,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/fixed-final-streams.log",
+      "sha256": "9f7c0f89700e1549950688724f811aba0925eabab5cb2b2de11f856286519d39",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/fixed-final-streams.log"
+    },
+    {
+      "bytes": 464,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/focused-unit-2.log",
+      "sha256": "25cb6429170c57c1f189439cbe5f2a62c067038d25b1662f6eaf7e49ae73ba04",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/focused-unit-2.log"
+    },
+    {
+      "bytes": 3681,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/focused-integration-2.log",
+      "sha256": "53d677de7327077f8ae3dc6d5a06ed2099e4037c8d7aaca2b4797e3d8329f3e7",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/focused-integration-2.log"
+    },
+    {
+      "bytes": 705,
+      "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/final-control-commands.json",
+      "sha256": "d1b4bc1b2cac1182fa33099e2bbccfa41adbcf2928284d799cb6186ca4b4549a",
+      "source": "/private/tmp/mapal-ordering-fix/evidence/final-control-commands.json"
+    }
+  ],
+  "created_utc": "2026-10-21T21:24:39.318467+00:00",
+  "fixed_checks": {
+    "alias_lookup_unit_passed": 1,
+    "epilogue_passed": 13,
+    "failed": 0,
+    "final_restored_streams_passed": 17,
+    "fmt_pass": true,
+    "focused_total_passed": 50,
+    "offline_locked": true,
+    "resident_passed": 13,
+    "rowfold_passed": 6,
+    "source_restored_after_negative_control": true,
+    "streams_passed": 17
+  },
+  "full_recovery": {
+    "Cargo_target_or_buildcache_included": false,
+    "all_copies_match": true,
+    "bytes": 59511743,
+    "copy_receipt": {
+      "bytes": 442553,
+      "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-ordering-candidate-20261021T212439Z/recovery-copy-receipt.json",
+      "sha256": "ffcb47041ab8b0f389f913dd5d931fb3abfe8867952bf336fd4055559048885f"
+    },
+    "excluded": [
+      "source/target (Cargo target/build cache)",
+      "evidence/preserved-baselines (prior inputs already archived elsewhere)"
+    ],
+    "file_count": 2385,
+    "ignored": true,
+    "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-ordering-candidate-20261021T212439Z",
+    "prior_frozen_inputs": "Old fixture/source/LLVM/oracle inputs remain hash-bound in the full proof and earlier recovery receipts; not duplicated here.",
+    "source_snapshot_preserved": true
+  },
+  "negative_control": {
+    "controls_passed": 2,
+    "exact_final_tests_against_old_production": true,
+    "exit": 101,
+    "expected_failures": [
+      "grouped_member_corners_wait_on_the_physical_writer",
+      "grouped_member_fork_waits_only_for_the_other_chain",
+      "grouped_member_capture_uses_one_producer_wait",
+      "grouped_member_legacy_cell_keeps_the_conservative_fallback"
+    ],
+    "failed": 4,
+    "log": {
+      "bytes": 3330,
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/old-final-tests.log",
+      "sha256": "d7faea23ff11e840f485728cea0b417f183a9ca73021996f2d10049ee7ecba70"
+    }
+  },
+  "patch": {
+    "bytes": 15475,
+    "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-ordering-candidate/ordering-only.patch",
+    "sha256": "0813872210b157aabc1887ece05e7d72d68744f420a07ef2efd0b8b29c5fbbbe"
+  },
+  "recovery_scope_updated_utc": "2026-10-21T21:25:20.756283+00:00",
+  "resume_commands": [
+    "cd /private/tmp/mapal-ordering-fix/source",
+    "CARGO_TARGET_DIR=/private/tmp/mapal-ordering-fix/source/target cargo test --offline --locked --release -p mapal-backend-llvm --lib grouped_stream_lookup",
+    "CARGO_TARGET_DIR=/private/tmp/mapal-ordering-fix/source/target cargo test --offline --locked --release -p mapal-backend-llvm --test streams --test epilogue --test resident --test rowfold"
+  ],
+  "schema": "mapal.s57.ordering-candidate.v1",
+  "shared_head_observed": "627a17ca1a57ed9d948fd417fe99cbd5029456b0",
+  "state": "Reviewed isolated candidate, UNAPPLIED pending ordinary GPU baseline1.3"
+}

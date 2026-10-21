@@ -290,6 +290,13 @@ reuses bytes by topo position, which concurrent streams do not follow, so a func
 streams keeps per-object buffers; the L2 window is not carried by a `launchv` (a group or a chain
 launch). Static before/after on five parts: `benches/results-s54-gpu/arch-select-fusion-report.txt`.
 
+R7's grouped-member guarantee is a remaining implementation obligation: the
+[ordering evidence and isolated candidate](../../performance/s57-ordering-evidence.md)
+prove omitted explicit edges in shared emission and show a correction using the existing
+group ownership and runtime events. The candidate adds no Dat, Loc or Trm and leaves the
+arena guard intact. Its emission/runtime proof does not close ordinary GPU execution;
+FRAMEWORK §4.5 laws 1, 4 and 5 therefore remain open for this integration boundary.
+
 ## 8. What is not placed here
 
 - Joint CPU/GPU cost-based placement and concurrent CPU task execution remain open questions.

@@ -3,7 +3,13 @@
 - [x] 1.1 Preserve frozen LLVM, source fixtures, interpreter oracles and unchanged-source receipts; distinguish missing emitted edges, refuted concerns and untested GPU consequences in the evidence report.
 - [x] 1.2 Finish and preserve the five-profile frozen baseline and independent confirmations, including validation and instance cleanup, before changing source or binaries.
 - [ ] 1.3 Run the unmodified materialized-raw and cross-chain member fixtures and their controls on a GPU without tracing or inserted clocks; preserve outputs, exit statuses and binary/source hashes.
-- [ ] 1.4 Establish the producer-to-consumer ordering guarantee for each proposed correction using generated code and runtime/API semantics; record any observed GPU failures separately. Keep unresolved or refuted cases out of the fix.
+- [x] 1.4 Establish the producer-to-consumer ordering guarantee for each proposed correction using generated code and runtime/API semantics; record any observed GPU failures separately. Keep unresolved or refuted cases out of the fix.
+
+Task 1.4 evidence: `benches/results-s54-gpu/s57-ordering-candidate/` preserves the
+reviewed, **unapplied** candidate, CUDA/runtime proof, four old-code regression failures,
+two passing controls, 50 passing candidate checks and 14 unchanged device LLVM units.
+Task 1.3 remains unexecuted: both authorized rentals failed before upload. Tasks 2.1–2.3
+are demonstrated only in the isolated snapshot; shared integration remains pending.
 
 ## 2. Preserve dependencies and eliminate proved dead storage
 

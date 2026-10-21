@@ -73,7 +73,11 @@ Separate proof duty discovered during validation: [stored-member ordering](../..
 Frozen emitted LLVM demonstrates missing explicit producer edges in host-readback and
 different-chain tile cases. GPU consequences are not yet tested. The §4.5 review leaves
 those composition/readiness duties open; the benchmark matrix must not be described as
-proof for all programs. No source fix has been applied during the freeze.
+proof for all programs. No ordering fix is applied. The reviewed isolated candidate has
+four old-code regression failures, two passing controls, 50 passing focused checks and
+14 unchanged device LLVM units; runtime/API completion proof is recorded. Both approved
+ordinary GPU attempts failed at allocation before upload and are cleaned up. No further
+attempt is authorized. Allocation elimination remains deferred; the arena guard stays.
 
 The [large/composed preparation](../../performance/s57-large-composed-evidence.md) adds
 96 successful temporary primitive emissions and small arithmetic certification.

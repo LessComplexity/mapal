@@ -1,0 +1,44 @@
+   Compiling mapal-backend-llvm v0.0.1 (/private/tmp/mapal-ordering-fix/source/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 5.56s
+     Running tests/streams.rs (target/release/deps/streams-65bd56ffb4529b4f)
+
+running 6 tests
+
+thread 'grouped_member_fork_waits_only_for_the_other_chain' (13123893) panicked at crates/backends/llvm/tests/streams.rs:569:9:
+assertion `left == right` failed: ["alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "alloc", "alloc", "alloc", "alloc", "launchv 1", "alloc", "launchv 1", "alloc", "launchv 2", "d2h_on 2", "d2h_on 2", "free", "d2h_on 1", "d2h_on 1", "free", "d2h", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h_on 1", "d2h_on 1", "free", "free", "free", "free", "free", "free", "free", "free", "free"]
+  left: []
+ right: ["event 1>2"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test grouped_member_fork_waits_only_for_the_other_chain ... FAILED
+
+thread 'grouped_member_capture_uses_one_producer_wait' (13123891) panicked at crates/backends/llvm/tests/streams.rs:594:9:
+assertion `left == right` failed: ["alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "alloc", "alloc", "alloc", "launchv 1", "alloc", "alloc", "launchv 2", "d2h", "d2h", "free", "d2h", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h_on 1", "d2h_on 1", "free", "d2h_on 2", "d2h_on 2", "free", "free", "free", "free", "free", "free", "free", "free", "free"]
+  left: []
+ right: ["event 1>2"]
+test grouped_member_capture_uses_one_producer_wait ... FAILED
+
+thread 'grouped_member_corners_wait_on_the_physical_writer' (13123892) panicked at crates/backends/llvm/tests/streams.rs:550:9:
+assertion `left == right` failed: ["alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "gen", "alloc", "alloc", "alloc", "alloc", "launchv 1", "alloc", "alloc", "launchv 2", "d2h", "d2h", "free", "d2h", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h", "free", "d2h_on 1", "d2h_on 1", "free", "d2h_on 2", "d2h_on 2", "free", "free", "free", "free", "free", "free", "free", "free", "free"]
+  left: ["d2h", "d2h", "d2h", "d2h", "d2h", "d2h", "d2h", "d2h", "d2h_on 1", "d2h_on 1", "d2h_on 2", "d2h_on 2"]
+ right: ["d2h_on 2", "d2h_on 2", "d2h_on 1", "d2h_on 1", "d2h", "d2h", "d2h", "d2h", "d2h_on 1", "d2h_on 1", "d2h_on 2", "d2h_on 2"]
+test grouped_member_corners_wait_on_the_physical_writer ... FAILED
+
+thread 'grouped_member_legacy_cell_keeps_the_conservative_fallback' (13123894) panicked at crates/backends/llvm/tests/streams.rs:611:13:
+assertion `left == right` failed: unordered legacy consumer
+  left: 2
+ right: 0
+test grouped_member_legacy_cell_keeps_the_conservative_fallback ... FAILED
+test grouped_loop_carry_views_stay_on_the_legacy_stream ... ok
+test grouped_member_row_fold_keeps_its_ordered_whole_copy ... ok
+
+failures:
+
+failures:
+    grouped_member_capture_uses_one_producer_wait
+    grouped_member_corners_wait_on_the_physical_writer
+    grouped_member_fork_waits_only_for_the_other_chain
+    grouped_member_legacy_cell_keeps_the_conservative_fallback
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p mapal-backend-llvm --test streams`
