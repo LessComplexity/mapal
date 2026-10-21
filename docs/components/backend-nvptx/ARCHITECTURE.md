@@ -262,6 +262,17 @@ host and their reads are device uses, so `keep`, `devgen` and the loop carry fol
 one-cell buffer, which SROA turns into a register); `mapal_gpu_launchv` passes the extra
 pointers. Static counts: `benches/results-s54-gpu/epilogue-fusion-report.txt`.
 
+**The rules together** (S54 integration, `s54/arch-select`). R1 runs before R2: a per-cell
+morphism an epilogue group takes is never also a cell kernel. One `ResidentPlan` holds every
+device output — sites', row folds', cells' and the stored group members' — and `uses` /
+`carries` see all of them as device-produced. Law 1 across streams: a launch on a chain's stream
+waits for every operand on another chain's stream, an epilogue's complete operands included
+(`mapal_gpu_event`); R7 opens streams only when no launch the chains do not order (a fold, an
+unchained site, a cell kernel, all on the legacy stream) reads a chained output. The arena
+reuses bytes by topo position, which concurrent streams do not follow, so a function that opens
+streams keeps per-object buffers; the L2 window is not carried by a `launchv` (a group or a chain
+launch). Static before/after on five parts: `benches/results-s54-gpu/arch-select-fusion-report.txt`.
+
 ## 8. What is not placed here
 
 - The whole float sum on the device (ADR-0028 D4; the canonical-tree re-pin is Sapir's call).

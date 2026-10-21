@@ -1461,6 +1461,17 @@ impl<'a> FnEmit<'a> {
             .copied()
             .filter(|&o| !gated_use(o))
             .collect();
+        // An epilogue member's output (S54 R1) is written by its site's launch,
+        // which reads the site's operands: it is born at the site, not at its
+        // own (later) map — else it could take the bytes of an operand that dies
+        // at the site while the kernel still reads it (S54 integration:
+        // px_bias_100's `d` took `a`'s offset and the checksum raced).
+        let site_of = |o: ObjectId| {
+            self.groups
+                .iter()
+                .find(|(_, g)| g.chain.iter().any(|mb| mb.out == o))
+                .map(|(s, _)| s)
+        };
         let live: Vec<(u32, u32, u64)> = members
             .iter()
             .map(|&o| {
@@ -1468,7 +1479,9 @@ impl<'a> FnEmit<'a> {
                     .ir
                     .in_edges(o)
                     .iter()
-                    .filter_map(|&p| self.lup.position(p))
+                    .copied()
+                    .chain(site_of(o))
+                    .filter_map(|p| self.lup.position(p))
                     .min();
                 let death = self.lup.death(o);
                 let bytes = self.array_bytes(&self.obj_ty(o));

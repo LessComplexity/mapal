@@ -176,6 +176,49 @@ fn epi_runs_in_the_store_and_c_never_exists() {
     assert!(!mapal_main(&e.text).contains("call float @fn5("));
 }
 
+/// S54 integration: one launch never passes two objects on the same arena
+/// bytes. A stored member is written by its site's kernel while it reads the
+/// site's operands, so it is born at the site (the box differential caught
+/// `d` on `a`'s offset: `px_bias_100`'s checksum raced).
+#[test]
+fn a_launch_never_passes_two_objects_on_the_same_arena_bytes() {
+    for src in [bias(), epi()] {
+        let mut arms = GpuArms::default();
+        arms.on.arena = true;
+        let ll = emit_on(&src, "rtx-4090", false, arms).text;
+        let main = mapal_main(&ll);
+        let (mut bases, mut off, mut slot) = (Vec::new(), Vec::new(), Vec::new());
+        let lookup = |v: &[(String, u64)], k: &str| v.iter().find(|(n, _)| n == k).map(|x| x.1);
+        for l in main.lines().map(str::trim) {
+            if let Some((lhs, _)) = l.split_once(" = call i64 @mapal_gpu_arena(") {
+                bases.push(lhs.to_owned());
+            } else if let Some((lhs, rhs)) = l.split_once(" = add i64 ")
+                && let Some((b, k)) = rhs.split_once(", ")
+                && bases.iter().any(|x| x == b)
+            {
+                off.push((lhs.to_owned(), k.parse::<u64>().expect("a literal offset")));
+            } else if let Some(rest) = l.strip_prefix("store i64 ")
+                && let Some((v, s)) = rest.split_once(", ptr ")
+                && let Some(o) = lookup(&off, v)
+            {
+                slot.push((s.to_owned(), o));
+            } else if let Some((lhs, s)) = l.split_once(" = load i64, ptr ")
+                && let Some(o) = lookup(&slot, s)
+            {
+                off.push((lhs.to_owned(), o));
+            }
+        }
+        for ptrs in launchv_ptrs(&ll) {
+            let mut offs: Vec<u64> = ptrs.iter().filter_map(|p| lookup(&off, p)).collect();
+            let n = offs.len();
+            offs.sort_unstable();
+            offs.dedup();
+            assert_eq!(offs.len(), n, "{ptrs:?}\n{main}");
+            assert!(n >= 3, "the arena holds the launch's objects: {ptrs:?}");
+        }
+    }
+}
+
 #[test]
 fn bias_reads_its_vector_in_gmem() {
     let e = emit(&bias(), on());
