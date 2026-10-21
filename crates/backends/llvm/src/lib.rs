@@ -106,6 +106,25 @@ pub struct GpuRungs {
     pub pad: bool,
     /// FMA register tile from the whole-thread register count (8×16).
     pub wide_fma: bool,
+    /// On `sm_90a`, the TF32 face takes Hopper's `wgmma` kernel (S53); off,
+    /// the `mma.sync` kernel. Both are bounded by TF32, neither is bit-exact.
+    pub wgmma: bool,
+    /// Keep an object's device copy between sites (S53, plan-s53 §2.3): copy
+    /// in at the producer, carry loop state on the device, copy out only what
+    /// the host reads, free at death. Off: one `mapal_gpu_tile` round trip
+    /// per site (S52).
+    pub resident: bool,
+    /// Under `resident`, compute a closed-form producer that only device sites
+    /// read on the device (`mapal_gen_<id>`) instead of copying it in.
+    pub devgen: bool,
+    /// S53 retention at part-of-object scope: a row-local site over a carried
+    /// array whose iteration writes one row ([`mapal_ir::Delta::Rows`])
+    /// recomputes only that row into its retained output (`func/retain.rs`).
+    pub retain_delta: bool,
+    /// Host runtime (S53): start the CUDA context and module load on a thread
+    /// as `main`'s first call, so it overlaps the host work before the first
+    /// site. Off: the first site creates them.
+    pub eager_init: bool,
 }
 
 impl GpuRungs {
@@ -126,11 +145,16 @@ impl GpuRungs {
         affine: true,
         pad: true,
         wide_fma: true,
+        wgmma: true,
+        resident: true,
+        devgen: true,
+        retain_delta: true,
+        eager_init: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 15] = [
+    pub const NAMES: [&'static str; 20] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -146,6 +170,11 @@ impl GpuRungs {
         "affine",
         "pad",
         "wide-fma",
+        "wgmma-hopper",
+        "resident",
+        "devgen",
+        "retain-delta",
+        "eager-init",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -166,6 +195,11 @@ impl GpuRungs {
             "affine" => &mut self.affine,
             "pad" => &mut self.pad,
             "wide-fma" => &mut self.wide_fma,
+            "wgmma-hopper" => &mut self.wgmma,
+            "resident" => &mut self.resident,
+            "devgen" => &mut self.devgen,
+            "retain-delta" => &mut self.retain_delta,
+            "eager-init" => &mut self.eager_init,
             _ => return None,
         })
     }

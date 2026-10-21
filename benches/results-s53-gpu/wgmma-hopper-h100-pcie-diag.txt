@@ -1,0 +1,242 @@
+== S53 wgmma-hopper diagnostics, H100 PCIe (vast instance 56973698, offer 50562987), 2026-10-20
+== measurement only: hand-edited PTX variants of the shipped kernel; tile_bench (and a copy with the
+== value gate non-fatal, diag3/diag4 decomposition rows) interleaved with cuBLAS-TF32 / CUTLASS, 30 reps
+
+== diag1: run-1 kernel (no-swizzle a panel). nofence = drop fence.proxy.async; nocvt = cvt->mov; noround = no staged rounding
+# n=1024 diag=mm_1024_tf
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0762 med_ms=0.0820 max_ms=0.0839 tflops_med=26.20
+ratio mapal_vs_cublas=0.283 mapal_vs_cutlass=0.406 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.nofence
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0748 med_ms=0.0783 max_ms=0.0816 tflops_med=27.42
+ratio mapal_vs_cublas=0.300 mapal_vs_cutlass=0.428 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.nocvt
+MAPAL VALUES WRONG: 1 of 256 cells differ from the in-order fold
+values leg=mapal cells=256 maxrel_vs_f64=1.450e-01 within_4x_cublas_tf32=NO
+# n=1024 diag=mm_1024_tf.noround
+values leg=mapal cells=256 maxrel_vs_f64=1.087e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0589 med_ms=0.0651 max_ms=0.0728 tflops_med=32.98
+ratio mapal_vs_cublas=0.360 mapal_vs_cutlass=0.516 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.5345 med_ms=1.7208 max_ms=1.7714 tflops_med=79.87
+ratio mapal_vs_cublas=0.345 mapal_vs_cutlass=0.569 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.nofence
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.4712 med_ms=1.6435 max_ms=1.7148 tflops_med=83.63
+ratio mapal_vs_cublas=0.359 mapal_vs_cutlass=0.589 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.nocvt
+values leg=mapal cells=256 maxrel_vs_f64=1.061e+00 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.5310 med_ms=1.6912 max_ms=1.8244 tflops_med=81.27
+ratio mapal_vs_cublas=0.350 mapal_vs_cutlass=0.572 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.noround
+values leg=mapal cells=256 maxrel_vs_f64=1.048e+00 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.2575 med_ms=1.3357 max_ms=1.4466 tflops_med=102.90
+ratio mapal_vs_cublas=0.440 mapal_vs_cutlass=0.759 (>1 = mapal faster, medians)
+== diag done
+
+== diag2: run-1 kernel at forced bk (8/16) and with/without one resident block (cover-on/off)
+# n=1024 diag=mm_1024_tf grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=153 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0769 med_ms=0.0824 max_ms=0.0842 tflops_med=26.06
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0229 med_ms=0.0236 max_ms=0.0247 tflops_med=91.18
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0334 med_ms=0.0336 max_ms=0.0339 tflops_med=63.85
+ratio mapal_vs_cublas=0.286 mapal_vs_cutlass=0.408 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.off-wgmma-hopper grid=16x8 block=64 smem=55296
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=64 smem=55296 regs=230 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.171e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0460 med_ms=0.0463 max_ms=0.0508 tflops_med=46.41
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0226 med_ms=0.0233 max_ms=0.0246 tflops_med=92.18
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0331 med_ms=0.0335 max_ms=0.0336 tflops_med=64.10
+ratio mapal_vs_cublas=0.503 mapal_vs_cutlass=0.724 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.bk8.cover-on grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=106 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0761 med_ms=0.0764 max_ms=0.0771 tflops_med=28.10
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0224 med_ms=0.0229 max_ms=0.0242 tflops_med=93.60
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0330 med_ms=0.0333 max_ms=0.0335 tflops_med=64.53
+ratio mapal_vs_cublas=0.300 mapal_vs_cutlass=0.436 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.bk16.cover-on grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=124 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0754 med_ms=0.0760 max_ms=0.0796 tflops_med=28.26
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0228 med_ms=0.0232 max_ms=0.0244 tflops_med=92.44
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0330 med_ms=0.0333 max_ms=0.0335 tflops_med=64.40
+ratio mapal_vs_cublas=0.306 mapal_vs_cutlass=0.439 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.bk8.cover-off grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=106 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0763 med_ms=0.0765 max_ms=0.0771 tflops_med=28.07
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0223 med_ms=0.0230 max_ms=0.0245 tflops_med=93.21
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0331 med_ms=0.0333 max_ms=0.0338 tflops_med=64.40
+ratio mapal_vs_cublas=0.301 mapal_vs_cutlass=0.436 (>1 = mapal faster, medians)
+# n=1024 diag=mm_1024_tf.bk16.cover-off grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=124 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0752 med_ms=0.0757 max_ms=0.0778 tflops_med=28.36
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0227 med_ms=0.0231 max_ms=0.0246 tflops_med=92.95
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0330 med_ms=0.0332 max_ms=0.0334 tflops_med=64.65
+ratio mapal_vs_cublas=0.305 mapal_vs_cutlass=0.439 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf grid=32x16 block=256 smem=200704
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=200704 regs=213 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.5332 med_ms=1.7034 max_ms=1.7362 tflops_med=80.69
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5796 med_ms=0.5877 max_ms=0.5936 tflops_med=233.84
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9367 med_ms=0.9606 max_ms=0.9708 tflops_med=143.08
+ratio mapal_vs_cublas=0.345 mapal_vs_cutlass=0.564 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.off-wgmma-hopper grid=32x32 block=128 smem=107520
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x32 block=128 smem=107520 regs=235 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.2223 med_ms=1.3738 max_ms=1.4666 tflops_med=100.04
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5776 med_ms=0.5810 max_ms=0.5920 tflops_med=236.57
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9365 med_ms=1.0130 max_ms=1.0803 tflops_med=135.67
+ratio mapal_vs_cublas=0.423 mapal_vs_cutlass=0.737 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.bk8.cover-on grid=32x16 block=256 smem=225792
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=225792 regs=178 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.8886 med_ms=1.9670 max_ms=2.0482 tflops_med=69.87
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5796 med_ms=0.5893 max_ms=0.5943 tflops_med=233.23
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9376 med_ms=0.9515 max_ms=0.9603 tflops_med=144.45
+ratio mapal_vs_cublas=0.300 mapal_vs_cutlass=0.484 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.bk16.cover-on grid=32x16 block=256 smem=225792
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=225792 regs=184 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.6504 med_ms=1.8184 max_ms=1.9171 tflops_med=75.58
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5807 med_ms=0.5899 max_ms=0.5945 tflops_med=232.98
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9389 med_ms=0.9556 max_ms=0.9793 tflops_med=143.83
+ratio mapal_vs_cublas=0.324 mapal_vs_cutlass=0.526 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.bk8.cover-off grid=64x16 block=128 smem=115456
+mapal kernel=mapal_tile_dff0dae306997d77 grid=64x16 block=128 smem=115456 regs=176 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.6438 med_ms=2.7770 max_ms=2.9248 tflops_med=49.49
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5811 med_ms=0.5866 max_ms=0.5930 tflops_med=234.30
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9387 med_ms=0.9475 max_ms=0.9573 tflops_med=145.05
+ratio mapal_vs_cublas=0.211 mapal_vs_cutlass=0.341 (>1 = mapal faster, medians)
+# n=4096 diag=mm_4096_tf.bk16.cover-off grid=64x16 block=128 smem=104960
+mapal kernel=mapal_tile_dff0dae306997d77 grid=64x16 block=128 smem=104960 regs=201 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.4546 med_ms=2.6417 max_ms=2.7568 tflops_med=52.03
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5795 med_ms=0.5930 max_ms=0.5971 tflops_med=231.78
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9387 med_ms=0.9577 max_ms=0.9682 tflops_med=143.51
+ratio mapal_vs_cublas=0.224 mapal_vs_cutlass=0.363 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf grid=64x32 block=256 smem=200704
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=200704 regs=213 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=11.2394 med_ms=13.6161 max_ms=14.6028 tflops_med=80.75
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8161 med_ms=3.9082 max_ms=4.0559 tflops_med=281.34
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.1226 med_ms=8.2834 max_ms=9.4246 tflops_med=132.74
+ratio mapal_vs_cublas=0.287 mapal_vs_cutlass=0.608 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf.off-wgmma-hopper grid=64x64 block=128 smem=107520
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x64 block=128 smem=107520 regs=235 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=3.247e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=10.7810 med_ms=12.4370 max_ms=12.7612 tflops_med=88.41
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8547 med_ms=4.2520 max_ms=4.3998 tflops_med=258.58
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.2077 med_ms=9.3020 max_ms=9.9859 tflops_med=118.20
+ratio mapal_vs_cublas=0.342 mapal_vs_cutlass=0.748 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf.bk8.cover-on grid=64x32 block=256 smem=225792
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=225792 regs=178 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=13.6212 med_ms=16.0788 max_ms=16.6084 tflops_med=68.38
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8508 med_ms=3.9519 max_ms=4.0759 tflops_med=278.23
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.1152 med_ms=8.8936 max_ms=9.5396 tflops_med=123.63
+ratio mapal_vs_cublas=0.246 mapal_vs_cutlass=0.553 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf.bk16.cover-on grid=64x32 block=256 smem=225792
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=225792 regs=182 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=11.7889 med_ms=14.1765 max_ms=14.8733 tflops_med=77.56
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8446 med_ms=3.9139 max_ms=4.0741 tflops_med=280.92
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.0307 med_ms=8.3188 max_ms=9.3177 tflops_med=132.17
+ratio mapal_vs_cublas=0.276 mapal_vs_cutlass=0.587 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf.bk8.cover-off grid=128x32 block=128 smem=115456
+mapal kernel=mapal_tile_0f986b19df91db16 grid=128x32 block=128 smem=115456 regs=176 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=19.2140 med_ms=22.1275 max_ms=24.1514 tflops_med=49.69
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8825 med_ms=3.9969 max_ms=4.0670 tflops_med=275.09
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.1303 med_ms=8.9866 max_ms=9.3682 tflops_med=122.35
+ratio mapal_vs_cublas=0.181 mapal_vs_cutlass=0.406 (>1 = mapal faster, medians)
+# n=8192 diag=mm_8192_tf.bk16.cover-off grid=128x32 block=128 smem=104960
+mapal kernel=mapal_tile_0f986b19df91db16 grid=128x32 block=128 smem=104960 regs=202 local_bytes=0
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=18.1398 med_ms=21.2818 max_ms=22.6009 tflops_med=51.66
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8358 med_ms=3.9706 max_ms=4.2285 tflops_med=276.91
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.1303 med_ms=8.8025 max_ms=9.4082 tflops_med=124.91
+ratio mapal_vs_cublas=0.187 mapal_vs_cutlass=0.414 (>1 = mapal faster, medians)
+== diag2 done
+
+== diag3: run-1 kernel time decomposition (nomma, nocopy, noround, mmaonly, copyonly)
+# n=1024 diag=mm_1024_tf
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0764 med_ms=0.0814 max_ms=0.0834 tflops_med=26.38
+# n=1024 diag=mm_1024_tf.noround
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0590 med_ms=0.0668 max_ms=0.0736 tflops_med=32.14
+# n=1024 diag=mm_1024_tf.nocopy
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0271 med_ms=0.0273 max_ms=0.0282 tflops_med=78.67
+# n=1024 diag=mm_1024_tf.nomma
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0760 med_ms=0.0792 max_ms=0.0817 tflops_med=27.11
+# n=1024 diag=mm_1024_tf.mmaonly
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0162 med_ms=0.0164 max_ms=0.0172 tflops_med=131.07
+# n=1024 diag=mm_1024_tf.copyonly
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0579 med_ms=0.0652 max_ms=0.0731 tflops_med=32.94
+# n=4096 diag=mm_4096_tf
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.5223 med_ms=1.6452 max_ms=1.6968 tflops_med=83.54
+# n=4096 diag=mm_4096_tf.noround
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.2596 med_ms=1.3299 max_ms=1.3797 tflops_med=103.34
+# n=4096 diag=mm_4096_tf.nocopy
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.5884 med_ms=0.6000 max_ms=0.6640 tflops_med=229.08
+# n=4096 diag=mm_4096_tf.nomma
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.2734 med_ms=1.3541 max_ms=1.3936 tflops_med=101.50
+# n=4096 diag=mm_4096_tf.mmaonly
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.4277 med_ms=0.4658 max_ms=0.4769 tflops_med=295.07
+# n=4096 diag=mm_4096_tf.copyonly
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.1989 med_ms=1.2351 max_ms=1.2870 tflops_med=111.28
+== diag3 done
+
+== diag4: 128-byte-swizzle kernel (= shipped ON kernel, byte-identical PTX) at 1024-8192, then its 4096 decomposition
+# n=1024 diag=swizzled-on grid=16x8 block=128 smem=76800
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=151 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.170e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.170e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0406 med_ms=0.0424 max_ms=0.0432 tflops_med=50.61
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0231 med_ms=0.0237 max_ms=0.0245 tflops_med=90.69
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0333 med_ms=0.0336 max_ms=0.0339 tflops_med=63.91
+ratio mapal_vs_cublas=0.558 mapal_vs_cutlass=0.792 (>1 = mapal faster, medians)
+# n=2048 diag=swizzled-on grid=16x8 block=256 smem=200704
+mapal kernel=mapal_tile_885771b50f0f4c9c grid=16x8 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.271e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.271e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.271e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.1710 med_ms=0.1716 max_ms=0.1726 tflops_med=100.14
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.1039 med_ms=0.1050 max_ms=0.1068 tflops_med=163.68
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.1613 med_ms=0.1620 max_ms=0.1628 tflops_med=106.02
+ratio mapal_vs_cublas=0.612 mapal_vs_cutlass=0.945 (>1 = mapal faster, medians)
+# n=4096 diag=swizzled-on grid=32x16 block=256 smem=200704
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.562e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.562e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.8006 med_ms=0.8934 max_ms=0.9648 tflops_med=153.84
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5778 med_ms=0.5848 max_ms=0.5980 tflops_med=235.02
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9367 med_ms=0.9609 max_ms=1.0430 tflops_med=143.04
+ratio mapal_vs_cublas=0.655 mapal_vs_cutlass=1.076 (>1 = mapal faster, medians)
+# n=8192 diag=swizzled-on grid=64x32 block=256 smem=200704
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.945e-02
+values leg=cublas cells=256 maxrel_vs_f64=2.945e-02
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=5.8073 med_ms=7.3564 max_ms=7.7933 tflops_med=149.46
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.9924 med_ms=4.0538 max_ms=4.3335 tflops_med=271.23
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.5904 med_ms=8.7937 max_ms=10.0428 tflops_med=125.03
+ratio mapal_vs_cublas=0.551 mapal_vs_cutlass=1.195 (>1 = mapal faster, medians)
+# n=4096 diag=swizzled-noround
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.5847 med_ms=0.5951 max_ms=0.6236 tflops_med=230.94
+# n=4096 diag=swizzled-nocopy
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.5915 med_ms=0.5939 max_ms=0.6614 tflops_med=231.42
+# n=4096 diag=swizzled-nomma
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.5589 med_ms=0.5615 max_ms=0.6476 tflops_med=244.76
+# n=4096 diag=swizzled-mmaonly
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.4279 med_ms=0.4380 max_ms=0.4820 tflops_med=313.78
+# n=4096 diag=swizzled-copyonly
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.4293 med_ms=0.4403 max_ms=0.4926 tflops_med=312.16
+== diag4 done

@@ -76,7 +76,7 @@ for spec in "$@"; do
         # FMA face, the TF32 face (tensor cores) and the exact face.
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix warp-fill arch-rungs
+            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix warp-fill wgmma-hopper arch-rungs
             arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
                 interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
             arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
