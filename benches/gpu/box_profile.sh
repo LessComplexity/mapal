@@ -12,11 +12,11 @@ PROF=$1; SM=$2
 CUDA=${CUDA:-/usr/local/cuda}
 mkdir -p prof
 
-for p in "$PROF"/mm_4096_*.ptx; do
+for p in "$PROF"/mm_4096[._]*.ptx; do
     v=$(basename "$p" .ptx)
     ptxas -arch="$SM" -O3 -v "$p" -o "prof/$v.cubin" > "prof/$v.ptxas" 2>&1
 done
-for c in prof/mm_4096_*.cubin; do cuobjdump -sass "$c" > "${c%.cubin}.sass" 2>&1; done
+for c in prof/mm_4096[._]*.cubin; do cuobjdump -sass "$c" > "${c%.cubin}.sass" 2>&1; done
 cp prof/mm_4096_c.sass prof/mapal.sass
 cuobjdump -sass tile_bench > prof/tile_bench.sass 2>&1
 
@@ -27,7 +27,8 @@ if ! command -v nsys >/dev/null; then
 fi
 if command -v nsys >/dev/null; then
     read -r k gx gy blk sm < "$PROF/mm_4096_c.launch"
-    nsys profile -o prof/run --force-overwrite true -t cuda \
+    # S53: nsys hung for 21 min on one 4090 host; never let it hold a rented box.
+    timeout 300 nsys profile -o prof/run --force-overwrite true -t cuda \
         ./tile_bench 4096 4096 4096 "$PROF/mm_4096_c.ptx" "$k" "$gx" "$gy" "$blk" "$sm" 5 --contract > prof/nsys.out 2>&1
     nsys stats -q -r cuda_gpu_kern_sum --format csv prof/run.nsys-rep > prof/kern.csv 2>&1
 else

@@ -24,7 +24,7 @@ pass=0; fail=0
 for o in "$PROF"/*.host.o; do
     b=$(basename "$o" .host.o)
     case $b in mm_*|e2e_*) continue ;; esac
-    base=${b%_c}; exp="tiles/$base.expect"; [ "$b" != "$base" ] && exp="tiles/${base}_c.expect"
+    stem=${b%.sync}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
     cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "prog_$b" 2>&1 | tail -3
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
@@ -55,6 +55,11 @@ for n in 1024 2048 4096 8192; do
         [ -f "$v" ] || continue
         var=${v%.launch}; var=${var##*.}
         bench "$n" "${v%.launch}" "_c.$var" --contract
+    done
+    for v in "$PROF/mm_${n}".*.launch; do
+        [ -f "$v" ] || continue
+        var=${v%.launch}; var=${var##*.}
+        bench "$n" "${v%.launch}" "_exact.$var"
     done
 done
 
