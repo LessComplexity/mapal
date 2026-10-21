@@ -21,10 +21,11 @@ cleanup() {
 trap cleanup EXIT
 
 for _ in $(seq 120); do
-    st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("actual_status") or "", (d.get("status_msg") or "").split(chr(10))[0])' || true)
+    st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("actual_status") or "", "intended=" + str(d.get("intended_status")), (d.get("status_msg") or "").split(chr(10))[0])' || true)
     [ "${st%% *}" = running ] && { st=running; break; }
-    # A host that cannot start the container says so in status_msg: give the offer up now.
-    case "$st" in *Error*) log "start failed: $st"; exit 1 ;; esac
+    # A host that cannot start the container says so in status_msg, and a rental
+    # whose GPU another renter took is created stopped: give the offer up now.
+    case "$st" in *Error*|*intended=stopped*) log "start failed: $st"; exit 1 ;; esac
     sleep 10
 done
 [ "$st" = running ] || { log "never reached running (last: $st)"; exit 1; }

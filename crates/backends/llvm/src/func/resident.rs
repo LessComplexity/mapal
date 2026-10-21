@@ -37,6 +37,7 @@
 //! always correct: a missed retention costs a copy, never a value.
 
 use super::*;
+use mapal_ir::{Affine, Delta};
 
 /// One use of an array object, seen through the products that carry it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,6 +86,19 @@ pub(crate) struct Gen {
     pub n: u64,
 }
 
+/// A host-written array uploaded as the rows its iteration wrote (S54
+/// `delta-h2d`): its device copy persists across iterations and differs from
+/// the host's only in `Δ`, so after one whole upload per loop entry only
+/// `[start, start + stride)` crosses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeltaUp {
+    /// The loop whose entry resets the first-pass flag.
+    pub merge: ObjectId,
+    /// The written row's first cell: `a·var + b`.
+    pub start: Affine,
+    pub stride: u64,
+}
+
 /// The placement decisions for one function — a pure function of the IR, the
 /// profile and the rungs, computed before the walk.
 #[derive(Clone, Debug, Default)]
@@ -104,6 +118,8 @@ pub(crate) struct ResidentPlan {
     pub carries: Vec<Carry>,
     /// S54 `arena`: the device arena and the host-free objects.
     pub arena: Option<Arena>,
+    /// `upload`s that cross as the rows their iteration wrote (`delta-h2d`).
+    pub delta: SecondaryMap<ObjectId, DeltaUp>,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -406,8 +422,45 @@ impl<'a> FnEmit<'a> {
             .then_some(body)
     }
 
+    /// The `upload`s a loop's iteration writes only rows of (`delta-h2d`): the
+    /// value `write_delta` says crosses the back edge, or a `Same` image of it.
+    /// Its producer runs every iteration, inside the loop, so its device copy
+    /// is never freed there and holds last iteration's value.
+    fn delta_uploads(
+        &self,
+        upload: &SecondaryMap<ObjectId, ()>,
+    ) -> SecondaryMap<ObjectId, DeltaUp> {
+        let mut out = SecondaryMap::new();
+        for d in self.ir.write_delta(self.f).values() {
+            let Delta::Rows {
+                stride,
+                start,
+                next,
+            } = *d
+            else {
+                continue;
+            };
+            // The counter is a `Proj` of the loop's merge.
+            let merge = self.ir.in_edges(start.var).first();
+            if let Some(merge) = merge.and_then(|&m| self.ir.morphism(m)).map(|m| m.source)
+                && upload.contains_key(next)
+            {
+                out.insert(
+                    next,
+                    DeltaUp {
+                        merge,
+                        start,
+                        stride,
+                    },
+                );
+            }
+        }
+        out
+    }
+
     /// Build the plan. `None` when the function has no device site.
-    pub(crate) fn resident_plan(&self, devgen: bool, arena: bool) -> Option<ResidentPlan> {
+    pub(crate) fn resident_plan(&self, rungs: crate::GpuRungs) -> Option<ResidentPlan> {
+        let (devgen, arena) = (rungs.devgen, rungs.arena);
         let sites = self.device_sites();
         if sites.is_empty() {
             return None;
@@ -505,6 +558,9 @@ impl<'a> FnEmit<'a> {
                 plan.upload.insert(o, ());
             }
             device.push(o);
+        }
+        if rungs.delta_h2d {
+            plan.delta = self.delta_uploads(&plan.upload);
         }
 
         // Inputs no reader is left for: an `Iota`/`Fill` (trap-free by
@@ -777,15 +833,19 @@ impl<'a> FnEmit<'a> {
         };
         let t = self.ir.morphism(m).expect("morphism resolves").target;
         let upload = plan.upload.contains_key(t) && !plan.devgen.contains_key(m);
+        let delta = plan.delta.get(t).cloned();
         let frees = plan.free_after.get(m).cloned().unwrap_or_default();
         if upload {
             let ty = self.obj_ty(t);
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
-            self.line(format!(
-                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
-            ));
+            match delta {
+                Some(du) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
+                None => self.line(format!(
+                    "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
+                )),
+            }
             self.dvalid.insert(t, ());
         }
         for o in frees {
@@ -796,6 +856,97 @@ impl<'a> FnEmit<'a> {
             self.line(format!("call void @mapal_gpu_free(ptr {slot})"));
             self.dvalid.remove(o);
         }
+    }
+
+    /// `delta-h2d`: after a loop entry's first (whole) upload, only the rows
+    /// the iteration wrote cross — `stride` cells from `start`, at the same
+    /// byte offset on both sides. Every executed `Update` was in bounds, so
+    /// the range is too.
+    fn emit_delta_h2d(&mut self, t: ObjectId, du: &DeltaUp, d: &str, h: &str, bytes: u64) {
+        let eb = crate::profile::elem_bytes(array_elem(&self.obj_ty(t)));
+        let flag = self.retain_flag(t);
+        let whole = format!("call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})");
+        let Some((wllt, tv)) = self.load_whole(du.start.var) else {
+            self.line(whole);
+            return;
+        };
+        let valid = self.tmp();
+        self.line(format!("{valid} = load i1, ptr {flag}"));
+        let start = self.affine_cell(&wllt, &tv, &du.start);
+        let (rows, first, done) = (self.label(), self.label(), self.label());
+        self.line(format!("br i1 {valid}, label %{rows}, label %{first}"));
+        self.label_line(&first);
+        self.line(whole);
+        self.line(format!("store i1 true, ptr {flag}"));
+        self.line(format!("br label %{done}"));
+        self.label_line(&rows);
+        let off = self.tmp();
+        self.line(format!("{off} = mul i64 {start}, {eb}"));
+        let dd = self.tmp();
+        self.line(format!("{dd} = add i64 {d}, {off}"));
+        let hp = self.tmp();
+        self.line(format!("{hp} = getelementptr i8, ptr {h}, i64 {off}"));
+        self.line(format!(
+            "call void @mapal_gpu_h2d(i64 {dd}, ptr {hp}, i64 {})",
+            du.stride * eb
+        ));
+        self.line(format!("br label %{done}"));
+        self.label_line(&done);
+    }
+
+    /// A retained site's restricted pass under `resident` (S54
+    /// `retain-resident`): the one-row site `one` reads row `row`'s `a` span
+    /// in place in `a`'s device copy and stores into row `row` of the output's
+    /// resident buffer. A host reader of the output gets that row only: its
+    /// host copy is retained the same way. An operand with no device copy
+    /// here runs the whole site instead (always correct).
+    pub(super) fn emit_row_resident(
+        &mut self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        row: &str,
+        call: impl Fn(&str, &str, &str) -> String,
+    ) -> bool {
+        let alias = |p: &Option<ResidentPlan>, o: ObjectId| p.as_ref().map_or(o, |p| p.alias(o));
+        let feeders: Vec<ObjectId> = [site.a.slot, site.b.slot]
+            .iter()
+            .filter_map(|&s| self.pair_source(source, s))
+            .filter(|&f| self.dvalid.contains_key(alias(&self.resident, f)))
+            .collect();
+        let &[fa, fb] = feeders.as_slice() else {
+            return false;
+        };
+        let eb = crate::profile::elem_bytes(&site.elem);
+        let (a, b) = (self.dload(fa), self.dload(fb));
+        let a_cells = self.tmp();
+        self.line(format!("{a_cells} = mul i64 {row}, {}", site.a.ci));
+        let a_cell = self.tmp();
+        self.line(format!("{a_cell} = add i64 {a_cells}, {}", site.a.base));
+        let a_off = self.tmp();
+        self.line(format!("{a_off} = mul i64 {a_cell}, {eb}"));
+        let a_row = self.tmp();
+        self.line(format!("{a_row} = add i64 {a}, {a_off}"));
+        let o = self.dload(target);
+        let o_off = self.tmp();
+        self.line(format!("{o_off} = mul i64 {row}, {}", site.c * eb));
+        let o_row = self.tmp();
+        self.line(format!("{o_row} = add i64 {o}, {o_off}"));
+        self.line(call(&a_row, &b, &o_row));
+        let keep = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.keep.contains_key(target));
+        if !keep {
+            let h = self.slot(target).expect("tile output slot");
+            let h_row = self.tmp();
+            self.line(format!("{h_row} = getelementptr i8, ptr {h}, i64 {o_off}"));
+            self.line(format!(
+                "call void @mapal_gpu_d2h(ptr {h_row}, i64 {o}, i64 {o_off}, i64 {})",
+                site.c * eb
+            ));
+        }
+        true
     }
 
     /// The device half of a site under `resident`: operands from their device

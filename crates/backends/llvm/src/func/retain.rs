@@ -45,7 +45,8 @@ pub(crate) fn retained_sites(
     rungs: crate::GpuRungs,
 ) -> SecondaryMap<ObjectId, Retained> {
     let mut out = SecondaryMap::new();
-    if !rungs.retain_delta || profile.gpu().is_none() {
+    let on = rungs.retain_delta || (rungs.resident && rungs.retain_resident);
+    if !on || profile.gpu().is_none() {
         return out;
     }
     let deltas = ir.write_delta(f);
@@ -90,12 +91,14 @@ pub(crate) fn retained_sites(
             ) else {
                 continue;
             };
-            let Some((stride, start)) = deltas.iter().find_map(|(view, d)| match *d {
+            // This loop's `Δ` of `a`: the carried array's own, or (S54) a
+            // `Same` image of it; the counter view names the loop.
+            let Some((stride, start)) = deltas.values().find_map(|d| match *d {
                 Delta::Rows {
                     stride,
                     start,
                     next,
-                } if next == a && (view == merge || proj_source(ir, view) == Some(merge)) => {
+                } if next == a && proj_source(ir, start.var) == Some(merge) => {
                     Some((stride, start))
                 }
                 _ => None,
@@ -141,8 +144,9 @@ fn proj_source(ir: &CategoryIr, o: ObjectId) -> Option<ObjectId> {
 }
 
 impl<'a> FnEmit<'a> {
-    /// The first-pass flag of the retained site writing `y` (minted once).
-    fn retain_flag(&mut self, y: ObjectId) -> String {
+    /// The first-pass flag of the retained site writing `y`, or of the delta
+    /// upload of `y` (minted once).
+    pub(super) fn retain_flag(&mut self, y: ObjectId) -> String {
         if let Some(f) = self.retain_flags.get(y) {
             return f.clone();
         }
@@ -151,18 +155,42 @@ impl<'a> FnEmit<'a> {
         f
     }
 
-    /// At loop entry: every site this loop retains starts with a whole pass.
+    /// At loop entry: every site this loop retains starts with a whole pass,
+    /// and every array it delta-uploads (`delta-h2d`) with a whole upload.
     pub(crate) fn retain_reset(&mut self, merge: ObjectId) {
+        let ups = self.resident.as_ref().map_or_else(Vec::new, |p| {
+            p.delta
+                .iter()
+                .filter(|(_, u)| u.merge == merge)
+                .map(|(o, _)| o)
+                .collect()
+        });
         let ys: Vec<ObjectId> = self
             .retain
             .iter()
             .filter(|(_, r)| r.merge == merge)
             .map(|(y, _)| y)
+            .chain(ups)
             .collect();
         for y in ys {
             let f = self.retain_flag(y);
             self.line(format!("store i1 false, ptr {f}"));
         }
+    }
+
+    /// `a·var + b` as an `i64`, computed in the counter's own wrapping width
+    /// (`var` loaded as `wllt` value `t`) and sign-extended.
+    pub(super) fn affine_cell(&mut self, wllt: &str, t: &str, a: &Affine) -> String {
+        let at = self.tmp();
+        self.line(format!("{at} = mul {wllt} {t}, {}", a.a));
+        let start = self.tmp();
+        self.line(format!("{start} = add {wllt} {at}, {}", a.b));
+        if wllt == "i64" {
+            return start;
+        }
+        let s = self.tmp();
+        self.line(format!("{s} = sext {wllt} {start} to i64"));
+        s
     }
 
     /// The retained site: the row the iteration wrote, or the whole site.
@@ -181,19 +209,8 @@ impl<'a> FnEmit<'a> {
         };
         let valid = self.tmp();
         self.line(format!("{valid} = load i1, ptr {flag}"));
-        // `a·t + b` in the counter's own wrapping width — the cell the
-        // program's first `Update` wrote — then the row it is in.
-        let at = self.tmp();
-        self.line(format!("{at} = mul {wllt} {t}, {}", r.start.a));
-        let start = self.tmp();
-        self.line(format!("{start} = add {wllt} {at}, {}", r.start.b));
-        let start64 = if wllt == "i64" {
-            start
-        } else {
-            let s = self.tmp();
-            self.line(format!("{s} = sext {wllt} {start} to i64"));
-            s
-        };
+        // The cell the program's first `Update` wrote, then the row it is in.
+        let start64 = self.affine_cell(&wllt, &t, &r.start);
         let rel = self.tmp();
         self.line(format!("{rel} = sub i64 {start64}, {}", site.a.base));
         let row = self.tmp();

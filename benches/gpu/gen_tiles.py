@@ -211,7 +211,7 @@ print("chain_256\nshare_256\nloop_128_8")
 (out / "loop_mm_1024_8.mapal").write_text(loop_mm(1024, 8))
 (out / "e2e_chain_4096.mapal").write_text(chain(4096, timed=True))
 
-def decode(T, d, rewrite=False):
+def decode(T, d, rewrite=False, scaled=False):
     """S53 `retain-delta`: a decode loop. Iteration t writes row t of the
     carried `x` (d unrolled `Update`s at `t*d + j`, the new row fed by the
     previous output), then `K = x·Wk`, `V = x·Wv` (row-local, invariant
@@ -220,7 +220,11 @@ def decode(T, d, rewrite=False):
 
     `rewrite=True` is the negative control: the iteration writes x[j·d + t]
     instead (a column, not a row), so the written cells are not one
-    contiguous range and nothing is retained."""
+    contiguous range and nothing is retained.
+
+    `scaled=True` (S54): `K` and `V` read `xh = x·0.5`, a per-cell map of the
+    written `x` — the row delta has to pass through it (`write_delta`'s Same
+    consumers), so `xh` uploads its written row and `K`, `V` are retained."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
     row = []
     for j in range(d):
@@ -229,11 +233,13 @@ def decode(T, d, rewrite=False):
             f"                ((t * {d} + {j}) * 7 + 13) % 101 - 50 -> widen_f32 -> f{j};\n"
             f"                f{j} / 64.0 + o[{j}] -> v{j};\n"
             f"                x[{idx}] <- v{j};\n")
+    xs = "xh" if scaled else "x"
+    half = "                x -> map { v -> v * 0.5 } -> xh;\n" if scaled else ""
     proj = lambda w_: (
         f"tc -> map {{ c ->\n"
         f"                    c / {d} -> i;\n"
         f"                    c % {d} -> j;\n"
-        f"                    (0.0, krange) -> fold {{ acc, k -> acc + x[i * {d} + k] * {w_}[k * {d} + j] }}\n"
+        f"                    (0.0, krange) -> fold {{ acc, k -> acc + {xs}[i * {d} + k] * {w_}[k * {d} + j] }}\n"
         f"                }}")
     # The loop lives in `main`: the entry fn is the one whose big blocks go to
     # the arena, and a 1024x256 decode carries ~10 MB of arrays.
@@ -252,7 +258,7 @@ def decode(T, d, rewrite=False):
     loop {{
         (t < {T}) -> {{
             -true-> {{
-{''.join(row)}                {proj('wk')} -> kk;
+{''.join(row)}{half}                {proj('wk')} -> kk;
                 {proj('wv')} -> vv;
                 krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> q;
                 rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;
@@ -275,6 +281,7 @@ def decode(T, d, rewrite=False):
 for T, d in ((16, 8), (1024, 256)):
     (out / f"decode_{T}_{d}.mapal").write_text(decode(T, d))
 (out / "loop_rewrite_16_8.mapal").write_text(decode(16, 8, rewrite=True))
+(out / "decode_scaled_16_8.mapal").write_text(decode(16, 8, scaled=True))
 
 # --- S54: multi-computation probes. Several computations in one program — a
 # tile site with per-cell consumers, chains, fan-out, fan-in, independent nets,
