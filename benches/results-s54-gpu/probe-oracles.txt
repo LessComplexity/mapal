@@ -1,0 +1,20 @@
+S54 multi-computation probes: the differential programs' interpreter oracle (gen_tiles.py px_*,
+examples/run --budget 2e10, HEAD 8d1657e). Per output: checksum (in-order fold), [0], [last].
+
+px_bias_128      -267.8275 26.498428 -53.08889
+px_diamond_128   5919.462 3438.9448 -452.9649
+px_epi_128       16390.85 14.849215 -25.944445
+px_ew_128        297.26965 -9.238095 -20.174603
+px_fanout_128    13.769611 27.69843 -53.88889 | 16390.85 14.849215 -25.944445 | 6666.5313 233.31743 -93.42579   (c | h | d)
+px_indep_128     98.1268 45.138992 10.271946
+px_loop_256      111330.02 0 0
+px_mlp_128       3333.2656 116.658714 -46.712894
+px_mlp2_128      169301.19 -808.24786 395.66037 | -1640.2864 -34.659378 278.81058   (d1 | d2)
+px_pro_128       3.4424028 6.9246073 -13.472222
+px_residual_128  -1.3742638 22.412716 -52.603176
+px_rowsum_128    13.770172 -114.03167 164.57156
+
+Cross-check of chain_bench.cu's probe formulas: its eager legs transcribed to numpy (f64) at the same
+sizes reproduce every value above within 1.6e-4 of max(|value|, rms) (checksums within n²·rms·1e-6):
+12/12 probes. So the library legs compute the programs Mapal runs; the box gate (1e-3, vs Mapal's
+printed corners and leg-vs-leg on the whole output) checks it again on device.
