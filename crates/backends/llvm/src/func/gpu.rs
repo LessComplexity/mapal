@@ -2209,42 +2209,48 @@ mod tests {
     }
 
     /// S54 `raster` at the kernels the box times, on the tile each face
-    /// actually takes: the 3090 groups at 8192 only (one block's panels, 8 MB,
-    /// past its 6 MB L2), on all three faces; every other part keeps
-    /// row-major at every size — the part is chosen by `l2_bytes`, not by a
-    /// table row. Without the gate every part groups where the grid is more
-    /// than a wave.
+    /// actually takes. The derivation (every rung on, `arch-rungs` off): the
+    /// 3090 groups at 8192 only (one block's panels, 8 MB, past its 6 MB L2),
+    /// every other part keeps row-major; without the gate every part groups
+    /// where the grid is more than a wave. What ships is the measured table:
+    /// raster OFF on the 3090 and the gate OFF on the 5090
+    /// (`l2-raster-rtx-{3090,5090}-run{2,3}.txt`), so only the 5090 groups,
+    /// at 4096 and 8192.
     #[test]
     fn raster_fires_where_one_blocks_panels_leave_the_l2() {
         use crate::profile::{A100, RTX_3090};
         let parts: [&TargetProfile; 6] =
             [&RTX_3090, &A100, &RTX_4090, &H100_PCIE, &H100, &RTX_5090];
         let faces = [(false, None), (true, None), (true, Some(Reduced::Tf32))];
+        let arms = |gate_off: bool| {
+            let mut off = GpuRungs::default();
+            off.arch = true;
+            off.l2_gate = gate_off;
+            crate::GpuArms {
+                on: GpuRungs::default(),
+                off,
+            }
+        };
         for p in parts {
             for n in [1024, 2048, 4096, 8192] {
                 for (contract, reduced) in faces {
                     let s = site(n, n, n, true, true, Ty::f32());
-                    let l = launch(&s, p, contract, crate::GpuArms::default(), reduced);
-                    let want_grouped = p.name == "rtx-3090" && n == 8192;
+                    let at = |a| launch(&s, p, contract, a, reduced);
+                    let why = format!("{} {n} {contract} {reduced:?}", p.name);
+                    let derived = at(arms(false));
                     assert_eq!(
-                        l.raster > 1,
-                        want_grouped,
-                        "{} {n} {contract} {reduced:?}",
-                        p.name
+                        derived.raster > 1,
+                        p.name == "rtx-3090" && n == 8192,
+                        "{why}"
                     );
-                    let mut off = GpuRungs::default();
-                    off.l2_gate = true;
-                    let arms = crate::GpuArms {
-                        on: GpuRungs::default(),
-                        off,
-                    };
-                    let u = launch(&s, p, contract, arms, reduced);
+                    let ungated = at(arms(true));
                     if n == 8192 {
-                        assert!(u.raster > 1, "{} {contract} {reduced:?}", p.name);
+                        assert!(ungated.raster > 1, "{why}");
                     }
-                    if u.raster > 1 {
-                        assert!(l.gy % u.raster == 0);
-                    }
+                    assert!(ungated.gy % ungated.raster == 0, "{why}");
+                    let shipped = at(crate::GpuArms::default());
+                    let want = p.name == "rtx-5090" && n >= 4096;
+                    assert_eq!(shipped.raster > 1, want, "{why}");
                 }
             }
         }

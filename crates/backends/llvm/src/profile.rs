@@ -739,6 +739,72 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
                files' trace totals)",
     },
+    // S54 `l2-raster` (benches/results-s54-gpu/l2-raster-tables.md). `raster`'s derivation groups
+    // only where one block's panels leave the L2 (the 3090 at 8192); there it measured no stable
+    // sign. `l2-gate` is the derivation's gate, so its row means the opposite of the others: it
+    // is OFF only where the ungated grouping measured faster in every session (the 5090 at 8192),
+    // never for "no effect". `l2-window` ships ON only where a probe's traced kernel time measured
+    // > 1% faster in every session.
+    RungOff {
+        profile: "rtx-3090",
+        rung: "raster",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-3090-run2.txt / -run3.txt mm_8192 OFF/ON cuBLAS-normalized exact 0.986 / 1.029, \
+               contract 0.992 / 1.017, TF32 0.991 / 0.956 (ON ms 92.743/55.147/34.632 vs OFF 91.632/54.659/34.341; \
+               116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "l2-gate",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-5090-run2.txt / -run3.txt mm_8192 gated/ungated cuBLAS-normalized exact 0.982 / 0.951, \
+               contract 0.980 / 0.959, TF32 0.970 / 0.949 (gated ms 34.913/23.173/13.156 vs ungated \
+               34.347/22.844/12.757; 35.970/23.788/13.347 vs 34.317/22.840/12.671); mm_4096 0.992-1.005, no effect",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-3090*.txt: no probe has an operand within the 6 MB L2 (pt_* at 2048 are 16 MB), so no \
+               probe row has a window arm (0 ms measured): unmeasured, not shipped",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-a100{,-confirm,-run2,-run3,-run5}.txt pt_{mlp,mlp2,diamond}_2048 traced kernel ms off/on: \
+               25 of 30 cells <= 1.000, none > 1.01 in every session (mlp2_2048_c 0.994/0.998/0.995/0.965/0.994)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-4090-run2.txt / -run4.txt traced kernel ms off/on: diamond_2048_c 0.933 / 0.939, \
+               mlp2_2048_c 0.938 / 0.949, diamond_4096_c 0.989 / 0.987 (the window costs on contract); exact \
+               0.985-1.003",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-5090{,-run2,-run3,-run4,-run5}.txt traced kernel ms off/on: 60 cells 0.976-1.005, \
+               none > 1.01 in any session (diamond_2048_c 0.988/0.989/0.976/0.991/0.986)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "l2-raster-h100-pcie.txt / -run2.txt traced kernel ms off/on, exact: diamond_2048 1.004 / 1.007, \
+               mlp2_2048 1.002 / 1.000, mlp_2048 1.000 / 1.000 — none > 1.01; contract ships ON (mlp2_2048_c \
+               1.012 / 1.016, disjoint)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
