@@ -1694,8 +1694,16 @@ impl Kernel<'_> {
         };
         self.header(name, threads, GPU_VEC_BYTES, blocks);
         let tid = self.sreg("tid.x");
-        let bx = self.sreg("ctaid.x");
-        let by = self.sreg("ctaid.y");
+        // Under the column-major store the grid's fastest axis runs down the
+        // rows too (the host swaps `gx`/`gy`): one wave's blocks write
+        // consecutive column runs, not 512-byte pieces 16 KB apart.
+        let (bx, by) = if self.col {
+            let by = self.sreg("ctaid.x");
+            (self.sreg("ctaid.y"), by)
+        } else {
+            let bx = self.sreg("ctaid.x");
+            (bx, self.sreg("ctaid.y"))
+        };
         // Warp shape (S52 rung `warp`): lay a warp's 32 lanes out as
         // `warp / wx` rows × `wx` columns of threads, `wx` = the lanes one
         // shared-memory wavefront serves with vector loads (128 B / 16 B = 8).
@@ -2140,11 +2148,17 @@ impl<'a> FnEmit<'a> {
                 self.gpu_arms,
                 self.reduced,
             );
+            // The column-major tile kernel takes its row block from `ctaid.x`.
+            let (gx, gy) = if col && l.tiled.is_some() {
+                (l.gy, l.gx)
+            } else {
+                (l.gx, l.gy)
+            };
             self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], |ops, o| {
                 format!(
                     "call void @mapal_gpu_launch(i64 {id}, i64 {}, i64 {}, i64 {o}, \
-                     i32 {}, i32 {}, i32 {}, i32 {})",
-                    ops[0], ops[1], l.gx, l.gy, l.block, l.smem
+                     i32 {gx}, i32 {gy}, i32 {}, i32 {})",
+                    ops[0], ops[1], l.block, l.smem
                 )
             });
             return;
