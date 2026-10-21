@@ -1,14 +1,12 @@
-# Next Session (S54)
+# Next Session (S55)
 
-**S53 is logged in `sessions/2026-10-21-s53-gpu-optimizations.md` — read it first.** Branch `s53-gpu-opt`
-(local, not pushed; base `s52-ptx-leg`). Eight GPU items merged, one rung table measured on RTX 4090 /
-H100 PCIe / RTX 5090; record `performance/s53-gpu-optimizations.md`, results
-`benches/results-s53-gpu/integrated-*.txt`. FP32 contract face: 4090 1.04–1.05× cuBLAS, H100 PCIe
-1.11–1.14× CUTLASS, 5090 0.87–0.92× cuBLAS; H100 TF32 through `wgmma` 1.24–1.64× the S52 kernel. The S54
-queue is at the end of the log (first: `resident` × `retain-delta` together; the context wait in whole
-programs). `vastai show instances` was empty at close.
+**S54 is logged in `sessions/2026-10-21-s54-fusion-placement.md` — read it first.** Branch `s54-gpu-fusion`
+(local, not pushed). Fusion as placement built (epilogue, devmap, rowfold, arena, streams, retain-resident,
+l2-raster) and measured on RTX 3090 / A100 / RTX 4090 / H100 PCIe / RTX 5090; the workflow stopped before the
+final verify + integrated run — that is item 1 of the queue. `vastai show instances` empty at close.
 
 ---
+
 
 (S52's handoff, kept below for the CPU-side items it still carries. The S53 workflow header it replaced:
 workflow `mapal-s53-gpu-optimizations`, run `wf_40012e53-58d`; item branches `s53/<key>`.)
