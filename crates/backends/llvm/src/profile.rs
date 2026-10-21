@@ -194,6 +194,12 @@ impl Gpu {
     pub fn has_mma_sync(&self) -> bool {
         self.sm() >= 80
     }
+
+    /// `wgmma.mma_async` exists only on the arch-specific Hopper target
+    /// `sm_90a` (PTX ISA: "Requires sm_90a"); Blackwell replaced it.
+    pub fn has_wgmma(&self) -> bool {
+        self.sm() == 90 && self.arch.ends_with('a')
+    }
 }
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
@@ -255,6 +261,87 @@ impl GpuMmaTile {
     }
     pub fn smem_bytes(&self) -> u64 {
         self.stages * self.stage_words() * 4
+    }
+}
+
+/// `wgmma.mma_async.m64nNk8.f32.tf32.tf32`'s fixed sides — ISA rules. One
+/// instruction is issued by a warpgroup of [`WARPGROUP_WARPS`] warps.
+pub const WGMMA_M: u64 = 64;
+pub const WGMMA_K: u64 = 8;
+/// `N` runs over the multiples of 8 up to 256.
+pub const WGMMA_N_STEP: u64 = 8;
+pub const WGMMA_N_MAX: u64 = 256;
+pub const WARPGROUP_WARPS: u64 = 4;
+/// Registers a `wgmma` thread spends beyond accumulators and fragments —
+/// [`MMA_ADDR_REGS`]'s policy for this kernel, read off ptxas 12.8 (S53): the
+/// m64n256 kernel used 213 = 128 accumulators + 16 fragments + 69 (its
+/// `cp.async` addresses), rounded up to the 8-register allocation unit.
+pub const WGMMA_ADDR_REGS: u64 = 72;
+/// Stages the `wgmma` panel pipeline needs at least: one landing, one read by
+/// the group being issued, one still read by the group in flight.
+pub const WGMMA_MIN_STAGES: u64 = 3;
+/// A no-swizzle core matrix: 8 rows of 16 bytes, contiguous (PTX ISA,
+/// "Shared Memory Matrix Layout").
+pub const CORE_MATRIX_BYTES: u64 = 8 * GPU_VEC_BYTES;
+
+/// The Hopper TF32 tile (S53 `wgmma-hopper`): the site's product transposed,
+/// `cᵀ = bᵀ·aᵀ`, because `wgmma` takes TF32 shared-memory operands only
+/// K-major — `a` (`ck = 1`) already is, `b` (lanes contiguous) is not. So `bᵀ`
+/// is the register operand (any layout loads), `aᵀ` the descriptor operand in
+/// `a`'s own layout, and one instruction covers `WGMMA_M` columns × `n` rows
+/// of `c`. A block is `groups` warpgroups side by side along `c`'s columns,
+/// all reading the same staged `a` panel. Derived by
+/// [`TargetProfile::gpu_wgmma_tile`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuWgmmaTile {
+    /// The instruction's `N`: rows of `c` per block.
+    pub n: u64,
+    /// Warpgroups per block.
+    pub groups: u64,
+    pub bk: u64,
+    pub stages: u64,
+    /// Words of padding on each `b` panel row (the register-operand loads).
+    pub pad_b: u64,
+    pub blocks_per_sm: u64,
+}
+
+impl GpuWgmmaTile {
+    pub fn bm(&self) -> u64 {
+        self.n
+    }
+    pub fn bn(&self) -> u64 {
+        self.groups * WGMMA_M
+    }
+    pub fn threads(&self, warp: u64) -> u64 {
+        self.groups * WARPGROUP_WARPS * warp
+    }
+    pub fn ldb(&self) -> u64 {
+        self.bn() + self.pad_b
+    }
+    /// Words of the `a` panel in one stage — `bm × bk`, core-matrix layout.
+    pub fn a_words(&self) -> u64 {
+        self.bm() * self.bk
+    }
+    pub fn stage_words(&self) -> u64 {
+        self.a_words() + self.bk * self.ldb()
+    }
+    pub fn smem_bytes(&self) -> u64 {
+        self.stages * self.stage_words() * 4
+    }
+    /// Leading-dimension byte offset of the K-major no-swizzle layout: the
+    /// two 16-byte `k` halves of an 8-row core-matrix pair sit side by side.
+    pub fn lbo(&self) -> u64 {
+        CORE_MATRIX_BYTES
+    }
+    /// Stride-dimension byte offset: one 8-row group holds all `bk/4`
+    /// core matrices of the panel's depth.
+    pub fn sbo(&self) -> u64 {
+        self.bk * 4 / GPU_VEC_BYTES * CORE_MATRIX_BYTES
+    }
+    /// The matrix descriptor without its start address (PTX ISA "Matrix
+    /// Descriptor Format": bits 16–29 LBO>>4, 32–45 SBO>>4, swizzle 0).
+    pub fn desc_fields(&self) -> u64 {
+        ((self.lbo() >> 4) << 16) | ((self.sbo() >> 4) << 32)
     }
 }
 
@@ -928,6 +1015,100 @@ impl TargetProfile {
         Some(GpuMmaTile { stages, ..geom })
     }
 
+    /// **The Hopper `wgmma` geometry for a `rows × c × k` f32 site on the TF32
+    /// face** ([`GpuWgmmaTile`]). `None` off `sm_90a`. For each panel depth
+    /// `bk` (a power of two ≥ the instruction's k, dividing `k`):
+    ///
+    /// 1. **`n`** — the largest multiple of 8 ≤ 256 dividing `rows` whose
+    ///    `n/2` accumulators, the panel's `4·bk/8` A fragments and
+    ///    [`WGMMA_ADDR_REGS`] fit `regs_per_thread` (the whole-thread rule).
+    /// 2. **Warpgroups per block** (a power of two) from `regs_per_sm` over
+    ///    that count, split across the resident blocks: [`GPU_RESIDENT_BLOCKS`],
+    ///    or one with `cover` (rung `wgmma-cover`: the policy keeps a second
+    ///    block to compute while one waits at the panel barrier, and here the
+    ///    group in flight already computes through it).
+    /// 3. **Fill** — while the grid has fewer blocks than SMs, halve the
+    ///    warpgroups, then `n`.
+    /// 4. **Smem** — `b` rows padded by [`conflict_free_pad`] for the A
+    ///    fragment pattern; the panel must fit [`WGMMA_MIN_STAGES`] stages
+    ///    in a block's share and copy in whole 16-byte chunks per thread.
+    ///
+    /// The deepest valid `bk` wins; then as many stages as the share holds.
+    pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64, cover: bool) -> Option<GpuWgmmaTile> {
+        let g = self.gpu()?;
+        if !g.has_wgmma() {
+            return None;
+        }
+        let wg_threads = WARPGROUP_WARPS * g.warp;
+        let resident_blocks = if cover { 1 } else { GPU_RESIDENT_BLOCKS };
+        // The largest legal `n` ≤ `cap` dividing `rows`.
+        let fit_n = |cap: u64| {
+            (1..=cap.min(WGMMA_N_MAX) / WGMMA_N_STEP)
+                .rev()
+                .map(|i| i * WGMMA_N_STEP)
+                .find(|n| rows.is_multiple_of(*n))
+        };
+        let regs = |n: u64, bk: u64| n / 2 + 4 * (bk / WGMMA_K) + WGMMA_ADDR_REGS;
+        let mut best = None;
+        let mut bk = WGMMA_K;
+        while bk <= k {
+            let frag_regs = regs(0, bk);
+            let geom = (|| {
+                if !k.is_multiple_of(bk) || frag_regs >= g.regs_per_thread {
+                    return None;
+                }
+                let mut n = fit_n(2 * (g.regs_per_thread - frag_regs))?;
+                let resident = g.regs_per_sm / regs(n, bk);
+                let per_block = (resident / resident_blocks / wg_threads)
+                    .min(g.max_threads_per_block / wg_threads)
+                    .max(1);
+                let mut groups = 1 << per_block.ilog2();
+                while (rows / n) * (c / (groups * WGMMA_M)) < g.sms {
+                    if groups > 1 {
+                        groups /= 2;
+                    } else if let Some(m) = fit_n(n / 2) {
+                        n = m;
+                    } else {
+                        break;
+                    }
+                }
+                let (bn, threads) = (groups * WGMMA_M, groups * wg_threads);
+                if !c.is_multiple_of(bn) {
+                    return None;
+                }
+                let blocks_per_sm = (g.regs_per_sm / regs(n, bk) / threads)
+                    .min(g.max_threads_per_sm / threads)
+                    .min(g.max_blocks_per_sm)
+                    .max(1);
+                let share = (g.smem_per_sm / blocks_per_sm)
+                    .saturating_sub(g.smem_reserved_per_block)
+                    .min(g.smem_per_block);
+                // A fragment pattern: lane = 4·group + t reads row k = t,
+                // column n = group of the `b` panel.
+                let pad_b = conflict_free_pad(bn, |l| (l % 4, l / 4))?;
+                let geom = GpuWgmmaTile {
+                    n,
+                    groups,
+                    bk,
+                    stages: WGMMA_MIN_STAGES,
+                    pad_b,
+                    blocks_per_sm,
+                };
+                let whole =
+                    (n * bk / 4).is_multiple_of(threads) && (bk * bn / 4).is_multiple_of(threads);
+                (whole && geom.smem_bytes() <= share).then(|| {
+                    let stages = (share / (geom.stage_words() * 4))
+                        .min(k / bk)
+                        .max(WGMMA_MIN_STAGES);
+                    GpuWgmmaTile { stages, ..geom }
+                })
+            })();
+            best = geom.or(best);
+            bk *= 2;
+        }
+        best
+    }
+
     /// **The GPU tile geometry for a `rows × c × k` site — the same three
     /// budgets the CPU rungs read, at their GPU locations.** `None` when the
     /// site does not divide into any geometry this derives; the emitter then
@@ -1387,11 +1568,13 @@ pub const RTX_4090: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
-/// H100 SXM5 — Hopper (`sm_90`), 132 SMs, 228 KB shared memory per SM.
+/// H100 SXM5 — Hopper, 132 SMs, 228 KB shared memory per SM. The target is
+/// the arch-specific `sm_90a` (S53): it is what admits `wgmma`, and every
+/// sm_90 instruction is in it.
 pub const H100: TargetProfile = TargetProfile {
     name: "h100",
     machine: Machine::Gpu(Gpu {
-        arch: "sm_90",
+        arch: "sm_90a",
         sms: 132,
         smem_per_sm: 228 * 1024,
         smem_per_block: 227 * 1024,
@@ -1406,7 +1589,7 @@ pub const H100: TargetProfile = TargetProfile {
 pub const H100_PCIE: TargetProfile = TargetProfile {
     name: "h100-pcie",
     machine: Machine::Gpu(Gpu {
-        arch: "sm_90",
+        arch: "sm_90a",
         sms: 114,
         smem_per_sm: 228 * 1024,
         smem_per_block: 227 * 1024,
@@ -2553,6 +2736,62 @@ mod tests {
             (w.wm(), w.wn(), w.bm(), w.bn(), w.bk, w.stages),
             (64, 64, 128, 128, 16, 2)
         );
+    }
+
+    /// The Hopper `wgmma` geometry (S53), worked by hand from the device facts.
+    #[test]
+    fn gpu_wgmma_tile_is_derived_from_hopper_facts() {
+        let t = |n, cover| {
+            let x = H100_PCIE
+                .gpu_wgmma_tile(n, n, n, cover)
+                .expect("sm_90a, divisible square site");
+            (
+                x.bm(),
+                x.bn(),
+                x.groups,
+                x.bk,
+                x.stages,
+                x.pad_b,
+                x.blocks_per_sm,
+            )
+        };
+        // 4096, one resident block: n = 256 (128 acc + 16 fragments + 72 ≤ 255
+        // at bk 32); 65 536 / 216 = 303 threads ⇒ 2 warpgroups ⇒ 256 × 128;
+        // the 227 KB share holds 4 bk-32 stages of 49 KB, not 3 of bk 64.
+        assert_eq!(t(4096, true), (256, 128, 2, 32, 4, 8, 1));
+        // The policy split (`wgmma-cover` off): 303 / 2 ⇒ one warpgroup, two
+        // blocks of 113 KB ⇒ bk 16 (20.5 KB stages), 5 stages.
+        assert_eq!(t(4096, false), (256, 64, 1, 16, 5, 8, 2));
+        // 1024: 4 × 8 blocks < 114 SMs ⇒ one warpgroup, then n 128 ⇒ 128
+        // blocks; 3 resident ⇒ 75 KB ⇒ exactly three bk-32 stages.
+        assert_eq!(t(1024, true), (128, 64, 1, 32, 3, 8, 3));
+        // `wgmma` is sm_90a only: not Ada, not consumer Blackwell, not a CPU.
+        for p in [&RTX_4090, &RTX_5090, &CUDA_ADA, &GENERIC] {
+            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096, true), None, "{}", p.name);
+        }
+        assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
+    }
+
+    /// The matrix descriptor's constant fields for the S52 bench geometries:
+    /// K-major, no swizzle — LBO = one 128-byte core matrix between the two
+    /// `k` halves, SBO = an 8-row group's whole panel depth (`bk/4` core
+    /// matrices). Start address and base offset stay zero (filled per stage).
+    #[test]
+    fn wgmma_descriptor_fields_follow_the_panel_depth() {
+        for (n, cover, bk) in [(4096, true, 32), (4096, false, 16), (1024, true, 32)] {
+            let x = H100_PCIE.gpu_wgmma_tile(n, n, n, cover).expect("geometry");
+            assert_eq!(x.bk, bk);
+            let d = x.desc_fields();
+            assert_eq!(d & 0x3fff, 0, "start address");
+            assert_eq!((d >> 16) & 0x3fff, 128 >> 4, "LBO");
+            assert_eq!((d >> 32) & 0x3fff, bk * 32 >> 4, "SBO");
+            assert_eq!((d >> 49) & 0x7, 0, "base offset");
+            assert_eq!(d >> 62, 0, "no swizzle");
+        }
+        let x = H100_PCIE
+            .gpu_wgmma_tile(4096, 4096, 4096, true)
+            .expect("geometry");
+        assert_eq!(x.desc_fields(), 0x40_0008_0000);
     }
 
     /// The placeholder honesty pin. `cuda-ada` inherits CPU-shaped constants it

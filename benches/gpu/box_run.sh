@@ -15,7 +15,9 @@ say "== $PROF $SM $(date -u +%FT%TZ)"
 nvidia-smi --query-gpu=name,driver_version,clocks.max.sm,clocks.sm,power.limit,temperature.gpu,persistence_mode --format=csv | tee -a "$LOG"
 nvcc --version | tail -1 | tee -a "$LOG"
 
-nvcc -O3 -std=c++17 -arch="$SM" -Icutlass/include -Icutlass/tools/util/include \
+# The harness is built for the plain arch (sm_90a -> sm_90): the Mapal leg is
+# PTX the driver JITs for the device, and the library legs stay as measured before.
+nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
     tile_bench.cu -lcublas -lcuda -o tile_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
 [ -x tile_bench ] || { say "HARNESS BUILD FAILED"; exit 1; }
 
