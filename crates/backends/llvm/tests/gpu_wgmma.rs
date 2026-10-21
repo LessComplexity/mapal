@@ -58,6 +58,9 @@ fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
     // the dynamic shared memory 1024-aligned.
     assert!(k.contains(&format!(", {}\n", 0x4000_0040_0001_0000u64)));
     assert!(k.contains("@mapal_smem = external addrspace(3) global [0 x i8], align 1024"));
+    // `idx32` is an FMA-kernel rung: the wgmma kernel keeps its `i64` indices
+    // (S53 integration: an `i32` index here did not verify in `opt`).
+    assert!(!k.contains("nuw nsw i32"));
 }
 
 /// The OFF arm is the S52 `mma.sync` kernel, unchanged (still `cvt.rna`).
