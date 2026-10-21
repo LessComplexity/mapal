@@ -1,0 +1,543 @@
+== h100-pcie sm_90a 2026-10-21T12:12:32Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA H100 PCIe, 580.159.03, 1755 MHz, 345 MHz, 350.00 W, 33, Enabled
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- differential (GPU stdout vs oracle)
+PASS at_256 -305.0057 -120.666664 -19.317451 
+PASS at_256.off-l2-window -305.0057 -120.666664 -19.317451 
+PASS at_256_c -305.059 -120.66669 -19.317453 
+PASS at_256_c.off-l2-window -305.059 -120.66669 -19.317453 
+PASS bt_256 713.7606 -73.47622 -147.7619 
+PASS bt_256_c 713.7606 -73.47622 -147.7619 
+PASS deep_4096x1024x8192 -42.25009 120.28557 -226.92068 
+PASS deep_4096x1024x8192.off-l2-window -42.25009 120.28557 -226.92068 
+PASS deep_4096x1024x8192_c -74.48213 120.28546 -226.92055 
+PASS deep_4096x1024x8192_c.off-l2-window -74.48213 120.28546 -226.92055 
+PASS fmod_64 23.55564 -0.15554532 1.9555535 
+PASS fmod_64.off-l2-window 23.55564 -0.15554532 1.9555535 
+PASS fmod_64_c 23.555641 -0.1555446 1.9555538 
+PASS fmod_64_c.off-l2-window 23.555641 -0.1555446 1.9555538 
+PASS odd_100 66.56736 21.77776 11.936509 
+PASS odd_100.off-l2-window 66.56736 21.77776 11.936509 
+PASS odd_100_c 66.57021 21.77777 11.936512 
+PASS odd_100_c.off-l2-window 66.57021 21.77777 11.936512 
+PASS px_bias_128 -267.8275 26.498428 -53.08889 
+PASS px_bias_128.off-l2-window -267.8275 26.498428 -53.08889 
+PASS px_bias_128_c -267.82483 26.498428 -53.088882 
+PASS px_bias_128_c.off-l2-window -267.82483 26.498428 -53.088882 
+PASS px_diamond_128 5919.462 3438.9448 -452.9649 
+PASS px_diamond_128.off-l2-window 5919.462 3438.9448 -452.9649 
+PASS px_diamond_128_c 5919.354 3438.9443 -452.96567 
+PASS px_diamond_128_c.off-l2-window 5919.354 3438.9443 -452.96567 
+PASS px_epi_128 16390.85 14.849215 -25.944445 
+PASS px_epi_128.off-l2-window 16390.85 14.849215 -25.944445 
+PASS px_epi_128_c 16390.848 14.849215 -25.94444 
+PASS px_epi_128_c.off-l2-window 16390.848 14.849215 -25.94444 
+PASS px_ew_128 297.26965 -9.238095 -20.174603 
+PASS px_ew_128_c 297.26965 -9.238095 -20.174603 
+PASS px_fanout_128 13.769611 27.69843 -53.88889 16390.85 14.849215 -25.944445 6666.5313 233.31743 -93.42579 
+PASS px_fanout_128.off-l2-window 13.769611 27.69843 -53.88889 16390.85 14.849215 -25.944445 6666.5313 233.31743 -93.42579 
+PASS px_fanout_128_c 13.777302 27.69843 -53.88888 16390.848 14.849215 -25.94444 6666.472 233.31702 -93.42625 
+PASS px_fanout_128_c.off-l2-window 13.777302 27.69843 -53.88888 16390.848 14.849215 -25.94444 6666.472 233.31702 -93.42625 
+PASS px_indep_128 98.1268 45.138992 10.271946 
+PASS px_indep_128.off-l2-window 98.1268 45.138992 10.271946 
+PASS px_indep_128_c 98.13161 45.138985 10.271954 
+PASS px_indep_128_c.off-l2-window 98.13161 45.138985 10.271954 
+PASS px_loop_256 111330.02 0 0 
+PASS px_loop_256.off-l2-window 111330.02 0 0 
+PASS px_loop_256_c 111329.97 0 0 
+PASS px_loop_256_c.off-l2-window 111329.97 0 0 
+PASS px_mlp2_128 169301.19 -808.24786 395.66037 -1640.2864 -34.659378 278.81058 
+PASS px_mlp2_128.off-l2-window 169301.19 -808.24786 395.66037 -1640.2864 -34.659378 278.81058 
+PASS px_mlp2_128_c 169301.31 -808.24805 395.6601 -1640.3129 -34.659283 278.8107 
+PASS px_mlp2_128_c.off-l2-window 169301.31 -808.24805 395.6601 -1640.3129 -34.659283 278.8107 
+PASS px_mlp_128 3333.2656 116.658714 -46.712894 
+PASS px_mlp_128.off-l2-window 3333.2656 116.658714 -46.712894 
+PASS px_mlp_128_c 3333.236 116.65851 -46.713123 
+PASS px_mlp_128_c.off-l2-window 3333.236 116.65851 -46.713123 
+PASS px_pro_128 3.4424028 6.9246073 -13.472222 
+PASS px_pro_128.off-l2-window 3.4424028 6.9246073 -13.472222 
+PASS px_pro_128_c 3.4443254 6.9246073 -13.47222 
+PASS px_pro_128_c.off-l2-window 3.4443254 6.9246073 -13.47222 
+PASS px_residual_128 -1.3742638 22.412716 -52.603176 
+PASS px_residual_128.off-l2-window -1.3742638 22.412716 -52.603176 
+PASS px_residual_128_c -1.3667259 22.412716 -52.60317 
+PASS px_residual_128_c.off-l2-window -1.3667259 22.412716 -52.60317 
+PASS px_rowsum_128 13.770172 -114.03167 164.57156 
+PASS px_rowsum_128.off-l2-window 13.770172 -114.03167 164.57156 
+PASS px_rowsum_128_c 13.776337 -114.03165 164.57149 
+PASS px_rowsum_128_c.off-l2-window 13.776337 -114.03165 164.57149 
+PASS rm_128_f64 13.76190476188507 27.698412698412707 -53.88888888888889 
+PASS rm_128_f64.off-l2-window 13.76190476188507 27.698412698412707 -53.88888888888889 
+PASS rm_128_f64_c 13.761904761886747 27.69841269841266 -53.88888888888892 
+PASS rm_128_f64_c.off-l2-window 13.761904761886747 27.69841269841266 -53.88888888888892 
+PASS rm_128x384x96 -24.066116 -48.190468 226.60318 
+PASS rm_128x384x96.off-l2-window -24.066116 -48.190468 226.60318 
+PASS rm_128x384x96_c -24.068176 -48.19047 226.60318 
+PASS rm_128x384x96_c.off-l2-window -24.068176 -48.19047 226.60318 
+PASS rm_256 623.73267 -136.60313 11.9365 
+PASS rm_256.off-l2-window 623.73267 -136.60313 11.9365 
+PASS rm_256_c 623.6497 -136.60312 11.93653 
+PASS rm_256_c.off-l2-window 623.6497 -136.60312 11.93653 
+PASS wide_2048x2048x64 12.6833515 -225.71428 23.460325 
+PASS wide_2048x2048x64.off-l2-window 12.6833515 -225.71428 23.460325 
+PASS wide_2048x2048x64_c 11.990871 -225.71425 23.460327 
+PASS wide_2048x2048x64_c.off-l2-window 11.990871 -225.71425 23.460327 
+differential: 80 pass, 0 fail
+TRAP-PASS e2e_trap rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap.off-l2-window rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap_c rc=101 mapal trap: div_zero
+TRAP-PASS e2e_trap_c.off-l2-window rc=101 mapal trap: div_zero
+-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals
+floor prog=e2e_1024 rep=1 program n=1024 gemms=1 ops=2 ctx_ms=266.844 handle_ms=22.849 alloc_ms=0.365 gen_ms=0.365 gemm_ms=99.234 d2h_ms=0.045 after_ctx_ms=122.858 total_ms=389.702 value=13216
+floor prog=e2e_1024 rep=2 program n=1024 gemms=1 ops=2 ctx_ms=272.952 handle_ms=15.014 alloc_ms=0.364 gen_ms=0.354 gemm_ms=77.092 d2h_ms=0.039 after_ctx_ms=92.863 total_ms=365.815 value=13216
+floor prog=e2e_1024 rep=3 program n=1024 gemms=1 ops=2 ctx_ms=270.421 handle_ms=15.346 alloc_ms=0.371 gen_ms=0.359 gemm_ms=77.582 d2h_ms=0.040 after_ctx_ms=93.698 total_ms=364.119 value=13216
+floor prog=e2e_4096 rep=1 program n=4096 gemms=1 ops=2 ctx_ms=249.417 handle_ms=15.226 alloc_ms=0.456 gen_ms=0.439 gemm_ms=80.728 d2h_ms=0.043 after_ctx_ms=96.893 total_ms=346.310 value=13517
+floor prog=e2e_4096 rep=2 program n=4096 gemms=1 ops=2 ctx_ms=249.098 handle_ms=15.147 alloc_ms=0.445 gen_ms=0.435 gemm_ms=80.722 d2h_ms=0.044 after_ctx_ms=96.794 total_ms=345.892 value=13517
+floor prog=e2e_4096 rep=3 program n=4096 gemms=1 ops=2 ctx_ms=270.865 handle_ms=15.095 alloc_ms=0.404 gen_ms=0.476 gemm_ms=81.515 d2h_ms=0.057 after_ctx_ms=97.547 total_ms=368.412 value=13517
+floor prog=mm_share_1024 rep=1 program n=1024 gemms=2 ops=3 ctx_ms=270.843 handle_ms=15.217 alloc_ms=0.467 gen_ms=0.363 gemm_ms=77.482 d2h_ms=0.036 after_ctx_ms=93.565 total_ms=364.409 value=-2.98851e+06
+floor prog=mm_share_1024 rep=2 program n=1024 gemms=2 ops=3 ctx_ms=274.661 handle_ms=15.083 alloc_ms=0.461 gen_ms=0.363 gemm_ms=77.034 d2h_ms=0.044 after_ctx_ms=92.986 total_ms=367.647 value=-2.98851e+06
+floor prog=mm_share_1024 rep=3 program n=1024 gemms=2 ops=3 ctx_ms=247.524 handle_ms=15.063 alloc_ms=0.465 gen_ms=0.363 gemm_ms=76.886 d2h_ms=0.036 after_ctx_ms=92.814 total_ms=340.338 value=-2.98851e+06
+floor prog=mm_chain_2048 rep=1 program n=2048 gemms=2 ops=3 ctx_ms=270.213 handle_ms=15.072 alloc_ms=0.493 gen_ms=0.389 gemm_ms=77.661 d2h_ms=0.041 after_ctx_ms=93.655 total_ms=363.868 value=2.24559e+06
+floor prog=mm_chain_2048 rep=2 program n=2048 gemms=2 ops=3 ctx_ms=267.347 handle_ms=15.265 alloc_ms=0.482 gen_ms=0.384 gemm_ms=78.582 d2h_ms=0.034 after_ctx_ms=94.747 total_ms=362.095 value=2.24559e+06
+floor prog=mm_chain_2048 rep=3 program n=2048 gemms=2 ops=3 ctx_ms=248.173 handle_ms=15.080 alloc_ms=0.482 gen_ms=0.388 gemm_ms=77.868 d2h_ms=0.042 after_ctx_ms=93.861 total_ms=342.034 value=2.24559e+06
+floor prog=e2e_chain_4096 rep=1 program n=4096 gemms=2 ops=3 ctx_ms=269.262 handle_ms=15.053 alloc_ms=0.493 gen_ms=0.486 gemm_ms=84.157 d2h_ms=0.035 after_ctx_ms=100.223 total_ms=369.486 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=2 program n=4096 gemms=2 ops=3 ctx_ms=265.907 handle_ms=15.045 alloc_ms=0.533 gen_ms=0.484 gemm_ms=84.337 d2h_ms=0.042 after_ctx_ms=100.441 total_ms=366.349 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=3 program n=4096 gemms=2 ops=3 ctx_ms=246.657 handle_ms=15.063 alloc_ms=0.505 gen_ms=0.482 gemm_ms=84.273 d2h_ms=0.042 after_ctx_ms=100.365 total_ms=347.022 value=-1.91245e+06
+floor prog=loop_mm_1024_8 rep=1 program n=1024 gemms=8 ops=2 ctx_ms=281.760 handle_ms=15.068 alloc_ms=0.363 gen_ms=0.351 gemm_ms=77.156 d2h_ms=0.046 after_ctx_ms=92.984 total_ms=374.744 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=2 program n=1024 gemms=8 ops=2 ctx_ms=273.505 handle_ms=14.970 alloc_ms=0.369 gen_ms=0.359 gemm_ms=77.509 d2h_ms=0.049 after_ctx_ms=93.257 total_ms=366.762 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=3 program n=1024 gemms=8 ops=2 ctx_ms=270.543 handle_ms=15.039 alloc_ms=0.374 gen_ms=0.360 gemm_ms=77.128 d2h_ms=0.048 after_ctx_ms=92.948 total_ms=363.491 value=-1.28729e+27
+copy_rate mb=64 reps=10 h2d_pageable_ms=5.322 h2d_pageable_gbps=12.61 h2d_pinned_ms=2.368 h2d_pinned_gbps=28.34 d2h_pageable_ms=7.215 d2h_pageable_gbps=9.30 d2h_pinned_ms=2.528 d2h_pinned_gbps=26.55
+-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)
+probe prog=pt_diamond_2048 face=_exact arm=on rep=1 wall_us=657213 traced_wall_us=410028 out=[7078.077 84.026306 iter ms=10.976551 ] mapal_gpu_trace_total flags=1 load_ms=187.548 lead_ms=88.990 init_ms=129.317 ctx_ms=146.504 module_ms=0.530 alloc_ms=0.936 h2d_ms=0.000 kernel_ms=3.295 gen_ms=0.110 d2h_ms=3.896 free_ms=0.862 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_exact arm=off-l2-window rep=1 wall_us=403456 traced_wall_us=404113 out=[7078.077 84.026306 iter ms=10.928090000000001 ] mapal_gpu_trace_total flags=1 load_ms=179.785 lead_ms=90.915 init_ms=137.154 ctx_ms=132.820 module_ms=0.498 alloc_ms=0.909 h2d_ms=0.000 kernel_ms=3.323 gen_ms=0.119 d2h_ms=3.903 free_ms=0.822 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=1 wall_us=568121 traced_wall_us=380849 out=[7078.0957 84.03949 iter ms=9.496129 ] mapal_gpu_trace_total flags=1 load_ms=162.537 lead_ms=86.476 init_ms=115.264 ctx_ms=133.125 module_ms=0.398 alloc_ms=0.988 h2d_ms=0.000 kernel_ms=1.884 gen_ms=0.120 d2h_ms=3.888 free_ms=0.835 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_c arm=off-l2-window rep=1 wall_us=407643 traced_wall_us=403695 out=[7078.0957 84.03949 iter ms=9.564951 ] mapal_gpu_trace_total flags=1 load_ms=181.497 lead_ms=89.023 init_ms=136.700 ctx_ms=133.208 module_ms=0.401 alloc_ms=0.921 h2d_ms=0.000 kernel_ms=1.899 gen_ms=0.116 d2h_ms=3.852 free_ms=0.839 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=2 wall_us=437130 traced_wall_us=386745 out=[7078.077 84.026306 iter ms=10.946941 ] mapal_gpu_trace_total flags=1 load_ms=167.365 lead_ms=86.447 init_ms=119.059 ctx_ms=134.038 module_ms=0.506 alloc_ms=0.914 h2d_ms=0.000 kernel_ms=3.293 gen_ms=0.116 d2h_ms=3.877 free_ms=0.829 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_exact arm=off-l2-window rep=2 wall_us=387228 traced_wall_us=399252 out=[7078.077 84.026306 iter ms=10.93385 ] mapal_gpu_trace_total flags=1 load_ms=177.607 lead_ms=87.525 init_ms=129.618 ctx_ms=134.793 module_ms=0.533 alloc_ms=0.915 h2d_ms=0.000 kernel_ms=3.323 gen_ms=0.118 d2h_ms=3.885 free_ms=0.852 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=2 wall_us=401898 traced_wall_us=400854 out=[7078.0957 84.03949 iter ms=9.531610000000002 ] mapal_gpu_trace_total flags=1 load_ms=181.086 lead_ms=88.364 init_ms=136.616 ctx_ms=132.255 module_ms=0.406 alloc_ms=0.880 h2d_ms=0.000 kernel_ms=1.885 gen_ms=0.110 d2h_ms=3.887 free_ms=0.836 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_c arm=off-l2-window rep=2 wall_us=405308 traced_wall_us=399066 out=[7078.0957 84.03949 iter ms=9.504349 ] mapal_gpu_trace_total flags=1 load_ms=179.465 lead_ms=87.990 init_ms=130.002 ctx_ms=136.878 module_ms=0.387 alloc_ms=0.885 h2d_ms=0.000 kernel_ms=1.899 gen_ms=0.111 d2h_ms=3.881 free_ms=0.830 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=3 wall_us=406410 traced_wall_us=416967 out=[7078.077 84.026306 iter ms=10.863698 ] mapal_gpu_trace_total flags=1 load_ms=192.624 lead_ms=90.785 init_ms=137.079 ctx_ms=145.591 module_ms=0.522 alloc_ms=0.879 h2d_ms=0.000 kernel_ms=3.293 gen_ms=0.121 d2h_ms=3.880 free_ms=0.831 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_exact arm=off-l2-window rep=3 wall_us=397482 traced_wall_us=389730 out=[7078.077 84.026306 iter ms=10.935210000000001 ] mapal_gpu_trace_total flags=1 load_ms=172.403 lead_ms=84.040 init_ms=115.789 ctx_ms=139.964 module_ms=0.493 alloc_ms=0.899 h2d_ms=0.000 kernel_ms=3.322 gen_ms=0.120 d2h_ms=3.881 free_ms=0.832 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=3 wall_us=405053 traced_wall_us=393910 out=[7078.0957 84.03949 iter ms=9.516160000000001 ] mapal_gpu_trace_total flags=1 load_ms=173.174 lead_ms=87.366 init_ms=121.663 ctx_ms=138.255 module_ms=0.383 alloc_ms=1.207 h2d_ms=0.000 kernel_ms=1.885 gen_ms=0.148 d2h_ms=4.020 free_ms=0.841 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_c arm=off-l2-window rep=3 wall_us=384633 traced_wall_us=391021 out=[7078.0957 84.03949 iter ms=9.472838 ] mapal_gpu_trace_total flags=1 load_ms=174.980 lead_ms=84.607 init_ms=114.985 ctx_ms=144.006 module_ms=0.382 alloc_ms=0.879 h2d_ms=0.000 kernel_ms=1.900 gen_ms=0.120 d2h_ms=3.894 free_ms=0.861 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=4 wall_us=410004 traced_wall_us=386369 out=[7078.077 84.026306 iter ms=10.955751 ] mapal_gpu_trace_total flags=1 load_ms=167.841 lead_ms=85.035 init_ms=113.941 ctx_ms=138.211 module_ms=0.513 alloc_ms=0.928 h2d_ms=0.000 kernel_ms=3.299 gen_ms=0.118 d2h_ms=3.892 free_ms=0.838 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_exact arm=off-l2-window rep=4 wall_us=406171 traced_wall_us=408009 out=[7078.077 84.026306 iter ms=10.973331 ] mapal_gpu_trace_total flags=1 load_ms=181.251 lead_ms=91.353 init_ms=138.289 ctx_ms=133.607 module_ms=0.500 alloc_ms=0.884 h2d_ms=0.000 kernel_ms=3.320 gen_ms=0.115 d2h_ms=3.873 free_ms=0.838 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=4 wall_us=403703 traced_wall_us=406881 out=[7078.0957 84.03949 iter ms=9.475119 ] mapal_gpu_trace_total flags=1 load_ms=191.452 lead_ms=83.904 init_ms=140.962 ctx_ms=133.769 module_ms=0.398 alloc_ms=0.868 h2d_ms=0.000 kernel_ms=1.890 gen_ms=0.116 d2h_ms=3.873 free_ms=0.828 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_c arm=off-l2-window rep=4 wall_us=394467 traced_wall_us=402855 out=[7078.0957 84.03949 iter ms=9.504579999999999 ] mapal_gpu_trace_total flags=1 load_ms=179.285 lead_ms=89.152 init_ms=137.367 ctx_ms=130.452 module_ms=0.399 alloc_ms=0.885 h2d_ms=0.000 kernel_ms=1.899 gen_ms=0.117 d2h_ms=3.904 free_ms=0.829 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_exact arm=on rep=5 wall_us=397663 traced_wall_us=387605 out=[7078.077 84.026306 iter ms=10.991692 ] mapal_gpu_trace_total flags=1 load_ms=176.446 lead_ms=76.785 init_ms=120.595 ctx_ms=131.922 module_ms=0.519 alloc_ms=1.199 h2d_ms=0.000 kernel_ms=3.298 gen_ms=0.145 d2h_ms=3.606 free_ms=0.837 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_exact arm=off-l2-window rep=5 wall_us=385623 traced_wall_us=389635 out=[7078.077 84.026306 iter ms=10.9423 ] mapal_gpu_trace_total flags=1 load_ms=167.668 lead_ms=88.647 init_ms=118.732 ctx_ms=136.853 module_ms=0.513 alloc_ms=0.893 h2d_ms=0.000 kernel_ms=3.321 gen_ms=0.117 d2h_ms=3.909 free_ms=0.831 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_2048 face=_c arm=on rep=5 wall_us=409814 traced_wall_us=399542 out=[7078.0957 84.03949 iter ms=9.557451 ] mapal_gpu_trace_total flags=1 load_ms=177.939 lead_ms=90.172 init_ms=135.311 ctx_ms=132.157 module_ms=0.403 alloc_ms=1.119 h2d_ms=0.000 kernel_ms=1.887 gen_ms=0.142 d2h_ms=3.870 free_ms=0.829 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=3 l2_persist=32768000
+probe prog=pt_diamond_2048 face=_c arm=off-l2-window rep=5 wall_us=404021 traced_wall_us=384880 out=[7078.0957 84.03949 iter ms=9.491209000000001 ] mapal_gpu_trace_total flags=1 load_ms=179.497 lead_ms=75.938 init_ms=120.893 ctx_ms=133.970 module_ms=0.404 alloc_ms=0.888 h2d_ms=0.000 kernel_ms=1.894 gen_ms=0.123 d2h_ms=3.886 free_ms=0.834 bytes_in=0 bytes_out=33554432 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=diamond n=2048 leg=eager values=7078.0791,84.0227051 gate=pass vs_mapal=9.577e-07 vs_eager=0.000e+00
+chain_values probe=diamond n=2048 leg=streams values=7078.0791,84.0227051 gate=pass vs_mapal=9.577e-07 vs_eager=0.000e+00
+chain_values probe=diamond n=2048 leg=lt values=7078.0791,84.0227051 gate=pass vs_mapal=9.577e-07 vs_eager=0.000e+00
+chain_values probe=diamond n=2048 leg=cutlass values=7078.0957,84.0394897 gate=pass vs_mapal=3.506e-06 vs_eager=1.675e-05
+chain probe=diamond n=2048 leg=eager launches=4 reps=30 min_ms=1.5776 med_ms=1.5817 max_ms=1.5869
+chain_samples probe=diamond n=2048 leg=eager ms=1.5776,1.5818,1.5801,1.5818,1.5796,1.5815,1.5838,1.5779,1.5829,1.5799,1.5789,1.5806,1.5839,1.5788,1.5842,1.5825,1.5795,1.5790,1.5799,1.5803,1.5820,1.5819,1.5869,1.5836,1.5831,1.5800,1.5817,1.5820,1.5847,1.5784
+chain probe=diamond n=2048 leg=streams launches=4 reps=30 min_ms=1.4530 med_ms=1.4569 max_ms=1.4621
+chain_samples probe=diamond n=2048 leg=streams ms=1.4582,1.4575,1.4550,1.4563,1.4598,1.4563,1.4542,1.4549,1.4573,1.4564,1.4547,1.4567,1.4569,1.4563,1.4561,1.4550,1.4562,1.4569,1.4570,1.4557,1.4579,1.4586,1.4576,1.4585,1.4612,1.4621,1.4585,1.4590,1.4575,1.4530
+chain probe=diamond n=2048 leg=lt launches=3 reps=30 min_ms=1.5572 med_ms=1.5613 max_ms=1.5658
+chain_samples probe=diamond n=2048 leg=lt ms=1.5658,1.5643,1.5604,1.5599,1.5625,1.5602,1.5572,1.5615,1.5610,1.5615,1.5587,1.5596,1.5598,1.5591,1.5606,1.5611,1.5615,1.5576,1.5614,1.5619,1.5634,1.5656,1.5613,1.5605,1.5645,1.5645,1.5626,1.5604,1.5610,1.5633
+chain probe=diamond n=2048 leg=cutlass launches=3 reps=30 min_ms=2.0672 med_ms=2.0730 max_ms=2.0774
+chain_samples probe=diamond n=2048 leg=cutlass ms=2.0747,2.0724,2.0723,2.0707,2.0714,2.0718,2.0765,2.0738,2.0696,2.0730,2.0734,2.0672,2.0741,2.0731,2.0708,2.0726,2.0714,2.0705,2.0754,2.0740,2.0751,2.0710,2.0740,2.0727,2.0739,2.0759,2.0718,2.0720,2.0774,2.0730
+probe prog=pt_diamond_4096 face=_exact arm=on rep=1 wall_us=734300 traced_wall_us=508874 out=[7792.082 -4408.107 iter ms=44.99583700000001 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=297.070 init_ms=118.284 ctx_ms=132.680 module_ms=0.548 alloc_ms=0.984 h2d_ms=0.000 kernel_ms=18.852 gen_ms=0.253 d2h_ms=14.236 free_ms=1.186 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=1 wall_us=631513 traced_wall_us=516273 out=[7792.0693 -4408.1167 iter ms=36.66371 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=312.803 init_ms=137.378 ctx_ms=149.017 module_ms=0.419 alloc_ms=0.990 h2d_ms=0.000 kernel_ms=10.747 gen_ms=0.243 d2h_ms=14.247 free_ms=1.202 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=2 wall_us=516667 traced_wall_us=521208 out=[7792.082 -4408.107 iter ms=43.878425 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=308.136 init_ms=128.911 ctx_ms=140.811 module_ms=0.518 alloc_ms=1.145 h2d_ms=0.000 kernel_ms=18.852 gen_ms=0.260 d2h_ms=14.420 free_ms=1.204 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=2 wall_us=517027 traced_wall_us=516840 out=[7792.0693 -4408.1167 iter ms=35.881728 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=312.323 init_ms=129.274 ctx_ms=134.651 module_ms=0.393 alloc_ms=1.009 h2d_ms=0.000 kernel_ms=10.757 gen_ms=0.259 d2h_ms=14.793 free_ms=1.207 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=3 wall_us=521158 traced_wall_us=524520 out=[7792.082 -4408.107 iter ms=44.434051000000004 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=312.283 init_ms=136.619 ctx_ms=136.327 module_ms=0.534 alloc_ms=1.010 h2d_ms=0.000 kernel_ms=18.852 gen_ms=0.247 d2h_ms=14.212 free_ms=1.212 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=3 wall_us=514679 traced_wall_us=512633 out=[7792.0693 -4408.1167 iter ms=36.08702400000001 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=308.096 init_ms=118.161 ctx_ms=135.279 module_ms=0.395 alloc_ms=0.976 h2d_ms=0.000 kernel_ms=10.752 gen_ms=0.258 d2h_ms=14.515 free_ms=1.222 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=4 wall_us=524560 traced_wall_us=512926 out=[7792.082 -4408.107 iter ms=44.177654000000004 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=297.437 init_ms=132.056 ctx_ms=134.778 module_ms=0.512 alloc_ms=0.983 h2d_ms=0.000 kernel_ms=18.851 gen_ms=0.259 d2h_ms=14.393 free_ms=1.209 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=4 wall_us=527501 traced_wall_us=530164 out=[7792.0693 -4408.1167 iter ms=36.41373299999999 ] mapal_gpu_trace_total flags=1 load_ms=0.008 lead_ms=315.872 init_ms=133.171 ctx_ms=150.718 module_ms=0.412 alloc_ms=0.957 h2d_ms=0.000 kernel_ms=10.756 gen_ms=0.254 d2h_ms=14.458 free_ms=1.205 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_exact arm=on rep=5 wall_us=517991 traced_wall_us=538942 out=[7792.082 -4408.107 iter ms=44.233575 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=316.147 init_ms=139.705 ctx_ms=141.749 module_ms=0.524 alloc_ms=1.104 h2d_ms=0.000 kernel_ms=18.851 gen_ms=0.256 d2h_ms=14.418 free_ms=1.212 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+probe prog=pt_diamond_4096 face=_c arm=on rep=5 wall_us=532996 traced_wall_us=523325 out=[7792.0693 -4408.1167 iter ms=36.00668099999999 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=302.501 init_ms=115.827 ctx_ms=142.063 module_ms=0.389 alloc_ms=0.996 h2d_ms=0.000 kernel_ms=10.752 gen_ms=0.254 d2h_ms=14.770 free_ms=1.289 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=3 gens=4 allocs=7 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=diamond n=4096 leg=eager values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=streams values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=lt values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain_values probe=diamond n=4096 leg=cutlass values=7792.06934,-4408.1167 gate=pass vs_mapal=1.625e-06 vs_eager=0.000e+00
+chain probe=diamond n=4096 leg=eager launches=4 reps=30 min_ms=11.1596 med_ms=11.6467 max_ms=12.3630
+chain_samples probe=diamond n=4096 leg=eager ms=11.1622,11.1596,11.5175,11.4482,11.3502,11.4484,11.4749,11.4482,11.4482,11.6199,11.3506,11.6467,11.4471,11.4453,11.5428,11.4467,11.6468,11.8760,12.1864,12.3082,12.1861,12.3236,12.1869,12.3363,12.1867,12.3484,12.1871,12.3630,12.1914,12.1570
+chain probe=diamond n=4096 leg=streams launches=4 reps=30 min_ms=10.4212 med_ms=10.6937 max_ms=11.3858
+chain_samples probe=diamond n=4096 leg=streams ms=10.4240,10.4212,10.6916,10.6392,10.6021,10.6931,10.6931,10.6930,10.6921,10.6844,10.5283,10.7532,10.6925,10.6841,10.6914,10.6937,10.6935,11.1741,11.3821,11.3833,11.3843,11.3834,11.3831,11.3858,11.3844,11.3836,11.3837,11.3827,11.3850,11.1756
+chain probe=diamond n=4096 leg=lt launches=3 reps=30 min_ms=11.0883 med_ms=11.4721 max_ms=12.1128
+chain_samples probe=diamond n=4096 leg=lt ms=11.0883,11.1918,11.3709,11.2752,11.2739,11.4631,11.3726,11.3727,11.4721,11.2752,11.2005,11.3728,11.3703,11.2894,11.5128,11.3726,11.4278,11.9170,12.1113,12.1119,12.1094,12.1116,12.1116,12.1108,12.1128,12.1104,12.1116,12.1113,12.1122,11.8872
+chain probe=diamond n=4096 leg=cutlass launches=3 reps=30 min_ms=12.4884 med_ms=12.7862 max_ms=13.3098
+chain_samples probe=diamond n=4096 leg=cutlass ms=12.4884,12.7000,12.6656,12.6172,12.6316,12.7802,12.6684,12.6646,12.7798,12.5859,12.7714,12.6788,12.6623,12.7862,12.7590,12.7333,12.8380,13.1664,13.3086,13.2620,13.3098,13.2819,13.2868,13.2690,13.2720,13.2810,13.2757,13.2756,13.1463,12.9821
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=1 wall_us=676136 traced_wall_us=435737 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.790853000000002 ] mapal_gpu_trace_total flags=1 load_ms=168.951 lead_ms=115.547 init_ms=144.719 ctx_ms=139.026 module_ms=0.546 alloc_ms=1.739 h2d_ms=3.655 kernel_ms=4.439 gen_ms=0.170 d2h_ms=3.957 free_ms=1.397 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_exact arm=off-l2-window rep=1 wall_us=436329 traced_wall_us=413946 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=20.130581 ] mapal_gpu_trace_total flags=1 load_ms=146.419 lead_ms=115.204 init_ms=119.866 ctx_ms=141.001 module_ms=0.533 alloc_ms=2.553 h2d_ms=3.848 kernel_ms=4.439 gen_ms=0.216 d2h_ms=3.965 free_ms=1.421 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=1 wall_us=599438 traced_wall_us=433378 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.832218 ] mapal_gpu_trace_total flags=1 load_ms=162.480 lead_ms=121.117 init_ms=141.345 ctx_ms=141.562 module_ms=0.462 alloc_ms=1.828 h2d_ms=3.750 kernel_ms=2.525 gen_ms=0.167 d2h_ms=3.971 free_ms=1.403 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_c arm=off-l2-window rep=1 wall_us=422085 traced_wall_us=405864 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.881869 ] mapal_gpu_trace_total flags=1 load_ms=153.284 lead_ms=104.891 init_ms=114.688 ctx_ms=142.885 module_ms=0.439 alloc_ms=1.821 h2d_ms=3.763 kernel_ms=2.564 gen_ms=0.168 d2h_ms=3.986 free_ms=1.386 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=2 wall_us=432783 traced_wall_us=422965 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.948107 ] mapal_gpu_trace_total flags=1 load_ms=149.458 lead_ms=121.882 init_ms=131.964 ctx_ms=138.637 module_ms=0.540 alloc_ms=1.906 h2d_ms=3.640 kernel_ms=4.439 gen_ms=0.154 d2h_ms=3.969 free_ms=1.397 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_exact arm=off-l2-window rep=2 wall_us=428988 traced_wall_us=423298 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.878515999999998 ] mapal_gpu_trace_total flags=1 load_ms=150.835 lead_ms=119.993 init_ms=131.657 ctx_ms=138.420 module_ms=0.541 alloc_ms=1.799 h2d_ms=3.648 kernel_ms=4.445 gen_ms=0.170 d2h_ms=3.983 free_ms=1.535 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=2 wall_us=428430 traced_wall_us=421782 out=[2977.885 1891.8231 476.01334 754.756 iter ms=17.139666 ] mapal_gpu_trace_total flags=1 load_ms=151.956 lead_ms=120.605 init_ms=132.414 ctx_ms=139.513 module_ms=0.415 alloc_ms=1.792 h2d_ms=3.683 kernel_ms=2.526 gen_ms=0.168 d2h_ms=3.962 free_ms=1.395 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_c arm=off-l2-window rep=2 wall_us=409434 traced_wall_us=415833 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.885729 ] mapal_gpu_trace_total flags=1 load_ms=146.582 lead_ms=119.743 init_ms=120.159 ctx_ms=145.221 module_ms=0.438 alloc_ms=1.841 h2d_ms=3.641 kernel_ms=2.562 gen_ms=0.156 d2h_ms=3.977 free_ms=1.441 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=3 wall_us=430653 traced_wall_us=430406 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.801543 ] mapal_gpu_trace_total flags=1 load_ms=175.293 lead_ms=105.407 init_ms=139.003 ctx_ms=140.984 module_ms=0.533 alloc_ms=1.794 h2d_ms=3.629 kernel_ms=4.439 gen_ms=0.169 d2h_ms=3.948 free_ms=1.398 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_exact arm=off-l2-window rep=3 wall_us=430609 traced_wall_us=431132 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.867295 ] mapal_gpu_trace_total flags=1 load_ms=155.512 lead_ms=123.382 init_ms=138.344 ctx_ms=139.619 module_ms=0.531 alloc_ms=1.927 h2d_ms=3.649 kernel_ms=4.439 gen_ms=0.166 d2h_ms=3.975 free_ms=1.440 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=3 wall_us=438943 traced_wall_us=421250 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.976710999999998 ] mapal_gpu_trace_total flags=1 load_ms=150.830 lead_ms=120.492 init_ms=132.005 ctx_ms=138.687 module_ms=0.436 alloc_ms=1.781 h2d_ms=3.709 kernel_ms=2.529 gen_ms=0.166 d2h_ms=3.997 free_ms=1.388 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_c arm=off-l2-window rep=3 wall_us=428221 traced_wall_us=405123 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.876078999999997 ] mapal_gpu_trace_total flags=1 load_ms=137.466 lead_ms=117.222 init_ms=115.131 ctx_ms=138.914 module_ms=0.419 alloc_ms=2.135 h2d_ms=3.604 kernel_ms=2.561 gen_ms=0.200 d2h_ms=3.951 free_ms=1.392 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=4 wall_us=435634 traced_wall_us=412656 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.747822 ] mapal_gpu_trace_total flags=1 load_ms=139.089 lead_ms=119.263 init_ms=119.660 ctx_ms=137.946 module_ms=0.521 alloc_ms=2.593 h2d_ms=3.681 kernel_ms=4.446 gen_ms=0.207 d2h_ms=3.977 free_ms=1.393 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_exact arm=off-l2-window rep=4 wall_us=414502 traced_wall_us=405040 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.832834000000002 ] mapal_gpu_trace_total flags=1 load_ms=135.661 lead_ms=118.911 init_ms=114.793 ctx_ms=139.034 module_ms=0.533 alloc_ms=1.817 h2d_ms=3.764 kernel_ms=4.440 gen_ms=0.161 d2h_ms=3.974 free_ms=1.417 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=4 wall_us=437154 traced_wall_us=422184 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.889919 ] mapal_gpu_trace_total flags=1 load_ms=148.164 lead_ms=122.142 init_ms=131.504 ctx_ms=138.154 module_ms=0.426 alloc_ms=1.796 h2d_ms=3.653 kernel_ms=2.523 gen_ms=0.171 d2h_ms=4.022 free_ms=1.414 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_c arm=off-l2-window rep=4 wall_us=433414 traced_wall_us=428919 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.941530999999998 ] mapal_gpu_trace_total flags=1 load_ms=156.834 lead_ms=121.921 init_ms=134.357 ctx_ms=143.755 module_ms=0.416 alloc_ms=1.798 h2d_ms=3.693 kernel_ms=2.563 gen_ms=0.169 d2h_ms=3.962 free_ms=1.397 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_exact arm=on rep=5 wall_us=431042 traced_wall_us=430068 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.741051999999996 ] mapal_gpu_trace_total flags=1 load_ms=156.255 lead_ms=121.769 init_ms=134.881 ctx_ms=142.400 module_ms=0.535 alloc_ms=1.941 h2d_ms=3.633 kernel_ms=4.438 gen_ms=0.168 d2h_ms=3.988 free_ms=1.525 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_exact arm=off-l2-window rep=5 wall_us=431167 traced_wall_us=407663 out=[2977.8862 1891.8232 476.01288 754.7543 iter ms=18.767421999999996 ] mapal_gpu_trace_total flags=1 load_ms=136.946 lead_ms=118.371 init_ms=115.697 ctx_ms=138.881 module_ms=0.534 alloc_ms=1.791 h2d_ms=3.627 kernel_ms=4.449 gen_ms=0.170 d2h_ms=3.968 free_ms=1.410 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_2048 face=_c arm=on rep=5 wall_us=437613 traced_wall_us=404063 out=[2977.885 1891.8231 476.01334 754.756 iter ms=18.167285000000003 ] mapal_gpu_trace_total flags=1 load_ms=151.120 lead_ms=105.552 init_ms=116.809 ctx_ms=139.248 module_ms=0.437 alloc_ms=1.792 h2d_ms=3.603 kernel_ms=2.523 gen_ms=0.169 d2h_ms=3.985 free_ms=1.390 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=4 l2_persist=32768000
+probe prog=pt_mlp2_2048 face=_c arm=off-l2-window rep=5 wall_us=410869 traced_wall_us=405900 out=[2977.885 1891.8231 476.01334 754.756 iter ms=16.827327 ] mapal_gpu_trace_total flags=1 load_ms=138.782 lead_ms=116.856 init_ms=114.451 ctx_ms=140.567 module_ms=0.421 alloc_ms=1.827 h2d_ms=3.619 kernel_ms=2.561 gen_ms=0.164 d2h_ms=4.022 free_ms=1.381 bytes_in=33554432 bytes_out=33554448 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=mlp2 n=2048 leg=eager values=2977.87061,1891.8103,476.011658,754.755005 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=streams values=2977.87061,1891.8103,476.011658,754.755005 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=lt values=2977.87061,1891.8103,476.011658,754.755005 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=lt2 values=2977.87061,1891.8103,476.011658,754.755005 gate=pass vs_mapal=4.125e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=2048 leg=cutlass values=2977.88501,1891.82312,476.013336,754.755981 gate=pass vs_mapal=1.999e-06 vs_eager=9.817e-06
+chain probe=mlp2 n=2048 leg=eager launches=6 reps=30 min_ms=2.1033 med_ms=2.1210 max_ms=2.1278
+chain_samples probe=mlp2 n=2048 leg=eager ms=2.1043,2.1077,2.1049,2.1071,2.1054,2.1047,2.1033,2.1052,2.1228,2.1228,2.1213,2.1278,2.1215,2.1214,2.1220,2.1210,2.1205,2.1228,2.1210,2.1276,2.1215,2.1223,2.1221,2.1181,2.1187,2.1243,2.1193,2.1164,2.1175,2.1236
+chain probe=mlp2 n=2048 leg=streams launches=6 reps=30 min_ms=1.8565 med_ms=1.8719 max_ms=1.8774
+chain_samples probe=mlp2 n=2048 leg=streams ms=1.8590,1.8616,1.8565,1.8593,1.8577,1.8574,1.8583,1.8678,1.8749,1.8734,1.8752,1.8726,1.8708,1.8732,1.8766,1.8774,1.8739,1.8674,1.8718,1.8751,1.8732,1.8772,1.8686,1.8660,1.8711,1.8675,1.8728,1.8723,1.8719,1.8735
+chain probe=mlp2 n=2048 leg=lt launches=4 reps=30 min_ms=2.0459 med_ms=2.0661 max_ms=2.0719
+chain_samples probe=mlp2 n=2048 leg=lt ms=2.0515,2.0459,2.0481,2.0502,2.0492,2.0509,2.0474,2.0687,2.0675,2.0680,2.0670,2.0682,2.0710,2.0672,2.0668,2.0669,2.0651,2.0695,2.0661,2.0719,2.0680,2.0698,2.0637,2.0656,2.0637,2.0645,2.0651,2.0651,2.0658,2.0672
+chain probe=mlp2 n=2048 leg=lt2 launches=4 reps=30 min_ms=1.8046 med_ms=1.8219 max_ms=1.8264
+chain_samples probe=mlp2 n=2048 leg=lt2 ms=1.8083,1.8060,1.8046,1.8071,1.8052,1.8061,1.8083,1.8218,1.8242,1.8211,1.8221,1.8239,1.8246,1.8264,1.8219,1.8233,1.8235,1.8220,1.8210,1.8222,1.8226,1.8204,1.8207,1.8249,1.8213,1.8233,1.8208,1.8201,1.8238,1.8223
+chain probe=mlp2 n=2048 leg=cutlass launches=4 reps=30 min_ms=2.7552 med_ms=2.7748 max_ms=2.7833
+chain_samples probe=mlp2 n=2048 leg=cutlass ms=2.7623,2.7621,2.7625,2.7582,2.7552,2.7604,2.7694,2.7755,2.7759,2.7748,2.7815,2.7744,2.7812,2.7818,2.7756,2.7797,2.7761,2.7715,2.7749,2.7813,2.7763,2.7687,2.7833,2.7720,2.7711,2.7733,2.7711,2.7756,2.7751,2.7705
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=1 wall_us=820615 traced_wall_us=713753 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=72.272101 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=434.066 init_ms=132.293 ctx_ms=139.674 module_ms=0.563 alloc_ms=2.144 h2d_ms=11.345 kernel_ms=25.172 gen_ms=0.360 d2h_ms=14.379 free_ms=2.000 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=1 wall_us=746105 traced_wall_us=698849 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=61.995499 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=431.425 init_ms=119.666 ctx_ms=142.911 module_ms=0.453 alloc_ms=2.270 h2d_ms=11.355 kernel_ms=14.363 gen_ms=0.365 d2h_ms=14.429 free_ms=1.994 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=2 wall_us=716435 traced_wall_us=715526 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=72.60594999999999 ] mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=437.490 init_ms=134.543 ctx_ms=143.005 module_ms=0.550 alloc_ms=2.279 h2d_ms=11.338 kernel_ms=25.160 gen_ms=0.362 d2h_ms=15.025 free_ms=2.015 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=2 wall_us=689828 traced_wall_us=707128 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=62.521573999999994 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=438.205 init_ms=139.867 ctx_ms=144.646 module_ms=0.446 alloc_ms=2.120 h2d_ms=11.365 kernel_ms=14.366 gen_ms=0.476 d2h_ms=14.480 free_ms=2.017 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=3 wall_us=716265 traced_wall_us=721067 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=72.693851 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=440.027 init_ms=140.368 ctx_ms=154.858 module_ms=0.559 alloc_ms=2.155 h2d_ms=11.392 kernel_ms=25.161 gen_ms=0.437 d2h_ms=14.694 free_ms=2.058 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=3 wall_us=702612 traced_wall_us=709233 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=61.32291 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=439.072 init_ms=142.160 ctx_ms=146.858 module_ms=0.423 alloc_ms=2.133 h2d_ms=11.377 kernel_ms=14.366 gen_ms=0.493 d2h_ms=14.549 free_ms=2.001 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=4 wall_us=717918 traced_wall_us=703306 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=72.53154799999999 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=424.815 init_ms=140.786 ctx_ms=142.065 module_ms=0.566 alloc_ms=2.154 h2d_ms=11.309 kernel_ms=25.165 gen_ms=0.358 d2h_ms=15.024 free_ms=2.038 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=4 wall_us=705047 traced_wall_us=705052 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=61.275567 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=436.992 init_ms=139.626 ctx_ms=154.125 module_ms=0.438 alloc_ms=2.132 h2d_ms=11.290 kernel_ms=14.367 gen_ms=0.454 d2h_ms=14.394 free_ms=2.001 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_exact arm=on rep=5 wall_us=720192 traced_wall_us=695170 out=[-2244.5913 1837.3057 323.03027 24.26964 iter ms=72.45019500000001 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=419.860 init_ms=120.074 ctx_ms=142.324 module_ms=0.561 alloc_ms=2.119 h2d_ms=11.325 kernel_ms=25.161 gen_ms=0.474 d2h_ms=14.511 free_ms=2.023 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+probe prog=pt_mlp2_4096 face=_c arm=on rep=5 wall_us=708050 traced_wall_us=708617 out=[-2244.6104 1837.3108 323.0321 24.269617 iter ms=61.341159000000005 ] mapal_gpu_trace_total flags=1 load_ms=0.007 lead_ms=441.030 init_ms=139.037 ctx_ms=140.995 module_ms=0.443 alloc_ms=2.329 h2d_ms=11.356 kernel_ms=14.367 gen_ms=0.363 d2h_ms=14.602 free_ms=2.025 bytes_in=134217728 bytes_out=134217744 h2d=2 d2h=6 launches=4 gens=6 allocs=12 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=mlp2 n=4096 leg=eager values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=streams values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=lt values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=lt2 values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain_values probe=mlp2 n=4096 leg=cutlass values=-2244.61035,1837.31079,323.032104,24.2696171 gate=pass vs_mapal=6.570e-06 vs_eager=0.000e+00
+chain probe=mlp2 n=4096 leg=eager launches=6 reps=30 min_ms=14.8988 med_ms=16.0395 max_ms=16.6753
+chain_samples probe=mlp2 n=4096 leg=eager ms=14.8988,15.2714,15.2695,15.3240,15.4519,15.5370,15.2655,15.2715,15.3352,15.6761,15.2721,16.4051,16.5294,16.5228,16.5597,16.5040,16.4938,16.4879,16.0395,15.8165,15.4892,15.2716,15.2930,16.3635,16.1882,16.2409,16.2496,16.5137,16.6753,16.2106
+chain probe=mlp2 n=4096 leg=streams launches=6 reps=30 min_ms=13.3849 med_ms=14.3538 max_ms=14.7897
+chain_samples probe=mlp2 n=4096 leg=streams ms=13.3849,13.7303,13.6342,13.7333,13.7354,13.8090,13.6147,13.7349,13.7347,13.7546,13.7381,14.7561,14.7565,14.7580,14.7897,14.7570,14.7684,14.7565,14.3538,14.0303,13.7356,13.7389,13.7389,14.4247,14.4875,14.4859,14.4859,14.7572,14.7603,14.4864
+chain probe=mlp2 n=4096 leg=lt launches=4 reps=30 min_ms=14.7192 med_ms=15.7930 max_ms=16.4874
+chain_samples probe=mlp2 n=4096 leg=lt ms=14.7192,15.2816,14.9729,15.1040,15.1053,15.3361,14.9783,15.1896,15.1184,15.1045,15.2745,16.4874,16.3721,16.3804,16.3876,16.3119,16.3893,16.2354,15.7930,15.6361,15.1701,15.3091,15.2848,15.7945,15.9398,15.9394,15.9669,16.2417,16.2422,15.9368
+chain probe=mlp2 n=4096 leg=lt2 launches=4 reps=30 min_ms=13.4662 med_ms=14.2090 max_ms=14.8873
+chain_samples probe=mlp2 n=4096 leg=lt2 ms=13.4662,13.9083,13.7247,13.5862,13.5871,13.6851,13.8275,13.8277,13.8269,13.5890,14.6212,14.8873,14.7468,14.7449,14.7468,14.7470,14.7469,14.3549,14.0960,13.9898,13.9014,13.9754,14.2090,14.2082,14.3408,14.4724,14.6095,14.6197,14.6097,14.3372
+chain probe=mlp2 n=4096 leg=cutlass launches=4 reps=30 min_ms=16.9725 med_ms=17.6763 max_ms=17.9117
+chain_samples probe=mlp2 n=4096 leg=cutlass ms=16.9725,17.1273,17.2165,17.0484,17.0724,16.9858,17.1392,17.1187,17.1965,17.0200,17.7273,17.8014,17.7981,17.7990,17.8024,17.7890,17.7967,17.4990,17.3139,17.1946,17.1102,17.2576,17.6993,17.6763,17.7692,17.7969,17.7711,17.9117,17.8027,17.7008
+probe prog=pt_mlp_2048 face=_exact arm=on rep=1 wall_us=639143 traced_wall_us=378847 out=[1620.1987 538.179 iter ms=9.124789000000002 ] mapal_gpu_trace_total flags=1 load_ms=182.965 lead_ms=68.090 init_ms=114.308 ctx_ms=136.007 module_ms=0.516 alloc_ms=0.985 h2d_ms=1.834 kernel_ms=2.221 gen_ms=0.102 d2h_ms=2.046 free_ms=0.722 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_exact arm=off-l2-window rep=1 wall_us=408004 traced_wall_us=391526 out=[1620.1987 538.179 iter ms=9.221071 ] mapal_gpu_trace_total flags=1 load_ms=194.887 lead_ms=66.182 init_ms=116.649 ctx_ms=143.753 module_ms=0.509 alloc_ms=1.046 h2d_ms=1.848 kernel_ms=2.226 gen_ms=0.101 d2h_ms=2.054 free_ms=0.725 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=1 wall_us=583439 traced_wall_us=387680 out=[1620.2026 538.1848 iter ms=7.967746000000001 ] mapal_gpu_trace_total flags=1 load_ms=187.869 lead_ms=70.279 init_ms=120.888 ctx_ms=136.633 module_ms=0.385 alloc_ms=1.234 h2d_ms=1.811 kernel_ms=1.269 gen_ms=0.133 d2h_ms=2.048 free_ms=0.719 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_c arm=off-l2-window rep=1 wall_us=387822 traced_wall_us=384253 out=[1620.2026 538.1848 iter ms=8.139151 ] mapal_gpu_trace_total flags=1 load_ms=186.667 lead_ms=67.767 init_ms=114.704 ctx_ms=139.147 module_ms=0.374 alloc_ms=0.971 h2d_ms=1.843 kernel_ms=1.281 gen_ms=0.100 d2h_ms=2.021 free_ms=0.733 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=2 wall_us=410784 traced_wall_us=410528 out=[1620.1987 538.179 iter ms=9.138629 ] mapal_gpu_trace_total flags=1 load_ms=205.939 lead_ms=73.678 init_ms=140.820 ctx_ms=138.064 module_ms=0.488 alloc_ms=1.205 h2d_ms=1.820 kernel_ms=2.223 gen_ms=0.104 d2h_ms=2.055 free_ms=0.708 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_exact arm=off-l2-window rep=2 wall_us=413447 traced_wall_us=397495 out=[1620.1987 538.179 iter ms=9.302993999999998 ] mapal_gpu_trace_total flags=1 load_ms=203.561 lead_ms=65.352 init_ms=116.224 ctx_ms=151.958 module_ms=0.490 alloc_ms=1.147 h2d_ms=1.840 kernel_ms=2.228 gen_ms=0.120 d2h_ms=2.042 free_ms=0.713 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=2 wall_us=407634 traced_wall_us=410230 out=[1620.2026 538.1848 iter ms=8.133401000000001 ] mapal_gpu_trace_total flags=1 load_ms=220.738 lead_ms=60.655 init_ms=137.501 ctx_ms=143.285 module_ms=0.376 alloc_ms=1.313 h2d_ms=1.822 kernel_ms=1.270 gen_ms=0.106 d2h_ms=2.041 free_ms=0.725 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_c arm=off-l2-window rep=2 wall_us=411404 traced_wall_us=404559 out=[1620.2026 538.1848 iter ms=8.177971999999999 ] mapal_gpu_trace_total flags=1 load_ms=208.996 lead_ms=67.465 init_ms=138.125 ctx_ms=137.724 module_ms=0.393 alloc_ms=1.282 h2d_ms=1.827 kernel_ms=1.287 gen_ms=0.106 d2h_ms=2.051 free_ms=0.712 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=3 wall_us=407157 traced_wall_us=390447 out=[1620.1987 538.179 iter ms=9.235182000000002 ] mapal_gpu_trace_total flags=1 load_ms=207.068 lead_ms=56.365 init_ms=121.851 ctx_ms=140.910 module_ms=0.505 alloc_ms=0.961 h2d_ms=1.838 kernel_ms=2.223 gen_ms=0.100 d2h_ms=2.019 free_ms=0.716 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_exact arm=off-l2-window rep=3 wall_us=383553 traced_wall_us=386918 out=[1620.1987 538.179 iter ms=9.037896000000002 ] mapal_gpu_trace_total flags=1 load_ms=204.332 lead_ms=56.321 init_ms=120.235 ctx_ms=139.759 module_ms=0.491 alloc_ms=0.978 h2d_ms=1.826 kernel_ms=2.224 gen_ms=0.086 d2h_ms=2.037 free_ms=0.715 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=3 wall_us=410622 traced_wall_us=402302 out=[1620.2026 538.1848 iter ms=8.216992999999999 ] mapal_gpu_trace_total flags=1 load_ms=208.384 lead_ms=65.929 init_ms=135.319 ctx_ms=138.362 module_ms=0.373 alloc_ms=1.134 h2d_ms=1.829 kernel_ms=1.267 gen_ms=0.115 d2h_ms=2.031 free_ms=0.714 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_c arm=off-l2-window rep=3 wall_us=414344 traced_wall_us=410856 out=[1620.2026 538.1848 iter ms=8.181512999999999 ] mapal_gpu_trace_total flags=1 load_ms=207.937 lead_ms=74.044 init_ms=138.296 ctx_ms=143.071 module_ms=0.379 alloc_ms=1.195 h2d_ms=1.825 kernel_ms=1.281 gen_ms=0.111 d2h_ms=2.050 free_ms=0.734 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=4 wall_us=411845 traced_wall_us=409305 out=[1620.1987 538.179 iter ms=9.120279 ] mapal_gpu_trace_total flags=1 load_ms=204.049 lead_ms=73.190 init_ms=137.351 ctx_ms=139.116 module_ms=0.530 alloc_ms=1.163 h2d_ms=1.828 kernel_ms=2.218 gen_ms=0.123 d2h_ms=2.091 free_ms=0.717 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_exact arm=off-l2-window rep=4 wall_us=407902 traced_wall_us=384442 out=[1620.1987 538.179 iter ms=9.220751 ] mapal_gpu_trace_total flags=1 load_ms=189.421 lead_ms=65.745 init_ms=114.658 ctx_ms=139.858 module_ms=0.490 alloc_ms=1.308 h2d_ms=1.829 kernel_ms=2.221 gen_ms=0.109 d2h_ms=2.013 free_ms=0.725 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=4 wall_us=406440 traced_wall_us=388604 out=[1620.2026 538.1848 iter ms=8.184472 ] mapal_gpu_trace_total flags=1 load_ms=190.386 lead_ms=67.794 init_ms=121.495 ctx_ms=136.098 module_ms=0.369 alloc_ms=0.959 h2d_ms=1.843 kernel_ms=1.263 gen_ms=0.087 d2h_ms=2.009 free_ms=0.751 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_c arm=off-l2-window rep=4 wall_us=389858 traced_wall_us=382548 out=[1620.2026 538.1848 iter ms=8.265864 ] mapal_gpu_trace_total flags=1 load_ms=187.613 lead_ms=68.004 init_ms=115.643 ctx_ms=139.382 module_ms=0.383 alloc_ms=1.020 h2d_ms=1.821 kernel_ms=1.279 gen_ms=0.090 d2h_ms=2.068 free_ms=0.727 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_exact arm=on rep=5 wall_us=408816 traced_wall_us=410585 out=[1620.1987 538.179 iter ms=9.255192 ] mapal_gpu_trace_total flags=1 load_ms=209.055 lead_ms=72.679 init_ms=139.538 ctx_ms=141.436 module_ms=0.485 alloc_ms=1.215 h2d_ms=1.814 kernel_ms=2.219 gen_ms=0.120 d2h_ms=2.012 free_ms=0.730 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_exact arm=off-l2-window rep=5 wall_us=421783 traced_wall_us=409918 out=[1620.1987 538.179 iter ms=9.263912999999999 ] mapal_gpu_trace_total flags=1 load_ms=205.875 lead_ms=73.056 init_ms=138.394 ctx_ms=139.780 module_ms=0.491 alloc_ms=1.060 h2d_ms=1.815 kernel_ms=2.222 gen_ms=0.116 d2h_ms=2.015 free_ms=0.718 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_2048 face=_c arm=on rep=5 wall_us=412086 traced_wall_us=412127 out=[1620.2026 538.1848 iter ms=8.161122 ] mapal_gpu_trace_total flags=1 load_ms=208.564 lead_ms=74.877 init_ms=139.734 ctx_ms=143.052 module_ms=0.386 alloc_ms=1.145 h2d_ms=1.816 kernel_ms=1.265 gen_ms=0.116 d2h_ms=2.050 free_ms=0.717 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=2 l2_persist=32768000
+probe prog=pt_mlp_2048 face=_c arm=off-l2-window rep=5 wall_us=413261 traced_wall_us=405564 out=[1620.2026 538.1848 iter ms=8.181712000000001 ] mapal_gpu_trace_total flags=1 load_ms=202.572 lead_ms=73.933 init_ms=138.494 ctx_ms=137.352 module_ms=0.381 alloc_ms=1.120 h2d_ms=1.807 kernel_ms=1.282 gen_ms=0.118 d2h_ms=2.047 free_ms=0.732 bytes_in=16777216 bytes_out=16777224 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=mlp n=2048 leg=eager values=1620.19287,538.180786 gate=pass vs_mapal=3.598e-06 vs_eager=0.000e+00
+chain_values probe=mlp n=2048 leg=lt values=1620.19287,538.180786 gate=pass vs_mapal=3.598e-06 vs_eager=0.000e+00
+chain_values probe=mlp n=2048 leg=cutlass values=1620.20264,538.184814 gate=pass vs_mapal=3.835e-06 vs_eager=1.542e-05
+chain probe=mlp n=2048 leg=eager launches=3 reps=30 min_ms=1.0484 med_ms=1.0514 max_ms=1.0590
+chain_samples probe=mlp n=2048 leg=eager ms=1.0590,1.0532,1.0501,1.0520,1.0527,1.0484,1.0530,1.0519,1.0498,1.0522,1.0524,1.0513,1.0524,1.0530,1.0521,1.0517,1.0497,1.0507,1.0495,1.0517,1.0497,1.0498,1.0526,1.0510,1.0499,1.0498,1.0513,1.0498,1.0503,1.0514
+chain probe=mlp n=2048 leg=lt launches=2 reps=30 min_ms=1.0219 med_ms=1.0242 max_ms=1.0263
+chain_samples probe=mlp n=2048 leg=lt ms=1.0250,1.0256,1.0242,1.0230,1.0237,1.0244,1.0231,1.0247,1.0230,1.0237,1.0234,1.0232,1.0244,1.0263,1.0219,1.0242,1.0228,1.0250,1.0252,1.0229,1.0243,1.0250,1.0236,1.0250,1.0238,1.0249,1.0232,1.0255,1.0236,1.0236
+chain probe=mlp n=2048 leg=cutlass launches=2 reps=30 min_ms=1.3683 med_ms=1.3714 max_ms=1.3748
+chain_samples probe=mlp n=2048 leg=cutlass ms=1.3698,1.3748,1.3706,1.3717,1.3710,1.3726,1.3683,1.3738,1.3729,1.3703,1.3718,1.3729,1.3724,1.3702,1.3687,1.3683,1.3701,1.3734,1.3693,1.3715,1.3688,1.3721,1.3714,1.3704,1.3700,1.3711,1.3737,1.3729,1.3711,1.3717
+probe prog=pt_mlp_4096 face=_exact arm=on rep=1 wall_us=692818 traced_wall_us=468105 out=[-1379.8322 1141.1628 iter ms=34.849067000000005 ] mapal_gpu_trace_total flags=1 load_ms=23.932 lead_ms=245.504 init_ms=130.989 ctx_ms=137.727 module_ms=0.520 alloc_ms=1.112 h2d_ms=5.684 kernel_ms=12.580 gen_ms=0.204 d2h_ms=7.595 free_ms=0.974 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=1 wall_us=634899 traced_wall_us=454543 out=[-1379.831 1141.1611 iter ms=29.094594 ] mapal_gpu_trace_total flags=1 load_ms=15.805 lead_ms=245.429 init_ms=115.477 ctx_ms=145.137 module_ms=0.403 alloc_ms=1.176 h2d_ms=5.666 kernel_ms=7.181 gen_ms=0.201 d2h_ms=7.608 free_ms=0.997 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=2 wall_us=453670 traced_wall_us=485363 out=[-1379.8322 1141.1628 iter ms=34.587611 ] mapal_gpu_trace_total flags=1 load_ms=51.639 lead_ms=237.465 init_ms=135.157 ctx_ms=153.239 module_ms=0.507 alloc_ms=1.184 h2d_ms=5.658 kernel_ms=12.593 gen_ms=0.203 d2h_ms=7.633 free_ms=1.003 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=2 wall_us=466812 traced_wall_us=472518 out=[-1379.831 1141.1611 iter ms=29.102736 ] mapal_gpu_trace_total flags=1 load_ms=32.567 lead_ms=245.512 init_ms=138.004 ctx_ms=139.486 module_ms=0.376 alloc_ms=1.159 h2d_ms=5.691 kernel_ms=7.196 gen_ms=0.188 d2h_ms=7.661 free_ms=1.043 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=3 wall_us=474470 traced_wall_us=465124 out=[-1379.8322 1141.1628 iter ms=34.566370000000006 ] mapal_gpu_trace_total flags=1 load_ms=20.769 lead_ms=243.691 init_ms=115.509 ctx_ms=148.271 module_ms=0.490 alloc_ms=1.177 h2d_ms=5.669 kernel_ms=12.597 gen_ms=0.196 d2h_ms=7.714 free_ms=0.999 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=3 wall_us=488782 traced_wall_us=473960 out=[-1379.831 1141.1611 iter ms=29.442195 ] mapal_gpu_trace_total flags=1 load_ms=42.300 lead_ms=238.445 init_ms=137.303 ctx_ms=142.837 module_ms=0.375 alloc_ms=1.098 h2d_ms=5.686 kernel_ms=7.190 gen_ms=0.199 d2h_ms=7.651 free_ms=0.977 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=4 wall_us=481271 traced_wall_us=475077 out=[-1379.8322 1141.1628 iter ms=34.562979 ] mapal_gpu_trace_total flags=1 load_ms=34.861 lead_ms=242.546 init_ms=132.023 ctx_ms=144.690 module_ms=0.501 alloc_ms=1.113 h2d_ms=5.682 kernel_ms=12.598 gen_ms=0.199 d2h_ms=7.619 free_ms=0.984 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=4 wall_us=481614 traced_wall_us=479559 out=[-1379.831 1141.1611 iter ms=29.302581 ] mapal_gpu_trace_total flags=1 load_ms=41.891 lead_ms=244.381 init_ms=141.129 ctx_ms=144.541 module_ms=0.378 alloc_ms=1.164 h2d_ms=5.658 kernel_ms=7.201 gen_ms=0.197 d2h_ms=7.626 free_ms=0.991 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_exact arm=on rep=5 wall_us=472683 traced_wall_us=474604 out=[-1379.8322 1141.1628 iter ms=34.736605000000004 ] mapal_gpu_trace_total flags=1 load_ms=32.227 lead_ms=243.259 init_ms=132.039 ctx_ms=142.753 module_ms=0.491 alloc_ms=1.142 h2d_ms=5.685 kernel_ms=12.596 gen_ms=0.205 d2h_ms=7.641 free_ms=0.984 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+probe prog=pt_mlp_4096 face=_c arm=on rep=5 wall_us=468883 traced_wall_us=457891 out=[-1379.831 1141.1611 iter ms=29.341130999999997 ] mapal_gpu_trace_total flags=1 load_ms=19.219 lead_ms=245.708 init_ms=120.750 ctx_ms=143.076 module_ms=0.388 alloc_ms=1.134 h2d_ms=5.688 kernel_ms=7.195 gen_ms=0.200 d2h_ms=7.619 free_ms=0.977 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6 l2_windows=0 l2_persist=0
+device name="NVIDIA H100 PCIe" cc=9.0
+chain_values probe=mlp n=4096 leg=eager values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain_values probe=mlp n=4096 leg=lt values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain_values probe=mlp n=4096 leg=cutlass values=-1379.83105,1141.16113 gate=pass vs_mapal=8.077e-07 vs_eager=0.000e+00
+chain probe=mlp n=4096 leg=eager launches=3 reps=30 min_ms=7.4467 med_ms=7.5700 max_ms=7.6361
+chain_samples probe=mlp n=4096 leg=eager ms=7.4520,7.4467,7.5152,7.5611,7.5716,7.5709,7.5702,7.5698,7.5685,7.5692,7.5700,7.5694,7.5698,7.5697,7.5694,7.5702,7.5705,7.5694,7.5702,7.5694,7.5701,7.5712,7.5702,7.6361,7.6350,7.6226,7.5717,7.5697,7.5694,7.5704
+chain probe=mlp n=4096 leg=lt launches=2 reps=30 min_ms=7.3637 med_ms=7.4880 max_ms=7.5533
+chain_samples probe=mlp n=4096 leg=lt ms=7.3637,7.3641,7.4295,7.4887,7.4893,7.4884,7.4862,7.4861,7.4868,7.4887,7.4876,7.4874,7.4884,7.4879,7.4876,7.4883,7.4881,7.4882,7.4880,7.4877,7.4880,7.4878,7.4879,7.5525,7.5533,7.4874,7.4884,7.4887,7.4873,7.4883
+chain probe=mlp n=4096 leg=cutlass launches=2 reps=30 min_ms=8.3112 med_ms=8.3865 max_ms=8.4270
+chain_samples probe=mlp n=4096 leg=cutlass ms=8.3112,8.3328,8.3639,8.3857,8.3793,8.3860,8.3878,8.3790,8.3792,8.3833,8.3906,8.3877,8.3931,8.3738,8.3792,8.3815,8.3865,8.3790,8.3830,8.3882,8.3869,8.3829,8.4173,8.4160,8.4270,8.3867,8.3891,8.4000,8.3913,8.3865
+-- timing vs cuBLAS / CUTLASS (f32, reps=30)
+# n=1024 face=_exact
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_ca2f6114b3534324 grid=16x8 block=256 smem=12544 regs=106 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.813e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1857 med_ms=0.1863 max_ms=0.1868 tflops_med=11.53
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0808 med_ms=0.0866 max_ms=0.0877 tflops_med=24.81
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1213 med_ms=0.1232 max_ms=0.1243 tflops_med=17.43
+ratio mapal_vs_cublas=0.465 mapal_vs_cutlass=0.661 (>1 = mapal faster, medians)
+samples mapal=0.1868,0.1863,0.1867,0.1866,0.1860,0.1861,0.1862,0.1865,0.1861,0.1864,0.1867,0.1862,0.1864,0.1861,0.1868,0.1863,0.1865,0.1861,0.1865,0.1860,0.1861,0.1867,0.1861,0.1863,0.1861,0.1857,0.1865,0.1862,0.1861,0.1863 cublas=0.0872,0.0868,0.0877,0.0856,0.0823,0.0863,0.0815,0.0858,0.0869,0.0860,0.0866,0.0868,0.0872,0.0865,0.0870,0.0808,0.0866,0.0860,0.0867,0.0861,0.0869,0.0862,0.0866,0.0857,0.0867,0.0862,0.0865,0.0869,0.0866,0.0808 cutlass=0.1239,0.1238,0.1224,0.1240,0.1234,0.1239,0.1230,0.1231,0.1218,0.1233,0.1237,0.1238,0.1225,0.1234,0.1239,0.1219,0.1213,0.1228,0.1222,0.1231,0.1232,0.1238,0.1227,0.1228,0.1226,0.1242,0.1225,0.1236,0.1232,0.1243
+# n=1024 face=_c
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_07c6663c96748bdb grid=16x8 block=256 smem=12544 regs=79 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.813e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1306 med_ms=0.1316 max_ms=0.1325 tflops_med=16.32
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0814 med_ms=0.0868 max_ms=0.0876 tflops_med=24.75
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1212 med_ms=0.1237 max_ms=0.1250 tflops_med=17.36
+ratio mapal_vs_cublas=0.660 mapal_vs_cutlass=0.940 (>1 = mapal faster, medians)
+samples mapal=0.1325,0.1319,0.1316,0.1313,0.1313,0.1317,0.1316,0.1316,0.1318,0.1316,0.1306,0.1314,0.1312,0.1316,0.1316,0.1311,0.1317,0.1314,0.1316,0.1314,0.1317,0.1309,0.1316,0.1318,0.1315,0.1314,0.1318,0.1319,0.1318,0.1316 cublas=0.0876,0.0865,0.0814,0.0871,0.0876,0.0867,0.0872,0.0868,0.0870,0.0867,0.0874,0.0875,0.0870,0.0862,0.0821,0.0860,0.0866,0.0866,0.0872,0.0867,0.0873,0.0860,0.0873,0.0861,0.0872,0.0865,0.0870,0.0861,0.0868,0.0858 cutlass=0.1239,0.1250,0.1223,0.1231,0.1212,0.1243,0.1244,0.1229,0.1239,0.1226,0.1232,0.1232,0.1239,0.1239,0.1234,0.1229,0.1245,0.1244,0.1233,0.1238,0.1233,0.1238,0.1219,0.1243,0.1229,0.1241,0.1237,0.1237,0.1223,0.1234
+# n=1024 face=_tf
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_a9135d8a78bdde1f grid=16x8 block=128 smem=76800 regs=147 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.170e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.170e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.170e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0407 med_ms=0.0422 max_ms=0.0434 tflops_med=50.84
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0229 med_ms=0.0236 max_ms=0.0244 tflops_med=90.93
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0334 med_ms=0.0343 max_ms=0.0346 tflops_med=62.54
+ratio mapal_vs_cublas=0.559 mapal_vs_cutlass=0.813 (>1 = mapal faster, medians)
+samples mapal=0.0434,0.0414,0.0407,0.0423,0.0425,0.0415,0.0434,0.0420,0.0432,0.0412,0.0423,0.0432,0.0412,0.0422,0.0413,0.0427,0.0425,0.0412,0.0408,0.0415,0.0416,0.0425,0.0427,0.0412,0.0425,0.0412,0.0408,0.0423,0.0428,0.0413 cublas=0.0244,0.0236,0.0238,0.0230,0.0239,0.0230,0.0237,0.0229,0.0238,0.0233,0.0236,0.0231,0.0237,0.0231,0.0239,0.0232,0.0238,0.0231,0.0236,0.0229,0.0238,0.0231,0.0237,0.0232,0.0238,0.0231,0.0237,0.0230,0.0240,0.0233 cutlass=0.0337,0.0344,0.0339,0.0344,0.0337,0.0343,0.0337,0.0343,0.0337,0.0344,0.0335,0.0346,0.0337,0.0344,0.0338,0.0343,0.0335,0.0346,0.0335,0.0344,0.0336,0.0343,0.0338,0.0344,0.0334,0.0346,0.0337,0.0344,0.0337,0.0344
+# n=2048 face=_exact
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_5754017a1fe0de49 grid=16x16 block=256 smem=16384 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=2.500e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.466e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=1.0933 med_ms=1.0957 max_ms=1.0975 tflops_med=15.68
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5240 med_ms=0.5256 max_ms=0.5285 tflops_med=32.69
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.6862 med_ms=0.6885 max_ms=0.6913 tflops_med=24.95
+ratio mapal_vs_cublas=0.480 mapal_vs_cutlass=0.628 (>1 = mapal faster, medians)
+samples mapal=1.0959,1.0945,1.0944,1.0962,1.0968,1.0963,1.0943,1.0957,1.0957,1.0964,1.0972,1.0963,1.0955,1.0948,1.0947,1.0962,1.0943,1.0933,1.0952,1.0946,1.0958,1.0955,1.0970,1.0960,1.0966,1.0962,1.0940,1.0946,1.0975,1.0953 cublas=0.5265,0.5249,0.5253,0.5247,0.5274,0.5240,0.5265,0.5242,0.5258,0.5243,0.5252,0.5247,0.5255,0.5251,0.5256,0.5252,0.5249,0.5250,0.5281,0.5272,0.5285,0.5245,0.5260,0.5265,0.5273,0.5269,0.5260,0.5249,0.5260,0.5260 cutlass=0.6877,0.6888,0.6885,0.6890,0.6882,0.6901,0.6887,0.6891,0.6862,0.6876,0.6878,0.6876,0.6875,0.6894,0.6891,0.6897,0.6869,0.6881,0.6888,0.6900,0.6899,0.6874,0.6871,0.6892,0.6888,0.6883,0.6862,0.6913,0.6876,0.6883
+# n=2048 face=_exact.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_5754017a1fe0de49 grid=16x16 block=256 smem=16384 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=2.500e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.466e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=1.1190 med_ms=1.1208 max_ms=1.1235 tflops_med=15.33
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5165 med_ms=0.5261 max_ms=0.5276 tflops_med=32.65
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.6854 med_ms=0.6886 max_ms=0.6912 tflops_med=24.95
+ratio mapal_vs_cublas=0.469 mapal_vs_cutlass=0.614 (>1 = mapal faster, medians)
+samples mapal=1.1214,1.1200,1.1196,1.1211,1.1197,1.1209,1.1222,1.1203,1.1221,1.1200,1.1200,1.1212,1.1200,1.1235,1.1217,1.1202,1.1207,1.1205,1.1204,1.1197,1.1215,1.1227,1.1215,1.1208,1.1208,1.1203,1.1190,1.1195,1.1210,1.1208 cublas=0.5270,0.5247,0.5276,0.5258,0.5256,0.5188,0.5248,0.5165,0.5268,0.5254,0.5252,0.5264,0.5252,0.5254,0.5256,0.5246,0.5251,0.5261,0.5273,0.5269,0.5271,0.5256,0.5267,0.5269,0.5262,0.5262,0.5262,0.5257,0.5270,0.5264 cutlass=0.6859,0.6893,0.6891,0.6886,0.6912,0.6889,0.6892,0.6893,0.6878,0.6869,0.6894,0.6902,0.6882,0.6881,0.6870,0.6868,0.6861,0.6902,0.6854,0.6902,0.6868,0.6892,0.6884,0.6881,0.6870,0.6892,0.6882,0.6908,0.6880,0.6912
+# n=2048 face=_c
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_844dbc85f2c69fb4 grid=16x16 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=2.500e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.6196 med_ms=0.6212 max_ms=0.6238 tflops_med=27.66
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5241 med_ms=0.5265 max_ms=0.5296 tflops_med=32.63
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.6857 med_ms=0.6876 max_ms=0.6905 tflops_med=24.99
+ratio mapal_vs_cublas=0.848 mapal_vs_cutlass=1.107 (>1 = mapal faster, medians)
+samples mapal=0.6238,0.6209,0.6208,0.6216,0.6215,0.6212,0.6220,0.6221,0.6210,0.6214,0.6198,0.6222,0.6236,0.6219,0.6196,0.6220,0.6197,0.6202,0.6205,0.6234,0.6203,0.6228,0.6204,0.6206,0.6222,0.6228,0.6208,0.6206,0.6196,0.6198 cublas=0.5296,0.5262,0.5266,0.5250,0.5244,0.5271,0.5277,0.5241,0.5284,0.5251,0.5281,0.5263,0.5281,0.5259,0.5261,0.5266,0.5258,0.5265,0.5262,0.5260,0.5265,0.5255,0.5284,0.5257,0.5273,0.5270,0.5264,0.5268,0.5273,0.5264 cutlass=0.6869,0.6865,0.6868,0.6893,0.6895,0.6885,0.6863,0.6871,0.6872,0.6879,0.6876,0.6900,0.6858,0.6861,0.6884,0.6868,0.6905,0.6894,0.6882,0.6883,0.6870,0.6877,0.6893,0.6867,0.6861,0.6889,0.6857,0.6895,0.6871,0.6863
+# n=2048 face=_c.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_844dbc85f2c69fb4 grid=16x16 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=2.500e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.6180 med_ms=0.6200 max_ms=0.6214 tflops_med=27.71
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.5178 med_ms=0.5263 max_ms=0.5287 tflops_med=32.64
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.6855 med_ms=0.6875 max_ms=0.6911 tflops_med=24.99
+ratio mapal_vs_cublas=0.849 mapal_vs_cutlass=1.109 (>1 = mapal faster, medians)
+samples mapal=0.6197,0.6197,0.6206,0.6214,0.6194,0.6203,0.6190,0.6191,0.6207,0.6200,0.6207,0.6197,0.6203,0.6206,0.6206,0.6200,0.6180,0.6195,0.6201,0.6206,0.6183,0.6192,0.6204,0.6203,0.6190,0.6210,0.6199,0.6196,0.6200,0.6198 cublas=0.5287,0.5178,0.5266,0.5247,0.5217,0.5266,0.5267,0.5254,0.5276,0.5244,0.5263,0.5255,0.5263,0.5257,0.5271,0.5252,0.5256,0.5238,0.5250,0.5263,0.5281,0.5246,0.5274,0.5265,0.5282,0.5248,0.5274,0.5235,0.5266,0.5263 cutlass=0.6875,0.6881,0.6901,0.6911,0.6864,0.6878,0.6856,0.6891,0.6863,0.6855,0.6882,0.6883,0.6864,0.6872,0.6867,0.6887,0.6887,0.6874,0.6905,0.6888,0.6881,0.6875,0.6861,0.6874,0.6862,0.6893,0.6867,0.6881,0.6874,0.6866
+# n=2048 face=_tf
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_885771b50f0f4c9c grid=16x8 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.271e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.271e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.271e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.1718 med_ms=0.1724 max_ms=0.1728 tflops_med=99.66
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.1009 med_ms=0.1020 max_ms=0.1036 tflops_med=168.40
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.1613 med_ms=0.1625 max_ms=0.1636 tflops_med=105.72
+ratio mapal_vs_cublas=0.592 mapal_vs_cutlass=0.943 (>1 = mapal faster, medians)
+samples mapal=0.1725,0.1718,0.1724,0.1723,0.1725,0.1724,0.1724,0.1722,0.1718,0.1723,0.1727,0.1726,0.1719,0.1723,0.1727,0.1728,0.1724,0.1722,0.1724,0.1727,0.1726,0.1727,0.1724,0.1719,0.1723,0.1722,0.1721,0.1721,0.1727,0.1724 cublas=0.1026,0.1015,0.1028,0.1018,0.1020,0.1019,0.1021,0.1009,0.1032,0.1020,0.1026,0.1015,0.1033,0.1022,0.1020,0.1026,0.1025,0.1016,0.1034,0.1019,0.1034,0.1028,0.1036,0.1016,0.1020,0.1020,0.1015,0.1018,0.1023,0.1015 cutlass=0.1620,0.1629,0.1617,0.1628,0.1615,0.1627,0.1613,0.1624,0.1625,0.1627,0.1623,0.1633,0.1620,0.1630,0.1621,0.1628,0.1624,0.1636,0.1619,0.1628,0.1623,0.1628,0.1618,0.1630,0.1621,0.1634,0.1619,0.1629,0.1625,0.1630
+# n=2048 face=_tf.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_885771b50f0f4c9c grid=16x8 block=256 smem=200704 regs=214 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.271e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.271e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.271e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.1713 med_ms=0.1720 max_ms=0.1727 tflops_med=99.88
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.1007 med_ms=0.1020 max_ms=0.1027 tflops_med=168.46
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.1608 med_ms=0.1618 max_ms=0.1629 tflops_med=106.18
+ratio mapal_vs_cublas=0.593 mapal_vs_cutlass=0.941 (>1 = mapal faster, medians)
+samples mapal=0.1727,0.1713,0.1721,0.1720,0.1721,0.1720,0.1721,0.1716,0.1722,0.1718,0.1719,0.1720,0.1718,0.1717,0.1719,0.1713,0.1721,0.1718,0.1718,0.1720,0.1719,0.1719,0.1722,0.1720,0.1720,0.1716,0.1720,0.1720,0.1723,0.1722 cublas=0.1022,0.1013,0.1022,0.1013,0.1023,0.1015,0.1027,0.1019,0.1021,0.1016,0.1022,0.1016,0.1026,0.1010,0.1018,0.1015,0.1022,0.1018,0.1020,0.1012,0.1020,0.1012,0.1020,0.1018,0.1023,0.1020,0.1021,0.1007,0.1026,0.1024 cutlass=0.1616,0.1614,0.1612,0.1624,0.1619,0.1623,0.1613,0.1622,0.1615,0.1622,0.1620,0.1617,0.1611,0.1629,0.1618,0.1620,0.1614,0.1625,0.1620,0.1618,0.1608,0.1617,0.1611,0.1625,0.1621,0.1612,0.1612,0.1615,0.1614,0.1624
+# n=4096 face=_exact
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_d7d2247fbbd9f82c grid=32x32 block=256 smem=16384 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=6.2252 med_ms=6.2283 max_ms=6.2323 tflops_med=22.07
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.6594 med_ms=3.6606 max_ms=3.6615 tflops_med=37.55
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=4.1319 med_ms=4.1409 max_ms=4.1485 tflops_med=33.19
+ratio mapal_vs_cublas=0.588 mapal_vs_cutlass=0.665 (>1 = mapal faster, medians)
+samples mapal=6.2260,6.2258,6.2321,6.2273,6.2280,6.2283,6.2276,6.2291,6.2296,6.2252,6.2265,6.2270,6.2271,6.2308,6.2301,6.2254,6.2304,6.2285,6.2287,6.2259,6.2284,6.2263,6.2319,6.2323,6.2268,6.2284,6.2271,6.2296,6.2270,6.2297 cublas=3.6614,3.6600,3.6602,3.6607,3.6606,3.6604,3.6609,3.6602,3.6610,3.6595,3.6608,3.6596,3.6609,3.6607,3.6615,3.6601,3.6607,3.6604,3.6612,3.6604,3.6611,3.6594,3.6608,3.6596,3.6608,3.6604,3.6606,3.6596,3.6610,3.6604 cutlass=4.1347,4.1352,4.1409,4.1403,4.1374,4.1407,4.1379,4.1404,4.1347,4.1455,4.1441,4.1470,4.1342,4.1382,4.1485,4.1412,4.1420,4.1372,4.1416,4.1428,4.1430,4.1420,4.1380,4.1351,4.1410,4.1448,4.1319,4.1409,4.1399,4.1425
+# n=4096 face=_exact.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_d7d2247fbbd9f82c grid=32x32 block=256 smem=16384 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=6.3986 med_ms=6.4012 max_ms=6.4046 tflops_med=21.47
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.6596 med_ms=3.6609 max_ms=3.6621 tflops_med=37.54
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=4.1329 med_ms=4.1418 max_ms=4.1482 tflops_med=33.18
+ratio mapal_vs_cublas=0.572 mapal_vs_cutlass=0.647 (>1 = mapal faster, medians)
+samples mapal=6.4046,6.4016,6.4033,6.4014,6.4027,6.4003,6.4027,6.4003,6.4017,6.4005,6.3991,6.3988,6.4007,6.3997,6.4019,6.4036,6.4011,6.4012,6.4031,6.3992,6.4012,6.4013,6.4011,6.3991,6.4028,6.4001,6.4018,6.4022,6.4009,6.3986 cublas=3.6614,3.6609,3.6609,3.6605,3.6603,3.6612,3.6616,3.6613,3.6612,3.6596,3.6611,3.6604,3.6603,3.6608,3.6616,3.6607,3.6608,3.6607,3.6610,3.6597,3.6606,3.6606,3.6615,3.6609,3.6618,3.6614,3.6616,3.6606,3.6621,3.6614 cutlass=4.1395,4.1403,4.1455,4.1431,4.1460,4.1359,4.1403,4.1371,4.1415,4.1435,4.1329,4.1418,4.1396,4.1438,4.1400,4.1460,4.1464,4.1348,4.1454,4.1379,4.1339,4.1376,4.1455,4.1482,4.1418,4.1432,4.1421,4.1415,4.1433,4.1433
+# n=4096 face=_c
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_eb50b87a44f46aa3 grid=32x32 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=3.5500 med_ms=3.6309 max_ms=3.6341 tflops_med=37.85
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.6646 med_ms=3.7525 max_ms=3.7539 tflops_med=36.63
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=4.1396 med_ms=4.1916 max_ms=4.2029 tflops_med=32.79
+ratio mapal_vs_cublas=1.033 mapal_vs_cutlass=1.154 (>1 = mapal faster, medians)
+samples mapal=3.5549,3.5524,3.5540,3.5500,3.5537,3.6341,3.6338,3.6335,3.6311,3.6321,3.6323,3.6289,3.6303,3.6276,3.6298,3.6300,3.6319,3.6307,3.6299,3.6319,3.6322,3.6330,3.6320,3.6296,3.6309,3.6316,3.6316,3.6329,3.6300,3.6294 cublas=3.6673,3.6647,3.6657,3.6653,3.6646,3.7535,3.7533,3.7539,3.7527,3.7526,3.7532,3.7519,3.7523,3.7526,3.7528,3.7520,3.7529,3.7516,3.7532,3.7518,3.7527,3.7525,3.7520,3.7516,3.7525,3.7525,3.7529,3.7516,3.7531,3.7527 cutlass=4.1472,4.1436,4.1396,4.1490,4.1752,4.1984,4.1939,4.1913,4.1911,4.1922,4.2029,4.1970,4.1968,4.1935,4.1892,4.1926,4.1906,4.1918,4.1986,4.1984,4.1890,4.1943,4.1913,4.1852,4.1898,4.1916,4.1933,4.1973,4.1915,4.1880
+# n=4096 face=_c.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_eb50b87a44f46aa3 grid=32x32 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=3.5380 med_ms=3.6235 max_ms=3.6266 tflops_med=37.93
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.6582 med_ms=3.7532 max_ms=3.7550 tflops_med=36.62
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=4.1400 med_ms=4.1950 max_ms=4.2057 tflops_med=32.76
+ratio mapal_vs_cublas=1.036 mapal_vs_cutlass=1.158 (>1 = mapal faster, medians)
+samples mapal=3.5383,3.5381,3.5383,3.5380,3.5957,3.5953,3.5947,3.6127,3.6260,3.6259,3.6235,3.6233,3.6229,3.6233,3.6237,3.6226,3.6232,3.6236,3.6261,3.6261,3.6259,3.6256,3.6266,3.6256,3.6251,3.6263,3.6236,3.6233,3.6229,3.6249 cublas=3.6625,3.6582,3.6601,3.6605,3.7222,3.7210,3.7220,3.7540,3.7545,3.7532,3.7532,3.7522,3.7530,3.7523,3.7534,3.7518,3.7536,3.7527,3.7550,3.7537,3.7539,3.7535,3.7544,3.7539,3.7549,3.7539,3.7532,3.7516,3.7536,3.7532 cutlass=4.1427,4.1400,4.1415,4.1618,4.1753,4.1731,4.1742,4.1913,4.1933,4.1898,4.1950,4.2026,4.1980,4.1987,4.1911,4.1967,4.1916,4.1980,4.1961,4.1932,4.1977,4.1950,4.1987,4.1982,4.2015,4.1915,4.2031,4.1909,4.2003,4.2057
+# n=4096 face=_tf
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.562e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.562e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.8143 med_ms=0.8180 max_ms=0.9794 tflops_med=168.02
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5780 med_ms=0.5929 max_ms=0.6265 tflops_med=231.81
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9428 med_ms=0.9498 max_ms=1.0327 tflops_med=144.70
+ratio mapal_vs_cublas=0.725 mapal_vs_cutlass=1.161 (>1 = mapal faster, medians)
+samples mapal=0.8184,0.8168,0.8154,0.8171,0.8172,0.8163,0.8181,0.8174,0.8153,0.8160,0.8180,0.8143,0.8155,0.8153,0.8145,0.8160,0.8156,0.8157,0.9398,0.9399,0.9399,0.9438,0.9575,0.9576,0.9581,0.9574,0.9578,0.9570,0.9794,0.8818 cublas=0.5905,0.5903,0.5901,0.5908,0.5965,0.5896,0.5935,0.5915,0.5913,0.5952,0.5918,0.5902,0.5929,0.5920,0.5887,0.5946,0.5886,0.6265,0.5981,0.5964,0.5989,0.5963,0.5924,0.5935,0.5944,0.5915,0.5966,0.5930,0.5940,0.5780 cutlass=0.9479,0.9469,0.9480,0.9492,0.9487,0.9504,0.9473,0.9486,0.9495,0.9502,0.9484,0.9488,0.9498,0.9491,0.9487,0.9497,0.9494,1.0094,1.0066,1.0071,1.0071,1.0238,1.0238,1.0227,1.0228,1.0240,1.0226,1.0327,1.0324,0.9428
+# n=4096 face=_tf.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_dff0dae306997d77 grid=32x16 block=256 smem=200704 regs=214 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.562e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.562e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.562e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=0.8231 med_ms=0.9296 max_ms=0.9698 tflops_med=147.85
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=0.5876 med_ms=0.5948 max_ms=0.6037 tflops_med=231.06
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=0.9481 med_ms=0.9895 max_ms=1.0309 tflops_med=138.90
+ratio mapal_vs_cublas=0.640 mapal_vs_cutlass=1.064 (>1 = mapal faster, medians)
+samples mapal=0.8279,0.8233,0.8231,0.8242,0.8245,0.8240,0.8249,0.8247,0.8243,0.8276,0.8265,0.8267,0.8270,0.8246,0.8536,0.9297,0.9306,0.9304,0.9297,0.9300,0.9296,0.9304,0.9695,0.9694,0.9689,0.9688,0.9698,0.9677,0.9696,0.9694 cublas=0.5899,0.5876,0.5898,0.5894,0.5944,0.5912,0.5901,0.5930,0.5951,0.6009,0.5945,0.5953,0.5948,0.5932,0.5986,0.6014,0.6024,0.6007,0.5996,0.6034,0.6037,0.5921,0.5948,0.5919,0.5937,0.5952,0.5932,0.5954,0.5931,0.5964 cutlass=0.9486,0.9481,0.9489,0.9487,0.9498,0.9507,0.9482,0.9506,0.9481,0.9490,0.9483,0.9503,0.9497,0.9508,0.9887,0.9899,0.9895,0.9911,0.9897,0.9907,0.9905,1.0304,1.0286,1.0300,1.0297,1.0303,1.0292,1.0309,1.0295,1.0294
+# n=8192 face=_exact
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_15bf00331bb882c3 grid=64x64 block=256 smem=16384 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.424e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=49.0715 med_ms=52.3686 max_ms=54.2583 tflops_med=21.00
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=26.2415 med_ms=27.5463 max_ms=28.7896 tflops_med=39.92
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=34.4762 med_ms=35.6187 max_ms=36.5431 tflops_med=30.87
+ratio mapal_vs_cublas=0.526 mapal_vs_cutlass=0.680 (>1 = mapal faster, medians)
+samples mapal=49.0715,50.7501,50.6642,50.7736,50.8202,50.8209,50.8920,51.8308,54.2262,54.2583,54.1051,53.5689,52.1169,51.6494,51.3130,51.3329,52.6583,53.8304,53.7256,54.0688,53.5466,52.3686,51.8043,51.6180,52.1820,52.8776,53.4761,53.6120,53.6812,52.4656 cublas=26.2415,26.8425,26.9760,26.6900,26.9609,26.9237,26.8547,28.2061,28.7300,28.7133,28.7896,28.4226,27.0832,26.9370,27.3029,27.3849,27.6433,28.0895,28.0419,28.1673,27.7189,27.4629,27.3434,26.9446,27.5463,27.6041,28.5700,28.4802,28.1993,27.5073 cutlass=34.6061,34.4762,34.5448,34.7732,34.5315,34.6417,34.5673,35.8976,35.8229,35.8249,35.8985,35.5328,34.9405,35.1092,35.0708,35.6205,35.7316,36.5431,35.7976,36.3069,35.4932,35.1555,35.4621,35.6187,35.3506,35.7959,35.8512,35.8001,35.6422,35.6544
+# n=8192 face=_exact.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_15bf00331bb882c3 grid=64x64 block=256 smem=16384 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.424e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=50.4705 med_ms=53.5822 max_ms=55.8143 tflops_med=20.52
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=26.2176 med_ms=27.1886 max_ms=28.6205 tflops_med=40.44
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=33.5974 med_ms=35.1207 max_ms=36.3379 tflops_med=31.31
+ratio mapal_vs_cublas=0.507 mapal_vs_cutlass=0.655 (>1 = mapal faster, medians)
+samples mapal=50.4705,51.4453,52.1700,51.9629,52.1402,52.1517,52.2171,52.3598,55.6096,54.4494,55.8143,53.6537,52.8217,52.5194,52.9405,52.6519,53.9411,54.5515,54.9228,54.9644,54.2281,53.5822,52.9146,52.6963,52.8933,54.4533,55.1886,55.5910,54.7208,53.6980 cublas=26.2176,26.9242,26.6867,26.8991,27.0434,26.7324,26.8694,27.8273,28.5431,28.6205,28.4111,27.2748,26.7058,26.6832,26.8860,27.2783,27.9120,27.6291,27.7987,27.7873,27.0280,26.8034,26.9829,27.1886,26.7202,27.2855,27.4883,27.2968,27.1812,27.2535 cutlass=33.5974,34.6437,34.6398,34.4136,34.6459,34.6767,34.3778,35.8453,35.0001,35.8788,35.8654,35.0516,34.6957,35.1207,35.0436,34.9775,35.8225,35.9003,35.7728,35.7388,35.5437,35.1048,35.1831,35.0410,35.3916,36.3379,35.9709,35.9258,35.8257,35.0392
+# n=8192 face=_c
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_3c6966e353d7136e grid=64x64 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=28.5394 med_ms=31.0893 max_ms=32.8169 tflops_med=35.37
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=27.1515 med_ms=29.4345 max_ms=30.7967 tflops_med=37.35
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=34.7954 med_ms=35.6835 max_ms=37.4100 tflops_med=30.81
+ratio mapal_vs_cublas=0.947 mapal_vs_cutlass=1.148 (>1 = mapal faster, medians)
+samples mapal=28.5394,30.2395,29.9665,29.9658,29.7880,29.9852,29.6210,29.9521,30.1479,32.4196,32.0512,32.2635,32.4213,32.0414,32.0240,30.7813,30.4414,30.4262,30.6200,31.2335,31.5362,32.1163,32.4728,32.8169,31.4648,31.0893,30.6413,30.4454,31.2632,31.2659 cublas=27.1515,28.7060,28.4133,28.5453,28.7700,28.2163,28.5030,28.4083,29.1678,30.4242,30.4166,30.5311,30.4132,30.4056,29.7689,28.9900,28.7306,28.8538,29.3546,29.8431,29.9298,30.3063,30.7967,30.6377,29.6423,29.4905,29.1102,29.1525,29.4345,29.6739 cutlass=34.7954,35.0136,34.8464,34.8902,35.0274,35.0290,35.0464,35.0390,36.7577,36.5087,36.5444,37.0750,36.5267,36.5679,35.6835,35.5339,35.2692,35.1054,35.7629,36.0956,36.3324,36.5397,37.4100,36.4376,35.7302,35.6680,35.3779,35.4909,35.6287,36.0777
+# n=8192 face=_c.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_3c6966e353d7136e grid=64x64 block=256 smem=16640 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=28.1494 med_ms=30.5262 max_ms=32.3807 tflops_med=36.02
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=27.1267 med_ms=28.9498 max_ms=30.5693 tflops_med=37.98
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=34.4800 med_ms=35.6795 max_ms=37.0752 tflops_med=30.82
+ratio mapal_vs_cublas=0.948 mapal_vs_cutlass=1.169 (>1 = mapal faster, medians)
+samples mapal=28.1494,29.5690,29.6734,29.9401,29.7626,29.5387,29.5531,29.7685,29.7420,32.3568,32.3300,31.8786,32.3211,31.8456,31.5451,30.3620,30.0705,29.7350,30.2097,30.9471,31.5270,31.7671,32.3807,31.7846,31.3003,30.7960,30.5262,30.4811,30.2031,30.8274 cublas=27.1267,28.1449,27.9958,28.2479,28.0940,28.0987,27.9425,28.2606,28.4927,30.5693,30.2217,30.2451,30.2222,30.1287,29.3872,28.4634,28.5021,28.2281,28.9571,29.5643,29.8159,30.2107,30.1717,29.8116,29.2715,28.6104,28.8264,28.5862,28.9498,29.3944 cutlass=34.4800,34.9123,35.0764,34.9109,34.8852,35.0536,34.9551,34.8880,36.4747,37.0752,36.4921,36.7847,36.4114,36.5404,35.5354,35.1592,35.3467,35.4087,35.8277,36.1362,36.1808,36.7992,36.2770,36.0115,35.6795,35.4730,35.3848,35.2785,35.8037,36.0514
+# n=8192 face=_tf
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=200704 regs=212 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.945e-02
+values leg=cublas cells=256 maxrel_vs_f64=2.945e-02
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=6.0605 med_ms=7.2458 max_ms=8.0428 tflops_med=151.74
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=3.8999 med_ms=3.9623 max_ms=4.4006 tflops_med=277.49
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.4010 med_ms=8.5027 max_ms=9.8635 tflops_med=129.31
+ratio mapal_vs_cublas=0.547 mapal_vs_cutlass=1.173 (>1 = mapal faster, medians)
+samples mapal=6.0828,6.0605,6.8282,7.3230,7.6374,7.7515,7.8613,8.0428,7.4443,7.5086,7.5089,7.5091,7.5086,7.3370,7.2453,7.2458,7.2466,7.2449,7.2446,7.2454,7.2446,7.2441,7.2441,7.2496,7.2484,7.1675,7.1659,7.1661,7.1579,7.1589 cublas=4.1039,4.1187,4.0042,4.1044,4.2453,4.3227,4.3241,4.4006,3.9360,4.0788,4.0809,4.0794,4.0805,4.0166,3.9428,3.9434,3.9453,3.9414,3.9415,3.9415,3.9435,3.9426,3.9428,3.9623,3.9631,3.9196,3.9204,3.9190,3.8999,3.9042 cutlass=9.6161,9.5236,8.6021,9.3369,9.4527,9.8635,9.7388,9.5604,8.5322,8.8008,8.7982,8.8017,8.6860,8.5298,8.4994,8.4994,8.4986,8.5013,8.4990,8.4996,8.4999,8.4993,8.5027,8.5020,8.4256,8.4100,8.4100,8.4073,8.4030,8.4010
+# n=8192 face=_tf.off-l2-gate
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13000
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000 l2_persist_bytes=32768000 l2_window_max=134217728
+mapal kernel=mapal_tile_0f986b19df91db16 grid=64x32 block=256 smem=200704 regs=214 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.945e-02
+values leg=cublas cells=256 maxrel_vs_f64=2.945e-02
+values leg=mapal cells=256 maxrel_vs_f64=2.945e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=5.8647 med_ms=7.6258 max_ms=7.8779 tflops_med=144.18
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=4.0150 med_ms=4.1960 max_ms=4.3225 tflops_med=262.04
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=8.5984 med_ms=9.0759 max_ms=9.9046 tflops_med=121.15
+ratio mapal_vs_cublas=0.550 mapal_vs_cutlass=1.190 (>1 = mapal faster, medians)
+samples mapal=5.8647,6.0906,6.6207,7.5642,7.7798,7.8779,7.7560,7.7555,7.6515,7.5657,7.5649,7.5645,7.5640,7.5665,7.7200,7.7219,7.7194,7.7182,7.7462,7.7604,7.7528,7.6258,7.5642,7.5269,7.5308,7.5301,7.5316,7.6355,7.7163,7.3564 cublas=4.1347,4.0758,4.0948,4.1907,4.3225,4.3210,4.2570,4.2507,4.1960,4.1488,4.1454,4.1465,4.1466,4.2144,4.2147,4.2114,4.2172,4.2123,4.2523,4.2488,4.2511,4.1464,4.1462,4.1132,4.1146,4.1157,4.1533,4.2130,4.2150,4.0150 cutlass=9.6066,9.4851,8.8412,9.0132,9.8079,9.9046,9.5071,9.2115,9.2023,9.3088,9.1828,9.0759,9.3440,9.0543,9.0505,9.0495,9.0503,9.0477,9.3025,9.4060,9.3477,9.1227,8.9573,8.8425,8.8414,8.8412,8.9387,9.0564,9.0533,8.5984
+== done

@@ -53,6 +53,7 @@ Grouping now ships on one part, the RTX 5090, and only on the contract faces. Th
 | RTX 4090 | run2 (shipped) | ungated | 4096 / 8192 | 0.973 / 0.977 (r255 both) | 1.000 / 1.007 | 0.995 / 0.994 |
 | RTX 4090 | run4 (epilogue) | ungated | 4096 / 8192 | 0.953 / 0.907 (r255+24/r255) | 0.997 / 1.017 | 1.002 / 1.011 |
 | H100 PCIe | run2 (shipped) | ungated | 2048 / 4096 / 8192 | 0.973* / 0.974* / 0.973* (r128+8/r128) | 1.006 / 1.003 / 0.996 (r127 both) | 0.996 / 1.003 / 1.000 |
+| H100 PCIe | run3 (shipped) | ungated | 2048 / 4096 / 8192 | 0.979* / 0.973* / 0.965 (r128+8/r128) | 1.002 / 1.002 / 1.002 (r127 both) | 1.002 / 0.883 / 1.006 |
 | H100 PCIe | run1 (pre-fix) | ungated | 2048 / 4096 / 8192 | 0.977* / 0.973* / 0.962 | 0.788* / 0.772* / 0.747* (r145/r127) | 0.996 / 1.036 / 1.001 |
 | RTX 5090 | run2 (shipped) | ungated | 4096 / 8192 | 1.009 / 1.019 | 1.007 / 1.020 | 0.999 / 1.031 |
 | RTX 5090 | run3 (shipped) | ungated | 4096 / 8192 | 1.005 / 1.052 | 0.995 / 1.043 | 0.997 / 1.054 |
@@ -68,18 +69,18 @@ Raw milliseconds and min–max ranges are in the session files (`python3 benches
 |---|---|---:|---|---|
 | A100 | mlp, mlp2, diamond at 2048 × 2 (none fits at 4096) | 6 | 0.926–1.025 | none |
 | RTX 4090 | 2048, 4096 × 2 | 2 | 0.933*–1.040 | none; contract costs 6–7% (diamond_2048_c 0.933*/0.939*, mlp2_2048_c 0.938*/0.949) |
-| H100 PCIe | 2048 × 2 | 2 | 1.000–1.016* | mlp2_2048_c 1.012*/1.016*; exact 1.000–1.007 |
+| H100 PCIe | 2048 × 2 | 3 | 1.000–1.016* | mlp2_2048_c 1.016*/1.012*/1.015*; exact 1.000–1.008* |
 | RTX 5090 | 2048, 4096 × 2 | 5 | 0.976–1.005 | none |
 | RTX 3090 | — | — | — | no probe operand fits 6 MB |
 
-| H100 PCIe probe | face | run1 | run2 |
-|---|---|---:|---:|
-| diamond_2048 | contract | 1.006* | 1.005 |
-| diamond_2048 | exact | 1.004* | 1.007* |
-| mlp2_2048 | contract | 1.012* | 1.016* |
-| mlp2_2048 | exact | 1.002 | 1.000 |
-| mlp_2048 | contract | 1.007* | 1.016* |
-| mlp_2048 | exact | 1.000 | 1.000 |
+| H100 PCIe probe | face | run1 | run2 | run3 |
+|---|---|---:|---:|---:|
+| diamond_2048 | contract | 1.005 | 1.006* | 1.007* |
+| diamond_2048 | exact | 1.007* | 1.004* | 1.008* |
+| mlp2_2048 | contract | 1.016* | 1.012* | 1.015* |
+| mlp2_2048 | exact | 1.000 | 1.002 | 1.000 |
+| mlp_2048 | contract | 1.016* | 1.007* | 1.011* |
+| mlp_2048 | exact | 1.000 | 1.000 | 1.001 |
 
 Device facts from the boxes, in bytes:
 
@@ -140,6 +141,7 @@ Each cell is vs cuBLAS / vs CUTLASS, for exact · contract · TF32.
 | RTX 4090 | `-run4` | RTX 4090 | 96250 (ES) | epilogue | 80/80 | **3/4** |
 | H100 PCIe | `l2-raster-h100-pcie.txt` | H100 PCIe | 415974 (US) | pre-fix | 80/80 | 4/4 |
 | H100 PCIe | `-run2` | H100 PCIe | 670790 (ZA) | shipped | 80/80 | 4/4 |
+| H100 PCIe | `-run3` | H100 PCIe | 364425 | shipped | 80/80 | 4/4 |
 | RTX 5090 | `l2-raster-rtx-5090.txt` | RTX 5090 | 229807 (EE) | pre-fix | 80/80 | 4/4 |
 | RTX 5090 | `-run2`, `-run3` | RTX 5090 | 95374 (VN), 43746 (US) | shipped | 80/80, 80/80 | 4/4, 4/4 |
 | RTX 5090 | `-run4`, `-run5` | RTX 5090 | 80057 (KR), 154140 (ZA) | epilogue | 80/80, 80/80 | 4/4, 4/4 |
