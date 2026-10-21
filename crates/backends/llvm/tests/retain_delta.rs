@@ -113,8 +113,8 @@ fn lower(src: &str) -> CategoryIr {
 }
 
 /// `(host, device)` on `target`, rung on or off — `resident` off in both, so
-/// every site is the S52 round trip the rung was measured against (a function
-/// with a retained site never takes `resident` anyway).
+/// every site is the S52 round trip the rung was measured against, and
+/// `lane-stride` off, so `s = q·Kᵀ` stays the host map S53 measured.
 fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<String>) {
     let mut opts = EmitOpts {
         target,
@@ -123,8 +123,34 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
     opts.gpu.on.retain_delta = on;
     opts.gpu.off.retain_delta = !on;
     opts.gpu.off.resident = true;
+    opts.gpu.off.lane_stride = true;
     let em = emit_detailed(ir, &opts).expect("emits");
     (em.text, em.device)
+}
+
+/// `(host, device)` on the 4090 with S54's three R5 rungs forced on (the
+/// mechanism, not the 4090's measured table, which ships `retain-resident`
+/// off), then the measurement arms `off`, on `face`.
+fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
+    let mut opts = EmitOpts {
+        target: "rtx-4090",
+        contract,
+        ..EmitOpts::default()
+    };
+    opts.gpu.on.retain_resident = true;
+    opts.gpu.on.delta_h2d = true;
+    opts.gpu.on.lane_stride = true;
+    for r in off {
+        *opts.gpu.off.rung(r).expect("a rung") = true;
+    }
+    let em = emit_detailed(ir, &opts).expect("emits");
+    (em.text, em.device.expect("a device unit"))
+}
+
+fn calls<'a>(host: &'a str, entry: &str) -> Vec<&'a str> {
+    host.lines()
+        .filter(|l| l.contains(&format!("call void @mapal_gpu_{entry}(")))
+        .collect()
 }
 
 fn tile_calls(host: &str) -> Vec<&str> {
@@ -196,12 +222,11 @@ fn decode_retains_k_and_v_only() {
     assert_eq!(kernels(&on_dev), kernels(&off_dev) + 1);
 }
 
-/// With the rung on (`resident` on too), a function with a retained site keeps
-/// the round trips the rung was measured with; with the rung off — what ships:
-/// the integrated run measured `resident` faster on decode — `resident` takes
-/// the function.
+/// `retain-delta` on with `retain-resident` off (`resident` on): a function
+/// with a retained site keeps the round trips the S53 rung was measured with.
+/// Shipped (S54): `retain-resident` keeps it resident, retention included.
 #[test]
-fn resident_yields_to_a_retained_site() {
+fn resident_yields_to_a_retained_site_only_without_retain_resident() {
     let ir = lower(&decode(16, 8, "f32", false));
     let at = |gpu: GpuArms| {
         emit_detailed(
@@ -215,13 +240,216 @@ fn resident_yields_to_a_retained_site() {
         .expect("emits")
         .text
     };
-    let mut on = GpuArms::default();
-    on.on.retain_delta = true;
-    let on = at(on);
-    assert_eq!(tile_calls(&on).len(), 5);
-    assert!(!on.contains("@mapal_gpu_alloc("));
+    let mut s53 = GpuArms::default();
+    s53.on.retain_delta = true;
+    s53.off.retain_resident = true;
+    s53.off.lane_stride = true;
+    let s53 = at(s53);
+    assert_eq!(tile_calls(&s53).len(), 5);
+    assert!(!s53.contains("@mapal_gpu_alloc("));
+    let mut r5 = GpuArms::default();
+    r5.on.retain_resident = true;
+    let r5 = at(r5);
+    assert!(tile_calls(&r5).is_empty() && r5.contains("@mapal_gpu_launch("));
+    assert_eq!(r5.matches("store i1 true, ptr").count(), 3, "K, V, x");
+    // The 4090's table (measured: no effect there) retains nothing; x still
+    // crosses as its row.
     let shipped = at(GpuArms::default());
     assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch"));
+    assert_eq!(shipped.matches("store i1 true, ptr").count(), 1, "x");
+}
+
+// --- S54 `retain-resident`, `delta-h2d`, `lane-stride` ----------------------
+
+/// Shipped: K and V retained in their resident buffers (a whole pass and a
+/// row pass each, both launches), `x` uploaded as its written row after one
+/// whole upload, `s = q·Kᵀ` a device site — so the only copy-out in the loop
+/// is the 8-float `o` the host's next row reads, and K never crosses.
+#[test]
+fn decode_retains_on_the_resident_buffers() {
+    let ir = lower(&decode(16, 8, "f32", false));
+    let (host, _) = emit_s54(&ir, &[], false);
+    assert!(tile_calls(&host).is_empty());
+    // K, V: whole + row; s; o.
+    assert_eq!(calls(&host, "launch").len(), 6);
+    // Three first-pass flags (K, V, x's upload), reset at loop entry.
+    assert_eq!(host.matches("store i1 false, ptr").count(), 3);
+    assert_eq!(host.matches("store i1 true, ptr").count(), 3);
+    let d2h = calls(&host, "d2h");
+    assert_eq!(d2h.len(), 1, "{d2h:#?}");
+    assert!(d2h[0].ends_with("i64 0, i64 32)"), "{d2h:#?}");
+    // The device unit gains the one-row kernel (K and V share it) and `s`'s.
+    let (_, dev) = emit_s54(&ir, &[], false);
+    let (_, base) = emit_s54(&ir, &["retain-resident", "delta-h2d", "lane-stride"], false);
+    let kernels = |d: &str| d.matches("void @mapal_tile_").count();
+    assert_eq!(kernels(&dev), kernels(&base) + 2);
+}
+
+/// `delta-h2d`: the written row crosses as `stride · elem` bytes at the row's
+/// own byte offset on both sides; `q` (rewritten whole by its map) and the
+/// first pass cross whole; off, `x` crosses whole every iteration.
+#[test]
+fn delta_upload_is_stride_times_elem_bytes() {
+    for (d, row, whole) in [(8u64, 32, 512), (4, 16, 256)] {
+        let ir = lower(&decode(16, d, "f32", false));
+        let (host, _) = emit_s54(&ir, &[], false);
+        let h2d = calls(&host, "h2d");
+        let partial: Vec<&&str> = h2d.iter().filter(|l| l.contains("ptr %t")).collect();
+        assert_eq!(partial.len(), 1, "{h2d:#?}");
+        assert!(partial[0].ends_with(&format!("i64 {row})")), "{partial:#?}");
+        assert_eq!(
+            h2d.iter()
+                .filter(|l| l.ends_with(&format!("i64 {whole})")))
+                .count(),
+            1
+        );
+        let (off_arm, _) = emit_s54(&ir, &["delta-h2d"], false);
+        assert!(calls(&off_arm, "h2d").iter().all(|l| !l.contains("ptr %t")));
+        assert_eq!(
+            off_arm.matches("store i1 true, ptr").count(),
+            2,
+            "K, V only"
+        );
+    }
+}
+
+/// The negative control: a column write has no `Δ::Rows`, so nothing is
+/// retained or delta-uploaded — the R5 rungs are byte-identical on and off.
+#[test]
+fn column_write_retains_nothing_on_the_resident_path() {
+    let ir = lower(&decode(16, 8, "f32", true));
+    let (on, on_dev) = emit_s54(&ir, &[], false);
+    assert!(!on.contains("store i1 true, ptr") && !on.contains("store i1 false, ptr"));
+    for off in ["retain-resident", "delta-h2d"] {
+        assert_eq!(emit_s54(&ir, &[off], false), (on.clone(), on_dev.clone()));
+    }
+}
+
+/// `lane-stride`: `s[r] = Σ_k q[k]·K[r·d + k]` reads K across lanes at stride
+/// `d` — `tile_plan` refuses it, `tile_plan_strided` takes it as a one-row
+/// site, and on a GPU profile it runs on the device: K then never crosses.
+/// Off, K is copied out whole on the first pass and as its new row after.
+#[test]
+fn lane_stride_places_q_kt_on_the_device() {
+    let ir = lower(&decode(16, 8, "f32", false));
+    let f = ir.entry();
+    let (strict, strided) = (ir.tile_plan(f), ir.tile_plan_strided(f));
+    assert_eq!(strided.sites.len(), strict.sites.len() + 1);
+    let s = strided
+        .sites
+        .iter()
+        .find(|(m, _)| !strict.sites.contains_key(*m))
+        .map(|(_, s)| s.clone())
+        .unwrap();
+    assert_eq!((s.rows, s.c, s.k), (1, 16, 8));
+    assert_eq!((s.a.clane, s.b.clane, s.b.ck), (0, 8, 1));
+    assert!(strict.sites.values().all(|s| s.b.clane == 1));
+
+    let (on, _) = emit_s54(&ir, &[], false);
+    let (off, _) = emit_s54(&ir, &["lane-stride"], false);
+    assert_eq!(calls(&on, "launch").len(), calls(&off, "launch").len() + 1);
+    let d2h = calls(&off, "d2h");
+    // K whole (512 B) on the first pass, its row (32 B at the row's offset)
+    // after, and o.
+    assert_eq!(d2h.len(), 3, "{d2h:#?}");
+    assert!(d2h.iter().any(|l| l.ends_with("i64 0, i64 512)")));
+    assert!(
+        d2h.iter()
+            .any(|l| l.contains("ptr %t") && l.ends_with(", i64 32)"))
+    );
+    // An int product stays on the host: below the GPU gate, not a device site.
+    let int_ir = lower(&decode(16, 8, "i32", false));
+    let int = |off: &[&str]| {
+        let mut opts = EmitOpts {
+            target: "rtx-4090",
+            ..EmitOpts::default()
+        };
+        for r in off {
+            *opts.gpu.off.rung(r).unwrap() = true;
+        }
+        emit_detailed(&int_ir, &opts).unwrap().text
+    };
+    assert_eq!(int(&[]), int(&["lane-stride"]));
+}
+
+/// The contract face fuses the step of the sites the CPU tiles; the strided
+/// site is a host map on the CPU, so its device step stays `fmul` + `fadd`
+/// (placement never changes a value).
+#[test]
+fn strided_site_keeps_the_host_step_on_the_contract_face() {
+    let src = "fn main() {
+    128 -> iota -> tk;
+    tk -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> kk;
+    8 -> iota -> krange;
+    16 -> iota -> rrange;
+    krange -> map { k -> k -> widen_f32 -> v; v / 8.0 } -> q;
+    rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 8 + k] } } -> s;
+    s[0] -> println;
+    s[15] -> println;
+}
+";
+    let ir = lower(src);
+    let (_, dev) = emit_s54(&ir, &[], true);
+    let kernels: Vec<&str> = dev
+        .split("define ptx_kernel void @mapal_tile_")
+        .skip(1)
+        .collect();
+    assert_eq!(kernels.len(), 1);
+    let k = kernels[0].split("\n}\n").next().unwrap();
+    assert!(!k.contains("@llvm.fma") && k.contains("fmul float") && k.contains("fadd float"));
+}
+
+/// `write_delta`'s Same consumers: `xh = x·0.5` (a captures-0 map of the
+/// written `x`) carries `x`'s `Δ`, so K and V over `xh` are retained and `xh`
+/// (not `x`) is delta-uploaded; a map capturing the counter is not Same.
+#[test]
+fn write_delta_passes_through_a_same_map() {
+    // K and V read `xh`; the map is the line before K.
+    let scaled = decode(16, 8, "f32", false)
+        .replace("acc + x[i * 8 + k]", "acc + xh[i * 8 + k]")
+        .replacen(
+            "                tc -> map",
+            "x -> map { v -> v * 0.5 } -> xh;\n                tc -> map",
+            1,
+        );
+    let ir = lower(&scaled);
+    let wd = ir.write_delta(ir.entry());
+    let rows: Vec<(u64, i64, i64, bool)> = wd
+        .iter()
+        .filter_map(|(k, d)| match *d {
+            Delta::Rows {
+                stride,
+                start,
+                next,
+            } => Some((stride, start.a, start.b, next == k)),
+            Delta::Top => None,
+        })
+        .collect();
+    assert_eq!(rows.len(), 2, "{wd:?}");
+    assert_eq!(rows[0].0, rows[1].0);
+    assert_eq!((rows[0].1, rows[0].2), (rows[1].1, rows[1].2));
+    assert_eq!(
+        rows.iter().filter(|r| r.3).count(),
+        1,
+        "the image keys itself"
+    );
+    let (host, _) = emit_s54(&ir, &[], false);
+    assert_eq!(host.matches("store i1 true, ptr").count(), 3, "K, V, xh");
+    assert_eq!(calls(&host, "launch").len(), 6);
+
+    // `v · t` captures the counter: every cell changes, so no Δ — nothing is
+    // retained, and `xh` crosses whole (`x` is no device operand at all).
+    let captured = scaled.replace("v -> v * 0.5", "v -> t -> widen_f32 -> tf; v * tf");
+    let ir = lower(&captured);
+    let wd: Vec<Delta> = ir.write_delta(ir.entry()).values().copied().collect();
+    assert_eq!(
+        wd.iter()
+            .filter(|d| matches!(d, Delta::Rows { .. }))
+            .count(),
+        1
+    );
+    let (host, _) = emit_s54(&ir, &[], false);
+    assert!(!host.contains("store i1 true"));
 }
 
 #[test]
@@ -306,6 +534,145 @@ fn int_decode_matches_the_oracle_on_and_off() {
         let out = Command::new(&exe).output().unwrap();
         assert!(out.status.success());
         assert_eq!(String::from_utf8_lossy(&out.stdout), rr.output);
+    }
+}
+
+/// The device unit compiled for the host: special registers become the
+/// emulator's `emu_*` (`mapal_gpu_emu.c`), global pointers generic.
+fn host_device(dev: &str) -> String {
+    let mut out = String::new();
+    for line in dev.lines() {
+        let nvvm_decl = line.starts_with("declare")
+            && (line.contains("@llvm.nvvm.") || line.contains("cp.async"));
+        if line.starts_with("target ") || line.starts_with("@mapal_smem") || nvvm_decl {
+            continue;
+        }
+        let mut l = line.replace("ptx_kernel ", "").replace("addrspace(1) ", "");
+        for (r, e) in [
+            ("tid.x", "tid_x"),
+            ("ctaid.x", "ctaid_x"),
+            ("ctaid.y", "ctaid_y"),
+        ] {
+            l = l.replace(
+                &format!("@llvm.nvvm.read.ptx.sreg.{r}()"),
+                &format!("@emu_{e}()"),
+            );
+        }
+        out.push_str(&l);
+        out.push('\n');
+    }
+    out + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n"
+}
+
+/// Build and run `host` + `dev` against the emulated device; its stdout.
+fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let p = |n: &str| dir.path().join(n);
+    std::fs::write(p("h.ll"), host).unwrap();
+    std::fs::write(p("d.ll"), host_device(dev)).unwrap();
+    let emu = format!(
+        "{}/../../mapal-rt/gpu/mapal_gpu_emu.c",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let ok = Command::new(clang)
+        .args(["-O1", "-Wno-override-module", "-c"])
+        .arg(p("d.ll"))
+        .arg("-o")
+        .arg(p("d.o"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "device unit does not compile for the host");
+    let mut link = Command::new(clang);
+    link.args(["-O1", "-Wno-override-module"])
+        .arg(p("h.ll"))
+        .arg(p("d.o"))
+        .arg(&emu)
+        .arg(rt_lib())
+        .arg("-o")
+        .arg(p("x"));
+    if cfg!(target_os = "linux") {
+        // The emulator finds kernels by name with `dlsym`.
+        link.args(["-rdynamic", "-ldl", "-lm"]);
+    }
+    assert!(link.status().unwrap().success(), "link failed");
+    let out = Command::new(p("x")).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The resident path's host half end to end without a GPU (S54): the device
+/// unit runs on the host, thread by thread, through `mapal_gpu_emu.c`, linked
+/// with the host module. Exact face against the interpreter, every R5 arm, on
+/// decode, its Same-map variant and the column-write control; the contract
+/// face against the CPU's contract build.
+#[test]
+fn resident_path_matches_the_oracle_emulated() {
+    let Some(clang) = clang() else {
+        eprintln!("skip: clang not found");
+        return;
+    };
+    let plain = decode(16, 8, "f32", false);
+    let scaled = plain
+        .replace("acc + x[i * 8 + k]", "acc + xh[i * 8 + k]")
+        .replacen(
+            "                tc -> map",
+            "x -> map { v -> v * 0.5 } -> xh;\n                tc -> map",
+            1,
+        );
+    let column = decode(16, 8, "f32", true);
+    let arms: [&[&str]; 5] = [
+        &[],
+        &["retain-resident"],
+        &["delta-h2d"],
+        &["lane-stride"],
+        &["retain-resident", "delta-h2d", "lane-stride"],
+    ];
+    for src in [&plain, &scaled, &column] {
+        let ir = lower(src);
+        let rr = mapal_interp::run(&ir, 100_000_000);
+        assert!(matches!(rr.outcome, mapal_interp::Outcome::Done(_)));
+        for off in arms {
+            let (host, dev) = emit_s54(&ir, off, false);
+            assert_eq!(run_emulated(&clang, &host, &dev), rr.output, "{off:?}");
+        }
+    }
+    // Contract face: the CPU build with `--contract` is the oracle.
+    let ir = lower(&plain);
+    let cpu = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "generic",
+            contract: true,
+            ..EmitOpts::default()
+        },
+    )
+    .unwrap()
+    .text;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("c.ll"), cpu).unwrap();
+    let ok = Command::new(&clang)
+        .args(["-O1", "-Wno-override-module"])
+        .arg(dir.path().join("c.ll"))
+        .arg(rt_lib())
+        .arg("-o")
+        .arg(dir.path().join("c"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok);
+    let want = Command::new(dir.path().join("c")).output().unwrap().stdout;
+    for off in arms {
+        let (host, dev) = emit_s54(&ir, off, true);
+        assert_eq!(
+            run_emulated(&clang, &host, &dev),
+            String::from_utf8_lossy(&want),
+            "contract {off:?}"
+        );
     }
 }
 

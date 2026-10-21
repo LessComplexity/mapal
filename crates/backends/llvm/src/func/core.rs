@@ -83,15 +83,23 @@ impl<'a> FnEmit<'a> {
         self.reduced = reduced;
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
+            self.tile_plan = Some(super::gpu::tile_plan(self.ir, self.f, self.profile, rungs));
             self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
         }
-        // ponytail: a function with a retained site keeps the S52 round trips,
-        // the arm `retain-delta` was measured on; `resident` would hold the
-        // retained output on the device while the restricted pass writes host
-        // rows. Plan the two together when a program needs both.
-        self.resident = (rungs.resident && self.profile.gpu().is_some() && self.retain.is_empty())
-            .then(|| self.resident_plan(rungs.devgen, rungs.arena))
+        // A function with a retained site stays resident under
+        // `retain-resident` (the retained output is its resident buffer);
+        // without it, it keeps the S52 round trips `retain-delta` measured on.
+        self.resident = (rungs.resident
+            && self.profile.gpu().is_some()
+            && (self.retain.is_empty() || rungs.retain_resident))
+            .then(|| self.resident_plan(rungs))
             .flatten();
+        // A carried state's next lives in the buffer the back edge swaps with
+        // the merge's: last iteration's rows are not in it, so it is not retained.
+        if let Some(p) = &self.resident {
+            self.retain
+                .retain(|y, _| !p.is_carry_next(y) && p.alias(y) == y);
+        }
         if self.arena_slot() {
             self.allocas
                 .push_str("  %darena = alloca i64\n  store i64 0, ptr %darena\n");

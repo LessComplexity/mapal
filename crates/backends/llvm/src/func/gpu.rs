@@ -147,6 +147,34 @@ pub(crate) fn gpu_site(site: &TileSite, profile: &TargetProfile) -> bool {
         && site.rows * site.c > 0
 }
 
+/// The tile sites of `f` a GPU profile places (S54 `lane-stride`): the CPU's
+/// [`CategoryIr::tile_plan`] plus the one-row strided-lane sites
+/// ([`CategoryIr::tile_plan_strided`]) that are device sites — the
+/// one-thread-per-cell kernel addresses any affine read. One answer for the
+/// host walk and the device unit.
+pub(crate) fn tile_plan(
+    ir: &CategoryIr,
+    f: FuncId,
+    profile: &TargetProfile,
+    rungs: crate::GpuRungs,
+) -> TilePlan {
+    if !(rungs.lane_stride && profile.gpu().is_some()) {
+        return ir.tile_plan(f);
+    }
+    let strict = ir.tile_plan(f);
+    let mut plan = ir.tile_plan_strided(f);
+    let extra: Vec<MorphismId> = plan
+        .sites
+        .iter()
+        .filter(|&(m, s)| !strict.sites.contains_key(m) && !gpu_site(s, profile))
+        .map(|(m, _)| m)
+        .collect();
+    for m in extra {
+        plan.sites.remove(m);
+    }
+    plan
+}
+
 /// Which kernel a GPU site gets, and how it is launched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Launch {
@@ -435,10 +463,10 @@ pub(crate) fn device_module(
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
-        let plan = ir.tile_plan(f);
+        let rungs = host_rungs(profile, contract, arms);
+        let plan = tile_plan(ir, f, profile, rungs);
         // A retained site's restricted pass (S53) launches its one-row kernel.
-        let retained =
-            super::retain::retained_sites(ir, f, profile, host_rungs(profile, contract, arms));
+        let retained = super::retain::retained_sites(ir, f, profile, rungs);
         for site in plan.sites.values().chain(retained.values().map(|r| &r.row)) {
             if gpu_site(site, profile) {
                 let name = kernel_name(kernel_id(site, profile, contract, reduced));
@@ -517,7 +545,11 @@ fn kernel_text(
         idx,
         t: lower_ty(&site.elem).expect("float elem lowers"),
         site,
-        contract,
+        // The contract face fuses the step of the sites the CPU tiles too
+        // (every one has `b.clane == 1`); a strided-lane site (`lane-stride`)
+        // is a host map there, whose step stays `fmul` + `fadd`, so it stays
+        // that on the device: placement never changes a value.
+        contract: contract && site.b.clane == 1,
         rungs: l.rungs,
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
         async_tail: None,
@@ -2068,6 +2100,27 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         row: &str,
     ) {
+        if self.resident.is_some() {
+            let id = kernel_id(one, self.profile, self.contract, self.reduced) as i64;
+            let l = launch(
+                one,
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.reduced,
+            );
+            let call = |a: &str, b: &str, o: &str| {
+                format!(
+                    "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
+                     i32 {}, i32 {}, i32 {}, i32 {})",
+                    l.gx, l.gy, l.block, l.smem
+                )
+            };
+            if !self.emit_row_resident(source, target, site, row, call) {
+                self.emit_tiled_map_gpu(source, target, site);
+            }
+            return;
+        }
         let eb = elem_bytes_of(&site.elem);
         let elem_llt = lower_ty(&site.elem).expect("tile element lowers");
         let src_ty = self.obj_ty(source);

@@ -8,6 +8,8 @@
 # ONLY="<glob>..." builds only the programs whose stem matches one of the globs
 # (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
 # HOST_RUNGS="<rung>..." narrows the whole programs' arms (default: every host rung).
+# NOARMS="<glob>..." builds those whole programs shipped only (both faces, no rung
+# arms): the regression programs an item's rungs leave byte-identical.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -17,14 +19,18 @@ RUN="$ROOT/target/release/examples/run"
 mkdir -p "$OUT/tiles"
 python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
 read -r -a ONLY_GLOBS <<< "${ONLY:-}"
-keep() {
-    [ ${#ONLY_GLOBS[@]} -eq 0 ] && return 0
-    local g
-    for g in "${ONLY_GLOBS[@]}"; do
+read -r -a NOARMS_GLOBS <<< "${NOARMS:-}"
+matches() { # <stem> <glob>...
+    local s=$1 g; shift
+    for g in "$@"; do
         # shellcheck disable=SC2254  # the glob is the point
-        case $1 in $g) return 0 ;; esac
+        case $s in $g) return 0 ;; esac
     done
     return 1
+}
+keep() {
+    [ ${#ONLY_GLOBS[@]} -eq 0 ] && return 0
+    matches "$1" "${ONLY_GLOBS[@]}"
 }
 
 # The oracle: the interpreter on the conformance face; the CPU build on the
@@ -97,7 +103,7 @@ arms() {
 # (e.g. KERNEL_RUNGS="raster l2-gate" TF32_RUNGS="raster l2-gate" HOST_RUNGS="l2-window raster").
 KERNEL_RUNGS=${KERNEL_RUNGS:-"interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs raster l2-gate"}
 TF32_RUNGS=${TF32_RUNGS:-"mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs raster l2-gate"}
-HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta arena arch-rungs l2-window raster"}
+HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta arena arch-rungs l2-window raster retain-resident delta-h2d lane-stride"}
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
@@ -126,13 +132,17 @@ for spec in "$@"; do
             # host rung off for the differential and the e2e wall-time A/B, and
             # the part's whole rung table off (`arch-rungs`, S54 arch-select:
             # what the per-part selection is worth on a multi-computation program).
+            [ ${#NOARMS_GLOBS[@]} -gt 0 ] && matches "$b" "${NOARMS_GLOBS[@]}" && continue
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- $HOST_RUNGS
-                # retain-delta's measured OFF arm: every site a round trip.
+                # retain-delta's measured OFF arm: every site a round trip. S54:
+                # the s54-base placement (R5's three rungs off) in the same run.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
-                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident ;;
+                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident
+                    emit_one "$f" "$d/$b$face.off-retain-resident+delta-h2d+lane-stride" "$prof" "$sm" \
+                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-resident,delta-h2d,lane-stride ;;
                 esac
             done ;;
         esac
