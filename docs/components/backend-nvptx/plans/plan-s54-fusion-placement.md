@@ -374,6 +374,19 @@ wave, the arm that tests the gate on every part. `l2-window` takes the chain int
 next reader is the next launch, else the operand read by the most blocks (`a`: `gx`, `b`: `gy`),
 when its bytes fit `l2_bytes`; `hitRatio` = set-aside / window, both device attributes.
 
+**Measured** (`benches/results-s54-gpu/l2-raster-tables.md`, 21 sessions on five parts). The gate
+mispredicted both ways:
+- On the 3090 at 8192 grouping measured no stable sign: exact 0.986 / 1.029, FMA 0.992 / 1.017,
+  TF32 0.991 / 0.956. **Raster ships OFF there.**
+- On the 5090, which the gate excludes, ungated grouping at 8192 measured TF32 1.031 / 1.054 /
+  1.014 in three sessions. **The gate ships OFF there on the contract faces.**
+- On the A100, 4090 and H100 the ungated grouping was never faster.
+
+`l2-window` ships ON only on H100 PCIe contract (mlp2_2048_c traced kernel 1.012 / 1.016). It costs
+up to 7% on the 4090 and measured ~0 elsewhere. The remap's known bits turned the kernel's address
+adds into `or`, which NVPTX does not fold into immediate offsets: +18 registers on the H100 FMA
+tile. An opaque register move after the remap fixes that.
+
 **Tests.** Unit: `raster` on the 3090 at 2048 / 4096 / 8192 (1, 1, > 1) and on the 4090 (1 at
 every size). Box: `tile_bench` kernels at 1024–8192 all faces on all five parts (the arm is
 one-line, every part gets a row); the chain probes at 4096 for `l2-window`.
