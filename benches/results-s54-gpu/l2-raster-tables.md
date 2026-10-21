@@ -50,6 +50,7 @@ Grouping now ships on one part, the RTX 5090, and only on the contract faces. Th
 | A100 | run3 (shipped) | ungated | 2048 / 4096 / 8192 | 0.995 / 1.000 / 0.999 | 0.957* / 0.970* / 0.966* | 1.000 / 0.994 / 1.009 |
 | A100 | run4 (shipped) | ungated | 2048 / 4096 / 8192 | 0.990* / 1.000 / 0.998 | 0.957* / 0.970* / 0.966* | 0.997* / 0.995 / 1.008* |
 | A100 | run1, confirm (pre-fix); run5 (epilogue) | ungated | 8192 | 0.993 / 0.993* / 0.995 | 0.965 / 0.970* / 0.966* | 0.968 / 1.004 / 1.002 |
+| RTX 4090 | run1 (shipped) | ungated | 4096 / 8192 | 0.999 / 0.991 (r255+8/r255) | 1.003 / 0.981 | 0.996 / 0.986 |
 | RTX 4090 | run2 (shipped) | ungated | 4096 / 8192 | 0.973 / 0.977 (r255 both) | 1.000 / 1.007 | 0.995 / 0.994 |
 | RTX 4090 | run4 (epilogue) | ungated | 4096 / 8192 | 0.953 / 0.907 (r255+24/r255) | 0.997 / 1.017 | 1.002 / 1.011 |
 | H100 PCIe | run2 (shipped) | ungated | 2048 / 4096 / 8192 | 0.973* / 0.974* / 0.973* (r128+8/r128) | 1.006 / 1.003 / 0.996 (r127 both) | 0.996 / 1.003 / 1.000 |
@@ -68,7 +69,7 @@ Raw milliseconds and min–max ranges are in the session files (`python3 benches
 | part | probes × faces | sessions | range | > 1.01 in every session |
 |---|---|---:|---|---|
 | A100 | mlp, mlp2, diamond at 2048 × 2 (none fits at 4096) | 6 | 0.926–1.025 | none |
-| RTX 4090 | 2048, 4096 × 2 | 2 | 0.933*–1.040 | none; contract costs 6–7% (diamond_2048_c 0.933*/0.939*, mlp2_2048_c 0.938*/0.949) |
+| RTX 4090 | 2048, 4096 × 2 | 3 | 0.933*–1.040 | none; contract costs 4–7% (diamond_2048_c 0.933*/0.939*/0.959*, mlp2_2048_c 0.938*/0.949/0.954*) |
 | H100 PCIe | 2048 × 2 | 3 | 1.000–1.016* | mlp2_2048_c 1.016*/1.012*/1.015*; exact 1.000–1.008* |
 | RTX 5090 | 2048, 4096 × 2 | 5 | 0.976–1.005 | none |
 | RTX 3090 | — | — | — | no probe operand fits 6 MB |
@@ -137,6 +138,7 @@ Each cell is vs cuBLAS / vs CUTLASS, for exact · contract · TF32.
 | A100 | `-run2` | A100-SXM4-40GB | 224078 (SI) | shipped | 80/80 | 4/4 |
 | A100 | `-run3`, `-run4` | A100-SXM4-40GB | 195410 (US), the same machine | shipped | 80/80, 80/80 | 4/4, 4/4 |
 | A100 | `-run5` | A100-SXM4-40GB | 195410 (US) | epilogue | 80/80 | 4/4 |
+| RTX 4090 | `l2-raster-rtx-4090.txt` | RTX 4090 | 67245 (ES) | shipped | 80/80 | 4/4 |
 | RTX 4090 | `-run2` | RTX 4090 | 87485 (ES) | shipped | 80/80 | 4/4 |
 | RTX 4090 | `-run4` | RTX 4090 | 96250 (ES) | epilogue | 80/80 | **3/4** |
 | H100 PCIe | `l2-raster-h100-pcie.txt` | H100 PCIe | 415974 (US) | pre-fix | 80/80 | 4/4 |
