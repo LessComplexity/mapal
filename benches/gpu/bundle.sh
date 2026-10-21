@@ -51,7 +51,7 @@ for spec in "$@"; do
         # and the TF32 face (tensor cores).
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            for rung in wide ldmatrix wgmma-hopper wgmma-cover; do
+            for rung in wide ldmatrix wgmma-hopper; do
                 emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
             done
             for rung in interleave unroll min-blocks warp async; do
