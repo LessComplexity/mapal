@@ -448,16 +448,25 @@ fn golden_arena_host_modules() {
 /// the last site's output goes to the host, so its window is the operand the
 /// most blocks read: `a` (each row-panel read by the grid's 4 columns) over
 /// `b` (2 rows) on this 64×64 site's 4×2 grid. Off: no window, the S53 text.
-/// Forced on: the H100 PCIe table ships it on the contract face only.
+/// Forced on: S56's H100 PCIe table leaves it off on both faces.
 #[test]
 fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
     let mut forced = on();
     *forced.on.rung("l2-window").expect("a rung") = true;
     let ll = emit(&chain_src(), forced);
-    assert!(
-        !emit(&chain_src(), on()).contains("launch_l2"),
-        "exact face: OFF"
-    );
+    for contract in [false, true] {
+        let shipped = emit_with_opts(
+            &lower_src(&chain_src()),
+            &EmitOpts {
+                target: GPU,
+                contract,
+                gpu: on(),
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits");
+        assert!(!shipped.contains("launch_l2"), "contract={contract}: OFF");
+    }
     let l = launch_args(&ll);
     assert_eq!(l.len(), 2, "{ll}");
     assert!(

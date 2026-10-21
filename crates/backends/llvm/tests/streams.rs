@@ -196,8 +196,7 @@ fn fanout(n: u64) -> String {
 }
 
 const H100: &str = "h100-pcie";
-/// A part whose measured table ships `streams` ON (the A100; the RTX 5090 is
-/// the other).
+/// A part whose measured table ships `streams` ON (the A100).
 const ON_PART: &str = "a100";
 
 #[test]
@@ -282,13 +281,13 @@ fn a_filled_part_keeps_one_stream_unless_the_gate_is_off() {
 
 #[test]
 fn a_part_whose_table_turns_streams_off_keeps_one_stream() {
-    for part in ["rtx-3090", "rtx-4090", H100, "h100"] {
+    for part in ["rtx-3090", "rtx-4090", "rtx-5090", H100, "h100"] {
         assert!(
             !host(&twin(64), part, on()).contains("@mapal_gpu_launchv("),
             "{part}"
         );
     }
-    assert!(host(&twin(64), "rtx-5090", on()).contains("@mapal_gpu_launchv("));
+    assert!(host(&twin(64), "rtx-5090", forced(&["streams"])).contains("@mapal_gpu_launchv("));
 }
 
 #[test]

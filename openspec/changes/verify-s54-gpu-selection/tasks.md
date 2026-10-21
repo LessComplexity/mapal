@@ -1,16 +1,16 @@
 ## 1. Reliable smoke execution
 
 - [x] 1.1 Add differential-only mode, aggregate value/trap failures and propagate remote failure after result retrieval; verify pass, mismatch, wrong-trap, empty-scope and remote-failure cleanup cases using local stubs plus shell syntax checks.
-- [ ] 1.2 Time the forced-ON retain-resident arm and explicitly select both stream directions; verify available-arm enumeration from fresh bundles.
+- [x] 1.2 Time the forced-ON retain-resident arm and explicitly select both stream directions; verify available-arm enumeration from fresh bundles.
 - [x] 1.4 Repair the existing mixed probe/decode report parsing boundary; verify saved decode, streams and L2-window result files summarize without dropping their intended records.
 - [x] 1.5 Record and enforce timed/traced probe and end-to-end process exit status; reject plausible output followed by failure before accepting final integrated measurements.
 - [x] 1.3 Build fresh current smoke bundles and run on Vast; require exact inventory coverage and zero value/trap failures, recording source/tool provenance and instance cleanup.
 
 ## 2. Resolve the disputed selections
 
-- [ ] 2.1 Measure integrated RTX 5090 streams on independent hosts, with null/reference controls and 15 interleaved probe repetitions; record per-probe distributions and a supported ON/OFF decision.
-- [ ] 2.2 Measure H100 PCIe retain-resident on the integrated decode path, separating untraced wall from traced kernels; record a supported decision and any overlapping/sign-unstable cases.
-- [ ] 2.3 Verify raster/l2-gate and H100 L2-window evidence against integrated placement; record kernel-only and iteration effects separately and update only justified selection rows.
+- [x] 2.1 Measure integrated RTX 5090 streams on independent hosts, with null/reference controls and 15 interleaved probe repetitions; record per-probe distributions and a supported ON/OFF decision.
+- [x] 2.2 Measure H100 PCIe retain-resident on the integrated decode path, separating untraced wall from traced kernels; record a supported decision and any overlapping/sign-unstable cases.
+- [x] 2.3 Verify raster/l2-gate and H100 L2-window evidence against integrated placement; record kernel-only and iteration effects separately and update only justified selection rows.
 - [ ] 2.4 Report completed selection decisions with fresh correctness/measurement evidence; verify applicable profile tests and emitted selection arms after any table edits.
 
 ## 3. Final integrated verification

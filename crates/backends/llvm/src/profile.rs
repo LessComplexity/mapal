@@ -863,10 +863,12 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     // S54 `l2-raster` (benches/results-s54-gpu/l2-raster-tables.md). `raster`'s derivation groups
     // only where one block's panels leave the L2 (the 3090 at 8192); there it measured no stable
-    // sign. `l2-gate` is the derivation's gate, so its row means the opposite of the others: it
-    // is OFF only where the ungated grouping measured faster in every session (the 5090 at 8192),
-    // never for "no effect". `l2-window` ships ON only where a probe's traced kernel time measured
-    // > 1% faster in every session.
+    // sign. S56 removes the disputed 5090 `l2-gate` OFF override: integrated a2/b Contract FMA
+    // lacks a repeatable >1% kernel gain. TF32/8192 retains ~1.5% null-corrected median gains,
+    // but all raster/gate distributions overlap, below the declared conservative acceptance bar.
+    // The derived gate and forced measurement arms remain; no whole-program gain is claimed.
+    // s56-selection-rtx-5090-{a2,b}.txt and docs/performance/s54-per-arch-selection.md preserve
+    // that counterevidence. L2-window is OFF on all measured profiles after the S56 iteration check.
     RungOff {
         profile: "rtx-3090",
         rung: "raster",
@@ -875,16 +877,6 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "l2-raster-rtx-3090-run2.txt / -run3.txt mm_8192 OFF/ON cuBLAS-normalized exact 0.986 / 1.029, \
                contract 0.992 / 1.017, TF32 0.991 / 0.956 (ON ms 92.743/55.147/34.632 vs OFF 91.632/54.659/34.341; \
                116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "l2-gate",
-        fill: Fill::Any,
-        face: Face::Contract,
-        cite: "l2-raster-rtx-5090-run2.txt / -run3.txt / -final.txt mm_8192 TF32 grouped 1.031 / 1.054 / 1.014 x \
-               faster (cuBLAS-normalized; ms 13.156 vs 12.757, 13.347 vs 12.671, 11.042 vs 10.877); FMA 1.020 / 1.043 / \
-               1.003; mm_4096 0.973-1.007. Exact keeps the gate: 1.018 / 1.052 / 0.999 (ms 34.913 vs 34.347, \
-               35.970 vs 34.317, 29.751 vs 29.530), not faster in every session",
     },
     RungOff {
         profile: "rtx-3090",
@@ -923,16 +915,31 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         profile: "h100-pcie",
         rung: "l2-window",
         fill: Fill::Any,
-        face: Face::Exact,
-        cite: "l2-raster-h100-pcie.txt / -run2.txt / -run3.txt traced kernel ms off/on, exact: diamond_2048 \
-               1.007 / 1.004 / 1.008, mlp2_2048 1.000 / 1.002 / 1.000, mlp_2048 1.000 / 1.000 / 1.001 — none > \
-               1.01; contract ships ON (mlp2_2048_c 1.016 / 1.012 / 1.015, disjoint in all three)",
+        face: Face::Any,
+        cite: "s56-selection-h100-pcie.txt integrated 15-rep OFF/ON iteration, contract 2048: diamond \
+               1.934879/1.969309, mlp2 2.589975/2.643185, mlp 1.291543/1.357854 ms (overlapping ranges). \
+               Traced kernels 0.998/1.007/1.007x do not establish an iteration win; 4096 arms are identical. \
+               Prior l2-raster-h100-pcie{-run2,-run3}.txt likewise lacks a stable iteration win. \
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster on every host",
     },
-    // S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`): host placement rungs, decided on
+    // Historical S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`) decisions used
     // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
     // own `load_ms` (context + module: 170–790 ms and, on the H100s, ±200 ms between processes,
     // which no arm changes). ON where OFF/ON > 1.01 in both sessions (two boxes); the process wall
     // is in the files beside it. `delta-h2d` and `lane-stride` measured ON on all five parts.
+    // S56 rechecks the disputed H100 choice per face on untraced process wall. Traced kernel
+    // savings are diagnostic, not proof of a process speedup; the initial S54 acceptance bar applies.
+    RungOff {
+        profile: "h100-pcie",
+        rung: "retain-resident",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "s56-selection-h100-pcie.txt decode OFF/ON untraced wall exact 842/819 ms, contract 878/870 ms, \
+               five reps with overlapping ranges. Prior retain-resident-h100-pcie{,-confirm}.txt wall \
+               exact 0.971/0.705x and contract 1.143/1.016x; fresh run repeats the confirm host. \
+               Traced kernels improve 1.219/1.130x but do not establish a stable wall win. \
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster",
+    },
     RungOff {
         profile: "rtx-5090",
         rung: "retain-resident",
@@ -955,13 +962,12 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
     // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
-    // `streams` ships ON (no row) on the A100 and the RTX 5090, measured on the device-only shape
+    // `streams` ships ON (no row) on the A100, measured on the device-only shape
     // (pt_twin, two independent sites): A100 n=512 one stream 1.040/0.972, 1.054/0.960, 0.518/0.486
     // vs streams 1.000/0.937, 0.969/0.898, 0.483/0.437 ms and n=2048 (last waves merge) 7.936/5.030,
     // 7.866/5.083, 6.039/3.807 vs 6.229/3.818, 6.204/3.716, 4.562/2.653 ms (streams-a100-confirm.txt,
-    // -final.txt, -shipped.txt); RTX 5090 n=512 0.143/0.802, 0.167/0.163, 0.672/0.691 vs
-    // 0.138/0.147, 0.159/0.154, 0.668/0.621 ms (-confirm, -final, -shipped) and n=4096 8.207/5.657 vs
-    // 7.804/5.447 ms (-shipped, disjoint).
+    // -final.txt, -shipped.txt). The disputed 5090 choice is superseded by the integrated S56
+    // comparison below; traced kernels serialize streams and cannot establish overlap.
     RungOff {
         profile: "rtx-3090",
         rung: "streams",
@@ -980,6 +986,16 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "streams-rtx-4090-final.txt pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms, pt_twin_1024 on \
                0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
                diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "s56-selection-rtx-5090-a2.txt / -b.txt, independent machines 55053/55265, 15 interleaved reps: \
+               all 16 changed probe/face cells per host favor OFF with disjoint iteration ranges. \
+               mlp2_4096 OFF/ON exact 0.836/0.791, contract 0.765/0.702; twin_4096 a2 exact \
+               7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established",
     },
     RungOff {
         profile: "h100-pcie",
@@ -4000,10 +4016,9 @@ mod tests {
         assert_eq!(big.raster(128, 128, 256, 8192, 8192, 8192, 4, true), 1); // 8 MB ≤ 72 MB
     }
 
-    /// S54 R5 (`retain-resident-*.txt`): the delta upload and the strided
-    /// one-row site ship on every measured part; retention on the resident
-    /// buffer only where the whole K/V site costs more than its row (not the
-    /// 4090, not the 5090).
+    /// S54 R5: the delta upload and the strided one-row site ship on every
+    /// measured part. Retention on the resident buffer ships on the 3090
+    /// and A100; S56's untraced H100 selection did not establish a stable win.
     #[test]
     fn r5_rungs_are_the_measured_table() {
         for p in GPU_MEASURED {
@@ -4011,7 +4026,7 @@ mod tests {
                 for contract in [false, true] {
                     let r = p.gpu_rungs(wps, contract);
                     assert!(r.resident && r.delta_h2d && r.lane_stride, "{}", p.name);
-                    let off = ["rtx-4090", "rtx-5090"].contains(&p.name);
+                    let off = ["rtx-4090", "rtx-5090", "h100-pcie"].contains(&p.name);
                     assert_eq!(r.retain_resident, !off, "{}", p.name);
                 }
             }
