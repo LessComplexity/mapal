@@ -539,7 +539,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Two kernels, detected independently: `@mapal_sme_panel(` cannot match
     // `@mapal_sme_panel_acc(` because of the paren, so the KC variant appears
     // only where the KC nest actually called it.
-    if funcs.contains("@mapal_gpu_tile(") {
+    let gpu_host = funcs.contains("@mapal_gpu_tile(");
+    if gpu_host {
         out.push_str(crate::func::gpu::GPU_DECLS);
         if funcs.contains(crate::func::gpu::GPU_SYNC) {
             out.push_str(crate::func::gpu::GPU_SYNC_DECL);
@@ -578,7 +579,18 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             out.push_str(&sme_panel(t, ti, tj, PanelWrite::Accumulate));
         }
     }
-    out.push_str(&emit_main_wrapper(ir));
+    // The runtime's init is `main`'s first call exactly when a site calls the
+    // runtime: the same gate as `GPU_DECLS`.
+    let prologue = if gpu_host {
+        crate::func::gpu::init_call(crate::func::gpu::host_rungs(
+            profile,
+            opts.contract,
+            opts.gpu,
+        ))
+    } else {
+        String::new()
+    };
+    out.push_str(&emit_main_wrapper(ir, &prologue));
     let device = opts
         .tiling
         .then(|| {

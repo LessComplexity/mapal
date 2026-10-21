@@ -26,7 +26,8 @@ pass=0; fail=0
 for o in "$PROF"/*.host.o; do
     b=$(basename "$o" .host.o)
     case $b in mm_*|e2e_*) continue ;; esac
-    stem=${b%.sync}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
+    # `<prog>[_c][.<arm>]`: every arm of a face answers to that face's oracle.
+    stem=${b%%.*}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
     cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "prog_$b" 2>&1 | tail -3
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
@@ -36,6 +37,15 @@ for o in "$PROF"/*.host.o; do
     fi
 done
 say "differential: $pass pass, $fail fail"
+
+# S53 eager-init: a program that traps before its first site exits 101 in every
+# arm, with the init thread possibly still running (the runtime joins it).
+for b in e2e_trap e2e_trap.off-eager-init e2e_trap.on-pool; do
+    [ -f "$PROF/$b.host.o" ] || continue
+    cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "prog_$b" 2>&1 | tail -3
+    got=$(MAPAL_PTX="$PROF/$b.ptx" timeout 60 "./prog_$b" 2>&1); rc=$?
+    if [ $rc -eq 101 ]; then say "TRAP-PASS $b rc=$rc $got"; else say "TRAP-FAIL $b rc=$rc $got"; fi
+done
 
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
 bench() { # <n> <stem> <label> [--contract]

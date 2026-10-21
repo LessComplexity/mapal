@@ -72,6 +72,15 @@ for spec in "$@"; do
             done
             ;;
         esac
+        # Host-link arms (S53): the same PTX, the host object with one host rung
+        # off; the differential and the e2e wall-time A/B run them.
+        case $b in mm_*) ;; *)
+            for arm in off-eager-init; do
+                emit_one "$f" "$d/$b.$arm" "$prof" "$sm" "--gpu-${arm/-/=}"
+                emit_one "$f" "$d/${b}_c.$arm" "$prof" "$sm" --contract "--gpu-${arm/-/=}"
+            done
+            ;;
+        esac
         # Measurement arms: the shipped kernel with one rung flipped, on the
         # FMA face, the TF32 face (tensor cores) and the exact face.
         case $b in mm_*)
