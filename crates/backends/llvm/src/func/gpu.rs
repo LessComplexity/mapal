@@ -111,7 +111,12 @@ pub(crate) fn launch(
         && vector_a(site)
         && vector_b(site);
     let wgmma = (tensor && rungs.wgmma)
-        .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
+        .then(|| {
+            let (r, c, k) = (site.rows, site.c, site.k);
+            profile
+                .gpu_wgmma_tile(r, c, k, rungs.wgmma_reg_stage)
+                .or_else(|| profile.gpu_wgmma_tile(r, c, k, false))
+        })
         .flatten();
     if let Some(w) = wgmma {
         let warp = profile.gpu().expect("gpu").warp;
@@ -515,6 +520,58 @@ impl Kernel<'_> {
         r
     }
 
+    /// Round the four floats `v` to TF32 (RNE) and store them at shared word
+    /// `si` — what `wgmma` reads must already be rounded.
+    fn store_rounded(&mut self, v: &str, si: &str) {
+        let sp = self.gep(3, "@mapal_smem", si);
+        let mut r = "poison".to_string();
+        for j in 0..4 {
+            let x = self.tmp();
+            self.line(format!("{x} = extractelement <4 x float> {v}, i64 {j}"));
+            let y = self.round_tf32(&x, false);
+            let nr = self.tmp();
+            self.line(format!(
+                "{nr} = insertelement <4 x i32> {r}, i32 {y}, i64 {j}"
+            ));
+            r = nr;
+        }
+        self.line(format!(
+            "store <4 x i32> {r}, ptr addrspace(3) {sp}, align 16"
+        ));
+    }
+
+    /// `ld.global` this thread's `a` chunks of panel `tile` (an i64 value).
+    fn load_a(&mut self, copies: &[(bool, String, String)], tile: &str, bk: u64) -> Vec<String> {
+        let k0 = self.op("mul", tile, bk);
+        let ka = self.op("mul", &k0, self.site.a.ck);
+        let mut vals = Vec::new();
+        for (_, gsrc, _) in copies.iter().filter(|c| c.0) {
+            let gi = self.op("add", gsrc, &ka);
+            let gp = self.gep(1, "%a", &gi);
+            let v = self.tmp();
+            self.line(format!(
+                "{v} = load <4 x float>, ptr addrspace(1) {gp}, align 16"
+            ));
+            vals.push(v);
+        }
+        vals
+    }
+
+    /// Round and store `vals` (from [`Self::load_a`]) into stage `stage`.
+    fn store_a(
+        &mut self,
+        copies: &[(bool, String, String)],
+        vals: &[String],
+        stage: &str,
+        stage_words: u64,
+    ) {
+        let so = self.op("mul", stage, stage_words);
+        for ((_, _, sdst), v) in copies.iter().filter(|c| c.0).zip(vals) {
+            let si = self.op("add", sdst, &so);
+            self.store_rounded(v, &si);
+        }
+    }
+
     fn asm(&mut self, text: &str) {
         self.line(format!(
             "call void asm sideeffect \"{text}\", \"~{{memory}}\"()"
@@ -526,12 +583,14 @@ impl Kernel<'_> {
     /// `wg` of block `(bx, by)` owns `c` columns `bx·bn + 64·wg ..+64` (the
     /// instruction's M) × rows `by·n ..+n` (its N).
     ///
-    /// - `a` panels land by `cp.async` in the K-major no-swizzle core-matrix
-    ///   layout the matrix descriptor reads (8 rows × 16 B contiguous; LBO
-    ///   between the two `k` halves, SBO between 8-row groups). `wgmma` reads
-    ///   shared memory as it is, truncating, so each thread rounds the chunks
-    ///   it copied once (RNE) and fences them to the async proxy before the
-    ///   panel barrier.
+    /// - `a` panels are K-major in 128-byte swizzle rows (the descriptor's
+    ///   mode 1; SBO one 8-row atom). `wgmma` reads shared memory as it is,
+    ///   truncating, so every `a` word is rounded (RNE) once before it lands:
+    ///   with `reg_stage`, `ld.global` → `cvt.rn` → `st.shared`, the next
+    ///   panel held in registers across the MMA issue and stored while the
+    ///   group computes; without, `cp.async` and an in-place pass over the
+    ///   chunks this thread copied. Either is fenced to the async proxy before
+    ///   the panel barrier.
     /// - `b` panels land row-major, rows padded; each thread loads its `bᵀ`
     ///   fragments (`a0..a3` = (g, t), (g+8, t), (g, t+4), (g+8, t+4) of the
     ///   warp's 16 rows, PTX ISA m64nNk8) and rounds them in the load.
@@ -630,8 +689,20 @@ impl Kernel<'_> {
             let sdst = self.op("add", &sn, a_words);
             copies.push((false, gsrc, sdst));
         }
+        // With `reg_stage` only `b` is copied asynchronously; `a` goes
+        // `ld.global` → round → `st.shared`, one panel held in registers.
+        let async_copies: Vec<_> = copies
+            .iter()
+            .filter(|c| !(g.reg_stage && c.0))
+            .cloned()
+            .collect();
         for st in 0..dist.min(nk) {
-            self.issue16(&copies, &st.to_string(), &st.to_string(), bk, stage_words);
+            let st = st.to_string();
+            if g.reg_stage {
+                let vals = self.load_a(&copies, &st, bk);
+                self.store_a(&copies, &vals, &st, stage_words);
+            }
+            self.issue16(&async_copies, &st, &st, bk, stage_words);
             self.line("call void @llvm.nvvm.cp.async.commit.group()");
         }
         for _ in nk..dist {
@@ -650,36 +721,27 @@ impl Kernel<'_> {
 
         self.out.push_str("kt:\n");
         let (it, itn) = (self.tmp(), self.tmp());
-        self.line(format!("{it} = phi i64 [0, %entry], [{itn}, %issued]"));
+        let latch = if g.reg_stage { "%stored" } else { "%issued" };
+        self.line(format!("{it} = phi i64 [0, %entry], [{itn}, {latch}]"));
         self.line(format!(
             "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
             dist - 1
         ));
         let cst = self.op("urem", &it, g.stages);
         let cbase = self.op("mul", &cst, stage_words);
-        // Round this thread's own `a` chunks of panel `it`, once.
-        for (_, _, sdst) in copies.iter().filter(|c| c.0) {
+        // Off `reg_stage`: round this thread's own landed `a` chunks of panel
+        // `it` in place, once.
+        for (_, _, sdst) in copies.iter().filter(|c| c.0 && !g.reg_stage) {
             let si = self.op("add", sdst, &cbase);
             let sp = self.gep(3, smem, &si);
             let v = self.tmp();
             self.line(format!(
                 "{v} = load <4 x float>, ptr addrspace(3) {sp}, align 16"
             ));
-            let mut r = "poison".to_string();
-            for j in 0..4 {
-                let x = self.tmp();
-                self.line(format!("{x} = extractelement <4 x float> {v}, i64 {j}"));
-                let y = self.round_tf32(&x, false);
-                let nr = self.tmp();
-                self.line(format!(
-                    "{nr} = insertelement <4 x i32> {r}, i32 {y}, i64 {j}"
-                ));
-                r = nr;
-            }
-            self.line(format!(
-                "store <4 x i32> {r}, ptr addrspace(3) {sp}, align 16"
-            ));
+            self.store_rounded(&v, &si);
         }
+        // Generic-proxy writes of `a` (the rounding, or `reg_stage`'s stores
+        // at the end of the previous iteration) become visible to `wgmma`.
         self.asm("fence.proxy.async.shared::cta;");
         self.line("call void @llvm.nvvm.barrier0()");
         let nxt = self.op("add", &it, dist);
@@ -688,9 +750,22 @@ impl Kernel<'_> {
         self.line(format!("br i1 {more}, label %issue, label %issued"));
         self.out.push_str("issue:\n");
         let nst = self.op("urem", &nxt, g.stages);
-        self.issue16(&copies, &nxt, &nst, bk, stage_words);
+        let loaded = if g.reg_stage {
+            self.load_a(&copies, &nxt, bk)
+        } else {
+            Vec::new()
+        };
+        self.issue16(&async_copies, &nxt, &nst, bk, stage_words);
         self.line("br label %issued");
         self.out.push_str("issued:\n");
+        let mut staged = Vec::new();
+        for v in &loaded {
+            let p = self.tmp();
+            self.line(format!(
+                "{p} = phi <4 x float> [{v}, %issue], [poison, %kt]"
+            ));
+            staged.push(p);
+        }
         self.line("call void @llvm.nvvm.cp.async.commit.group()");
         // The previous group done: its fragment registers may be rewritten.
         self.asm("wgmma.wait_group.sync.aligned 0;");
@@ -768,6 +843,16 @@ impl Kernel<'_> {
             }
         }
         self.asm("wgmma.commit_group.sync.aligned;");
+        if g.reg_stage {
+            // While the group computes: panel `it + dist` into the stage the
+            // group waited above (`it − 2`) read.
+            self.line(format!("br i1 {more}, label %store, label %stored"));
+            self.out.push_str("store:\n");
+            let sst = self.op("urem", &nxt, g.stages);
+            self.store_a(&copies, &staged, &sst, stage_words);
+            self.line("br label %stored");
+            self.out.push_str("stored:\n");
+        }
         self.line(format!("{itn} = add i64 {it}, 1"));
         let fin = self.tmp();
         self.line(format!("{fin} = icmp eq i64 {itn}, {nk}"));

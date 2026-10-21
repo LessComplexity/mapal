@@ -48,16 +48,40 @@ fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
     assert!(k.contains("wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32"));
     assert!(!k.contains("mma.sync"));
     // RNE, never `rna` (ties away) — and nothing reaches `wgmma` unrounded:
-    // per panel, 4 per staged `a` chunk this thread copied (128·32/4/128 = 8)
-    // and 4 per k8 step of `bᵀ` fragments (32/8 = 4).
+    // 4 per `a` chunk this thread stages (128·32/4/128 = 8 per panel; the
+    // two prologue panels and the one stored per iteration) and 4 per k8
+    // step of `bᵀ` fragments (32/8 = 4).
     assert!(!k.contains("cvt.rna"));
-    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 8 * 4 + 4 * 4);
-    // The rounded panel is fenced to the async proxy before the barrier.
+    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 3 * 8 * 4 + 4 * 4);
+    // `a` arrives through registers (`ld.global` → round → `st.shared`):
+    // never read back from shared memory to be rounded in place.
+    assert_eq!(
+        k.matches("load <4 x float>, ptr addrspace(1)").count(),
+        3 * 8
+    );
+    assert!(!k.contains("load <4 x float>, ptr addrspace(3)"));
+    // The stores are fenced to the async proxy before the barrier.
     assert!(k.contains("fence.proxy.async.shared::cta"));
     // Descriptor: 128-byte swizzle, SBO one 1024-byte atom; the atoms need
     // the dynamic shared memory 1024-aligned.
     assert!(k.contains(&format!(", {}\n", 0x4000_0040_0001_0000u64)));
     assert!(k.contains("@mapal_smem = external addrspace(3) global [0 x i8], align 1024"));
+}
+
+/// `wgmma-reg-stage` off: `a` lands by `cp.async` and each thread rounds the
+/// chunks it copied in place, once per panel (the first S53 kernel).
+#[test]
+fn wgmma_reg_stage_off_rounds_the_landed_panel_in_place() {
+    let off = GpuRungs {
+        wgmma_reg_stage: false,
+        ..GpuRungs::default()
+    };
+    let k = device("h100-pcie", true, TF32, off);
+    assert!(k.contains("wgmma.mma_async"));
+    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 8 * 4 + 4 * 4);
+    assert_eq!(k.matches("load <4 x float>, ptr addrspace(3)").count(), 8);
+    assert!(!k.contains("load <4 x float>, ptr addrspace(1)"));
+    assert!(k.contains("fence.proxy.async.shared::cta"));
 }
 
 /// The OFF arm is the S52 `mma.sync` kernel, unchanged (still `cvt.rna`).
