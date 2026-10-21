@@ -19,6 +19,14 @@
  *    producer, copies out only what the host reads, and frees at death.
  *    Launches are asynchronous on the one (legacy default) stream; `d2h` is
  *    synchronous, so a host read always sees every launch before it.
+ *  - S54 `streams` (R7): sites on independent chains launch on their own
+ *    non-blocking streams (`mapal_gpu_launchv`'s stream index; 0 is the legacy
+ *    stream, i.e. program order). A chain stream joins program order at each
+ *    launch: if any legacy-stream operation was enqueued since its last join,
+ *    the launch first waits on an event recorded there. Cross-chain edges are
+ *    the emitter's `mapal_gpu_event`; a chain output is copied out on its own
+ *    stream (`mapal_gpu_d2h_on`). `pinned`: `mapal_gpu_pin` page-locks a
+ *    crossing host array once; `mapal_gpu_unpin` releases every pin.
  *
  * Kernels are found by name: the emitter passes a 64-bit id and the device
  * unit names the kernel `mapal_tile_<id as 16 hex digits>` (a tile site) or
@@ -47,6 +55,8 @@ static struct {
   double lead, init, ctx, module;
   unsigned long long in, out, n_h2d, n_d2h, n_launch, n_gen, n_alloc;
   unsigned long long n_l2, l2_persist; /* S54 `l2-window` */
+  double pin;
+  unsigned long long n_pin, n_event, n_pdl;
 } tot;
 static unsigned flags;
 static double now_ms(void) {
@@ -60,11 +70,11 @@ static void total_line(void) {
           "init_ms=%.3f ctx_ms=%.3f module_ms=%.3f alloc_ms=%.3f h2d_ms=%.3f "
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
-          "l2_windows=%llu l2_persist=%llu\n",
+          "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
-          tot.l2_persist);
+          tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl);
 }
 
 #define CK(x)                                                                  \
@@ -82,7 +92,29 @@ static void total_line(void) {
  * (`mapal_gpu_init`; the bit is `GPU_INIT_EAGER` in
  * crates/backends/llvm/src/func/gpu.rs). A program without that call runs the
  * S52 path: init at the first site. */
-enum { EAGER = 1 };
+enum { EAGER = 1, STREAMS = 2, PDL = 4 };
+
+/* Chain streams (`STREAMS`): created with the context. Eight because that is
+ * the driver's default count of hardware work queues
+ * (CUDA_DEVICE_MAX_CONNECTIONS): a ninth stream would share a queue, so chain
+ * `s` takes stream `1 + (s - 1) % 8` and two chains that meet in one only
+ * serialize. Slot 0 is the legacy stream. */
+#define MAPAL_GPU_STREAMS 8
+static CUstream streams[MAPAL_GPU_STREAMS + 1];
+/* Program order on the legacy stream: operations enqueued there, and the count
+ * each chain stream has joined (waited behind). */
+static unsigned long long legacy_ops, joined[MAPAL_GPU_STREAMS + 1];
+/* Whether the last operation enqueued on a slot was a kernel (`pdl`). */
+static int last_kernel[MAPAL_GPU_STREAMS + 1];
+/* A chain stream may hold work the host has not waited for: the next free
+ * waits for the device once, then frees run as on one stream. */
+static int chains_busy;
+/* One reusable event per recording slot (a wait captures the event's state
+ * when it is enqueued, so re-recording it later is safe). */
+static CUevent evs[MAPAL_GPU_STREAMS + 1];
+static unsigned slot_of(uint32_t s) {
+  return s ? 1 + (s - 1) % MAPAL_GPU_STREAMS : 0;
+}
 
 static CUmodule module;
 static CUcontext ctx;
@@ -124,6 +156,9 @@ static void init_all(void) {
   fclose(f);
   CK(cuModuleLoadData(&module, ptx));
   free(ptx);
+  if (flags & STREAMS)
+    for (int i = 1; i <= MAPAL_GPU_STREAMS; i++)
+      CK(cuStreamCreate(&streams[i], CU_STREAM_NON_BLOCKING));
   tot.init = t1 - t0;
   tot.ctx = t2 - t1;
   tot.module = now_ms() - t2;
@@ -225,6 +260,8 @@ uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) {
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
   double t0 = now_ms();
   CK(cuMemcpyHtoD((CUdeviceptr)d, h, bytes));
+  legacy_ops++;
+  last_kernel[0] = 0;
   double ms = now_ms() - t0;
   tot.h2d += ms;
   tot.in += bytes;
@@ -239,6 +276,7 @@ void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   double t0 = now_ms();
   CK(cuMemcpyDtoH(h, (CUdeviceptr)(d + off), bytes));
+  last_kernel[0] = 0;
   double ms = now_ms() - t0;
   tot.d2h += ms;
   tot.out += bytes;
@@ -248,22 +286,157 @@ void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
             (unsigned long long)bytes);
 }
 
-void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
-                      uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
+/* `wait` waits for everything `record` has enqueued so far. */
+static void event(unsigned record, unsigned wait, int automatic) {
+  double t0 = now_ms();
+  if (!evs[record])
+    CK(cuEventCreate(&evs[record], CU_EVENT_DISABLE_TIMING));
+  CK(cuEventRecord(evs[record], streams[record]));
+  CK(cuStreamWaitEvent(streams[wait], evs[record], 0));
+  last_kernel[wait] = 0;
+  chains_busy = 1;
+  tot.n_event++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=event record=%u wait=%u auto=%d ms=%.3f\n",
+            record, wait, automatic, now_ms() - t0);
+}
+
+/* A cross-chain edge (the emitter's): stream `wait` waits for everything
+ * stream `record` has enqueued so far. */
+void mapal_gpu_event(uint32_t record, uint32_t wait) {
+  load_module();
+  event(slot_of(record), slot_of(wait), 0);
+}
+
+/* One tile kernel on stream slot `k`. A chain stream first joins program
+ * order (see the header). Under `PDL` (sm_90+; every tile kernel then opens
+ * with `griddepcontrol.wait`), a kernel right behind another kernel on its
+ * stream is a programmatic dependent launch: it may start while the first
+ * drains, and waits for it at its entry. */
+static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
+                      uint32_t gy, uint32_t block, uint32_t smem) {
   load_module();
   char name[40];
   CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
-  CUdeviceptr da = a, db = b, dout = out;
-  void *args[] = {&da, &db, &dout};
+  if (k && joined[k] != legacy_ops) {
+    event(0, k, 1);
+    joined[k] = legacy_ops;
+  }
+  int pdl = (flags & PDL) && last_kernel[k];
   double t0 = now_ms();
-  CK(cuLaunchKernel(fn, gx, gy, 1, block, 1, 1, smem, 0, args, 0));
+  if (pdl) {
+    CUlaunchAttribute at[1];
+    at[0].id = CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION;
+    at[0].value.programmaticStreamSerializationAllowed = 1;
+    CUlaunchConfig cfg = {0};
+    cfg.gridDimX = gx;
+    cfg.gridDimY = gy;
+    cfg.gridDimZ = 1;
+    cfg.blockDimX = block;
+    cfg.blockDimY = 1;
+    cfg.blockDimZ = 1;
+    cfg.sharedMemBytes = smem;
+    cfg.hStream = streams[k];
+    cfg.attrs = at;
+    cfg.numAttrs = 1;
+    CK(cuLaunchKernelEx(&cfg, fn, args, 0));
+    tot.n_pdl++;
+  } else {
+    CK(cuLaunchKernel(fn, gx, gy, 1, block, 1, 1, smem, streams[k], args, 0));
+  }
+  last_kernel[k] = 1;
+  if (!k)
+    legacy_ops++;
+  else
+    chains_busy = 1;
   if (trace)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
   tot.kernel += ms;
   tot.n_launch++;
   if (trace)
-    fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f\n", name, ms);
+    fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f stream=%u pdl=%d\n",
+            name, ms, k, pdl);
+}
+
+void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
+                      uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
+  CUdeviceptr da = a, db = b, dout = out;
+  void *args[] = {&da, &db, &dout};
+  launch_on(0, id, args, gx, gy, block, smem);
+}
+
+/* The S54 launch (plan-s54 §4): `nptr` device pointers, on chain `stream`. */
+void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr,
+                       const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                       uint32_t block, uint32_t smem) {
+  CUdeviceptr d[16];
+  void *args[16];
+  if (nptr > 16) {
+    fprintf(stderr, "mapal_gpu: launchv with %u pointers\n", nptr);
+    exit(102);
+  }
+  for (uint32_t i = 0; i < nptr; i++) {
+    d[i] = ptrs[i];
+    args[i] = &d[i];
+  }
+  launch_on(slot_of(stream), id, args, gx, gy, block, smem);
+}
+
+/* `d2h` on chain `stream` (its producer's): queued behind that chain's
+ * kernels, and waited for, so the host sees the values on return. */
+void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off,
+                      uint64_t bytes) {
+  unsigned k = slot_of(stream);
+  double t0 = now_ms();
+  CK(cuMemcpyDtoHAsync(h, (CUdeviceptr)(d + off), bytes, streams[k]));
+  CK(cuStreamSynchronize(streams[k]));
+  last_kernel[k] = 0;
+  double ms = now_ms() - t0;
+  tot.d2h += ms;
+  tot.out += bytes;
+  tot.n_d2h++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=d2h ms=%.3f bytes=%llu stream=%u\n", ms,
+            (unsigned long long)bytes, k);
+}
+
+/* `pinned`: page-lock a host array that crosses the bus, once. Best effort —
+ * a range the driver refuses (already registered through a neighbour's page,
+ * say) is copied pageable, which is slower and exactly as correct; the trace
+ * says which. */
+static struct pin { const void *h; } *pins;
+static size_t n_pins, cap_pins;
+void mapal_gpu_pin(const void *h, uint64_t bytes) {
+  load_module();
+  for (size_t i = 0; i < n_pins; i++)
+    if (pins[i].h == h)
+      return;
+  double t0 = now_ms();
+  CUresult r = cuMemHostRegister((void *)h, bytes, 0);
+  double ms = now_ms() - t0;
+  tot.pin += ms;
+  if (r == CUDA_SUCCESS) {
+    if (n_pins == cap_pins) {
+      cap_pins = cap_pins ? 2 * cap_pins : 16;
+      pins = realloc(pins, cap_pins * sizeof *pins);
+      if (!pins)
+        exit(102);
+    }
+    pins[n_pins++].h = h;
+    tot.n_pin++;
+  }
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=pin ms=%.3f bytes=%llu ok=%d\n", ms,
+            (unsigned long long)bytes, r == CUDA_SUCCESS);
+}
+
+/* Release every pin: the emitter calls it before the function that pinned
+ * returns its frame. */
+void mapal_gpu_unpin(void) {
+  for (size_t i = 0; i < n_pins; i++)
+    CK(cuMemHostUnregister((void *)pins[i].h));
+  n_pins = 0;
 }
 
 /* S54 `l2-window`: `mapal_gpu_launch` with an L2 access-policy window over
@@ -349,37 +522,6 @@ void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
             name, ms, bytes);
 }
 
-/* A kernel over `nptr` device pointers (S54): a site whose store also
- * evaluates per-cell consumers takes their operands and outputs after its
- * own `a, b, out`. `stream` is the stream index; only 0 (the legacy default
- * stream) exists until streams do. */
-void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr,
-                       const uint64_t *ptrs, uint32_t gx, uint32_t gy,
-                       uint32_t block, uint32_t smem) {
-  load_module();
-  char name[40];
-  CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
-  CUdeviceptr d[16];
-  void *args[16];
-  if (nptr > 16 || stream != 0) {
-    fprintf(stderr, "mapal_gpu: launchv nptr=%u stream=%u\n", nptr, stream);
-    exit(102);
-  }
-  for (uint32_t i = 0; i < nptr; i++) {
-    d[i] = (CUdeviceptr)ptrs[i];
-    args[i] = &d[i];
-  }
-  double t0 = now_ms();
-  CK(cuLaunchKernel(fn, gx, gy, 1, block, 1, 1, smem, 0, args, 0));
-  if (trace)
-    CK(cuCtxSynchronize());
-  double ms = now_ms() - t0;
-  tot.kernel += ms;
-  tot.n_launch++;
-  if (trace)
-    fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f\n", name, ms);
-}
-
 /* `devgen`: fill `n` elements of `out` from the producer's element law. The
  * kernel is one thread per element, `MAPAL_GEN_THREADS` per block — the
  * emitter's naive-kernel width, mirrored here. */
@@ -394,6 +536,8 @@ void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
   unsigned grid = (unsigned)((n + MAPAL_GEN_THREADS - 1) / MAPAL_GEN_THREADS);
   double t0 = now_ms();
   CK(cuLaunchKernel(fn, grid, 1, 1, MAPAL_GEN_THREADS, 1, 1, 0, 0, args, 0));
+  legacy_ops++;
+  last_kernel[0] = 1;
   if (trace)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
@@ -410,6 +554,13 @@ void mapal_gpu_free(uint64_t *slot) {
   if (!*slot)
     return;
   double t0 = now_ms();
+  /* A chain stream may still read the buffer: free only when every stream
+   * is done (cuMemFree's own wait is not documented to cover non-blocking
+   * streams). The emitter moves frees past the last chained launch. */
+  if (chains_busy) {
+    CK(cuCtxSynchronize());
+    chains_busy = 0;
+  }
   CK(cuMemFree((CUdeviceptr)*slot));
   *slot = 0;
   double ms = now_ms() - t0;
@@ -427,8 +578,12 @@ void mapal_gpu_free(uint64_t *slot) {
 void mapal_gpu_sync(void) {
   if (init_state == 1)
     load_module();
-  if (init_state == 2)
+  if (init_state == 2) {
     CK(cuCtxSynchronize());
+    for (int i = 0; i <= MAPAL_GPU_STREAMS; i++)
+      joined[i] = legacy_ops;
+    chains_busy = 0;
+  }
 }
 
 /* One site, whole round trip (the S52 ABI): composed of the split entries. */

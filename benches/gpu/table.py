@@ -100,7 +100,10 @@ def probe_table(path):
             runs.setdefault((f['prog'], f['face'], f['arm']), []).append({
                 'iter': float(it[1]) if it else None, 'wall': int(f['wall_us']) / 1e3,
                 'kernel': float(f.get('kernel_ms', 'nan')), 'launches': f.get('launches', '?'),
-                'in': int(f.get('bytes_in', 0)), 'out': int(f.get('bytes_out', 0))})
+                'in': int(f.get('bytes_in', 0)), 'out': int(f.get('bytes_out', 0)),
+                # S54 R7: the traced process's copies, pins, events, dependent launches.
+                'copy': float(f.get('h2d_ms', 'nan')) + float(f.get('d2h_ms', 'nan')),
+                'pin': float(f.get('pin_ms', 0)), 'events': f.get('events', '0'), 'pdl': f.get('pdl', '0')})
         elif l.startswith('chain probe='):
             f = fields(l)
             legs.setdefault((f['probe'], f['n']), {})[f['leg']] = (float(f['med_ms']), f['launches'])
@@ -130,8 +133,9 @@ def probe_table(path):
     arms = [(k, rs) for k, rs in sorted(runs.items()) if k[2] != 'on']
     if arms:
         print("\n| probe | face | arm | iter ms arm | iter ms on | arm / on (>1 = on faster) "
-              "| traced kernel ms arm | on | arm / on |")
-        print("|---|---|---|---:|---:|---:|---:|---:|---:|")
+              "| traced kernel ms arm | on | arm / on | wall arm / on "
+              "| traced h2d+d2h ms arm / on | pin ms on | events on | pdl on |")
+        print("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for (prog, face, arm), rs in arms:
         on = runs.get((prog, face, 'on'))
         a = [r['iter'] for r in rs if r['iter'] is not None]
@@ -139,8 +143,12 @@ def probe_table(path):
         ka = [r['kernel'] for r in rs]
         ko = [r['kernel'] for r in on or []]
         if a and o:
+            wa, wo = [r['wall'] for r in rs], [r['wall'] for r in on]
             print(f"| {prog} | {face} | {arm} | {med(a):.3f} | {med(o):.3f} | {med(a) / med(o):.3f}{ovl(a, o)} "
-                  f"| {med(ka):.3f} | {med(ko):.3f} | {med(ka) / med(ko):.3f}{ovl(ka, ko)} |")
+                  f"| {med(ka):.3f} | {med(ko):.3f} | {med(ka) / med(ko):.3f}{ovl(ka, ko)} "
+                  f"| {med(wa) / med(wo):.3f}{ovl(wa, wo)} | {med([r['copy'] for r in rs]):.3f} / "
+                  f"{med([r['copy'] for r in on]):.3f} | {med([r['pin'] for r in on]):.3f} | {on[0]['events']} "
+                  f"| {on[0]['pdl']} |")
     # S54 `probe_kernels`: each launch's traced kernel ms, in launch order (id prefix: ms).
     ks = {}
     for l in open(path):

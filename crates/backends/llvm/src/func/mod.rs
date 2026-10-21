@@ -385,6 +385,9 @@ pub(crate) struct FnEmit<'a> {
     /// arrays read only at the cell `t`, passed as one-cell buffers, so every
     /// `Index` on them reads element 0 (`emit_index`).
     cell_slots: Vec<u32>,
+    /// S54 `streams`: the function's path plan (the entry's, from `lib.rs`),
+    /// which says which device sites are independent.
+    path_plan: Option<&'a PathPlan>,
 }
 
 /// Should this site's `b` be packed — shape AND size.

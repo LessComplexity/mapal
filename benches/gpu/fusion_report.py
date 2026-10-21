@@ -11,6 +11,9 @@ device IR alone (no GPU needed):
                       S52 round trip, counts as two copies in and one out)
   L2 windows          launches with an L2 access-policy window (`mapal_gpu_launch_l2`, S54)
   grouped kernels     tile kernels walking their grid in block-row groups (`; raster`, S54)
+  streams, events     (S54 R7) launches on a chain stream (`mapal_gpu_launchv` with stream > 0)
+                      and the cross-chain waits (`mapal_gpu_event`)
+  pins                (S54) host arrays page-locked before they cross (`mapal_gpu_pin`)
   host elem loops     host loops of at least n·n trips — per-cell work left on the host
   over device out     host loops that read a buffer a d2h filled — a device output consumed
                       on the host (the boundary amendment 9 says should not exist)
@@ -79,7 +82,8 @@ def const(arg):
 
 def analyze(host, dev, n):
     r = dict(tile=0, gen_k=0, cell_k=0, launch=0, launch_l=0, gens=0, h2d=0, h2d_b=0, d2h=0, d2h_b=0,
-             elem_loops=0, dev_loops=0, unknown_bytes=False, allocs=0, arena=0, heap=0, l2win=0)
+             elem_loops=0, dev_loops=0, unknown_bytes=False, allocs=0, arena=0, heap=0, l2win=0,
+             streams=0, events=0, pins=0)
     r["cell_k"] = len(re.findall(r"; cell\ndefine ptx_kernel void @mapal_tile_", dev))
     r["tile"] = len(re.findall(r"define ptx_kernel void @mapal_tile_", dev)) - r["cell_k"]
     r["raster"] = len(re.findall(r"; raster: ", dev))
@@ -115,6 +119,15 @@ def analyze(host, dev, n):
                     r["launch"] += 1
                     r["launch_l"] += in_loop(i)
                 r["l2win"] += op == "launch_l2"
+                if op == "launchv":
+                    r["streams"] += const(args[1]) != 0
+                elif op == "event":
+                    r["events"] += 1
+                elif op == "pin":
+                    r["pins"] += 1
+                elif op == "d2h_on":
+                    add("d2h", const(args[4]))
+                    filled.add(args[1])
                 if op == "tile":
                     add("h2d", None if None in (const(args[2]), const(args[4])) else const(args[2]) + const(args[4]))
                     r["h2d"] += 1
@@ -168,8 +181,8 @@ def report(profile, face, n, globs):
     print("Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.\n")
     print("| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls "
           "| d2h bytes | L2 windows | grouped kernels | host elem loops | host loops over device out | dev allocs "
-          "| arena | host heap |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+          "| arena | host heap | on a chain stream | events | pins |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for s in stems:
         dev = tiles / f"{s}.dev.ll"
         dev.unlink(missing_ok=True)
@@ -181,7 +194,8 @@ def report(profile, face, n, globs):
         launches = f"{r['launch']}" + (f" ({r['launch_l']} L)" if r["launch_l"] else "")
         print(f"| {s} | {r['tile']} | {r['gen_k']} | {r['cell_k']} | {launches} | {r['gens']} | {r['h2d']} "
               f"| {mb(r['h2d_b'])}{q} | {r['d2h']} | {mb(r['d2h_b'])}{q} | {r['l2win']} | {r['raster']} "
-              f"| {r['elem_loops']} | {r['dev_loops']} | {r['allocs']} | {mb(r['arena'])} | {mb(r['heap'])} |")
+              f"| {r['elem_loops']} | {r['dev_loops']} | {r['allocs']} | {mb(r['arena'])} | {mb(r['heap'])} "
+              f"| {r['streams']} | {r['events']} | {r['pins']} |")
 
 
 def selftest():

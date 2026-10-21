@@ -261,6 +261,22 @@ loop's initial upload, `px` checksum paths) at ~2× the pageable rate (S52 trace
 64 MB pageable). `pdl`: µs per dependent launch, likely within noise; measured because sm_90+
 is where the arch report put it.
 
+**Built and measured** (branch `s54/streams`, `benches/results-s54-gpu/streams-tables.md`). Three things
+changed from the design above, each because a measurement said so:
+- Streams open only over device-only sites. Moving a chained copy-out to its host reader put the host
+  between the chains, and the host-joined probes ran 0.60–0.96× on streams on every part. Those
+  probes now keep the one-stream text.
+- The gate is the last-wave form of "under one wave". On the A100 at 2048, two grids of about 1.2
+  waves each ran 1.27–1.43× faster in three sessions.
+- `pinned` pins only copies inside a loop: one registration never repays a single crossing. Even in
+  the loop the sign follows the host's pageable copy rate, so it ships OFF everywhere.
+
+Shipped: `streams` ON on the A100 and RTX 5090, at 1.01–1.11× (n=512) and 1.04–1.43× (where last
+waves merge) on two independent sites. OFF on the RTX 3090 (no effect), the RTX 4090 (0.94–0.99×) and
+the H100 (not established). `pdl` OFF on both sm_90+ parts (no stable sign). Before epilogue/devmap
+fold the probes' joins onto the device, no timed probe in §3 has the device-only shape; `twin` is
+the one that does.
+
 ### 4.4 `rowfold` — row-local folds as device sites, and the reader-chosen store order (R0 for folds)
 
 **Shape.** A `Map` over `rows` whose body is one `Fold` over `k` with a single affine read

@@ -1,0 +1,417 @@
+//! S54 `streams` / `pinned` / `pdl` (R7, plan-s54 §4.3): independent device
+//! sites on their own streams, page-locked crossings, dependent launches on
+//! sm_90+. Each test reads the placement off the emitted `mapal_gpu_*` calls;
+//! the values are the box differential's job.
+
+use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
+use mapal_ir::CategoryIr;
+
+fn lower_src(src: &str) -> CategoryIr {
+    let po = mapal_syntax::parse(src);
+    assert!(po.diagnostics.is_empty(), "parse: {:?}", po.diagnostics);
+    let ir = mapal_lower::lower(src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}"));
+    mapal_rewrite::rewrite(ir).ir
+}
+
+fn emit(src: &str, target: &'static str, mut gpu: GpuArms) -> Emission {
+    // R7 alone (S54 integration): R1 (`epilogue`) and R2 (`devmap`) place these
+    // programs' per-cell joins on the device (and launch them with `launchv` on
+    // the legacy stream), `arena` lays out their buffers; their own tests pin those.
+    for r in ["epilogue", "devmap", "arena"] {
+        *gpu.off.rung(r).expect("a rung") = true;
+    }
+    emit_detailed(
+        &lower_src(src),
+        &EmitOpts {
+            target,
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits")
+}
+
+fn host(src: &str, target: &'static str, gpu: GpuArms) -> String {
+    emit(src, target, gpu).text
+}
+
+fn off(rungs: &[&str]) -> GpuArms {
+    let mut a = GpuArms::default();
+    for r in rungs {
+        *a.off.rung(r).expect("a rung") = true;
+    }
+    a
+}
+
+fn on() -> GpuArms {
+    GpuArms::default()
+}
+
+/// The measurement arm with `rungs` forced on — the mechanism, whatever the
+/// part's measured table ships (`pinned` and `pdl` ship OFF on every part).
+fn forced(rungs: &[&str]) -> GpuArms {
+    let mut a = GpuArms::default();
+    for r in rungs {
+        *a.on.rung(r).expect("a rung") = true;
+    }
+    a
+}
+
+fn mapal_main(ll: &str) -> &str {
+    let start = ll
+        .find("define internal void @mapal_main(")
+        .expect("mapal_main");
+    let end = start + ll[start..].find("\n}\n").expect("mapal_main end") + 3;
+    &ll[start..end]
+}
+
+/// `mapal_main`'s runtime calls in order, `op` plus the stream for the S54
+/// entries (`launchv 1`, `event 1>2`, `d2h_on 2`).
+fn calls(ll: &str) -> Vec<String> {
+    mapal_main(ll)
+        .lines()
+        .filter(|l| l.contains("call ") && l.contains("@mapal_gpu_"))
+        .map(|l| {
+            let op = &l[l.find("@mapal_gpu_").expect("call") + "@mapal_gpu_".len()..];
+            let name = &op[..op.find('(').expect("args")];
+            let i32s: Vec<&str> = op
+                .split("i32 ")
+                .skip(1)
+                .map(|x| x.split([',', ')']).next().expect("arg"))
+                .collect();
+            match name {
+                "launchv" | "d2h_on" => format!("{name} {}", i32s[0]),
+                "event" => format!("event {}>{}", i32s[0], i32s[1]),
+                other => other.to_owned(),
+            }
+        })
+        .collect()
+}
+
+fn init_flags(ll: &str) -> u32 {
+    let at = ll
+        .find("call void @mapal_gpu_init(i32 ")
+        .expect("init call");
+    let rest = &ll[at + "call void @mapal_gpu_init(i32 ".len()..];
+    rest[..rest.find(')').expect(")")].parse().expect("flags")
+}
+
+fn site(out: &str, a: &str, b: &str, n: u64) -> String {
+    format!(
+        "    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + {a}[i * {n} + k] * {b}[k * {n} + j] }}
+    }} -> {out};\n"
+    )
+}
+
+fn operand(name: &str, mul: u32) -> String {
+    format!(
+        "    ta -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+    )
+}
+
+fn program(n: u64, ops: &[(&str, u32)], body: &str, outs: &[&str]) -> String {
+    let mut s = format!(
+        "fn main() {{\n    {} -> iota -> ta;\n    {n} -> iota -> krange;\n",
+        n * n
+    );
+    for (o, m) in ops {
+        s += &operand(o, *m);
+    }
+    s += body;
+    for o in outs {
+        s += &format!(
+            "    {o}[0] -> println;\n    {o}[{}] -> println;\n",
+            n * n - 1
+        );
+    }
+    s + "}\n"
+}
+
+/// Two independent sites joined per cell on the host (gen_tiles `indep`).
+fn indep(n: u64) -> String {
+    program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5), ("f", 3)],
+        &(site("c", "a", "b", n)
+            + &site("d", "e", "f", n)
+            + "    ta -> map { t -> c[t] + d[t] } -> g;\n"),
+        &["g"],
+    )
+}
+
+/// `indep` without its join: both outputs read at the corners only, so both
+/// stay on the device (gen_tiles `twin`).
+fn twin(n: u64) -> String {
+    program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5), ("f", 3)],
+        &(site("c", "a", "b", n) + &site("d", "e", "f", n)),
+        &["c", "d"],
+    )
+}
+
+/// One output, two independent readers; device-only (corners).
+fn diamond(n: u64) -> String {
+    program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5), ("g", 3)],
+        &(site("c", "a", "b", n) + &site("d1", "c", "e", n) + &site("d2", "c", "g", n)),
+        &["d1", "d2"],
+    )
+}
+
+/// Two independent two-site chains, device-only (corners).
+fn mlp2(n: u64) -> String {
+    program(
+        n,
+        &[
+            ("a", 7),
+            ("b", 11),
+            ("e", 5),
+            ("f", 3),
+            ("g", 13),
+            ("p", 17),
+        ],
+        &(site("c1", "a", "b", n)
+            + &site("d1", "c1", "e", n)
+            + &site("c2", "f", "g", n)
+            + &site("d2", "c2", "p", n)),
+        &["d1", "d2"],
+    )
+}
+
+/// One output read by a host map and by a second site (`fanout`).
+fn fanout(n: u64) -> String {
+    program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5)],
+        &(site("c", "a", "b", n)
+            + "    c -> map { v -> v * 0.5 + 1.0 } -> h;\n"
+            + &site("d", "c", "e", n)),
+        &["c", "h", "d"],
+    )
+}
+
+const H100: &str = "h100-pcie";
+/// A part whose measured table ships `streams` ON (the A100; the RTX 5090 is
+/// the other).
+const ON_PART: &str = "a100";
+
+#[test]
+fn independent_device_only_sites_take_two_streams() {
+    let ll = host(&twin(64), ON_PART, on());
+    let t = calls(&ll);
+    let pos = |x: &str| {
+        t.iter()
+            .position(|c| c == x)
+            .unwrap_or_else(|| panic!("{x} in {t:?}"))
+    };
+    // Both launches before any copy-out, each corner on its producer's stream.
+    assert!(pos("launchv 1") < pos("launchv 2"), "{t:?}");
+    assert!(pos("launchv 2") < pos("d2h_on 1"), "{t:?}");
+    assert_eq!(t.iter().filter(|c| *c == "d2h_on 1").count(), 2, "{t:?}");
+    assert_eq!(t.iter().filter(|c| *c == "d2h_on 2").count(), 2, "{t:?}");
+    // The operands die at the sites; their frees wait for the last launch.
+    let frees_before = t[..pos("launchv 2")]
+        .iter()
+        .filter(|c| *c == "free")
+        .count();
+    assert_eq!(frees_before, 0, "{t:?}");
+    assert!(!t.contains(&"launch".to_owned()), "{t:?}");
+    assert!(!t.iter().any(|c| c.starts_with("event")), "{t:?}");
+    assert_eq!(init_flags(&ll) & 2, 2, "the runtime creates the streams");
+}
+
+#[test]
+fn a_whole_copy_out_keeps_one_stream() {
+    // indep's join reads c and d whole on the host: the host is between the
+    // chains, so there is nothing to overlap (measured slower on five parts).
+    let ll = host(&indep(64), ON_PART, on());
+    assert!(!ll.contains("@mapal_gpu_launchv("));
+    assert!(!ll.contains("@mapal_gpu_event("));
+    assert_eq!(init_flags(&ll) & 2, 0);
+}
+
+#[test]
+fn diamond_waits_on_its_join_edge_only() {
+    let t = calls(&host(&diamond(64), ON_PART, on()));
+    let launches: Vec<&String> = t.iter().filter(|c| c.starts_with("launchv")).collect();
+    // c and d1 are one chain; d2 reads c from the other.
+    assert_eq!(launches, ["launchv 1", "launchv 1", "launchv 2"], "{t:?}");
+    let ev: Vec<&String> = t.iter().filter(|c| c.starts_with("event")).collect();
+    assert_eq!(ev, ["event 1>2"], "{t:?}");
+    let e = t.iter().position(|c| c == "event 1>2").expect("event");
+    assert_eq!(
+        t[e + 1],
+        "launchv 2",
+        "the wait sits right before d2: {t:?}"
+    );
+}
+
+#[test]
+fn two_chains_with_no_edge() {
+    let t = calls(&host(&mlp2(64), ON_PART, on()));
+    let mut launches: Vec<&String> = t.iter().filter(|c| c.starts_with("launchv")).collect();
+    launches.sort();
+    assert_eq!(
+        launches,
+        ["launchv 1", "launchv 1", "launchv 2", "launchv 2"],
+        "{t:?}"
+    );
+    assert!(!t.iter().any(|c| c.starts_with("event")), "{t:?}");
+}
+
+#[test]
+fn a_single_chain_keeps_one_stream() {
+    let ll = host(&fanout(64), ON_PART, on());
+    assert!(!ll.contains("@mapal_gpu_launchv("), "fanout is one chain");
+    assert_eq!(init_flags(&ll) & 2, 0);
+}
+
+#[test]
+fn a_filled_part_keeps_one_stream_unless_the_gate_is_off() {
+    // 1024² on the ON_PART PCIe: the two grids do not fit one wave together.
+    let gated = host(&twin(1024), ON_PART, on());
+    assert!(!gated.contains("@mapal_gpu_launchv("));
+    let forced = host(&twin(1024), ON_PART, off(&["stream-gate"]));
+    assert!(forced.contains("@mapal_gpu_launchv("));
+}
+
+#[test]
+fn a_part_whose_table_turns_streams_off_keeps_one_stream() {
+    for part in ["rtx-3090", "rtx-4090", H100, "h100"] {
+        assert!(
+            !host(&twin(64), part, on()).contains("@mapal_gpu_launchv("),
+            "{part}"
+        );
+    }
+    assert!(host(&twin(64), "rtx-5090", on()).contains("@mapal_gpu_launchv("));
+}
+
+#[test]
+fn every_off_arm_is_the_one_stream_pageable_text() {
+    let all_off = off(&["streams", "pinned", "pdl"]);
+    for src in [indep(64), twin(64), diamond(64), mlp2(64), fanout(64)] {
+        let ll = host(&src, H100, all_off);
+        for entry in ["launchv", "event", "d2h_on", "pin", "unpin"] {
+            assert!(!ll.contains(&format!("@mapal_gpu_{entry}(")), "{entry}");
+        }
+        assert_eq!(init_flags(&ll), 1, "eager-init only");
+        let dev = emit(&src, H100, all_off).device.expect("a device unit");
+        assert!(!dev.contains("griddepcontrol"));
+    }
+    // Streams off alone: one stream; pins are a separate rung.
+    let ll = host(&twin(64), H100, off(&["streams"]));
+    assert!(!ll.contains("@mapal_gpu_launchv("));
+    let mut a = forced(&["pinned"]);
+    *a.off.rung("streams").expect("a rung") = true;
+    let ll = host(&relu_loop(64), H100, a);
+    assert!(ll.contains("@mapal_gpu_pin("));
+}
+
+/// `x ← relu(x · w)` three times, the relu on the host (gen_tiles `loop`):
+/// the site's output comes down and the next state goes up every iteration.
+fn relu_loop(n: u64) -> String {
+    format!(
+        "fn main() {{
+    {nn} -> iota -> ta;
+    {n} -> iota -> krange;
+{a}{w}    mut x: [f32; {nn}] <- a;
+    mut it: i32 <- 0;
+    loop {{
+        (it < 3) -> {{
+            -true-> {{
+{s}                y -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> x;
+                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    out[0] -> println;
+    out[{last}] -> println;
+}}
+",
+        nn = n * n,
+        last = n * n - 1,
+        a = operand("a", 7),
+        w = operand("w", 11),
+        s = site("y", "x", "w", n),
+    )
+}
+
+#[test]
+fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
+    // Straight-line copies run once: never pinned (devgen off, so a, b, e, f
+    // go up and c, d come down — six single crossings).
+    let ll = host(&indep(64), H100, off(&["devgen", "streams"]));
+    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_h2d(").count(), 4);
+    assert!(!ll.contains("@mapal_gpu_pin("));
+    // Shipped: no part's table pins (the sign followed the host's copy path).
+    assert!(!host(&relu_loop(64), H100, on()).contains("@mapal_gpu_pin("));
+    // In the loop, each pin sits right before the copy of the array it pins.
+    let ll = host(&relu_loop(64), H100, forced(&["pinned"]));
+    let main = mapal_main(&ll);
+    let lines: Vec<&str> = main.lines().collect();
+    let mut pinned = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        let Some(at) = l.find("@mapal_gpu_pin(ptr ") else {
+            continue;
+        };
+        let p = l[at + "@mapal_gpu_pin(ptr ".len()..]
+            .split(',')
+            .next()
+            .expect("ptr");
+        pinned.push(p.to_owned());
+        let next = lines[i + 1..]
+            .iter()
+            .find(|x| x.contains("@mapal_gpu_h2d(") || x.contains("@mapal_gpu_d2h("))
+            .expect("a copy after the pin");
+        assert!(next.contains(&format!("ptr {p},")), "{l} then {next}");
+    }
+    // y down and x up, every iteration; the loop's entry and exit run once.
+    assert_eq!(pinned.len(), 2, "{pinned:?}\n{main}");
+    assert!(main.contains("call void @mapal_gpu_unpin()"));
+}
+
+#[test]
+fn a_one_element_read_is_not_pinned() {
+    // `c` is only read at two corners: one-element copies, nothing pinned.
+    let src = program(64, &[("a", 7), ("b", 11)], &site("c", "a", "b", 64), &["c"]);
+    let ll = host(&src, H100, on());
+    assert!(ll.contains("@mapal_gpu_d2h("));
+    assert!(!ll.contains("@mapal_gpu_pin("));
+}
+
+#[test]
+fn pdl_is_hopper_and_later_only() {
+    let src = diamond(64);
+    // Shipped: OFF on both sm_90+ parts measured (no stable sign).
+    for part in [H100, "rtx-5090"] {
+        let e = emit(&src, part, on());
+        assert!(
+            !e.device.expect("device").contains("griddepcontrol"),
+            "{part}"
+        );
+        assert_eq!(init_flags(&e.text) & 4, 0, "{part}");
+    }
+    let h = emit(&src, H100, forced(&["pdl"]));
+    let dev = h.device.expect("device unit");
+    let kernels = dev.matches("define ptx_kernel void @mapal_tile_").count();
+    assert!(kernels > 0);
+    assert_eq!(dev.matches("griddepcontrol.wait;").count(), kernels);
+    assert_eq!(init_flags(&h.text) & 4, 4);
+    for part in ["rtx-4090", "rtx-3090", "a100"] {
+        let e = emit(&src, part, forced(&["pdl"]));
+        assert!(
+            !e.device.expect("device").contains("griddepcontrol"),
+            "{part}"
+        );
+        assert_eq!(init_flags(&e.text) & 4, 0, "{part}");
+    }
+    let e = emit(&src, "rtx-5090", forced(&["pdl"]));
+    assert!(e.device.expect("device").contains("griddepcontrol.wait;"));
+}

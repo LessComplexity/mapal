@@ -229,6 +229,9 @@ pub(crate) struct ResidentPlan {
     pub rowfold: SecondaryMap<MorphismId, super::rowfold::RowFold>,
     /// Per-cell maps run as their own device kernels (`devmap`).
     pub cells: SecondaryMap<MorphismId, Cell>,
+    /// S54 `streams` (R7): each straight-line device site's chain (its stream,
+    /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
+    pub chain: SecondaryMap<MorphismId, u32>,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -284,6 +287,14 @@ pub(crate) fn color(live: &[(u32, u32, u64)]) -> (Vec<u64>, u64) {
 impl ResidentPlan {
     pub(crate) fn is_carry_next(&self, o: ObjectId) -> bool {
         self.carries.iter().any(|c| c.next == o)
+    }
+
+    /// The chain stream `o` is produced on (0: the legacy stream).
+    pub(crate) fn stream_of(&self, ir: &CategoryIr, o: ObjectId) -> u32 {
+        ir.in_edges(o)
+            .iter()
+            .find_map(|&m| self.chain.get(m).copied())
+            .unwrap_or(0)
     }
 
     /// The object whose device slot `o` shares: a carry's views and exit share
@@ -1259,10 +1270,170 @@ impl<'a> FnEmit<'a> {
             }
         }
         plan.cells = cells;
-        if arena {
+        self.chains(&sites, &mut plan);
+        // ponytail: the arena reuses bytes by topo position, which concurrent
+        // streams do not follow; a function that opens streams keeps its own
+        // buffers. Color per stream when a part ships both on one program.
+        if arena && plan.chain.is_empty() {
             plan.arena = Some(self.arena(&plan));
         }
         Some(plan)
+    }
+
+    /// **S54 R7: device sites on streams.** Straight-line device sites (a site
+    /// in a loop or guard arm stays on the legacy stream) are covered by
+    /// chains in topo order: a site continues the chain whose last site is one
+    /// of its `PathPlan` ancestors, else opens one. Two chains are opened as
+    /// streams only when
+    /// - every one of these sites' outputs stays on the device (`keep`: read
+    ///   by device sites and one-element copies only). A whole copy-out puts
+    ///   the host between the chains: it waits for the transfer (at 512², five
+    ///   to ten times one kernel) before the next launch. In the first two
+    ///   sessions, diamond and mlp2 with a host join ran 0.60–0.96× on streams on
+    ///   every part, and indep flipped sign between sessions
+    ///   (`streams-<part>.txt`, `-confirm.txt`); and
+    /// - the grids can actually share the part — the **wave rule**
+    ///   ([`waves_merge`]): two independent grids' last waves fit one wave,
+    ///   `t_a / w_a + t_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
+    ///   its launch geometry). Grids that fill their last waves have nothing to
+    ///   overlap.
+    ///
+    /// Otherwise the text stays the one-stream text. With streams open, the
+    /// frees between the first and last chained launch (`cuMemFree` waits for
+    /// the whole device) move after the last.
+    fn chains(&self, sites: &SecondaryMap<MorphismId, DevSite>, plan: &mut ResidentPlan) {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let (Some(pp), true) = (self.path_plan, rungs.streams) else {
+            return;
+        };
+        let gpu = self.profile.gpu().expect("a device site has a GPU profile");
+        let line = self.straight_line();
+        let task_of = |m: MorphismId| {
+            pp.tasks
+                .iter()
+                .position(|t| matches!(t.kind, TaskKind::Split { site, .. } if site == m))
+        };
+        let tile = |m: MorphismId| match &sites[m] {
+            DevSite::Tile(t) => Some(t),
+            DevSite::RowFold(_) => None,
+        };
+        let mut order: Vec<(u32, MorphismId, usize)> = sites
+            .keys()
+            .filter(|&m| line.contains_key(m) && tile(m).is_some())
+            .filter_map(|m| Some((self.lup.position(m)?, m, task_of(m)?)))
+            .collect();
+        order.sort();
+        let device_only = order.iter().all(|&(_, m, _)| {
+            plan.keep
+                .contains_key(self.ir.morphism(m).expect("site").target)
+        });
+        if order.len() < 2 || !device_only {
+            return;
+        }
+        // S54 integration: a launch the chains do not order — a device site off
+        // the chains (a fold, a loop's site) or a cell kernel (`devmap`) — must
+        // not read a chained output; they run on the legacy stream, which the
+        // chains' non-blocking streams do not wait for.
+        let chained: Vec<ObjectId> = order
+            .iter()
+            .map(|&(_, m, _)| self.ir.morphism(m).expect("site").target)
+            .collect();
+        let reads_chained = |src: ObjectId, slots: &[u32]| {
+            slots.iter().any(|&k| {
+                self.pair_source(src, k)
+                    .is_some_and(|o| chained.contains(&o))
+            })
+        };
+        let unordered = sites.iter().any(|(m, s)| {
+            !order.iter().any(|&(_, o, _)| o == m)
+                && reads_chained(self.ir.morphism(m).expect("site").source, &s.reads())
+        }) || plan
+            .cells
+            .values()
+            .any(|c| c.operands().iter().any(|&(o, _)| chained.contains(&o)));
+        if unordered {
+            return;
+        }
+        // Every task's ancestors (the deps, transitively).
+        let mut anc: Vec<Option<std::collections::BTreeSet<usize>>> = vec![None; pp.tasks.len()];
+        fn ancestors(
+            pp: &PathPlan,
+            t: usize,
+            memo: &mut Vec<Option<std::collections::BTreeSet<usize>>>,
+        ) -> std::collections::BTreeSet<usize> {
+            if let Some(s) = &memo[t] {
+                return s.clone();
+            }
+            let mut s = std::collections::BTreeSet::new();
+            for &d in &pp.tasks[t].deps {
+                s.insert(d);
+                s.extend(ancestors(pp, d, memo));
+            }
+            memo[t] = Some(s.clone());
+            s
+        }
+        let anc: Vec<_> = order
+            .iter()
+            .map(|&(_, _, t)| ancestors(pp, t, &mut anc))
+            .collect();
+        let before = |i: usize, j: usize| anc[j].contains(&order[i].2);
+        let mut chain = Vec::with_capacity(order.len());
+        let mut tail: Vec<usize> = Vec::new();
+        for i in 0..order.len() {
+            match (0..i).rev().find(|&j| before(j, i) && tail[chain[j]] == j) {
+                Some(j) => {
+                    chain.push(chain[j]);
+                    tail[chain[j]] = i;
+                }
+                None => {
+                    chain.push(tail.len());
+                    tail.push(i);
+                }
+            }
+        }
+        if tail.len() < 2 {
+            return;
+        }
+        let grid = |i: usize| {
+            let l = gpu::launch(
+                tile(order[i].1).expect("a tile site"),
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.reduced,
+            );
+            (l.gx * l.gy, l.wave(gpu))
+        };
+        let merge = (0..order.len()).any(|i| {
+            (i + 1..order.len()).any(|j| {
+                chain[i] != chain[j]
+                    && !before(i, j)
+                    && !before(j, i)
+                    && waves_merge(grid(i), grid(j))
+            })
+        });
+        if rungs.stream_gate && !merge {
+            return;
+        }
+        for (i, &(_, m, _)) in order.iter().enumerate() {
+            plan.chain.insert(m, chain[i] as u32 + 1);
+        }
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let (lo, last) = (order[0].0, order[order.len() - 1].1);
+        let moved: Vec<MorphismId> = plan
+            .free_after
+            .keys()
+            .filter(|&d| d != last && (lo..pos(last)).contains(&pos(d)))
+            .collect();
+        for d in moved {
+            let objs = plan.free_after.remove(d).expect("listed");
+            match plan.free_after.get_mut(last) {
+                Some(v) => v.extend(objs),
+                None => {
+                    plan.free_after.insert(last, objs);
+                }
+            }
+        }
     }
 
     /// S54 `arena` (R6). Device side: the objects `free_after` frees — produced
@@ -1637,6 +1808,8 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
+            // `pinned` (S54): a copy that runs more than once is page-locked.
+            self.pin(m, &h, bytes);
             match delta {
                 Some(du) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
                 None => self.line(format!(
@@ -1754,13 +1927,14 @@ impl<'a> FnEmit<'a> {
         source: ObjectId,
         target: ObjectId,
         slots: &[u32],
-        // `(kernel id, geometry)` of a tile site whose store evaluates an
-        // epilogue group (S54 R1): then the launch is `launchv` over the
-        // group's pointers instead of `call`'s.
+        // `(kernel id, geometry)` of a tile site: the `launchv` it takes when
+        // its store evaluates an epilogue group (S54 R1) or it runs on a
+        // chain's stream (S54 R7) instead of `call`'s launch.
         grouped: Option<(i64, String)>,
         call: impl Fn(&[String], &str) -> String,
     ) {
         let src_ty = self.obj_ty(source);
+        let ms = self.ir.in_edges(target)[0];
         let mut ops = Vec::new();
         let mut temps = Vec::new();
         for &slot in slots {
@@ -1787,15 +1961,23 @@ impl<'a> FnEmit<'a> {
             self.line(format!(
                 "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
             ));
+            self.pin(ms, &h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
             temps.push(slot_name);
             ops.push(d);
         }
+        let plan = self.resident.clone().expect("resident site");
+        let s = plan.stream_of(self.ir, target);
+        if s != 0 && self.first_chained(&plan, target) {
+            self.chain_prologue(&plan);
+        }
         let o_bytes = self.array_bytes(&self.obj_ty(target));
         let m = self.ir.in_edges(target)[0];
-        let group = grouped.and_then(|ig| Some((ig, self.groups.get(m).cloned()?)));
+        let group = grouped
+            .clone()
+            .and_then(|ig| Some((ig, self.groups.get(m).cloned()?)));
         // The values this launch leaves in `Gmem`: the site's output unless
         // its group holds every reader (S54), and each stored member result.
         let mut stored = Vec::new();
@@ -1806,10 +1988,32 @@ impl<'a> FnEmit<'a> {
         } else {
             "0".to_string()
         };
-        match &group {
-            None => self.line(call(&ops, &dout)),
-            Some(((id, geom), g)) => {
-                let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout];
+        // A cross-chain edge (S54 R7): an operand on another chain's stream — a
+        // site operand, or an epilogue's complete operand — is waited for.
+        if !plan.chain.is_empty() {
+            let mut feeds: Vec<ObjectId> = slots
+                .iter()
+                .filter_map(|&k| self.pair_source(source, k))
+                .collect();
+            if let Some((_, g)) = &group {
+                feeds.extend(g.caps());
+            }
+            let mut waits: Vec<u32> = feeds
+                .iter()
+                .map(|&f| plan.stream_of(self.ir, f))
+                .filter(|&p| p != 0 && p != s)
+                .collect();
+            waits.sort_unstable();
+            waits.dedup();
+            for p in waits {
+                self.line(format!("call void @mapal_gpu_event(i32 {p}, i32 {s})"));
+            }
+        }
+        // The pointers of a `launchv`: an epilogue group's, or a chained site's
+        // own three.
+        let ptrs = match (&group, &grouped) {
+            (Some((_, g)), _) => {
+                let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout.clone()];
                 for o in g.caps() {
                     debug_assert!(self.dvalid.contains_key(o), "epilogue operand in Gmem");
                     ptrs.push(self.dload(o));
@@ -1820,6 +2024,13 @@ impl<'a> FnEmit<'a> {
                     ptrs.push(d.clone());
                     stored.push((mb.out, d));
                 }
+                Some(ptrs)
+            }
+            (None, Some(_)) if s != 0 => Some(vec![ops[0].clone(), ops[1].clone(), dout.clone()]),
+            _ => None,
+        };
+        match (ptrs, grouped) {
+            (Some(ptrs), Some((id, geom))) => {
                 let n = ptrs.len();
                 let arr = format!("%p{}", self.fresh());
                 self.allocas
@@ -1832,9 +2043,10 @@ impl<'a> FnEmit<'a> {
                     self.line(format!("store i64 {p}, ptr {g}"));
                 }
                 self.line(format!(
-                    "call void @mapal_gpu_launchv(i64 {id}, i32 0, i32 {n}, ptr {arr}, {geom})"
+                    "call void @mapal_gpu_launchv(i64 {id}, i32 {s}, i32 {n}, ptr {arr}, {geom})"
                 ));
             }
+            _ => self.line(call(&ops, &dout)),
         }
         for (o, _) in &stored {
             self.dvalid.insert(*o, ());
@@ -1843,29 +2055,76 @@ impl<'a> FnEmit<'a> {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
         for (o, d) in stored {
-            let keep = self
-                .resident
-                .as_ref()
-                .is_some_and(|p| p.keep.contains_key(o) || p.is_carry_next(o));
+            let keep = plan.keep.contains_key(o) || plan.is_carry_next(o);
             if !keep {
                 let bytes = self.array_bytes(&self.obj_ty(o));
                 let h = self.slot(o).expect("device output slot");
+                self.pin(ms, &h, bytes);
                 // A device fold's output lands in what was a host loop's slot: say
                 // the copy keeps no pointer to it, as the loop did not, or the slot
                 // counts as escaped and a later host loop that reads it loses its
                 // vector form (S54: softmax_rows' `exp` pass ran scalar, +17 ms).
                 // ponytail: every `d2h` is just as non-capturing; marked here only,
                 // so no other program's text moves.
-                let fold = self.ir.in_edges(o).first().is_some_and(|m| {
-                    self.resident
-                        .as_ref()
-                        .is_some_and(|p| p.rowfold.contains_key(*m))
-                });
+                let fold = self
+                    .ir
+                    .in_edges(o)
+                    .first()
+                    .is_some_and(|m| plan.rowfold.contains_key(*m));
                 let h = if fold { format!("nocapture {h}") } else { h };
-                self.line(format!(
-                    "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 0, i64 {bytes})"
-                ));
+                self.d2h(s, &h, &d, "0", bytes);
             }
+        }
+    }
+
+    /// A copy-out on stream `s`: the legacy entry on stream 0 (the one-stream
+    /// text), else queued behind the chain's kernels and waited for.
+    fn d2h(&mut self, s: u32, h: &str, d: &str, off: &str, bytes: impl std::fmt::Display) {
+        if s == 0 {
+            self.line(format!(
+                "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
+            ));
+        } else {
+            self.line(format!(
+                "call void @mapal_gpu_d2h_on(i32 {s}, ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
+            ));
+        }
+    }
+
+    /// `pinned`: page-lock the host array a copy at `m` moves, when that copy
+    /// runs more than once — `m` inside a loop (or guard arm), so one
+    /// registration is paid for every crossing after it (the runtime pins an
+    /// array once). A copy that runs once is not pinned: registering costs
+    /// more than one pinned copy saves on every box measured
+    /// (`streams-<part>.txt`, S54 trace + `copy_rate`: 0.06–0.09 ms per MB
+    /// registered at 64 MB, 0.3–0.5 at 1 MB, against 0.002 (RTX 4090 box) to
+    /// 0.08 ms per MB (RTX 5090 box) saved per crossing).
+    fn pin(&mut self, m: MorphismId, h: &str, bytes: u64) {
+        if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).pinned
+            && !self.straight_line().contains_key(m)
+        {
+            self.line(format!("call void @mapal_gpu_pin(ptr {h}, i64 {bytes})"));
+        }
+    }
+
+    /// Is `target`'s site the first chained launch of the function?
+    fn first_chained(&self, plan: &ResidentPlan, target: ObjectId) -> bool {
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let first = plan.chain.keys().min_by_key(|&m| pos(m));
+        first.is_some_and(|m| self.ir.morphism(m).expect("site").target == target)
+    }
+
+    /// Before the first chained launch: every chained output's buffer, so no
+    /// `cuMemAlloc` (which may wait for the device) lands between two chains'
+    /// launches.
+    fn chain_prologue(&mut self, plan: &ResidentPlan) {
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let mut sites: Vec<MorphismId> = plan.chain.keys().collect();
+        sites.sort_by_key(|&m| pos(m));
+        for m in sites {
+            let c = self.ir.morphism(m).expect("site").target;
+            let bytes = self.array_bytes(&self.obj_ty(c));
+            self.dalloc(c, bytes);
         }
     }
 
@@ -1881,12 +2140,15 @@ impl<'a> FnEmit<'a> {
         }
         let arr = self.pair_source(source, 0).expect("elem read array");
         let eb = crate::profile::elem_bytes(array_elem(&self.obj_ty(arr)));
+        let s = self
+            .resident
+            .as_ref()
+            .expect("plan")
+            .stream_of(self.ir, arr);
         let d = self.dload(arr);
         let off = self.tmp();
         self.line(format!("{off} = mul i64 {idx}, {eb}"));
-        self.line(format!(
-            "call void @mapal_gpu_d2h(ptr {ep}, i64 {d}, i64 {off}, i64 {eb})"
-        ));
+        self.d2h(s, ep, &d, &off, eb);
     }
 
     fn carries_of(&self, merge: ObjectId) -> Vec<Carry> {
@@ -1955,6 +2217,10 @@ impl<'a> FnEmit<'a> {
 
     /// Function exit: free every buffer still held (a no-op on freed slots).
     pub(super) fn resident_teardown(&mut self) {
+        // Pins end with the frame they pinned.
+        if self.body.contains("@mapal_gpu_pin(") {
+            self.line("call void @mapal_gpu_unpin()");
+        }
         let slots: Vec<String> = self
             .dslots
             .iter()
@@ -1979,6 +2245,21 @@ impl<'a> FnEmit<'a> {
             .and_then(|p| p.arena.as_ref())
             .is_some_and(|a| a.bytes > 0)
     }
+}
+
+/// The wave rule (S54 R7): grids of `(blocks, wave)` on separate streams take
+/// one wave fewer than back to back exactly when their last waves — `b − w·(⌈b
+/// / w⌉ − 1)` blocks each — fit in one: `t_a / w_a + t_b / w_b ≤ 1`. Two
+/// grids under one wave each are the case `b = t`. Measured on device-only
+/// sites (`twin`): the A100 at 2048, where two grids of ~1.2 waves run in 3
+/// waves instead of 4, 21–27% faster in two sessions
+/// (`streams-a100-confirm.txt`, `-final.txt`); where the rule says no (the
+/// RTX 4090 and 5090 at 1024–2048) streams measured 3–6% slower. The first
+/// build's 8–37% losses with this rule at 2048–4096 were programs with a host
+/// join, which no longer open streams at all.
+pub(crate) fn waves_merge((ba, wa): (u64, u64), (bb, wb): (u64, u64)) -> bool {
+    let last = |b: u64, w: u64| b - w * (b.div_ceil(w) - 1);
+    last(ba, wa) * wb + last(bb, wb) * wa <= wa * wb
 }
 
 fn array_len(ty: &Ty) -> u64 {
@@ -2029,5 +2310,27 @@ mod tests {
         assert_eq!(off, [0, ARENA_ALIGN, 0]);
         assert_eq!(total, 3 * ARENA_ALIGN);
         assert_eq!(color(&[]), (vec![], 0));
+    }
+
+    use super::waves_merge;
+
+    #[test]
+    fn the_wave_rule_merges_exactly_the_last_waves_that_fit_one() {
+        // Two quarter waves share one wave; two full waves never do.
+        assert!(waves_merge((64, 256), (64, 256)));
+        assert!(!waves_merge((256, 256), (256, 256)));
+        // Under one wave each but not together: two waves either way.
+        assert!(!waves_merge((128, 164), (128, 164)));
+        // Many waves with short tails (the 3090 at 4096, 82 SMs × 2): 40 + 40
+        // of 164 — one wave saved of 14.
+        assert!(waves_merge((1024, 164), (1024, 164)));
+        // ~1.2 waves each (the A100 at 2048): 4 waves back to back, 3 together.
+        assert!(waves_merge((256, 216), (256, 216)));
+        // A tail of exactly half each fits; one block more does not.
+        assert!(waves_merge((50, 100), (50, 100)));
+        assert!(!waves_merge((51, 100), (50, 100)));
+        // Different geometries weigh each tail by its own wave.
+        assert!(waves_merge((128, 256), (32, 64)));
+        assert!(!waves_merge((128, 256), (33, 64)));
     }
 }
