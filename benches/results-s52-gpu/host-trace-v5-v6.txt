@@ -1,0 +1,184 @@
+# S52 host side of one GPU site: MAPAL_GPU_TRACE=1 phases of the e2e programs (box_profile.sh, 3 processes each),
+# plus the nsys runtime-API totals of the tile_bench process on the same box. Raw; copied from the scratch prof tarballs (S53 link audit).
+# NOTE: 'iter ms' is the program's own time bracket, which on GPU profiles does NOT contain the site (no clock fence; docs/notes/s53-research-link.md §1).
+# NOTE: wall_s is empty: box_profile.sh computes it with bc, absent on the box.
+== v6 rtx-4090 e2e_1024
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=147.055 lookup_ms=0.020 alloc_ms=0.184 h2d_ms=0.508 kernel_ms=0.137 d2h_ms=0.318 free_ms=0.310 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.328112
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=150.191 lookup_ms=0.025 alloc_ms=0.224 h2d_ms=0.496 kernel_ms=0.135 d2h_ms=0.308 free_ms=0.336 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.344787
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=140.647 lookup_ms=0.020 alloc_ms=0.195 h2d_ms=0.466 kernel_ms=0.133 d2h_ms=0.310 free_ms=0.279 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.333712
+== v6 rtx-4090 e2e_1024_c
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=134.771 lookup_ms=0.015 alloc_ms=0.174 h2d_ms=0.465 kernel_ms=0.108 d2h_ms=0.321 free_ms=0.274 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.334812
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=140.244 lookup_ms=0.018 alloc_ms=0.199 h2d_ms=0.505 kernel_ms=0.106 d2h_ms=0.329 free_ms=0.284 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.33935
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=135.977 lookup_ms=0.020 alloc_ms=0.184 h2d_ms=0.529 kernel_ms=0.104 d2h_ms=0.318 free_ms=0.281 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.384687
+== v6 rtx-4090 e2e_4096
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=140.751 lookup_ms=0.025 alloc_ms=0.200 h2d_ms=6.845 kernel_ms=3.790 d2h_ms=3.351 free_ms=2.369 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.332439
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=144.538 lookup_ms=0.024 alloc_ms=0.218 h2d_ms=6.853 kernel_ms=4.075 d2h_ms=3.372 free_ms=2.628 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.273792
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=138.801 lookup_ms=0.024 alloc_ms=0.227 h2d_ms=6.785 kernel_ms=4.064 d2h_ms=3.398 free_ms=2.623 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.275923999999996
+== v6 rtx-4090 e2e_4096_c
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=139.379 lookup_ms=0.019 alloc_ms=0.205 h2d_ms=6.819 kernel_ms=2.736 d2h_ms=3.389 free_ms=2.313 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.336654000000003
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=142.673 lookup_ms=0.022 alloc_ms=0.251 h2d_ms=7.054 kernel_ms=2.738 d2h_ms=3.370 free_ms=2.644 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.266381
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=141.872 lookup_ms=0.022 alloc_ms=0.223 h2d_ms=6.745 kernel_ms=2.734 d2h_ms=4.416 free_ms=2.649 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=22.686635000000003
+== v6 rtx-4090 nsys tile_bench runtime API (name|calls|total_ms)
+cuInit|4|0.007
+cuLibraryLoadData|4|16.024
+cuModuleLoadData|1|0.453
+cudaFree_v3020|2|109.321
+== v6 h100-pcie e2e_1024
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=408.296 lookup_ms=0.087 alloc_ms=0.378 h2d_ms=0.426 kernel_ms=0.259 d2h_ms=0.252 free_ms=0.359 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.283396
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=343.348 lookup_ms=0.078 alloc_ms=0.257 h2d_ms=0.408 kernel_ms=0.260 d2h_ms=0.236 free_ms=0.246 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.2942159999999998
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=338.369 lookup_ms=0.067 alloc_ms=0.255 h2d_ms=0.426 kernel_ms=0.260 d2h_ms=0.211 free_ms=0.249 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.277256
+== v6 h100-pcie e2e_1024_c
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=349.999 lookup_ms=0.051 alloc_ms=0.280 h2d_ms=0.473 kernel_ms=0.173 d2h_ms=0.233 free_ms=0.281 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.314907
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=343.374 lookup_ms=0.047 alloc_ms=0.258 h2d_ms=0.404 kernel_ms=0.173 d2h_ms=0.224 free_ms=0.245 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.278556
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=333.065 lookup_ms=0.051 alloc_ms=0.270 h2d_ms=0.421 kernel_ms=0.174 d2h_ms=0.229 free_ms=0.250 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.2740259999999999
+== v6 h100-pcie e2e_4096
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=349.617 lookup_ms=0.068 alloc_ms=0.324 h2d_ms=5.717 kernel_ms=7.965 d2h_ms=3.223 free_ms=0.502 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.352055
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=360.848 lookup_ms=0.077 alloc_ms=0.350 h2d_ms=5.876 kernel_ms=7.838 d2h_ms=3.231 free_ms=0.502 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.326784999999997
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=346.169 lookup_ms=0.067 alloc_ms=0.352 h2d_ms=5.749 kernel_ms=7.924 d2h_ms=3.198 free_ms=0.504 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.742122
+== v6 h100-pcie e2e_4096_c
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=347.310 lookup_ms=0.046 alloc_ms=0.332 h2d_ms=5.789 kernel_ms=4.219 d2h_ms=3.264 free_ms=0.460 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.030878
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=350.296 lookup_ms=0.058 alloc_ms=0.326 h2d_ms=5.703 kernel_ms=4.217 d2h_ms=3.202 free_ms=0.431 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.039527999999997
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=334.134 lookup_ms=0.047 alloc_ms=0.322 h2d_ms=5.744 kernel_ms=4.236 d2h_ms=3.200 free_ms=0.511 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.015697
+== v6 h100-pcie nsys tile_bench runtime API (name|calls|total_ms)
+cuInit|4|0.01
+cuLibraryLoadData|4|19.94
+cuModuleLoadData|1|0.824
+cudaFree_v3020|2|147.105
+== v6 rtx-5090 e2e_1024
+mapal_gpu_trace kernel=mapal_tile_f24cd6725591d228 load_ms=219.790 lookup_ms=0.027 alloc_ms=0.521 h2d_ms=1.544 kernel_ms=0.139 d2h_ms=0.576 free_ms=0.472 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.0205119999999996
+mapal_gpu_trace kernel=mapal_tile_f24cd6725591d228 load_ms=222.495 lookup_ms=0.025 alloc_ms=0.501 h2d_ms=1.054 kernel_ms=0.178 d2h_ms=0.568 free_ms=0.476 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.057843
+mapal_gpu_trace kernel=mapal_tile_f24cd6725591d228 load_ms=227.212 lookup_ms=0.026 alloc_ms=0.496 h2d_ms=1.118 kernel_ms=0.172 d2h_ms=0.561 free_ms=0.648 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.2558869999999995
+== v6 rtx-5090 e2e_1024_c
+mapal_gpu_trace kernel=mapal_tile_b3430eaa07e662e7 load_ms=221.523 lookup_ms=0.021 alloc_ms=0.479 h2d_ms=0.963 kernel_ms=0.119 d2h_ms=0.521 free_ms=0.456 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.1038550000000003
+mapal_gpu_trace kernel=mapal_tile_b3430eaa07e662e7 load_ms=217.840 lookup_ms=0.022 alloc_ms=0.497 h2d_ms=0.925 kernel_ms=0.115 d2h_ms=0.522 free_ms=0.500 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.100784
+mapal_gpu_trace kernel=mapal_tile_b3430eaa07e662e7 load_ms=225.336 lookup_ms=0.021 alloc_ms=0.710 h2d_ms=1.417 kernel_ms=0.121 d2h_ms=0.566 free_ms=0.472 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=2.083344
+== v6 rtx-5090 e2e_4096
+mapal_gpu_trace kernel=mapal_tile_44b89e2e8514dfc0 load_ms=222.887 lookup_ms=0.032 alloc_ms=0.530 h2d_ms=11.444 kernel_ms=3.368 d2h_ms=7.066 free_ms=1.026 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=32.088514
+mapal_gpu_trace kernel=mapal_tile_44b89e2e8514dfc0 load_ms=213.303 lookup_ms=0.043 alloc_ms=0.498 h2d_ms=10.085 kernel_ms=3.363 d2h_ms=6.894 free_ms=1.029 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=33.426946
+mapal_gpu_trace kernel=mapal_tile_44b89e2e8514dfc0 load_ms=218.841 lookup_ms=0.031 alloc_ms=0.515 h2d_ms=10.386 kernel_ms=3.366 d2h_ms=6.907 free_ms=1.069 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=35.060032
+== v6 rtx-5090 e2e_4096_c
+mapal_gpu_trace kernel=mapal_tile_359ebbfdb3fa2c9f load_ms=216.014 lookup_ms=0.024 alloc_ms=0.504 h2d_ms=10.235 kernel_ms=2.268 d2h_ms=7.259 free_ms=1.079 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=34.117247
+mapal_gpu_trace kernel=mapal_tile_359ebbfdb3fa2c9f load_ms=216.349 lookup_ms=0.025 alloc_ms=0.509 h2d_ms=15.518 kernel_ms=2.262 d2h_ms=7.016 free_ms=1.016 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=32.693242999999995
+mapal_gpu_trace kernel=mapal_tile_359ebbfdb3fa2c9f load_ms=210.848 lookup_ms=0.024 alloc_ms=0.512 h2d_ms=9.845 kernel_ms=2.261 d2h_ms=6.889 free_ms=1.030 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=35.327466
+== v6 rtx-5090 nsys tile_bench runtime API (name|calls|total_ms)
+cuInit|4|0.009
+cuLibraryLoadData|4|157.542
+cuModuleLoadData|1|0.411
+cudaFree_v3020|2|152.095
+== v5 h100-pcie e2e_1024
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=334.649 lookup_ms=0.069 alloc_ms=0.265 h2d_ms=0.401 kernel_ms=0.259 d2h_ms=0.224 free_ms=0.239 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.266766
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=333.653 lookup_ms=0.070 alloc_ms=0.276 h2d_ms=0.406 kernel_ms=0.259 d2h_ms=0.232 free_ms=0.250 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.273956
+mapal_gpu_trace kernel=mapal_tile_ca2f6114b3534324 load_ms=337.535 lookup_ms=0.069 alloc_ms=0.261 h2d_ms=0.412 kernel_ms=0.259 d2h_ms=0.229 free_ms=0.245 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.2695149999999997
+== v5 h100-pcie e2e_1024_c
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=330.716 lookup_ms=0.048 alloc_ms=0.274 h2d_ms=0.404 kernel_ms=0.172 d2h_ms=0.233 free_ms=0.250 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.2711059999999998
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=393.965 lookup_ms=0.047 alloc_ms=0.255 h2d_ms=0.412 kernel_ms=0.171 d2h_ms=0.228 free_ms=0.236 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.283696
+mapal_gpu_trace kernel=mapal_tile_07c6663c96748bdb load_ms=687.533 lookup_ms=0.047 alloc_ms=0.259 h2d_ms=0.405 kernel_ms=0.170 d2h_ms=0.226 free_ms=0.981 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.286527
+== v5 h100-pcie e2e_4096
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=329.188 lookup_ms=0.071 alloc_ms=0.313 h2d_ms=5.523 kernel_ms=7.947 d2h_ms=3.201 free_ms=0.399 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.027689
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=332.189 lookup_ms=0.068 alloc_ms=0.313 h2d_ms=5.634 kernel_ms=7.957 d2h_ms=3.147 free_ms=0.514 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.017989
+mapal_gpu_trace kernel=mapal_tile_d7d2247fbbd9f82c load_ms=334.457 lookup_ms=0.068 alloc_ms=0.316 h2d_ms=5.649 kernel_ms=7.963 d2h_ms=3.163 free_ms=0.520 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.023289
+== v5 h100-pcie e2e_4096_c
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=337.573 lookup_ms=0.047 alloc_ms=0.296 h2d_ms=5.471 kernel_ms=4.220 d2h_ms=3.149 free_ms=0.368 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.037309999999998
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=346.615 lookup_ms=0.047 alloc_ms=0.296 h2d_ms=5.485 kernel_ms=4.218 d2h_ms=3.170 free_ms=0.375 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.013758999999997
+mapal_gpu_trace kernel=mapal_tile_eb50b87a44f46aa3 load_ms=336.893 lookup_ms=0.047 alloc_ms=0.285 h2d_ms=5.622 kernel_ms=4.232 d2h_ms=3.153 free_ms=0.506 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=21.02556
+== v5 h100-pcie nsys tile_bench runtime API (name|calls|total_ms)
+cuInit|4|0.009
+cuLibraryLoadData|4|19.382
+cuModuleLoadData|1|0.809
+cudaFree_v3020|2|133.67
