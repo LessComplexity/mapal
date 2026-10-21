@@ -349,9 +349,16 @@ fn launch_args(ll: &str) -> Vec<(String, String, String, Option<String>)> {
 /// the last site's output goes to the host, so its window is the operand the
 /// most blocks read: `a` (each row-panel read by the grid's 4 columns) over
 /// `b` (2 rows) on this 64×64 site's 4×2 grid. Off: no window, the S53 text.
+/// Forced on: the H100 PCIe table ships it on the contract face only.
 #[test]
 fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
-    let ll = emit(&chain_src(), on());
+    let mut forced = on();
+    *forced.on.rung("l2-window").expect("a rung") = true;
+    let ll = emit(&chain_src(), forced);
+    assert!(
+        !emit(&chain_src(), on()).contains("launch_l2"),
+        "exact face: OFF"
+    );
     let l = launch_args(&ll);
     assert_eq!(l.len(), 2, "{ll}");
     assert!(
