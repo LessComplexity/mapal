@@ -239,6 +239,15 @@ fn a_fold_over_a_host_array_stays_on_the_host() {
     assert_eq!(sites(&src).len(), 2, "both are row folds");
     let (on, dev) = emit(&src, GpuArms::default(), false);
     assert_eq!(launch_ids(&on).len(), 2, "the site and `mx`");
+    // `mx` crosses back whole (the host's `ex` reads it): its copy keeps no
+    // pointer to the host slot, so the host loop that reads it still
+    // vectorizes; `c`'s copy is today's text.
+    let d2h: Vec<&str> = on
+        .lines()
+        .filter(|l| l.contains("call void @mapal_gpu_d2h("))
+        .collect();
+    assert_eq!(d2h.len(), 2, "{d2h:?}");
+    assert!(!d2h[0].contains("nocapture") && d2h[1].contains("(ptr nocapture "));
     assert!(dev.contains("%c = fcmp ogt float %v, %acc"));
     assert!(dev.contains("%accn = select i1 %c, float %v, float %acc"));
     let (off_ll, _) = emit(&src, off("rowfold-layout"), false);
