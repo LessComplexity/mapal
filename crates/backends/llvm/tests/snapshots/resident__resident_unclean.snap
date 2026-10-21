@@ -13,6 +13,7 @@ declare void @mapal_print_str(ptr, i64, i1 zeroext)
 declare double @mapal_time_ms()
 declare void @mapal_trap(i32) noreturn
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+declare void @mapal_gpu_init(i32)
 declare i64 @mapal_gpu_alloc(ptr, i64)
 declare void @mapal_gpu_h2d(i64, ptr, i64)
 declare void @mapal_gpu_d2h(ptr, i64, i64, i64)
@@ -83,7 +84,7 @@ bb12:
   %t27 = load i64, ptr %d19
   %t28 = load i64, ptr %d21
   %t30 = call i64 @mapal_gpu_alloc(ptr %d29, i64 16384)
-  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t27, i64 %t28, i64 %t30, i32 2, i32 1, i32 32, i32 13312)
+  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t27, i64 %t28, i64 %t30, i32 4, i32 2, i32 32, i32 1664)
   call void @mapal_gpu_free(ptr %d19)
   call void @mapal_gpu_free(ptr %d21)
   %t31 = getelementptr { ptr, i32 }, ptr %o8, i32 0, i32 0
@@ -540,6 +541,7 @@ bb42:
 
 define i32 @main() {
 entry:
+  call void @mapal_gpu_init(i32 1)
   call void @mapal_main()
   ret i32 0
 }

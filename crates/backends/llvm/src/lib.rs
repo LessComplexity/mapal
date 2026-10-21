@@ -551,9 +551,13 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // trip (`mapal_gpu_tile`) or `resident`'s split entries (`mapal_gpu_alloc`
     // precedes every one of them).
     let resident = funcs.contains("@mapal_gpu_alloc(");
-    let gpu_host = resident || funcs.contains("@mapal_gpu_tile(");
+    let round_trip = funcs.contains("@mapal_gpu_tile(");
+    let gpu_host = resident || round_trip;
     if gpu_host {
-        out.push_str(crate::func::gpu::GPU_DECLS);
+        out.push_str(crate::func::gpu::GPU_INIT_DECL);
+        if round_trip {
+            out.push_str(crate::func::gpu::GPU_TILE_DECL);
+        }
         if funcs.contains(crate::func::gpu::GPU_SYNC) {
             out.push_str(crate::func::gpu::GPU_SYNC_DECL);
         }
@@ -595,7 +599,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         }
     }
     // The runtime's init is `main`'s first call exactly when a site calls the
-    // runtime: the same gate as `GPU_DECLS`.
+    // runtime: the same gate as `GPU_INIT_DECL`.
     let prologue = if gpu_host {
         crate::func::gpu::init_call(crate::func::gpu::host_rungs(
             profile,
