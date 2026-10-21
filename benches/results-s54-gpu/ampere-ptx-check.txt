@@ -1,0 +1,32 @@
+S54 Ampere profiles: static PTX check (no GPU), HEAD 67c4f89 (+ 8d1657e for px_loop_256), 2026-10-21.
+Profiles: rtx-3090 (sm_86, 82 SMs, 16 blocks/SM, 100 KB smem/SM) and a100 (A100 SXM4, sm_80, 108 SMs,
+164 KB smem/SM, 2048 threads, 32 blocks/SM). Both UNMEASURED: not in GPU_MEASURED, every rung ON.
+A100 variant: SXM4 — vast `search offers` (num_gpus=1 rentable cuda_max_good>=12.8 reliability>0.97
+inet_down>500 disk>=40) listed 4 A100_SXM4 offers (40 GB $0.69/h, 80 GB $1.07..$1.72/h) and 1 A100_PCIE
+($0.73/h) on 2026-10-21. RTX_3090: 5+ offers. The PCIe part gets its own name (a100-pcie) when measured.
+
+ISA gates (profile.rs): cp.async + mma.sync TF32 + cvt.rna.tf32 need sm_80 (Gpu::has_mma_sync, gating
+gpu_tile_async / gpu_mma_tile); ldmatrix (sm_75) is emitted only inside the mma kernel, so sm_80 gates it;
+wgmma / fence.proxy.async need sm_90a (Gpu::has_wgmma). Pinned in
+profile::tests::ampere_profiles_carry_the_compute_capability_facts.
+
+1) bundle.sh <B> rtx-3090:sm_86 a100:sm_80 (every tiles program, exact + contract faces, every arm;
+   mm_* also TF32 and every kernel-rung arm): exit 0 — opt -O3 + llc -O3 -mcpu=<sm> succeeded on every
+   device module. Bundle: /private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/scratchpad/s54base/bundle-ampere
+   (63 programs, 52 oracle files; its px_loop_128 predates 8d1657e).
+
+part      sm     host objects  device modules  PTX  missing  wrong .target  above-target instr  cp.async  ldmatrix  mma.sync.tf32  gen kernels
+rtx-3090  sm_86  629           621             621  0        0              0                   489       15        19             403
+a100      sm_80  629           621             621  0        0              0                   489       15        19             403
+(above-target = any of wgmma, fence.proxy.async, setmaxnreg, cp.async.bulk, mbarrier; counts are PTX files.)
+
+2) TF32 face for EVERY tiles program (bundle.sh builds it for mm_* only): emit --contract --precision=tf32
+   -> opt -> llc.
+part      sm     llc ok  fail  no device module  with mma.sync.tf32  above-target
+rtx-3090  sm_86  59      0     4                 54                  0
+a100      sm_80  59      0     4                 54                  0
+
+3) px_loop_256 (after 8d1657e), exact / contract / tf32 on both parts: llc ok 6/6, .target correct,
+   no above-target instruction.
+
+Not checked here: ptxas / driver JIT (no CUDA on the Mac) — the box differential in part 2 is that check.
