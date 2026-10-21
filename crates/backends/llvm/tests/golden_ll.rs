@@ -10,7 +10,7 @@
 //! and loop CFG are additionally covered by the `abs` / `fir` / `sum_to_n`
 //! example snapshots.
 
-use mapal_backend_llvm::{EmitError, EmitOpts, emit, emit_with_opts};
+use mapal_backend_llvm::{EmitError, EmitOpts, GpuArms, emit, emit_with_opts};
 use mapal_ir::{CategoryIr, Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value};
 
 const L: SourceLoc = SourceLoc { start: 0, end: 0 };
@@ -2074,18 +2074,53 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
             nn = n * n
         )
     };
-    let at = |src: &str, target: &'static str| {
+    let at_arms = |src: &str, target: &'static str, gpu: GpuArms| {
         let ir = mapal_rewrite::rewrite(lower_src(src)).ir;
         emit_with_opts(
             &ir,
             &EmitOpts {
                 target,
+                gpu,
                 ..EmitOpts::default()
             },
         )
         .unwrap()
     };
+    let at = |src: &str, target: &'static str| at_arms(src, target, GpuArms::default());
+    // `resident` (shipped): the operands are built on the device and each read
+    // waits for every launch before it, so the bracket is the site's launch.
     let ll = at(&e2e(64), "h100-pcie");
+    let host = mapal_main(&ll);
+    let calls: Vec<&str> = host
+        .lines()
+        .filter_map(|l| {
+            [
+                "@mapal_gpu_gen(",
+                "@mapal_time_ms(",
+                "@mapal_gpu_launch(",
+                "@mapal_gpu_sync(",
+            ]
+            .into_iter()
+            .find(|c| l.contains(c))
+        })
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            "@mapal_gpu_gen(",
+            "@mapal_gpu_gen(",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms(",
+            "@mapal_gpu_launch(",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms("
+        ],
+        "gen -> sync -> time -> launch -> sync -> time:\n{host}"
+    );
+    // The S52 round trip (`resident` off): the host generation precedes t0.
+    let mut off = GpuArms::default();
+    *off.off.rung("resident").unwrap() = true;
+    let ll = at_arms(&e2e(64), "h100-pcie", off);
     let host = mapal_main(&ll);
     let calls: Vec<&str> = host
         .lines()

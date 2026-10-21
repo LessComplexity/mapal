@@ -87,6 +87,7 @@ impl<'a> FnEmit<'a> {
                 if self.perf_timing {
                     self.line("call void @mapal_perf_end()");
                 }
+                self.resident_teardown();
                 self.heap_teardown();
                 self.line(format!("ret {t} {v}"));
                 t
@@ -95,6 +96,7 @@ impl<'a> FnEmit<'a> {
                 if self.perf_timing {
                     self.line("call void @mapal_perf_end()");
                 }
+                self.resident_teardown();
                 self.heap_teardown();
                 self.line("ret void");
                 "void".to_string()
