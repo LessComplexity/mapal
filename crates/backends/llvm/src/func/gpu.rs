@@ -2214,8 +2214,8 @@ mod tests {
     /// every other part keeps row-major; without the gate every part groups
     /// where the grid is more than a wave. What ships is the measured table:
     /// raster OFF on the 3090 and the gate OFF on the 5090
-    /// (`l2-raster-rtx-{3090,5090}-run{2,3}.txt`), so only the 5090 groups,
-    /// at 4096 and 8192.
+    /// (`l2-raster-rtx-{3090,5090}-*.txt`), so only the 5090 groups, on the
+    /// contract faces (FMA and TF32) at 4096 and 8192.
     #[test]
     fn raster_fires_where_one_blocks_panels_leave_the_l2() {
         use crate::profile::{A100, RTX_3090};
@@ -2249,7 +2249,7 @@ mod tests {
                     }
                     assert!(ungated.gy % ungated.raster == 0, "{why}");
                     let shipped = at(crate::GpuArms::default());
-                    let want = p.name == "rtx-5090" && n >= 4096;
+                    let want = p.name == "rtx-5090" && n >= 4096 && contract;
                     assert_eq!(shipped.raster > 1, want, "{why}");
                 }
             }
