@@ -524,8 +524,9 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
 /// the rows of the measured part with its architecture (`cuda-ada` ← the
-/// 4090's, `h100` ← the H100 PCIe's); with none, the rows of every measured
-/// part — only what was positive on all of them.
+/// 4090's, `h100` ← the H100 PCIe's); with none (Ampere, S54), every rung is
+/// ON — the S52 baseline the arms are measured against — until its own
+/// session adds rows.
 pub const GPU_MEASURED: [&TargetProfile; 3] = [&RTX_4090, &H100_PCIE, &RTX_5090];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
@@ -1186,8 +1187,8 @@ impl TargetProfile {
     /// **The GPU rungs this part ships at a site this full, on this face**
     /// (S53): every rung on, minus this profile's rows of [`GPU_RUNGS_OFF`]
     /// that cover the fill and the face. An unmeasured profile takes the
-    /// measured part of its architecture ([`GPU_MEASURED`]); with none, the
-    /// intersection of the measured parts' sets.
+    /// measured part of its architecture ([`GPU_MEASURED`]); with none, every
+    /// rung: another architecture's losses are not this one's.
     pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
         let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
             Fill::Under
@@ -1205,10 +1206,9 @@ impl TargetProfile {
             .filter(|p| p.name == self.name || p.gpu().map(|g| g.arch) == arch)
             .map(|p| p.name)
             .collect();
-        let from = |name: &str| same.is_empty() || same.contains(&name);
         let mut r = crate::GpuRungs::ALL;
         for d in GPU_RUNGS_OFF {
-            if from(d.profile)
+            if same.contains(&d.profile)
                 && (d.fill == Fill::Any || d.fill == fill)
                 && (d.face == Face::Any || d.face == face)
             {
@@ -2106,6 +2106,45 @@ pub const RTX_5090: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
+/// RTX 3090 — Ampere GA102 (`sm_86`), 82 SMs (S54). Compute capability 8.6
+/// differs from Ada's per-SM facts in one field: 16 resident blocks per SM, not
+/// 24 (CUDA C Programming Guide, compute-capability table); 100 KB shared memory
+/// per SM, 99 KB per block, 1536 threads per SM, as on Ada.
+/// **UNMEASURED** — not in [`GPU_MEASURED`], so every rung is ON until its own
+/// session measures the arms.
+pub const RTX_3090: TargetProfile = TargetProfile {
+    name: "rtx-3090",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_86",
+        sms: 82,
+        max_blocks_per_sm: 16,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// A100 SXM4 — Ampere GA100 (`sm_80`), 108 SMs (S54; the 40 GB and 80 GB SXM4
+/// parts have the same SM). 164 KB shared memory per SM (`167936`), 163 KB per
+/// block opt-in (`166912`), 2048 threads and 32 blocks per SM (CUDA C
+/// Programming Guide, compute capability 8.0). The SXM4 variant because vast
+/// listed four rentable single-GPU SXM4 offers to one PCIe on 2026-10-21; the
+/// PCIe part (same SM facts, lower clocks) is a separate name, `a100-pcie`,
+/// when it is measured — the `h100` / `h100-pcie` split.
+/// **UNMEASURED** — every rung ON (see [`RTX_3090`]).
+pub const A100: TargetProfile = TargetProfile {
+    name: "a100",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_80",
+        sms: 108,
+        smem_per_sm: 164 * 1024,
+        smem_per_block: 163 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
 /// How many blocks the thread budget is split across on one SM: two, so one
 /// computes while the other waits at the panel barrier. Policy, like
 /// [`Sme::panel_l1d_ratio`] — not a property of the silicon.
@@ -2176,7 +2215,7 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 11] = [
+const PROFILES: [&TargetProfile; 13] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
@@ -2185,6 +2224,8 @@ const PROFILES: [&TargetProfile; 11] = [
     &H100,
     &H100_PCIE,
     &RTX_5090,
+    &RTX_3090,
+    &A100,
     &APPLE_M4_SME,
     &RAPTORLAKE,
     &RAPTORLAKE_INLINE,
@@ -3329,10 +3370,12 @@ mod tests {
                         assert_eq!(!r.get(n), cited, "{} {n} {wps} {contract}", p.name);
                     }
                 }
-                // An unmeasured part takes its architecture's measured part.
+                // An unmeasured part takes its architecture's measured part;
+                // with none (Ampere), every rung.
                 for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
                     assert_eq!(p.gpu_rungs(wps, contract), m.gpu_rungs(wps, contract));
                 }
+                assert_eq!(A100.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
             }
         }
     }
@@ -3512,5 +3555,63 @@ mod tests {
         assert_eq!(CUDA_ADA.vec_regs, GENERIC.vec_regs);
         assert_eq!(CUDA_ADA.l2_bytes, GENERIC.l2_bytes);
         assert_eq!(CUDA_ADA.acc_vecs_per_row, GENERIC.acc_vecs_per_row);
+    }
+
+    /// S54 Ampere: the compute-capability facts (CUDA C Programming Guide
+    /// tables for 8.0 and 8.6; the `deviceQuery` values), the ISA gates they
+    /// open, and the geometry derived from them. Unmeasured: every rung ON.
+    #[test]
+    fn ampere_profiles_carry_the_compute_capability_facts() {
+        let f32 = Ty::f32();
+        let facts = |p: &TargetProfile| {
+            let g = *p.gpu().expect("gpu");
+            (
+                g.arch,
+                g.sms,
+                g.smem_per_sm,
+                g.smem_per_block,
+                g.max_threads_per_sm,
+                g.max_blocks_per_sm,
+            )
+        };
+        assert_eq!(facts(&RTX_3090), ("sm_86", 82, 102_400, 101_376, 1536, 16));
+        assert_eq!(facts(&A100), ("sm_80", 108, 167_936, 166_912, 2048, 32));
+        for p in [&RTX_3090, &A100] {
+            assert_eq!(resolve(p.name).map(|r| r.name), Some(p.name));
+            let g = *p.gpu().expect("gpu");
+            // cp.async, ldmatrix (sm_75) and `mma.sync` TF32 all hold from
+            // sm_80; `wgmma` is sm_90a only.
+            assert!(g.has_mma_sync() && !g.has_wgmma(), "{}", p.name);
+            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None);
+            assert!(p.gpu_mma_tile(4096, 4096, 4096, true, true).is_some());
+            let t = p
+                .gpu_tile(4096, 4096, 4096, &f32, false, false)
+                .expect("tile");
+            assert!(p.gpu_tile_async(t, 4096, &f32).is_some());
+            for wps in [0, 1, 2, 64] {
+                for contract in [false, true] {
+                    assert_eq!(p.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+                }
+            }
+        }
+        // 2 warps × 4 schedulers × SMs.
+        assert_eq!(RTX_3090.gpu().map(Gpu::fill_warps), Some(656));
+        assert_eq!(A100.gpu().map(Gpu::fill_warps), Some(864));
+        let g = |p: &TargetProfile, n| {
+            let x = p.gpu_tile(n, n, n, &f32, false, false).expect("square");
+            (x.bm(), x.bn(), x.threads(), x.bk, x.blocks_per_sm)
+        };
+        // 3090: Ada's 100 KB SM ⇒ the 4090's 4096² tile; 1024² is 64 blocks
+        // < 82 SMs ⇒ halve x once.
+        assert_eq!(g(&RTX_3090, 4096), (128, 128, 256, 32, 2));
+        assert_eq!(g(&RTX_3090, 1024), (128, 64, 128, 32, 4));
+        // A100: 164 KB / 2 blocks − 1 KB ⇒ bk 64, as on Hopper.
+        assert_eq!(g(&A100, 4096), (128, 128, 256, 64, 2));
+        let m = |p: &TargetProfile| {
+            let x = p.gpu_mma_tile(4096, 4096, 4096, false, true).expect("mma");
+            (x.wm(), x.wn(), x.bm(), x.bn(), x.bk, x.stages)
+        };
+        assert_eq!(m(&RTX_3090), (64, 32, 128, 128, 16, 2));
+        assert_eq!(m(&A100), (64, 32, 128, 128, 32, 2));
     }
 }
