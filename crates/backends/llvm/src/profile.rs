@@ -687,6 +687,106 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
                files' trace totals)",
     },
+    // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
+    // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
+    // `streams` ships ON (no row) on the A100 and the RTX 5090, measured on the device-only shape
+    // (pt_twin, two independent sites): A100 n=512 one stream 1.040/0.972, 1.054/0.960, 0.518/0.486
+    // vs streams 1.000/0.937, 0.969/0.898, 0.483/0.437 ms and n=2048 (last waves merge) 7.936/5.030,
+    // 7.866/5.083, 6.039/3.807 vs 6.229/3.818, 6.204/3.716, 4.562/2.653 ms (streams-a100-confirm.txt,
+    // -final.txt, -shipped.txt); RTX 5090 n=512 0.143/0.802, 0.167/0.163, 0.672/0.691 vs
+    // 0.138/0.147, 0.159/0.154, 0.668/0.621 ms (-confirm, -final, -shipped) and n=4096 8.207/5.657 vs
+    // 7.804/5.447 ms (-shipped, disjoint).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-3090-confirm.txt / -final.txt pt_twin_512 (device-only) on 0.971/0.941 vs off \
+               0.967/0.945 ms, on 0.706/0.700 vs off 0.711/0.696 ms: no effect in two sessions; every probe with a \
+               host join slower on streams (streams-rtx-3090.txt, -confirm.txt: diamond_512 0.82-0.88x, mlp2_512 \
+               0.62-0.84x)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-4090-final.txt pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms, pt_twin_1024 on \
+               0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
+               diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_twin_512: streams-h100-final.txt (H100 SXM, no PCIe box left) on 0.752/0.739 vs off \
+               0.763/0.762 ms, one session inside the H100 noise floor; streams-h100-pcie-confirm.txt on \
+               4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048 (copies in the loop pinned): streams-rtx-3090.txt on 130.755/126.012 vs off \
+               131.314/125.685 ms, -confirm.txt on 107.350/103.422 vs off 103.603/98.630 ms, -final.txt on \
+               110.819/106.843 vs off 114.186/108.992 ms: no stable sign",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-rtx-4090.txt on 108.529/105.036 vs off 105.843/105.855 ms, -final.txt on \
+               69.409/68.007 vs off 70.917/69.474 ms: no stable sign (the session-1 box copies pageable at the pinned \
+               rate, 13.3 vs 13.4 GB/s)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-h100-pcie.txt on 75.623/69.702 vs off 72.974/73.441 ms, -confirm.txt on \
+               70.811/69.016 vs off 72.437/69.029 ms: no stable sign",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-a100.txt on 97.927/93.810 vs off 103.262/95.645 ms, -confirm.txt on \
+               100.516/90.376 vs off 105.920/94.261 ms, -final.txt on 128.398/119.525 vs off 129.161/118.392 ms: \
+               positive on the two boxes whose pageable copy runs at 0.56-0.84 of pinned, negative on the one at \
+               0.98 — a host fact, not the part's",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-rtx-5090.txt on 77.545/75.830 vs off 92.102/88.746 ms, -confirm.txt on \
+               50.086/48.318 vs off 58.865/57.286 ms (pageable 9-19 GB/s vs pinned 26-52), -final.txt on \
+               57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pdl",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-h100-pcie.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.211/1.174 vs off \
+               1.243/1.269 ms, then 1.936/1.808 vs 1.716/1.931 ms; pt_diamond_2048 10.037/9.153 vs 10.416/8.907, \
+               then 20.825/24.517 vs 26.320/24.602 ms)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pdl",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-5090.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.031/1.069 vs off \
+               1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
+               6.119/5.545 vs 6.122/5.549 ms)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

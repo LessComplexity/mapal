@@ -520,14 +520,15 @@ impl<'a> FnEmit<'a> {
     /// - every one of these sites' outputs stays on the device (`keep`: read
     ///   by device sites and one-element copies only). A whole copy-out puts
     ///   the host between the chains: it waits for the transfer (at 512², five
-    ///   to ten times one kernel) before the next launch, and on the first two
-    ///   sessions every such program — indep, diamond, mlp2 at 512 with a host
-    ///   join — ran 2–20% slower on streams than on one, on five parts
+    ///   to ten times one kernel) before the next launch. In the first two
+    ///   sessions, diamond and mlp2 with a host join ran 0.60–0.96× on streams on
+    ///   every part, and indep flipped sign between sessions
     ///   (`streams-<part>.txt`, `-confirm.txt`); and
     /// - the grids can actually share the part — the **wave rule**
-    ///   ([`waves_merge`]): two independent grids fit one wave together,
-    ///   `b_a / w_a + b_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
-    ///   its launch geometry). A filled part has nothing to overlap.
+    ///   ([`waves_merge`]): two independent grids' last waves fit one wave,
+    ///   `t_a / w_a + t_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
+    ///   its launch geometry). Grids that fill their last waves have nothing to
+    ///   overlap.
     ///
     /// Otherwise the text stays the one-stream text. With streams open, the
     /// frees between the first and last chained launch (`cuMemFree` waits for
@@ -983,15 +984,19 @@ impl<'a> FnEmit<'a> {
     }
 }
 
-/// The wave rule (S54 R7): two grids of `(blocks, wave)` on separate streams
-/// run as one wave instead of two exactly when both fit one wave together,
-/// `b_a / w_a + b_b / w_b ≤ 1`. Grids of several waves are never opened, even
-/// when their last waves would share one: the first session measured that form
-/// 8–20% slower than one stream at 4096 on the RTX 3090 and RTX 5090 (two
-/// multi-wave GEMMs at once share L2 and DRAM for longer than one tail wave
-/// saves; `streams-rtx-3090.txt`, `streams-rtx-5090.txt`).
+/// The wave rule (S54 R7): grids of `(blocks, wave)` on separate streams take
+/// one wave fewer than back to back exactly when their last waves — `b − w·(⌈b
+/// / w⌉ − 1)` blocks each — fit in one: `t_a / w_a + t_b / w_b ≤ 1`. Two
+/// grids under one wave each are the case `b = t`. Measured on device-only
+/// sites (`twin`): the A100 at 2048, where two grids of ~1.2 waves run in 3
+/// waves instead of 4, 21–27% faster in two sessions
+/// (`streams-a100-confirm.txt`, `-final.txt`); where the rule says no (the
+/// RTX 4090 and 5090 at 1024–2048) streams measured 3–6% slower. The first
+/// build's 8–37% losses with this rule at 2048–4096 were programs with a host
+/// join, which no longer open streams at all.
 pub(crate) fn waves_merge((ba, wa): (u64, u64), (bb, wb): (u64, u64)) -> bool {
-    ba * wb + bb * wa <= wa * wb
+    let last = |b: u64, w: u64| b - w * (b.div_ceil(w) - 1);
+    last(ba, wa) * wb + last(bb, wb) * wa <= wa * wb
 }
 
 fn array_len(ty: &Ty) -> u64 {
@@ -1020,8 +1025,10 @@ mod tests {
         // Under one wave each but not together: two waves either way.
         assert!(!waves_merge((128, 164), (128, 164)));
         // Many waves with short tails (the 3090 at 4096, 82 SMs × 2): 40 + 40
-        // of 164 would share a wave, but multi-wave grids are never opened.
-        assert!(!waves_merge((1024, 164), (1024, 164)));
+        // of 164 — one wave saved of 14.
+        assert!(waves_merge((1024, 164), (1024, 164)));
+        // ~1.2 waves each (the A100 at 2048): 4 waves back to back, 3 together.
+        assert!(waves_merge((256, 216), (256, 216)));
         // A tail of exactly half each fits; one block more does not.
         assert!(waves_merge((50, 100), (50, 100)));
         assert!(!waves_merge((51, 100), (50, 100)));

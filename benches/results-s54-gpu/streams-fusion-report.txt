@@ -1,10 +1,10 @@
-# S54 streams: static fusion report, before (EMIT_FLAGS=--gpu-off=streams,pinned,pdl, byte-identical to
-# s54-base on 41 programs x 5 parts x 2 faces) and after (shipped), exact face. 'on a chain stream' =
+# S54 streams: static fusion report of the shipped table, before (EMIT_FLAGS=--gpu-off=streams,pinned,pdl, byte-identical to
+# s54-base on 45 programs x 5 parts x 2 faces) and after (shipped: streams open on the A100 and RTX 5090 only, over device-only sites; pinned and pdl off everywhere), exact face. 'on a chain stream' =
 # launches with a stream index > 0; events = cross-chain waits the emitter places (the runtime adds a
 # join event only when legacy work was enqueued since; it shows in the trace as op=event auto=1).
 
 ## rtx-3090 — before
-S54 static fusion report — emit --rewrite --target=rtx-3090 --gpu-off=streams,pinned,pdl (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=rtx-3090 --gpu-off=streams,pinned,pdl (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
@@ -31,38 +31,48 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## rtx-3090 — after
-S54 static fusion report — emit --rewrite --target=rtx-3090  (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=rtx-3090  (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
-| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 2 |
-| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 2 |
+| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 0 |
+| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## a100 — before
-S54 static fusion report — emit --rewrite --target=a100 --gpu-off=streams,pinned,pdl (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=a100 --gpu-off=streams,pinned,pdl (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
@@ -89,38 +99,48 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## a100 — after
-S54 static fusion report — emit --rewrite --target=a100  (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=a100  (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
-| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 2 |
-| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 2 |
+| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 0 |
+| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 2 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 2 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 3 | 1 | 0 |
 
 ## rtx-4090 — before
-S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=streams,pinned,pdl (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=streams,pinned,pdl (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
@@ -147,38 +167,48 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## rtx-4090 — after
-S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
-| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 2 |
-| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 2 |
+| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 0 |
+| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## h100-pcie — before
-S54 static fusion report — emit --rewrite --target=h100-pcie --gpu-off=streams,pinned,pdl (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=h100-pcie --gpu-off=streams,pinned,pdl (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
@@ -205,38 +235,14 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
 ## h100-pcie — after
-S54 static fusion report — emit --rewrite --target=h100-pcie  (face exact), HEAD f3efb55
-Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
-
-| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
-| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 2 |
-| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 2 |
-
-## rtx-5090 — before
-S54 static fusion report — emit --rewrite --target=rtx-5090 --gpu-off=streams,pinned,pdl (face exact), HEAD f3efb55
+S54 static fusion report — emit --rewrite --target=h100-pcie  (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
@@ -263,32 +269,76 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
 | pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
 
-## rtx-5090 — after
-S54 static fusion report — emit --rewrite --target=rtx-5090  (face exact), HEAD f3efb55
+## rtx-5090 — before
+S54 static fusion report — emit --rewrite --target=rtx-5090 --gpu-off=streams,pinned,pdl (face exact), HEAD 99df048
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
-| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 3 | 1 | 4 |
-| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 1 |
-| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 2 |
-| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 2 | 0 | 4 |
-| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 2 |
-| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 4 |
-| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 4 | 0 | 6 |
-| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 2 |
-| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 2 |
+| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 0 |
+| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 0 | 0 | 0 |
+
+## rtx-5090 — after
+S54 static fusion report — emit --rewrite --target=rtx-5090  (face exact), HEAD 99df048
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | on a chain stream | events | pins |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 0 | 0 | 0 |
+| pt_diamond_1024 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_diamond_512 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_fanout_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_fanout_512 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_indep_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 8.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_indep_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 2.0 MB | 2 | 1 | 0 | 0 | 0 |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 0 | 0 | 0 |
+| pt_mlp2_1024 | 1 | 6 | 4 | 6 | 2 | 8.0 MB | 6 | 8.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp2_512 | 1 | 6 | 4 | 6 | 2 | 2.0 MB | 6 | 2.0 MB | 3 | 2 | 0 | 0 | 0 |
+| pt_mlp_1024 | 1 | 3 | 2 | 3 | 1 | 4.0 MB | 3 | 4.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_mlp_512 | 1 | 3 | 2 | 3 | 1 | 1.0 MB | 3 | 1.0 MB | 1 | 1 | 0 | 0 | 0 |
+| pt_twin_1024 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 0 | 0 | 0 |
+| pt_twin_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 2 | 0 | 0 |
+| pt_twin_512 | 1 | 4 | 2 | 4 | 0 | 0 B | 4 | 16 B | 0 | 0 | 2 | 0 | 0 |
+| px_fan_128 | 1 | 4 | 3 | 4 | 0 | 0 B | 6 | 24 B | 0 | 0 | 3 | 1 | 0 |
