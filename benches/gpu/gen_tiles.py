@@ -377,11 +377,13 @@ def probe_program(n, spec, timed, w=None):
 
 
 # The differential at 128 (the interpreter takes ~2 min per 256³ site and the
-# probes hold 25 sites; 128 is still several blocks per site on every part),
-# the loop 4 steps; the timed probes at 2048 and 4096, the loop 8 steps.
+# probes hold 25 sites; 128 is still several blocks per site on every part).
+# The loop at 256 × 3 steps: its carried array then reaches `heap_min_bytes`
+# (256 KB), the storage the timed loops have — at 128 the 64 KB array stays an
+# SSA aggregate and clang takes ~35 s per host object (~1 s at 256).
 for name, spec in probes(128).items():
     (out / f"px_{name}_128.mapal").write_text(probe_program(128, spec, False))
-(out / "px_loop_128.mapal").write_text(probe_program(128, loop_act(128, 4), False, w='w'))
+(out / "px_loop_256.mapal").write_text(probe_program(256, loop_act(256, 3), False, w='w'))
 for n in (2048, 4096):
     for name, spec in probes(n).items():
         (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))

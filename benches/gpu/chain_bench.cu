@@ -131,6 +131,7 @@ static cublasLtHandle_t lt;
 static void *ws[2];
 static const size_t WS = 32u << 20;
 static int launches;
+static bool lt_unavailable;
 
 static float *B(const std::string &k, long long cnt = 0) {
   auto it = buf.find(k);
@@ -166,10 +167,12 @@ struct LtPlan {
     BLAS(cublasLtMatmulPreferenceSetAttribute(pref, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &WS, sizeof WS));
     cublasLtMatmulHeuristicResult_t res;
     int got = 0;
-    BLAS(cublasLtMatmulAlgoGetHeuristic(lt, op, l, l, l, l, pref, 1, &res, &got));
-    if (!got) {
-      fprintf(stderr, "cublasLt: no algorithm for epilogue %d\n", (int)epi);
-      exit(102);
+    // No algorithm for this epilogue on this part drops the lt legs, not the run.
+    cublasStatus_t s = cublasLtMatmulAlgoGetHeuristic(lt, op, l, l, l, l, pref, 1, &res, &got);
+    if (s != CUBLAS_STATUS_SUCCESS || !got) {
+      printf("chain_note cublasLt has no algorithm for epilogue %d (status %d): lt legs dropped\n", (int)epi,
+             (int)s);
+      lt_unavailable = true;
     }
     algo = res.algo;
     cublasLtMatmulPreferenceDestroy(pref);
@@ -401,6 +404,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "unknown probe %s\n", probe.c_str());
     return 2;
   }
+  if (lt_unavailable)
+    legs.erase(std::remove_if(legs.begin(), legs.end(), [](const Leg &l) { return !strncmp(l.name, "lt", 2); }),
+               legs.end());
   for (auto &o : outs) B(o.first, o.second);
 
   // Mapal's printed values, in print order: [0] and [last] of every output.
