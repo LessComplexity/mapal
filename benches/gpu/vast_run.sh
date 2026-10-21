@@ -50,7 +50,8 @@ for _ in 1 2 3 4 5; do
 done
 [ "$up" = 1 ] || { log "bundle upload failed 5 times"; exit 1; }
 log "bundle uploaded"
-"${SSH[@]}" "cd /w && bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
+# PROBE_ARMS / PROBE_REPS / E2E_REPS reach box_run.sh (unset: its defaults).
+"${SSH[@]}" "cd /w && PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true

@@ -15,6 +15,11 @@
 //            LinearCombination / LinearCombinationRelu epilogue (a bias is C with
 //            ldc = 0, CUTLASS example 12's broadcast).
 //   gemv     rowsum: sgemm + cublasSgemv against a ones vector.
+//   fused    softmax_rows: sgemm + one warp-per-row softmax kernel (max, exp, sum,
+//            quotient in one pass over the row: what a fusing compiler emits).
+// rowsum and softmax_rows: every library leg reduces in its own order (a warp
+// tree, gemv's blocking), Mapal in the oracle's (one in-order chain per row) —
+// `chain_note ... library order != oracle order`.
 //   fused    ew: the three maps as one kernel (what a fusing compiler emits).
 // All math is pure FP32 (CUBLAS_COMPUTE_32F, default sgemm math: no TF32).
 //
@@ -29,7 +34,7 @@
 // not bit equality (the libraries fold in their own order).
 //
 // usage: chain_bench <probe> <n> <reps> [mapal values...]
-//   probe: epi bias ew pro indep mlp fanout diamond residual rowsum mlp2 loop
+//   probe: epi bias ew pro indep mlp fanout diamond residual rowsum softmax_rows mlp2 loop
 #include <cublasLt.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -120,6 +125,45 @@ __global__ void row_sum(float *r, const float *c, int n) {
   for (int j = lane; j < n; j += 32) s += c[(size_t)row * n + j];
   for (int d = 16; d; d /= 2) s += __shfl_down_sync(0xffffffffu, s, d);
   if (!lane) r[row] = s;
+}
+
+// softmax_rows' exp: gen_tiles.py `expo`, (1 + x/256)^256 with the base clamped at 0.
+__device__ float expo(float x) {
+  float v = fmaxf(x / 256.f + 1.f, 0.f);
+  for (int i = 0; i < 8; ++i) v = v * v;
+  return v;
+}
+
+// softmax_rows, eager: a row max and a row sum (one warp per row, as row_sum),
+// exp and the quotient one thread per cell.
+__global__ void row_max(float *r, const float *c, int n) {
+  int row = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
+  if (row >= n) return;
+  float m = -1e9f;
+  for (int j = lane; j < n; j += 32) m = fmaxf(m, c[(size_t)row * n + j]);
+  for (int d = 16; d; d /= 2) m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, d));
+  if (!lane) r[row] = m;
+}
+__global__ void sm_exp(float *o, const float *c, const float *mx, long long cnt, int n) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < cnt) o[i] = expo((c[i] - mx[i / n]) / (float)n);
+}
+__global__ void sm_div(float *o, const float *ex, const float *den, long long cnt, int n) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < cnt) o[i] = ex[i] / den[i / n];
+}
+// softmax_rows, fused: one warp per row — max, exp + sum, quotient.
+__global__ void softmax_row(float *y, const float *c, int n) {
+  int row = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
+  if (row >= n) return;
+  const float *x = c + (size_t)row * n;
+  float *o = y + (size_t)row * n;
+  float m = -1e9f, s = 0.f;
+  for (int j = lane; j < n; j += 32) m = fmaxf(m, x[j]);
+  for (int d = 16; d; d /= 2) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, d));
+  for (int j = lane; j < n; j += 32) s += expo((x[j] - m) / (float)n);
+  for (int d = 16; d; d /= 2) s += __shfl_xor_sync(0xffffffffu, s, d);
+  for (int j = lane; j < n; j += 32) o[j] = expo((x[j] - m) / (float)n) / s;
 }
 
 static int n;
@@ -353,6 +397,24 @@ int main(int argc, char **argv) {
                BLAS(cublasSgemv(hb[0], CUBLAS_OP_T, n, n, &one, B("c"), n, B("ones"), 1, &zero, B("r"), 1));
                ++launches;
              }}};
+  } else if (probe == "softmax_rows") {  // y = softmax over the rows of a·b, temperature n
+    outs = {{"y", nn}};
+    B("mx", n);
+    B("den", n);
+    legs = {{"eager",
+             [] {
+               sgemm(0, "c", "a", "b");
+               row_max<<<(n + 7) / 8, 256, 0, st[0]>>>(B("mx"), B("c"), n);
+               sm_exp<<<(unsigned)((nn + 255) / 256), 256, 0, st[0]>>>(B("ex"), B("c"), B("mx"), nn, n);
+               row_sum<<<(n + 7) / 8, 256, 0, st[0]>>>(B("den"), B("ex"), n);
+               sm_div<<<(unsigned)((nn + 255) / 256), 256, 0, st[0]>>>(B("y"), B("ex"), B("den"), nn, n);
+               launches += 4;
+             }},
+            {"fused", [] {
+               sgemm(0, "c", "a", "b");
+               softmax_row<<<(n + 7) / 8, 256, 0, st[0]>>>(B("y"), B("c"), n);
+               ++launches;
+             }}};
   } else if (probe == "mlp2") {  // d1 = relu(a·b + bias)·e ; d2 = relu(f·g + bias2)·p
     outs = {{"d1", nn}, {"d2", nn}};
     auto *p1 = new LtPlan(CUBLASLT_EPILOGUE_RELU_BIAS, B("bias"));
@@ -408,6 +470,10 @@ int main(int argc, char **argv) {
     legs.erase(std::remove_if(legs.begin(), legs.end(), [](const Leg &l) { return !strncmp(l.name, "lt", 2); }),
                legs.end());
   for (auto &o : outs) B(o.first, o.second);
+  if (probe == "rowsum" || probe == "softmax_rows")
+    printf("chain_note probe=%s n=%d every library leg reduces in its own order (warp tree, gemv blocking): "
+           "library order != oracle order\n",
+           probe.c_str(), n);
 
   // Mapal's printed values, in print order: [0] and [last] of every output.
   std::vector<double> want;

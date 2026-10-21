@@ -128,6 +128,14 @@ pub struct GpuRungs {
     /// as `main`'s first call, so it overlaps the host work before the first
     /// site. Off: the first site creates them.
     pub eager_init: bool,
+    /// S54 R0 for folds (`func/rowfold.rs`): a row-local in-order fold whose
+    /// read array a device site produced runs on the device, one thread per
+    /// row. Off: the host fold behind the output's whole copy-out.
+    pub rowfold: bool,
+    /// Under `rowfold`, when the fold is the producing site's only reader, the
+    /// site stores its output in the order the fold reads it (column-major),
+    /// so a warp's reads coalesce. Off: row-major store, strided fold reads.
+    pub rowfold_layout: bool,
 }
 
 impl GpuRungs {
@@ -153,11 +161,13 @@ impl GpuRungs {
         devgen: true,
         retain_delta: true,
         eager_init: true,
+        rowfold: true,
+        rowfold_layout: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 20] = [
+    pub const NAMES: [&'static str; 22] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -178,6 +188,8 @@ impl GpuRungs {
         "devgen",
         "retain-delta",
         "eager-init",
+        "rowfold",
+        "rowfold-layout",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -203,6 +215,8 @@ impl GpuRungs {
             "devgen" => &mut self.devgen,
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
+            "rowfold" => &mut self.rowfold,
+            "rowfold-layout" => &mut self.rowfold_layout,
             _ => return None,
         })
     }

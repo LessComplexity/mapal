@@ -371,6 +371,41 @@ pub struct TileSite {
     pub add_acc_first: bool,
 }
 
+/// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
+/// body is one `fold` over `k` reading one array at `base + ci·i + ck·k` and
+/// combining it into the accumulator by one step — `out[i] = fold_k (seed,
+/// ⊕) a[base + ci·i + ck·k]`. The arm [`CategoryIr::tile_site`] refuses (it
+/// needs `a·b`): a row sum, a row max, a norm's denominator.
+///
+/// Each row is one chain in increasing `k` (ADR-0028 D4), so rows are
+/// independent and any realization that keeps one row on one in-order chain
+/// computes the oracle's bits. Geometry only, like [`TileSite`]: where it runs
+/// is the backend's question.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowFoldSite {
+    pub rows: u64,
+    pub k: u64,
+    /// The one read; `clane == 0` and no `ksplit` by construction.
+    pub a: TileRead,
+    pub op: RowFoldOp,
+    pub seed: Value,
+    pub elem: Ty,
+}
+
+/// The step of a [`RowFoldSite`], in the source's operand order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowFoldOp {
+    /// `acc ⊕ e` (`acc_first`) or `e ⊕ acc`, `⊕` ∈ {`Add`, `Sub`, `Mul`}.
+    Arith { op: Operation, acc_first: bool },
+    /// `(x cmp y) ? p : q` with `{x, y} = {p, q} = {acc, e}` — a running max
+    /// or min. `acc_lhs`: `x` is `acc`; `acc_if_true`: `p` is `acc`.
+    Select {
+        cmp: Operation,
+        acc_lhs: bool,
+        acc_if_true: bool,
+    },
+}
+
 impl PathPlan {
     /// Whether scheduling can be skipped entirely.
     pub fn is_single_path(&self) -> bool {
@@ -837,6 +872,190 @@ impl CategoryIr {
             }
         }
         MovePlan { sites }
+    }
+
+    /// Recognize [`RowFoldSite`]s — maps whose body is one in-order fold of one
+    /// affine read. Disjoint from [`Self::tile_plan`] (its step needs a product
+    /// of two reads, this one the read itself) and from [`Self::move_plan`] (no
+    /// fold there).
+    pub fn row_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        let mut sites = SecondaryMap::new();
+        if let Some(fd) = self.func(f) {
+            for &m in &fd.morphisms {
+                if let Some(site) = self.row_fold_site(m) {
+                    sites.insert(m, site);
+                }
+            }
+        }
+        sites
+    }
+
+    fn row_fold_site(&self, site: MorphismId) -> Option<RowFoldSite> {
+        let map = self.morphisms.get(site)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        if captures == 0 {
+            return None;
+        }
+        let rows = self.tile_iota_size(self.pair_slot_source(map.source, captures)?)?;
+        let Ty::Array { size, elem } = &self.objects.get(map.target)?.ty else {
+            return None;
+        };
+        if *size != rows || rows == 0 || !elem.is_numeric() {
+            return None;
+        }
+        let elem = (**elem).clone();
+        let body_def = self.func(body)?;
+        let mut folds = body_def.morphisms.iter().copied().filter(|&m| {
+            matches!(
+                self.morphisms.get(m).map(|x| x.op),
+                Some(Operation::Fold { .. })
+            )
+        });
+        let fold_id = folds.next()?;
+        if folds.next().is_some() {
+            return None;
+        }
+        let fold = self.morphisms.get(fold_id)?;
+        if fold.target != body_def.output {
+            return None;
+        }
+        let Operation::Fold {
+            body: fbody,
+            captures: fcap,
+        } = fold.op
+        else {
+            return None;
+        };
+        let k = self.tile_iota_size(self.pair_slot_source(fold.source, fcap.checked_add(1)?)?)?;
+        let seed_object = self
+            .objects
+            .get(self.pair_slot_source(fold.source, fcap)?)?;
+        if seed_object.kind != ObjectKind::Constant {
+            return None;
+        }
+        let seed = seed_object.value.clone()?;
+        let fdef = self.func(fbody)?;
+        // ONE read: a second one is a second array or a second cell per step.
+        let reads = fdef
+            .morphisms
+            .iter()
+            .filter(|&&m| {
+                self.morphisms
+                    .get(m)
+                    .is_some_and(|x| x.op == Operation::Index)
+            })
+            .count();
+        if reads != 1 {
+            return None;
+        }
+        let acc = |o: ObjectId| self.tile_input_proj_index(o, fdef.input) == Some(fcap);
+        let [step] = self.in_edges(fdef.output) else {
+            return None;
+        };
+        let step = self.morphisms.get(*step)?;
+        let slot = |k| self.pair_slot_source(step.source, k);
+        let (op, e) = match step.op {
+            Operation::Add | Operation::Sub | Operation::Mul => {
+                let (x, y) = (slot(0)?, slot(1)?);
+                match (acc(x), acc(y)) {
+                    (true, false) => (
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: true,
+                        },
+                        y,
+                    ),
+                    (false, true) => (
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: false,
+                        },
+                        x,
+                    ),
+                    _ => return None,
+                }
+            }
+            Operation::Phi => {
+                let (p, q) = (slot(0)?, slot(1)?);
+                let cmp = self.morphisms.get(*self.in_edges(slot(2)?).first()?)?;
+                if !matches!(
+                    cmp.op,
+                    Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge
+                ) {
+                    return None;
+                }
+                let x = self.pair_slot_source(cmp.source, 0)?;
+                let y = self.pair_slot_source(cmp.source, 1)?;
+                let e = if acc(x) { y } else { x };
+                // Exactly `{acc, e}` on both sides: anything else is not a
+                // running max/min of the read.
+                let one_each = |u: ObjectId, v: ObjectId| {
+                    acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e)
+                };
+                if !one_each(x, y) || !one_each(p, q) {
+                    return None;
+                }
+                (
+                    RowFoldOp::Select {
+                        cmp: cmp.op,
+                        acc_lhs: acc(x),
+                        acc_if_true: acc(p),
+                    },
+                    e,
+                )
+            }
+            _ => return None,
+        };
+        // `e` IS the read — any arithmetic on it is a second step.
+        let index = self.tile_definer(e, Operation::Index)?;
+        let array = self.pair_slot_source(index.source, 0)?;
+        let address = self.pair_slot_source(index.source, 1)?;
+        let body_value = self.tile_fold_capture(array, fold.source, fdef.input, fcap)?;
+        let read_slot = self.tile_input_proj_index(body_value, body_def.input)?;
+        if read_slot >= captures {
+            return None;
+        }
+        let Ty::Array {
+            elem: read_elem, ..
+        } = &self.objects.get(array)?.ty
+        else {
+            return None;
+        };
+        let acc_ty = &self.objects.get(fdef.output)?.ty;
+        if **read_elem != elem || *acc_ty != elem || seed.ty() != elem {
+            return None;
+        }
+        // The row index as the fold captures it (the map's element).
+        let i = (0..fcap).find_map(|s| {
+            let o = self.pair_slot_source(fold.source, s)?;
+            (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
+        })?;
+        let aff = self.tile_affine(address, fold.source, fdef.input, fcap, Some(i), i, None)?;
+        if aff.clane != 0 || aff.cq != 0 || aff.cr != 0 {
+            return None;
+        }
+        if !self.tile_trap_free(body, &self.bounds_proof(body), Some(fold_id))
+            || !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None)
+        {
+            return None;
+        }
+        Some(RowFoldSite {
+            rows,
+            k,
+            a: TileRead {
+                slot: read_slot,
+                base: aff.base,
+                ci: aff.ci,
+                ck: aff.ck,
+                clane: 0,
+                ksplit: None,
+            },
+            op,
+            seed,
+            elem,
+        })
     }
 
     fn move_site(&self, site: MorphismId) -> Option<MoveSite> {
