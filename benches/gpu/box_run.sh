@@ -39,6 +39,14 @@ for o in "$PROF"/*.host.o; do
     case $b in mm_*|e2e_*|loop_mm_*|pt_*) continue ;; esac
     # `<prog>[_c][.<arm>]`: every arm of a face answers to that face's oracle.
     stem=${b%%.*}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
+    # S54: a TF32 program answers to its `off-epilogue` arm (bundle.sh), run first.
+    case $stem in *_tf)
+        exp="tiles/$stem.ref"
+        if [ ! -s "$exp" ]; then
+            link "$PROF/$stem.off-epilogue.host.o" "prog_ref_$stem"
+            MAPAL_PTX="$PROF/$stem.off-epilogue.ptx" "./prog_ref_$stem" > "$exp" 2>&1
+        fi ;;
+    esac
     link "$o" "prog_$b"
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then

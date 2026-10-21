@@ -372,6 +372,14 @@ pub(crate) struct FnEmit<'a> {
     retain_flags: SecondaryMap<ObjectId, String>,
     /// A retained site's restricted host pass: `bulk_bounds` answers this row.
     row_bounds: Option<(String, String)>,
+    /// S54 `epilogue` (R1): per-cell morphisms evaluated in a device site's
+    /// store, by site morphism (`func/resident.rs:epilogues`). Decided before
+    /// the residency plan, which reads their uses as device uses.
+    groups: SecondaryMap<MorphismId, resident::Epi>,
+    /// Emitting a map body's device variant: these input slots are captured
+    /// arrays read only at the cell `t`, passed as one-cell buffers, so every
+    /// `Index` on them reads element 0 (`emit_index`).
+    cell_slots: Vec<u32>,
 }
 
 /// Should this site's `b` be packed — shape AND size.

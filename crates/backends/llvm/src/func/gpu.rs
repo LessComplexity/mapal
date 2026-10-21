@@ -347,10 +347,71 @@ pub(crate) fn kernel_id(
     contract: bool,
     reduced: Option<Reduced>,
 ) -> u64 {
-    let key = format!("{site:?}|{}|{contract}|{reduced:?}", profile.name);
+    kernel_id_with(site, profile, contract, reduced, None)
+}
+
+/// [`kernel_id`] of a site whose store evaluates `epi` (S54): the key also
+/// names the group — its bodies, how each slot is fed, what is stored.
+pub(crate) fn kernel_id_with(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    reduced: Option<Reduced>,
+    epi: Option<&EpiKernel>,
+) -> u64 {
+    let mut key = format!("{site:?}|{}|{contract}|{reduced:?}", profile.name);
+    if let Some(e) = epi {
+        key.push_str(&format!("|{e:?}"));
+    }
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
+}
+
+/// **S54 R1, the device half: the per-cell consumers a site's store
+/// evaluates** (`resident.rs:Epi`), in the terms the kernel needs. Group value
+/// 0 is the site's accumulator, `k + 1` call `k`'s result.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EpiKernel {
+    /// The site's own output is stored (a reader outside the group).
+    pub store_out: bool,
+    /// Device pointers to complete operands, after `a, b, out` (`%x<i>`).
+    pub caps: usize,
+    pub calls: Vec<EpiCall>,
+}
+
+/// One member: `ret @callee(arg)`, its input assembled field by field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EpiCall {
+    pub callee: String,
+    /// The body's input type: a scalar element, or a `{ … }` struct.
+    pub arg: String,
+    pub ret: String,
+    pub fields: Vec<EpiArg>,
+    /// Stored (`%y<j>`, in call order among the stored).
+    pub store: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EpiArg {
+    /// Group value `k`, by value (a mapped element).
+    Value(usize),
+    /// Group value `k` through a one-cell buffer: a captured array the body
+    /// reads at `t`, which its device variant reads at 0.
+    Cell(usize),
+    /// Operand pointer `%x<i>`.
+    Cap(usize),
+    /// The cell index `t`, `i32`.
+    Index,
+}
+
+/// A grouped site for the device unit: its function and morphism (its plain
+/// kernel is not emitted), geometry and epilogue.
+pub(crate) struct EpiSite {
+    pub f: mapal_ir::FuncId,
+    pub m: mapal_ir::MorphismId,
+    pub site: TileSite,
+    pub k: EpiKernel,
 }
 
 pub(crate) fn kernel_name(id: u64) -> String {
@@ -409,6 +470,8 @@ pub(crate) fn device_module(
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
     gens: &[GenKernel],
+    epis: &[EpiSite],
+    epi_bodies: &[(String, String)],
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
@@ -416,14 +479,27 @@ pub(crate) fn device_module(
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained =
             super::retain::retained_sites(ir, f, profile, host_rungs(profile, contract, arms));
-        for site in plan.sites.values().chain(retained.values().map(|r| &r.row)) {
+        // A grouped site (S54) launches its epilogue kernel instead.
+        let plain = plan
+            .sites
+            .iter()
+            .filter(|&(m, _)| !epis.iter().any(|e| e.f == f && e.m == m))
+            .map(|(_, s)| s);
+        for site in plain.chain(retained.values().map(|r| &r.row)) {
             if gpu_site(site, profile) {
                 let name = kernel_name(kernel_id(site, profile, contract, reduced));
-                kernels
-                    .entry(name.clone())
-                    .or_insert_with(|| kernel_text(&name, site, profile, contract, arms, reduced));
+                kernels.entry(name.clone()).or_insert_with(|| {
+                    kernel_text(&name, site, profile, contract, arms, reduced, None)
+                });
             }
         }
+    }
+    for e in epis {
+        let id = kernel_id_with(&e.site, profile, contract, reduced, Some(&e.k));
+        let name = kernel_name(id);
+        kernels.entry(name.clone()).or_insert_with(|| {
+            kernel_text(&name, &e.site, profile, contract, arms, reduced, Some(&e.k))
+        });
     }
     if kernels.is_empty() {
         return None;
@@ -461,6 +537,18 @@ pub(crate) fn device_module(
         out.push('\n');
         out.push_str(&gen_kernel_text(*id, callee, elem));
     }
+    // The bodies an epilogue calls (S54): the host's text, or its device
+    // variant (`_cell`); clean leaves, under the same check.
+    for (callee, text) in epi_bodies {
+        assert!(
+            !text.contains("@mapal_"),
+            "epilogue body {callee} names a host runtime symbol"
+        );
+        if bodies.insert(callee.clone()) {
+            out.push('\n');
+            out.push_str(text);
+        }
+    }
     out.push('\n');
     out.push_str(&md);
     // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
@@ -477,6 +565,7 @@ fn kernel_text(
     contract: bool,
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
+    epi: Option<&EpiKernel>,
 ) -> String {
     let l = launch(site, profile, contract, arms, reduced);
     let rungs = l.rungs;
@@ -499,6 +588,7 @@ fn kernel_text(
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
         async_tail: None,
         sync_tail: None,
+        epi,
     };
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
@@ -693,6 +783,8 @@ struct Kernel<'s> {
     /// The panel loop's induction values, threaded from its head to its latch.
     async_tail: Option<(String, String, u64)>,
     sync_tail: Option<(String, String)>,
+    /// S54: the per-cell consumers evaluated in this kernel's store.
+    epi: Option<&'s EpiKernel>,
 }
 
 impl Kernel<'_> {
@@ -735,6 +827,12 @@ impl Kernel<'_> {
     /// (it is non-negative): a GEP would sign-extend it, and copy 0's bare
     /// index then extends differently from copy `p`'s `index + constant`.
     fn gep(&mut self, space: u32, base: &str, idx: &str) -> String {
+        let t = self.t.clone();
+        self.gep_ty(space, &t, base, idx)
+    }
+
+    /// [`Self::gep`] over elements of type `ty`.
+    fn gep_ty(&mut self, space: u32, ty: &str, base: &str, idx: &str) -> String {
         let idx = if self.idx == "i32" {
             let z = self.tmp();
             self.line(format!("{z} = zext nneg i32 {idx} to i64"));
@@ -744,10 +842,154 @@ impl Kernel<'_> {
         };
         let p = self.tmp();
         self.line(format!(
-            "{p} = getelementptr inbounds {}, ptr addrspace({space}) {base}, i64 {idx}",
-            self.t
+            "{p} = getelementptr inbounds {ty}, ptr addrspace({space}) {base}, i64 {idx}"
         ));
         p
+    }
+
+    /// The group values' types: the accumulator's, then each call's result.
+    fn epi_tys(&self, epi: &EpiKernel) -> Vec<String> {
+        std::iter::once(self.t.clone())
+            .chain(epi.calls.iter().map(|c| c.ret.clone()))
+            .collect()
+    }
+
+    /// The epilogue's extra parameters (S54): operand pointers `%x<i>`, then
+    /// one output pointer `%y<j>` per stored member. Empty without one.
+    fn epi_params(&self, align: u64) -> String {
+        let Some(epi) = self.epi else {
+            return String::new();
+        };
+        let mut s = String::new();
+        for i in 0..epi.caps {
+            s.push_str(&format!(", ptr addrspace(1) readonly %x{i}"));
+        }
+        let stored = epi.calls.iter().filter(|c| c.store).count();
+        for j in 0..stored {
+            s.push_str(&format!(", ptr addrspace(1) noalias align {align} %y{j}"));
+        }
+        s
+    }
+
+    /// Entry-block state of the epilogue: each operand pointer as the generic
+    /// pointer a host body takes, and one one-cell buffer per `Cell` field —
+    /// in the entry block, so inlining the body leaves a value in a register.
+    fn epi_entry(&mut self) {
+        let Some(epi) = self.epi else {
+            return;
+        };
+        for i in 0..epi.caps {
+            self.line(format!(
+                "%xg{i} = addrspacecast ptr addrspace(1) %x{i} to ptr"
+            ));
+        }
+        let tys = self.epi_tys(epi);
+        for (k, c) in epi.calls.iter().enumerate() {
+            for (f, a) in c.fields.iter().enumerate() {
+                if let EpiArg::Cell(v) = *a {
+                    self.line(format!("%cell{k}_{f} = alloca {}", tys[v]));
+                }
+            }
+        }
+    }
+
+    /// The group's results at one cell (S54): each member's body called on
+    /// the accumulator `acc` of output cell `cell` (an index value), in chain
+    /// order. The bodies are the host's (or their `_cell` variants): the
+    /// values are the host loop's, bit for bit.
+    fn epi_values(&mut self, acc: &str, cell: &str) -> Vec<String> {
+        let epi = self.epi.expect("an epilogue");
+        let t32 = if self.idx == "i32" {
+            cell.to_string()
+        } else {
+            let x = self.tmp();
+            self.line(format!("{x} = trunc i64 {cell} to i32"));
+            x
+        };
+        let tys = self.epi_tys(epi);
+        let mut vals = vec![acc.to_string()];
+        for (k, c) in epi.calls.iter().enumerate() {
+            let arg = if c.arg.starts_with('{') {
+                let mut agg = "poison".to_string();
+                for (f, a) in c.fields.iter().enumerate() {
+                    let (ty, v) = match *a {
+                        EpiArg::Value(i) => (tys[i].clone(), vals[i].clone()),
+                        EpiArg::Cell(i) => {
+                            let p = format!("%cell{k}_{f}");
+                            self.line(format!("store {} {}, ptr {p}", tys[i], vals[i]));
+                            ("ptr".to_string(), p)
+                        }
+                        EpiArg::Cap(i) => ("ptr".to_string(), format!("%xg{i}")),
+                        EpiArg::Index => ("i32".to_string(), t32.clone()),
+                    };
+                    let n = self.tmp();
+                    self.line(format!("{n} = insertvalue {} {agg}, {ty} {v}, {f}", c.arg));
+                    agg = n;
+                }
+                agg
+            } else {
+                let [EpiArg::Value(i)] = c.fields[..] else {
+                    unreachable!("a scalar body input is one group value")
+                };
+                vals[i].clone()
+            };
+            let r = self.tmp();
+            self.line(format!(
+                "{r} = call {} @{}({} {arg})",
+                c.ret, c.callee, c.arg
+            ));
+            vals.push(r);
+        }
+        vals.split_off(1)
+    }
+
+    /// Store `accs`, the accumulators of the consecutive output cells from
+    /// index `oi`, through the epilogue: the site's output when stored, and
+    /// each stored member's result — one vector store per output when
+    /// `accs.len() > 1`, as the plain store.
+    fn store_cells(&mut self, accs: &[String], oi: &str) {
+        let epi = self.epi.expect("an epilogue");
+        let mut per: Vec<Vec<String>> = vec![Vec::new(); epi.calls.len()];
+        for (j, acc) in accs.iter().enumerate() {
+            let cell = self.plus(oi.to_string(), j as u64);
+            for (k, v) in self.epi_values(acc, &cell).into_iter().enumerate() {
+                per[k].push(v);
+            }
+        }
+        let mut outs: Vec<(String, String, Vec<String>)> = Vec::new();
+        if epi.store_out {
+            outs.push(("%o".to_string(), self.t.clone(), accs.to_vec()));
+        }
+        let mut y = 0;
+        for (k, c) in epi.calls.iter().enumerate() {
+            if c.store {
+                outs.push((format!("%y{y}"), c.ret.clone(), std::mem::take(&mut per[k])));
+                y += 1;
+            }
+        }
+        let n = accs.len();
+        for (p, ty, vals) in outs {
+            let e = if ty == "double" { 8 } else { 4 };
+            let (sty, v) = if n == 1 {
+                (ty.clone(), vals[0].clone())
+            } else {
+                let vt = format!("<{n} x {ty}>");
+                let mut vec = "poison".to_string();
+                for (j, x) in vals.iter().enumerate() {
+                    let nv = self.tmp();
+                    self.line(format!(
+                        "{nv} = insertelement {vt} {vec}, {ty} {x}, i64 {j}"
+                    ));
+                    vec = nv;
+                }
+                (vt, vec)
+            };
+            let gp = self.gep_ty(1, &ty, &p, oi);
+            self.line(format!(
+                "store {sty} {v}, ptr addrspace(1) {gp}, align {}",
+                n * e
+            ));
+        }
     }
 
     /// `v + c`, or `v` itself when `c` is 0.
@@ -835,9 +1077,11 @@ impl Kernel<'_> {
             "define ptx_kernel void @{name}(\
              ptr addrspace(1) noalias readonly align {align} %a, \
              ptr addrspace(1) noalias readonly align {align} %b, \
-             ptr addrspace(1) noalias align {align} %o) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
-             entry:\n"
+             ptr addrspace(1) noalias align {align} %o{}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
+             entry:\n",
+            self.epi_params(align)
         ));
+        self.epi_entry();
     }
 
     /// One thread per output cell, `k` walked in order — the correctness path
@@ -893,8 +1137,12 @@ impl Kernel<'_> {
         self.line(format!("{fin} = icmp eq {ix} {kn}, {}", s.k));
         self.line(format!("br i1 {fin}, label %store, label %kloop"));
         self.out.push_str("store:\n");
-        let p = self.gep(1, "%o", &cell);
-        self.line(format!("store {t} {accn}, ptr addrspace(1) {p}, align {e}"));
+        if self.epi.is_some() {
+            self.store_cells(std::slice::from_ref(&accn), &cell);
+        } else {
+            let p = self.gep(1, "%o", &cell);
+            self.line(format!("store {t} {accn}, ptr addrspace(1) {p}, align {e}"));
+        }
         self.line("br label %done");
         self.out.push_str("done:\n  ret void\n}\n");
     }
@@ -1221,6 +1469,10 @@ impl Kernel<'_> {
                     let x = self.tmp();
                     self.line(format!("{x} = load float, ptr {p}, align 4"));
                     let oi = self.op("add", &ebase, (8 * j + e) * s.c + 8 * h);
+                    if self.epi.is_some() {
+                        self.store_cells(&[x], &oi);
+                        continue;
+                    }
                     let op = self.gep(1, "%o", &oi);
                     self.line(format!("store float {x}, ptr addrspace(1) {op}, align 4"));
                 }
@@ -1482,6 +1734,18 @@ impl Kernel<'_> {
                 let rc = self.op("add", &rr, &ocol);
                 for ni in 0..nt {
                     let base = (mi * nt + ni) * 4 + half as usize * 2;
+                    if self.epi.is_some() {
+                        let mut xs = Vec::new();
+                        for j in 0..2 {
+                            let p = acc_slot(self, base + j);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load float, ptr {p}, align 4"));
+                            xs.push(x);
+                        }
+                        let oi = self.op("add", &rc, ni as u64 * MMA_N);
+                        self.store_cells(&xs, &oi);
+                        continue;
+                    }
                     let mut vec = "poison".to_string();
                     for j in 0..2 {
                         let p = acc_slot(self, base + j);
@@ -1886,6 +2150,18 @@ impl Kernel<'_> {
             let c0 = self.op("add", &rr, &col0);
             let c0 = self.op("add", &c0, &b_frag0);
             for v in 0..tn / lanes {
+                if self.epi.is_some() {
+                    let mut xs = Vec::new();
+                    for j in 0..lanes {
+                        let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
+                        let x = self.tmp();
+                        self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
+                        xs.push(x);
+                    }
+                    let oi = self.op("add", &c0, v * b_chunk);
+                    self.store_cells(&xs, &oi);
+                    continue;
+                }
                 let mut vec = "poison".to_string();
                 for j in 0..lanes {
                     let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
@@ -1918,7 +2194,14 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
     ) {
         if self.resident.is_some() {
-            let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
+            let epi = self.epi_kernel(self.ir.in_edges(target)[0]);
+            let id = kernel_id_with(
+                site,
+                self.profile,
+                self.contract,
+                self.reduced,
+                epi.as_ref(),
+            ) as i64;
             let l = launch(
                 site,
                 self.profile,
@@ -1926,13 +2209,11 @@ impl<'a> FnEmit<'a> {
                 self.gpu_arms,
                 self.reduced,
             );
-            self.emit_site_resident(source, target, site, |a, b, o| {
-                format!(
-                    "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
-                     i32 {}, i32 {}, i32 {}, i32 {})",
-                    l.gx, l.gy, l.block, l.smem
-                )
-            });
+            let geom = format!(
+                "i32 {}, i32 {}, i32 {}, i32 {}",
+                l.gx, l.gy, l.block, l.smem
+            );
+            self.emit_site_resident(source, target, site, id, &geom);
             return;
         }
         let src_ty = self.obj_ty(source);
@@ -1965,6 +2246,90 @@ impl<'a> FnEmit<'a> {
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
             l.gx, l.gy, l.block, l.smem
         ));
+    }
+
+    /// Site `m`'s epilogue as its kernel takes it (S54), `None` without one.
+    pub(super) fn epi_kernel(&self, m: MorphismId) -> Option<EpiKernel> {
+        let g = self.groups.get(m)?;
+        let caps = g.caps();
+        let calls = g
+            .chain
+            .iter()
+            .map(|mb| {
+                let captures = match self.ir.morphism(mb.m).expect("member").op {
+                    Operation::Map { captures, .. } => captures,
+                    _ => unreachable!("an epilogue member is a map"),
+                };
+                let in_ty = self.obj_ty(self.ir.func(mb.body).expect("body").input);
+                let arg = crate::ty::lower_body_input_ty(&in_ty, captures)
+                    .expect("a member's input lowers");
+                let fields: Vec<EpiArg> = mb
+                    .srcs
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, s)| match *s {
+                        resident::EpiSrc::Value(k) if (slot as u32) < captures => EpiArg::Cell(k),
+                        resident::EpiSrc::Value(k) => EpiArg::Value(k),
+                        resident::EpiSrc::Gmem(o) => {
+                            EpiArg::Cap(caps.iter().position(|&x| x == o).expect("an operand"))
+                        }
+                        resident::EpiSrc::Index => EpiArg::Index,
+                    })
+                    .collect();
+                let cell = fields.iter().any(|a| matches!(a, EpiArg::Cell(_)));
+                let (ret, _) = array_parts(&self.obj_ty(mb.out));
+                EpiCall {
+                    callee: format!(
+                        "{}{}",
+                        self.fnames[mb.body],
+                        if cell { "_cell" } else { "" }
+                    ),
+                    arg,
+                    ret,
+                    fields,
+                    store: mb.store,
+                }
+            })
+            .collect();
+        Some(EpiKernel {
+            store_out: g.store_out,
+            caps: caps.len(),
+            calls,
+        })
+    }
+
+    /// This function's grouped sites for the device unit, and the bodies
+    /// their kernels call: `(callee, body, captured slots read at the cell)`
+    /// — an empty slot list is the host's own text.
+    pub(crate) fn epi_sites(&self) -> (Vec<EpiSite>, Vec<(String, FuncId, Vec<u32>)>) {
+        let mut sites = Vec::new();
+        let mut bodies = Vec::new();
+        for (m, g) in self.groups.iter() {
+            let site = self
+                .tile_plan
+                .as_ref()
+                .and_then(|p| p.sites.get(m))
+                .expect("a grouped site is a tile site")
+                .clone();
+            let k = self.epi_kernel(m).expect("a group");
+            for (mb, c) in g.chain.iter().zip(&k.calls) {
+                let slots = c
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| matches!(a, EpiArg::Cell(_)))
+                    .map(|(s, _)| s as u32)
+                    .collect();
+                bodies.push((c.callee.clone(), mb.body, slots));
+            }
+            sites.push(EpiSite {
+                f: self.f,
+                m,
+                site,
+                k,
+            });
+        }
+        (sites, bodies)
     }
 
     /// A retained site's restricted pass (S53, `func/retain.rs`): output row
@@ -2132,7 +2497,7 @@ mod tests {
             for s in s52_sites() {
                 let l = launch(&s, p, false, force(GpuRungs::ALL), None);
                 assert!(max_index(&s, &l) < 1 << 31, "{} {s:?}", p.name);
-                let k = kernel_text("k", &s, p, false, force(GpuRungs::ALL), None);
+                let k = kernel_text("k", &s, p, false, force(GpuRungs::ALL), None, None);
                 assert!(k.contains("add nuw nsw i32"), "{} {s:?}", p.name);
             }
         }
@@ -2140,7 +2505,15 @@ mod tests {
         let big = site(1 << 16, 1 << 16, 1 << 16, true, true, Ty::f32());
         let l = launch(&big, &RTX_4090, false, force(GpuRungs::ALL), None);
         assert!(max_index(&big, &l) >= 1 << 31);
-        let k = kernel_text("k", &big, &RTX_4090, false, force(GpuRungs::ALL), None);
+        let k = kernel_text(
+            "k",
+            &big,
+            &RTX_4090,
+            false,
+            force(GpuRungs::ALL),
+            None,
+            None,
+        );
         assert!(!k.contains("nuw nsw i32") && k.contains("add i64"));
     }
 

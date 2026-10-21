@@ -388,3 +388,8 @@ for n in (2048, 4096):
     for name, spec in probes(n).items():
         (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))
     (out / f"pt_loop_{n}.mapal").write_text(probe_program(n, loop_act(n, 8), True, w='w'))
+# S54 `epilogue`: the per-cell consumer in the store of the one-thread-per-cell
+# kernel (100 is indivisible by every tile) and of an f64 site.
+(out / "px_bias_100.mapal").write_text(probe_program(100, probes(100)['bias'], False))
+(out / "px_mlp2_64_f64.mapal").write_text(
+    probe_program(64, probes(64)['mlp2'], False).replace("widen_f32", "widen_f64").replace("zero: f32", "zero: f64"))

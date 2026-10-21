@@ -118,13 +118,22 @@ for spec in "$@"; do
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    async resident devgen eager-init retain-delta epilogue
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
                         ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident ;;
                 esac
-            done ;;
+            done
+            # S54 `epilogue` on the TF32 face (mma.sync, wgmma): no oracle there (a
+            # bound), so the ON arm answers to the OFF arm, bit for bit — the same
+            # body over the same accumulators. Programs without a group drop both.
+            case $b in px_*)
+                emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
+                emit_one "$f" "$d/${b}_tf.off-epilogue" "$prof" "$sm" --contract --precision=tf32 \
+                    --gpu-off=epilogue
+                if same "$d/${b}_tf.off-epilogue" "$d/${b}_tf"; then rm -f "$d/${b}_tf".*; fi ;;
+            esac ;;
         esac
         # Earlier builds, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
         # mm_*: the shipped kernels (tile_bench arms). e2e_*: the whole program,

@@ -58,7 +58,11 @@ impl<'a> FnEmit<'a> {
     pub fn emit(mut self) -> String {
         let fd = self.ir.func(self.f).expect("func resolves");
         let ret_ty = self.obj_ty(fd.output);
-        let fname = self.fnames[self.f].clone();
+        let fname = if self.cell_slots.is_empty() {
+            self.fnames[self.f].clone()
+        } else {
+            format!("{}_cell", self.fnames[self.f])
+        };
 
         // Only the entry function's frame is once-per-program (plan-s29
         // composition rule 4); the parallel entry goes through `emit_parallel`,
