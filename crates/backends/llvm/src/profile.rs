@@ -907,9 +907,9 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         rung: "l2-window",
         fill: Fill::Any,
         face: Face::Any,
-        cite: "l2-raster-rtx-4090-run2.txt / -run4.txt traced kernel ms off/on: diamond_2048_c 0.933 / 0.939, \
-               mlp2_2048_c 0.938 / 0.949, diamond_4096_c 0.989 / 0.987 (the window costs on contract); exact \
-               0.985-1.003",
+        cite: "l2-raster-rtx-4090-run2.txt / -run4.txt / l2-raster-rtx-4090.txt traced kernel ms off/on: \
+               diamond_2048_c 0.933 / 0.939 / 0.959, mlp2_2048_c 0.938 / 0.949 / 0.954 (the window costs on \
+               contract); exact 0.977-1.003",
     },
     RungOff {
         profile: "rtx-5090",
