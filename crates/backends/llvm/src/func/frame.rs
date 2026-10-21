@@ -54,6 +54,12 @@ impl<'a> FnEmit<'a> {
             }
         }
         self.mark_elided_arrays(&fd.morphisms.clone());
+        // S54 `arena`: a device-only array has no host bytes to hold.
+        if let Some(a) = self.resident.as_ref().and_then(|p| p.arena.as_ref()) {
+            for o in a.host_free.keys() {
+                self.elided_arrays.insert(o, ());
+            }
+        }
         in_llt
     }
 

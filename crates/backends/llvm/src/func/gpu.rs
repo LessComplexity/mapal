@@ -112,6 +112,11 @@ declare void @mapal_gpu_gen(i64, i64, i64)
 declare void @mapal_gpu_free(ptr)
 ";
 
+/// `arena` (S54): a function's one device allocation, made lazily into its
+/// slot (`mapal_gpu.c`); declared only beside a call, so the OFF arm's text
+/// is S53's.
+pub(crate) const ARENA_DECL: &str = "declare i64 @mapal_gpu_arena(ptr, i64)\n";
+
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
 /// launches it with exactly this many, so the two must agree.
 /// ponytail: the naive kernel's literal, for the same reason (a one-element-

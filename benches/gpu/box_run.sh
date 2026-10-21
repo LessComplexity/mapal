@@ -5,8 +5,8 @@
 #    host-rung arm, interleaved; the S54 multi-computation probes the same way,
 #    each followed by its library legs (chain_bench.cu); the decode loop,
 # 3. the timing harness vs cuBLAS and CUTLASS, every kernel arm.
-# PROBE_ARMS / PROBE_REPS narrow the probe section (default: on + every off-<rung>
-# arm the bundle built for the probe; 5 repetitions).
+# E2E_ARMS narrows the e2e section's arms; PROBE_ARMS / PROBE_REPS the probe section
+# (default: on + every off-<rung> arm the bundle built for the probe; 5 repetitions).
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -64,7 +64,7 @@ done
 # process for the wall time and the program's own `iter ms`, one traced for
 # the phase totals; the cuBLAS whole-program floor (`tile_bench --program`).
 say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
-ARMS="on off-resident off-devgen off-eager-init off-arch-rungs s52"
+ARMS=${E2E_ARMS:-on off-resident off-devgen off-eager-init off-arena off-arch-rungs s52}
 arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
 e2e() { # <prog> <floor: n gemms ops>
     local p=$1; shift

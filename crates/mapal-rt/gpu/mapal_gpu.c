@@ -189,9 +189,7 @@ static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
   return fn;
 }
 
-/* The device buffer of `*slot`, allocated on first use: a slot is one object's
- * device copy, so a producer inside a loop reuses its buffer every iteration. */
-uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
+static uint64_t dev_alloc(uint64_t *slot, uint64_t bytes, const char *op) {
   load_module();
   if (*slot)
     return *slot;
@@ -203,9 +201,22 @@ uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
   tot.alloc += ms;
   tot.n_alloc++;
   if (trace)
-    fprintf(stderr, "mapal_gpu_trace op=alloc ms=%.3f bytes=%llu\n", ms,
+    fprintf(stderr, "mapal_gpu_trace op=%s ms=%.3f bytes=%llu\n", op, ms,
             (unsigned long long)bytes);
   return *slot;
+}
+
+/* The device buffer of `*slot`, allocated on first use: a slot is one object's
+ * device copy, so a producer inside a loop reuses its buffer every iteration. */
+uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
+  return dev_alloc(slot, bytes, "alloc");
+}
+
+/* S54 `arena`: the function's one allocation, laid out at compile time (each
+ * straight-line object at its offset, from death positions). Made on the first
+ * ask like any slot; released by `mapal_gpu_free` at function exit. */
+uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) {
+  return dev_alloc(slot, bytes, "arena");
 }
 
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
