@@ -157,7 +157,7 @@ def report(profile, face, n, globs):
     if globs:
         stems = [s for s in sorted(p.stem for p in tiles.glob("*.mapal")) if any(fnmatch.fnmatch(s, g) for g in globs)]
     flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
-    flags += os.environ.get("EMIT_FLAGS", "").split()
+    flags += os.environ.get("EMIT_FLAGS", "").split()  # an OFF arm's report: EMIT_FLAGS=--gpu-off=<rung>
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     print(f"S54 static fusion report — {EMIT.name} ({EMIT.parent.parent.parent.name}) --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")

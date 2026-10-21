@@ -800,6 +800,58 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                0.0840 ON vs 0.0881 / 0.0799 OFF, cuBLAS 0.0471 / 0.0481 vs 0.0512 / 0.0481); kept filled (n=2048/4096/8192 \
                1.049/1.020/1.024 vs 1.017/1.024/1.022)",
     },
+    // S54 `rowfold-layout` (the reader-chosen store order): the strided fold the
+    // row-major store leaves costs 0.01–0.1 ms at 4096 (L1 serves each sector to
+    // the next 7 steps), and the column-major store costs the FMA tile more. Read
+    // on the device clock (traced kernel sums, site + fold, column-major vs
+    // row-major): the rung changes only kernels, and the probes' own clock is
+    // host-noise-bound at that size (probe_rungs.py).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-3090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 9.081 vs 8.994, 9.856 vs 9.790; _c 4096 5.637 vs 5.624, 5.936 vs 5.929; 2048 within 0.4%: no \
+               size faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-5090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 3.478 vs 3.432, 3.378 vs 3.330; _c 4096 2.216 vs 2.153, 2.161 vs 2.088 (2048 2.5-2.8% faster, \
+               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-h100-pcie.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 7.851 vs 6.451, 9.101 vs 7.615; _c 4096 4.033 vs 3.760, 4.735 vs 4.441; 2048 the same sign; \
+               -v2.txt / -v2-confirm.txt too (_exact 4096 8.97 vs 7.52 ms): the HBM part pays 7-22% for the \
+               column-major tile store",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "rowfold-rtx-4090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 4.189 vs 4.018, 4.267 vs 4.160 (the exact tile pays 4-6% for the store); kept on the contract \
+               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "rowfold-a100.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _c 4096 \
+               8.326 vs 8.162, 10.694 vs 10.488; kept on the exact face: _exact 2048 2.392 vs 2.428, 3.080 vs \
+               3.120 and 4096 15.479 vs 15.568, 19.911 vs 20.027 ms",
+    },
     RungOff {
         profile: "a100",
         rung: "retain-delta",
@@ -3854,6 +3906,21 @@ mod tests {
                     let off = ["rtx-4090", "rtx-5090"].contains(&p.name);
                     assert_eq!(r.retain_resident, !off, "{}", p.name);
                 }
+            }
+        }
+    }
+
+    /// S54: `rowfold` ships on every measured part; the reader-chosen store
+    /// order only where its device time measured faster in two sessions — the
+    /// 4090's contract face and the A100's exact face.
+    #[test]
+    fn rowfold_rungs_are_the_measured_table() {
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
+                assert!(r.rowfold, "{} {contract}", p.name);
+                let layout = matches!((p.name, contract), ("rtx-4090", true) | ("a100", false));
+                assert_eq!(r.rowfold_layout, layout, "{} {contract}", p.name);
             }
         }
     }

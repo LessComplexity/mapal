@@ -20,7 +20,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 120); do
+# START_TRIES x 10 s for the container to start (default 20 min; a slow image pull needs more).
+for _ in $(seq "${START_TRIES:-120}"); do
     st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("actual_status") or "", "intended=" + str(d.get("intended_status")), (d.get("status_msg") or "").split(chr(10))[0])' || true)
     [ "${st%% *}" = running ] && { st=running; break; }
     # A host that cannot start the container says so in status_msg, and a rental
@@ -51,7 +52,8 @@ for _ in 1 2 3 4 5; do
 done
 [ "$up" = 1 ] || { log "bundle upload failed 5 times"; exit 1; }
 log "bundle uploaded"
-"${SSH[@]}" "cd /w && E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
+# E2E_ARMS / PROBE_ARMS / PROBE_REPS / E2E_REPS reach box_run.sh (unset: its defaults).
+"${SSH[@]}" "cd /w && E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
