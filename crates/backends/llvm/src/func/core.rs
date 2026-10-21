@@ -72,6 +72,9 @@ impl<'a> FnEmit<'a> {
             resident: None,
             dslots: SecondaryMap::new(),
             dvalid: SecondaryMap::new(),
+            retain: SecondaryMap::new(),
+            retain_flags: SecondaryMap::new(),
+            row_bounds: None,
         }
     }
 
@@ -79,7 +82,14 @@ impl<'a> FnEmit<'a> {
         self.gpu_arms = arms;
         self.reduced = reduced;
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
-        self.resident = (rungs.resident && self.profile.gpu().is_some())
+        if self.tile_plan.is_some() {
+            self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
+        }
+        // ponytail: a function with a retained site keeps the S52 round trips,
+        // the arm `retain-delta` was measured on; `resident` would hold the
+        // retained output on the device while the restricted pass writes host
+        // rows. Plan the two together when a program needs both.
+        self.resident = (rungs.resident && self.profile.gpu().is_some() && self.retain.is_empty())
             .then(|| self.resident_plan(rungs.devgen))
             .flatten();
     }
@@ -967,6 +977,9 @@ impl<'a> FnEmit<'a> {
     }
 
     pub(super) fn bulk_bounds(&self, n: u64) -> (String, String) {
+        if let Some((lo, hi)) = &self.row_bounds {
+            return (lo.clone(), hi.clone());
+        }
         if self.split_range {
             ("%lo".into(), "%hi".into())
         } else {

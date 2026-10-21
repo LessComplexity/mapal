@@ -365,6 +365,13 @@ pub(crate) struct FnEmit<'a> {
     dslots: SecondaryMap<ObjectId, String>,
     /// Objects whose device copy is current at this point of the walk.
     dvalid: SecondaryMap<ObjectId, ()>,
+    /// S53 `retain-delta`: the tile sites whose output is retained across
+    /// iterations, by output object (`func/retain.rs`), and their first-pass
+    /// flags.
+    retain: SecondaryMap<ObjectId, retain::Retained>,
+    retain_flags: SecondaryMap<ObjectId, String>,
+    /// A retained site's restricted host pass: `bulk_bounds` answers this row.
+    row_bounds: Option<(String, String)>,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -627,6 +634,7 @@ pub(crate) mod gpu;
 mod ops;
 mod packed;
 mod resident;
+mod retain;
 mod sme;
 mod tile;
 mod trio;

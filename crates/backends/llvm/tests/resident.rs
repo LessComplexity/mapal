@@ -280,6 +280,25 @@ fn devgen_refuses_an_unclean_body() {
 }
 
 #[test]
+fn devgen_refuses_a_float_remainder() {
+    // A float `%` lowers to `fmodf` on the host and to `fma(-y, trunc(x / y),
+    // x)` on NVPTX: different bits, so a body with one is never device-built.
+    // `a` is copied in; `b` (no float `%`) is still device-built.
+    let src = e2e_src().replace(
+        "(t * 7 + 13) % 101 - 50 -> widen_f32 }",
+        "(t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v % 0.7 }",
+    );
+    assert_ne!(src, e2e_src(), "the operand was rewritten");
+    let t = transfers(&emit(&src, on()));
+    assert_eq!(
+        t.iter().filter(|x| x.starts_with("h2d")).count(),
+        1,
+        "{t:?}"
+    );
+    assert_eq!(t.iter().filter(|x| *x == "gen").count(), 1, "{t:?}");
+}
+
+#[test]
 fn off_arm_is_the_s52_round_trip() {
     let ll = emit(&e2e_src(), off("resident"));
     assert!(ll.contains("@mapal_gpu_tile("));

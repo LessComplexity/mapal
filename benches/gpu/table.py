@@ -2,44 +2,87 @@
 """Tabulate a box_run results file: medians, TFLOP/s, ratios, overlap, geometry;
 then every rung arm against the default it flips (ON vs OFF, medians, and the
 same ratio normalized by each bench's own cuBLAS leg, which cancels clock drift
-between benches); and its `== e2e` sections (box_profile.sh): iter ms against
-the site trace."""
+between benches); then the whole-program rows (`e2e prog=`: process wall, the
+program's own `iter ms`, the MAPAL_GPU_TRACE totals) and the decode rows."""
 import re
 import sys
 
-PHASES = ('load', 'lookup', 'alloc', 'h2d', 'kernel', 'd2h', 'free')
+med = lambda xs: sorted(xs)[len(xs) // 2]
+rng = lambda xs: f"{min(xs):.1f}–{max(xs):.1f}"
+# ` ~`: the two min–max ranges overlap.
+ovl = lambda a, b: '' if (max(a) < min(b) or max(b) < min(a)) else ' ~'
+PHASES = ('alloc', 'h2d', 'kernel', 'gen', 'd2h', 'free')
+
+
+def fields(l):
+    return dict(kv.split('=', 1) for kv in re.findall(r'(\w+=[^\s\[\]]+)', l))
 
 
 def e2e_table(path):
-    """`== e2e <program>` sections (box_profile.sh output, one process per
-    `wall_ms=` line): the program's own `iter ms` against its site's trace."""
-    runs, prog, cur = {}, None, {}
+    """`e2e prog=` lines: one process each, every arm interleaved per rep."""
+    e2e, floor = {}, {}
     for l in open(path):
-        m = re.match(r'== e2e (\S+)', l)
+        if l.startswith('e2e prog='):
+            f = fields(l)
+            it = re.search(r'iter ms=\s*([-\d.eE+]+)', l)
+            e2e.setdefault((f['prog'], f['face']), {}).setdefault(f['arm'], []).append({
+                'wall': int(f['wall_us']) / 1e3,
+                'phases': sum(float(f.get(p + '_ms', 0)) for p in PHASES),
+                'load': float(f.get('load_ms', 0)), 'lead': float(f.get('lead_ms', 0)),
+                'iter': float(it[1]) if it else None,
+                'in': int(f.get('bytes_in', 0)), 'out': int(f.get('bytes_out', 0))})
+        elif l.startswith('floor prog='):
+            f = fields(l)
+            floor.setdefault(f['prog'], []).append(float(f['total_ms']))
+    if not e2e:
+        return
+    print("\n| program | face | arm | procs | wall ms med (range) | wall arm/on (>1 = on faster) | iter ms | "
+          "phases ms excl. load | load wait ms | lead ms | bytes in | bytes out | cuBLAS floor ms |")
+    print("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    for (p, face), arms in e2e.items():
+        on = arms.get('on')
+        for arm, rs in arms.items():
+            w = [r['wall'] for r in rs]
+            ratio = f"{med(w) / med([r['wall'] for r in on]):.3f}{ovl(w, [r['wall'] for r in on])}" if on and arm != 'on' else ''
+            its = [r['iter'] for r in rs if r['iter'] is not None]
+            fl = f"{med(floor[p]):.1f}" if arm == 'on' and p in floor else ''
+            print(f"| {p} | {face} | {arm} | {len(rs)} | {med(w):.1f} ({rng(w)}) | {ratio} "
+                  f"| {f'{med(its):.3f}' if its else ''} | {med([r['phases'] for r in rs]):.2f} "
+                  f"| {med([r['load'] for r in rs]):.1f} | {med([r['lead'] for r in rs]):.1f} "
+                  f"| {rs[0]['in']} | {rs[0]['out']} | {fl} |")
+
+
+def decode_table(path):
+    """`decode prog=` lines (box_run.sh decode block)."""
+    runs, launches, floor = {}, {}, None
+    for l in open(path):
+        if l.startswith('decode prog='):
+            f = fields(l)
+            runs.setdefault(f['prog'], []).append(f)
+        elif l.startswith('decode_launch prog='):
+            f = fields(l)
+            launches.setdefault(f['prog'], []).append(f"{f['n']}×{f['kernel'][-6:]}")
+        m = re.match(r'decode_floor T=\d+ d=\d+ .* med_ms=([\d.]+)', l)
         if m:
-            prog, cur = m[1], {}
-            continue
-        if prog is None:
-            continue
-        if l.startswith('mapal_gpu_trace'):
-            cur.update({p: float(re.search(rf'{p}_ms=([\d.]+)', l)[1]) for p in PHASES})
-        elif l.startswith('iter ms='):
-            cur['iter'] = float(l.split('=')[1])
-        elif l.startswith('wall_ms='):
-            cur['wall'] = float(l.split('=')[1])
-            runs.setdefault(prog, []).append(cur)
-            cur = {}
+            floor = float(m[1])
     if not runs:
         return
-    med = lambda xs: sorted(xs)[len(xs) // 2]
-    print("\n| program | procs | iter ms | trace sum | iter − sum (max abs) | load ms | site w/o load | wall ms |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|")
-    for prog, rs in runs.items():
-        total = [sum(r[p] for p in PHASES) for r in rs]
-        diff = max((r['iter'] - t for r, t in zip(rs, total)), key=abs)
-        print(f"| {prog} | {len(rs)} | {med([r['iter'] for r in rs]):.3f} | {med(total):.3f} | {diff:+.3f} "
-              f"| {med([r['load'] for r in rs]):.1f} | {med([t - r['load'] for r, t in zip(rs, total)]):.3f} "
-              f"| {med([r['wall'] for r in rs]):.0f} |")
+    print("\n| decode | procs | wall s med (range) | on/arm (>1 = shipped faster) | kernel ms | h2d ms | d2h ms "
+          "| alloc+free ms | load ms | launches |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+    for prog, rs in sorted(runs.items()):
+        w = [float(r['wall_s']) for r in rs]
+        base = runs.get(prog.split('.')[0])
+        ratio = ''
+        if base and '.' in prog:
+            bw = [float(r['wall_s']) for r in base]
+            ratio = f"{med(w) / med(bw):.2f}{ovl(w, bw)}"
+        g = lambda k: med([float(r.get(k, 'nan')) for r in rs])
+        print(f"| {prog} | {len(rs)} | {med(w):.3f} ({min(w):.3f}–{max(w):.3f}) | {ratio} | {g('kernel_ms'):.1f} "
+              f"| {g('h2d_ms'):.1f} | {g('d2h_ms'):.1f} | {g('alloc_ms') + g('free_ms'):.1f} | {g('load_ms'):.1f} "
+              f"| {' '.join(launches.get(prog, []))} |")
+    if floor is not None:
+        print(f"\nhand-written cuBLAS sgemv KV cache (device time, whole loop): {floor:.3f} ms")
 
 
 for path in sys.argv[1:]:
@@ -88,3 +131,4 @@ for path in sys.argv[1:]:
         print(f"| {r['n']} | {face} | {rung} | {'ON' if direction == 'off' else 'OFF'} | {on['mapal'][1]:.3f} "
               f"| {off['mapal'][1]:.3f} | {speed:.3f}{ov(on['mapal'], off['mapal'])} | {norm:.3f} |")
     e2e_table(path)
+    decode_table(path)

@@ -311,11 +311,24 @@ impl<'a> FnEmit<'a> {
             return None;
         };
         let fd = self.ir.func(body)?;
+        // Every op must lower to the same bits on the device as on the host.
+        // A float `%` does not: the host calls `fmodf`, NVPTX expands `frem` to
+        // `fma(-y, trunc(x / y), x)` (S53 review: 2051 of 4096 elements differ).
         let leaf = fd.morphisms.iter().all(|&g| {
-            !matches!(
-                self.ir.morphism(g).map(|x| x.op),
-                Some(Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. })
-            )
+            let Some(x) = self.ir.morphism(g) else {
+                return false;
+            };
+            let float_mod = x.op == Operation::Mod
+                && self
+                    .ir
+                    .object(x.source)
+                    .and_then(|o| o.ty.component_ty(0).cloned())
+                    .is_some_and(|t| is_float(&t));
+            !float_mod
+                && !matches!(
+                    x.op,
+                    Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. }
+                )
         });
         (*lb == body
             && **inner == ElemSrc::Index

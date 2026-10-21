@@ -204,6 +204,88 @@ static int h2d_probe(int mb, int reps) {
     printf(" %s_ms=%.3f %s_gbps=%.2f", names[k], med, names[k], bytes / med / 1e6);
   }
   printf("\n");
+// --- S53 `--decode T d reps`: the library floor for the decode program
+// (gen_tiles.py `decode`), written the way a user would by hand: x, K, V, o
+// device-resident, preallocated; per step one tiny kernel writes token row t
+// of x from the previous output, then four cublasSgemv: K[t] = x[t]·Wk,
+// V[t] = x[t]·Wv (the KV cache: one row each), s = K·q_t, o = sᵀ·V over all T
+// rows (the program's extent; rows past t are zero). One 4-byte-per-value d2h
+// at the end. Same formulas as the program; values are close, not bit-exact
+// (cuBLAS's own summation order).
+__global__ void decode_row(float *xrow, const float *o, int t, int d) {
+  int j = blockIdx.x * blockDim.x + threadIdx.x;
+  if (j < d) xrow[j] = (float)(((t * d + j) * 7 + 13) % 101 - 50) / 64.0f + o[j];
+}
+__global__ void decode_q(float *q, int t, int d, float div) {
+  int k = blockIdx.x * blockDim.x + threadIdx.x;
+  if (k < d) q[k] = (float)(((t * d + k) * 5 + 3) % 97 - 48) / div;
+}
+
+static int decode_main(int T, int d, int reps) {
+  CUDA(cudaFree(0));
+  device_facts();
+  const float div = 16.0f * d;
+  std::vector<float> wk((size_t)d * d), wv((size_t)d * d);
+  for (int i = 0; i < d * d; ++i) {
+    wk[i] = (float)((i * 7 + 13) % 101 - 50) / div;
+    wv[i] = (float)((i * 11 + 57) % 103 - 51) / div;
+  }
+  float *dWk, *dWv, *dx, *dK, *dV, *dq, *ds, *dout;
+  CUDA(cudaMalloc(&dWk, wk.size() * 4));
+  CUDA(cudaMalloc(&dWv, wv.size() * 4));
+  CUDA(cudaMalloc(&dx, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dK, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dV, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dq, d * 4));
+  CUDA(cudaMalloc(&ds, T * 4));
+  CUDA(cudaMalloc(&dout, d * 4));
+  CUDA(cudaMemcpy(dWk, wk.data(), wk.size() * 4, cudaMemcpyHostToDevice));
+  CUDA(cudaMemcpy(dWv, wv.data(), wv.size() * 4, cudaMemcpyHostToDevice));
+  cublasHandle_t h;
+  cublasCreate(&h);
+  cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
+  const float one = 1.0f, zero = 0.0f;
+  const int tb = 256;
+  auto run = [&] {
+    CUDA(cudaMemset(dx, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dK, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dV, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dout, 0, d * 4));
+    for (int t = 0; t < T; ++t) {
+      float *xr = dx + (size_t)t * d;
+      decode_row<<<(d + tb - 1) / tb, tb>>>(xr, dout, t, d);
+      // Row-major W (d×d) is column-major Wᵀ: y = Wᵀ·x[t] is K[t] = x[t]·W.
+      cublasSgemv(h, CUBLAS_OP_N, d, d, &one, dWk, d, xr, 1, &zero, dK + (size_t)t * d, 1);
+      cublasSgemv(h, CUBLAS_OP_N, d, d, &one, dWv, d, xr, 1, &zero, dV + (size_t)t * d, 1);
+      decode_q<<<(d + tb - 1) / tb, tb>>>(dq, t, d, div);
+      // K row-major T×d is column-major d×T: s = Kᵀ_cm·q.
+      cublasSgemv(h, CUBLAS_OP_T, d, T, &one, dK, d, dq, 1, &zero, ds, 1);
+      cublasSgemv(h, CUBLAS_OP_N, d, T, &one, dV, d, ds, 1, &zero, dout, 1);
+    }
+  };
+  run();  // warmup (and the values)
+  CUDA(cudaDeviceSynchronize());
+  std::vector<float> o(d);
+  CUDA(cudaMemcpy(o.data(), dout, d * 4, cudaMemcpyDeviceToHost));
+  double sum = 0;
+  for (float v : o) sum += v;
+  printf("decode_floor values o0=%.9g olast=%.9g sum=%.9g\n", o[0], o[d - 1], sum);
+  cudaEvent_t e0, e1;
+  CUDA(cudaEventCreate(&e0));
+  CUDA(cudaEventCreate(&e1));
+  std::vector<float> ms;
+  for (int r = 0; r < reps; ++r) {
+    CUDA(cudaEventRecord(e0));
+    run();
+    CUDA(cudaEventRecord(e1));
+    CUDA(cudaEventSynchronize(e1));
+    float x;
+    CUDA(cudaEventElapsedTime(&x, e0, e1));
+    ms.push_back(x);
+  }
+  std::sort(ms.begin(), ms.end());
+  printf("decode_floor T=%d d=%d reps=%d min_ms=%.3f med_ms=%.3f max_ms=%.3f per_step_us=%.2f\n", T, d,
+         reps, ms.front(), ms[ms.size() / 2], ms.back(), 1e3 * ms[ms.size() / 2] / T);
   return 0;
 }
 
@@ -212,6 +294,8 @@ int main(int argc, char **argv) {
     return program_floor(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
   if (argc >= 4 && !strcmp(argv[1], "--h2d"))
     return h2d_probe(atoi(argv[2]), atoi(argv[3]));
+  if (argc >= 4 && !strcmp(argv[1], "--decode"))
+    return decode_main(atoi(argv[2]), atoi(argv[3]), argc > 4 ? atoi(argv[4]) : 10);
   if (argc < 11) {
     fprintf(stderr, "usage: %s M N K ptx kernel gx gy block smem reps [--contract]\n", argv[0]);
     return 2;

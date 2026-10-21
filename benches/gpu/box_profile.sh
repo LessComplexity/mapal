@@ -4,7 +4,8 @@
 #   1. ptxas resources (registers, spills, smem) of every n=4096 FMA variant
 #   2. SASS: Mapal's kernel, and the harness binary (CUTLASS's kernel)
 #   3. the kernels cuBLAS and CUTLASS actually launch, and their times (nsys)
-#   4. the host side of a site: MAPAL_GPU_TRACE phases of the e2e programs
+#   4. the host side: per-operation MAPAL_GPU_TRACE and the nsys timeline of the
+#      e2e programs
 # Everything lands in prof/, tarred to prof-<profile>.tgz.
 # usage: bash box_profile.sh <profile> <sm_NN>
 set -uo pipefail
@@ -46,20 +47,13 @@ else
     echo "nsys unavailable" > prof/kern.csv
 fi
 
-# Every e2e build in the bundle (PREV ones too, `e2e_4096_c.<tag>`), processes
-# interleaved so drift lands on every variant alike. No `bc` on the box.
-e2e=()
-for o in "$PROF"/e2e_*.host.o; do
-    b=$(basename "$o" .host.o)
-    cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
-        -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null && e2e+=("$b")
-done
-for r in 1 2 3; do
-    for b in "${e2e[@]}"; do
-        t0=$(date +%s%N)
-        MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" >> "prof/$b.out" 2>&1
-        echo "wall_ms=$(( ($(date +%s%N) - t0) / 1000000 ))" >> "prof/$b.out"
-    done
+# The per-operation trace of the e2e programs (box_run.sh keeps the totals):
+# this build and the S52 host object (`.s52`, PREV), one process each.
+for b in e2e_1024 e2e_1024_c e2e_4096 e2e_4096_c e2e_1024.s52 e2e_1024_c.s52 e2e_4096.s52 e2e_4096_c.s52; do
+    [ -f "$PROF/$b.host.o" ] || continue
+    cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
+        -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null || continue
+    MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" > "prof/$b.out" 2>&1
 done
 # The launch timeline of whole Mapal programs: API calls (launch overhead, JIT,
 # allocation), kernels, transfers, and the gaps between them — what a program
