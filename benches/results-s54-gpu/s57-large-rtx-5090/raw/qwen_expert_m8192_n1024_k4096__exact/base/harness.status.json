@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/w/trace/primitive-results/tile_bench",
+    "8192",
+    "1024",
+    "4096",
+    "/w/run-bundle-rtx-5090/cases/qwen_expert_m8192_n1024_k4096__exact/base.ptx",
+    "mapal_tile_8229a6b8695e195b",
+    "8",
+    "64",
+    "256",
+    "33792",
+    "30"
+  ],
+  "exit": 0,
+  "seconds": 1.269,
+  "stdout_sha256": "c9bf389eae1c51c39c3254c16cb550b4cd4000f59b4429f7fae8e3fc9c12a959",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

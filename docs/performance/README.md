@@ -6,10 +6,17 @@ Machine-tag rule (S26, Sapir — standing): every results CSV carries a machine-
 
 | Benchmark | Compares | Latest | File |
 |---|---|---|---|
+| S54 GPU placement | Final five-profile integration and independent confirmations (in progress) | 2026-10-21 | [s54-gpu-fusion.md](s54-gpu-fusion.md) |
+| S54 GPU selection | Disputed 5090 streams/raster and H100 retention/L2 choices; accepted selection evidence | 2026-10-21 | [s54-per-arch-selection.md](s54-per-arch-selection.md) |
+| S54 current library comparison | Accepted pre-final selection data across sizes, workload families, arithmetic faces, retention and allocation | 2026-10-21 | [s54-current-library-comparison.md](s54-current-library-comparison.md) |
+| S56 kernel evidence | Actual launch resources, emitted PTX, offline SASS and missing counter evidence; accepted selection runs | 2026-10-21 | [s56-selection-kernel-evidence.md](s56-selection-kernel-evidence.md) |
+| S57 ordering investigation | Frozen emitted LLVM and interpreter evidence; GPU consequences untested | 2026-10-21 | [s57-ordering-evidence.md](s57-ordering-evidence.md) |
+| S57 large/composed evidence | 16K/rectangular 5090 results, failures and small composition certification; composed GPU/PyTorch results pending | 2026-10-21 | [s57-large-composed-evidence.md](s57-large-composed-evidence.md) |
+| S57 disassembly comparison | Small-M, FMA and TF32 gaps; independently checked PTX/SASS evidence and bounded conclusions | 2026-10-21 | [s57-ptx-sass-gap.md](s57-ptx-sass-gap.md) |
 | Matmul GEMM | flow-cuda · flow-llvm · interp vs naive CUDA · cuBLAS · numpy · Rust · C++ · Chapel | 2026-07-22 (S20) | [matmul.md](matmul.md) |
 | Arena allocation | malloc/free API-call counts, structural | 2026-07-21 (v1.0) | [arena.md](arena.md) |
 
-## Headline (current truth)
+## Historical S20 headline
 
 | What | Number | Note |
 |---|---|---|

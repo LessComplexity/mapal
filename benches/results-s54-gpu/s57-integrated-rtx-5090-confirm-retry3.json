@@ -1,0 +1,250 @@
+{
+  "profile": "rtx-5090",
+  "phase": "confirm",
+  "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "offer": 54569486,
+  "machine_id": 145957,
+  "host_id": 617499,
+  "instance": 57104993,
+  "listed_dph": 0.7703703703703704,
+  "offer_snapshot": "/private/tmp/mapal-s56-gpu/integrated/operations/offers-5090-confirm-replacement-20261021T2007.json",
+  "offer_snapshot_sha256": "fa030d4ff59a6bdc87ab4837f94ed090967c61cf64970d6c4b204d5e16df2099",
+  "runner_sha256": "704fd9511b596b7611acb4150a7b109378fe33f7037f4ab09bf32e09dec1eb16",
+  "results_sha256": "d0a9c0d0c14af7cd3f580cb13845278ec267e2e1ee7cf483d475504a392db56a",
+  "manifest_sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa",
+  "request_sha256": "d5f0ddb902f49611ddcfa77ab6880ea19217322e0ce076c2ac761b4729b9dd3e",
+  "validator": "/private/tmp/mapal-s56-gpu/verify_integrated.py",
+  "validator_sha256": "b5858a99feff07b1ff7f8b5b1683c46c9fa3f6f8807d98b8cd8077b7834ba7de",
+  "hardware": {
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce RTX 5090",
+        "driver_version": "590.48.01",
+        "clocks.max.sm [MHz]": "3090 MHz",
+        "clocks.current.sm [MHz]": "1995 MHz",
+        "power.limit [W]": "546.00 W",
+        "temperature.gpu": "43",
+        "persistence_mode": "Enabled"
+      }
+    ],
+    "csv_columns": [
+      "name",
+      "driver_version",
+      "clocks.max.sm [MHz]",
+      "clocks.current.sm [MHz]",
+      "power.limit [W]",
+      "temperature.gpu",
+      "persistence_mode"
+    ]
+  },
+  "profiling": {
+    "supplied": true,
+    "resources_pass": true,
+    "nsys_complete": true,
+    "nsys_missing": [],
+    "resource_aliases": {
+      "mm_4096": "mm_4096.null"
+    },
+    "nsys_validation": "Container signatures and parsed numeric CSV exports; binary reports are not re-exported locally",
+    "archive_sha256": "f4834ffb93ca8b639f04245e233e2e212d790d245cb67eccbf3109e0a52fc732"
+  },
+  "warnings": [
+    "No library comparison exists for twin: pt_twin_1024, pt_twin_2048, pt_twin_4096, pt_twin_512"
+  ],
+  "verification_sha256": "324d896101072e4976e2a416d8f92a9de12d0b5792d49b687fabc7fffacb103d",
+  "run_env": {
+    "DIFFERENTIAL_ONLY": "0",
+    "PROFILE": "1",
+    "PROBE_REPS": "5",
+    "E2E_REPS": "7",
+    "PROBE_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window off-streams on-streams",
+    "E2E_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+    "PROF_PROBES": "pt_epi_4096_c pt_mlp_4096_c pt_mlp2_4096_c pt_indep_4096_c pt_twin_4096_c",
+    "START_TRIES": "36"
+  },
+  "counts": {
+    "manifest differential": {
+      "expected": 812,
+      "observed": 812
+    },
+    "manifest traps": {
+      "expected": 22,
+      "observed": 22
+    },
+    "manifest host files": {
+      "expected": 1246,
+      "observed": 1246
+    },
+    "manifest launch files": {
+      "expected": 48,
+      "observed": 48
+    },
+    "run header": {
+      "expected": 1,
+      "observed": 1
+    },
+    "completion": {
+      "expected": 1,
+      "observed": 1
+    },
+    "PASS": {
+      "expected": 812,
+      "observed": 812
+    },
+    "TRAP-PASS": {
+      "expected": 22,
+      "observed": 22
+    },
+    "differential summary": {
+      "expected": 1,
+      "observed": 1
+    },
+    "traps summary": {
+      "expected": 1,
+      "observed": 1
+    },
+    "probe": {
+      "expected": 1240,
+      "observed": 1240
+    },
+    "probe_kernels": {
+      "expected": 1240,
+      "observed": 1240
+    },
+    "decode": {
+      "expected": 70,
+      "observed": 70
+    },
+    "decode launch inventory": {
+      "expected": 14,
+      "observed": 14
+    },
+    "twin no-library exceptions": {
+      "expected": 4,
+      "observed": 4
+    },
+    "chain_values": {
+      "expected": 116,
+      "observed": 116
+    },
+    "chain": {
+      "expected": 116,
+      "observed": 116
+    },
+    "chain_samples": {
+      "expected": 114,
+      "observed": 114
+    },
+    "kernel sections": {
+      "expected": 48,
+      "observed": 48
+    },
+    "e2e": {
+      "expected": 252,
+      "observed": 252
+    },
+    "floor": {
+      "expected": 18,
+      "observed": 18
+    },
+    "scope all generated sources": {
+      "expected": 88,
+      "observed": 88
+    },
+    "scope correctness sources": {
+      "expected": 36,
+      "observed": 36
+    },
+    "scope timing sources": {
+      "expected": 52,
+      "observed": 52
+    },
+    "scope probe sources": {
+      "expected": 40,
+      "observed": 40
+    },
+    "scope differential sources": {
+      "expected": 35,
+      "observed": 35
+    },
+    "scope trap sources": {
+      "expected": 1,
+      "observed": 1
+    },
+    "scope library probes": {
+      "expected": 40,
+      "observed": 40
+    },
+    "scope floors": {
+      "expected": 6,
+      "observed": 6
+    },
+    "scope planned programs": {
+      "expected": 82,
+      "observed": 82
+    },
+    "scope probe groups": {
+      "expected": 248,
+      "observed": 248
+    },
+    "scope e2e groups": {
+      "expected": 36,
+      "observed": 36
+    },
+    "scope decode groups": {
+      "expected": 14,
+      "observed": 14
+    },
+    "scope emission dispositions": {
+      "expected": 3874,
+      "observed": 3874
+    },
+    "scope trace contracts": {
+      "expected": 1246,
+      "observed": 1246
+    },
+    "scope kernel bases": {
+      "expected": 18,
+      "observed": 18
+    },
+    "scope kernel nulls": {
+      "expected": 12,
+      "observed": 12
+    }
+  },
+  "binaries": {
+    "target/release/examples/emit": "f7f47973b607686b52cb4ac37c2876b384a0cc32dd82191a11341eb54ba1a5aa",
+    "target/release/examples/run": "ad2c59a934134392b09e802d57d1020e7cb3a8fa8d1efef35da2a5bc736b9a63",
+    "target/release/libmapal_rt.a": "70a897fc3905c6fa982aa010352eec2a57025cf7838baaf30b49cec5399a43be",
+    "target/x86_64-unknown-linux-gnu/release/libmapal_rt.a": "5b26eea594347505cd45d7aed48b750753d812ca583b7a28698441d2594b25cb"
+  },
+  "cutlass": {
+    "commit": "91843b71d90737e0a9b86f7d9df213cff5a3526f",
+    "cache": "/private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/scratchpad/arch-select/b1/cutlass"
+  },
+  "measurement_scope": {
+    "decode_baseline": "off-retain-resident+delta-h2d+lane-stride",
+    "decode_full_table_comparison": "unmeasured by existing timed-arm loop",
+    "decode_full_placement_disabled_comparison": "unmeasured by existing timed-arm loop"
+  },
+  "execution": {
+    "profile": "rtx-5090",
+    "tag": "rtx-5090-confirm-retry3",
+    "exit": 0,
+    "stage": "rental-wrapper",
+    "rental_started": true,
+    "results_directory_created": true,
+    "timed_out": false,
+    "timeout_seconds": 3300,
+    "seconds": 2837.7,
+    "results": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-confirm-retry3",
+    "end_utc": "2026-10-21T20:54:19Z"
+  },
+  "cleanup": {
+    "instance": 57104993,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T20:55:19.782896+00:00",
+    "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+    "allocation_recovery": null
+  }
+}

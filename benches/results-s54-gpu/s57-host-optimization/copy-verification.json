@@ -1,0 +1,91 @@
+{
+  "source": "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence",
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 2408,
+      "sha256": "97f56167acf4411167df9c1b8e356f47af7d92a85d0b8ed36bacdb373f8b5ecc"
+    },
+    {
+      "file": "after.json",
+      "bytes": 41477,
+      "sha256": "0fd0e3d1fbc694a80ecbe156b649b1254305e782dc33369911c35e60d5b20066"
+    },
+    {
+      "file": "before.json",
+      "bytes": 41477,
+      "sha256": "0fd0e3d1fbc694a80ecbe156b649b1254305e782dc33369911c35e60d5b20066"
+    },
+    {
+      "file": "host-assembly.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "host-assembly.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "host-object.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "host-object.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "host.O2.ll",
+      "bytes": 29900,
+      "sha256": "25bbaf95aa420672e821ad25d28874552fcd71fb2f627b81d7a4a2f4e091a924"
+    },
+    {
+      "file": "host.O2.o",
+      "bytes": 8552,
+      "sha256": "ce1151e0301e2b4a75a8a7e6df74667af696d22f4276cae179f8ca9a4040cc3d"
+    },
+    {
+      "file": "host.O2.s",
+      "bytes": 29360,
+      "sha256": "27a15006e4b804f0998e318d66efce0c65e70f9139657cf35b7681883fb40b96"
+    },
+    {
+      "file": "host.emitted.ll",
+      "bytes": 182146,
+      "sha256": "49d79c826244cb63ac6c1daa088b307b814f79e115bbc7676446d7f5a3a22c7d"
+    },
+    {
+      "file": "manifest.json",
+      "bytes": 3941,
+      "sha256": "ab2f9822e07a7dfdf718ced573991d70e02d342213ac5799fa8c13ead38ae3ef"
+    },
+    {
+      "file": "observations.json",
+      "bytes": 1367,
+      "sha256": "1a687b2284cc60957e669e31279c00b8a0fc616cfbbab3f4cd84b69d2432c5c5"
+    },
+    {
+      "file": "optimized-llvm.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "optimized-llvm.stdout",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "original-emission-command.json",
+      "bytes": 770,
+      "sha256": "db0f585f7f9f46b2678839b21e069a4f0379e20337ed07b0d46e4e4afe810543"
+    },
+    {
+      "file": "prepare.py",
+      "bytes": 3645,
+      "sha256": "09fdfd48af1750b989f74e8c7caaf6b9086678c650a9894924b2c325675b66f5"
+    }
+  ],
+  "all_match": true
+}

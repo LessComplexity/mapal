@@ -1,0 +1,11 @@
+{
+  "host_available_bytes": 767250669568,
+  "gpu_index": 0,
+  "gpu_name": "NVIDIA GeForce RTX 5090",
+  "gpu_uuid": "GPU-686b6835-b1e9-b510-0865-74c94c54caef",
+  "gpu_free_bytes": 33710669824,
+  "gpu_total_bytes": 34190917632,
+  "driver": "610.57.04",
+  "power_limit_w": "465.00",
+  "gpu_free_measure": "nvidia-smi whole-device free MiB before invocation; allocation failures remain authoritative"
+}

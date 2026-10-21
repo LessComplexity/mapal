@@ -1,0 +1,84 @@
+{
+  "scope": "Frozen composition host LLVM optimized/lowered using frozen clang-O2; no link, runtime or GPU execution",
+  "original_input": "/private/tmp/mapal-s56-gpu/large-composed/composition/certification-01/gpu/recurrent-t16-d8-h16.run/rtx-5090/contract/shipped/host.ll",
+  "original_input_sha256": "49d79c826244cb63ac6c1daa088b307b814f79e115bbc7676446d7f5a3a22c7d",
+  "certification_manifest_sha256": "e65b89fba065ea650b19298d1e820a7845ad767478715af192107e8a8318cf0a",
+  "frozen_manifest_sha256": "afdb6d16c0fbeb31789d2760a82ec48ffacd206d9f957af8d0cac72608e62133",
+  "source_head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "tool": {
+    "path": "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+    "sha256": "305697d3868243dca6e4aabf4f628df7de135d701eb4fd78f6a5d7528fef4395"
+  },
+  "commands": [
+    {
+      "stage": "optimized-llvm",
+      "argv": [
+        "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+        "-O2",
+        "--target=x86_64-unknown-linux-gnu",
+        "-Wno-override-module",
+        "-S",
+        "-emit-llvm",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.emitted.ll",
+        "-o",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.O2.ll"
+      ],
+      "exit": 0,
+      "seconds": 0.18240966700250283
+    },
+    {
+      "stage": "host-object",
+      "argv": [
+        "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+        "-O2",
+        "--target=x86_64-unknown-linux-gnu",
+        "-Wno-override-module",
+        "-c",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.emitted.ll",
+        "-o",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.O2.o"
+      ],
+      "exit": 0,
+      "seconds": 0.07418741699075326
+    },
+    {
+      "stage": "host-assembly",
+      "argv": [
+        "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+        "-O2",
+        "--target=x86_64-unknown-linux-gnu",
+        "-Wno-override-module",
+        "-S",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.emitted.ll",
+        "-o",
+        "/private/tmp/mapal-s56-gpu/large-composed/host-optimization-evidence/host.O2.s"
+      ],
+      "exit": 0,
+      "seconds": 0.07624791598937009
+    }
+  ],
+  "before_after_identical": true,
+  "frozen_sources_checked": 328,
+  "frozen_inputs_checked": 4,
+  "frozen_llvm_tools_checked": 3,
+  "files": {
+    "after.json": "0fd0e3d1fbc694a80ecbe156b649b1254305e782dc33369911c35e60d5b20066",
+    "before.json": "0fd0e3d1fbc694a80ecbe156b649b1254305e782dc33369911c35e60d5b20066",
+    "host-assembly.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host-assembly.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host-object.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host-object.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host.O2.ll": "25bbaf95aa420672e821ad25d28874552fcd71fb2f627b81d7a4a2f4e091a924",
+    "host.O2.o": "ce1151e0301e2b4a75a8a7e6df74667af696d22f4276cae179f8ca9a4040cc3d",
+    "host.O2.s": "27a15006e4b804f0998e318d66efce0c65e70f9139657cf35b7681883fb40b96",
+    "host.emitted.ll": "49d79c826244cb63ac6c1daa088b307b814f79e115bbc7676446d7f5a3a22c7d",
+    "optimized-llvm.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "optimized-llvm.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "original-emission-command.json": "db0f585f7f9f46b2678839b21e069a4f0379e20337ed07b0d46e4e4afe810543",
+    "prepare.py": "09fdfd48af1750b989f74e8c7caaf6b9086678c650a9894924b2c325675b66f5"
+  },
+  "supplemental_observations": {
+    "README.md": "97f56167acf4411167df9c1b8e356f47af7d92a85d0b8ed36bacdb373f8b5ecc",
+    "observations.json": "1a687b2284cc60957e669e31279c00b8a0fc616cfbbab3f4cd84b69d2432c5c5"
+  }
+}

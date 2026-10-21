@@ -1,0 +1,28 @@
+{
+  "created_utc": "2026-10-21T20:37:02.907485+00:00",
+  "archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-static-followup-notes",
+  "files": [
+    {
+      "source": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-large-composed-preparation/recurrent-checkpoint-root-cause.md",
+      "relative_path": "recurrent-checkpoint-root-cause.md",
+      "bytes": 10855,
+      "sha256": "e05abcadb16ed26acfb73750573f5eb4aaa3062b2d9e2f192acf1f6b69aa67be"
+    },
+    {
+      "source": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-large-composed-preparation/recurrent-checkpoint-root-cause-copy.json",
+      "relative_path": "recurrent-checkpoint-root-cause-copy.json",
+      "bytes": 537,
+      "sha256": "f64ffc52d68a66a003f5015e97d2b96e5fc3869b7313bebf1164514f0a136666"
+    },
+    {
+      "source": "/Volumes/LessComplex/Personal/mapal/openspec/changes/eliminate-unmaterialized-gpu-allocations/implementation-touch-map.md",
+      "relative_path": "implementation-touch-map.md",
+      "bytes": 14687,
+      "sha256": "d480a75400e16e7489efa66f9124caacb625192b6721a8ed589b2020f10b5bdc"
+    }
+  ],
+  "file_count": 3,
+  "total_bytes": 26079,
+  "all_copies_match": true,
+  "scope": "Planned allocation implementation map and bounded replay candidate; neither is an applied fix or performance result."
+}

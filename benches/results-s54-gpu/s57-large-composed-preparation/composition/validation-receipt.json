@@ -1,0 +1,122 @@
+{
+  "scope": "CPU scalar/reference and source-text preparation only; no Mapal parsing/emission/build/runtime execution",
+  "manifest_sha256": "60b63e7c490d726d502fd0f7a59688b7a88f5b296a02620b381ee0c8a1d29ca7",
+  "artifact_hashes_verified": 8,
+  "cases": [
+    {
+      "case": "recurrent-t16-d8-h16",
+      "stage_signals": {
+        "X": {
+          "values": 2048,
+          "nonzero": 1088,
+          "max_abs": 0.7834014296531677
+        },
+        "K": {
+          "values": 2048,
+          "nonzero": 1088,
+          "max_abs": 0.04693785309791565
+        },
+        "V": {
+          "values": 2048,
+          "nonzero": 1088,
+          "max_abs": 0.05035586655139923
+        },
+        "q": {
+          "values": 128,
+          "nonzero": 120,
+          "max_abs": 0.03125
+        },
+        "sraw": {
+          "values": 256,
+          "nonzero": 136,
+          "max_abs": 0.0026674335822463036
+        },
+        "s": {
+          "values": 256,
+          "nonzero": 136,
+          "max_abs": 0.00016671459889039397
+        },
+        "a": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 1.2987854461243842e-05
+        },
+        "p": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 8.952529810812848e-07
+        },
+        "hraw": {
+          "values": 256,
+          "nonzero": 256,
+          "max_abs": 5.3266088428927105e-08
+        },
+        "h": {
+          "values": 256,
+          "nonzero": 118,
+          "max_abs": 0.0625000149011612
+        },
+        "mraw": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.0011138920672237873
+        },
+        "m": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.0316009521484375
+        },
+        "y": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.007900365628302097
+        }
+      },
+      "fp32_vs_fmaf_changed_checkpoint_cells": 879
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "stage_signals": {
+        "p": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.035400390625
+        },
+        "hraw": {
+          "values": 256,
+          "nonzero": 256,
+          "max_abs": 0.0021982192993164062
+        },
+        "h": {
+          "values": 256,
+          "nonzero": 124,
+          "max_abs": 0.06367301940917969
+        },
+        "mraw": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.0011561550199985504
+        },
+        "m": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.03165128082036972
+        },
+        "y": {
+          "values": 128,
+          "nonzero": 128,
+          "max_abs": 0.014696592465043068
+        }
+      },
+      "fp32_vs_fmaf_changed_checkpoint_cells": 0
+    }
+  ],
+  "existing_output_refused_without_manifest_mutation": true,
+  "recurrent_zero_attention_negative_control": {
+    "kind": "scalar calculation only; not compiler evidence",
+    "changed_final_cells": 8,
+    "final_max_abs_delta": 1.380685716867447e-07,
+    "final_max_abs": 0.007900266908109188,
+    "implication": "Full intermediate checks required; a loose external final tolerance can hide missing attention."
+  }
+}

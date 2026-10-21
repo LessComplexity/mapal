@@ -1,0 +1,2527 @@
+{
+  "PTX_observations": {
+    "async_copy_first_line": 52,
+    "entry_line": 12,
+    "instructions": [
+      "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32",
+      "cp.async.cg.shared.global",
+      "cp.async.commit_group",
+      "cp.async.wait_group"
+    ],
+    "mma_first_line": 298,
+    "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_tf.ptx",
+    "sha256": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2"
+  },
+  "artifacts": {
+    "confirmation": {
+      "kernel_csv": {
+        "bytes": 23351,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3-kernels.csv",
+        "sha256": "1219082d995e3ce4aa017962de9f0cd05562003b49b8598d6c89eeb25a5e022e"
+      },
+      "prof_archive": {
+        "bytes": 14660576,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-confirm-retry3/prof-rtx-5090.tgz",
+        "sha256": "f4834ffb93ca8b639f04245e233e2e212d790d245cb67eccbf3109e0a52fc732"
+      },
+      "prof_members": {
+        "prof/kern_mm_4096_tf.csv": {
+          "bytes": 5115,
+          "member": "prof/kern_mm_4096_tf.csv",
+          "sha256": "7823c55681cab45973472132e04be45f17e52b7156e95d20618c0aef906792c2"
+        },
+        "prof/mapal.sass": {
+          "bytes": 378828,
+          "member": "prof/mapal.sass",
+          "sha256": "85fe4318de30353b6aa5dd3965ac6df43209474a65087794e491c8dc5ba5c032"
+        },
+        "prof/mm_4096_tf.cubin": {
+          "bytes": 25752,
+          "member": "prof/mm_4096_tf.cubin",
+          "sha256": "564e49d6adedeef57034f012e1194a6786a603567edf5ee116cd3140ed1791d8"
+        },
+        "prof/mm_4096_tf.ptxas": {
+          "bytes": 955,
+          "member": "prof/mm_4096_tf.ptxas",
+          "sha256": "33e6f894db0602c6d4fb203bd273757d8a16240002559e752b0195cf10e10bf4",
+          "tile_entry_lines": [
+            {
+              "line": 12,
+              "text": "ptxas info    : Compiling entry function 'mapal_tile_18a86cb342332edb' for 'sm_120'"
+            },
+            {
+              "line": 13,
+              "text": "ptxas info    : Function properties for mapal_tile_18a86cb342332edb"
+            },
+            {
+              "line": 14,
+              "text": "    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads"
+            },
+            {
+              "line": 15,
+              "text": "ptxas info    : Used 124 registers, used 1 barriers"
+            }
+          ]
+        },
+        "prof/mm_4096_tf.sass": {
+          "bytes": 193500,
+          "member": "prof/mm_4096_tf.sass",
+          "sha256": "b3b4999007949e08dbe432f9cd2b4fbe6c8982d4f5f5026e492e933119a31214"
+        },
+        "prof/nsys_mm_4096_tf.out": {
+          "bytes": 1581,
+          "member": "prof/nsys_mm_4096_tf.out",
+          "sha256": "6811a5e8966a7c965d8171169d62705654bc5e4eb183e4e9296178e634c42534"
+        },
+        "prof/run_mm_4096_tf.sqlite": {
+          "bytes": 516096,
+          "member": "prof/run_mm_4096_tf.sqlite",
+          "sha256": "f98ab23cc3bc29b405568babd193c449d746e7b39e5697a33f84a2d6e43f7c8d"
+        },
+        "prof/tile_bench.sass": {
+          "bytes": 1397836,
+          "member": "prof/tile_bench.sass",
+          "sha256": "b853de1b08d6ab819540acbb6418d4c80c4c593a60329d8aae6b2cd35144061f"
+        }
+      },
+      "program_csv": {
+        "bytes": 188616,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3-programs.csv",
+        "sha256": "a0b1c2b05a692aa8bbe13e26431901e45474442a4b2d24e7ec3eda91cf737174"
+      },
+      "provenance": {
+        "bytes": 7160,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3.json",
+        "sha256": "6bfd1712f4d9870f36b57d5f9f0fc8532af4f01e6bc52a9159c4a55367ce0acd"
+      },
+      "raw_results": {
+        "bytes": 1220798,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3.txt",
+        "sha256": "d0a9c0d0c14af7cd3f580cb13845278ec267e2e1ee7cf483d475504a392db56a"
+      },
+      "request": {
+        "bytes": 1525,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-confirm-retry3/request.json",
+        "sha256": "d5f0ddb902f49611ddcfa77ab6880ea19217322e0ce076c2ac761b4729b9dd3e"
+      },
+      "verification": {
+        "bytes": 14301,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3.verification.json",
+        "sha256": "324d896101072e4976e2a416d8f92a9de12d0b5792d49b687fabc7fffacb103d"
+      }
+    },
+    "primary": {
+      "kernel_csv": {
+        "bytes": 23350,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-kernels.csv",
+        "sha256": "aad2f6d369b11e3420ac31da14d586b51b0e42a055e9135a8df32987ba0b5cce"
+      },
+      "prof_archive": {
+        "bytes": 14626263,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/prof-rtx-5090.tgz",
+        "sha256": "3ea980a915bf4ae61ab768c9817c93252009c55559f58a26d0d2b55bd0ad5092"
+      },
+      "prof_members": {
+        "prof/kern_mm_4096_tf.csv": {
+          "bytes": 5107,
+          "member": "prof/kern_mm_4096_tf.csv",
+          "sha256": "1509a9030c351c98ffdd21ddba7991cb6db67df0ab0859179dc0332a95ebf433"
+        },
+        "prof/mapal.sass": {
+          "bytes": 378828,
+          "member": "prof/mapal.sass",
+          "sha256": "85fe4318de30353b6aa5dd3965ac6df43209474a65087794e491c8dc5ba5c032"
+        },
+        "prof/mm_4096_tf.cubin": {
+          "bytes": 25752,
+          "member": "prof/mm_4096_tf.cubin",
+          "sha256": "564e49d6adedeef57034f012e1194a6786a603567edf5ee116cd3140ed1791d8"
+        },
+        "prof/mm_4096_tf.ptxas": {
+          "bytes": 955,
+          "member": "prof/mm_4096_tf.ptxas",
+          "sha256": "af3f32428f5af95d803c762bff1f2780e11deabeb75faefe724029a927bfcc01",
+          "tile_entry_lines": [
+            {
+              "line": 12,
+              "text": "ptxas info    : Compiling entry function 'mapal_tile_18a86cb342332edb' for 'sm_120'"
+            },
+            {
+              "line": 13,
+              "text": "ptxas info    : Function properties for mapal_tile_18a86cb342332edb"
+            },
+            {
+              "line": 14,
+              "text": "    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads"
+            },
+            {
+              "line": 15,
+              "text": "ptxas info    : Used 124 registers, used 1 barriers"
+            }
+          ]
+        },
+        "prof/mm_4096_tf.sass": {
+          "bytes": 193500,
+          "member": "prof/mm_4096_tf.sass",
+          "sha256": "b3b4999007949e08dbe432f9cd2b4fbe6c8982d4f5f5026e492e933119a31214"
+        },
+        "prof/nsys_mm_4096_tf.out": {
+          "bytes": 1582,
+          "member": "prof/nsys_mm_4096_tf.out",
+          "sha256": "d977d1b32ec14d1a6bcb4ab0d03af617c2fa13e23b877aaac4008c9ccb38ce45"
+        },
+        "prof/run_mm_4096_tf.sqlite": {
+          "bytes": 512000,
+          "member": "prof/run_mm_4096_tf.sqlite",
+          "sha256": "10e729e9c18f2abfd626c0d7e56a7133d87eabe8ad7b173e20023e800d409396"
+        },
+        "prof/tile_bench.sass": {
+          "bytes": 1397836,
+          "member": "prof/tile_bench.sass",
+          "sha256": "b853de1b08d6ab819540acbb6418d4c80c4c593a60329d8aae6b2cd35144061f"
+        }
+      },
+      "program_csv": {
+        "bytes": 187636,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-programs.csv",
+        "sha256": "dab37498b8ce41b2a01a7313bff0aa9ad962530b4f875e2bdf9c56cdf93bbe6f"
+      },
+      "provenance": {
+        "bytes": 7136,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.json",
+        "sha256": "a5c526e83d8ccb049a5f5f7222aceae47f5efe52610c975fd1b7a603517d24b4"
+      },
+      "raw_results": {
+        "bytes": 1218149,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.txt",
+        "sha256": "568afad81b2d4b5e2d26bf7f0d44fb8267be9f08c372db60fd2e741dd5ed3ea5"
+      },
+      "request": {
+        "bytes": 1525,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/request.json",
+        "sha256": "839ef798f51c31c9482b56f03399d20a8f7dc8db4a97d66ea492a47cbfdcafab"
+      },
+      "verification": {
+        "bytes": 14300,
+        "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.verification.json",
+        "sha256": "e438ac23bd1e9c0c6793242f82210a6b71140e284f53926e6c0dccca86b8e8d5"
+      }
+    }
+  },
+  "assertions": {
+    "TF32_4096_offline_cubin_and_SASS_hashes_equal": true,
+    "all_18_PTX_rehashed_against_manifest": true,
+    "all_18_launched_entry_names_match_saved_PTX_and_launch_descriptor": true,
+    "all_18_shipped_resource_tuples_equal": true,
+    "both_provenances_confirm_cleanup": true,
+    "both_verifications_pass": true,
+    "offline_harness_SASS_hashes_equal": true,
+    "same_frozen_manifest": true
+  },
+  "author": "/root/audit_s54_worktrees",
+  "created_utc": "2026-10-21T21:05:45.229189+00:00",
+  "frozen_manifest": {
+    "bytes": 3829881,
+    "path": "/private/tmp/mapal-s56-gpu/integrated/rtx-5090-manifest.json",
+    "sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa"
+  },
+  "kernel_names_by_sha256": {
+    "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d": "void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_128x128_32x3_nn_align4>(T1::Params)",
+    "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb": "void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)",
+    "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5": "mapal_tile_18a86cb342332edb"
+  },
+  "limitations": [
+    "No actual driver-JIT SASS dump; offline ptxas register124 vs driver122 must remain distinct.",
+    "Equal PTX/input manifests, function names and resource tuples do not prove identical driver/library machine code or equivalent machine conditions.",
+    "No decode Nsight timeline or decoded per-function driver resource table in the audited archives.",
+    "No NCU counter data; no causal attribution from times, registers or startup snapshots.",
+    "Ordinary event, ordinary process wall, runtime-traced summed kernel and Nsight activity timing are distinct observations.",
+    "Profiled eight-launch ranges include validation/warmup and are not ordinary30-sample ranges.",
+    "Empty trace-rtx-5090.tgz placeholders are not used as profiling evidence; nonempty prof archives are hash-bound."
+  ],
+  "note": {
+    "bytes": 6588,
+    "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-rtx-5090-confirm-driver-resource-evidence.md",
+    "sha256": "a2474c325426fd121162410191cc04dcffb671ea39893099673b419ef8930117"
+  },
+  "queries": {
+    "device_attributes_query": "SELECT * FROM TARGET_INFO_GPU",
+    "interval_query": "SELECT s.value AS kernel_name,k.start,k.end,k.registersPerThread,k.localMemoryPerThread,k.gridX,k.gridY,k.blockX,k.dynamicSharedMemory FROM CUPTI_ACTIVITY_KIND_KERNEL k JOIN StringIds s ON s.id=k.demangledName ORDER BY k.start",
+    "resource_group_query": "SELECT s.value AS kernel_name,k.registersPerThread,k.localMemoryPerThread,k.localMemoryTotal,k.gridX,k.gridY,k.gridZ,k.blockX,k.blockY,k.blockZ,k.staticSharedMemory,k.dynamicSharedMemory,COUNT(*) AS launches,MIN(k.end-k.start) AS min_ns,MAX(k.end-k.start) AS max_ns FROM CUPTI_ACTIVITY_KIND_KERNEL k JOIN StringIds s ON s.id=k.demangledName GROUP BY s.value,k.registersPerThread,k.localMemoryPerThread,k.localMemoryTotal,k.gridX,k.gridY,k.gridZ,k.blockX,k.blockY,k.blockZ,k.staticSharedMemory,k.dynamicSharedMemory ORDER BY s.value",
+    "table_inventory_query": "SELECT name FROM sqlite_master WHERE type='table'"
+  },
+  "report_presentation_QA": {
+    "decode": {
+      "combined_control_source_lines": "4048;4065;4079;4093;4107",
+      "ordinary_combined_control_wall_ms": 14480,
+      "ordinary_control_over_shipped_wall_ratio": 2.869599682917162,
+      "ordinary_shipped_wall_ms": 5046,
+      "shipped_source_lines": "4024;4059;4073;4087;4101",
+      "traced_H2D_D2H_bytes_combined_control": [
+        4837081088,
+        2152726528
+      ],
+      "traced_H2D_D2H_bytes_shipped": [
+        3144704,
+        1048576
+      ],
+      "traced_allocations_shipped_control": [
+        8,
+        12288
+      ],
+      "traced_kernel_ms_separate_execution": 9098.911
+    },
+    "line_scope": [
+      348,
+      372
+    ],
+    "mismatches": [],
+    "program_csv": {
+      "bytes": 188616,
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-confirm-retry3-programs.csv",
+      "sha256": "a0b1c2b05a692aa8bbe13e26431901e45474442a4b2d24e7ec3eda91cf737174"
+    },
+    "reviewed_report": {
+      "bytes": 36338,
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/s54-gpu-fusion.md",
+      "sha256": "78ba609501c367a00be9dd39792432a2a5d3353388dfd5d95ff397d34ff046f7"
+    },
+    "reviewed_report_unchanged_by_agent": true,
+    "stream_comparisons": [
+      {
+        "OFF_iter_median_ms": 12.446224,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 13.572797,
+        "ON_over_OFF": 1.0905152438201335,
+        "disjoint_OFF_faster_range": true,
+        "face": "_c",
+        "off_source_lines": "2253;2269;2285;2301;2317",
+        "on_source_lines": "2259;2275;2291;2307;2323",
+        "program": "pt_indep_4096",
+        "report_line": 356,
+        "trace_allocs_OFF_ON": [
+          1,
+          7
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 21.088984,
+        "ON_has_observation_faster_than_OFF_min": true,
+        "ON_iter_median_ms": 22.197332,
+        "ON_over_OFF": 1.0525557798327316,
+        "disjoint_OFF_faster_range": false,
+        "face": "_exact",
+        "off_source_lines": "2245;2261;2277;2293;2309",
+        "on_source_lines": "2251;2267;2283;2299;2315",
+        "program": "pt_indep_4096",
+        "report_line": 357,
+        "trace_allocs_OFF_ON": [
+          1,
+          7
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 24.978134999999998,
+        "ON_has_observation_faster_than_OFF_min": true,
+        "ON_iter_median_ms": 27.069233,
+        "ON_over_OFF": 1.083717139009778,
+        "disjoint_OFF_faster_range": false,
+        "face": "_c",
+        "off_source_lines": "2711;2727;2743;2759;2775",
+        "on_source_lines": "2717;2733;2749;2765;2781",
+        "program": "pt_mlp2_4096",
+        "report_line": 358,
+        "trace_allocs_OFF_ON": [
+          1,
+          14
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 39.932475,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 42.010317,
+        "ON_over_OFF": 1.052033889710067,
+        "disjoint_OFF_faster_range": true,
+        "face": "_exact",
+        "off_source_lines": "2703;2719;2735;2751;2767",
+        "on_source_lines": "2709;2725;2741;2757;2773",
+        "program": "pt_mlp2_4096",
+        "report_line": 359,
+        "trace_allocs_OFF_ON": [
+          1,
+          14
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 12.404873,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 12.752519000000001,
+        "ON_over_OFF": 1.028024954386877,
+        "disjoint_OFF_faster_range": true,
+        "face": "_c",
+        "off_source_lines": "3839;3855;3871;3887;3903",
+        "on_source_lines": "3845;3861;3877;3893;3909",
+        "program": "pt_twin_4096",
+        "report_line": 360,
+        "trace_allocs_OFF_ON": [
+          1,
+          6
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 21.022909,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 21.151780000000002,
+        "ON_over_OFF": 1.0061300270100586,
+        "disjoint_OFF_faster_range": true,
+        "face": "_exact",
+        "off_source_lines": "3831;3847;3863;3879;3895",
+        "on_source_lines": "3837;3853;3869;3885;3901",
+        "program": "pt_twin_4096",
+        "report_line": 361,
+        "trace_allocs_OFF_ON": [
+          1,
+          6
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 2.365251,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 2.4605870000000003,
+        "ON_over_OFF": 1.040306927256346,
+        "disjoint_OFF_faster_range": true,
+        "face": "_c",
+        "off_source_lines": "3921;3937;3953;3969;3985",
+        "on_source_lines": "3927;3943;3959;3975;3991",
+        "program": "pt_twin_512",
+        "report_line": 362,
+        "trace_allocs_OFF_ON": [
+          1,
+          6
+        ]
+      },
+      {
+        "OFF_iter_median_ms": 2.368468,
+        "ON_has_observation_faster_than_OFF_min": false,
+        "ON_iter_median_ms": 2.469234,
+        "ON_over_OFF": 1.0425448011119425,
+        "disjoint_OFF_faster_range": true,
+        "face": "_exact",
+        "off_source_lines": "3913;3929;3945;3961;3977",
+        "on_source_lines": "3919;3935;3951;3967;3983",
+        "program": "pt_twin_512",
+        "report_line": 363,
+        "trace_allocs_OFF_ON": [
+          1,
+          6
+        ]
+      }
+    ],
+    "stream_counts": {
+      "comparisons": 8,
+      "disjoint_ranges_favor_OFF": 6,
+      "medians_favor_OFF": 8,
+      "overlapping_ranges_with_faster_ON_observations": 2
+    }
+  },
+  "runs": {
+    "confirmation": {
+      "TF32_4096": {
+        "device_attributes": {
+          "chipName": "GB202",
+          "clockRate": 2407000000,
+          "computeMajor": 12,
+          "computeMinor": 0,
+          "l2CacheSize": 100663296,
+          "maxRegistersPerSm": 65536,
+          "maxShmemPerSm": 102400,
+          "maxThreadsPerBlock": 1024,
+          "memoryBandwidth": 1792128000000,
+          "name": "NVIDIA GeForce RTX 5090",
+          "smCount": 170,
+          "totalMemory": 33671348224
+        },
+        "ordinary_values": {
+          "cublas_device_event_ms_max": "1.8985",
+          "cublas_device_event_ms_median": "1.8883",
+          "cublas_device_event_ms_min": "1.8862",
+          "cutlass_device_event_ms_max": "1.8985",
+          "cutlass_device_event_ms_median": "1.8883",
+          "cutlass_device_event_ms_min": "1.8862",
+          "mapal_device_event_ms_max": "4.4585",
+          "mapal_device_event_ms_median": "4.4472",
+          "mapal_device_event_ms_min": "4.438",
+          "source_line": "4502"
+        },
+        "profiled_intervals": [
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 473743627,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 471687591
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 478250004,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 473745419
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 482768189,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 478252052
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 527099158,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 525211058
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 531416958,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 527101078
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 535740199,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 531419262
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 539971632,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 538084620
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 544282488,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 539972752
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 548599329,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 544284856
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 599635495,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 595192990
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 604045264,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 602159468
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 608461945,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 606574933
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 615435335,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 610992478
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 619840431,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 617955724
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 624256600,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 622371220
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 631234118,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 626788733
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 635643151,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 633757099
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 640063736,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 638175668
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 647032838,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 642592157
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 651443631,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 649555371
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 655860535,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 653973972
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 662832485,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 658391485
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 667243086,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 665354730
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 671660503,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 669773267
+          }
+        ],
+        "profiled_resource_rows": [
+          {
+            "blockX": 256,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 37888,
+            "gridX": 32,
+            "gridY": 32,
+            "gridZ": 1,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 4516137,
+            "median_ns": 4442681.0,
+            "min_ns": 2056036,
+            "registersPerThread": 122,
+            "staticSharedMemory": 0
+          },
+          {
+            "blockX": 128,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 98304,
+            "gridX": 256,
+            "gridY": 4,
+            "gridZ": 1,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 4320937,
+            "median_ns": 1888180.0,
+            "min_ns": 1884707,
+            "registersPerThread": 234,
+            "staticSharedMemory": 0
+          },
+          {
+            "blockX": 128,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 65536,
+            "gridX": 32,
+            "gridY": 32,
+            "gridZ": 1,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 4314473,
+            "median_ns": 1887124.0,
+            "min_ns": 1885380,
+            "registersPerThread": 230,
+            "staticSharedMemory": 0
+          }
+        ],
+        "raw_section_lines": [
+          4502,
+          4503,
+          4504,
+          4505,
+          4506,
+          4507,
+          4508,
+          4509,
+          4510,
+          4511,
+          4512,
+          4513
+        ]
+      },
+      "decode_Contract_shipped": {
+        "csv_values": {
+          "source_lines": "4024;4059;4073;4087;4101",
+          "trace_process_allocs_observed": "8",
+          "trace_process_bytes_in_observed": "3144704",
+          "trace_process_bytes_out_observed": "1048576",
+          "trace_process_d2h_observed": "1024",
+          "trace_process_events_observed": "0",
+          "trace_process_gens_observed": "2",
+          "trace_process_h2d_observed": "2048",
+          "trace_process_launches_observed": "4096",
+          "trace_process_pdl_observed": "0",
+          "trace_process_pins_observed": "0",
+          "traced_kernel_ms_max": "9213.313",
+          "traced_kernel_ms_median": "9098.911",
+          "traced_kernel_ms_min": "8880.935",
+          "wall_ms_max": "5104.0",
+          "wall_ms_median": "5046.0",
+          "wall_ms_min": "4912.0"
+        },
+        "launch_inventory": [
+          {
+            "fields": {
+              "kernel": "mapal_tile_022eacf5c2c33e41",
+              "n": "2048",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4025
+          },
+          {
+            "fields": {
+              "kernel": "mapal_tile_a6828e8e9cba333a",
+              "n": "1024",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4026
+          },
+          {
+            "fields": {
+              "kernel": "mapal_tile_b2d76fce0a35453e",
+              "n": "1024",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4027
+          }
+        ],
+        "raw_trace_records": [
+          {
+            "alloc_ms": "0.244",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "123.486",
+            "d2h": "1024",
+            "d2h_ms": "13.618",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.180",
+            "gen_ms": "4.370",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.821",
+            "init_ms": "26.222",
+            "kernel_ms": "9128.771",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.812",
+            "line": 4024,
+            "load_ms": "150.351",
+            "module_ms": "2.337",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "1",
+            "traced_wall_s": "9.641",
+            "wall_rc": "0",
+            "wall_s": "5.104"
+          },
+          {
+            "alloc_ms": "0.218",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "124.889",
+            "d2h": "1024",
+            "d2h_ms": "14.262",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.168",
+            "gen_ms": "4.401",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.879",
+            "init_ms": "26.658",
+            "kernel_ms": "9213.313",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.849",
+            "line": 4059,
+            "load_ms": "152.132",
+            "module_ms": "2.335",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "2",
+            "traced_wall_s": "9.721",
+            "wall_rc": "0",
+            "wall_s": "5.046"
+          },
+          {
+            "alloc_ms": "0.234",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "122.357",
+            "d2h": "1024",
+            "d2h_ms": "13.262",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.185",
+            "gen_ms": "4.387",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.810",
+            "init_ms": "28.560",
+            "kernel_ms": "8880.935",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "2.634",
+            "line": 4073,
+            "load_ms": "150.789",
+            "module_ms": "2.336",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "3",
+            "traced_wall_s": "9.384",
+            "wall_rc": "0",
+            "wall_s": "5.065"
+          },
+          {
+            "alloc_ms": "0.208",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "130.500",
+            "d2h": "1024",
+            "d2h_ms": "13.896",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.172",
+            "gen_ms": "4.404",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.762",
+            "init_ms": "29.321",
+            "kernel_ms": "9084.889",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.977",
+            "line": 4087,
+            "load_ms": "160.281",
+            "module_ms": "2.335",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "4",
+            "traced_wall_s": "9.592",
+            "wall_rc": "0",
+            "wall_s": "5.026"
+          },
+          {
+            "alloc_ms": "0.328",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "130.391",
+            "d2h": "1024",
+            "d2h_ms": "13.793",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.175",
+            "gen_ms": "4.232",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.793",
+            "init_ms": "26.384",
+            "kernel_ms": "9098.911",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.745",
+            "line": 4101,
+            "load_ms": "157.497",
+            "module_ms": "2.335",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "5",
+            "traced_wall_s": "9.604",
+            "wall_rc": "0",
+            "wall_s": "4.912"
+          }
+        ]
+      },
+      "hardware": {
+        "csv_columns": [
+          "name",
+          "driver_version",
+          "clocks.max.sm [MHz]",
+          "clocks.current.sm [MHz]",
+          "power.limit [W]",
+          "temperature.gpu",
+          "persistence_mode"
+        ],
+        "gpus": [
+          {
+            "clocks.current.sm [MHz]": "1995 MHz",
+            "clocks.max.sm [MHz]": "3090 MHz",
+            "driver_version": "590.48.01",
+            "name": "NVIDIA GeForce RTX 5090",
+            "persistence_mode": "Enabled",
+            "power.limit [W]": "546.00 W",
+            "temperature.gpu": "43"
+          }
+        ]
+      },
+      "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+      "header": {
+        "column_line": 2,
+        "columns": "name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode",
+        "value_line": 3,
+        "values": "NVIDIA GeForce RTX 5090, 590.48.01, 3090 MHz, 1995 MHz, 546.00 W, 43, Enabled"
+      },
+      "host_id": 617499,
+      "machine_id": 145957,
+      "manifest_sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa",
+      "profiler_coverage": {
+        "decode_SQLite_or_nsys_members": [],
+        "hardware_counter_tables": [],
+        "kernel_SQLite_members": [
+          "prof/run-1024.sqlite",
+          "prof/run-4096.sqlite",
+          "prof/run-8192.sqlite",
+          "prof/run_mm_4096_tf.sqlite",
+          "prof/tl_e2e_1024_c.sqlite",
+          "prof/tl_e2e_4096_c.sqlite",
+          "prof/tl_pt_epi_4096_c.sqlite",
+          "prof/tl_pt_mlp_4096_c.sqlite",
+          "prof/tl_pt_mlp2_4096_c.sqlite",
+          "prof/tl_pt_indep_4096_c.sqlite",
+          "prof/tl_pt_twin_4096_c.sqlite"
+        ],
+        "ncu_csv": {
+          "bytes": 0,
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-confirm-retry3/ncu-rtx-5090.csv",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "resource_rows": [
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_f24cd6725591d228",
+            "local_bytes": "0",
+            "regs": "77",
+            "smem": "8192"
+          },
+          "face": "_exact",
+          "n": 1024,
+          "resource_line": 4121,
+          "section_line": 4118
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_b3430eaa07e662e7",
+            "local_bytes": "0",
+            "regs": "79",
+            "smem": "8448"
+          },
+          "face": "_c",
+          "n": 1024,
+          "resource_line": 4157,
+          "section_line": 4154
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_1a9c689505abacd3",
+            "local_bytes": "0",
+            "regs": "66",
+            "smem": "36864"
+          },
+          "face": "_tf",
+          "n": 1024,
+          "resource_line": 4193,
+          "section_line": 4190
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x12",
+            "kernel": "mapal_tile_83ea5f57ed66edbc",
+            "local_bytes": "0",
+            "regs": "101",
+            "smem": "12288"
+          },
+          "face": "_exact",
+          "n": 1536,
+          "resource_line": 4229,
+          "section_line": 4226
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x12",
+            "kernel": "mapal_tile_4b8c6a3b1d159013",
+            "local_bytes": "0",
+            "regs": "95",
+            "smem": "12544"
+          },
+          "face": "_c",
+          "n": 1536,
+          "resource_line": 4241,
+          "section_line": 4238
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "12x24",
+            "kernel": "mapal_tile_2edd34f62dc6fee7",
+            "local_bytes": "0",
+            "regs": "80",
+            "smem": "41472"
+          },
+          "face": "_tf",
+          "n": 1536,
+          "resource_line": 4253,
+          "section_line": 4250
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_8f8f17dbfee141eb",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 2048,
+          "resource_line": 4265,
+          "section_line": 4262
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_a699b750c8acc1b6",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 2048,
+          "resource_line": 4301,
+          "section_line": 4298
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_e4397dd68e9ce32e",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 2048,
+          "resource_line": 4337,
+          "section_line": 4334
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_b71975cf5c3a641b",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 3072,
+          "resource_line": 4373,
+          "section_line": 4370
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_bf9741e6398cf186",
+            "local_bytes": "40",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 3072,
+          "resource_line": 4385,
+          "section_line": 4382
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_b9224b7b1cc405fe",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 3072,
+          "resource_line": 4397,
+          "section_line": 4394
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_44b89e2e8514dfc0",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 4096,
+          "resource_line": 4409,
+          "section_line": 4406
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_359ebbfdb3fa2c9f",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 4096,
+          "resource_line": 4457,
+          "section_line": 4454
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_18a86cb342332edb",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 4096,
+          "resource_line": 4505,
+          "section_line": 4502
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_c18771960a7c9351",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 8192,
+          "resource_line": 4553,
+          "section_line": 4550
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_d887e043cb797d3c",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 8192,
+          "resource_line": 4601,
+          "section_line": 4598
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_7866e25aa2accf14",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 8192,
+          "resource_line": 4649,
+          "section_line": 4646
+        }
+      ],
+      "tag": "rtx-5090-confirm-retry3"
+    },
+    "primary": {
+      "TF32_4096": {
+        "device_attributes": {
+          "chipName": "GB202",
+          "clockRate": 2437000000,
+          "computeMajor": 12,
+          "computeMinor": 0,
+          "l2CacheSize": 100663296,
+          "maxRegistersPerSm": 65536,
+          "maxShmemPerSm": 102400,
+          "maxThreadsPerBlock": 1024,
+          "memoryBandwidth": 1792128000000,
+          "name": "NVIDIA GeForce RTX 5090",
+          "smCount": 170,
+          "totalMemory": 33766572032
+        },
+        "ordinary_values": {
+          "cublas_device_event_ms_max": "1.3926",
+          "cublas_device_event_ms_median": "1.3906",
+          "cublas_device_event_ms_min": "1.3824",
+          "cutlass_device_event_ms_max": "1.3763",
+          "cutlass_device_event_ms_median": "1.3701",
+          "cutlass_device_event_ms_min": "1.364",
+          "mapal_device_event_ms_max": "1.5503",
+          "mapal_device_event_ms_median": "1.546",
+          "mapal_device_event_ms_min": "1.5299",
+          "source_line": "4502"
+        },
+        "profiled_intervals": [
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 290861130,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 289331459
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 292402480,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 290861386
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 293946935,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 292402768
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 362894019,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 361506685
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 364280297,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 362894307
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 365669487,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 364280585
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 367084054,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 365710960
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 368453948,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 367084310
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 369823234,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 368454204
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 408950604,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 407422309
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 410479987,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 409103341
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 411987833,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 410628243
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 413665696,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 412133370
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 415198023,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 413817633
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 416709486,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 415345608
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 418392789,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 416856302
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 419923132,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 418542582
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 421436514,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 420071804
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 423118922,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 421582243
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 424649232,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 423267306
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 426162839,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 424797073
+          },
+          {
+            "blockX": 256,
+            "dynamicSharedMemory": 37888,
+            "end": 427843998,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 122,
+            "start": 426307767
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 98304,
+            "end": 429378149,
+            "gridX": 256,
+            "gridY": 4,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 234,
+            "start": 427995711
+          },
+          {
+            "blockX": 128,
+            "dynamicSharedMemory": 65536,
+            "end": 430889003,
+            "gridX": 32,
+            "gridY": 32,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "localMemoryPerThread": 0,
+            "registersPerThread": 230,
+            "start": 429525285
+          }
+        ],
+        "profiled_resource_rows": [
+          {
+            "blockX": 256,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 37888,
+            "gridX": 32,
+            "gridY": 32,
+            "gridZ": 1,
+            "kernel_name_sha256": "c5786546fcd4a585b78b11a5f2edc114f9deda6e038ea79459587fc6431400f5",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 1544167,
+            "median_ns": 1536359.0,
+            "min_ns": 1528295,
+            "registersPerThread": 122,
+            "staticSharedMemory": 0
+          },
+          {
+            "blockX": 128,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 98304,
+            "gridX": 256,
+            "gridY": 4,
+            "gridZ": 1,
+            "kernel_name_sha256": "656670f4d70c78ff1f19dbc8d4cd84e813cb077f45efe146c0c411c0dfbd5b4d",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 1388902,
+            "median_ns": 1382182.0,
+            "min_ns": 1376646,
+            "registersPerThread": 234,
+            "staticSharedMemory": 0
+          },
+          {
+            "blockX": 128,
+            "blockY": 1,
+            "blockZ": 1,
+            "dynamicSharedMemory": 65536,
+            "gridX": 32,
+            "gridY": 32,
+            "gridZ": 1,
+            "kernel_name_sha256": "c4b198bc2e7709a15d52b4eda02516fd5ee15735b41acbdbf6d86078808651fb",
+            "launches": 8,
+            "localMemoryPerThread": 0,
+            "localMemoryTotal": 150405120,
+            "max_ns": 1373094,
+            "median_ns": 1365238.0,
+            "min_ns": 1359590,
+            "registersPerThread": 230,
+            "staticSharedMemory": 0
+          }
+        ],
+        "raw_section_lines": [
+          4502,
+          4503,
+          4504,
+          4505,
+          4506,
+          4507,
+          4508,
+          4509,
+          4510,
+          4511,
+          4512,
+          4513
+        ]
+      },
+      "decode_Contract_shipped": {
+        "csv_values": {
+          "source_lines": "4024;4059;4073;4087;4101",
+          "trace_process_allocs_observed": "8",
+          "trace_process_bytes_in_observed": "3144704",
+          "trace_process_bytes_out_observed": "1048576",
+          "trace_process_d2h_observed": "1024",
+          "trace_process_events_observed": "0",
+          "trace_process_gens_observed": "2",
+          "trace_process_h2d_observed": "2048",
+          "trace_process_launches_observed": "4096",
+          "trace_process_pdl_observed": "0",
+          "trace_process_pins_observed": "0",
+          "traced_kernel_ms_max": "72.28",
+          "traced_kernel_ms_median": "72.112",
+          "traced_kernel_ms_min": "72.027",
+          "wall_ms_max": "460.0",
+          "wall_ms_median": "450.0",
+          "wall_ms_min": "440.0"
+        },
+        "launch_inventory": [
+          {
+            "fields": {
+              "kernel": "mapal_tile_022eacf5c2c33e41",
+              "n": "2048",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4025
+          },
+          {
+            "fields": {
+              "kernel": "mapal_tile_a6828e8e9cba333a",
+              "n": "1024",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4026
+          },
+          {
+            "fields": {
+              "kernel": "mapal_tile_b2d76fce0a35453e",
+              "n": "1024",
+              "prog": "decode_1024_256_c"
+            },
+            "line": 4027
+          }
+        ],
+        "raw_trace_records": [
+          {
+            "alloc_ms": "0.206",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "56.370",
+            "d2h": "1024",
+            "d2h_ms": "5.032",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.115",
+            "gen_ms": "0.029",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.624",
+            "init_ms": "63.175",
+            "kernel_ms": "72.280",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.067",
+            "line": 4024,
+            "load_ms": "118.653",
+            "module_ms": "0.094",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "1",
+            "traced_wall_s": "0.463",
+            "wall_rc": "0",
+            "wall_s": "0.440"
+          },
+          {
+            "alloc_ms": "0.174",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "56.547",
+            "d2h": "1024",
+            "d2h_ms": "5.007",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.129",
+            "gen_ms": "0.028",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.609",
+            "init_ms": "63.460",
+            "kernel_ms": "72.112",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "0.949",
+            "line": 4059,
+            "load_ms": "119.234",
+            "module_ms": "0.094",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "2",
+            "traced_wall_s": "0.477",
+            "wall_rc": "0",
+            "wall_s": "0.460"
+          },
+          {
+            "alloc_ms": "0.225",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "58.797",
+            "d2h": "1024",
+            "d2h_ms": "4.958",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.104",
+            "gen_ms": "0.038",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.512",
+            "init_ms": "62.522",
+            "kernel_ms": "72.027",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.069",
+            "line": 4073,
+            "load_ms": "120.423",
+            "module_ms": "0.099",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "3",
+            "traced_wall_s": "0.461",
+            "wall_rc": "0",
+            "wall_s": "0.450"
+          },
+          {
+            "alloc_ms": "0.211",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "55.890",
+            "d2h": "1024",
+            "d2h_ms": "4.766",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.115",
+            "gen_ms": "0.037",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.585",
+            "init_ms": "62.558",
+            "kernel_ms": "72.027",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.046",
+            "line": 4087,
+            "load_ms": "117.573",
+            "module_ms": "0.098",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "4",
+            "traced_wall_s": "0.466",
+            "wall_rc": "0",
+            "wall_s": "0.460"
+          },
+          {
+            "alloc_ms": "0.197",
+            "allocs": "8",
+            "bytes_in": "3144704",
+            "bytes_out": "1048576",
+            "ctx_ms": "56.964",
+            "d2h": "1024",
+            "d2h_ms": "4.795",
+            "events": "0",
+            "flags": "1",
+            "free_ms": "0.113",
+            "gen_ms": "0.028",
+            "gens": "2",
+            "h2d": "2048",
+            "h2d_ms": "3.585",
+            "init_ms": "63.462",
+            "kernel_ms": "72.139",
+            "l2_persist": "0",
+            "l2_windows": "0",
+            "launches": "4096",
+            "lead_ms": "1.014",
+            "line": 4101,
+            "load_ms": "119.589",
+            "module_ms": "0.094",
+            "out": "[-0.007221978",
+            "pdl": "0",
+            "pin_ms": "0.000",
+            "pins": "0",
+            "prog": "decode_1024_256_c",
+            "rc": "0",
+            "rep": "5",
+            "traced_wall_s": "0.464",
+            "wall_rc": "0",
+            "wall_s": "0.447"
+          }
+        ]
+      },
+      "hardware": {
+        "csv_columns": [
+          "name",
+          "driver_version",
+          "clocks.max.sm [MHz]",
+          "clocks.current.sm [MHz]",
+          "power.limit [W]",
+          "temperature.gpu",
+          "persistence_mode"
+        ],
+        "gpus": [
+          {
+            "clocks.current.sm [MHz]": "180 MHz",
+            "clocks.max.sm [MHz]": "3090 MHz",
+            "driver_version": "615.78.08",
+            "name": "NVIDIA GeForce RTX 5090",
+            "persistence_mode": "Enabled",
+            "power.limit [W]": "450.00 W",
+            "temperature.gpu": "46"
+          }
+        ]
+      },
+      "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+      "header": {
+        "column_line": 2,
+        "columns": "name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode",
+        "value_line": 3,
+        "values": "NVIDIA GeForce RTX 5090, 615.78.08, 3090 MHz, 180 MHz, 450.00 W, 46, Enabled"
+      },
+      "host_id": 309734,
+      "machine_id": 44652,
+      "manifest_sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa",
+      "profiler_coverage": {
+        "decode_SQLite_or_nsys_members": [],
+        "hardware_counter_tables": [],
+        "kernel_SQLite_members": [
+          "prof/run-1024.sqlite",
+          "prof/run-4096.sqlite",
+          "prof/run-8192.sqlite",
+          "prof/run_mm_4096_tf.sqlite",
+          "prof/tl_e2e_1024_c.sqlite",
+          "prof/tl_e2e_4096_c.sqlite",
+          "prof/tl_pt_epi_4096_c.sqlite",
+          "prof/tl_pt_mlp_4096_c.sqlite",
+          "prof/tl_pt_mlp2_4096_c.sqlite",
+          "prof/tl_pt_indep_4096_c.sqlite",
+          "prof/tl_pt_twin_4096_c.sqlite"
+        ],
+        "ncu_csv": {
+          "bytes": 0,
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/ncu-rtx-5090.csv",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "resource_rows": [
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_f24cd6725591d228",
+            "local_bytes": "0",
+            "regs": "77",
+            "smem": "8192"
+          },
+          "face": "_exact",
+          "n": 1024,
+          "resource_line": 4121,
+          "section_line": 4118
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_b3430eaa07e662e7",
+            "local_bytes": "0",
+            "regs": "79",
+            "smem": "8448"
+          },
+          "face": "_c",
+          "n": 1024,
+          "resource_line": 4157,
+          "section_line": 4154
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_1a9c689505abacd3",
+            "local_bytes": "0",
+            "regs": "66",
+            "smem": "36864"
+          },
+          "face": "_tf",
+          "n": 1024,
+          "resource_line": 4193,
+          "section_line": 4190
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x12",
+            "kernel": "mapal_tile_83ea5f57ed66edbc",
+            "local_bytes": "0",
+            "regs": "101",
+            "smem": "12288"
+          },
+          "face": "_exact",
+          "n": 1536,
+          "resource_line": 4229,
+          "section_line": 4226
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x12",
+            "kernel": "mapal_tile_4b8c6a3b1d159013",
+            "local_bytes": "0",
+            "regs": "95",
+            "smem": "12544"
+          },
+          "face": "_c",
+          "n": 1536,
+          "resource_line": 4241,
+          "section_line": 4238
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "12x24",
+            "kernel": "mapal_tile_2edd34f62dc6fee7",
+            "local_bytes": "0",
+            "regs": "80",
+            "smem": "41472"
+          },
+          "face": "_tf",
+          "n": 1536,
+          "resource_line": 4253,
+          "section_line": 4250
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_8f8f17dbfee141eb",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 2048,
+          "resource_line": 4265,
+          "section_line": 4262
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_a699b750c8acc1b6",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 2048,
+          "resource_line": 4301,
+          "section_line": 4298
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "16x16",
+            "kernel": "mapal_tile_e4397dd68e9ce32e",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 2048,
+          "resource_line": 4337,
+          "section_line": 4334
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_b71975cf5c3a641b",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 3072,
+          "resource_line": 4373,
+          "section_line": 4370
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_bf9741e6398cf186",
+            "local_bytes": "40",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 3072,
+          "resource_line": 4385,
+          "section_line": 4382
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "24x24",
+            "kernel": "mapal_tile_b9224b7b1cc405fe",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 3072,
+          "resource_line": 4397,
+          "section_line": 4394
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_44b89e2e8514dfc0",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 4096,
+          "resource_line": 4409,
+          "section_line": 4406
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_359ebbfdb3fa2c9f",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 4096,
+          "resource_line": 4457,
+          "section_line": 4454
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "32x32",
+            "kernel": "mapal_tile_18a86cb342332edb",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 4096,
+          "resource_line": 4505,
+          "section_line": 4502
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_c18771960a7c9351",
+            "local_bytes": "8",
+            "regs": "128",
+            "smem": "33792"
+          },
+          "face": "_exact",
+          "n": 8192,
+          "resource_line": 4553,
+          "section_line": 4550
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_d887e043cb797d3c",
+            "local_bytes": "0",
+            "regs": "128",
+            "smem": "16640"
+          },
+          "face": "_c",
+          "n": 8192,
+          "resource_line": 4601,
+          "section_line": 4598
+        },
+        {
+          "attributes": {
+            "block": "256",
+            "grid": "64x64",
+            "kernel": "mapal_tile_7866e25aa2accf14",
+            "local_bytes": "0",
+            "regs": "122",
+            "smem": "37888"
+          },
+          "face": "_tf",
+          "n": 8192,
+          "resource_line": 4649,
+          "section_line": 4646
+        }
+      ],
+      "tag": "rtx-5090-primary-retry4"
+    }
+  },
+  "schema": "mapal.s57.rtx5090.confirmation-driver-resources.v1",
+  "scope": "Read-only saved-artifact analysis; only this new receipt and named companion note written. No builds, GPU, rentals, source or policy edits.",
+  "shipped_PTX_bindings": [
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_f24cd6725591d228",
+      "launch": {
+        "bytes": 43,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024.launch",
+        "sha256": "739f4ab6895d76591b6413b9721a3dd711b5aa449f350df13c0bdbd453347c4b"
+      },
+      "n": 1024,
+      "ptx": {
+        "bytes": 25546,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024.ptx",
+        "sha256": "83c46d59f2bcb24a3438c09139969e897d53b4db71d26b7bbaaeac787f0a8959"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_b3430eaa07e662e7",
+      "launch": {
+        "bytes": 43,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024_c.launch",
+        "sha256": "dcbcd2513c45e1f98e7d8a8512759566dfca195aeddf2f930dba397eaf501b42"
+      },
+      "n": 1024,
+      "ptx": {
+        "bytes": 18676,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024_c.ptx",
+        "sha256": "53c82c5f14e58cbd32232c33c6d41a597ff11c19b209e6de074a8df1ab8de548"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_1a9c689505abacd3",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024_tf.launch",
+        "sha256": "c0f453a389b553906a5d8353098910817c1bdbc8255d78dae056a99e3c5e8d25"
+      },
+      "n": 1024,
+      "ptx": {
+        "bytes": 24667,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1024_tf.ptx",
+        "sha256": "6b9e1e9dd3f078c376191c6440d4dad685fe623bbffe56d7a39a88ba1367cc17"
+      }
+    },
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_83ea5f57ed66edbc",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536.launch",
+        "sha256": "58946a43d49230109aa99ab7a7dd8e757f2ce01bc62484ffbeb60d4878c72eb1"
+      },
+      "n": 1536,
+      "ptx": {
+        "bytes": 45493,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536.ptx",
+        "sha256": "b7666cff107a5d7706cb987dbdb69c8ea0c4a5bae9a8ccc6e78763fc0a3cd770"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_4b8c6a3b1d159013",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536_c.launch",
+        "sha256": "c8584772bd52842bc3085ce7363ea267810f0c1fb6a6aacaa4500007112ee03c"
+      },
+      "n": 1536,
+      "ptx": {
+        "bytes": 30934,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536_c.ptx",
+        "sha256": "3fab561304953f7b7fbc6c7c63a242d219984265fb807567c8dae15e3a99623f"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_2edd34f62dc6fee7",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536_tf.launch",
+        "sha256": "b251972c47c715f9c32e217930b21edfb81d47f3bdeddbd7699b4103eacd0970"
+      },
+      "n": 1536,
+      "ptx": {
+        "bytes": 15452,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_1536_tf.ptx",
+        "sha256": "e0ac2bf2fe80ff7fc519a6b9ecf59357dd5590ccfe61ec1450e500dea517a39b"
+      }
+    },
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_8f8f17dbfee141eb",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048.launch",
+        "sha256": "e0d058d7978b766ddfefc29abed27a43c0958d646d239c9b552c0abbaca1ec39"
+      },
+      "n": 2048,
+      "ptx": {
+        "bytes": 88581,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048.ptx",
+        "sha256": "05a81a7a6a691747f4d30173d2c18a68d2c0ae6242d0a2dbbeb3862326d137c3"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_a699b750c8acc1b6",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048_c.launch",
+        "sha256": "ba7c4d43e859310896aa6fdcdcdcc9e0f13b844be9d5bf54944a31a42c093a43"
+      },
+      "n": 2048,
+      "ptx": {
+        "bytes": 56133,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048_c.ptx",
+        "sha256": "e9b906cce06e8643499fe19b31971153622e95d93dc2306e63a3e8d416b21162"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_e4397dd68e9ce32e",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048_tf.launch",
+        "sha256": "b0b67fe0d9897f33517a8d919b5b9c9fcfbb1af2c3175248c7e1e7072b1b112b"
+      },
+      "n": 2048,
+      "ptx": {
+        "bytes": 32888,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_2048_tf.ptx",
+        "sha256": "07f733b589e7a1f495c33c65fb84e4644f3f99a66670fd64810a07c4d1da5c3f"
+      }
+    },
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_b71975cf5c3a641b",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072.launch",
+        "sha256": "d423421b0e386755760607e9eac24c270865d6958214105492cb7dd6e90c42dc"
+      },
+      "n": 3072,
+      "ptx": {
+        "bytes": 87915,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072.ptx",
+        "sha256": "1301d9318ab43ca9302c4770b928d12cb46cc855da7bcb16aba87d57a04f4a58"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_bf9741e6398cf186",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072_c.launch",
+        "sha256": "2992e2fa97e63063c923074794dc659ccb95808175e22ae452feccc9f8f2f470"
+      },
+      "n": 3072,
+      "ptx": {
+        "bytes": 56194,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072_c.ptx",
+        "sha256": "98e04df826c82992fbd9575af020ef55227b1634937ec7d146f88e81685c0a61"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_b9224b7b1cc405fe",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072_tf.launch",
+        "sha256": "00d903130da5f077a83ae96d2bb07e57be88b3851587bbf2e13367eee4bc9fef"
+      },
+      "n": 3072,
+      "ptx": {
+        "bytes": 32711,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_3072_tf.ptx",
+        "sha256": "590d7e69d48eb4d0d126849923899e0c770990242ec8a35e87807fc69a8dc2c3"
+      }
+    },
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_44b89e2e8514dfc0",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096.launch",
+        "sha256": "052424677ee635958df1d3c699db134410d6464d0db2c086f45e1ac89e12963d"
+      },
+      "n": 4096,
+      "ptx": {
+        "bytes": 88594,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096.ptx",
+        "sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_359ebbfdb3fa2c9f",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_c.launch",
+        "sha256": "3d5e2ac4be6f4228cfbcfba0c187789488854acf0b104bce53f0fa12b6d89b22"
+      },
+      "n": 4096,
+      "ptx": {
+        "bytes": 56145,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_c.ptx",
+        "sha256": "0ec5bf4171a415c6146bd4ea36362cf2027f95af5c90bb5b19105e77b6cd312b"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_18a86cb342332edb",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_tf.launch",
+        "sha256": "5ef60e2bd801b8bf5bb1996942e1787de3cb182d98fc3d29d6fbb562e94d9a74"
+      },
+      "n": 4096,
+      "ptx": {
+        "bytes": 32892,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_tf.ptx",
+        "sha256": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2"
+      }
+    },
+    {
+      "face": "_exact",
+      "kernel": "mapal_tile_c18771960a7c9351",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192.launch",
+        "sha256": "ca288d11dfe7d7b63548d90e75c9e5d084098b0e8879a2fd9d9d29310a52e229"
+      },
+      "n": 8192,
+      "ptx": {
+        "bytes": 88595,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192.ptx",
+        "sha256": "ad65409799fc8e54fabc7e22d23d47c37333fd74ee9e0741811d42a64270830d"
+      }
+    },
+    {
+      "face": "_c",
+      "kernel": "mapal_tile_d887e043cb797d3c",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_c.launch",
+        "sha256": "53b133362a0c490f7163ba05d104df49cb97028ae11791b013b028a2be9cfc0a"
+      },
+      "n": 8192,
+      "ptx": {
+        "bytes": 56145,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_c.ptx",
+        "sha256": "6e9eada5612ef84450dca7548f3fe09413f417b5c852efb3a6f80ded8c7e6ca3"
+      }
+    },
+    {
+      "face": "_tf",
+      "kernel": "mapal_tile_7866e25aa2accf14",
+      "launch": {
+        "bytes": 44,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_tf.launch",
+        "sha256": "a12f9634ccd02a2be8b889f3babe6ccf4e6096a9c2b63756c8a1c15881317f77"
+      },
+      "n": 8192,
+      "ptx": {
+        "bytes": 32909,
+        "path": "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_tf.ptx",
+        "sha256": "2bbd78b6e0b56549593ba1adecf9c7f6fbb9b0c9f2f9afcb41ab3dbab50e1c7b"
+      }
+    }
+  ],
+  "source_references": {
+    "benches/gpu/box_profile.sh": {
+      "bytes": 4111,
+      "lines": {
+        "TF32_nsys": 43,
+        "TF32_stats": 45,
+        "offline_cuobjdump": 20,
+        "offline_ptxas": 18,
+        "program_timeline_scope": 66
+      },
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/gpu/box_profile.sh",
+      "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75"
+    },
+    "benches/gpu/tile_bench.cu": {
+      "bytes": 20136,
+      "lines": {
+        "PTX_load": 345,
+        "cublas": 383,
+        "driver_local_bytes": 351,
+        "driver_registers": 350,
+        "launch": 380
+      },
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/gpu/tile_bench.cu",
+      "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51"
+    }
+  }
+}

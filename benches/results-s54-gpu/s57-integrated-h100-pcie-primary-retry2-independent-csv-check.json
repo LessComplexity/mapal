@@ -1,0 +1,549 @@
+{
+  "pass": true,
+  "method": "New stdlib-only source-line/raw-sample parser; does not import summarizer/exporter/validators",
+  "checker_sha256": "792142267a6a24eca51d52b9c385acbb5f894a0a042185cf3f91056f782d45a8",
+  "raw": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-h100-pcie-primary-retry2.txt",
+  "raw_sha256": "1aec766486bd84f117245adb7b4e28576456cca43c6a3aca5e192baeef2f77ce",
+  "tables": {
+    "programs": "c1ce718a06432c3635ad6e5d70de4633cf89929c0942c8642f09ddf998240264",
+    "kernels": "9217177365cc6c24a1f14b9aaaf0e247a2d306efa5e9c491f0468bbf993d3df0",
+    "libraries": "c1c22f50d7ab328944d45b74e5506e3c15155348c6b1cd75c178899cd978dc4b",
+    "losses": "9a8b70278674dc2ffb45777ac4b887a885a9f09b7c5335f11e4d950e6c5c645b",
+    "nulls": "3470ca489d4f6c45fb4a84892e7dc4652c9183008d2688a05729d6824be10ba3"
+  },
+  "counts": {
+    "programs_rows": 296,
+    "numeric_fields": 7956,
+    "kernels_rows": 46,
+    "nulls_rows": 12,
+    "libraries_rows": 118,
+    "losses_rows": 772
+  },
+  "errors": [],
+  "all_nulls": [
+    {
+      "n": "1024",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.036051836781452,
+      "shipped_mapal_ms": [
+        0.1236,
+        0.1305,
+        0.134
+      ],
+      "repeat_mapal_ms": [
+        0.1234,
+        0.1261,
+        0.1317
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "1024",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 0.9969755317363889,
+      "shipped_mapal_ms": [
+        0.1878,
+        0.1889,
+        0.1901
+      ],
+      "repeat_mapal_ms": [
+        0.1874,
+        0.1882,
+        0.1899
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "1024",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 1.0069767441860467,
+      "shipped_mapal_ms": [
+        0.0419,
+        0.0433,
+        0.0444
+      ],
+      "repeat_mapal_ms": [
+        0.0416,
+        0.043,
+        0.0447
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 0.9997389446576854,
+      "shipped_mapal_ms": [
+        0.6208,
+        0.6259,
+        0.6295
+      ],
+      "repeat_mapal_ms": [
+        0.6226,
+        0.6263,
+        0.6298
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 0.9990511201531758,
+      "shipped_mapal_ms": [
+        1.0929,
+        1.0958,
+        1.098
+      ],
+      "repeat_mapal_ms": [
+        1.093,
+        1.0956,
+        1.0988
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 1.003057136833228,
+      "shipped_mapal_ms": [
+        0.1719,
+        0.173,
+        0.1746
+      ],
+      "repeat_mapal_ms": [
+        0.1718,
+        0.1728,
+        0.1754
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "4096",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.0010706668245464,
+      "shipped_mapal_ms": [
+        3.5822,
+        3.665,
+        3.6982
+      ],
+      "repeat_mapal_ms": [
+        3.5813,
+        3.6605,
+        3.6918
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "4096",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 1.0029585715913714,
+      "shipped_mapal_ms": [
+        6.2777,
+        6.3058,
+        6.3396
+      ],
+      "repeat_mapal_ms": [
+        6.2789,
+        6.2889,
+        6.321
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "4096",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 0.9861834142093376,
+      "shipped_mapal_ms": [
+        0.8146,
+        0.9248,
+        0.9677
+      ],
+      "repeat_mapal_ms": [
+        0.8145,
+        0.9314,
+        0.9691
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.0133842946591003,
+      "shipped_mapal_ms": [
+        28.7107,
+        30.8715,
+        33.4852
+      ],
+      "repeat_mapal_ms": [
+        28.7513,
+        30.5437,
+        33.3114
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 0.99818588419082,
+      "shipped_mapal_ms": [
+        50.3115,
+        52.4767,
+        55.0702
+      ],
+      "repeat_mapal_ms": [
+        50.254,
+        52.9049,
+        56.4208
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 0.9973159340203643,
+      "shipped_mapal_ms": [
+        5.8129,
+        7.1841,
+        7.9636
+      ],
+      "repeat_mapal_ms": [
+        5.8126,
+        7.3647,
+        7.9268
+      ],
+      "raw_mapal_ranges_overlap": true
+    }
+  ],
+  "null_max_absolute_deviation": 0.03605183678145196,
+  "overlap_table": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/independent-overlap-check.csv",
+  "overlap_table_sha256": "32fa9616d259aa42b0be96de4714c5d4c935cdbac2c70cb3cc3235e639e51f9d",
+  "control_comparisons": 772,
+  "overlapping_control_comparisons": 436,
+  "largest_median_control_gains_with_overlap": [
+    {
+      "kind": "probe",
+      "program": "pt_fanout_512",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_kernel_ms",
+      "arm_min": 0.083,
+      "arm_median": 0.083,
+      "arm_max": 0.125,
+      "shipped_min": 0.099,
+      "shipped_median": 0.104,
+      "shipped_max": 0.14,
+      "arm_over_shipped": 0.7980769230769231,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.3461538461538463
+    },
+    {
+      "kind": "e2e",
+      "program": "mm_share_1024",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 528.639,
+      "arm_median": 540.054,
+      "arm_max": 561.401,
+      "shipped_min": 512.011,
+      "shipped_median": 667.81,
+      "shipped_max": 796.248,
+      "arm_over_shipped": 0.8086940896362739,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.1923271589224482
+    },
+    {
+      "kind": "e2e",
+      "program": "mm_share_1024",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 521.494,
+      "arm_median": 544.449,
+      "arm_max": 768.298,
+      "shipped_min": 512.011,
+      "shipped_median": 667.81,
+      "shipped_max": 796.248,
+      "arm_over_shipped": 0.8152753028556027,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.1923271589224482
+    },
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 6.958875,
+      "arm_median": 7.62525,
+      "arm_max": 9.146030000000001,
+      "shipped_min": 9.145883,
+      "shipped_median": 9.299177,
+      "shipped_max": 10.573506,
+      "arm_over_shipped": 0.8199919197150458,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.1370367506715917
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 60.458774000000005,
+      "arm_median": 66.11089100000001,
+      "arm_max": 82.264507,
+      "shipped_min": 63.797127,
+      "shipped_median": 77.991562,
+      "shipped_max": 80.820046,
+      "arm_over_shipped": 0.8476672258468168,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0362665386801717
+    },
+    {
+      "kind": "e2e",
+      "program": "e2e_1024",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 506.502,
+      "arm_median": 535.207,
+      "arm_max": 726.107,
+      "shipped_min": 513.351,
+      "shipped_median": 627.258,
+      "shipped_max": 900.675,
+      "arm_over_shipped": 0.853248583517468,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.4358924079087072
+    },
+    {
+      "kind": "e2e",
+      "program": "e2e_1024",
+      "face": "_c",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 518.626,
+      "arm_median": 536.957,
+      "arm_max": 548.459,
+      "shipped_min": 513.351,
+      "shipped_median": 627.258,
+      "shipped_max": 900.675,
+      "arm_over_shipped": 0.8560385040924149,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.4358924079087072
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_2048",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 57.767458,
+      "arm_median": 65.315579,
+      "arm_max": 157.596435,
+      "shipped_min": 61.377058999999996,
+      "shipped_median": 75.988866,
+      "shipped_max": 97.525479,
+      "arm_over_shipped": 0.8595414359782655,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.2834180075802157
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_512",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 502.488,
+      "arm_median": 532.323,
+      "arm_max": 668.553,
+      "shipped_min": 502.679,
+      "shipped_median": 617.062,
+      "shipped_max": 745.249,
+      "arm_over_shipped": 0.8626734428631158,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.2077376341437327
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_512",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 519.266,
+      "arm_median": 535.742,
+      "arm_max": 632.156,
+      "shipped_min": 502.679,
+      "shipped_median": 617.062,
+      "shipped_max": 745.249,
+      "arm_over_shipped": 0.8682142151031824,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.2077376341437327
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_4096",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 249.903948,
+      "arm_median": 267.554436,
+      "arm_max": 379.463896,
+      "shipped_min": 243.751147,
+      "shipped_median": 307.71266099999997,
+      "shipped_max": 501.24013599999995,
+      "arm_over_shipped": 0.8694944014669583,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.6289226916145645
+    },
+    {
+      "kind": "probe",
+      "program": "pt_rowsum_2048",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 496.785,
+      "arm_median": 532.328,
+      "arm_max": 1131.387,
+      "shipped_min": 538.514,
+      "shipped_median": 605.405,
+      "shipped_max": 940.668,
+      "arm_over_shipped": 0.8792923745261436,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.553783004765405
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_4096",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 852.787,
+      "arm_median": 945.038,
+      "arm_max": 1422.431,
+      "shipped_min": 905.709,
+      "shipped_median": 1058.842,
+      "shipped_max": 1233.362,
+      "arm_over_shipped": 0.8925203193677621,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.164821569223737
+    },
+    {
+      "kind": "probe",
+      "program": "pt_rowsum_2048",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 509.311,
+      "arm_median": 542.59,
+      "arm_max": 557.508,
+      "shipped_min": 538.514,
+      "shipped_median": 605.405,
+      "shipped_max": 940.668,
+      "arm_over_shipped": 0.8962430108770163,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.553783004765405
+    },
+    {
+      "kind": "probe",
+      "program": "pt_bias_2048",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 451.23,
+      "arm_median": 476.298,
+      "arm_max": 1459.987,
+      "shipped_min": 491.317,
+      "shipped_median": 512.752,
+      "shipped_max": 1102.199,
+      "arm_over_shipped": 0.9289052017349518,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 2.149575233251163
+    },
+    {
+      "kind": "probe",
+      "program": "pt_diamond_512",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "traced_wall_ms",
+      "arm_min": 524.256,
+      "arm_median": 544.051,
+      "arm_max": 571.457,
+      "shipped_min": 527.203,
+      "shipped_median": 583.953,
+      "shipped_max": 798.909,
+      "arm_over_shipped": 0.9316691583055486,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.3681049673518246
+    },
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_4096",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 556.067,
+      "arm_median": 606.437,
+      "arm_max": 1422.045,
+      "shipped_min": 557.872,
+      "shipped_median": 650.774,
+      "shipped_max": 855.061,
+      "arm_over_shipped": 0.9318703574512811,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.3139138933024368
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_4096",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 841.752,
+      "arm_median": 846.494,
+      "arm_max": 923.818,
+      "shipped_min": 839.09,
+      "shipped_median": 904.82,
+      "shipped_max": 1036.205,
+      "arm_over_shipped": 0.935538560155611,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.1452056762671028
+    },
+    {
+      "kind": "probe",
+      "program": "pt_pro_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 481.03,
+      "arm_median": 499.924,
+      "arm_max": 633.745,
+      "shipped_min": 497.156,
+      "shipped_median": 534.21,
+      "shipped_max": 841.715,
+      "arm_over_shipped": 0.9358192471125586,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.575625690271616
+    },
+    {
+      "kind": "e2e",
+      "program": "mm_chain_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 507.824,
+      "arm_median": 533.445,
+      "arm_max": 549.812,
+      "shipped_min": 536.865,
+      "shipped_median": 569.82,
+      "shipped_max": 926.791,
+      "arm_over_shipped": 0.9361640518058334,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.6264627426204765
+    }
+  ],
+  "limits": [
+    "Program distributions recomputed from all raw repetition records; kernel distributions independently recomputed from all saved raw samples using upper-middle median.",
+    "Chain/decode library harness supplies printed summaries without raw samples; checked source summaries/gates/identities and derived ratios, cannot reconstruct unrecorded library samples.",
+    "1e-12 comparison tolerance only accommodates binary floating arithmetic/CSV serialization, not measurement acceptance. No confidence intervals or performance tolerance invented."
+  ]
+}

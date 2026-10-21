@@ -1,0 +1,251 @@
+{
+  "profile": "a100",
+  "phase": "primary",
+  "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "offer": 44032502,
+  "machine_id": 142924,
+  "host_id": 125728,
+  "instance": 57095767,
+  "listed_dph": 1.0933333333333335,
+  "offer_snapshot": "/private/tmp/mapal-s56-gpu/integrated/operations/offers-20261021T183259Z.json",
+  "offer_snapshot_sha256": "ca62df587c78f7e391da95986ed3095c8f45601ecff27327e74bd9ecfead9d8a",
+  "runner_sha256": "704fd9511b596b7611acb4150a7b109378fe33f7037f4ab09bf32e09dec1eb16",
+  "results_sha256": "4738d68b0c21ffef3f70d900e9b3b91c032526d59f9e556028f2324c26650c7d",
+  "manifest_sha256": "75c3f233189a7adb955fa8a240052a64ea80c52d8e67622bb4669309db557dd9",
+  "request_sha256": "562af9567443a2e4947fd476f91b5ce43722789a33dcc9bad7f2cb28929d8b83",
+  "validator": "/private/tmp/mapal-s56-gpu/verify_integrated.py",
+  "validator_sha256": "b5858a99feff07b1ff7f8b5b1683c46c9fa3f6f8807d98b8cd8077b7834ba7de",
+  "hardware": {
+    "gpus": [
+      {
+        "name": "NVIDIA A100-SXM4-80GB",
+        "driver_version": "580.159.03",
+        "clocks.max.sm [MHz]": "1410 MHz",
+        "clocks.current.sm [MHz]": "210 MHz",
+        "power.limit [W]": "400.00 W",
+        "temperature.gpu": "28",
+        "persistence_mode": "Enabled",
+        "memory_gb_from_name": 80
+      }
+    ],
+    "csv_columns": [
+      "name",
+      "driver_version",
+      "clocks.max.sm [MHz]",
+      "clocks.current.sm [MHz]",
+      "power.limit [W]",
+      "temperature.gpu",
+      "persistence_mode"
+    ]
+  },
+  "profiling": {
+    "supplied": true,
+    "resources_pass": true,
+    "nsys_complete": true,
+    "nsys_missing": [],
+    "resource_aliases": {
+      "mm_4096": "mm_4096.null"
+    },
+    "nsys_validation": "Container signatures and parsed numeric CSV exports; binary reports are not re-exported locally",
+    "archive_sha256": "065e6623a19289d0b1763a9efb1e1b1ccf43e0867f3c541f9ad06efea75e3386"
+  },
+  "warnings": [
+    "No library comparison exists for twin: pt_twin_1024, pt_twin_2048, pt_twin_4096, pt_twin_512"
+  ],
+  "verification_sha256": "a5bb367b2320c8897b55561d48e88ff02c340b3763cf702a643d74411790885b",
+  "run_env": {
+    "DIFFERENTIAL_ONLY": "0",
+    "PROFILE": "1",
+    "PROBE_REPS": "5",
+    "E2E_REPS": "7",
+    "PROBE_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+    "E2E_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+    "PROF_PROBES": "pt_epi_4096_c pt_mlp_4096_c pt_mlp2_4096_c pt_indep_4096_c pt_twin_4096_c",
+    "START_TRIES": "36"
+  },
+  "counts": {
+    "manifest differential": {
+      "expected": 708,
+      "observed": 708
+    },
+    "manifest traps": {
+      "expected": 20,
+      "observed": 20
+    },
+    "manifest host files": {
+      "expected": 1065,
+      "observed": 1065
+    },
+    "manifest launch files": {
+      "expected": 42,
+      "observed": 42
+    },
+    "run header": {
+      "expected": 1,
+      "observed": 1
+    },
+    "completion": {
+      "expected": 1,
+      "observed": 1
+    },
+    "PASS": {
+      "expected": 708,
+      "observed": 708
+    },
+    "TRAP-PASS": {
+      "expected": 20,
+      "observed": 20
+    },
+    "differential summary": {
+      "expected": 1,
+      "observed": 1
+    },
+    "traps summary": {
+      "expected": 1,
+      "observed": 1
+    },
+    "probe": {
+      "expected": 1180,
+      "observed": 1180
+    },
+    "probe_kernels": {
+      "expected": 1180,
+      "observed": 1180
+    },
+    "decode": {
+      "expected": 60,
+      "observed": 60
+    },
+    "decode launch inventory": {
+      "expected": 12,
+      "observed": 12
+    },
+    "twin no-library exceptions": {
+      "expected": 4,
+      "observed": 4
+    },
+    "chain_values": {
+      "expected": 116,
+      "observed": 116
+    },
+    "chain": {
+      "expected": 116,
+      "observed": 116
+    },
+    "chain_samples": {
+      "expected": 114,
+      "observed": 114
+    },
+    "kernel sections": {
+      "expected": 42,
+      "observed": 42
+    },
+    "e2e": {
+      "expected": 252,
+      "observed": 252
+    },
+    "floor": {
+      "expected": 18,
+      "observed": 18
+    },
+    "scope all generated sources": {
+      "expected": 88,
+      "observed": 88
+    },
+    "scope correctness sources": {
+      "expected": 36,
+      "observed": 36
+    },
+    "scope timing sources": {
+      "expected": 52,
+      "observed": 52
+    },
+    "scope probe sources": {
+      "expected": 40,
+      "observed": 40
+    },
+    "scope differential sources": {
+      "expected": 35,
+      "observed": 35
+    },
+    "scope trap sources": {
+      "expected": 1,
+      "observed": 1
+    },
+    "scope library probes": {
+      "expected": 40,
+      "observed": 40
+    },
+    "scope floors": {
+      "expected": 6,
+      "observed": 6
+    },
+    "scope planned programs": {
+      "expected": 82,
+      "observed": 82
+    },
+    "scope probe groups": {
+      "expected": 236,
+      "observed": 236
+    },
+    "scope e2e groups": {
+      "expected": 36,
+      "observed": 36
+    },
+    "scope decode groups": {
+      "expected": 12,
+      "observed": 12
+    },
+    "scope emission dispositions": {
+      "expected": 3802,
+      "observed": 3802
+    },
+    "scope trace contracts": {
+      "expected": 1065,
+      "observed": 1065
+    },
+    "scope kernel bases": {
+      "expected": 18,
+      "observed": 18
+    },
+    "scope kernel nulls": {
+      "expected": 12,
+      "observed": 12
+    }
+  },
+  "binaries": {
+    "target/release/examples/emit": "f7f47973b607686b52cb4ac37c2876b384a0cc32dd82191a11341eb54ba1a5aa",
+    "target/release/examples/run": "ad2c59a934134392b09e802d57d1020e7cb3a8fa8d1efef35da2a5bc736b9a63",
+    "target/release/libmapal_rt.a": "70a897fc3905c6fa982aa010352eec2a57025cf7838baaf30b49cec5399a43be",
+    "target/x86_64-unknown-linux-gnu/release/libmapal_rt.a": "5b26eea594347505cd45d7aed48b750753d812ca583b7a28698441d2594b25cb"
+  },
+  "cutlass": {
+    "commit": "91843b71d90737e0a9b86f7d9df213cff5a3526f",
+    "cache": "/private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/scratchpad/arch-select/b1/cutlass"
+  },
+  "measurement_scope": {
+    "decode_baseline": "off-retain-resident+delta-h2d+lane-stride",
+    "decode_full_table_comparison": "unmeasured by existing timed-arm loop",
+    "decode_full_placement_disabled_comparison": "unmeasured by existing timed-arm loop"
+  },
+  "execution": {
+    "profile": "a100",
+    "tag": "a100-primary",
+    "exit": 0,
+    "stage": "rental-wrapper",
+    "rental_started": true,
+    "results_directory_created": true,
+    "timed_out": false,
+    "timeout_seconds": 7200,
+    "seconds": 2170.0,
+    "results": "/private/tmp/mapal-s56-gpu/integrated/results/a100-primary",
+    "end_utc": "2026-10-21T19:10:29Z"
+  },
+  "cleanup": {
+    "instance": 57095767,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T19:12:40.801013+00:00",
+    "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+    "allocation_recovery": null
+  }
+}

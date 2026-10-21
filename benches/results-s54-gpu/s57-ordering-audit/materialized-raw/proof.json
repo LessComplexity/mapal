@@ -1,0 +1,565 @@
+{
+  "status": "current emitted missing-producer-wait path demonstrated; GPU wrong output not tested",
+  "fixture_sha256": "8728dc8f12ca48f54dd6cb5bd4a2ac811f1ebaa71b7418a93955ff57d1cdedcb",
+  "frozen_before_after_equal": true,
+  "faces": {
+    "exact": {
+      "host_sha256": "47a149d6c6aaab7602b48d36ec5732b03cabe950b177e2380fb1f737f87cf610",
+      "device_sha256": "a13a309a7011611401d01171594c5348840cc3cbab570053dc5d1adf2eb4f0ee",
+      "launches": [
+        {
+          "line": 136,
+          "text": "call void @mapal_gpu_launchv(i64 -5910159045450748452, i32 1, i32 4, ptr %p29, i32 4, i32 2, i32 32, i32 1536)"
+        },
+        {
+          "line": 157,
+          "text": "call void @mapal_gpu_launchv(i64 8546537189269670622, i32 2, i32 4, ptr %p43, i32 4, i32 2, i32 32, i32 1536)"
+        }
+      ],
+      "first_member_readback": {
+        "line": 174,
+        "text": "call void @mapal_gpu_d2h(ptr %t56, i64 %t57, i64 %t58, i64 4)"
+      },
+      "calls_between_last_launch_and_first_readback": [],
+      "first_live_free": {
+        "line": 192,
+        "text": "call void @mapal_gpu_free(ptr %d41)"
+      },
+      "later_raw_readbacks": [
+        {
+          "line": 300,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t136, i64 %t137, i64 %t138, i64 4)"
+        },
+        {
+          "line": 315,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t146, i64 %t147, i64 %t148, i64 4)"
+        },
+        {
+          "line": 331,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t156, i64 %t157, i64 %t158, i64 4)"
+        },
+        {
+          "line": 346,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t166, i64 %t167, i64 %t168, i64 4)"
+        }
+      ],
+      "tile_kernels": [
+        {
+          "name": "mapal_tile_769b664aca158ade",
+          "raw_output_parameter_used_in_body": true,
+          "member_y0_parameter_used_in_body": true
+        },
+        {
+          "name": "mapal_tile_adfae5a959d8addc",
+          "raw_output_parameter_used_in_body": true,
+          "member_y0_parameter_used_in_body": true
+        }
+      ],
+      "all_main_runtime_calls": [
+        {
+          "line": 90,
+          "text": "%t1 = call i64 @mapal_gpu_alloc(ptr %d0, i64 16384)"
+        },
+        {
+          "line": 91,
+          "text": "call void @mapal_gpu_gen(i64 2241086273371086914, i64 %t1, i64 4096)"
+        },
+        {
+          "line": 92,
+          "text": "%t3 = call i64 @mapal_gpu_alloc(ptr %d2, i64 16384)"
+        },
+        {
+          "line": 93,
+          "text": "call void @mapal_gpu_gen(i64 -8319208597251102849, i64 %t3, i64 4096)"
+        },
+        {
+          "line": 94,
+          "text": "%t5 = call i64 @mapal_gpu_alloc(ptr %d4, i64 16384)"
+        },
+        {
+          "line": 95,
+          "text": "call void @mapal_gpu_gen(i64 3388508959519476380, i64 %t5, i64 4096)"
+        },
+        {
+          "line": 96,
+          "text": "%t7 = call i64 @mapal_gpu_alloc(ptr %d6, i64 16384)"
+        },
+        {
+          "line": 97,
+          "text": "call void @mapal_gpu_gen(i64 -7602686761790676223, i64 %t7, i64 4096)"
+        },
+        {
+          "line": 124,
+          "text": "%t23 = call i64 @mapal_gpu_alloc(ptr %d22, i64 16384)"
+        },
+        {
+          "line": 125,
+          "text": "%t25 = call i64 @mapal_gpu_alloc(ptr %d24, i64 16384)"
+        },
+        {
+          "line": 126,
+          "text": "%t26 = call i64 @mapal_gpu_alloc(ptr %d22, i64 16384)"
+        },
+        {
+          "line": 127,
+          "text": "%t28 = call i64 @mapal_gpu_alloc(ptr %d27, i64 16384)"
+        },
+        {
+          "line": 136,
+          "text": "call void @mapal_gpu_launchv(i64 -5910159045450748452, i32 1, i32 4, ptr %p29, i32 4, i32 2, i32 32, i32 1536)"
+        },
+        {
+          "line": 147,
+          "text": "%t40 = call i64 @mapal_gpu_alloc(ptr %d24, i64 16384)"
+        },
+        {
+          "line": 148,
+          "text": "%t42 = call i64 @mapal_gpu_alloc(ptr %d41, i64 16384)"
+        },
+        {
+          "line": 157,
+          "text": "call void @mapal_gpu_launchv(i64 8546537189269670622, i32 2, i32 4, ptr %p43, i32 4, i32 2, i32 32, i32 1536)"
+        },
+        {
+          "line": 174,
+          "text": "call void @mapal_gpu_d2h(ptr %t56, i64 %t57, i64 %t58, i64 4)"
+        },
+        {
+          "line": 180,
+          "text": "call void @mapal_print_f32(float %t61, i1 zeroext true)"
+        },
+        {
+          "line": 189,
+          "text": "call void @mapal_gpu_d2h(ptr %t66, i64 %t67, i64 %t68, i64 4)"
+        },
+        {
+          "line": 192,
+          "text": "call void @mapal_gpu_free(ptr %d41)"
+        },
+        {
+          "line": 196,
+          "text": "call void @mapal_print_f32(float %t71, i1 zeroext true)"
+        },
+        {
+          "line": 205,
+          "text": "call void @mapal_gpu_d2h(ptr %t76, i64 %t77, i64 %t78, i64 4)"
+        },
+        {
+          "line": 211,
+          "text": "call void @mapal_print_f32(float %t81, i1 zeroext true)"
+        },
+        {
+          "line": 220,
+          "text": "call void @mapal_gpu_d2h(ptr %t86, i64 %t87, i64 %t88, i64 4)"
+        },
+        {
+          "line": 223,
+          "text": "call void @mapal_gpu_free(ptr %d27)"
+        },
+        {
+          "line": 227,
+          "text": "call void @mapal_print_f32(float %t91, i1 zeroext true)"
+        },
+        {
+          "line": 236,
+          "text": "call void @mapal_gpu_d2h(ptr %t96, i64 %t97, i64 %t98, i64 4)"
+        },
+        {
+          "line": 239,
+          "text": "call void @mapal_gpu_free(ptr %d0)"
+        },
+        {
+          "line": 243,
+          "text": "call void @mapal_print_f32(float %t101, i1 zeroext true)"
+        },
+        {
+          "line": 252,
+          "text": "call void @mapal_gpu_d2h(ptr %t106, i64 %t107, i64 %t108, i64 4)"
+        },
+        {
+          "line": 255,
+          "text": "call void @mapal_gpu_free(ptr %d2)"
+        },
+        {
+          "line": 259,
+          "text": "call void @mapal_print_f32(float %t111, i1 zeroext true)"
+        },
+        {
+          "line": 268,
+          "text": "call void @mapal_gpu_d2h(ptr %t116, i64 %t117, i64 %t118, i64 4)"
+        },
+        {
+          "line": 271,
+          "text": "call void @mapal_gpu_free(ptr %d4)"
+        },
+        {
+          "line": 275,
+          "text": "call void @mapal_print_f32(float %t121, i1 zeroext true)"
+        },
+        {
+          "line": 284,
+          "text": "call void @mapal_gpu_d2h(ptr %t126, i64 %t127, i64 %t128, i64 4)"
+        },
+        {
+          "line": 287,
+          "text": "call void @mapal_gpu_free(ptr %d6)"
+        },
+        {
+          "line": 291,
+          "text": "call void @mapal_print_f32(float %t131, i1 zeroext true)"
+        },
+        {
+          "line": 300,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t136, i64 %t137, i64 %t138, i64 4)"
+        },
+        {
+          "line": 306,
+          "text": "call void @mapal_print_f32(float %t141, i1 zeroext true)"
+        },
+        {
+          "line": 315,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t146, i64 %t147, i64 %t148, i64 4)"
+        },
+        {
+          "line": 318,
+          "text": "call void @mapal_gpu_free(ptr %d22)"
+        },
+        {
+          "line": 322,
+          "text": "call void @mapal_print_f32(float %t151, i1 zeroext true)"
+        },
+        {
+          "line": 331,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t156, i64 %t157, i64 %t158, i64 4)"
+        },
+        {
+          "line": 337,
+          "text": "call void @mapal_print_f32(float %t161, i1 zeroext true)"
+        },
+        {
+          "line": 346,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t166, i64 %t167, i64 %t168, i64 4)"
+        },
+        {
+          "line": 349,
+          "text": "call void @mapal_gpu_free(ptr %d24)"
+        },
+        {
+          "line": 353,
+          "text": "call void @mapal_print_f32(float %t171, i1 zeroext true)"
+        },
+        {
+          "line": 354,
+          "text": "call void @mapal_gpu_free(ptr %d0)"
+        },
+        {
+          "line": 355,
+          "text": "call void @mapal_gpu_free(ptr %d2)"
+        },
+        {
+          "line": 356,
+          "text": "call void @mapal_gpu_free(ptr %d4)"
+        },
+        {
+          "line": 357,
+          "text": "call void @mapal_gpu_free(ptr %d6)"
+        },
+        {
+          "line": 358,
+          "text": "call void @mapal_gpu_free(ptr %d22)"
+        },
+        {
+          "line": 359,
+          "text": "call void @mapal_gpu_free(ptr %d27)"
+        },
+        {
+          "line": 360,
+          "text": "call void @mapal_gpu_free(ptr %d24)"
+        },
+        {
+          "line": 361,
+          "text": "call void @mapal_gpu_free(ptr %d41)"
+        }
+      ]
+    },
+    "contract": {
+      "host_sha256": "370e5bc7f961a3d2386b1508e38e718e9ed93e5ef8f9eefa9ce6284b5e1df537",
+      "device_sha256": "9b2ff9364824f675e0b50399a25068b5968f4e38bbfe354ba446abed63e5ef06",
+      "launches": [
+        {
+          "line": 136,
+          "text": "call void @mapal_gpu_launchv(i64 -5869913981016682307, i32 1, i32 4, ptr %p29, i32 4, i32 2, i32 32, i32 1664)"
+        },
+        {
+          "line": 157,
+          "text": "call void @mapal_gpu_launchv(i64 -615245021611174823, i32 2, i32 4, ptr %p43, i32 4, i32 2, i32 32, i32 1664)"
+        }
+      ],
+      "first_member_readback": {
+        "line": 174,
+        "text": "call void @mapal_gpu_d2h(ptr %t56, i64 %t57, i64 %t58, i64 4)"
+      },
+      "calls_between_last_launch_and_first_readback": [],
+      "first_live_free": {
+        "line": 192,
+        "text": "call void @mapal_gpu_free(ptr %d41)"
+      },
+      "later_raw_readbacks": [
+        {
+          "line": 300,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t136, i64 %t137, i64 %t138, i64 4)"
+        },
+        {
+          "line": 315,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t146, i64 %t147, i64 %t148, i64 4)"
+        },
+        {
+          "line": 331,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t156, i64 %t157, i64 %t158, i64 4)"
+        },
+        {
+          "line": 346,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t166, i64 %t167, i64 %t168, i64 4)"
+        }
+      ],
+      "tile_kernels": [
+        {
+          "name": "mapal_tile_ae89e0559b66d0bd",
+          "raw_output_parameter_used_in_body": true,
+          "member_y0_parameter_used_in_body": true
+        },
+        {
+          "name": "mapal_tile_f77635e99d09d459",
+          "raw_output_parameter_used_in_body": true,
+          "member_y0_parameter_used_in_body": true
+        }
+      ],
+      "all_main_runtime_calls": [
+        {
+          "line": 90,
+          "text": "%t1 = call i64 @mapal_gpu_alloc(ptr %d0, i64 16384)"
+        },
+        {
+          "line": 91,
+          "text": "call void @mapal_gpu_gen(i64 2241086273371086914, i64 %t1, i64 4096)"
+        },
+        {
+          "line": 92,
+          "text": "%t3 = call i64 @mapal_gpu_alloc(ptr %d2, i64 16384)"
+        },
+        {
+          "line": 93,
+          "text": "call void @mapal_gpu_gen(i64 -8319208597251102849, i64 %t3, i64 4096)"
+        },
+        {
+          "line": 94,
+          "text": "%t5 = call i64 @mapal_gpu_alloc(ptr %d4, i64 16384)"
+        },
+        {
+          "line": 95,
+          "text": "call void @mapal_gpu_gen(i64 3388508959519476380, i64 %t5, i64 4096)"
+        },
+        {
+          "line": 96,
+          "text": "%t7 = call i64 @mapal_gpu_alloc(ptr %d6, i64 16384)"
+        },
+        {
+          "line": 97,
+          "text": "call void @mapal_gpu_gen(i64 -7602686761790676223, i64 %t7, i64 4096)"
+        },
+        {
+          "line": 124,
+          "text": "%t23 = call i64 @mapal_gpu_alloc(ptr %d22, i64 16384)"
+        },
+        {
+          "line": 125,
+          "text": "%t25 = call i64 @mapal_gpu_alloc(ptr %d24, i64 16384)"
+        },
+        {
+          "line": 126,
+          "text": "%t26 = call i64 @mapal_gpu_alloc(ptr %d22, i64 16384)"
+        },
+        {
+          "line": 127,
+          "text": "%t28 = call i64 @mapal_gpu_alloc(ptr %d27, i64 16384)"
+        },
+        {
+          "line": 136,
+          "text": "call void @mapal_gpu_launchv(i64 -5869913981016682307, i32 1, i32 4, ptr %p29, i32 4, i32 2, i32 32, i32 1664)"
+        },
+        {
+          "line": 147,
+          "text": "%t40 = call i64 @mapal_gpu_alloc(ptr %d24, i64 16384)"
+        },
+        {
+          "line": 148,
+          "text": "%t42 = call i64 @mapal_gpu_alloc(ptr %d41, i64 16384)"
+        },
+        {
+          "line": 157,
+          "text": "call void @mapal_gpu_launchv(i64 -615245021611174823, i32 2, i32 4, ptr %p43, i32 4, i32 2, i32 32, i32 1664)"
+        },
+        {
+          "line": 174,
+          "text": "call void @mapal_gpu_d2h(ptr %t56, i64 %t57, i64 %t58, i64 4)"
+        },
+        {
+          "line": 180,
+          "text": "call void @mapal_print_f32(float %t61, i1 zeroext true)"
+        },
+        {
+          "line": 189,
+          "text": "call void @mapal_gpu_d2h(ptr %t66, i64 %t67, i64 %t68, i64 4)"
+        },
+        {
+          "line": 192,
+          "text": "call void @mapal_gpu_free(ptr %d41)"
+        },
+        {
+          "line": 196,
+          "text": "call void @mapal_print_f32(float %t71, i1 zeroext true)"
+        },
+        {
+          "line": 205,
+          "text": "call void @mapal_gpu_d2h(ptr %t76, i64 %t77, i64 %t78, i64 4)"
+        },
+        {
+          "line": 211,
+          "text": "call void @mapal_print_f32(float %t81, i1 zeroext true)"
+        },
+        {
+          "line": 220,
+          "text": "call void @mapal_gpu_d2h(ptr %t86, i64 %t87, i64 %t88, i64 4)"
+        },
+        {
+          "line": 223,
+          "text": "call void @mapal_gpu_free(ptr %d27)"
+        },
+        {
+          "line": 227,
+          "text": "call void @mapal_print_f32(float %t91, i1 zeroext true)"
+        },
+        {
+          "line": 236,
+          "text": "call void @mapal_gpu_d2h(ptr %t96, i64 %t97, i64 %t98, i64 4)"
+        },
+        {
+          "line": 239,
+          "text": "call void @mapal_gpu_free(ptr %d0)"
+        },
+        {
+          "line": 243,
+          "text": "call void @mapal_print_f32(float %t101, i1 zeroext true)"
+        },
+        {
+          "line": 252,
+          "text": "call void @mapal_gpu_d2h(ptr %t106, i64 %t107, i64 %t108, i64 4)"
+        },
+        {
+          "line": 255,
+          "text": "call void @mapal_gpu_free(ptr %d2)"
+        },
+        {
+          "line": 259,
+          "text": "call void @mapal_print_f32(float %t111, i1 zeroext true)"
+        },
+        {
+          "line": 268,
+          "text": "call void @mapal_gpu_d2h(ptr %t116, i64 %t117, i64 %t118, i64 4)"
+        },
+        {
+          "line": 271,
+          "text": "call void @mapal_gpu_free(ptr %d4)"
+        },
+        {
+          "line": 275,
+          "text": "call void @mapal_print_f32(float %t121, i1 zeroext true)"
+        },
+        {
+          "line": 284,
+          "text": "call void @mapal_gpu_d2h(ptr %t126, i64 %t127, i64 %t128, i64 4)"
+        },
+        {
+          "line": 287,
+          "text": "call void @mapal_gpu_free(ptr %d6)"
+        },
+        {
+          "line": 291,
+          "text": "call void @mapal_print_f32(float %t131, i1 zeroext true)"
+        },
+        {
+          "line": 300,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t136, i64 %t137, i64 %t138, i64 4)"
+        },
+        {
+          "line": 306,
+          "text": "call void @mapal_print_f32(float %t141, i1 zeroext true)"
+        },
+        {
+          "line": 315,
+          "text": "call void @mapal_gpu_d2h_on(i32 1, ptr %t146, i64 %t147, i64 %t148, i64 4)"
+        },
+        {
+          "line": 318,
+          "text": "call void @mapal_gpu_free(ptr %d22)"
+        },
+        {
+          "line": 322,
+          "text": "call void @mapal_print_f32(float %t151, i1 zeroext true)"
+        },
+        {
+          "line": 331,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t156, i64 %t157, i64 %t158, i64 4)"
+        },
+        {
+          "line": 337,
+          "text": "call void @mapal_print_f32(float %t161, i1 zeroext true)"
+        },
+        {
+          "line": 346,
+          "text": "call void @mapal_gpu_d2h_on(i32 2, ptr %t166, i64 %t167, i64 %t168, i64 4)"
+        },
+        {
+          "line": 349,
+          "text": "call void @mapal_gpu_free(ptr %d24)"
+        },
+        {
+          "line": 353,
+          "text": "call void @mapal_print_f32(float %t171, i1 zeroext true)"
+        },
+        {
+          "line": 354,
+          "text": "call void @mapal_gpu_free(ptr %d0)"
+        },
+        {
+          "line": 355,
+          "text": "call void @mapal_gpu_free(ptr %d2)"
+        },
+        {
+          "line": 356,
+          "text": "call void @mapal_gpu_free(ptr %d4)"
+        },
+        {
+          "line": 357,
+          "text": "call void @mapal_gpu_free(ptr %d6)"
+        },
+        {
+          "line": 358,
+          "text": "call void @mapal_gpu_free(ptr %d22)"
+        },
+        {
+          "line": 359,
+          "text": "call void @mapal_gpu_free(ptr %d27)"
+        },
+        {
+          "line": 360,
+          "text": "call void @mapal_gpu_free(ptr %d24)"
+        },
+        {
+          "line": 361,
+          "text": "call void @mapal_gpu_free(ptr %d41)"
+        }
+      ]
+    }
+  }
+}

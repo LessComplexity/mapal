@@ -1,0 +1,2899 @@
+{
+  "schema_version": 1,
+  "scope": "saved accepted H100 and two independent RTX5090 selection sessions; not the final integrated build",
+  "report": "report",
+  "row_definitions": {
+    "ordinary_mapal_launches": [
+      "session",
+      "n",
+      "face",
+      "ptx",
+      "kernel",
+      "results",
+      "section_header_line_1based",
+      "resource_line_1based",
+      "grid_x",
+      "grid_y",
+      "threads_per_block",
+      "dynamic_shared_bytes",
+      "registers_per_thread",
+      "local_bytes_function_attribute"
+    ],
+    "sql_resource_rows": [
+      "leg",
+      "kernel",
+      "registers_per_thread",
+      "grid_x",
+      "grid_y",
+      "grid_z",
+      "block_x",
+      "block_y",
+      "block_z",
+      "static_shared_bytes",
+      "dynamic_shared_bytes",
+      "local_memory_per_thread",
+      "instances"
+    ]
+  },
+  "queries": {
+    "kernel_resources": "SELECT s.value,k.registersPerThread,k.gridX,k.gridY,k.gridZ,k.blockX,k.blockY,k.blockZ,k.staticSharedMemory,k.dynamicSharedMemory,k.localMemoryPerThread,COUNT(*) FROM CUPTI_ACTIVITY_KIND_KERNEL AS k JOIN StringIds AS s ON s.id=k.demangledName GROUP BY 1,2,3,4,5,6,7,8,9,10,11 ORDER BY s.value"
+  },
+  "artifacts": {
+    "report": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-kernel-evidence.md",
+      "sha256": "0670125a61bc67d1f5bb55d2de9909519506e8a87f90e271a460bad125b06a8c",
+      "bytes": 7697
+    },
+    "kernel_csv": {
+      "path": "/private/tmp/mapal-s56-gpu/current-library-kernels.csv",
+      "sha256": "a89b0ce7f831856ffaabacd93ecd55d26f5542b91d5bbd905e23b0999dde25f7",
+      "bytes": 19447
+    },
+    "manifest:h100-pcie": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie-manifest.json",
+      "sha256": "da24b9af45c6c539ed94335397f4b8435bd5700549c976f06a5c20b4f5068c72",
+      "bytes": 305723
+    },
+    "harness:h100-pcie:box_profile.sh": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/box_profile.sh",
+      "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75",
+      "bytes": 4111
+    },
+    "harness:h100-pcie:tile_bench.cu": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/tile_bench.cu",
+      "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51",
+      "bytes": 20136
+    },
+    "ptx:h100-pcie:mm_1024": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024.ptx",
+      "sha256": "35d66a4d25797d312e4460ef827c7724b3a4e61b471bf12c3567aab120d2dbcb",
+      "bytes": 45531
+    },
+    "launch:h100-pcie:mm_1024": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024.launch",
+      "sha256": "1026e33c1843bb7e71fbc4408fc4d3959061b55e89be69c75983129a5e047de2",
+      "bytes": 43
+    },
+    "ptx:h100-pcie:mm_1024_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024_c.ptx",
+      "sha256": "481ec40be233187971c5a0d61b8a4db5e60bf12b4738065a54cbad7142cda467",
+      "bytes": 31691
+    },
+    "launch:h100-pcie:mm_1024_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024_c.launch",
+      "sha256": "16f331534b75339e0123b1679e4082baa386e6944118553603fc942adce032ee",
+      "bytes": 42
+    },
+    "ptx:h100-pcie:mm_1024_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024_tf.ptx",
+      "sha256": "ce37cb054a08b956f28a4bf4c8bae5ebfa96d110e5ee429fcf007a5d5d498cc7",
+      "bytes": 25726
+    },
+    "launch:h100-pcie:mm_1024_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_1024_tf.launch",
+      "sha256": "ecd845aef6ee7afb04b22aac0abcd4bae042b0e4bbb0bf6e2312d063f7ea78b4",
+      "bytes": 43
+    },
+    "ptx:h100-pcie:mm_2048": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048.ptx",
+      "sha256": "962734fba6651102ccf50e995dec09aa786f74214719de0cf7a1a356227354a8",
+      "bytes": 87071
+    },
+    "launch:h100-pcie:mm_2048": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048.launch",
+      "sha256": "9abc9356a058708a614516af6269a2d5aa5954c8716c6b24146222c1a0781ae2",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_2048_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048_c.ptx",
+      "sha256": "fbfff1d56c4f1d8b5e9481a1dd06e81679615c13c749419c5ad29ff187dd3627",
+      "bytes": 56122
+    },
+    "launch:h100-pcie:mm_2048_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048_c.launch",
+      "sha256": "edde4cf141df32359bfac713e4e470c005a22102e7a725445a63a8345397a3f2",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_2048_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048_tf.ptx",
+      "sha256": "b802745e1d7ea7bc35abbe544046a06f19122fd9bb555f966f2c241b8deb5588",
+      "bytes": 29375
+    },
+    "launch:h100-pcie:mm_2048_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_2048_tf.launch",
+      "sha256": "870eb2293c898b9139f909d77a1e1d48507f82a54836752e284fc4645957f899",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_4096": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096.ptx",
+      "sha256": "c7f101f1f772d6b6065417fdef01a2d78c4de34cb49b1ea317c195851c538d8d",
+      "bytes": 87077
+    },
+    "launch:h100-pcie:mm_4096": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096.launch",
+      "sha256": "261d3cd9a5dc4fa482b66152804fc91628a3973f66ef89a058bca49fcd941ad0",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_4096_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096_c.ptx",
+      "sha256": "dc85e15df75064818f1e70b9c5bb5a22969666c8744946fafc88317582499844",
+      "bytes": 56134
+    },
+    "launch:h100-pcie:mm_4096_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096_c.launch",
+      "sha256": "a47f3fc921ab49a7ff0d698b4fe0480f9be46537d5aae876e9b22e389e01e418",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_4096_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096_tf.ptx",
+      "sha256": "87544030637dd45cd1aa88cc3a985566565b8cc1e83c3c4d6107fa4075a0aaad",
+      "bytes": 29421
+    },
+    "launch:h100-pcie:mm_4096_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096_tf.launch",
+      "sha256": "9f8c1f1c8d749f5dc478d50b50b961e5001605b6432c6e5ed95e0f90c47ec7b5",
+      "bytes": 45
+    },
+    "ptx:h100-pcie:mm_8192": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192.ptx",
+      "sha256": "36d595119a64fc549f85d7e13b3cc63304f926df9413e78769ffd09793aca64b",
+      "bytes": 87077
+    },
+    "launch:h100-pcie:mm_8192": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192.launch",
+      "sha256": "d1eebd9c85078eb9b135e0939a1d5269d5ccdfacbbe104206976f57b867c49ac",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_8192_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192_c.ptx",
+      "sha256": "0acbad60c3590d601a3aa3a81407d185e9c6df83c66072cbfbe7c81fbf28ade9",
+      "bytes": 56134
+    },
+    "launch:h100-pcie:mm_8192_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192_c.launch",
+      "sha256": "61b7036e9a38a3037faa577117e84fc459dca2ca00d807d7f2cd61d559e46406",
+      "bytes": 44
+    },
+    "ptx:h100-pcie:mm_8192_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192_tf.ptx",
+      "sha256": "1f3d4b1a624a5ae33524254693d5c8f3db77f98ca6146a2d3ad27f15ad3b8a56",
+      "bytes": 29449
+    },
+    "launch:h100-pcie:mm_8192_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_8192_tf.launch",
+      "sha256": "b36c393ea93cb4b9b0c1b0608341da8fcb688687809577ba1521e4b87da3451e",
+      "bytes": 45
+    },
+    "manifest:rtx-5090": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090-manifest.json",
+      "sha256": "20a96949bef5cede5b9295936404898ac7cf4b32cf82badecf3cd093bd97ac66",
+      "bytes": 488827
+    },
+    "harness:rtx-5090:box_profile.sh": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/box_profile.sh",
+      "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75",
+      "bytes": 4111
+    },
+    "harness:rtx-5090:tile_bench.cu": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/tile_bench.cu",
+      "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51",
+      "bytes": 20136
+    },
+    "ptx:rtx-5090:mm_1024": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024.ptx",
+      "sha256": "83c46d59f2bcb24a3438c09139969e897d53b4db71d26b7bbaaeac787f0a8959",
+      "bytes": 25546
+    },
+    "launch:rtx-5090:mm_1024": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024.launch",
+      "sha256": "739f4ab6895d76591b6413b9721a3dd711b5aa449f350df13c0bdbd453347c4b",
+      "bytes": 43
+    },
+    "ptx:rtx-5090:mm_1024_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024_c.ptx",
+      "sha256": "53c82c5f14e58cbd32232c33c6d41a597ff11c19b209e6de074a8df1ab8de548",
+      "bytes": 18676
+    },
+    "launch:rtx-5090:mm_1024_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024_c.launch",
+      "sha256": "dcbcd2513c45e1f98e7d8a8512759566dfca195aeddf2f930dba397eaf501b42",
+      "bytes": 43
+    },
+    "ptx:rtx-5090:mm_1024_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024_tf.ptx",
+      "sha256": "6b9e1e9dd3f078c376191c6440d4dad685fe623bbffe56d7a39a88ba1367cc17",
+      "bytes": 24667
+    },
+    "launch:rtx-5090:mm_1024_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_1024_tf.launch",
+      "sha256": "c0f453a389b553906a5d8353098910817c1bdbc8255d78dae056a99e3c5e8d25",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_2048": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048.ptx",
+      "sha256": "05a81a7a6a691747f4d30173d2c18a68d2c0ae6242d0a2dbbeb3862326d137c3",
+      "bytes": 88581
+    },
+    "launch:rtx-5090:mm_2048": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048.launch",
+      "sha256": "e0d058d7978b766ddfefc29abed27a43c0958d646d239c9b552c0abbaca1ec39",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_2048_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048_c.ptx",
+      "sha256": "e9b906cce06e8643499fe19b31971153622e95d93dc2306e63a3e8d416b21162",
+      "bytes": 56133
+    },
+    "launch:rtx-5090:mm_2048_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048_c.launch",
+      "sha256": "ba7c4d43e859310896aa6fdcdcdcc9e0f13b844be9d5bf54944a31a42c093a43",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_2048_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048_tf.ptx",
+      "sha256": "07f733b589e7a1f495c33c65fb84e4644f3f99a66670fd64810a07c4d1da5c3f",
+      "bytes": 32888
+    },
+    "launch:rtx-5090:mm_2048_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_2048_tf.launch",
+      "sha256": "b0b67fe0d9897f33517a8d919b5b9c9fcfbb1af2c3175248c7e1e7072b1b112b",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_4096": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096.ptx",
+      "sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6",
+      "bytes": 88594
+    },
+    "launch:rtx-5090:mm_4096": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096.launch",
+      "sha256": "052424677ee635958df1d3c699db134410d6464d0db2c086f45e1ac89e12963d",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_4096_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096_c.ptx",
+      "sha256": "cdb603c0991a94fd89befbe889479c23f77f3b30d484999b2eb9a0dedc97fce4",
+      "bytes": 56502
+    },
+    "launch:rtx-5090:mm_4096_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096_c.launch",
+      "sha256": "3d5e2ac4be6f4228cfbcfba0c187789488854acf0b104bce53f0fa12b6d89b22",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_4096_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096_tf.ptx",
+      "sha256": "4d10e94b886b5cc6bc89bf82e96786c82fccf98185caf391cac5bbd7d2a1ea50",
+      "bytes": 33293
+    },
+    "launch:rtx-5090:mm_4096_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096_tf.launch",
+      "sha256": "5ef60e2bd801b8bf5bb1996942e1787de3cb182d98fc3d29d6fbb562e94d9a74",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_8192": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192.ptx",
+      "sha256": "ad65409799fc8e54fabc7e22d23d47c37333fd74ee9e0741811d42a64270830d",
+      "bytes": 88595
+    },
+    "launch:rtx-5090:mm_8192": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192.launch",
+      "sha256": "ca288d11dfe7d7b63548d90e75c9e5d084098b0e8879a2fd9d9d29310a52e229",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_8192_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192_c.ptx",
+      "sha256": "d0f81acd790131e64ed590dfa8b18912e1582000c4a26d9ad780fd9c43288aee",
+      "bytes": 56502
+    },
+    "launch:rtx-5090:mm_8192_c": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192_c.launch",
+      "sha256": "53b133362a0c490f7163ba05d104df49cb97028ae11791b013b028a2be9cfc0a",
+      "bytes": 44
+    },
+    "ptx:rtx-5090:mm_8192_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192_tf.ptx",
+      "sha256": "5b61beb2f92a32ec48514c404c07fc0994d179048ea0486f160a76d8c7fffb78",
+      "bytes": 33309
+    },
+    "launch:rtx-5090:mm_8192_tf": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_8192_tf.launch",
+      "sha256": "a12f9634ccd02a2be8b889f3babe6ccf4e6096a9c2b63756c8a1c15881317f77",
+      "bytes": 44
+    },
+    "results:H100": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-a/results-h100-pcie.txt",
+      "sha256": "0fe30fac0dc4447d802bf1752153fee11124e1642ef2c800b1858d1f3cb1ce83",
+      "bytes": 561249
+    },
+    "verification:H100": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-a/verification.json",
+      "sha256": "ebfea21014dfdf326a9cdab0c33594455698006cc904be535bb5dd747aabe7fa",
+      "bytes": 12366
+    },
+    "archive:H100": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-a/prof-h100-pcie.tgz",
+      "sha256": "f9d73ea390b23305a75c30db450463a581cf29e67d2063b603eb530a0f772cdb",
+      "bytes": 5695540
+    },
+    "sqlite:H100:prof/run-1024.sqlite": {
+      "archive": "archive:H100",
+      "member": "prof/run-1024.sqlite",
+      "sha256": "4f9561a174aacff116c68d7767aa44abdbdeaaf84b2ffe8f5ea1e7ff55b27728",
+      "bytes": 524288
+    },
+    "sqlite:H100:prof/run-4096.sqlite": {
+      "archive": "archive:H100",
+      "member": "prof/run-4096.sqlite",
+      "sha256": "ecee8f5f6a30b94d4af3afcbc17c922204bb2d6c34369eaa6827d82344faa3e7",
+      "bytes": 524288
+    },
+    "sqlite:H100:prof/run-8192.sqlite": {
+      "archive": "archive:H100",
+      "member": "prof/run-8192.sqlite",
+      "sha256": "70f972e0af57f565ceeda56ecc9faf7f11eaa118a5dbd72d4f8e264b6a0aa61d",
+      "bytes": 524288
+    },
+    "sqlite:H100:prof/run_mm_4096_tf.sqlite": {
+      "archive": "archive:H100",
+      "member": "prof/run_mm_4096_tf.sqlite",
+      "sha256": "46edd1ffbd739c8ca252701bcc11cd03057ea70a0ebf0088815fede022ac2522",
+      "bytes": 524288
+    },
+    "sass:H100:mm_4096.null": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096.null.sass",
+      "sha256": "68fcbc5cbc44aef5a45cf9241db4897da31e6b1c5882e8f28a1d4f4bcc98ec3c",
+      "bytes": 539358
+    },
+    "cubin:H100:mm_4096.null": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096.null.cubin",
+      "sha256": "ec829dba76a29ab37d026d4c2614b7c8d970fd23b7c9e74fbf6e1bc7629f65b7",
+      "bytes": 44416
+    },
+    "ptxas:H100:mm_4096.null": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096.null.ptxas",
+      "sha256": "c76b4758099bf2a38b3a5145145dafe3c96dce8413afc9206f403b0bfb631870",
+      "bytes": 957
+    },
+    "ptx-null:h100-pcie": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-pcie/h100-pcie/mm_4096.null.ptx",
+      "sha256": "c7f101f1f772d6b6065417fdef01a2d78c4de34cb49b1ea317c195851c538d8d",
+      "bytes": 87077
+    },
+    "sass:H100:mm_4096_c": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_c.sass",
+      "sha256": "3976e9035eaa8a9986879dca2ee1da66753a47e31b31d2dbbaa69e6a1489c59c",
+      "bytes": 293470
+    },
+    "cubin:H100:mm_4096_c": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_c.cubin",
+      "sha256": "fc546485f788d8ede88a24818dc86befc7db7feb2479975920180ce8b4db1f13",
+      "bytes": 27008
+    },
+    "ptxas:H100:mm_4096_c": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_c.ptxas",
+      "sha256": "37adf549c1e0b0bb3784d0a91d054c70e26f919ef54ff73e354fabae7d107b49",
+      "bytes": 957
+    },
+    "sass:H100:mm_4096_tf": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_tf.sass",
+      "sha256": "0457dace45a9986378eefc0235da8370d89c09e2bcd8eb19f81ae9143a57950b",
+      "bytes": 167854
+    },
+    "cubin:H100:mm_4096_tf": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_tf.cubin",
+      "sha256": "d10bbb7235f4b9a02780e9bf8c75b58ce13e7b165e4db5420c7ab928f0e91792",
+      "bytes": 17664
+    },
+    "ptxas:H100:mm_4096_tf": {
+      "archive": "archive:H100",
+      "member": "prof/mm_4096_tf.ptxas",
+      "sha256": "1ee1e424302ca4fc192b97cebf1adda11909574b35469cc171102660c3699bb7",
+      "bytes": 957
+    },
+    "sass:H100:tile_bench": {
+      "archive": "archive:H100",
+      "member": "prof/tile_bench.sass",
+      "sha256": "d57db8a573b6c59acad8a41432c13ab2a4acedb97b1e380bb3f49d8915552e4c",
+      "bytes": 1243937
+    },
+    "ncu:H100": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-h100-a/ncu-h100-pcie.csv",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "results:5090 A2": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-a2/results-rtx-5090.txt",
+      "sha256": "b44bb1e7658f01a0a70e72436cf51b7d8cbf6ec8e2c7118fadfd35158678e370",
+      "bytes": 1933026
+    },
+    "verification:5090 A2": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-a2/verification.json",
+      "sha256": "830983f989860bba8f08da3f2da45dc98724d84b9837bd69e6fa4e33db71d9e3",
+      "bytes": 12648
+    },
+    "archive:5090 A2": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-a2/prof-rtx-5090.tgz",
+      "sha256": "c1526049b7c95f337a3a73837b0f0b158f1512623500375ec975fa1aa02194e9",
+      "bytes": 5663581
+    },
+    "sqlite:5090 A2:prof/run-1024.sqlite": {
+      "archive": "archive:5090 A2",
+      "member": "prof/run-1024.sqlite",
+      "sha256": "99e73b7fd3cdc5300be25e45deba81613721724a86f3d55d01515d613ccff01d",
+      "bytes": 524288
+    },
+    "sqlite:5090 A2:prof/run-4096.sqlite": {
+      "archive": "archive:5090 A2",
+      "member": "prof/run-4096.sqlite",
+      "sha256": "9c5a1417c32034b657d20c75aa7ec9c846fcd566485557216d7d606b28eb11ed",
+      "bytes": 524288
+    },
+    "sqlite:5090 A2:prof/run-8192.sqlite": {
+      "archive": "archive:5090 A2",
+      "member": "prof/run-8192.sqlite",
+      "sha256": "4222b18c29b4e1bdcf6af00a1ae6aea206813381a36ecc096f855254004f561b",
+      "bytes": 528384
+    },
+    "sqlite:5090 A2:prof/run_mm_4096_tf.sqlite": {
+      "archive": "archive:5090 A2",
+      "member": "prof/run_mm_4096_tf.sqlite",
+      "sha256": "b34ace9b08a9110b28e142d55b8770f914f60c4873335fa007b3961e55eac91f",
+      "bytes": 520192
+    },
+    "sass:5090 A2:mm_4096.null": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096.null.sass",
+      "sha256": "8cf1c8b94b9622a804c80599b610365aa907e21199217d3acf6bf2508dc046b8",
+      "bytes": 715212
+    },
+    "cubin:5090 A2:mm_4096.null": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096.null.cubin",
+      "sha256": "a3352c34e4498937b4d25fd34ebb7da4fcefb7bbb6951061f248895b6a81c91d",
+      "bytes": 53144
+    },
+    "ptxas:5090 A2:mm_4096.null": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096.null.ptxas",
+      "sha256": "95a5ae8b4f44d4a6675b18163f66f3e0b75eee2b410dfeff798079e3610df00a",
+      "bytes": 990
+    },
+    "ptx-null:rtx-5090": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-rtx-5090/rtx-5090/mm_4096.null.ptx",
+      "sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6",
+      "bytes": 88594
+    },
+    "sass:5090 A2:mm_4096_c": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_c.sass",
+      "sha256": "41f78bd08ace4a06869cac8eac86803bbb326ce1d11134f615b10ea0c7074000",
+      "bytes": 381164
+    },
+    "cubin:5090 A2:mm_4096_c": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_c.cubin",
+      "sha256": "2a7de45f9cfb136f2811c58112487342e897c85549d943c62d7c1bda7b4081a1",
+      "bytes": 32904
+    },
+    "ptxas:5090 A2:mm_4096_c": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_c.ptxas",
+      "sha256": "a6c58e463d7ce0c08518d44fb4d9a1ab1f0f2e5790ece7e6b53aabe5d34fce47",
+      "bytes": 955
+    },
+    "sass:5090 A2:mm_4096_tf": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_tf.sass",
+      "sha256": "198af02bb68efe87565fa90b2ba95ac2544897c5496e381d3930112bad65fa69",
+      "bytes": 195884
+    },
+    "cubin:5090 A2:mm_4096_tf": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_tf.cubin",
+      "sha256": "fa8a234f73f066157a2548ca3ed11812e8ef0b220480cb7bbfba46274ee7c9e3",
+      "bytes": 25904
+    },
+    "ptxas:5090 A2:mm_4096_tf": {
+      "archive": "archive:5090 A2",
+      "member": "prof/mm_4096_tf.ptxas",
+      "sha256": "a8527666d3eec26a069f1d42d3f5b9b4b91d038e03ad8805cd44c5f04f5d5794",
+      "bytes": 955
+    },
+    "sass:5090 A2:tile_bench": {
+      "archive": "archive:5090 A2",
+      "member": "prof/tile_bench.sass",
+      "sha256": "b853de1b08d6ab819540acbb6418d4c80c4c593a60329d8aae6b2cd35144061f",
+      "bytes": 1397836
+    },
+    "ncu:5090 A2": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-a2/ncu-rtx-5090.csv",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "results:5090 B": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-b/results-rtx-5090.txt",
+      "sha256": "dff280fe087747d9f52d901a86f6032296d28d47ab7baa7a5d91dfb6fed914b8",
+      "bytes": 1931895
+    },
+    "verification:5090 B": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-b/verification.json",
+      "sha256": "1a57f585a358fd0cda9f2e2b3fba2f2ec75bd46c12ec9e54ac8734ffa5d6101f",
+      "bytes": 12647
+    },
+    "archive:5090 B": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-b/prof-rtx-5090.tgz",
+      "sha256": "1ca8006e7cfc7aa4a5e1c595133e6a6688f3318795a61254b7afcb4a15322c17",
+      "bytes": 5704182
+    },
+    "sqlite:5090 B:prof/run-1024.sqlite": {
+      "archive": "archive:5090 B",
+      "member": "prof/run-1024.sqlite",
+      "sha256": "6c74a34f26dd02e88f2ddfec904629810b3163289594b61c6d697f8e940ba133",
+      "bytes": 532480
+    },
+    "sqlite:5090 B:prof/run-4096.sqlite": {
+      "archive": "archive:5090 B",
+      "member": "prof/run-4096.sqlite",
+      "sha256": "07950a2f337c0f5a24f2bde6b43d5993c26a97c8db96a13412244cdf935dd7c9",
+      "bytes": 532480
+    },
+    "sqlite:5090 B:prof/run-8192.sqlite": {
+      "archive": "archive:5090 B",
+      "member": "prof/run-8192.sqlite",
+      "sha256": "74aa4a88d4b95fb2a479be9dbef1a89a8be2d6daecdb788efaec76d6da8253aa",
+      "bytes": 532480
+    },
+    "sqlite:5090 B:prof/run_mm_4096_tf.sqlite": {
+      "archive": "archive:5090 B",
+      "member": "prof/run_mm_4096_tf.sqlite",
+      "sha256": "594cd1558f60983155c18ac9bc8cc0d71341b9ab034f77ea7fd5fc7ca4d29c2a",
+      "bytes": 528384
+    },
+    "sass:5090 B:mm_4096.null": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096.null.sass",
+      "sha256": "8cf1c8b94b9622a804c80599b610365aa907e21199217d3acf6bf2508dc046b8",
+      "bytes": 715212
+    },
+    "cubin:5090 B:mm_4096.null": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096.null.cubin",
+      "sha256": "a3352c34e4498937b4d25fd34ebb7da4fcefb7bbb6951061f248895b6a81c91d",
+      "bytes": 53144
+    },
+    "ptxas:5090 B:mm_4096.null": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096.null.ptxas",
+      "sha256": "4da585ed9b5604841f3237759504c9ebcef6b3b674d8ff8960634c6648e291e3",
+      "bytes": 991
+    },
+    "sass:5090 B:mm_4096_c": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_c.sass",
+      "sha256": "41f78bd08ace4a06869cac8eac86803bbb326ce1d11134f615b10ea0c7074000",
+      "bytes": 381164
+    },
+    "cubin:5090 B:mm_4096_c": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_c.cubin",
+      "sha256": "2a7de45f9cfb136f2811c58112487342e897c85549d943c62d7c1bda7b4081a1",
+      "bytes": 32904
+    },
+    "ptxas:5090 B:mm_4096_c": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_c.ptxas",
+      "sha256": "ba14ca0f633baa2b5fa9a56599b8dc0697b6b84892c9bc982660472eef5fe0ea",
+      "bytes": 955
+    },
+    "sass:5090 B:mm_4096_tf": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_tf.sass",
+      "sha256": "198af02bb68efe87565fa90b2ba95ac2544897c5496e381d3930112bad65fa69",
+      "bytes": 195884
+    },
+    "cubin:5090 B:mm_4096_tf": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_tf.cubin",
+      "sha256": "fa8a234f73f066157a2548ca3ed11812e8ef0b220480cb7bbfba46274ee7c9e3",
+      "bytes": 25904
+    },
+    "ptxas:5090 B:mm_4096_tf": {
+      "archive": "archive:5090 B",
+      "member": "prof/mm_4096_tf.ptxas",
+      "sha256": "42e94c7f6c35cdad1700857b547ac830bf60b5ca2a8fa002af16e1773e667040",
+      "bytes": 955
+    },
+    "sass:5090 B:tile_bench": {
+      "archive": "archive:5090 B",
+      "member": "prof/tile_bench.sass",
+      "sha256": "b853de1b08d6ab819540acbb6418d4c80c4c593a60329d8aae6b2cd35144061f",
+      "bytes": 1397836
+    },
+    "ncu:5090 B": {
+      "path": "/private/tmp/mapal-s56-gpu/selection-5090-b/ncu-rtx-5090.csv",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  },
+  "profiles": {
+    "h100-pcie": {
+      "manifest": "manifest:h100-pcie",
+      "head": "4c93c8a37a34518370c6b4b5888e476367c25f74",
+      "bundle": "/private/tmp/mapal-s56-gpu/selection-h100-pcie",
+      "sm": "sm_90a",
+      "box_profile.sh": "harness:h100-pcie:box_profile.sh",
+      "tile_bench.cu": "harness:h100-pcie:tile_bench.cu"
+    },
+    "rtx-5090": {
+      "manifest": "manifest:rtx-5090",
+      "head": "4c93c8a37a34518370c6b4b5888e476367c25f74",
+      "bundle": "/private/tmp/mapal-s56-gpu/selection-rtx-5090",
+      "sm": "sm_120",
+      "box_profile.sh": "harness:rtx-5090:box_profile.sh",
+      "tile_bench.cu": "harness:rtx-5090:tile_bench.cu"
+    }
+  },
+  "sessions": {
+    "H100": {
+      "profile": "h100-pcie",
+      "results": "results:H100",
+      "verification": "verification:H100",
+      "archive": "archive:H100",
+      "hardware": {
+        "gpus": [
+          {
+            "name": "NVIDIA H100 PCIe",
+            "driver_version": "595.71.05",
+            "clocks.max.sm [MHz]": "1755 MHz",
+            "clocks.current.sm [MHz]": "345 MHz",
+            "power.limit [W]": "350.00 W",
+            "temperature.gpu": "32",
+            "persistence_mode": "Enabled"
+          }
+        ],
+        "csv_columns": [
+          "name",
+          "driver_version",
+          "clocks.max.sm [MHz]",
+          "clocks.current.sm [MHz]",
+          "power.limit [W]",
+          "temperature.gpu",
+          "persistence_mode"
+        ]
+      }
+    },
+    "5090 A2": {
+      "profile": "rtx-5090",
+      "results": "results:5090 A2",
+      "verification": "verification:5090 A2",
+      "archive": "archive:5090 A2",
+      "hardware": {
+        "gpus": [
+          {
+            "name": "NVIDIA GeForce RTX 5090",
+            "driver_version": "570.211.01",
+            "clocks.max.sm [MHz]": "3135 MHz",
+            "clocks.current.sm [MHz]": "28 MHz",
+            "power.limit [W]": "500.00 W",
+            "temperature.gpu": "37",
+            "persistence_mode": "Enabled"
+          }
+        ],
+        "csv_columns": [
+          "name",
+          "driver_version",
+          "clocks.max.sm [MHz]",
+          "clocks.current.sm [MHz]",
+          "power.limit [W]",
+          "temperature.gpu",
+          "persistence_mode"
+        ]
+      }
+    },
+    "5090 B": {
+      "profile": "rtx-5090",
+      "results": "results:5090 B",
+      "verification": "verification:5090 B",
+      "archive": "archive:5090 B",
+      "hardware": {
+        "gpus": [
+          {
+            "name": "NVIDIA GeForce RTX 5090",
+            "driver_version": "595.104.02",
+            "clocks.max.sm [MHz]": "3090 MHz",
+            "clocks.current.sm [MHz]": "180 MHz",
+            "power.limit [W]": "575.00 W",
+            "temperature.gpu": "36",
+            "persistence_mode": "Enabled"
+          }
+        ],
+        "csv_columns": [
+          "name",
+          "driver_version",
+          "clocks.max.sm [MHz]",
+          "clocks.current.sm [MHz]",
+          "power.limit [W]",
+          "temperature.gpu",
+          "persistence_mode"
+        ]
+      }
+    }
+  },
+  "kernel_names": {
+    "k:6e334e672a503fe7": "mapal_tile_ca2f6114b3534324",
+    "k:9ac5ff530e851a92": "mapal_tile_07c6663c96748bdb",
+    "k:64e0274cf8665544": "mapal_tile_a9135d8a78bdde1f",
+    "k:3e3b771bb6e3f5d6": "mapal_tile_5754017a1fe0de49",
+    "k:1b2e635573f79d8d": "mapal_tile_844dbc85f2c69fb4",
+    "k:d1bea02f3e16a74b": "mapal_tile_885771b50f0f4c9c",
+    "k:1b0cb14cfe67738f": "mapal_tile_d7d2247fbbd9f82c",
+    "k:2640c4c0c5bb30ec": "mapal_tile_eb50b87a44f46aa3",
+    "k:783bd1b9efd5f9b0": "mapal_tile_dff0dae306997d77",
+    "k:0c028b718ef55bfb": "mapal_tile_15bf00331bb882c3",
+    "k:c6807d21abeba201": "mapal_tile_3c6966e353d7136e",
+    "k:dae331f27dd06dbc": "mapal_tile_0f986b19df91db16",
+    "k:233e8c57e20d958d": "mapal_tile_f24cd6725591d228",
+    "k:dc78e7ccba40fa2e": "mapal_tile_b3430eaa07e662e7",
+    "k:3f8a399d47fb1ad4": "mapal_tile_1a9c689505abacd3",
+    "k:4c0933e165020205": "mapal_tile_8f8f17dbfee141eb",
+    "k:1544561b1db475cf": "mapal_tile_a699b750c8acc1b6",
+    "k:65e66312a5e58b31": "mapal_tile_e4397dd68e9ce32e",
+    "k:22e67b0a6b377de0": "mapal_tile_44b89e2e8514dfc0",
+    "k:b3a6f57362c66d62": "mapal_tile_359ebbfdb3fa2c9f",
+    "k:c5786546fcd4a585": "mapal_tile_18a86cb342332edb",
+    "k:4f60dde84fce1824": "mapal_tile_c18771960a7c9351",
+    "k:4f981cb2baa37be1": "mapal_tile_d887e043cb797d3c",
+    "k:fdab55985d08e257": "mapal_tile_7866e25aa2accf14",
+    "k:462651106cd387f4": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+    "k:8ef7b943324f5072": "void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)",
+    "k:b6bb02211647b68f": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+    "k:ff769e99b8e48d21": "sm90_xmma_gemm_f32f32_tf32f32_f32_nn_n_tilesize128x128x32_warpgroupsize1x1x1_execute_segment_k_off_kernel__5x_cublas",
+    "k:c4b198bc2e7709a1": "void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)",
+    "k:869ed1cd4be10015": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock13MmaMultistageINS1_9GemmShapeILi128ELi128ELi16EEENS_9transform11threadblock28PredicatedTileAccessIteratorINS_11MatrixShapeILi128ELi16EEEfNS_6layout8RowMajorELi1ENS8_29PitchLinearWarpRakedThreadMapINS_16PitchLinearShapeILi16ELi128EEELi128ENSG_ILi4ELi8EEELi4EEENS_5ArrayIfLi4ELb1EEELb0ENSD_9NoPermuteEEENS9_25RegularTileAccessIteratorISC_fNSD_37RowMajorTensorOpMultiplicandCrosswiseILi32ELi16EEELi0ESJ_Li16EEELNS_4arch14CacheOperation4KindE1ENSA_INSB_ILi16ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi16EEELi128ENSG_ILi8ELi4EEELi4EEESL_Lb0ESM_EENSO_ISV_fNSD_37RowMajorTensorOpMultiplicandCongruousILi32ELi32EEELi0ESY_Li16EEELSU_1EfSE_NS4_9MmaPolicyINS1_4warp11MmaTensorOpINS6_ILi64ELi64ELi16EEEfSQ_fS11_fSE_NS14_17MmaTensorOpPolicyINSS_3MmaINS6_ILi16ELi8ELi8EEELi32ENS_10tfloat32_tESE_S1A_NSD_11ColumnMajorEfSE_NSS_13OpMultiplyAddEEENSB_ILi1ELi1EEEEELi1ELb0EbEENSB_ILi0ELi0EEES1H_Li1EEELi4ELNS1_23SharedMemoryClearOptionE0EbEENS_8epilogue11threadblock8EpilogueIS7_S1G_Li1ENS1M_22PredicatedTileIteratorINS1M_26OutputTileOptimalThreadMapINS1M_15OutputTileShapeILi128ELi8ELi2ELi1ELi1EEENS1Q_ILi1ELi8ELi1ELi1ELi8EEELi128ELi4ELi32EEEfLb0ESM_Lb0EEENS1L_4warp24FragmentIteratorTensorOpIS16_S19_fSL_SE_EENS1V_20TileIteratorTensorOpIS16_S19_fSE_EENS1M_18SharedLoadIteratorINS1T_18CompactedThreadMapEfLi16EEENS1L_6thread17LinearCombinationIfLi4EffLNS23_9ScaleType4KindE0ELNS_15FloatRoundStyleE2EfEENSB_ILi0ELi8EEELi2ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "k:194585fbb15b7dba": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "k:deb770dd29df388c": "void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)",
+    "k:a2a23097e5a4539a": "void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(T1::Params)",
+    "k:656670f4d70c78ff": "void cutlass::Kernel2<cutlass_80_tensorop_s1688gemm_128x128_32x3_nn_align4>(T1::Params)"
+  },
+  "ptx_observations": {
+    "ptx:h100-pcie:mm_1024": {
+      "profile": "h100-pcie",
+      "n": 1024,
+      "face": "Exact",
+      "kernel": "k:6e334e672a503fe7",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 512,
+        "mul.rn.f32": 512
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 131,
+        "mul.rn.f32": 130
+      },
+      "launch": "launch:h100-pcie:mm_1024",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_1024_c": {
+      "profile": "h100-pcie",
+      "n": 1024,
+      "face": "Contract",
+      "kernel": "k:9ac5ff530e851a92",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 512
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 171
+      },
+      "launch": "launch:h100-pcie:mm_1024_c",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_1024_tf": {
+      "profile": "h100-pcie",
+      "n": 1024,
+      "face": "TF32",
+      "kernel": "k:64e0274cf8665544",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 24,
+        "cp.async.commit_group": 2,
+        "cp.async.wait_group": 1,
+        "wgmma.commit_group.sync.aligned": 1,
+        "wgmma.fence.sync.aligned": 1,
+        "wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32": 4,
+        "wgmma.wait_group.sync.aligned": 2
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 69,
+        "cp.async.commit_group": 127,
+        "cp.async.wait_group": 440,
+        "wgmma.commit_group.sync.aligned": 399,
+        "wgmma.fence.sync.aligned": 377,
+        "wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32": 384,
+        "wgmma.wait_group.sync.aligned": 278
+      },
+      "launch": "launch:h100-pcie:mm_1024_tf",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_2048": {
+      "profile": "h100-pcie",
+      "n": 2048,
+      "face": "Exact",
+      "kernel": "k:3e3b771bb6e3f5d6",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 188,
+        "mul.rn.f32": 187
+      },
+      "launch": "launch:h100-pcie:mm_2048",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_2048_c": {
+      "profile": "h100-pcie",
+      "n": 2048,
+      "face": "Contract",
+      "kernel": "k:1b2e635573f79d8d",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 172
+      },
+      "launch": "launch:h100-pcie:mm_2048_c",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_2048_tf": {
+      "profile": "h100-pcie",
+      "n": 2048,
+      "face": "TF32",
+      "kernel": "k:d1bea02f3e16a74b",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 36,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 1,
+        "wgmma.commit_group.sync.aligned": 1,
+        "wgmma.fence.sync.aligned": 1,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 4,
+        "wgmma.wait_group.sync.aligned": 2
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 69,
+        "cp.async.commit_group": 130,
+        "cp.async.wait_group": 436,
+        "wgmma.commit_group.sync.aligned": 422,
+        "wgmma.fence.sync.aligned": 400,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 407,
+        "wgmma.wait_group.sync.aligned": 332
+      },
+      "launch": "launch:h100-pcie:mm_2048_tf",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_4096": {
+      "profile": "h100-pcie",
+      "n": 4096,
+      "face": "Exact",
+      "kernel": "k:1b0cb14cfe67738f",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 188,
+        "mul.rn.f32": 187
+      },
+      "launch": "launch:h100-pcie:mm_4096",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_4096_c": {
+      "profile": "h100-pcie",
+      "n": 4096,
+      "face": "Contract",
+      "kernel": "k:2640c4c0c5bb30ec",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 172
+      },
+      "launch": "launch:h100-pcie:mm_4096_c",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_4096_tf": {
+      "profile": "h100-pcie",
+      "n": 4096,
+      "face": "TF32",
+      "kernel": "k:783bd1b9efd5f9b0",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 36,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 1,
+        "wgmma.commit_group.sync.aligned": 1,
+        "wgmma.fence.sync.aligned": 1,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 4,
+        "wgmma.wait_group.sync.aligned": 2
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 69,
+        "cp.async.commit_group": 130,
+        "cp.async.wait_group": 436,
+        "wgmma.commit_group.sync.aligned": 422,
+        "wgmma.fence.sync.aligned": 400,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 407,
+        "wgmma.wait_group.sync.aligned": 332
+      },
+      "launch": "launch:h100-pcie:mm_4096_tf",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_8192": {
+      "profile": "h100-pcie",
+      "n": 8192,
+      "face": "Exact",
+      "kernel": "k:0c028b718ef55bfb",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 188,
+        "mul.rn.f32": 187
+      },
+      "launch": "launch:h100-pcie:mm_8192",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_8192_c": {
+      "profile": "h100-pcie",
+      "n": 8192,
+      "face": "Contract",
+      "kernel": "k:c6807d21abeba201",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 172
+      },
+      "launch": "launch:h100-pcie:mm_8192_c",
+      "launch_file_line": 1
+    },
+    "ptx:h100-pcie:mm_8192_tf": {
+      "profile": "h100-pcie",
+      "n": 8192,
+      "face": "TF32",
+      "kernel": "k:dae331f27dd06dbc",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 36,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 1,
+        "wgmma.commit_group.sync.aligned": 1,
+        "wgmma.fence.sync.aligned": 1,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 4,
+        "wgmma.wait_group.sync.aligned": 2
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 69,
+        "cp.async.commit_group": 130,
+        "cp.async.wait_group": 436,
+        "wgmma.commit_group.sync.aligned": 422,
+        "wgmma.fence.sync.aligned": 400,
+        "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32": 407,
+        "wgmma.wait_group.sync.aligned": 332
+      },
+      "launch": "launch:h100-pcie:mm_8192_tf",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_1024": {
+      "profile": "rtx-5090",
+      "n": 1024,
+      "face": "Exact",
+      "kernel": "k:233e8c57e20d958d",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 256,
+        "mul.rn.f32": 256
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 111,
+        "mul.rn.f32": 110
+      },
+      "launch": "launch:rtx-5090:mm_1024",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_1024_c": {
+      "profile": "rtx-5090",
+      "n": 1024,
+      "face": "Contract",
+      "kernel": "k:dc78e7ccba40fa2e",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 256
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 112
+      },
+      "launch": "launch:rtx-5090:mm_1024_c",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_1024_tf": {
+      "profile": "rtx-5090",
+      "n": 1024,
+      "face": "TF32",
+      "kernel": "k:3f8a399d47fb1ad4",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 8,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 2,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 32
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 55,
+        "cp.async.commit_group": 76,
+        "cp.async.wait_group": 134,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 205
+      },
+      "launch": "launch:rtx-5090:mm_1024_tf",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_2048": {
+      "profile": "rtx-5090",
+      "n": 2048,
+      "face": "Exact",
+      "kernel": "k:4c0933e165020205",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "cp.async.ca.shared.global": 16,
+        "cp.async.cg.shared.global": 4,
+        "cp.async.commit_group": 2,
+        "cp.async.wait_group": 1,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 198,
+        "cp.async.ca.shared.global": 60,
+        "cp.async.cg.shared.global": 82,
+        "cp.async.commit_group": 93,
+        "cp.async.wait_group": 2314,
+        "mul.rn.f32": 197
+      },
+      "launch": "launch:rtx-5090:mm_2048",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_2048_c": {
+      "profile": "rtx-5090",
+      "n": 2048,
+      "face": "Contract",
+      "kernel": "k:1544561b1db475cf",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 177
+      },
+      "launch": "launch:rtx-5090:mm_2048_c",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_2048_tf": {
+      "profile": "rtx-5090",
+      "n": 2048,
+      "face": "TF32",
+      "kernel": "k:65e66312a5e58b31",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 8,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 2,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 64
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 52,
+        "cp.async.commit_group": 76,
+        "cp.async.wait_group": 179,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 298
+      },
+      "launch": "launch:rtx-5090:mm_2048_tf",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_4096": {
+      "profile": "rtx-5090",
+      "n": 4096,
+      "face": "Exact",
+      "kernel": "k:22e67b0a6b377de0",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "cp.async.ca.shared.global": 16,
+        "cp.async.cg.shared.global": 4,
+        "cp.async.commit_group": 2,
+        "cp.async.wait_group": 1,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 198,
+        "cp.async.ca.shared.global": 60,
+        "cp.async.cg.shared.global": 82,
+        "cp.async.commit_group": 93,
+        "cp.async.wait_group": 2314,
+        "mul.rn.f32": 197
+      },
+      "launch": "launch:rtx-5090:mm_4096",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_4096_c": {
+      "profile": "rtx-5090",
+      "n": 4096,
+      "face": "Contract",
+      "kernel": "k:b3a6f57362c66d62",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 190
+      },
+      "launch": "launch:rtx-5090:mm_4096_c",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_4096_tf": {
+      "profile": "rtx-5090",
+      "n": 4096,
+      "face": "TF32",
+      "kernel": "k:c5786546fcd4a585",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 8,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 2,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 64
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 66,
+        "cp.async.commit_group": 90,
+        "cp.async.wait_group": 193,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 312
+      },
+      "launch": "launch:rtx-5090:mm_4096_tf",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_8192": {
+      "profile": "rtx-5090",
+      "n": 8192,
+      "face": "Exact",
+      "kernel": "k:4f60dde84fce1824",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "add.rn.f32": 1024,
+        "cp.async.ca.shared.global": 16,
+        "cp.async.cg.shared.global": 4,
+        "cp.async.commit_group": 2,
+        "cp.async.wait_group": 1,
+        "mul.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "add.rn.f32": 198,
+        "cp.async.ca.shared.global": 60,
+        "cp.async.cg.shared.global": 82,
+        "cp.async.commit_group": 93,
+        "cp.async.wait_group": 2314,
+        "mul.rn.f32": 197
+      },
+      "launch": "launch:rtx-5090:mm_8192",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_8192_c": {
+      "profile": "rtx-5090",
+      "n": 8192,
+      "face": "Contract",
+      "kernel": "k:4f981cb2baa37be1",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "fma.rn.f32": 1024
+      },
+      "first_opcode_lines": {
+        "fma.rn.f32": 190
+      },
+      "launch": "launch:rtx-5090:mm_8192_c",
+      "launch_file_line": 1
+    },
+    "ptx:rtx-5090:mm_8192_tf": {
+      "profile": "rtx-5090",
+      "n": 8192,
+      "face": "TF32",
+      "kernel": "k:fdab55985d08e257",
+      "entry_line": 12,
+      "scope": "single visible tile entry, excluding all other entries",
+      "static_ptx_op_counts": {
+        "cp.async.cg.shared.global": 8,
+        "cp.async.commit_group": 3,
+        "cp.async.wait_group": 2,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 64
+      },
+      "first_opcode_lines": {
+        "cp.async.cg.shared.global": 66,
+        "cp.async.commit_group": 90,
+        "cp.async.wait_group": 193,
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32": 312
+      },
+      "launch": "launch:rtx-5090:mm_8192_tf",
+      "launch_file_line": 1
+    }
+  },
+  "ordinary_mapal_launches": [
+    [
+      "H100",
+      1024,
+      "Contract",
+      "ptx:h100-pcie:mm_1024_c",
+      "k:9ac5ff530e851a92",
+      "results:H100",
+      1618,
+      1621,
+      16,
+      8,
+      128,
+      6272,
+      157,
+      0
+    ],
+    [
+      "H100",
+      1024,
+      "Exact",
+      "ptx:h100-pcie:mm_1024",
+      "k:6e334e672a503fe7",
+      "results:H100",
+      1582,
+      1585,
+      16,
+      8,
+      256,
+      12544,
+      106,
+      0
+    ],
+    [
+      "H100",
+      1024,
+      "TF32",
+      "ptx:h100-pcie:mm_1024_tf",
+      "k:64e0274cf8665544",
+      "results:H100",
+      1654,
+      1657,
+      16,
+      8,
+      128,
+      76800,
+      147,
+      0
+    ],
+    [
+      "H100",
+      2048,
+      "Contract",
+      "ptx:h100-pcie:mm_2048_c",
+      "k:1b2e635573f79d8d",
+      "results:H100",
+      1738,
+      1741,
+      16,
+      16,
+      256,
+      16640,
+      127,
+      0
+    ],
+    [
+      "H100",
+      2048,
+      "Exact",
+      "ptx:h100-pcie:mm_2048",
+      "k:3e3b771bb6e3f5d6",
+      "results:H100",
+      1690,
+      1693,
+      16,
+      16,
+      256,
+      16384,
+      128,
+      0
+    ],
+    [
+      "H100",
+      2048,
+      "TF32",
+      "ptx:h100-pcie:mm_2048_tf",
+      "k:d1bea02f3e16a74b",
+      "results:H100",
+      1786,
+      1789,
+      16,
+      8,
+      256,
+      200704,
+      212,
+      0
+    ],
+    [
+      "H100",
+      4096,
+      "Contract",
+      "ptx:h100-pcie:mm_4096_c",
+      "k:2640c4c0c5bb30ec",
+      "results:H100",
+      1882,
+      1885,
+      32,
+      32,
+      256,
+      16640,
+      127,
+      0
+    ],
+    [
+      "H100",
+      4096,
+      "Exact",
+      "ptx:h100-pcie:mm_4096",
+      "k:1b0cb14cfe67738f",
+      "results:H100",
+      1834,
+      1837,
+      32,
+      32,
+      256,
+      16384,
+      128,
+      0
+    ],
+    [
+      "H100",
+      4096,
+      "TF32",
+      "ptx:h100-pcie:mm_4096_tf",
+      "k:783bd1b9efd5f9b0",
+      "results:H100",
+      1930,
+      1933,
+      32,
+      16,
+      256,
+      200704,
+      212,
+      0
+    ],
+    [
+      "H100",
+      8192,
+      "Contract",
+      "ptx:h100-pcie:mm_8192_c",
+      "k:c6807d21abeba201",
+      "results:H100",
+      2026,
+      2029,
+      64,
+      64,
+      256,
+      16640,
+      127,
+      0
+    ],
+    [
+      "H100",
+      8192,
+      "Exact",
+      "ptx:h100-pcie:mm_8192",
+      "k:0c028b718ef55bfb",
+      "results:H100",
+      1978,
+      1981,
+      64,
+      64,
+      256,
+      16384,
+      128,
+      0
+    ],
+    [
+      "H100",
+      8192,
+      "TF32",
+      "ptx:h100-pcie:mm_8192_tf",
+      "k:dae331f27dd06dbc",
+      "results:H100",
+      2074,
+      2077,
+      64,
+      32,
+      256,
+      200704,
+      212,
+      0
+    ],
+    [
+      "5090 A2",
+      1024,
+      "Contract",
+      "ptx:rtx-5090:mm_1024_c",
+      "k:dc78e7ccba40fa2e",
+      "results:5090 A2",
+      5878,
+      5881,
+      16,
+      16,
+      256,
+      8448,
+      79,
+      0
+    ],
+    [
+      "5090 A2",
+      1024,
+      "Exact",
+      "ptx:rtx-5090:mm_1024",
+      "k:233e8c57e20d958d",
+      "results:5090 A2",
+      5842,
+      5845,
+      16,
+      16,
+      256,
+      8192,
+      77,
+      0
+    ],
+    [
+      "5090 A2",
+      1024,
+      "TF32",
+      "ptx:rtx-5090:mm_1024_tf",
+      "k:3f8a399d47fb1ad4",
+      "results:5090 A2",
+      5914,
+      5917,
+      16,
+      16,
+      256,
+      36864,
+      76,
+      0
+    ],
+    [
+      "5090 A2",
+      2048,
+      "Contract",
+      "ptx:rtx-5090:mm_2048_c",
+      "k:1544561b1db475cf",
+      "results:5090 A2",
+      5986,
+      5989,
+      16,
+      16,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 A2",
+      2048,
+      "Exact",
+      "ptx:rtx-5090:mm_2048",
+      "k:4c0933e165020205",
+      "results:5090 A2",
+      5950,
+      5953,
+      16,
+      16,
+      256,
+      33792,
+      128,
+      24
+    ],
+    [
+      "5090 A2",
+      2048,
+      "TF32",
+      "ptx:rtx-5090:mm_2048_tf",
+      "k:65e66312a5e58b31",
+      "results:5090 A2",
+      6022,
+      6025,
+      16,
+      16,
+      256,
+      37888,
+      124,
+      0
+    ],
+    [
+      "5090 A2",
+      4096,
+      "Contract",
+      "ptx:rtx-5090:mm_4096_c",
+      "k:b3a6f57362c66d62",
+      "results:5090 A2",
+      6106,
+      6109,
+      32,
+      32,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 A2",
+      4096,
+      "Exact",
+      "ptx:rtx-5090:mm_4096",
+      "k:22e67b0a6b377de0",
+      "results:5090 A2",
+      6058,
+      6061,
+      32,
+      32,
+      256,
+      33792,
+      128,
+      24
+    ],
+    [
+      "5090 A2",
+      4096,
+      "TF32",
+      "ptx:rtx-5090:mm_4096_tf",
+      "k:c5786546fcd4a585",
+      "results:5090 A2",
+      6166,
+      6169,
+      32,
+      32,
+      256,
+      37888,
+      124,
+      0
+    ],
+    [
+      "5090 A2",
+      8192,
+      "Contract",
+      "ptx:rtx-5090:mm_8192_c",
+      "k:4f981cb2baa37be1",
+      "results:5090 A2",
+      6274,
+      6277,
+      64,
+      64,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 A2",
+      8192,
+      "Exact",
+      "ptx:rtx-5090:mm_8192",
+      "k:4f60dde84fce1824",
+      "results:5090 A2",
+      6226,
+      6229,
+      64,
+      64,
+      256,
+      33792,
+      128,
+      24
+    ],
+    [
+      "5090 A2",
+      8192,
+      "TF32",
+      "ptx:rtx-5090:mm_8192_tf",
+      "k:fdab55985d08e257",
+      "results:5090 A2",
+      6334,
+      6337,
+      64,
+      64,
+      256,
+      37888,
+      124,
+      0
+    ],
+    [
+      "5090 B",
+      1024,
+      "Contract",
+      "ptx:rtx-5090:mm_1024_c",
+      "k:dc78e7ccba40fa2e",
+      "results:5090 B",
+      5878,
+      5881,
+      16,
+      16,
+      256,
+      8448,
+      79,
+      0
+    ],
+    [
+      "5090 B",
+      1024,
+      "Exact",
+      "ptx:rtx-5090:mm_1024",
+      "k:233e8c57e20d958d",
+      "results:5090 B",
+      5842,
+      5845,
+      16,
+      16,
+      256,
+      8192,
+      77,
+      0
+    ],
+    [
+      "5090 B",
+      1024,
+      "TF32",
+      "ptx:rtx-5090:mm_1024_tf",
+      "k:3f8a399d47fb1ad4",
+      "results:5090 B",
+      5914,
+      5917,
+      16,
+      16,
+      256,
+      36864,
+      66,
+      0
+    ],
+    [
+      "5090 B",
+      2048,
+      "Contract",
+      "ptx:rtx-5090:mm_2048_c",
+      "k:1544561b1db475cf",
+      "results:5090 B",
+      5986,
+      5989,
+      16,
+      16,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 B",
+      2048,
+      "Exact",
+      "ptx:rtx-5090:mm_2048",
+      "k:4c0933e165020205",
+      "results:5090 B",
+      5950,
+      5953,
+      16,
+      16,
+      256,
+      33792,
+      128,
+      8
+    ],
+    [
+      "5090 B",
+      2048,
+      "TF32",
+      "ptx:rtx-5090:mm_2048_tf",
+      "k:65e66312a5e58b31",
+      "results:5090 B",
+      6022,
+      6025,
+      16,
+      16,
+      256,
+      37888,
+      122,
+      0
+    ],
+    [
+      "5090 B",
+      4096,
+      "Contract",
+      "ptx:rtx-5090:mm_4096_c",
+      "k:b3a6f57362c66d62",
+      "results:5090 B",
+      6106,
+      6109,
+      32,
+      32,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 B",
+      4096,
+      "Exact",
+      "ptx:rtx-5090:mm_4096",
+      "k:22e67b0a6b377de0",
+      "results:5090 B",
+      6058,
+      6061,
+      32,
+      32,
+      256,
+      33792,
+      128,
+      8
+    ],
+    [
+      "5090 B",
+      4096,
+      "TF32",
+      "ptx:rtx-5090:mm_4096_tf",
+      "k:c5786546fcd4a585",
+      "results:5090 B",
+      6166,
+      6169,
+      32,
+      32,
+      256,
+      37888,
+      122,
+      0
+    ],
+    [
+      "5090 B",
+      8192,
+      "Contract",
+      "ptx:rtx-5090:mm_8192_c",
+      "k:4f981cb2baa37be1",
+      "results:5090 B",
+      6274,
+      6277,
+      64,
+      64,
+      256,
+      16640,
+      128,
+      0
+    ],
+    [
+      "5090 B",
+      8192,
+      "Exact",
+      "ptx:rtx-5090:mm_8192",
+      "k:4f60dde84fce1824",
+      "results:5090 B",
+      6226,
+      6229,
+      64,
+      64,
+      256,
+      33792,
+      128,
+      8
+    ],
+    [
+      "5090 B",
+      8192,
+      "TF32",
+      "ptx:rtx-5090:mm_8192_tf",
+      "k:fdab55985d08e257",
+      "results:5090 B",
+      6334,
+      6337,
+      64,
+      64,
+      256,
+      37888,
+      122,
+      0
+    ]
+  ],
+  "profiled_kernel_resources": [
+    {
+      "session": "H100",
+      "n": 1024,
+      "face": "Contract",
+      "artifact": "sqlite:H100:prof/run-1024.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:9ac5ff530e851a92",
+          157,
+          16,
+          8,
+          1,
+          128,
+          1,
+          1,
+          0,
+          6272,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:462651106cd387f4",
+          121,
+          16,
+          16,
+          4,
+          128,
+          1,
+          1,
+          0,
+          12672,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          137,
+          8,
+          8,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "H100",
+      "n": 4096,
+      "face": "Contract",
+      "artifact": "sqlite:H100:prof/run-4096.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:2640c4c0c5bb30ec",
+          127,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:b6bb02211647b68f",
+          255,
+          32,
+          32,
+          1,
+          128,
+          1,
+          1,
+          0,
+          33792,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          137,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "H100",
+      "n": 8192,
+      "face": "Contract",
+      "artifact": "sqlite:H100:prof/run-8192.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:c6807d21abeba201",
+          127,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:b6bb02211647b68f",
+          255,
+          64,
+          64,
+          1,
+          128,
+          1,
+          1,
+          0,
+          33792,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          137,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "H100",
+      "n": 4096,
+      "face": "TF32",
+      "artifact": "sqlite:H100:prof/run_mm_4096_tf.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:783bd1b9efd5f9b0",
+          212,
+          32,
+          16,
+          1,
+          256,
+          1,
+          1,
+          0,
+          200704,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:ff769e99b8e48d21",
+          168,
+          114,
+          1,
+          1,
+          384,
+          1,
+          1,
+          0,
+          231424,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:c4b198bc2e7709a1",
+          226,
+          32,
+          32,
+          1,
+          128,
+          1,
+          1,
+          0,
+          65536,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 A2",
+      "n": 1024,
+      "face": "Contract",
+      "artifact": "sqlite:5090 A2:prof/run-1024.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:dc78e7ccba40fa2e",
+          79,
+          16,
+          16,
+          1,
+          256,
+          1,
+          1,
+          0,
+          8448,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:deb770dd29df388c",
+          128,
+          128,
+          1,
+          5,
+          128,
+          1,
+          1,
+          0,
+          30720,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          8,
+          8,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 A2",
+      "n": 4096,
+      "face": "Contract",
+      "artifact": "sqlite:5090 A2:prof/run-4096.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:b3a6f57362c66d62",
+          128,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:a2a23097e5a4539a",
+          210,
+          256,
+          2,
+          4,
+          256,
+          1,
+          1,
+          0,
+          49152,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 A2",
+      "n": 8192,
+      "face": "Contract",
+      "artifact": "sqlite:5090 A2:prof/run-8192.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:4f981cb2baa37be1",
+          128,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:a2a23097e5a4539a",
+          210,
+          512,
+          4,
+          2,
+          256,
+          1,
+          1,
+          0,
+          49152,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 A2",
+      "n": 4096,
+      "face": "TF32",
+      "artifact": "sqlite:5090 A2:prof/run_mm_4096_tf.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:c5786546fcd4a585",
+          124,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          37888,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:656670f4d70c78ff",
+          234,
+          256,
+          4,
+          1,
+          128,
+          1,
+          1,
+          0,
+          98304,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:c4b198bc2e7709a1",
+          230,
+          32,
+          32,
+          1,
+          128,
+          1,
+          1,
+          0,
+          65536,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 B",
+      "n": 1024,
+      "face": "Contract",
+      "artifact": "sqlite:5090 B:prof/run-1024.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:dc78e7ccba40fa2e",
+          79,
+          16,
+          16,
+          1,
+          256,
+          1,
+          1,
+          0,
+          8448,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:deb770dd29df388c",
+          128,
+          128,
+          1,
+          5,
+          128,
+          1,
+          1,
+          0,
+          30720,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          8,
+          8,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 B",
+      "n": 4096,
+      "face": "Contract",
+      "artifact": "sqlite:5090 B:prof/run-4096.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:b3a6f57362c66d62",
+          128,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:a2a23097e5a4539a",
+          210,
+          256,
+          2,
+          4,
+          256,
+          1,
+          1,
+          0,
+          49152,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 B",
+      "n": 8192,
+      "face": "Contract",
+      "artifact": "sqlite:5090 B:prof/run-8192.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:4f981cb2baa37be1",
+          128,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:a2a23097e5a4539a",
+          210,
+          512,
+          4,
+          2,
+          256,
+          1,
+          1,
+          0,
+          49152,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:8ef7b943324f5072",
+          124,
+          64,
+          64,
+          1,
+          256,
+          1,
+          1,
+          0,
+          16640,
+          0,
+          8
+        ]
+      ]
+    },
+    {
+      "session": "5090 B",
+      "n": 4096,
+      "face": "TF32",
+      "artifact": "sqlite:5090 B:prof/run_mm_4096_tf.sqlite",
+      "query": "kernel_resources",
+      "rows": [
+        [
+          "Mapal",
+          "k:c5786546fcd4a585",
+          122,
+          32,
+          32,
+          1,
+          256,
+          1,
+          1,
+          0,
+          37888,
+          0,
+          8
+        ],
+        [
+          "cuBLAS",
+          "k:656670f4d70c78ff",
+          234,
+          256,
+          4,
+          1,
+          128,
+          1,
+          1,
+          0,
+          98304,
+          0,
+          8
+        ],
+        [
+          "CUTLASS",
+          "k:c4b198bc2e7709a1",
+          230,
+          32,
+          32,
+          1,
+          128,
+          1,
+          1,
+          0,
+          65536,
+          0,
+          8
+        ]
+      ]
+    }
+  ],
+  "static_sass_observations": [
+    {
+      "session": "H100",
+      "face": "Exact",
+      "n": 4096,
+      "kernel": "k:1b0cb14cfe67738f",
+      "input_ptx": "ptx:h100-pcie:mm_4096",
+      "identical_input_alias": "ptx-null:h100-pcie",
+      "sass": "sass:H100:mm_4096.null",
+      "function_line": 141,
+      "cubin": "cubin:H100:mm_4096.null",
+      "ptxas": "ptxas:H100:mm_4096.null",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 128
+      },
+      "static_sass_op_counts": {
+        "FMUL": 1024,
+        "FADD": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "H100",
+      "face": "Contract",
+      "n": 4096,
+      "kernel": "k:2640c4c0c5bb30ec",
+      "input_ptx": "ptx:h100-pcie:mm_4096_c",
+      "identical_input_alias": null,
+      "sass": "sass:H100:mm_4096_c",
+      "function_line": 141,
+      "cubin": "cubin:H100:mm_4096_c",
+      "ptxas": "ptxas:H100:mm_4096_c",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 127
+      },
+      "static_sass_op_counts": {
+        "FFMA": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "H100",
+      "face": "TF32",
+      "n": 4096,
+      "kernel": "k:783bd1b9efd5f9b0",
+      "input_ptx": "ptx:h100-pcie:mm_4096_tf",
+      "identical_input_alias": null,
+      "sass": "sass:H100:mm_4096_tf",
+      "function_line": 141,
+      "cubin": "cubin:H100:mm_4096_tf",
+      "ptxas": "ptxas:H100:mm_4096_tf",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 212
+      },
+      "static_sass_op_counts": {
+        "LDGSTS": 36,
+        "HGMMA": 4
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "H100",
+      "leg": "CUTLASS",
+      "family": "MmaMultistage",
+      "symbol": "k:869ed1cd4be10015",
+      "observed_kernel_names": [
+        "k:c4b198bc2e7709a1"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:H100:tile_bench",
+      "function_line": 19,
+      "static_sass_op_counts": {
+        "LDGSTS": 32,
+        "HMMA": 64,
+        "FMUL": 256,
+        "FFMA": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    },
+    {
+      "session": "H100",
+      "leg": "CUTLASS",
+      "family": "MmaPipelined",
+      "symbol": "k:194585fbb15b7dba",
+      "observed_kernel_names": [
+        "k:8ef7b943324f5072"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:H100:tile_bench",
+      "function_line": 3944,
+      "static_sass_op_counts": {
+        "FFMA": 576,
+        "FMUL": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    },
+    {
+      "session": "5090 A2",
+      "face": "Exact",
+      "n": 4096,
+      "kernel": "k:22e67b0a6b377de0",
+      "input_ptx": "ptx:rtx-5090:mm_4096",
+      "identical_input_alias": "ptx-null:rtx-5090",
+      "sass": "sass:5090 A2:mm_4096.null",
+      "function_line": 143,
+      "cubin": "cubin:5090 A2:mm_4096.null",
+      "ptxas": "ptxas:5090 A2:mm_4096.null",
+      "ptxas_properties": {
+        "stack_frame_bytes": 24,
+        "spill_store_bytes": 20,
+        "spill_load_bytes": 20,
+        "registers": 128
+      },
+      "static_sass_op_counts": {
+        "LDGSTS": 20,
+        "STL": 4,
+        "LDL": 4,
+        "FMUL": 1024,
+        "FADD": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 A2",
+      "face": "Contract",
+      "n": 4096,
+      "kernel": "k:b3a6f57362c66d62",
+      "input_ptx": "ptx:rtx-5090:mm_4096_c",
+      "identical_input_alias": null,
+      "sass": "sass:5090 A2:mm_4096_c",
+      "function_line": 143,
+      "cubin": "cubin:5090 A2:mm_4096_c",
+      "ptxas": "ptxas:5090 A2:mm_4096_c",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 128
+      },
+      "static_sass_op_counts": {
+        "FFMA": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 A2",
+      "face": "TF32",
+      "n": 4096,
+      "kernel": "k:c5786546fcd4a585",
+      "input_ptx": "ptx:rtx-5090:mm_4096_tf",
+      "identical_input_alias": null,
+      "sass": "sass:5090 A2:mm_4096_tf",
+      "function_line": 143,
+      "cubin": "cubin:5090 A2:mm_4096_tf",
+      "ptxas": "ptxas:5090 A2:mm_4096_tf",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 124
+      },
+      "static_sass_op_counts": {
+        "LDGSTS": 8,
+        "HMMA": 64
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 A2",
+      "leg": "CUTLASS",
+      "family": "MmaMultistage",
+      "symbol": "k:869ed1cd4be10015",
+      "observed_kernel_names": [
+        "k:c4b198bc2e7709a1"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:5090 A2:tile_bench",
+      "function_line": 23,
+      "static_sass_op_counts": {
+        "LDGSTS": 32,
+        "HMMA": 64,
+        "FMUL": 256,
+        "FFMA": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    },
+    {
+      "session": "5090 A2",
+      "leg": "CUTLASS",
+      "family": "MmaPipelined",
+      "symbol": "k:194585fbb15b7dba",
+      "observed_kernel_names": [
+        "k:8ef7b943324f5072"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:5090 A2:tile_bench",
+      "function_line": 3548,
+      "static_sass_op_counts": {
+        "FFMA": 576,
+        "FMUL": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    },
+    {
+      "session": "5090 B",
+      "face": "Exact",
+      "n": 4096,
+      "kernel": "k:22e67b0a6b377de0",
+      "input_ptx": "ptx:rtx-5090:mm_4096",
+      "identical_input_alias": "ptx-null:rtx-5090",
+      "sass": "sass:5090 B:mm_4096.null",
+      "function_line": 143,
+      "cubin": "cubin:5090 B:mm_4096.null",
+      "ptxas": "ptxas:5090 B:mm_4096.null",
+      "ptxas_properties": {
+        "stack_frame_bytes": 24,
+        "spill_store_bytes": 20,
+        "spill_load_bytes": 20,
+        "registers": 128
+      },
+      "static_sass_op_counts": {
+        "LDGSTS": 20,
+        "STL": 4,
+        "LDL": 4,
+        "FMUL": 1024,
+        "FADD": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 B",
+      "face": "Contract",
+      "n": 4096,
+      "kernel": "k:b3a6f57362c66d62",
+      "input_ptx": "ptx:rtx-5090:mm_4096_c",
+      "identical_input_alias": null,
+      "sass": "sass:5090 B:mm_4096_c",
+      "function_line": 143,
+      "cubin": "cubin:5090 B:mm_4096_c",
+      "ptxas": "ptxas:5090 B:mm_4096_c",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 128
+      },
+      "static_sass_op_counts": {
+        "FFMA": 1024
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 B",
+      "face": "TF32",
+      "n": 4096,
+      "kernel": "k:c5786546fcd4a585",
+      "input_ptx": "ptx:rtx-5090:mm_4096_tf",
+      "identical_input_alias": null,
+      "sass": "sass:5090 B:mm_4096_tf",
+      "function_line": 143,
+      "cubin": "cubin:5090 B:mm_4096_tf",
+      "ptxas": "ptxas:5090 B:mm_4096_tf",
+      "ptxas_properties": {
+        "stack_frame_bytes": 0,
+        "spill_store_bytes": 0,
+        "spill_load_bytes": 0,
+        "registers": 124
+      },
+      "static_sass_op_counts": {
+        "LDGSTS": 8,
+        "HMMA": 64
+      },
+      "provenance": "offline ptxas cubin; not identified as the driver-JIT image executed during timings"
+    },
+    {
+      "session": "5090 B",
+      "leg": "CUTLASS",
+      "family": "MmaMultistage",
+      "symbol": "k:869ed1cd4be10015",
+      "observed_kernel_names": [
+        "k:c4b198bc2e7709a1"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:5090 B:tile_bench",
+      "function_line": 23,
+      "static_sass_op_counts": {
+        "LDGSTS": 32,
+        "HMMA": 64,
+        "FMUL": 256,
+        "FFMA": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    },
+    {
+      "session": "5090 B",
+      "leg": "CUTLASS",
+      "family": "MmaPipelined",
+      "symbol": "k:194585fbb15b7dba",
+      "observed_kernel_names": [
+        "k:8ef7b943324f5072"
+      ],
+      "match_basis": "unique matching CUTLASS template family in captured executable and demangled Nsight kernel identity",
+      "sass": "sass:5090 B:tile_bench",
+      "function_line": 3548,
+      "static_sass_op_counts": {
+        "FFMA": 576,
+        "FMUL": 128
+      },
+      "provenance": "cuobjdump of tile_bench executable fatbin; static disassembly, not dynamic instruction counts"
+    }
+  ],
+  "source_references": {
+    "box_profile.sh": {
+      "offline_ptxas_lines": [
+        16,
+        18
+      ],
+      "offline_cuobjdump_lines": [
+        20,
+        22
+      ],
+      "contract_nsys_command_lines": [
+        32,
+        37
+      ],
+      "tf32_nsys_command_lines": [
+        40,
+        45
+      ]
+    },
+    "tile_bench.cu": {
+      "ptx_module_load_line": 345,
+      "driver_register_attribute_line": 350,
+      "driver_local_size_attribute_line": 351,
+      "actual_mapal_launch_line": 380,
+      "cublas_sgemm_line": 383
+    }
+  },
+  "limitations": {
+    "empty_counter_artifacts": [
+      "ncu:H100",
+      "ncu:5090 A2",
+      "ncu:5090 B"
+    ],
+    "per_run_counter_permission_error_observed": false,
+    "permission_limit_source": "frozen box_profile.sh lines2-3 is a harness statement, not a saved per-run error",
+    "missing_profiled_library_scope": [
+      "Exact all sizes",
+      "Contract2048",
+      "TF321024/2048/8192"
+    ],
+    "cuBLAS_sass_saved": false,
+    "identified_executed_Mapal_JIT_machine_image_saved": false,
+    "static_instruction_counts_are_dynamic_counts": false,
+    "resources_prove_achieved_occupancy_or_gap_cause": false,
+    "pre_final_5090_raster_affected": [
+      "Contract4096",
+      "Contract8192",
+      "TF324096",
+      "TF328192"
+    ],
+    "whole_program_vs_library_probe_clock_boundaries_equal": false
+  },
+  "validation": {
+    "csv_rows": 36,
+    "unique_ptx_files": 24,
+    "ptx_hashes_matched": true,
+    "results_and_verification_hashes_matched": true,
+    "archive_hashes_match_accepted_verification": true,
+    "sql_runs": 12,
+    "sql_kernel_rows": 36,
+    "sass_observations": 15,
+    "filesystem_writes": "this receipt only",
+    "no_new_builds_or_measurements": true,
+    "receipt_artifact_digests_rechecked": 112,
+    "all_sql_resource_rows_reproduced": true,
+    "all_sass_function_line_references_rechecked": true,
+    "ptx_digests_match_accepted_bundle_manifests": 24
+  }
+}

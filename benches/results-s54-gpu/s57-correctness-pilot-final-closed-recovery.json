@@ -1,0 +1,41 @@
+{
+  "archive": ".claude/worktrees/_archive-s54-20261021/s57-correctness-pilot-final-closed-recovery",
+  "created_utc": "2026-10-21T21:15:01.018330+00:00",
+  "copy_manifest": "COPY-MANIFEST.json",
+  "copy_manifest_sha256": "2daa27116473f520bc2ef2a587a2619e2c9905e0808084858a1e44c816acacc4",
+  "payload_files": 267,
+  "payload_bytes": 29603728,
+  "archive_files_including_manifest": 268,
+  "archive_bytes_including_manifest": 29686641,
+  "copy_and_postcopy_sha256_verified": true,
+  "git_ignored_verified": true,
+  "private_file_mode": "0600",
+  "private_directory_mode": "0700",
+  "task_instances_active": 0,
+  "attempts": [
+    {
+      "instance": 57110891,
+      "pass": false,
+      "classification": "allocation_failure_before_upload",
+      "confirmed_absent": true
+    },
+    {
+      "instance": 57111469,
+      "pass": false,
+      "classification": "allocation_failure_before_upload",
+      "confirmed_absent": true
+    }
+  ],
+  "benchmark_upload_bytes": 0,
+  "gpu_executions": 0,
+  "cumulative_listed_time_estimate_usd": 0.009195244102674896,
+  "conservative_two_failure_allowance_usd": 0.22,
+  "actual_invoice_observed": false,
+  "sanitized_receipts": {
+    "allocation-diagnosis.json": "0283ffb86f413dde1143e7eb8716b59f7d5923685ace7eca4aaf3639ba82f414",
+    "closed-attempts-receipt.json": "e02c5d8e4cf73afde693dc8ee32c580713ad65dabacf09a7452af98757f64912",
+    "failure-review.json": "c560508c2fdd486029d79057fd30e651deb3b0f88c0679a9fcff9bf39c40f442",
+    "failure-review-retry2.json": "0fc30f76aa7d918f415237ed5aa1ed18fe5e23f72f7019004684fcac2703dac3"
+  },
+  "secrets_policy": "Raw create responses/API and account diagnostics exist only inside the ignored restricted archive; this public receipt contains counts, hashes and sanitized outcome metadata."
+}

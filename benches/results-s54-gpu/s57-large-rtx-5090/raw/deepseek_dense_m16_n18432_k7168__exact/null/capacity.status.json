@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "nvidia-smi",
+    "--query-gpu=index,name,uuid,memory.free,memory.total,driver_version,power.limit",
+    "--format=csv,noheader,nounits"
+  ],
+  "exit": 0,
+  "seconds": 0.216,
+  "stdout_sha256": "66aa92966eaf8159d5f2882703e2e5ba05a74427b2fbfc11eb693290d6ebdc52",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

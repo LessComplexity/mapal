@@ -1,0 +1,22 @@
+{
+  "created_utc": "2026-10-21T20:29:09.747505+00:00",
+  "archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-correctness-pilot-destination-v2",
+  "files": [
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest-v2.json",
+      "relative_path": "staging-manifest-v2.json",
+      "bytes": 3955,
+      "sha256": "d930a9c445240c638ee7f0f9ddc0fe46d2c313b80c0d5053fbea844f63580b66"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/run_correctness_pair_vast_v2.py",
+      "relative_path": "run_correctness_pair_vast_v2.py",
+      "bytes": 6610,
+      "sha256": "8735a120022c50b6badc91a985725275806b57ab6b45fae214db429362bf6c6a"
+    }
+  ],
+  "all_copies_match": true,
+  "root_review": "Only destination/snapshot/rate/budget facts and corresponding manifest pin differ from the reviewed first preparation; all four upload bytes independently rechecked unchanged. One attempt, $1 cap, $0.83255556 allowance.",
+  "state": "Automatic approval review rejected launch before execution; explicit user question pending. No reservation/rental/upload.",
+  "rejection_reason": "This would upload a new, separately scoped runtime/saved-LLVM/PyTorch payload to an external Vast host and launch a rental; prior approvals do not specifically authorize this payload and destination, so sensitive egress is not authorized."
+}
