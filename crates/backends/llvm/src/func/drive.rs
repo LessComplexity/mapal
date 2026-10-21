@@ -135,6 +135,16 @@ impl<'a> FnEmit<'a> {
         } else {
             ""
         };
+        // `cell-law`'s device variant: its own name, the values after `%arg`.
+        let fname = if self.cell_vals.is_empty() {
+            fname
+        } else {
+            gpu::cell_variant(&fname)
+        };
+        let param = self
+            .cell_vals
+            .iter()
+            .fold(param, |p, (s, t)| format!("{p}, {t} %cv{s}"));
         format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n",
             perf_begin, self.allocas, self.body

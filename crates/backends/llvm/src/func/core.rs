@@ -77,6 +77,7 @@ impl<'a> FnEmit<'a> {
             row_bounds: None,
             groups: SecondaryMap::new(),
             cell_slots: Vec::new(),
+            cell_vals: Vec::new(),
         }
     }
 

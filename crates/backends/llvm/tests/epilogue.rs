@@ -16,7 +16,10 @@ fn lower_src(src: &str) -> CategoryIr {
     mapal_rewrite::rewrite(ir).ir
 }
 
-fn emit_on(src: &str, target: &'static str, contract: bool, gpu: GpuArms) -> Emission {
+fn emit_on(src: &str, target: &'static str, contract: bool, mut gpu: GpuArms) -> Emission {
+    // R1 alone (S54 integration): R2 (`devmap`) would place the per-cell maps
+    // R1 declines; its own tests pin that.
+    *gpu.off.rung("devmap").expect("a rung") = true;
     emit_detailed(
         &lower_src(src),
         &EmitOpts {

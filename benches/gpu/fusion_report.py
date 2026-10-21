@@ -3,8 +3,10 @@
 face, and count, per program, where the work lands — from the emitted host and
 device IR alone (no GPU needed):
 
-  tile / gen kernels  `define ptx_kernel` in the device module (`mapal_tile_*`, `mapal_gen_*`)
-  launches, gens      host call sites of `mapal_gpu_launch[v]` / `mapal_gpu_tile`, `mapal_gpu_gen`
+  tile / gen / cell kernels  `define ptx_kernel` in the device module (`mapal_tile_*`, `mapal_gen_*`;
+                      a `devmap` cell kernel is a `mapal_tile_*` under a `; cell` line)
+  launches, gens      host call sites of `mapal_gpu_launch[_l2]` / `mapal_gpu_tile` / `mapal_gpu_launchv`,
+                      `mapal_gpu_gen`
   h2d, d2h            host call sites and their constant byte counts (`mapal_gpu_tile`, the
                       S52 round trip, counts as two copies in and one out)
   L2 windows          launches with an L2 access-policy window (`mapal_gpu_launch_l2`, S54)
@@ -22,7 +24,7 @@ EMIT_FLAGS="--gpu-off=<rung>" adds emit flags (an OFF arm's report).
 Counts are static: a call inside a host loop (a program `loop`) counts once and
 is flagged `L`.
 
-usage: [FLAGS="<emit flags>"] fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
+usage: [EMIT_FLAGS="--gpu-off=<rung>"] fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
        fusion_report.py --selftest
 """
 import fnmatch
@@ -76,9 +78,10 @@ def const(arg):
 
 
 def analyze(host, dev, n):
-    r = dict(tile=0, gen_k=0, launch=0, launch_l=0, gens=0, h2d=0, h2d_b=0, d2h=0, d2h_b=0,
+    r = dict(tile=0, gen_k=0, cell_k=0, launch=0, launch_l=0, gens=0, h2d=0, h2d_b=0, d2h=0, d2h_b=0,
              elem_loops=0, dev_loops=0, unknown_bytes=False, allocs=0, arena=0, heap=0, l2win=0)
-    r["tile"] = len(re.findall(r"define ptx_kernel void @mapal_tile_", dev))
+    r["cell_k"] = len(re.findall(r"; cell\ndefine ptx_kernel void @mapal_tile_", dev))
+    r["tile"] = len(re.findall(r"define ptx_kernel void @mapal_tile_", dev)) - r["cell_k"]
     r["raster"] = len(re.findall(r"; raster: ", dev))
     r["gen_k"] = len(re.findall(r"define ptx_kernel void @mapal_gen_", dev))
     # Every arena member asks `mapal_gpu_arena`; only the first ask allocates.
@@ -163,10 +166,10 @@ def report(profile, face, n, globs):
                           text=True).stdout.strip()
     print(f"S54 static fusion report — {EMIT.name} ({EMIT.parent.parent.parent.name}) --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")
     print("Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.\n")
-    print("| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes "
-          "| L2 windows | grouped kernels | host elem loops | host loops over device out | dev allocs | arena "
-          "| host heap |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    print("| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls "
+          "| d2h bytes | L2 windows | grouped kernels | host elem loops | host loops over device out | dev allocs "
+          "| arena | host heap |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for s in stems:
         dev = tiles / f"{s}.dev.ll"
         dev.unlink(missing_ok=True)
@@ -176,9 +179,9 @@ def report(profile, face, n, globs):
         r = analyze(host, dev.read_text() if dev.exists() else "", size)
         q = "?" if r["unknown_bytes"] else ""
         launches = f"{r['launch']}" + (f" ({r['launch_l']} L)" if r["launch_l"] else "")
-        print(f"| {s} | {r['tile']} | {r['gen_k']} | {launches} | {r['gens']} | {r['h2d']} | {mb(r['h2d_b'])}{q} "
-              f"| {r['d2h']} | {mb(r['d2h_b'])}{q} | {r['l2win']} | {r['raster']} | {r['elem_loops']} | {r['dev_loops']} "
-              f"| {r['allocs']} | {mb(r['arena'])} | {mb(r['heap'])} |")
+        print(f"| {s} | {r['tile']} | {r['gen_k']} | {r['cell_k']} | {launches} | {r['gens']} | {r['h2d']} "
+              f"| {mb(r['h2d_b'])}{q} | {r['d2h']} | {mb(r['d2h_b'])}{q} | {r['l2win']} | {r['raster']} "
+              f"| {r['elem_loops']} | {r['dev_loops']} | {r['allocs']} | {mb(r['arena'])} | {mb(r['heap'])} |")
 
 
 def selftest():
@@ -197,9 +200,11 @@ bb24:
   ret void
 }
 """
-    r = analyze(host, "define ptx_kernel void @mapal_tile_1(\ndefine ptx_kernel void @mapal_gen_2(", 512)
-    assert (r["tile"], r["gen_k"], r["launch"], r["d2h"], r["d2h_b"], r["elem_loops"], r["dev_loops"]) == \
-        (1, 1, 1, 1, 1048576, 1, 1), r
+    dev = ("define ptx_kernel void @mapal_tile_1(\ndefine ptx_kernel void @mapal_gen_2(\n"
+           "; cell\ndefine ptx_kernel void @mapal_tile_3(")
+    r = analyze(host, dev, 512)
+    assert (r["tile"], r["gen_k"], r["cell_k"], r["launch"], r["d2h"], r["d2h_b"], r["elem_loops"],
+            r["dev_loops"]) == (1, 1, 1, 1, 1, 1048576, 1, 1), r
     assert (r["allocs"], r["arena"], r["heap"]) == (0, 0, 1048576), r
     r = analyze("define internal void @mapal_main() {\n  %t2 = call i64 @mapal_gpu_arena(ptr %darena, i64 512)\n"
                 "  %t5 = call i64 @mapal_gpu_arena(ptr %darena, i64 512)\n  %t7 = call i64 @mapal_gpu_alloc(ptr %d6, i64 4)\n}\n",
