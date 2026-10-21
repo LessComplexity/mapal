@@ -87,11 +87,25 @@ pub(crate) struct ResidentPlan {
     /// Producers no reader is left for (every reader is device-built).
     pub skip: SecondaryMap<MorphismId, ()>,
     pub carries: Vec<Carry>,
+    /// S54 `streams` (R7): each straight-line device site's chain (its stream,
+    /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
+    pub chain: SecondaryMap<MorphismId, u32>,
+    /// A chained site's whole copy-out, moved from its launch to right before
+    /// its first host reader (output → reader).
+    pub d2h_at: SecondaryMap<ObjectId, MorphismId>,
 }
 
 impl ResidentPlan {
     pub(crate) fn is_carry_next(&self, o: ObjectId) -> bool {
         self.carries.iter().any(|c| c.next == o)
+    }
+
+    /// The chain stream `o` is produced on (0: the legacy stream).
+    pub(crate) fn stream_of(&self, ir: &CategoryIr, o: ObjectId) -> u32 {
+        ir.in_edges(o)
+            .iter()
+            .find_map(|&m| self.chain.get(m).copied())
+            .unwrap_or(0)
     }
 
     /// The object whose device slot `o` shares: a carry's views and exit share
@@ -497,7 +511,166 @@ impl<'a> FnEmit<'a> {
                 }
             }
         }
+        self.chains(&sites, &mut plan);
         Some(plan)
+    }
+
+    /// The morphisms that read `o`'s host copy (everything but a device site's
+    /// operand slot), through the pointer-only products that carry it.
+    fn host_readers(
+        &self,
+        sites: &SecondaryMap<MorphismId, TileSite>,
+        o: ObjectId,
+    ) -> Vec<MorphismId> {
+        let mut out = Vec::new();
+        for &m in self.ir.out_edges(o) {
+            let morph = self.ir.morphism(m).expect("morphism resolves");
+            match morph.op {
+                Operation::Pair { slot, .. }
+                    if self.pointer_only_array_component(morph.target, slot) =>
+                {
+                    for &m2 in self.ir.out_edges(morph.target) {
+                        if !matches!(self.slot_use(sites, m2, slot), Use::Dev | Use::None) {
+                            out.push(m2);
+                        }
+                    }
+                }
+                _ => out.push(m),
+            }
+        }
+        out
+    }
+
+    /// **S54 R7: device sites on streams.** Straight-line device sites (a site
+    /// in a loop or guard arm stays on the legacy stream) are covered by
+    /// chains in topo order: a site continues the chain whose last site is one
+    /// of its `PathPlan` ancestors, else opens one. Two chains are opened as
+    /// streams only when the grids can actually share the part — the **wave
+    /// rule**: a grid of `b` blocks on a part holding `w` at once runs
+    /// `⌈b / w⌉` waves, the last one `b − w·(⌈b / w⌉ − 1)` blocks full; two
+    /// independent grids on separate streams save a wave exactly when their
+    /// last waves fit in one, `t_a / w_a + t_b / w_b ≤ 1` (a site's `w` is
+    /// `sms × blocks_per_sm` of its launch geometry). A filled part has nothing
+    /// to overlap, and its text stays the one-stream text. With streams open:
+    /// a chained output's whole copy-out moves to its first host reader (when
+    /// every reader is straight-line), so the next chain launches before the
+    /// host waits; and the frees between the first and last chained launch
+    /// (`cuMemFree` waits for the whole device) move after the last.
+    fn chains(&self, sites: &SecondaryMap<MorphismId, TileSite>, plan: &mut ResidentPlan) {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let (Some(pp), true) = (self.path_plan, rungs.streams) else {
+            return;
+        };
+        let gpu = self.profile.gpu().expect("a device site has a GPU profile");
+        let line = self.straight_line();
+        let task_of = |m: MorphismId| {
+            pp.tasks
+                .iter()
+                .position(|t| matches!(t.kind, TaskKind::Split { site, .. } if site == m))
+        };
+        let mut order: Vec<(u32, MorphismId, usize)> = sites
+            .keys()
+            .filter(|&m| line.contains_key(m))
+            .filter_map(|m| Some((self.lup.position(m)?, m, task_of(m)?)))
+            .collect();
+        order.sort();
+        if order.len() < 2 {
+            return;
+        }
+        // Every task's ancestors (the deps, transitively).
+        let mut anc: Vec<Option<std::collections::BTreeSet<usize>>> = vec![None; pp.tasks.len()];
+        fn ancestors(
+            pp: &PathPlan,
+            t: usize,
+            memo: &mut Vec<Option<std::collections::BTreeSet<usize>>>,
+        ) -> std::collections::BTreeSet<usize> {
+            if let Some(s) = &memo[t] {
+                return s.clone();
+            }
+            let mut s = std::collections::BTreeSet::new();
+            for &d in &pp.tasks[t].deps {
+                s.insert(d);
+                s.extend(ancestors(pp, d, memo));
+            }
+            memo[t] = Some(s.clone());
+            s
+        }
+        let anc: Vec<_> = order
+            .iter()
+            .map(|&(_, _, t)| ancestors(pp, t, &mut anc))
+            .collect();
+        let before = |i: usize, j: usize| anc[j].contains(&order[i].2);
+        let mut chain = Vec::with_capacity(order.len());
+        let mut tail: Vec<usize> = Vec::new();
+        for i in 0..order.len() {
+            match (0..i).rev().find(|&j| before(j, i) && tail[chain[j]] == j) {
+                Some(j) => {
+                    chain.push(chain[j]);
+                    tail[chain[j]] = i;
+                }
+                None => {
+                    chain.push(tail.len());
+                    tail.push(i);
+                }
+            }
+        }
+        if tail.len() < 2 {
+            return;
+        }
+        let grid = |i: usize| {
+            let l = gpu::launch(
+                &sites[order[i].1],
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.reduced,
+            );
+            (l.gx * l.gy, l.wave(gpu))
+        };
+        let merge = (0..order.len()).any(|i| {
+            (i + 1..order.len()).any(|j| {
+                chain[i] != chain[j]
+                    && !before(i, j)
+                    && !before(j, i)
+                    && waves_merge(grid(i), grid(j))
+            })
+        });
+        if rungs.stream_gate && !merge {
+            return;
+        }
+        for (i, &(_, m, _)) in order.iter().enumerate() {
+            plan.chain.insert(m, chain[i] as u32 + 1);
+        }
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        for &(_, m, _) in &order {
+            let c = self.ir.morphism(m).expect("site").target;
+            if plan.keep.contains_key(c) {
+                continue;
+            }
+            let readers = self.host_readers(sites, c);
+            if !readers.is_empty() && readers.iter().all(|&r| line.contains_key(r)) {
+                let first = readers
+                    .into_iter()
+                    .min_by_key(|&r| pos(r))
+                    .expect("a reader");
+                plan.d2h_at.insert(c, first);
+            }
+        }
+        let (lo, last) = (order[0].0, order[order.len() - 1].1);
+        let moved: Vec<MorphismId> = plan
+            .free_after
+            .keys()
+            .filter(|&d| d != last && (lo..pos(last)).contains(&pos(d)))
+            .collect();
+        for d in moved {
+            let objs = plan.free_after.remove(d).expect("listed");
+            match plan.free_after.get_mut(last) {
+                Some(v) => v.extend(objs),
+                None => {
+                    plan.free_after.insert(last, objs);
+                }
+            }
+        }
     }
 
     fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, TileSite>, o: ObjectId) -> bool {
@@ -578,6 +751,7 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
+            self.pin(&h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -598,7 +772,8 @@ impl<'a> FnEmit<'a> {
         source: ObjectId,
         target: ObjectId,
         site: &TileSite,
-        call: impl Fn(&str, &str, &str) -> String,
+        id: i64,
+        l: gpu::Launch,
     ) {
         let src_ty = self.obj_ty(source);
         let mut ops = Vec::new();
@@ -627,28 +802,133 @@ impl<'a> FnEmit<'a> {
             self.line(format!(
                 "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
             ));
+            self.pin(&h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
             temps.push(slot_name);
             ops.push(d);
         }
+        let plan = self.resident.clone().expect("resident site");
+        let s = plan.stream_of(self.ir, target);
+        if s != 0 && self.first_chained(&plan, target) {
+            self.chain_prologue(&plan);
+        }
         let o_bytes = self.array_bytes(&self.obj_ty(target));
         let dout = self.dalloc(target, o_bytes);
-        self.line(call(&ops[0], &ops[1], &dout));
+        let (gx, gy, block, smem) = (l.gx, l.gy, l.block, l.smem);
+        if plan.chain.is_empty() {
+            self.line(format!(
+                "call void @mapal_gpu_launch(i64 {id}, i64 {}, i64 {}, i64 {dout}, \
+                 i32 {gx}, i32 {gy}, i32 {block}, i32 {smem})",
+                ops[0], ops[1]
+            ));
+        } else {
+            // A cross-chain edge: the operand's stream is waited for.
+            let mut waits: Vec<u32> = [site.a.slot, site.b.slot]
+                .iter()
+                .filter_map(|&k| self.pair_source(source, k))
+                .map(|f| plan.stream_of(self.ir, f))
+                .filter(|&p| p != 0 && p != s)
+                .collect();
+            waits.dedup();
+            for p in waits {
+                self.line(format!("call void @mapal_gpu_event(i32 {p}, i32 {s})"));
+            }
+            let v = format!("%dv{}", self.fresh());
+            self.allocas
+                .push_str(&format!("  {v} = alloca [3 x i64]\n"));
+            for (i, d) in [&ops[0], &ops[1], &dout].into_iter().enumerate() {
+                let p = self.tmp();
+                self.line(format!(
+                    "{p} = getelementptr [3 x i64], ptr {v}, i64 0, i64 {i}"
+                ));
+                self.line(format!("store i64 {d}, ptr {p}"));
+            }
+            self.line(format!(
+                "call void @mapal_gpu_launchv(i64 {id}, i32 {s}, i32 3, ptr {v}, \
+                 i32 {gx}, i32 {gy}, i32 {block}, i32 {smem})"
+            ));
+        }
         self.dvalid.insert(target, ());
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
-        let keep = self
-            .resident
-            .as_ref()
-            .is_some_and(|p| p.keep.contains_key(target) || p.is_carry_next(target));
-        if !keep {
+        let keep = plan.keep.contains_key(target) || plan.is_carry_next(target);
+        if !keep && !plan.d2h_at.contains_key(target) {
             let h = self.slot(target).expect("tile output slot");
+            self.pin(&h, o_bytes);
+            self.d2h(s, &h, &dout, "0", o_bytes);
+        }
+    }
+
+    /// A copy-out on stream `s`: the legacy entry on stream 0 (the one-stream
+    /// text), else queued behind the chain's kernels and waited for.
+    fn d2h(&mut self, s: u32, h: &str, d: &str, off: &str, bytes: impl std::fmt::Display) {
+        if s == 0 {
             self.line(format!(
-                "call void @mapal_gpu_d2h(ptr {h}, i64 {dout}, i64 0, i64 {o_bytes})"
+                "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
             ));
+        } else {
+            self.line(format!(
+                "call void @mapal_gpu_d2h_on(i32 {s}, ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
+            ));
+        }
+    }
+
+    /// `pinned`: page-lock a host array right before it crosses (the runtime
+    /// does it once per array).
+    fn pin(&mut self, h: &str, bytes: u64) {
+        if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).pinned {
+            self.line(format!("call void @mapal_gpu_pin(ptr {h}, i64 {bytes})"));
+        }
+    }
+
+    /// Is `target`'s site the first chained launch of the function?
+    fn first_chained(&self, plan: &ResidentPlan, target: ObjectId) -> bool {
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let first = plan.chain.keys().min_by_key(|&m| pos(m));
+        first.is_some_and(|m| self.ir.morphism(m).expect("site").target == target)
+    }
+
+    /// Before the first chained launch: every chained output's buffer and the
+    /// page lock of every chained output's host copy, so neither a `cuMemAlloc`
+    /// nor a `cuMemHostRegister` (each may wait for the device) lands between
+    /// two chains' launches.
+    fn chain_prologue(&mut self, plan: &ResidentPlan) {
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let mut sites: Vec<MorphismId> = plan.chain.keys().collect();
+        sites.sort_by_key(|&m| pos(m));
+        for m in sites {
+            let c = self.ir.morphism(m).expect("site").target;
+            let bytes = self.array_bytes(&self.obj_ty(c));
+            self.dalloc(c, bytes);
+            if !plan.keep.contains_key(c) && !plan.is_carry_next(c) {
+                let h = self.slot(c).expect("tile output slot");
+                self.pin(&h, bytes);
+            }
+        }
+    }
+
+    /// Before `m`: the chained outputs whose first host reader is `m` are
+    /// copied out (`d2h_at`).
+    pub(super) fn resident_before(&mut self, m: MorphismId) {
+        let Some(plan) = &self.resident else {
+            return;
+        };
+        let outs: Vec<ObjectId> = plan
+            .d2h_at
+            .iter()
+            .filter(|&(_, &r)| r == m)
+            .map(|(o, _)| o)
+            .collect();
+        for o in outs {
+            let s = self.resident.as_ref().expect("plan").stream_of(self.ir, o);
+            let bytes = self.array_bytes(&self.obj_ty(o));
+            let h = self.slot(o).expect("tile output slot");
+            let d = self.dload(o);
+            self.pin(&h, bytes);
+            self.d2h(s, &h, &d, "0", bytes);
         }
     }
 
@@ -664,12 +944,15 @@ impl<'a> FnEmit<'a> {
         }
         let arr = self.pair_source(source, 0).expect("elem read array");
         let eb = crate::profile::elem_bytes(array_elem(&self.obj_ty(arr)));
+        let s = self
+            .resident
+            .as_ref()
+            .expect("plan")
+            .stream_of(self.ir, arr);
         let d = self.dload(arr);
         let off = self.tmp();
         self.line(format!("{off} = mul i64 {idx}, {eb}"));
-        self.line(format!(
-            "call void @mapal_gpu_d2h(ptr {ep}, i64 {d}, i64 {off}, i64 {eb})"
-        ));
+        self.d2h(s, ep, &d, &off, eb);
     }
 
     fn carries_of(&self, merge: ObjectId) -> Vec<Carry> {
@@ -693,6 +976,7 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
             let d = self.dalloc(merge, bytes);
+            self.pin(&h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -729,6 +1013,7 @@ impl<'a> FnEmit<'a> {
             {
                 let d = self.dload(exit);
                 let h = self.slot(exit).expect("exit slot");
+                self.pin(&h, bytes);
                 self.line(format!(
                     "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 0, i64 {bytes})"
                 ));
@@ -738,6 +1023,10 @@ impl<'a> FnEmit<'a> {
 
     /// Function exit: free every buffer still held (a no-op on freed slots).
     pub(super) fn resident_teardown(&mut self) {
+        // Pins end with the frame they pinned.
+        if self.body.contains("@mapal_gpu_pin(") {
+            self.line("call void @mapal_gpu_unpin()");
+        }
         let slots: Vec<String> = self.dslots.values().cloned().collect();
         let mut seen = std::collections::BTreeSet::new();
         for s in slots {
@@ -746,6 +1035,14 @@ impl<'a> FnEmit<'a> {
             }
         }
     }
+}
+
+/// The wave rule (S54 R7): grids of `(blocks, wave)` on separate streams take
+/// one wave fewer than back to back exactly when their last waves — `b − w·(⌈b
+/// / w⌉ − 1)` blocks each — fit in one: `t_a / w_a + t_b / w_b ≤ 1`.
+pub(crate) fn waves_merge((ba, wa): (u64, u64), (bb, wb): (u64, u64)) -> bool {
+    let last = |b: u64, w: u64| b - w * (b.div_ceil(w) - 1);
+    last(ba, wa) * wb + last(bb, wb) * wa <= wa * wb
 }
 
 fn array_len(ty: &Ty) -> u64 {
@@ -759,5 +1056,28 @@ fn array_elem(ty: &Ty) -> &Ty {
     match ty {
         Ty::Array { elem, .. } => elem,
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::waves_merge;
+
+    #[test]
+    fn the_wave_rule_merges_exactly_the_last_waves_that_fit_one() {
+        // Two quarter waves share one wave; two full waves never do.
+        assert!(waves_merge((64, 256), (64, 256)));
+        assert!(!waves_merge((256, 256), (256, 256)));
+        // Under one wave each but not together: two waves either way.
+        assert!(!waves_merge((128, 164), (128, 164)));
+        // Many waves with short tails (the 3090 at 4096, 82 SMs × 2): 40 + 40
+        // of 164 — one wave saved of 14.
+        assert!(waves_merge((1024, 164), (1024, 164)));
+        // A tail of exactly half each fits; one block more does not.
+        assert!(waves_merge((50, 100), (50, 100)));
+        assert!(!waves_merge((51, 100), (50, 100)));
+        // Different geometries weigh each tail by its own wave.
+        assert!(waves_merge((128, 256), (32, 64)));
+        assert!(!waves_merge((128, 256), (33, 64)));
     }
 }

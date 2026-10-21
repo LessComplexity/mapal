@@ -64,11 +64,23 @@ fn a_gpu_site_makes_init_mains_first_call() {
     assert!(ll.contains("declare void @mapal_gpu_init(i32)\n"));
 }
 
-/// The OFF arm of `eager-init`.
+/// The OFF arm of `eager-init`. S54's `pdl` (sm_90+) is another flag bit and
+/// changes the kernels, so both arms here hold it off: one rung at a time.
 fn off_eager() -> GpuArms {
     GpuArms {
         off: GpuRungs {
             eager_init: true,
+            pdl: true,
+            ..GpuRungs::default()
+        },
+        ..GpuArms::default()
+    }
+}
+
+fn no_pdl() -> GpuArms {
+    GpuArms {
+        off: GpuRungs {
+            pdl: true,
             ..GpuRungs::default()
         },
         ..GpuArms::default()
@@ -83,7 +95,7 @@ fn the_rung_is_one_flag_bit() {
 
 #[test]
 fn the_host_rung_moves_nothing_but_the_flag() {
-    let on = host(SITE, "rtx-5090", GpuArms::default());
+    let on = host(SITE, "rtx-5090", no_pdl());
     let off = host(SITE, "rtx-5090", off_eager());
     assert_eq!(
         on.replace("@mapal_gpu_init(i32 1)", "@mapal_gpu_init(i32 0)"),
@@ -97,9 +109,9 @@ fn the_host_rung_moves_nothing_but_the_flag() {
         };
         emit_detailed(&lower_src(SITE), &opts).unwrap().device
     };
-    assert!(dev(GpuArms::default()).is_some());
+    assert!(dev(no_pdl()).is_some());
     assert_eq!(
-        dev(GpuArms::default()),
+        dev(no_pdl()),
         dev(off_eager()),
         "the device unit is unchanged"
     );

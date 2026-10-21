@@ -128,6 +128,20 @@ pub struct GpuRungs {
     /// as `main`'s first call, so it overlaps the host work before the first
     /// site. Off: the first site creates them.
     pub eager_init: bool,
+    /// S54 R7: device sites with no `PathPlan` path between them launch on
+    /// separate streams (one per chain), an event on every cross-chain edge,
+    /// each whole copy-out moved to its first host reader. Off: one stream.
+    pub streams: bool,
+    /// Open the streams only where the grids' last waves merge (the wave
+    /// rule in `func/resident.rs`); off = whenever two chains exist. A
+    /// measurement arm for the rule itself.
+    pub stream_gate: bool,
+    /// Page-lock (`cuMemHostRegister`) every host array that crosses the
+    /// bus, once, before its first copy. Off: pageable copies.
+    pub pinned: bool,
+    /// sm_90+: a site launched right behind another kernel on its stream is a
+    /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
+    pub pdl: bool,
 }
 
 impl GpuRungs {
@@ -153,11 +167,15 @@ impl GpuRungs {
         devgen: true,
         retain_delta: true,
         eager_init: true,
+        streams: true,
+        stream_gate: true,
+        pinned: true,
+        pdl: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 20] = [
+    pub const NAMES: [&'static str; 24] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -178,6 +196,10 @@ impl GpuRungs {
         "devgen",
         "retain-delta",
         "eager-init",
+        "streams",
+        "stream-gate",
+        "pinned",
+        "pdl",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -203,6 +225,10 @@ impl GpuRungs {
             "devgen" => &mut self.devgen,
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
+            "streams" => &mut self.streams,
+            "stream-gate" => &mut self.stream_gate,
+            "pinned" => &mut self.pinned,
+            "pdl" => &mut self.pdl,
             _ => return None,
         })
     }
@@ -511,6 +537,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             );
             if id == entry {
                 fe.set_perf_timing(opts.perf_timing);
+                // S54 `streams`: the device sites' independence (the host
+                // stays sequential on a GPU profile).
+                fe.set_path_plan(path_plan.as_ref().filter(|_| profile.gpu().is_some()));
             }
             fe.set_gpu_arms(opts.gpu, opts.reduced);
             if let Some(&site) = body_sites.get(id) {
@@ -570,6 +599,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     }
     if resident {
         out.push_str(crate::func::gpu::RESIDENT_DECLS);
+        for (call, decl) in crate::func::gpu::S54_DECLS {
+            if funcs.contains(call) {
+                out.push_str(decl);
+            }
+        }
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
@@ -604,11 +638,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // The runtime's init is `main`'s first call exactly when a site calls the
     // runtime: the same gate as `GPU_INIT_DECL`.
     let prologue = if gpu_host {
-        crate::func::gpu::init_call(crate::func::gpu::host_rungs(
-            profile,
-            opts.contract,
-            opts.gpu,
-        ))
+        crate::func::gpu::init_call(
+            crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu),
+            funcs.contains("@mapal_gpu_launchv("),
+            crate::func::gpu::pdl(profile, opts.contract, opts.gpu),
+        )
     } else {
         String::new()
     };
