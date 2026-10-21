@@ -57,6 +57,14 @@ out.mkdir(parents=True, exist_ok=True)
 for name, M, N, K, al, bl, elem in CASES:
     (out / f"{name}.mapal").write_text(program(M, N, K, al, bl, elem))
     print(name)
+# S53 integration: a filled grid (2048², small k) — the size the measured
+# tables switch rungs at (`wide-fma`, register staging), which the 256-sized
+# cases never reach; its oracle is the CPU build (bundle.sh `wide_*`).
+(out / "wide_2048x2048x64.mapal").write_text(program(2048, 2048, 64, "rm", "rm", "f32"))
+# A float `%` in a closed-form operand: `devgen` must leave it to the host
+# (fmodf vs NVPTX's frem expansion differ).
+(out / "fmod_64.mapal").write_text(program(64, 64, 64, "rm", "rm", "f32").replace("x / 7.0", "x % 0.7"))
+print("wide_2048x2048x64\nfmod_64")
 
 
 def bench(n):
@@ -194,3 +202,68 @@ print("chain_256\nshare_256\nloop_128_8")
 (out / "mm_share_1024.mapal").write_text(share(1024))
 (out / "loop_mm_1024_8.mapal").write_text(loop_mm(1024, 8))
 (out / "e2e_chain_4096.mapal").write_text(chain(4096, timed=True))
+
+def decode(T, d, rewrite=False):
+    """S53 `retain-delta`: a decode loop. Iteration t writes row t of the
+    carried `x` (d unrolled `Update`s at `t*d + j`, the new row fed by the
+    previous output), then `K = x·Wk`, `V = x·Wv` (row-local, invariant
+    weights), `s = q_t·Kᵀ` and `o = s·V` (row-mixing). The compiler is never
+    told any of that; the rule has to find that only row t of K and V changed.
+
+    `rewrite=True` is the negative control: the iteration writes x[j·d + t]
+    instead (a column, not a row), so the written cells are not one
+    contiguous range and nothing is retained."""
+    w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
+    row = []
+    for j in range(d):
+        idx = f"{j} * {d} + t" if rewrite else f"t * {d} + {j}"
+        row.append(
+            f"                ((t * {d} + {j}) * 7 + 13) % 101 - 50 -> widen_f32 -> f{j};\n"
+            f"                f{j} / 64.0 + o[{j}] -> v{j};\n"
+            f"                x[{idx}] <- v{j};\n")
+    proj = lambda w_: (
+        f"tc -> map {{ c ->\n"
+        f"                    c / {d} -> i;\n"
+        f"                    c % {d} -> j;\n"
+        f"                    (0.0, krange) -> fold {{ acc, k -> acc + x[i * {d} + k] * {w_}[k * {d} + j] }}\n"
+        f"                }}")
+    # The loop lives in `main`: the entry fn is the one whose big blocks go to
+    # the arena, and a 1024x256 decode carries ~10 MB of arrays.
+    return f"""fn main() {{
+    {d * d} -> iota -> tw;
+    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / {w}.0 }} -> wk;
+    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / {w}.0 }} -> wv;
+    {T * d} -> iota -> tc;
+    {d} -> iota -> krange;
+    {T} -> iota -> rrange;
+    (0.0, {T * d}) -> fill -> x0;
+    (0.0, {d}) -> fill -> o0;
+    mut x: [f32; {T * d}] <- x0;
+    mut o: [f32; {d}] <- o0;
+    mut t: i32 <- 0;
+    loop {{
+        (t < {T}) -> {{
+            -true-> {{
+{''.join(row)}                {proj('wk')} -> kk;
+                {proj('wv')} -> vv;
+                krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> q;
+                rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;
+                krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + s[r] * vv[r * {d} + j] }} }} -> o;
+                t + 1 -> t;
+                -> loop;
+            }}
+            -false-> o -> out;
+        }}
+    }}
+    out[0] -> println;
+    out[{d - 1}] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+"""
+
+
+for T, d in ((16, 8), (1024, 256)):
+    (out / f"decode_{T}_{d}.mapal").write_text(decode(T, d))
+(out / "loop_rewrite_16_8.mapal").write_text(decode(16, 8, rewrite=True))

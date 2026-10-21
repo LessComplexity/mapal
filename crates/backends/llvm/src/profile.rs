@@ -284,19 +284,23 @@ pub struct RungOff {
 /// **The GPU rung table: every rung a measured part ships OFF, with the row
 /// that says so** (S53; the [`DispatchCost`] precedent — a measured number
 /// lives only on the profile it was measured on). A profile is *measured* when
-/// it has a row here; every rung not listed for it is ON. Rows cite
-/// `benches/results-s53-gpu/<file>` (`-confirm` = the second session, on a
-/// different box): the ON vs OFF arm medians, ms. Box-to-box noise is ±5% at
-/// 4096–8192; a rung whose sign changes between sessions counts as no effect.
+/// it is in [`GPU_MEASURED`]; every rung not listed for it is ON. Rows cite
+/// `benches/results-s53-gpu/<file>` (`-confirm` / `-run1` = another session, on
+/// a different box): the ON vs OFF arm medians, ms. Box-to-box noise is ±5% at
+/// 4096–8192. The rule a row follows: a rung ships OFF in a (fill, face) class
+/// when no size in the class measured it positive with a stable sign (a sign
+/// that changes between sessions is no effect).
 pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-4090",
         rung: "async",
         fill: Fill::Filled,
-        face: Face::Contract,
+        face: Face::Any,
         cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.368/3.027/28.393 vs off 0.359/2.823/25.554 ms, \
-               -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; kept under-filled (n=1024 on 0.070 \
-               vs off 0.101) and on the exact face (n=2048 on 0.524/0.523 vs off 0.544/0.544 ms, ≈0 at 4096/8192)",
+               -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; _exact with fma-regs on \
+               (fma-regs-rtx-4090.txt) cp.async 0.508/4.437/39.162 vs register staging 0.492/4.245/37.149 ms, \
+               -run1.txt 0.520/4.520/39.002 vs 0.502/4.249/36.698 ms; kept under-filled (_c n=1024 on 0.070 vs \
+               off 0.101 ms)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -323,6 +327,20 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms",
     },
     RungOff {
+        profile: "rtx-4090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.067 ms: no effect",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.068 ms: no effect",
+    },
+    RungOff {
         profile: "h100-pcie",
         rung: "async",
         fill: Fill::Any,
@@ -340,11 +358,49 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "h100-pcie",
-        rung: "ldmatrix",
-        fill: Fill::Filled,
+        rung: "wide-fma",
+        fill: Fill::Any,
         face: Face::Any,
-        cite: "arch-rungs-h100-pcie.txt _tf n=2048/4096/8192 on 0.212/1.404/12.002 vs off 0.213/1.284/11.986 ms; \
-               kept under-filled (n=1024 on 0.047 vs off 0.051)",
+        cite: "fma-regs-h100-pcie.txt register staging n=2048/4096/8192 _c on 0.795/4.054/33.097 vs off \
+               0.654/3.851/33.608 ms, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "affine",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pad",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pad",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.134 ms, ranges overlap: no effect",
     },
     RungOff {
         profile: "rtx-5090",
@@ -355,7 +411,68 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                -confirm.txt on 0.358/3.043/27.908 vs off 0.352/2.991/27.069 ms; kept under-filled (n=1024 on 0.074 \
                vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192)",
     },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide-fma",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "fma-regs-rtx-5090.txt _c register staging n=2048/4096/8192 on 0.344/3.194/26.885 vs off \
+               0.348/2.947/28.434 ms, -run1.txt on 0.313/2.592/19.681 vs off 0.311/2.360/19.382 ms (4096 disjoint)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact cp.async n=1024..8192 on 0.076/0.588/4.920/40.005 vs off \
+               0.076/0.586/4.907/40.004 ms: no effect",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "affine",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact cp.async n=2048/4096/8192 on 0.588/4.920/40.005 vs off \
+               0.580/4.876/39.878 ms; kept under-filled (n=1024 on 0.076 vs off 0.084 ms)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pad",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact register staging n=2048/4096/8192 on 0.545/4.446/39.511 vs off \
+               0.541/4.613/38.788 ms: no stable sign",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.074 ms: no effect",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.078 ms, ranges overlap, one session: \
+               not established",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "warp-fill",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "warp-fill-rtx-5090.txt _tf n=2048 on 0.2314 vs off 0.2252 ms, disjoint; _c and _exact PTX \
+               byte-identical at every filled size",
+    },
 ];
+
+/// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
+/// the rows of the measured part with its architecture (`cuda-ada` ← the
+/// 4090's, `h100` ← the H100 PCIe's); with none, the rows of every measured
+/// part — only what was positive on all of them.
+pub const GPU_MEASURED: [&TargetProfile; 3] = [&RTX_4090, &H100_PCIE, &RTX_5090];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
 /// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
@@ -1014,9 +1131,9 @@ impl TargetProfile {
 
     /// **The GPU rungs this part ships at a site this full, on this face**
     /// (S53): every rung on, minus this profile's rows of [`GPU_RUNGS_OFF`]
-    /// that cover the fill and the face. An unmeasured profile gets the
-    /// intersection of the measured parts' sets — only what was positive on
-    /// every part measured.
+    /// that cover the fill and the face. An unmeasured profile takes the
+    /// measured part of its architecture ([`GPU_MEASURED`]); with none, the
+    /// intersection of the measured parts' sets.
     pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
         let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
             Fill::Under
@@ -1028,10 +1145,16 @@ impl TargetProfile {
         } else {
             Face::Exact
         };
-        let measured = GPU_RUNGS_OFF.iter().any(|d| d.profile == self.name);
+        let arch = self.gpu().map(|g| g.arch);
+        let same: Vec<&str> = GPU_MEASURED
+            .iter()
+            .filter(|p| p.name == self.name || p.gpu().map(|g| g.arch) == arch)
+            .map(|p| p.name)
+            .collect();
+        let from = |name: &str| same.is_empty() || same.contains(&name);
         let mut r = crate::GpuRungs::ALL;
         for d in GPU_RUNGS_OFF {
-            if (!measured || d.profile == self.name)
+            if from(d.profile)
                 && (d.fill == Fill::Any || d.fill == fill)
                 && (d.face == Face::Any || d.face == face)
             {
@@ -3103,18 +3226,21 @@ mod tests {
         assert_eq!(wps(&H100_PCIE, 1024), 1);
     }
 
-    /// The rung table (S53): on the contract face `cp.async` pays only
-    /// under-filled on Ada, never on Hopper; every OFF names its results row;
-    /// an unmeasured part gets the intersection of the measured parts' sets.
+    /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
+    /// Hopper; every OFF names its results row; an unmeasured part takes the
+    /// measured part of its architecture.
     #[test]
     fn gpu_rungs_are_the_measured_table() {
         assert!(RTX_4090.gpu_rungs(1, true).cp_async);
         assert!(!RTX_4090.gpu_rungs(4, true).cp_async);
-        assert!(RTX_4090.gpu_rungs(4, false).cp_async);
+        // With fma-regs' register-staged tile, the exact face streams by
+        // registers when filled too (S53 integration).
+        assert!(!RTX_4090.gpu_rungs(4, false).cp_async);
+        assert!(RTX_4090.gpu_rungs(1, false).cp_async);
         assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
         assert!(RTX_5090.gpu_rungs(0, true).cp_async);
 
-        let measured = [&RTX_4090, &H100_PCIE, &RTX_5090];
+        let measured = GPU_MEASURED;
         for d in GPU_RUNGS_OFF {
             assert!(
                 measured.iter().any(|p| p.name == d.profile),
@@ -3148,12 +3274,9 @@ mod tests {
                         assert_eq!(!r.get(n), cited, "{} {n} {wps} {contract}", p.name);
                     }
                 }
-                for p in [&CUDA_ADA, &H100] {
-                    let r = p.gpu_rungs(wps, contract);
-                    for n in crate::GpuRungs::NAMES {
-                        let all = measured.iter().all(|m| m.gpu_rungs(wps, contract).get(n));
-                        assert_eq!(r.get(n), all, "{} {n}: the intersection", p.name);
-                    }
+                // An unmeasured part takes its architecture's measured part.
+                for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
+                    assert_eq!(p.gpu_rungs(wps, contract), m.gpu_rungs(wps, contract));
                 }
             }
         }

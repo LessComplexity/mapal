@@ -29,6 +29,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     // topo LoopEnter deferral — ir §13).
     fe.copy_obj(plan.init, plan.merge);
     fe.resident_loop_enter(plan.merge, plan.init);
+    fe.retain_reset(plan.merge);
 
     let header = fe.label();
     let advance = fe.label();

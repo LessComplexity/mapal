@@ -17,8 +17,19 @@ python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
 # contract face (per-step fmaf — the same fused step the GPU emits).
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
-    case $(basename "$b") in mm_*|e2e_*) continue ;; esac
-    [ -s "$b.expect" ] || "$RUN" "$f" --budget 20000000000 > "$b.expect"
+    case $(basename "$b") in mm_*|e2e_*|loop_mm_*) continue ;; esac
+    if [ ! -s "$b.expect" ]; then
+        case $(basename "$b") in
+        # Too big for the interpreter (1024 decode steps; a 2048² filled site):
+        # the CPU build's conformance face is the interpreter bit for bit (the
+        # backend differential suite's invariant).
+        decode_1024_*|wide_*)
+            "$EMIT" "$f" - --rewrite --target=apple-m > "$b.cpu.ll"
+            clang -O2 "$b.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu" 2>/dev/null
+            "$b.cpu" > "$b.expect" ;;
+        *) "$RUN" "$f" --budget 20000000000 > "$b.expect" ;;
+        esac
+    fi
     if [ ! -s "${b}_c.expect" ]; then
         "$EMIT" "$f" - --rewrite --contract --target=apple-m > "$b.cpu_c.ll"
         clang -O2 "$b.cpu_c.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu_c" 2>/dev/null
@@ -27,7 +38,7 @@ for f in "$OUT"/tiles/*.mapal; do
 done
 
 # emit_one <src.mapal> <out-stem> <profile> <sm> [emit flags...]: host object,
-# PTX, and the launch line (kernel gx gy block smem) the host call passes.
+# PTX, and the launch line (kernel gx gy block smem) of the first site.
 emit_one() {
     local src=$1 stem=$2 prof=$3 sm=$4; shift 4
     rm -f "$stem.dev.ll"
@@ -36,72 +47,81 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -o 'call void @mapal_gpu_tile(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
+    grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
         python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
         > "$stem.launch"
 }
 
+# same <stem> <stem>: the two emissions are one program (host, PTX, launch).
+same() {
+    local x
+    for x in host.ll ptx launch; do
+        if [ -f "$1.$x" ] || [ -f "$2.$x" ]; then cmp -s "$1.$x" "$2.$x" || return 1; fi
+    done
+}
+
 # arms <src> <base-stem> <prof> <sm> <face flags> -- <rung>...: for every rung,
-# the kernel with it forced off and forced on (S53). An arm whose kernel and
-# launch equal the shipped one is not an arm and is dropped, so what stays is
-# exactly the opposite of the profile's decision at that size.
+# the emission with it forced off and forced on (S53). An arm equal to the
+# shipped emission is not an arm and is dropped, so what stays is exactly the
+# opposite of the profile's decision at that size. A comma joins rungs (file
+# tag `+`).
 arms() {
     local src=$1 base=$2 prof=$3 sm=$4 flags=() s; shift 4
     while [ "$1" != -- ]; do flags+=("$1"); shift; done; shift
     for rung in "$@"; do
         for dir in off on; do
-            s="$base.$dir-$rung"
+            s="$base.$dir-${rung//,/+}"
             emit_one "$src" "$s" "$prof" "$sm" ${flags[@]+"${flags[@]}"} "--gpu-$dir=$rung"
-            if cmp -s "$s.ptx" "$base.ptx" && cmp -s "$s.launch" "$base.launch"; then rm -f "$s".*; fi
+            if same "$s" "$base"; then rm -f "$s".*; fi
         done
     done
 }
 
+KERNEL_RUNGS="interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs"
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
-        # S53: the differential runs both staging paths whatever the table
-        # ships at its sizes: register staging (async off) and cp.async.
-        case $b in mm_*|e2e_*) ;; *)
-            for arm in off-async on-async; do
-                emit_one "$f" "$d/$b.$arm" "$prof" "$sm" "--gpu-${arm/-/=}"
-                emit_one "$f" "$d/${b}_c.$arm" "$prof" "$sm" --contract "--gpu-${arm/-/=}"
-            done
-            ;;
-        esac
-        # Host-link arms (S53): the same PTX, the host object with one host rung
-        # off; the differential and the e2e wall-time A/B run them.
-        case $b in mm_*) ;; *)
-            for arm in off-eager-init; do
-                emit_one "$f" "$d/$b.$arm" "$prof" "$sm" "--gpu-${arm/-/=}"
-                emit_one "$f" "$d/${b}_c.$arm" "$prof" "$sm" --contract "--gpu-${arm/-/=}"
-            done
-            ;;
-        esac
-        # Measurement arms: the shipped kernel with one rung flipped, on the
-        # FMA face, the TF32 face (tensor cores) and the exact face.
-        case $b in mm_*)
+        case $b in
+        mm_[0-9]*)
+            # The kernel benches: every rung flipped on all three faces; arms
+            # at the four sizes the decisions cite, the shipped kernel at all.
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix warp-fill wgmma-hopper arch-rungs
-            arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
-                interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
-            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
-            ;;
+            case $b in mm_1536|mm_3072) ;; *)
+                arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- \
+                    wide ldmatrix warp-fill wgmma-hopper arch-rungs
+                arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
+                arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
+                ;;
+            esac ;;
+        *)
+            # Whole programs: both staging paths for the differential, and every
+            # host rung off for the differential and the e2e wall-time A/B.
+            for face in "" _c; do
+                flags=(); [ "$face" = _c ] && flags=(--contract)
+                arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
+                    async resident devgen eager-init retain-delta
+                # retain-delta's measured OFF arm: every site a round trip.
+                case $b in decode_*)
+                    emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
+                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident ;;
+                esac
+            done ;;
         esac
         # Earlier builds, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
-        # mm_*: the shipped kernel (a tile_bench arm). e2e_*: the whole program,
-        # host object included (box_profile.sh runs it next to this build's).
+        # mm_*: the shipped kernels (tile_bench arms). e2e_*: the whole program,
+        # host object included (box_run.sh times it next to this build's).
         for prev in ${PREV:-}; do
             tag=${prev%%=*}; from=${prev#*=}
             case $b in
             mm_*)
-                if [ -f "$from/$prof/${b}_c.ptx" ]; then
-                    cp "$from/$prof/${b}_c.ptx" "$d/${b}_c.$tag.ptx"
-                    cp "$from/$prof/${b}_c.launch" "$d/${b}_c.$tag.launch"
-                fi ;;
+                for v in "$b" "${b}_c" "${b}_tf"; do
+                    [ -f "$from/$prof/$v.ptx" ] || continue
+                    cp "$from/$prof/$v.ptx" "$d/$v.$tag.ptx"
+                    cp "$from/$prof/$v.launch" "$d/$v.$tag.launch"
+                done ;;
             e2e_*)
                 for v in "$b" "${b}_c"; do
                     [ -f "$from/$prof/$v.host.o" ] || continue
