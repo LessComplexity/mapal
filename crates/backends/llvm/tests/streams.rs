@@ -126,20 +126,28 @@ fn indep(n: u64) -> String {
     )
 }
 
-/// One output, two independent readers, joined per cell (`diamond`).
+/// `indep` without its join: both outputs read at the corners only, so both
+/// stay on the device (gen_tiles `twin`).
+fn twin(n: u64) -> String {
+    program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5), ("f", 3)],
+        &(site("c", "a", "b", n) + &site("d", "e", "f", n)),
+        &["c", "d"],
+    )
+}
+
+/// One output, two independent readers; device-only (corners).
 fn diamond(n: u64) -> String {
     program(
         n,
         &[("a", 7), ("b", 11), ("e", 5), ("g", 3)],
-        &(site("c", "a", "b", n)
-            + &site("d1", "c", "e", n)
-            + &site("d2", "c", "g", n)
-            + "    ta -> map { t -> d1[t] + d2[t] } -> h;\n"),
-        &["h"],
+        &(site("c", "a", "b", n) + &site("d1", "c", "e", n) + &site("d2", "c", "g", n)),
+        &["d1", "d2"],
     )
 }
 
-/// Two independent site → host map → site chains (`mlp2` without the bias).
+/// Two independent two-site chains, device-only (corners).
 fn mlp2(n: u64) -> String {
     program(
         n,
@@ -152,11 +160,9 @@ fn mlp2(n: u64) -> String {
             ("p", 17),
         ],
         &(site("c1", "a", "b", n)
-            + "    c1 -> map { v -> v * 0.5 } -> h1;\n"
-            + &site("d1", "h1", "e", n)
+            + &site("d1", "c1", "e", n)
             + &site("c2", "f", "g", n)
-            + "    c2 -> map { v -> v * 0.5 } -> h2;\n"
-            + &site("d2", "h2", "p", n)),
+            + &site("d2", "c2", "p", n)),
         &["d1", "d2"],
     )
 }
@@ -176,44 +182,38 @@ fn fanout(n: u64) -> String {
 const H100: &str = "h100-pcie";
 
 #[test]
-fn independent_sites_take_two_streams_and_copy_out_at_the_join() {
-    let ll = host(&indep(64), H100, on());
+fn independent_device_only_sites_take_two_streams() {
+    let ll = host(&twin(64), H100, on());
     let t = calls(&ll);
     let pos = |x: &str| {
         t.iter()
             .position(|c| c == x)
             .unwrap_or_else(|| panic!("{x} in {t:?}"))
     };
-    // Both launches before either copy-out: the second chain launches before
-    // the host waits for the first.
+    // Both launches before any copy-out, each corner on its producer's stream.
     assert!(pos("launchv 1") < pos("launchv 2"), "{t:?}");
-    assert!(
-        pos("launchv 2") < pos("d2h_on 1") && pos("d2h_on 1") < pos("d2h_on 2"),
-        "{t:?}"
-    );
+    assert!(pos("launchv 2") < pos("d2h_on 1"), "{t:?}");
+    assert_eq!(t.iter().filter(|c| *c == "d2h_on 1").count(), 2, "{t:?}");
+    assert_eq!(t.iter().filter(|c| *c == "d2h_on 2").count(), 2, "{t:?}");
     // The operands die at the sites; their frees wait for the last launch.
     let frees_before = t[..pos("launchv 2")]
         .iter()
         .filter(|c| *c == "free")
         .count();
     assert_eq!(frees_before, 0, "{t:?}");
-    assert!(
-        !t.contains(&"launch".to_owned()),
-        "every site on a chain: {t:?}"
-    );
-    assert!(
-        !t.iter().any(|c| c.starts_with("event")),
-        "no edge between the chains: {t:?}"
-    );
-    // The copy-outs sit right before the host join reads them.
-    let main = mapal_main(&ll);
-    let last_d2h = main.rfind("@mapal_gpu_d2h_on(").expect("d2h");
-    // The join's body takes `c` and `d` by pointer.
-    let join = main
-        .find("call float @fn")
-        .expect("the host join's body call");
-    assert!(last_d2h < join);
+    assert!(!t.contains(&"launch".to_owned()), "{t:?}");
+    assert!(!t.iter().any(|c| c.starts_with("event")), "{t:?}");
     assert_eq!(init_flags(&ll) & 2, 2, "the runtime creates the streams");
+}
+
+#[test]
+fn a_whole_copy_out_keeps_one_stream() {
+    // indep's join reads c and d whole on the host: the host is between the
+    // chains, so there is nothing to overlap (measured slower on five parts).
+    let ll = host(&indep(64), H100, on());
+    assert!(!ll.contains("@mapal_gpu_launchv("));
+    assert!(!ll.contains("@mapal_gpu_event("));
+    assert_eq!(init_flags(&ll) & 2, 0);
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn diamond_waits_on_its_join_edge_only() {
 }
 
 #[test]
-fn two_mlps_are_two_chains_with_no_edge() {
+fn two_chains_with_no_edge() {
     let t = calls(&host(&mlp2(64), H100, on()));
     let mut launches: Vec<&String> = t.iter().filter(|c| c.starts_with("launchv")).collect();
     launches.sort();
@@ -254,17 +254,17 @@ fn a_single_chain_keeps_one_stream() {
 
 #[test]
 fn a_filled_part_keeps_one_stream_unless_the_gate_is_off() {
-    // 1024² on the H100 PCIe: each grid's last wave is too full to share one.
-    let gated = host(&indep(1024), H100, on());
+    // 1024² on the H100 PCIe: the two grids do not fit one wave together.
+    let gated = host(&twin(1024), H100, on());
     assert!(!gated.contains("@mapal_gpu_launchv("));
-    let forced = host(&indep(1024), H100, off(&["stream-gate"]));
+    let forced = host(&twin(1024), H100, off(&["stream-gate"]));
     assert!(forced.contains("@mapal_gpu_launchv("));
 }
 
 #[test]
 fn every_off_arm_is_the_one_stream_pageable_text() {
     let all_off = off(&["streams", "pinned", "pdl"]);
-    for src in [indep(64), diamond(64), mlp2(64), fanout(64)] {
+    for src in [indep(64), twin(64), diamond(64), mlp2(64), fanout(64)] {
         let ll = host(&src, H100, all_off);
         for entry in ["launchv", "event", "d2h_on", "pin", "unpin"] {
             assert!(!ll.contains(&format!("@mapal_gpu_{entry}(")), "{entry}");
@@ -274,7 +274,7 @@ fn every_off_arm_is_the_one_stream_pageable_text() {
         assert!(!dev.contains("griddepcontrol"));
     }
     // Streams off alone: one stream; pins are a separate rung.
-    let ll = host(&indep(64), H100, off(&["streams"]));
+    let ll = host(&twin(64), H100, off(&["streams"]));
     assert!(!ll.contains("@mapal_gpu_launchv("));
     let ll = host(&relu_loop(64), H100, off(&["streams"]));
     assert!(ll.contains("@mapal_gpu_pin("));

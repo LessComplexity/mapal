@@ -90,9 +90,6 @@ pub(crate) struct ResidentPlan {
     /// S54 `streams` (R7): each straight-line device site's chain (its stream,
     /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
     pub chain: SecondaryMap<MorphismId, u32>,
-    /// A chained site's whole copy-out, moved from its launch to right before
-    /// its first host reader (output → reader).
-    pub d2h_at: SecondaryMap<ObjectId, MorphismId>,
 }
 
 impl ResidentPlan {
@@ -515,45 +512,26 @@ impl<'a> FnEmit<'a> {
         Some(plan)
     }
 
-    /// The morphisms that read `o`'s host copy (everything but a device site's
-    /// operand slot), through the pointer-only products that carry it.
-    fn host_readers(
-        &self,
-        sites: &SecondaryMap<MorphismId, TileSite>,
-        o: ObjectId,
-    ) -> Vec<MorphismId> {
-        let mut out = Vec::new();
-        for &m in self.ir.out_edges(o) {
-            let morph = self.ir.morphism(m).expect("morphism resolves");
-            match morph.op {
-                Operation::Pair { slot, .. }
-                    if self.pointer_only_array_component(morph.target, slot) =>
-                {
-                    for &m2 in self.ir.out_edges(morph.target) {
-                        if !matches!(self.slot_use(sites, m2, slot), Use::Dev | Use::None) {
-                            out.push(m2);
-                        }
-                    }
-                }
-                _ => out.push(m),
-            }
-        }
-        out
-    }
-
     /// **S54 R7: device sites on streams.** Straight-line device sites (a site
     /// in a loop or guard arm stays on the legacy stream) are covered by
     /// chains in topo order: a site continues the chain whose last site is one
     /// of its `PathPlan` ancestors, else opens one. Two chains are opened as
-    /// streams only when the grids can actually share the part — the **wave
-    /// rule** ([`waves_merge`]): two independent grids fit one wave together,
-    /// `b_a / w_a + b_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
-    /// its launch geometry). A filled part has nothing to overlap, and its text
-    /// stays the one-stream text. With streams open:
-    /// a chained output's whole copy-out moves to its first host reader (when
-    /// every reader is straight-line), so the next chain launches before the
-    /// host waits; and the frees between the first and last chained launch
-    /// (`cuMemFree` waits for the whole device) move after the last.
+    /// streams only when
+    /// - every one of these sites' outputs stays on the device (`keep`: read
+    ///   by device sites and one-element copies only). A whole copy-out puts
+    ///   the host between the chains: it waits for the transfer (at 512², five
+    ///   to ten times one kernel) before the next launch, and on the first two
+    ///   sessions every such program — indep, diamond, mlp2 at 512 with a host
+    ///   join — ran 2–20% slower on streams than on one, on five parts
+    ///   (`streams-<part>.txt`, `-confirm.txt`); and
+    /// - the grids can actually share the part — the **wave rule**
+    ///   ([`waves_merge`]): two independent grids fit one wave together,
+    ///   `b_a / w_a + b_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
+    ///   its launch geometry). A filled part has nothing to overlap.
+    ///
+    /// Otherwise the text stays the one-stream text. With streams open, the
+    /// frees between the first and last chained launch (`cuMemFree` waits for
+    /// the whole device) move after the last.
     fn chains(&self, sites: &SecondaryMap<MorphismId, TileSite>, plan: &mut ResidentPlan) {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
         let (Some(pp), true) = (self.path_plan, rungs.streams) else {
@@ -572,7 +550,11 @@ impl<'a> FnEmit<'a> {
             .filter_map(|m| Some((self.lup.position(m)?, m, task_of(m)?)))
             .collect();
         order.sort();
-        if order.len() < 2 {
+        let device_only = order.iter().all(|&(_, m, _)| {
+            plan.keep
+                .contains_key(self.ir.morphism(m).expect("site").target)
+        });
+        if order.len() < 2 || !device_only {
             return;
         }
         // Every task's ancestors (the deps, transitively).
@@ -640,20 +622,6 @@ impl<'a> FnEmit<'a> {
             plan.chain.insert(m, chain[i] as u32 + 1);
         }
         let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
-        for &(_, m, _) in &order {
-            let c = self.ir.morphism(m).expect("site").target;
-            if plan.keep.contains_key(c) {
-                continue;
-            }
-            let readers = self.host_readers(sites, c);
-            if !readers.is_empty() && readers.iter().all(|&r| line.contains_key(r)) {
-                let first = readers
-                    .into_iter()
-                    .min_by_key(|&r| pos(r))
-                    .expect("a reader");
-                plan.d2h_at.insert(c, first);
-            }
-        }
         let (lo, last) = (order[0].0, order[order.len() - 1].1);
         let moved: Vec<MorphismId> = plan
             .free_after
@@ -854,7 +822,7 @@ impl<'a> FnEmit<'a> {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
         let keep = plan.keep.contains_key(target) || plan.is_carry_next(target);
-        if !keep && !plan.d2h_at.contains_key(target) {
+        if !keep {
             let h = self.slot(target).expect("tile output slot");
             self.pin(ms, &h, o_bytes);
             self.d2h(s, &h, &dout, "0", o_bytes);
@@ -909,27 +877,6 @@ impl<'a> FnEmit<'a> {
             let c = self.ir.morphism(m).expect("site").target;
             let bytes = self.array_bytes(&self.obj_ty(c));
             self.dalloc(c, bytes);
-        }
-    }
-
-    /// Before `m`: the chained outputs whose first host reader is `m` are
-    /// copied out (`d2h_at`).
-    pub(super) fn resident_before(&mut self, m: MorphismId) {
-        let Some(plan) = &self.resident else {
-            return;
-        };
-        let outs: Vec<ObjectId> = plan
-            .d2h_at
-            .iter()
-            .filter(|&(_, &r)| r == m)
-            .map(|(o, _)| o)
-            .collect();
-        for o in outs {
-            let s = self.resident.as_ref().expect("plan").stream_of(self.ir, o);
-            let bytes = self.array_bytes(&self.obj_ty(o));
-            let h = self.slot(o).expect("tile output slot");
-            let d = self.dload(o);
-            self.d2h(s, &h, &d, "0", bytes);
         }
     }
 
