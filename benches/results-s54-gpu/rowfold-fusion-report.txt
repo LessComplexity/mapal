@@ -3,7 +3,7 @@
 # every gen_tiles program, five profiles, every face); AFTER = shipped (rowfold + rowfold-layout ON).
 
 ## BEFORE
-S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=rowfold (face exact), HEAD dca9958
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=rowfold (face exact), HEAD 90e3254
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
@@ -26,7 +26,7 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 |
 | decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 |
 
-S54 static fusion report — emit --rewrite --target=rtx-4090 --contract --gpu-off=rowfold (face contract), HEAD dca9958
+S54 static fusion report — emit --rewrite --target=rtx-4090 --contract --gpu-off=rowfold (face contract), HEAD 90e3254
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
@@ -50,7 +50,7 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 |
 
 ## AFTER
-S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD dca9958
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 90e3254
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
@@ -73,7 +73,7 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 |
 | decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 |
 
-S54 static fusion report — emit --rewrite --target=rtx-4090 --contract (face contract), HEAD dca9958
+S54 static fusion report — emit --rewrite --target=rtx-4090 --contract (face contract), HEAD 90e3254
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
@@ -97,7 +97,7 @@ Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites
 | decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 |
 
 ## AFTER with --gpu-off=rowfold-layout (the store-order arm: the same transfers, c row-major)
-S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=rowfold-layout (face exact), HEAD dca9958
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=rowfold-layout (face exact), HEAD 90e3254
 Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
 
 | program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |

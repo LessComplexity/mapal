@@ -131,16 +131,17 @@ pub struct GpuRungs {
     /// S54 R0 for folds (`func/rowfold.rs`): a row-local in-order fold whose
     /// read array a device site produced runs on the device, one thread per
     /// row. Off: the host fold behind the output's whole copy-out. Ships ON on
-    /// every measured part: `rowfold-<part>.txt` rowsum 2.2–9.2× and
-    /// softmax_rows 1.02–1.31× the OFF arm's own clock, two sessions each.
+    /// every measured part: `rowfold-<part>.txt` rowsum 2.3–9.9× and
+    /// softmax_rows 1.0–1.3× the OFF arm's own clock, two sessions each.
     pub rowfold: bool,
     /// Under `rowfold`, when the fold is the producing site's only reader, the
     /// site stores its output in the order the fold reads it (column-major),
     /// so a warp's reads coalesce. Off: row-major store, strided fold reads.
     /// Measured mostly no gain: the strided fold costs 0.01–0.1 ms at 4096
     /// (L1 serves each sector to the next steps) and the column-major store
-    /// costs the FMA tile 0–4% (GDDR parts) to 8–22% (H100) — OFF rows in
-    /// [`crate::profile::GPU_RUNGS_OFF`].
+    /// costs the FMA tile 0–6% (GDDR parts) to 7–22% (H100). Ships ON only on
+    /// the 4090's contract face and the A100's exact face (1–2% of device
+    /// time); OFF rows in [`crate::profile::GPU_RUNGS_OFF`] elsewhere.
     pub rowfold_layout: bool,
 }
 
