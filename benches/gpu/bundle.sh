@@ -7,6 +7,8 @@
 #   e.g. rtx-4090:sm_89 h100-pcie:sm_90a rtx-5090:sm_120 rtx-3090:sm_86 a100:sm_80
 # ONLY="<glob>..." builds only the programs whose stem matches one of the globs
 # (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
+# NOARMS="<glob>..." builds those whole programs shipped only (both faces, no rung
+# arms): the regression programs an item's rungs leave byte-identical.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -16,14 +18,18 @@ RUN="$ROOT/target/release/examples/run"
 mkdir -p "$OUT/tiles"
 python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
 read -r -a ONLY_GLOBS <<< "${ONLY:-}"
-keep() {
-    [ ${#ONLY_GLOBS[@]} -eq 0 ] && return 0
-    local g
-    for g in "${ONLY_GLOBS[@]}"; do
+read -r -a NOARMS_GLOBS <<< "${NOARMS:-}"
+matches() { # <stem> <glob>...
+    local s=$1 g; shift
+    for g in "$@"; do
         # shellcheck disable=SC2254  # the glob is the point
-        case $1 in $g) return 0 ;; esac
+        case $s in $g) return 0 ;; esac
     done
     return 1
+}
+keep() {
+    [ ${#ONLY_GLOBS[@]} -eq 0 ] && return 0
+    matches "$1" "${ONLY_GLOBS[@]}"
 }
 
 # The oracle: the interpreter on the conformance face; the CPU build on the
@@ -115,6 +121,7 @@ for spec in "$@"; do
         *)
             # Whole programs: both staging paths for the differential, and every
             # host rung off for the differential and the e2e wall-time A/B.
+            [ ${#NOARMS_GLOBS[@]} -gt 0 ] && matches "$b" "${NOARMS_GLOBS[@]}" && continue
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
