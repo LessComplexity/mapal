@@ -134,6 +134,17 @@ pub struct GpuRungs {
     /// copy-out, and no store of the site's output when nothing else reads it
     /// (`func/resident.rs:epilogues`). Off: the morphism runs on the host
     /// behind the site's copy-out (S53).
+    ///
+    /// Ships ON on every measured part, so it has no `GPU_RUNGS_OFF` row. On
+    /// the nine probes it touches (epi, bias, residual, mlp, mlp2, indep,
+    /// diamond, fanout, loop) at n = 2048 and 4096, both faces, the OFF arm's
+    /// median clock was 1.55–3.24× ON's on the RTX 3090, 1.20–4.72× on the
+    /// A100, 1.73–4.85× on the RTX 4090, 1.69–7.00× on the RTX 5090 and on
+    /// the H100 PCIe 1.44–3.84× and 1.10–20.44× on two boxes. One H100 row
+    /// read 0.26 because of host stalls in three of its five ON reps; its
+    /// minima give 2.38. Every ratio of minima is at least 1.29, and the
+    /// printed values are identical (`benches/results-s54-gpu/epilogue-*.txt`,
+    /// `epilogue-tables.md`). Only the filled class (n ≥ 2048) was measured.
     pub epilogue: bool,
 }
 
