@@ -4,7 +4,7 @@ face, and count, per program, where the work lands — from the emitted host and
 device IR alone (no GPU needed):
 
   tile / gen kernels  `define ptx_kernel` in the device module (`mapal_tile_*`, `mapal_gen_*`)
-  launches, gens      host call sites of `mapal_gpu_launch` / `mapal_gpu_tile`, `mapal_gpu_gen`
+  launches, gens      host call sites of `mapal_gpu_launch[v]` / `mapal_gpu_tile`, `mapal_gpu_gen`
   h2d, d2h            host call sites and their constant byte counts (`mapal_gpu_tile`, the
                       S52 round trip, counts as two copies in and one out)
   L2 windows          launches with an L2 access-policy window (`mapal_gpu_launch_l2`, S54)
@@ -22,7 +22,7 @@ EMIT_FLAGS="--gpu-off=<rung>" adds emit flags (an OFF arm's report).
 Counts are static: a call inside a host loop (a program `loop`) counts once and
 is flagged `L`.
 
-usage: fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
+usage: [FLAGS="<emit flags>"] fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
        fusion_report.py --selftest
 """
 import fnmatch
@@ -108,7 +108,7 @@ def analyze(host, dev, n):
                 if not m:
                     continue
                 op, args = m[1], [a.split()[-1] for a in m[2].split(",") if a.strip()]
-                if op in ("launch", "launch_l2", "tile"):
+                if op in ("launch", "launch_l2", "launchv", "tile"):
                     r["launch"] += 1
                     r["launch_l"] += in_loop(i)
                 r["l2win"] += op == "launch_l2"
@@ -157,7 +157,8 @@ def report(profile, face, n, globs):
     if globs:
         stems = [s for s in sorted(p.stem for p in tiles.glob("*.mapal")) if any(fnmatch.fnmatch(s, g) for g in globs)]
     flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
-    flags += os.environ.get("EMIT_FLAGS", "").split()  # an OFF arm's report: EMIT_FLAGS=--gpu-off=<rung>
+    # A rung's OFF arm: EMIT_FLAGS=--gpu-off=<rung> (FLAGS, the epilogue item's spelling, too).
+    flags += (os.environ.get("EMIT_FLAGS", "") + " " + os.environ.get("FLAGS", "")).split()
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     print(f"S54 static fusion report — {EMIT.name} ({EMIT.parent.parent.parent.name}) --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")

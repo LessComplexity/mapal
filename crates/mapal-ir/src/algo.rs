@@ -357,6 +357,47 @@ pub struct MovePlan {
     pub sites: SecondaryMap<MorphismId, MoveSite>,
 }
 
+/// **Which cells of one array a per-cell morphism's cell `t` reads** (S54).
+///
+/// The read footprint existed in pieces (`TileRead` for a fold's operands,
+/// `MoveSite` for a permutation) and nowhere whole for the per-cell maps a
+/// backend wants to place next to their producer: a cell that reads only
+/// `x[t]` can run where `x[t]` is computed, and one that reads `x[t ÷ c]` can
+/// run anywhere `x` is complete. Geometry only (ADR-0032).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Footprint {
+    /// `x[t]`.
+    Same,
+    /// `x[t ÷ c]` — one cell per row of `c` cells (a per-row scale).
+    Row { c: u64 },
+    /// `x[t % c]` — one cell per column (a bias).
+    Col { c: u64 },
+    /// `x[k]`, one fixed cell.
+    Const(u64),
+    /// Any other address (data-dependent, or not one of the above forms).
+    Other,
+}
+
+/// One read of a per-cell morphism: slot `slot` of the map's source product
+/// (for a capture-free map, slot 0 is the mapped array itself), at `foot`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellRead {
+    pub slot: u32,
+    pub foot: Footprint,
+}
+
+/// A `Map` whose cell `t` is a clean leaf function of a fixed set of input
+/// cells (S54): `out[t] = body(x₁[f₁(t)], …)`. `reads` lists every array read
+/// the body makes, the mapped element included unless it is the index itself
+/// (an `iota`); a scalar capture makes the morphism no `CellSite`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CellSite {
+    /// The number of cells, `len(out)`.
+    pub extent: u64,
+    pub reads: Vec<CellRead>,
+    pub body: FuncId,
+}
+
 /// Everything a backend needs to emit one recognized tiled map site.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TileSite {
@@ -1205,6 +1246,116 @@ impl CategoryIr {
             }
             _ => None,
         }
+    }
+
+    /// **The per-cell morphisms of `f` and what each cell reads** (S54,
+    /// [`CellSite`]). A `Map` is one when its body is classifiable (trap-,
+    /// loop- and effect-free: [`Self::body_is_classifiable`]), calls no
+    /// function and holds no nested `Map`/`Fold` (a cell is one leaf
+    /// evaluation), every `Index` in it is proven and reads a captured array,
+    /// and every capture is an array. Each `Index` address is classified over
+    /// the map index `t` — which exists only when the mapped array is an
+    /// `iota`; over any other mapped array the element is a value and an
+    /// address built from it is [`Footprint::Other`].
+    pub fn cell_plan(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
+        let mut out = SecondaryMap::new();
+        let Some(fd) = self.func(f) else {
+            return out;
+        };
+        for &m in &fd.morphisms {
+            if let Some(site) = self.cell_site(m) {
+                out.insert(m, site);
+            }
+        }
+        out
+    }
+
+    fn cell_site(&self, m: MorphismId) -> Option<CellSite> {
+        let map = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        let mapped = if captures == 0 {
+            map.source
+        } else {
+            self.pair_slot_source(map.source, captures)?
+        };
+        let Ty::Array { size: extent, .. } = self.objects.get(map.target)?.ty else {
+            return None;
+        };
+        let bd = self.func(body)?;
+        let leaf = bd.morphisms.iter().all(|&g| {
+            !matches!(
+                self.morphisms.get(g).map(|x| x.op),
+                Some(Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. }) | None
+            )
+        });
+        if !leaf || !self.body_is_classifiable(body) {
+            return None;
+        }
+        if (0..captures).any(|s| {
+            !self
+                .pair_slot_source(map.source, s)
+                .and_then(|o| self.objects.get(o))
+                .is_some_and(|o| matches!(o.ty, Ty::Array { .. }))
+        }) {
+            return None;
+        }
+        // The mapped element: the index itself over an `iota`, else a read.
+        let index = self.tile_iota_size(mapped) == Some(extent);
+        let mut reads = Vec::new();
+        if !index {
+            reads.push(CellRead {
+                slot: captures,
+                foot: Footprint::Same,
+            });
+        }
+        for &g in &bd.morphisms {
+            let x = self.morphisms.get(g)?;
+            if x.op != Operation::Index {
+                continue;
+            }
+            let arr = self.pair_slot_source(x.source, 0)?;
+            let slot = self
+                .tile_input_proj_index(arr, bd.input)
+                .filter(|&s| s < captures)?;
+            let addr = self.pair_slot_source(x.source, 1)?;
+            let foot = if index {
+                self.cell_footprint(addr, bd.input, captures)
+            } else {
+                Footprint::Other
+            };
+            reads.push(CellRead { slot, foot });
+        }
+        Some(CellSite {
+            extent,
+            reads,
+            body,
+        })
+    }
+
+    /// `addr` over the map index `t` (`Proj{captures}` of the body input):
+    /// `t`, `t ÷ c`, `t % c` (literal `c`), a literal, or anything else.
+    fn cell_footprint(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Footprint {
+        if self.tile_input_proj_index(addr, input) == Some(captures) {
+            return Footprint::Same;
+        }
+        if let Some(k) = self.tile_literal_u64(addr) {
+            return Footprint::Const(k);
+        }
+        let split = |op| {
+            let [g] = self.in_edges(addr) else {
+                return None;
+            };
+            self.tile_split(*g, input, captures, op).map(|(_, c)| c)
+        };
+        if let Some(c) = split(Operation::Div) {
+            return Footprint::Row { c };
+        }
+        if let Some(c) = split(Operation::Mod) {
+            return Footprint::Col { c };
+        }
+        Footprint::Other
     }
 
     fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {

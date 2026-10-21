@@ -69,8 +69,9 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
-        python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
+    # (A program whose every site has an epilogue launches only `launchv`: no line.)
+    { grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -1 |
+        python3 -c 'import sys,re; s=sys.stdin.read(); m=re.search(r"i64 (-?\d+)",s); n=re.findall(r"i32 (\d+)",s); m and print(f"mapal_tile_{int(m.group(1)) & (2**64-1):016x}", *n)' \
         > "$stem.launch"
 }
 
@@ -103,7 +104,7 @@ arms() {
 # (e.g. KERNEL_RUNGS="raster l2-gate" TF32_RUNGS="raster l2-gate" HOST_RUNGS="l2-window raster").
 KERNEL_RUNGS=${KERNEL_RUNGS:-"interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs raster l2-gate"}
 TF32_RUNGS=${TF32_RUNGS:-"mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs raster l2-gate"}
-HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta arena arch-rungs l2-window raster retain-resident delta-h2d lane-stride rowfold rowfold-layout"}
+HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta arena arch-rungs l2-window raster retain-resident delta-h2d lane-stride rowfold rowfold-layout epilogue"}
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
@@ -144,7 +145,16 @@ for spec in "$@"; do
                     emit_one "$f" "$d/$b$face.off-retain-resident+delta-h2d+lane-stride" "$prof" "$sm" \
                         ${flags[@]+"${flags[@]}"} --gpu-off=retain-resident,delta-h2d,lane-stride ;;
                 esac
-            done ;;
+            done
+            # S54 `epilogue` on the TF32 face (mma.sync, wgmma): no oracle there (a
+            # bound), so the ON arm answers to the OFF arm, bit for bit — the same
+            # body over the same accumulators. Programs without a group drop both.
+            case $b in px_*)
+                emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
+                emit_one "$f" "$d/${b}_tf.off-epilogue" "$prof" "$sm" --contract --precision=tf32 \
+                    --gpu-off=epilogue
+                if same "$d/${b}_tf.off-epilogue" "$d/${b}_tf"; then rm -f "$d/${b}_tf".*; fi ;;
+            esac ;;
         esac
         # Earlier builds, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
         # mm_*: the shipped kernels (tile_bench arms). e2e_*: the whole program,

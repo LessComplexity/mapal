@@ -75,6 +75,8 @@ impl<'a> FnEmit<'a> {
             retain: SecondaryMap::new(),
             retain_flags: SecondaryMap::new(),
             row_bounds: None,
+            groups: SecondaryMap::new(),
+            cell_slots: Vec::new(),
         }
     }
 
@@ -89,11 +91,14 @@ impl<'a> FnEmit<'a> {
         // A function with a retained site stays resident under
         // `retain-resident` (the retained output is its resident buffer);
         // without it, it keeps the S52 round trips `retain-delta` measured on.
-        self.resident = (rungs.resident
+        let resident = rungs.resident
             && self.profile.gpu().is_some()
-            && (self.retain.is_empty() || rungs.retain_resident))
-            .then(|| self.resident_plan(rungs))
-            .flatten();
+            && (self.retain.is_empty() || rungs.retain_resident);
+        // S54 `epilogue`: the per-cell groups, before the plan that reads them.
+        if resident {
+            self.groups = self.epilogues();
+        }
+        self.resident = resident.then(|| self.resident_plan(rungs)).flatten();
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.
         if let Some(p) = &self.resident {

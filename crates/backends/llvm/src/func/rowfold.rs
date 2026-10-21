@@ -130,7 +130,7 @@ impl<'a> FnEmit<'a> {
         let (source, target) = (morph.source, morph.target);
         let id = gpu::rowfold_id(&r.site, self.profile) as i64;
         let (blocks, threads) = gpu::rowfold_grid(&r.site, self.profile);
-        self.emit_site_resident(source, target, &[r.site.a.slot], |ops, o| {
+        self.emit_site_resident(source, target, &[r.site.a.slot], None, |ops, o| {
             let a = &ops[0];
             format!(
                 "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {a}, i64 {o}, \
