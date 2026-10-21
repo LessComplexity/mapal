@@ -367,10 +367,19 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         profile: "h100-pcie",
         rung: "affine",
         fill: Fill::Any,
-        face: Face::Any,
+        face: Face::Exact,
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; _c n=1024 on 0.131 vs off 0.127 ms; \
-               integrated-h100-pcie.txt _c n=2048/4096/8192 on 0.656/3.950/36.832 vs off 0.632/3.793/36.889 ms",
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; integrated-h100-pcie-confirm.txt _exact \
+               n=2048/4096/8192 off 1.08x/1.20x/1.23x faster than on",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms; integrated-h100-pcie.txt \
+               _c n=1024 on 0.921x of off; kept filled with min-blocks off (integrated-h100-pcie-confirm.txt _c \
+               n=2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms)",
     },
     RungOff {
         profile: "h100-pcie",
