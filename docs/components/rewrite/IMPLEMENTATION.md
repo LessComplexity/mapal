@@ -16,12 +16,13 @@
 | `ReplayError` | sum (NonCanonicalLoop) | `src/replay.rs:ReplayError` | built |
 | `NaturalityLaw` / `NATURALITY_LAWS` | layer-2 rule table, data only, all `Planned` | `src/naturality.rs` | built (no pass) |
 | `INLINE_MAX_BODY` | ℕ policy constant (256 — S27, was 64; recorded, perf-tunable, never semantics-bearing) | `src/inline.rs:INLINE_MAX_BODY` | built |
+| Guard-owned target set (S55) | derived `ObjectId → ()` membership over gated `GuardSite` arm ownership and owned loop decide/advance/exit targets; no stored ownership model | `src/equations.rs:analyze_const_fold` (`guarded_work`), from `mapal_ir::CategoryIr::{guard_plan,loop_plan}` | built |
 
 ## Morphisms / passes (Trn) → code
 
 | Pass | Signature | Realized at | State |
 | --- | --- | --- | --- |
-| `analyze_const_fold` | `&CategoryIr → RewritePlan` (layer 3: oracle-exact folds, integer/bool identities, proj∘pack, index-of-const, **index∘update L-a (ADR-0021 §3: const equal in-bounds indices ⇒ alias to the Update value operand)**, phi-select; P1/P2 + token guard in `forward`) | `src/equations.rs:analyze_const_fold` | built |
+| `analyze_const_fold` | `&CategoryIr → RewritePlan` (layer 3: oracle-exact folds, integer/bool identities, proj∘pack, index-of-const, **index∘update L-a (ADR-0021 §3: const equal in-bounds indices ⇒ alias to the Update value operand)**, phi-select; P1/P2 + token guard in `forward`; **S55: excludes targets owned by gated `GuardSite` arms, derived from `CategoryIr::guard_plan` plus owned loop driver cones from `CategoryIr::loop_plan`, so folding/forwarding cannot detach guarded trap or loop dependencies**) | `src/equations.rs:analyze_const_fold` | built |
 | `analyze_cse` | `&CategoryIr → RewritePlan` (layer 4: value numbering, BTreeMap string keys, positions not id bits; excludes non-Temporary/token/SCC/internal-pack; **no constant dedup** — P1, headroom) | `src/graph_rewrites.rs:analyze_cse` | built |
 | `analyze_dce` | `&CategoryIr → RewritePlan` (layer 4: backward liveness from keep-roots {Returns, SCC objects (RW11), non-pure results (R4), LoopExit targets}; pure-only removal — conservative as-built) | `src/graph_rewrites.rs:analyze_dce` | built |
 | `analyze_map_fusion` | `&CategoryIr → RewritePlan` (layer 1: out-degree-1 Map∘Map with loop-free + single-full-writer bodies (P3); map(id) → alias under P1/P2. **S34: `is_identity_body` quantifies over the body's WHOLE morphism set** — Return writer `Output(param)` *and* every other owned morphism `Output`/`Pair`/`is_pure`; a body that also traps denotes `id ∘ trap : A ⇀ A`, not `id_A`) | `src/functor_laws.rs:{analyze_map_fusion,is_identity_body}` | built |
