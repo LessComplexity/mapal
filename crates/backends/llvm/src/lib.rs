@@ -95,6 +95,17 @@ pub struct GpuRungs {
     /// Shrink the register / warp tile until the grid gives every warp
     /// scheduler two warps (`warp-fill`, S53); OFF = blocks ≥ SMs only.
     pub fill: bool,
+    /// S53 `fma-regs` (four rungs, FMA and one-thread-per-cell kernels):
+    /// index arithmetic in `i32` when every index the kernel forms fits.
+    pub idx32: bool,
+    /// Panel copy `p` addressed as copy 0 plus a constant from the lane
+    /// map's period: one base register per operand.
+    pub affine: bool,
+    /// Register-staged transposed-A store: the lane map and row pad under
+    /// which one warp's stores hit 32 banks.
+    pub pad: bool,
+    /// FMA register tile from the whole-thread register count (8×16).
+    pub wide_fma: bool,
 }
 
 impl GpuRungs {
@@ -111,11 +122,15 @@ impl GpuRungs {
         wide: true,
         ldmatrix: true,
         fill: true,
+        idx32: true,
+        affine: true,
+        pad: true,
+        wide_fma: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 11] = [
+    pub const NAMES: [&'static str; 15] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -127,6 +142,10 @@ impl GpuRungs {
         "wide",
         "ldmatrix",
         "warp-fill",
+        "idx32",
+        "affine",
+        "pad",
+        "wide-fma",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -143,6 +162,10 @@ impl GpuRungs {
             "wide" => &mut self.wide,
             "ldmatrix" => &mut self.ldmatrix,
             "warp-fill" => &mut self.fill,
+            "idx32" => &mut self.idx32,
+            "affine" => &mut self.affine,
+            "pad" => &mut self.pad,
+            "wide-fma" => &mut self.wide_fma,
             _ => return None,
         })
     }

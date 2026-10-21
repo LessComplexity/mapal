@@ -110,7 +110,7 @@ pub(crate) fn launch(
     // The fill key reads the S52 geometry (no S53 geometry rung): the table's
     // rows were measured on grids classified by it.
     let base = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false))
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false, false))
         .flatten();
     let (blocks, threads) = match base {
         Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
@@ -144,17 +144,39 @@ pub(crate) fn launch(
         };
     }
     let tiled = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, rungs.fill))
+        .then(|| {
+            profile.gpu_tile(
+                site.rows,
+                site.c,
+                site.k,
+                &site.elem,
+                rungs.wide_fma,
+                rungs.fill,
+            )
+        })
         .flatten()
         .map(|g| {
             let streamed = rungs
                 .cp_async
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
                 .flatten();
-            match streamed {
-                Some(a) => a,
-                None if rungs.prefetch => prefetch_depth(g, e),
-                None => g,
+            if let Some(a) = streamed {
+                return a;
+            }
+            // Register staging: the prefetch panel takes what a whole-file tile
+            // leaves of the file (`wide-fma`), else one fragment pair's worth.
+            let g = match rungs.prefetch {
+                true if g.held > 0 => {
+                    let gpu = profile.gpu().expect("gpu");
+                    prefetch_depth(g, e, gpu.regs_per_thread.saturating_sub(g.held))
+                }
+                true => prefetch_depth(g, e, g.tm + g.tn),
+                false => g,
+            };
+            if rungs.pad && vector_a(site) {
+                profile.gpu_tile_sync_a(g, &site.elem)
+            } else {
+                g
             }
         });
     match tiled {
@@ -181,11 +203,12 @@ pub(crate) fn launch(
 
 /// The prefetch rung holds the next panel in registers while the current one
 /// is computed, so its depth is bounded by registers, not shared memory: one
-/// panel's elements per thread, `(bm + bn)·bk / threads`, may take at most one
-/// fragment pair's worth (`tm + tn`) — the budget the register tile already
-/// spends on operands. Halve `bk` until it fits; a halved power of two still
-/// divides `k` and still loads in whole vectors per thread.
-fn prefetch_depth(g: GpuTile, elem_bytes: u64) -> GpuTile {
+/// panel's elements per thread, `(bm + bn)·bk / threads`, may take at most
+/// `budget` registers — one fragment pair's worth (`tm + tn`, S52), or what
+/// the register tile leaves of the file (`wide-fma`, S53). Halve `bk` until it
+/// fits; a halved power of two still divides `k` and still loads in whole
+/// vectors per thread.
+fn prefetch_depth(g: GpuTile, elem_bytes: u64, budget: u64) -> GpuTile {
     let lanes = GPU_VEC_BYTES / elem_bytes;
     let regs = |bk: u64| (g.bm() + g.bn()) * bk * elem_bytes.div_ceil(4) / g.threads();
     let whole = |bk: u64| {
@@ -193,7 +216,7 @@ fn prefetch_depth(g: GpuTile, elem_bytes: u64) -> GpuTile {
             && (bk * g.bn() / lanes).is_multiple_of(g.threads())
     };
     let mut bk = g.bk;
-    while regs(bk) > g.tm + g.tn && bk / 2 >= lanes && whole(bk / 2) {
+    while regs(bk) > budget && bk / 2 >= lanes && whole(bk / 2) {
         bk /= 2;
     }
     GpuTile { bk, ..g }
@@ -294,9 +317,16 @@ fn kernel_text(
     reduced: Option<Reduced>,
 ) -> String {
     let l = launch(site, profile, contract, arms, reduced);
+    let rungs = l.rungs;
+    let idx = if rungs.idx32 && l.mma.is_none() && max_index(site, &l) < 1 << 31 {
+        "i32"
+    } else {
+        "i64"
+    };
     let mut k = Kernel {
         out: String::new(),
         next: 0,
+        idx,
         t: lower_ty(&site.elem).expect("float elem lowers"),
         site,
         contract,
@@ -313,12 +343,181 @@ fn kernel_text(
     k.out
 }
 
+/// The largest index a kernel forms (S53 rung `idx32`): each operand's last
+/// element — `base + ci·(rows−1) + clane·(c−1) + ck·(k−1)`, site extents —
+/// every cell a launched thread can name (the one-thread-per-cell grid rounds
+/// up to whole blocks), and `k`. Every intermediate of the index arithmetic is
+/// a partial sum of one of these, so below 2³¹ the kernel indexes in `i32`
+/// with `nuw nsw`; pointers stay 64-bit.
+fn max_index(site: &TileSite, l: &Launch) -> u64 {
+    let last = |r: &mapal_ir::TileRead| {
+        r.base + r.ci * (site.rows - 1) + r.clane * (site.c - 1) + r.ck * (site.k - 1)
+    };
+    let cells = (site.rows * site.c).max(l.gx * l.gy * l.block);
+    last(&site.a).max(last(&site.b)).max(cells).max(site.k)
+}
+
+/// The integer arithmetic a panel lane map is written in, so one definition
+/// both emits the kernel's index IR ([`Kernel`]) and evaluates on numbers
+/// ([`Num`]) — the evaluation is what proves a copy affine ([`affine_delta`]).
+trait Arith {
+    type V: Clone;
+    fn imm(&mut self, code: &str, a: &Self::V, c: u64) -> Self::V;
+    fn sum(&mut self, a: &Self::V, b: &Self::V) -> Self::V;
+}
+
+struct Num;
+
+impl Arith for Num {
+    type V = u64;
+    fn imm(&mut self, code: &str, a: &u64, c: u64) -> u64 {
+        match code {
+            "add" => a + c,
+            "mul" => a * c,
+            "udiv" => a / c,
+            "urem" => a % c,
+            _ => unreachable!("lane maps use add/mul/udiv/urem"),
+        }
+    }
+    fn sum(&mut self, a: &u64, b: &u64) -> u64 {
+        a + b
+    }
+}
+
+impl Arith for Kernel<'_> {
+    type V = String;
+    fn imm(&mut self, code: &str, a: &String, c: u64) -> String {
+        self.op(code, a, c)
+    }
+    fn sum(&mut self, a: &String, b: &String) -> String {
+        self.op("add", a, b)
+    }
+}
+
+/// Where linear copy `li` (`tid + p·threads`) of a staged panel lands, as
+/// (panel row, panel column): `a` → (`m`, `k`), `b` → (`k`, `n`).
+#[derive(Clone, Copy, Debug)]
+enum LaneMap {
+    /// `per_row` consecutive copies along a row, `unit` elements each.
+    RowMajor { per_row: u64, unit: u64 },
+    /// Consecutive copies down a `rows`-long column (`a` column-major).
+    ColMajor { rows: u64 },
+    /// `l` copies along a row, then down `rows` rows, then the next `l·unit`
+    /// columns: the `cp.async` element copy (`l = lanes`, `unit` 1) and the
+    /// `pad` rung's vector copy (`l` from [`TargetProfile::gpu_tile_sync_a`]).
+    Split { l: u64, rows: u64, unit: u64 },
+}
+
+impl LaneMap {
+    fn coords<A: Arith>(self, ar: &mut A, li: &A::V) -> (A::V, A::V) {
+        let scaled = |ar: &mut A, v: A::V, unit: u64| {
+            if unit == 1 {
+                v
+            } else {
+                ar.imm("mul", &v, unit)
+            }
+        };
+        match self {
+            LaneMap::RowMajor { per_row, unit } => {
+                let r = ar.imm("udiv", li, per_row);
+                let c = ar.imm("urem", li, per_row);
+                (r, scaled(ar, c, unit))
+            }
+            LaneMap::ColMajor { rows } => {
+                let c = ar.imm("udiv", li, rows);
+                (ar.imm("urem", li, rows), c)
+            }
+            LaneMap::Split { l, rows, unit } => {
+                let lo = ar.imm("urem", li, l);
+                let q = ar.imm("udiv", li, l);
+                let r = ar.imm("urem", &q, rows);
+                let hi = ar.imm("udiv", &q, rows);
+                let hi = ar.imm("mul", &hi, l);
+                let c = ar.sum(&hi, &lo);
+                (r, scaled(ar, c, unit))
+            }
+        }
+    }
+}
+
+/// S53 rung `affine`: copy `p` is copy 0 moved by a constant when the lane map
+/// is periodic in `threads` — `map(tid + p·threads) = map(tid) + map(p·threads)`
+/// for every `tid` (`map(0) = (0, 0)`). With power-of-two extents it is
+/// (`Q = threads / l`: `Q | rows` or `rows | Q`); it is checked here for every
+/// thread rather than assumed, and a copy that fails keeps its own
+/// `udiv`/`urem` chain.
+fn affine_delta(map: LaneMap, threads: u64, p: u64) -> Option<(u64, u64)> {
+    let at = |li: u64| map.coords(&mut Num, &li);
+    let d = at(p * threads);
+    (0..threads)
+        .all(|t| {
+            let (r, c) = at(t);
+            at(t + p * threads) == (r + d.0, c + d.1)
+        })
+        .then_some(d)
+}
+
+/// The tiled kernel's two staged copies, `[a, b]`, each as (lane map, copies
+/// per thread per panel). A vector operand moves `lanes` elements along its
+/// fast axis per copy; a strided one moves one element, consecutive threads
+/// taking consecutive panel rows/lanes. Async staging copies `a` element by
+/// element (its panel is transposed in shared memory, which a 16-byte copy
+/// cannot do): `lanes` lanes along `k` within one row, then rows — four lanes
+/// read one 16-byte global run, a warp covers 8 rows, and `pad_a` keeps those
+/// 32 writes on 32 banks. Register staging under `pad`: `a_row_lanes` per row.
+fn lane_maps(s: &TileSite, g: &GpuTile) -> [(LaneMap, u64); 2] {
+    let e = elem_bytes_of(&s.elem);
+    let lanes = GPU_VEC_BYTES / e;
+    let (bm, bn, bk, threads) = (g.bm(), g.bn(), g.bk, g.threads());
+    let (kv, nv) = (bk / lanes, bn / lanes);
+    let streamed = g.stages >= 2;
+    let a = if streamed {
+        let map = LaneMap::Split {
+            l: lanes,
+            rows: bm,
+            unit: 1,
+        };
+        (map, bm * bk / threads)
+    } else if !vector_a(s) {
+        (LaneMap::ColMajor { rows: bm }, bm * bk / threads)
+    } else if g.a_row_lanes > 0 && g.a_row_lanes < kv {
+        let map = LaneMap::Split {
+            l: g.a_row_lanes,
+            rows: bm,
+            unit: lanes,
+        };
+        (map, bm * kv / threads)
+    } else {
+        let map = LaneMap::RowMajor {
+            per_row: kv,
+            unit: lanes,
+        };
+        (map, bm * kv / threads)
+    };
+    let b = if vector_b(s) {
+        let map = LaneMap::RowMajor {
+            per_row: nv,
+            unit: lanes,
+        };
+        (map, bk * nv / threads)
+    } else {
+        let map = LaneMap::RowMajor {
+            per_row: bn,
+            unit: 1,
+        };
+        (map, bk * bn / threads)
+    };
+    [a, b]
+}
+
 /// String builder for one kernel — the device twin of [`FnEmit`]'s
 /// `line`/`tmp`, kept separate because a kernel shares no state with the host
 /// function around the site.
 struct Kernel<'s> {
     out: String,
     next: u32,
+    /// The index type: `i64`, or `i32` under `idx32` ([`max_index`]).
+    idx: &'static str,
     /// `float` or `double`.
     t: String,
     site: &'s TileSite,
@@ -342,29 +541,90 @@ impl Kernel<'_> {
         self.out.push('\n');
     }
 
-    /// `dst = op i64 lhs, rhs`, returning `dst`.
+    /// `dst = op IDX lhs, rhs`, returning `dst`. In `i32` every value is a
+    /// partial sum of an index below 2³¹ ([`max_index`]), so `add`/`mul` carry
+    /// `nuw nsw` — what lets LLVM fold a copy's constant into the address.
     fn op(&mut self, code: &str, lhs: &str, rhs: impl std::fmt::Display) -> String {
         let t = self.tmp();
-        self.line(format!("{t} = {code} i64 {lhs}, {rhs}"));
+        let flags = match code {
+            "add" | "mul" if self.idx == "i32" => " nuw nsw",
+            _ => "",
+        };
+        self.line(format!("{t} = {code}{flags} {} {lhs}, {rhs}", self.idx));
         t
     }
 
     fn sreg(&mut self, reg: &str) -> String {
         let r32 = self.tmp();
         self.line(format!("{r32} = call i32 @llvm.nvvm.read.ptx.sreg.{reg}()"));
+        if self.idx == "i32" {
+            return r32;
+        }
         let r = self.tmp();
         self.line(format!("{r} = zext i32 {r32} to i64"));
         r
     }
 
-    /// `ptr addrspace(AS) gep T, base, idx`.
+    /// `ptr addrspace(AS) gep T, base, idx`. An `i32` index is zero-extended
+    /// (it is non-negative): a GEP would sign-extend it, and copy 0's bare
+    /// index then extends differently from copy `p`'s `index + constant`.
     fn gep(&mut self, space: u32, base: &str, idx: &str) -> String {
+        let idx = if self.idx == "i32" {
+            let z = self.tmp();
+            self.line(format!("{z} = zext nneg i32 {idx} to i64"));
+            z
+        } else {
+            idx.to_string()
+        };
         let p = self.tmp();
         self.line(format!(
             "{p} = getelementptr inbounds {}, ptr addrspace({space}) {base}, i64 {idx}",
             self.t
         ));
         p
+    }
+
+    /// `v + c`, or `v` itself when `c` is 0.
+    fn plus(&mut self, v: String, c: u64) -> String {
+        if c == 0 { v } else { self.op("add", &v, c) }
+    }
+
+    /// Every staged copy's `(global index at k0 = 0, + constant, shared
+    /// index, + constant)`; `at` turns panel coordinates into the two indices,
+    /// `off` a coordinate delta into the two constants. Under `affine` a copy
+    /// the lane map proves periodic ([`affine_delta`]) is copy 0's indices plus
+    /// constants; otherwise (and on the OFF arm) each copy has its own chain.
+    fn copies(
+        &mut self,
+        map: LaneMap,
+        n: u64,
+        threads: u64,
+        tid: &str,
+        at: impl Fn(&mut Self, &str, &str) -> (String, String),
+        off: impl Fn(u64, u64) -> (u64, u64),
+    ) -> Vec<(String, u64, String, u64)> {
+        let mut base: Option<(String, String)> = None;
+        let mut out = Vec::new();
+        for p in 0..n {
+            let delta = self.rungs.affine.then(|| affine_delta(map, threads, p));
+            if let Some(Some((d0, d1))) = delta {
+                let (g, s) = match &base {
+                    Some(b) => b.clone(),
+                    None => {
+                        let (r, c) = map.coords(self, &tid.to_string());
+                        base.insert(at(self, &r, &c)).clone()
+                    }
+                };
+                let (go, so) = off(d0, d1);
+                out.push((g, go, s, so));
+                continue;
+            }
+            let li = self.op("add", tid, p * threads);
+            let (r, c) = map.coords(self, &li);
+            let (g, s) = at(self, &r, &c);
+            out.push((g, 0, s, 0));
+        }
+        out
     }
 
     /// One accumulation step, in the oracle's operand order:
@@ -419,6 +679,7 @@ impl Kernel<'_> {
     fn naive(&mut self, name: &str, threads: u64) {
         let s = self.site;
         let t = self.t.clone();
+        let ix = self.idx;
         let seed = const_literal(&s.seed);
         let e = elem_bytes_of(&s.elem);
         self.header(name, threads, e, 0);
@@ -427,7 +688,7 @@ impl Kernel<'_> {
         let cell0 = self.op("mul", &bx, threads);
         let cell = self.op("add", &cell0, &tid);
         let inside = self.tmp();
-        self.line(format!("{inside} = icmp ult i64 {cell}, {}", s.rows * s.c));
+        self.line(format!("{inside} = icmp ult {ix} {cell}, {}", s.rows * s.c));
         self.line(format!("br i1 {inside}, label %body, label %done"));
         self.out.push_str("body:\n");
         let i = self.op("udiv", &cell, s.c);
@@ -443,7 +704,7 @@ impl Kernel<'_> {
         self.line("br label %kloop");
         self.out.push_str("kloop:\n");
         let (kv, acc, kn) = (self.tmp(), self.tmp(), self.tmp());
-        self.line(format!("{kv} = phi i64 [0, %body], [{kn}, %kloop]"));
+        self.line(format!("{kv} = phi {ix} [0, %body], [{kn}, %kloop]"));
         // The back-edge value is the step's result, known only after the body
         // is emitted; patched in below (the marker cannot collide with a `%v`).
         self.line(format!(
@@ -461,9 +722,9 @@ impl Kernel<'_> {
         let bv = load(self, "%b", &bbase, s.b.ck);
         let accn = self.step(&acc, &av, &bv);
         self.out = self.out.replace("@ACC_NEXT@", &accn);
-        self.line(format!("{kn} = add i64 {kv}, 1"));
+        self.line(format!("{kn} = add {ix} {kv}, 1"));
         let fin = self.tmp();
-        self.line(format!("{fin} = icmp eq i64 {kn}, {}", s.k));
+        self.line(format!("{fin} = icmp eq {ix} {kn}, {}", s.k));
         self.line(format!("br i1 {fin}, label %store, label %kloop"));
         self.out.push_str("store:\n");
         let p = self.gep(1, "%o", &cell);
@@ -775,12 +1036,12 @@ impl Kernel<'_> {
     fn tiled(&mut self, name: &str, g: GpuTile) {
         let s = self.site;
         let t = self.t.clone();
+        let ix = self.idx;
         let seed = const_literal(&s.seed);
         let e = elem_bytes_of(&s.elem);
         let lanes = GPU_VEC_BYTES / e;
         let vt = format!("<{lanes} x {t}>");
         let (bm, bn, bk, tm, tn, threads) = (g.bm(), g.bn(), g.bk, g.tm, g.tn, g.threads());
-        let (kv, nv) = (bk / lanes, bn / lanes);
 
         let blocks = if self.rungs.min_blocks {
             g.blocks_per_sm
@@ -819,7 +1080,8 @@ impl Kernel<'_> {
         let smem = "@mapal_smem";
         // `sa`: words between two `k` rows of the transposed A panel; `bs_off`:
         // where B starts inside a stage. Async staging pads A's rows and keeps
-        // `stages` buffers; register staging has one unpadded buffer.
+        // `stages` buffers; register staging has one buffer, padded under the
+        // `pad` rung ([`TargetProfile::gpu_tile_sync_a`]).
         let streamed = g.stages >= 2;
         let sa = g.sa();
         let bs_off = bk * sa;
@@ -843,74 +1105,42 @@ impl Kernel<'_> {
         }
 
         // Loop-invariant load coordinates, one set per load this thread issues:
-        // `(global index at k0 = 0, shared index)`. A vector operand moves
-        // `lanes` elements along its fast axis per load; a strided one moves one
-        // element, consecutive threads taking consecutive panel rows/lanes.
+        // `(global index at k0 = 0, + constant, shared index, + constant)`.
         let (a_vec, b_vec) = (vector_a(s), vector_b(s));
-        // Async staging copies `a` element by element (its panel is transposed
-        // in shared memory, which a 16-byte copy cannot do): `lanes` lanes run
-        // along `k` within one row, then rows — four lanes read one 16-byte
-        // global run, a warp covers 8 rows, and `pad_a` keeps those 32 writes
-        // on 32 banks.
-        let a_elementwise = streamed || !a_vec;
-        let mut a_src = Vec::new();
-        let a_loads = if a_elementwise {
-            bm * bk / threads
-        } else {
-            bm * kv / threads
-        };
-        for p in 0..a_loads {
-            let li = self.op("add", &tid, p * threads);
-            let (r, kc) = if streamed {
-                let j = self.op("urem", &li, lanes);
-                let q = self.op("udiv", &li, lanes);
-                let r = self.op("urem", &q, bm);
-                let c = self.op("udiv", &q, bm);
-                let kc = self.op("mul", &c, lanes);
-                (r, self.op("add", &kc, &j))
-            } else if a_vec {
-                let r = self.op("udiv", &li, kv);
-                let kc0 = self.op("urem", &li, kv);
-                (r, self.op("mul", &kc0, lanes))
-            } else {
-                let kc = self.op("udiv", &li, bm);
-                (self.op("urem", &li, bm), kc)
-            };
-            let grow = self.op("add", &row0, &r);
-            let gr = self.op("mul", &grow, s.a.ci);
-            let gk = self.op("mul", &kc, s.a.ck);
-            let g0 = self.op("add", &gr, &gk);
-            let gsrc = self.op("add", &g0, s.a.base);
-            let skc = self.op("mul", &kc, sa);
-            let sdst = self.op("add", &skc, &r);
-            a_src.push((gsrc, sdst));
-        }
-        let mut b_src = Vec::new();
-        let b_loads = if b_vec {
-            bk * nv / threads
-        } else {
-            bk * bn / threads
-        };
-        for p in 0..b_loads {
-            let li = self.op("add", &tid, p * threads);
-            let (kr, nc) = if b_vec {
-                let kr = self.op("udiv", &li, nv);
-                let nc0 = self.op("urem", &li, nv);
-                (kr, self.op("mul", &nc0, lanes))
-            } else {
-                let kr = self.op("udiv", &li, bn);
-                (kr, self.op("urem", &li, bn))
-            };
-            let gk = self.op("mul", &kr, s.b.ck);
-            let gc = self.op("add", &col0, &nc);
-            let gl = self.op("mul", &gc, s.b.clane);
-            let g0 = self.op("add", &gk, &gl);
-            let gsrc = self.op("add", &g0, s.b.base);
-            let sk = self.op("mul", &kr, bn);
-            let sn = self.op("add", &sk, &nc);
-            let sdst = self.op("add", &sn, bs_off);
-            b_src.push((gsrc, sdst));
-        }
+        let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g);
+        let a_src = self.copies(
+            a_map,
+            a_loads,
+            threads,
+            &tid,
+            |k, r, kc| {
+                let grow = k.op("add", &row0, r);
+                let gr = k.op("mul", &grow, s.a.ci);
+                let gk = k.op("mul", kc, s.a.ck);
+                let g0 = k.op("add", &gr, &gk);
+                let gsrc = k.op("add", &g0, s.a.base);
+                let skc = k.op("mul", kc, sa);
+                (gsrc, k.op("add", &skc, r))
+            },
+            |dr, dk| (dr * s.a.ci + dk * s.a.ck, dk * sa + dr),
+        );
+        let b_src = self.copies(
+            b_map,
+            b_loads,
+            threads,
+            &tid,
+            |k, kr, nc| {
+                let gk = k.op("mul", kr, s.b.ck);
+                let gc = k.op("add", &col0, nc);
+                let gl = k.op("mul", &gc, s.b.clane);
+                let g0 = k.op("add", &gk, &gl);
+                let gsrc = k.op("add", &g0, s.b.base);
+                let sk = k.op("mul", kr, bn);
+                let sn = k.op("add", &sk, nc);
+                (gsrc, k.op("add", &sn, bs_off))
+            },
+            |dk, dn| (dk * s.b.ck + dn * s.b.clane, dk * bn + dn),
+        );
         // Bank geometry: a thread's register tile is `tm/lanes × tn/lanes`
         // vector chunks spaced one thread-row of chunks apart (`ty·lanes` rows,
         // `tx·lanes` columns), not one contiguous `tm × tn` block. Consecutive
@@ -936,8 +1166,9 @@ impl Kernel<'_> {
             let ka = k.op("mul", k0, s.a.ck);
             let kb = k.op("mul", k0, s.b.ck);
             let mut vals = Vec::new();
-            for (gsrc, _) in &a_src {
+            for (gsrc, goff, _, _) in &a_src {
                 let gi = k.op("add", gsrc, &ka);
+                let gi = k.plus(gi, *goff);
                 let gp = k.gep(1, "%a", &gi);
                 let v = k.tmp();
                 k.line(format!(
@@ -945,8 +1176,9 @@ impl Kernel<'_> {
                 ));
                 vals.push(v);
             }
-            for (gsrc, _) in &b_src {
+            for (gsrc, goff, _, _) in &b_src {
                 let gi = k.op("add", gsrc, &kb);
+                let gi = k.plus(gi, *goff);
                 let gp = k.gep(1, "%b", &gi);
                 let v = k.tmp();
                 k.line(format!(
@@ -957,9 +1189,10 @@ impl Kernel<'_> {
             vals
         };
         let store_panels = |k: &mut Self, vals: &[String]| {
-            for ((_, sdst), v) in a_src.iter().zip(vals) {
+            for ((_, _, sdst, soff), v) in a_src.iter().zip(vals) {
                 if !a_vec {
-                    let sp = k.gep(3, smem, sdst);
+                    let si = k.plus(sdst.clone(), *soff);
+                    let sp = k.gep(3, smem, &si);
                     k.line(format!("store {t} {v}, ptr addrspace(3) {sp}, align {e}"));
                     continue;
                 }
@@ -968,13 +1201,14 @@ impl Kernel<'_> {
                 for j in 0..lanes {
                     let x = k.tmp();
                     k.line(format!("{x} = extractelement {vt} {v}, i64 {j}"));
-                    let si = k.op("add", sdst, j * sa);
+                    let si = k.op("add", sdst, soff + j * sa);
                     let sp = k.gep(3, smem, &si);
                     k.line(format!("store {t} {x}, ptr addrspace(3) {sp}, align {e}"));
                 }
             }
-            for ((_, sdst), v) in b_src.iter().zip(&vals[a_src.len()..]) {
-                let sp = k.gep(3, smem, sdst);
+            for ((_, _, sdst, soff), v) in b_src.iter().zip(&vals[a_src.len()..]) {
+                let si = k.plus(sdst.clone(), *soff);
+                let sp = k.gep(3, smem, &si);
                 k.line(format!(
                     "store {b_ty} {v}, ptr addrspace(3) {sp}, align {b_al}"
                 ));
@@ -994,19 +1228,23 @@ impl Kernel<'_> {
                 let ka = k.op("mul", &k0, s.a.ck);
                 let kb = k.op("mul", &k0, s.b.ck);
                 let so = k.op("mul", stage, stage_elems);
-                for (gsrc, sdst) in &a_src {
+                for (gsrc, goff, sdst, soff) in &a_src {
                     let gi = k.op("add", gsrc, &ka);
+                    let gi = k.plus(gi, *goff);
                     let gp = k.gep(1, "%a", &gi);
                     let si = k.op("add", sdst, &so);
+                    let si = k.plus(si, *soff);
                     let sp = k.gep(3, smem, &si);
                     k.line(format!(
                         "call void @llvm.nvvm.cp.async.ca.shared.global.{e}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
                     ));
                 }
-                for (gsrc, sdst) in &b_src {
+                for (gsrc, goff, sdst, soff) in &b_src {
                     let gi = k.op("add", gsrc, &kb);
+                    let gi = k.plus(gi, *goff);
                     let gp = k.gep(1, "%b", &gi);
                     let si = k.op("add", sdst, &so);
+                    let si = k.plus(si, *soff);
                     let sp = k.gep(3, smem, &si);
                     let (kind, n) = if b_vec {
                         ("cg", GPU_VEC_BYTES)
@@ -1029,7 +1267,7 @@ impl Kernel<'_> {
             self.line("br label %kt");
             self.out.push_str("kt:\n");
             let (it, itn) = (self.tmp(), self.tmp());
-            self.line(format!("{it} = phi i64 [0, %entry], [{itn}, %ktl]"));
+            self.line(format!("{it} = phi {ix} [0, %entry], [{itn}, %ktl]"));
             self.line(format!(
                 "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
                 g.stages - 2
@@ -1039,7 +1277,7 @@ impl Kernel<'_> {
             self.line("call void @llvm.nvvm.barrier0()");
             let nxt = self.op("add", &it, g.stages - 1);
             let more = self.tmp();
-            self.line(format!("{more} = icmp ult i64 {nxt}, {nk}"));
+            self.line(format!("{more} = icmp ult {ix} {nxt}, {nk}"));
             self.line(format!("br i1 {more}, label %issue, label %issued"));
             self.out.push_str("issue:\n");
             let nst = self.op("urem", &nxt, g.stages);
@@ -1066,7 +1304,7 @@ impl Kernel<'_> {
             self.line("br label %kt");
             self.out.push_str("kt:\n");
             let (k0, k0n) = (self.tmp(), self.tmp());
-            self.line(format!("{k0} = phi i64 [0, %entry], [{k0n}, %ktl]"));
+            self.line(format!("{k0} = phi {ix} [0, %entry], [{k0n}, %ktl]"));
             if self.rungs.prefetch {
                 let held: Vec<String> = first.iter().map(|_| self.tmp()).collect();
                 for (i, (h, f)) in held.iter().zip(&first).enumerate() {
@@ -1079,9 +1317,9 @@ impl Kernel<'_> {
                 self.line("call void @llvm.nvvm.barrier0()");
                 let nk = self.op("add", &k0, bk);
                 let more = self.tmp();
-                self.line(format!("{more} = icmp ult i64 {nk}, {}", s.k));
+                self.line(format!("{more} = icmp ult {ix} {nk}, {}", s.k));
                 let kl = self.tmp();
-                self.line(format!("{kl} = select i1 {more}, i64 {nk}, i64 {k0}"));
+                self.line(format!("{kl} = select i1 {more}, {ix} {nk}, {ix} {k0}"));
                 let next = load_panels(self, &kl);
                 for (i, n) in next.iter().enumerate() {
                     self.out = self.out.replace(&format!("@NEXT{i}@"), n);
@@ -1099,7 +1337,7 @@ impl Kernel<'_> {
         // --- bk register steps over the staged panels
         self.out.push_str("kk:\n");
         let (kk, kkn) = (self.tmp(), self.tmp());
-        self.line(format!("{kk} = phi i64 [0, %{pre}], [{kkn}, %kk]"));
+        self.line(format!("{kk} = phi {ix} [0, %{pre}], [{kkn}, %kk]"));
         let frag = |k: &mut Self, row: u64, first: &str, n: u64, off: u64, chunk: u64| {
             let r = k.op("mul", &kk, row);
             let r = k.op("add", &r, first);
@@ -1132,9 +1370,9 @@ impl Kernel<'_> {
                 self.line(format!("store {t} {r}, ptr {p}, align {e}"));
             }
         }
-        self.line(format!("{kkn} = add i64 {kk}, 1"));
+        self.line(format!("{kkn} = add {ix} {kk}, 1"));
         let kkd = self.tmp();
-        self.line(format!("{kkd} = icmp eq i64 {kkn}, {bk}"));
+        self.line(format!("{kkd} = icmp eq {ix} {kkn}, {bk}"));
         // Fully unrolled: every shared-memory offset becomes an immediate.
         let unroll = if self.rungs.unroll {
             ", !llvm.loop !@LOOP@"
@@ -1147,13 +1385,13 @@ impl Kernel<'_> {
         let ktd = self.tmp();
         if let Some((it, itn, nk)) = self.async_tail.take() {
             // No barrier here: the next panel's barrier orders the overwrite.
-            self.line(format!("{itn} = add i64 {it}, 1"));
-            self.line(format!("{ktd} = icmp eq i64 {itn}, {nk}"));
+            self.line(format!("{itn} = add {ix} {it}, 1"));
+            self.line(format!("{ktd} = icmp eq {ix} {itn}, {nk}"));
         } else {
             let (k0, k0n) = self.sync_tail.take().expect("sync panel loop");
             self.line("call void @llvm.nvvm.barrier0()");
-            self.line(format!("{k0n} = add i64 {k0}, {bk}"));
-            self.line(format!("{ktd} = icmp eq i64 {k0n}, {}", s.k));
+            self.line(format!("{k0n} = add {ix} {k0}, {bk}"));
+            self.line(format!("{ktd} = icmp eq {ix} {k0n}, {}", s.k));
         }
         self.line(format!("br i1 {ktd}, label %done, label %kt"));
 
@@ -1227,5 +1465,223 @@ impl<'a> FnEmit<'a> {
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
             l.gx, l.gy, l.block, l.smem
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::GpuRungs;
+    use crate::profile::{H100, H100_PCIE, RTX_4090, RTX_5090};
+    use mapal_ir::TileRead;
+    use proptest::prelude::*;
+
+    /// A `m × n × k` site as `benches/gpu/gen_tiles.py` writes it: `a[i·K + k]`
+    /// (or column-major `a[k·M + i]`), `b[k·N + j]` (or `b[j·K + k]`).
+    fn site(m: u64, n: u64, k: u64, a_rm: bool, b_rm: bool, elem: Ty) -> TileSite {
+        let read = |slot, ci, ck, clane| TileRead {
+            slot,
+            base: 0,
+            ci,
+            ck,
+            clane,
+            ksplit: None,
+        };
+        let a = if a_rm {
+            read(0, k, 1, 0)
+        } else {
+            read(0, 1, m, 0)
+        };
+        let b = if b_rm {
+            read(1, 0, n, 1)
+        } else {
+            read(1, 0, 1, k)
+        };
+        let seed = if elem == Ty::f32() {
+            Value::F32(0.0)
+        } else {
+            Value::F64(0.0)
+        };
+        TileSite {
+            rows: m,
+            c: n,
+            k,
+            a,
+            b,
+            seed,
+            elem,
+            mul_a_first: true,
+            add_acc_first: true,
+        }
+    }
+
+    /// Every S52 box site: the four timed squares and the six differential
+    /// programs.
+    fn s52_sites() -> Vec<TileSite> {
+        let f32 = Ty::f32;
+        let mut v: Vec<TileSite> = [1024, 2048, 4096, 8192]
+            .map(|n| site(n, n, n, true, true, f32()))
+            .into();
+        v.extend([
+            site(256, 256, 256, true, true, f32()),
+            site(128, 384, 96, true, true, f32()),
+            site(256, 256, 128, false, true, f32()),
+            site(256, 256, 128, true, false, f32()),
+            site(100, 100, 100, true, true, f32()),
+            site(128, 128, 128, true, true, Ty::f64()),
+        ]);
+        v
+    }
+
+    /// Arms that emit exactly the rung set `r`, whatever the profile's table.
+    fn force(r: GpuRungs) -> crate::GpuArms {
+        let mut off = GpuRungs::ALL;
+        for n in GpuRungs::NAMES {
+            *off.rung(n).expect("a listed name") = !r.get(n);
+        }
+        off.arch = true;
+        crate::GpuArms {
+            on: GpuRungs::default(),
+            off,
+        }
+    }
+
+    const PARTS: [&TargetProfile; 4] = [&RTX_4090, &H100_PCIE, &H100, &RTX_5090];
+
+    /// The rung settings whose geometry differs: shipped, register staging,
+    /// and each with the whole-file tile off.
+    fn arms() -> Vec<GpuRungs> {
+        let on = GpuRungs::ALL;
+        let sync = GpuRungs {
+            cp_async: false,
+            ..on
+        };
+        [on, sync]
+            .into_iter()
+            .flat_map(|r| {
+                [
+                    r,
+                    GpuRungs {
+                        wide_fma: false,
+                        ..r
+                    },
+                ]
+            })
+            .collect()
+    }
+
+    /// `idx32`: every S52 site indexes in `i32`; an operand past 2³¹ elements
+    /// keeps `i64`.
+    #[test]
+    fn idx32_takes_i32_exactly_when_every_index_fits() {
+        for p in PARTS {
+            for s in s52_sites() {
+                let l = launch(&s, p, false, force(GpuRungs::ALL), None);
+                assert!(max_index(&s, &l) < 1 << 31, "{} {s:?}", p.name);
+                let k = kernel_text("k", &s, p, false, force(GpuRungs::ALL), None);
+                assert!(k.contains("add nuw nsw i32"), "{} {s:?}", p.name);
+            }
+        }
+        // 2¹⁶ rows of 2¹⁶: `a`'s last element is 2³² − 1.
+        let big = site(1 << 16, 1 << 16, 1 << 16, true, true, Ty::f32());
+        let l = launch(&big, &RTX_4090, false, force(GpuRungs::ALL), None);
+        assert!(max_index(&big, &l) >= 1 << 31);
+        let k = kernel_text("k", &big, &RTX_4090, false, force(GpuRungs::ALL), None);
+        assert!(!k.contains("nuw nsw i32") && k.contains("add i64"));
+    }
+
+    /// `affine`: for every S52 site, part and arm, every copy `p` of both
+    /// panels is copy 0 plus a constant — the lane map evaluated at
+    /// `tid + p·threads` equals the `udiv`/`urem` chain at `tid` plus the delta,
+    /// for every `tid` ([`affine_delta`] checks exactly that).
+    #[test]
+    fn affine_decomposition_equals_udiv_urem_for_every_copy_and_thread() {
+        let mut copies = 0;
+        for p in PARTS {
+            for r in arms() {
+                for s in s52_sites() {
+                    let Some(g) = launch(&s, p, false, force(r), None).tiled else {
+                        continue;
+                    };
+                    for (map, n) in lane_maps(&s, &g) {
+                        for c in 0..n {
+                            let d = affine_delta(map, g.threads(), c);
+                            assert!(d.is_some(), "{} {s:?} {map:?} copy {c}", p.name);
+                            copies += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            copies > 1000,
+            "the sweep reached the tiled kernels: {copies}"
+        );
+    }
+
+    proptest! {
+        /// Power-of-two extents make every lane map periodic in `threads`
+        /// (`Q = threads / l` divides `rows` or `rows` divides `Q`).
+        #[test]
+        fn power_of_two_lane_maps_are_affine(
+            t in 5u32..11, l in 0u32..4, rows in 0u32..9, unit in 0u32..3, p in 0u64..64,
+        ) {
+            let (threads, l, rows, unit) = (1u64 << t, 1u64 << l, 1u64 << rows, 1u64 << unit);
+            for map in [
+                LaneMap::RowMajor { per_row: l, unit },
+                LaneMap::ColMajor { rows },
+                LaneMap::Split { l, rows, unit },
+            ] {
+                prop_assert!(affine_delta(map, threads, p).is_some(), "{map:?}");
+            }
+        }
+    }
+
+    /// `pad`: on register staging each of a warp's `lanes` transposed-A store
+    /// instructions hits 32 distinct banks; the S52 map (all `bk/lanes` lanes
+    /// of a row in one warp, no pad) is a `bk/lanes`-way conflict — 4-way at
+    /// the 4096² geometry the SASS review read.
+    #[test]
+    fn sync_a_store_is_conflict_free_under_pad() {
+        let worst_way = |s: &TileSite, g: &GpuTile| {
+            let [(map, n), _] = lane_maps(s, g);
+            let lanes = GPU_VEC_BYTES / 4;
+            let mut worst = 0;
+            for warp in 0..g.threads() / 32 {
+                for c in 0..n {
+                    for j in 0..lanes {
+                        let mut hits = [0; 32];
+                        for lane in 0..32 {
+                            let li = warp * 32 + lane + c * g.threads();
+                            let (r, kc) = map.coords(&mut Num, &li);
+                            hits[(((kc + j) * g.sa() + r) % 32) as usize] += 1;
+                        }
+                        worst = worst.max(*hits.iter().max().unwrap());
+                    }
+                }
+            }
+            worst
+        };
+        for p in PARTS {
+            for wide_fma in [true, false] {
+                let on = GpuRungs {
+                    cp_async: false,
+                    wide_fma,
+                    ..GpuRungs::ALL
+                };
+                for n in [1024, 2048, 4096, 8192] {
+                    let s = site(n, n, n, true, true, Ty::f32());
+                    let g = launch(&s, p, false, force(on), None).tiled.expect("tiled");
+                    assert_eq!((g.a_row_lanes, g.pad_a), (2, 4), "{} {n}", p.name);
+                    assert_eq!(worst_way(&s, &g), 1, "{} {n} pad on", p.name);
+                    // `bk / lanes` lanes per row ⇒ that many ways.
+                    let off = launch(&s, p, false, force(GpuRungs { pad: false, ..on }), None);
+                    let g = off.tiled.expect("tiled");
+                    let ways = g.bk / (GPU_VEC_BYTES / 4);
+                    assert_eq!(worst_way(&s, &g), ways, "{} {n} S52 map", p.name);
+                    assert!(ways > 1);
+                }
+            }
+        }
     }
 }

@@ -63,14 +63,23 @@ for spec in "$@"; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        # S53: the differential runs both staging paths whatever the table
+        # ships at its sizes: register staging (async off) and cp.async.
+        case $b in mm_*|e2e_*) ;; *)
+            for arm in off-async on-async; do
+                emit_one "$f" "$d/$b.$arm" "$prof" "$sm" "--gpu-${arm/-/=}"
+                emit_one "$f" "$d/${b}_c.$arm" "$prof" "$sm" --contract "--gpu-${arm/-/=}"
+            done
+            ;;
+        esac
         # Measurement arms: the shipped kernel with one rung flipped, on the
         # FMA face, the TF32 face (tensor cores) and the exact face.
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix warp-fill arch-rungs
             arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
-                interleave unroll min-blocks warp prefetch async warp-fill arch-rungs
-            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill arch-rungs
+                interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
+            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
             for prev in ${PREV:-}; do
                 tag=${prev%%=*}; from=${prev#*=}
