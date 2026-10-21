@@ -7,6 +7,8 @@ device IR alone (no GPU needed):
   launches, gens      host call sites of `mapal_gpu_launch` / `mapal_gpu_tile`, `mapal_gpu_gen`
   h2d, d2h            host call sites and their constant byte counts (`mapal_gpu_tile`, the
                       S52 round trip, counts as two copies in and one out)
+  L2 windows          launches with an L2 access-policy window (`mapal_gpu_launch_l2`, S54)
+  grouped kernels     tile kernels walking their grid in block-row groups (`; raster`, S54)
   host elem loops     host loops of at least n·n trips — per-cell work left on the host
   over device out     host loops that read a buffer a d2h filled — a device output consumed
                       on the host (the boundary amendment 9 says should not exist)
@@ -18,6 +20,7 @@ usage: fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
        fusion_report.py --selftest
 """
 import fnmatch
+import os
 import re
 import subprocess
 import sys
@@ -25,7 +28,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EMIT = ROOT / "target/release/examples/emit"
+EMIT = Path(os.environ.get("EMIT", ROOT / "target/release/examples/emit"))
 # The pre-S54 multi-site programs (gen_tiles.py `chain`, `share`, `loop_mm`, `decode`).
 EXISTING = ["mm_chain_2048", "mm_share_1024", "loop_mm_1024_8", "decode_1024_256"]
 
@@ -68,8 +71,9 @@ def const(arg):
 
 def analyze(host, dev, n):
     r = dict(tile=0, gen_k=0, launch=0, launch_l=0, gens=0, h2d=0, h2d_b=0, d2h=0, d2h_b=0,
-             elem_loops=0, dev_loops=0, unknown_bytes=False)
+             elem_loops=0, dev_loops=0, unknown_bytes=False, l2win=0)
     r["tile"] = len(re.findall(r"define ptx_kernel void @mapal_tile_", dev))
+    r["raster"] = len(re.findall(r"; raster: ", dev))
     r["gen_k"] = len(re.findall(r"define ptx_kernel void @mapal_gen_", dev))
 
     def add(key, b):
@@ -92,9 +96,10 @@ def analyze(host, dev, n):
                 if not m:
                     continue
                 op, args = m[1], [a.split()[-1] for a in m[2].split(",") if a.strip()]
-                if op in ("launch", "tile"):
+                if op in ("launch", "launch_l2", "tile"):
                     r["launch"] += 1
                     r["launch_l"] += in_loop(i)
+                r["l2win"] += op == "launch_l2"
                 if op == "tile":
                     add("h2d", None if None in (const(args[2]), const(args[4])) else const(args[2]) + const(args[4]))
                     r["h2d"] += 1
@@ -142,11 +147,11 @@ def report(profile, face, n, globs):
     flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
-    print(f"S54 static fusion report — emit --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")
+    print(f"S54 static fusion report — {EMIT.name} ({EMIT.parent.parent.parent.name}) --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")
     print("Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.\n")
     print("| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes "
-          "| host elem loops | host loops over device out |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+          "| L2 windows | grouped kernels | host elem loops | host loops over device out |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for s in stems:
         dev = tiles / f"{s}.dev.ll"
         dev.unlink(missing_ok=True)
@@ -157,7 +162,7 @@ def report(profile, face, n, globs):
         q = "?" if r["unknown_bytes"] else ""
         launches = f"{r['launch']}" + (f" ({r['launch_l']} L)" if r["launch_l"] else "")
         print(f"| {s} | {r['tile']} | {r['gen_k']} | {launches} | {r['gens']} | {r['h2d']} | {mb(r['h2d_b'])}{q} "
-              f"| {r['d2h']} | {mb(r['d2h_b'])}{q} | {r['elem_loops']} | {r['dev_loops']} |")
+              f"| {r['d2h']} | {mb(r['d2h_b'])}{q} | {r['l2win']} | {r['raster']} | {r['elem_loops']} | {r['dev_loops']} |")
 
 
 def selftest():

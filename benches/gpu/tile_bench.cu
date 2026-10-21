@@ -99,6 +99,9 @@ static void device_facts() {
       {"l2_bytes", cudaDevAttrL2CacheSize},
       {"sm_clock_khz", cudaDevAttrClockRate},
       {"mem_clock_khz", cudaDevAttrMemoryClockRate},
+      // S54 `l2-window`: the persisting set-aside and the largest window.
+      {"l2_persist_bytes", cudaDevAttrMaxPersistingL2CacheSize},
+      {"l2_window_max", cudaDevAttrMaxAccessPolicyWindowSize},
   };
   printf("facts");
   for (auto &a : attrs) {

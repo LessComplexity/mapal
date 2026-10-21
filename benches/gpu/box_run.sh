@@ -5,8 +5,8 @@
 #    host-rung arm, interleaved; the S54 multi-computation probes the same way,
 #    each followed by its library legs (chain_bench.cu); the decode loop,
 # 3. the timing harness vs cuBLAS and CUTLASS, every kernel arm.
-# PROBE_ARMS / PROBE_REPS narrow the probe section (default: on, off-resident,
-# off-devgen; 5 repetitions).
+# PROBE_ARMS / PROBE_REPS narrow the probe section (default: the bundle's
+# `probe_arms` file, else on, off-resident, off-devgen; 5 repetitions).
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -102,6 +102,7 @@ say "$(./tile_bench --h2d 64 10 2>&1)"
 # phases, launches and bytes — then the library legs (chain_bench.cu) on the
 # same probe, gated against the exact face's printed values.
 say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)"
+[ -z "${PROBE_ARMS:-}" ] && [ -s probe_arms ] && PROBE_ARMS=$(cat probe_arms)
 PROBE_ARMS=${PROBE_ARMS:-on off-resident off-devgen}
 for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
