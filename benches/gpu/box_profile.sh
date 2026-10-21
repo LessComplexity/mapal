@@ -46,16 +46,19 @@ else
     echo "nsys unavailable" > prof/kern.csv
 fi
 
-for n in 1024 4096; do
-    for face in "" _c; do
-        b=e2e_$n$face
-        cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
-            -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null || continue
-        for r in 1 2 3; do
-            t0=$(date +%s.%N)
-            MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" >> "prof/$b.out" 2>&1
-            echo "wall_s=$(echo "$(date +%s.%N) - $t0" | bc)" >> "prof/$b.out"
-        done
+# Every e2e build in the bundle (PREV ones too, `e2e_4096_c.<tag>`), processes
+# interleaved so drift lands on every variant alike. No `bc` on the box.
+e2e=()
+for o in "$PROF"/e2e_*.host.o; do
+    b=$(basename "$o" .host.o)
+    cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
+        -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null && e2e+=("$b")
+done
+for r in 1 2 3; do
+    for b in "${e2e[@]}"; do
+        t0=$(date +%s%N)
+        MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" >> "prof/$b.out" 2>&1
+        echo "wall_ms=$(( ($(date +%s%N) - t0) / 1000000 ))" >> "prof/$b.out"
     done
 done
 # The launch timeline of whole Mapal programs: API calls (launch overhead, JIT,

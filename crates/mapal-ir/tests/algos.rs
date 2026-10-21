@@ -2993,6 +2993,102 @@ fn path_plan_is_deterministic() {
     assert_eq!(ir.path_plan(f), ir.path_plan(f));
 }
 
+/// plan-s53 `clock-fence`, the GPU e2e shape (`benches/gpu/gen_tiles.py e2e`):
+/// generate `a` and `b` from `ta`, `t0`, the site `ta -> map {a[t]}` with `a`
+/// and `b` captured, `t1`, print. The site's source is the capture pack, written
+/// on the site's line, so Kahn releases `t1` (its token is ready one line
+/// earlier) BEFORE the site — and `t0` before the generation. That was S52's
+/// `e2e_4096_c.host.ll`: `t1 - t0` timed the generation, and nothing of the site.
+#[test]
+fn topo_order_puts_the_site_between_the_clock_reads_and_the_generation_before() {
+    let at = |line: u32| SourceLoc {
+        start: line * 10,
+        end: line * 10 + 9,
+    };
+    let arr = Ty::Array {
+        elem: Box::new(Ty::i32()),
+        size: 8,
+    };
+    let mut b = IrBuilder::new();
+    let gen_body = identity_map_body(&mut b);
+    let site_body = b
+        .declare(
+            FuncKind::MapBody,
+            "site",
+            Ty::Tuple(vec![arr.clone(), arr.clone(), Ty::i32()]),
+            Ty::i32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(site_body).unwrap();
+        let input = fb.input();
+        let a = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let t = fb.proj(input, 2, Dest::Fresh(None), L).unwrap();
+        let cell = fb.index(a, t, Dest::Fresh(None), L).unwrap();
+        fb.output(cell, None, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let f = b
+        .declare(FuncKind::Named, "e2e", Ty::IoToken, Ty::IoToken, at(0))
+        .unwrap();
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let token = fb.input();
+        let eight = fb.constant(Value::I32(8), at(1)).unwrap();
+        let ta = fb.iota(eight, Dest::Fresh(None), at(1)).unwrap();
+        let a = fb.map(gen_body, ta, Dest::Fresh(None), at(2)).unwrap();
+        let bb = fb.map(gen_body, ta, Dest::Fresh(None), at(3)).unwrap();
+        let start = fb.time_ms(token, at(4)).unwrap();
+        let token = fb.proj(start, 0, Dest::Fresh(None), at(4)).unwrap();
+        let t0 = fb.proj(start, 1, Dest::Fresh(None), at(4)).unwrap();
+        let c = fb
+            .map_captured(site_body, &[a, bb], ta, Dest::Fresh(None), at(5))
+            .unwrap();
+        let stop = fb.time_ms(token, at(6)).unwrap();
+        let token = fb.proj(stop, 0, Dest::Fresh(None), at(6)).unwrap();
+        let t1 = fb.proj(stop, 1, Dest::Fresh(None), at(6)).unwrap();
+        let zero = fb.constant(Value::I32(0), at(7)).unwrap();
+        let head = fb.index(c, zero, Dest::Fresh(None), at(7)).unwrap();
+        let token = fb.print(token, head, at(7)).unwrap();
+        let elapsed = fb
+            .binop(Operation::Sub, t1, t0, Dest::Fresh(None), at(8))
+            .unwrap();
+        let token = fb.print(token, elapsed, at(8)).unwrap();
+        fb.output(token, None, at(9)).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    assert!(validate(&ir).is_empty(), "{:?}", validate(&ir));
+
+    let order = ir.topo_order(f);
+    let at_line = |line: u32| -> Vec<u32> {
+        order
+            .iter()
+            .enumerate()
+            .filter(|&(_, &m)| ir.morphism(m).unwrap().loc.start == line * 10)
+            .map(|(i, _)| i as u32)
+            .collect()
+    };
+    let reads = func_ops(&ir, f, |op| op == Operation::TimeMs);
+    let (r0, r1) = (topo_pos(&ir, f, reads[0]), topo_pos(&ir, f, reads[1]));
+    // The site: its capture pack and the Map itself, every one inside.
+    let site = at_line(5);
+    assert!(site.len() >= 2, "pack edges and the map: {site:?}");
+    assert!(
+        site.iter().all(|&p| r0 < p && p < r1),
+        "the site lies between t0 ({r0}) and t1 ({r1}): {site:?}"
+    );
+    // The generation is written above t0, so it is outside the bracket.
+    let generation: Vec<u32> = [1, 2, 3].into_iter().flat_map(at_line).collect();
+    assert!(
+        generation.iter().all(|&p| p < r0),
+        "the generation precedes t0 ({r0}): {generation:?}"
+    );
+    // The readout is written below t1.
+    assert!(at_line(7).iter().all(|&p| r1 < p), "the readout follows t1");
+}
+
 #[test]
 fn emission_nested_product_dissolution_is_pair_built_only() {
     // inner = (x, 1); outer = (inner, 1); back = outer.0; ret back.1

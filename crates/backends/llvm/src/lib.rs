@@ -541,6 +541,12 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // only where the KC nest actually called it.
     if funcs.contains("@mapal_gpu_tile(") {
         out.push_str(crate::func::gpu::GPU_DECLS);
+        if funcs.contains(crate::func::gpu::GPU_SYNC) {
+            out.push_str(crate::func::gpu::GPU_SYNC_DECL);
+        }
+    } else {
+        // No device work in the module: the clock fence's sync waits for nothing.
+        funcs = funcs.replace(&format!("  {}\n", crate::func::gpu::GPU_SYNC), "");
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");

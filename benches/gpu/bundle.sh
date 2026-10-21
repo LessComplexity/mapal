@@ -80,16 +80,27 @@ for spec in "$@"; do
             arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
                 interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
             arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill idx32 affine pad wide-fma fma-regs arch-rungs
-            # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
-            for prev in ${PREV:-}; do
-                tag=${prev%%=*}; from=${prev#*=}
+            ;;
+        esac
+        # Earlier builds, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
+        # mm_*: the shipped kernel (a tile_bench arm). e2e_*: the whole program,
+        # host object included (box_profile.sh runs it next to this build's).
+        for prev in ${PREV:-}; do
+            tag=${prev%%=*}; from=${prev#*=}
+            case $b in
+            mm_*)
                 if [ -f "$from/$prof/${b}_c.ptx" ]; then
                     cp "$from/$prof/${b}_c.ptx" "$d/${b}_c.$tag.ptx"
                     cp "$from/$prof/${b}_c.launch" "$d/${b}_c.$tag.launch"
-                fi
-            done
-            ;;
-        esac
+                fi ;;
+            e2e_*)
+                for v in "$b" "${b}_c"; do
+                    [ -f "$from/$prof/$v.host.o" ] || continue
+                    cp "$from/$prof/$v.host.o" "$d/$v.$tag.host.o"
+                    cp "$from/$prof/$v.ptx" "$d/$v.$tag.ptx"
+                done ;;
+            esac
+        done
     done
 done
 
