@@ -28,7 +28,15 @@ impl<'a> FnEmit<'a> {
 
         match op {
             Operation::Pair { slot, .. } => {
-                if matches!(self.obj_ty(source), Ty::Array { .. }) {
+                if self.host_free(source) {
+                    // S54 `arena`: the field of a device-only array is never
+                    // read on the host (device sites take the device copy).
+                    let (llt, dst) = self
+                        .component_ptr(target, slot)
+                        .expect("Pair array target ptr");
+                    assert_eq!(llt, "ptr", "a device-only array rides a pointer-only field");
+                    self.line(format!("store ptr null, ptr {dst}"));
+                } else if matches!(self.obj_ty(source), Ty::Array { .. }) {
                     let sllt = lower_ty(&self.obj_ty(source)).expect("array lowers");
                     let src = self
                         .array_operand_ptr(source, None)
@@ -575,10 +583,32 @@ impl<'a> FnEmit<'a> {
         let arr_ty = src_ty.component_ty(0).cloned().expect("index array");
         let (elem_llt, size) = array_parts(&arr_ty);
         let arr_llt = lower_ty(&arr_ty).expect("array lowers");
+        let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
+        // S54 `arena`: a device-only array's element is copied out into a
+        // scratch cell (its reads are proven, so no guard).
+        if self
+            .pair_source(source, 0)
+            .is_some_and(|a| self.host_free(a))
+        {
+            assert!(
+                self.bp.proven(m)
+                    && self
+                        .resident
+                        .as_ref()
+                        .is_some_and(|p| p.elem.contains_key(m)),
+                "a device-only array's reads are proven one-element copy-outs"
+            );
+            let i64idx = self.load_index(source, 1, &idx_ty);
+            let ep = self.scratch(&elem_llt);
+            self.resident_elem(m, source, &ep, &i64idx);
+            let v = self.tmp();
+            self.line(format!("{v} = load {elem_llt}, ptr {ep}"));
+            self.store_obj(target, &elem_llt, &v);
+            return;
+        }
         let arr_ptr = self
             .array_operand_ptr(source, Some(0))
             .expect("index array ptr");
-        let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
         let i64idx = self.load_index(source, 1, &idx_ty);
         // Guard elision (S20 `bounds_proof`; the vectorization unlock): the
         // plan proves the index statically inside `[0, size)` — the trap is

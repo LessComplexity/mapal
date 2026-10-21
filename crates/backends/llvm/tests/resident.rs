@@ -2,6 +2,8 @@
 //! lives between GPU sites, pinned on the emitted host text. The placement is
 //! the claim, so every test reads it off the `mapal_gpu_*` calls in order; the
 //! values are the box differential's job (16/16 on three parts, both faces).
+//! The S53 pins take the S54 `arena` rung's OFF arm (per-object buffers and
+//! host slots, byte for byte); the arena's own pins follow them.
 
 use mapal_backend_llvm::{EmitOpts, GpuArms, emit_with_opts};
 use mapal_ir::CategoryIr;
@@ -27,19 +29,31 @@ fn emit(src: &str, gpu: GpuArms) -> String {
     .expect("emits")
 }
 
+/// The S53 path: the shipped rungs with `arena` forced off.
 fn on() -> GpuArms {
+    off("arena")
+}
+
+/// The shipped emission, `arena` included.
+fn shipped() -> GpuArms {
     GpuArms::default()
 }
 
-/// The measurement arm with `rung` forced off.
-fn off(rung: &str) -> GpuArms {
+/// The measurement arm with each of `rungs` forced off.
+fn offs(rungs: &[&str]) -> GpuArms {
     let mut a = GpuArms::default();
-    *a.off.rung(rung).expect("a rung") = true;
+    for r in rungs {
+        *a.off.rung(r).expect("a rung") = true;
+    }
     a
 }
 
+fn off(rung: &str) -> GpuArms {
+    offs(&[rung])
+}
+
 fn no_devgen() -> GpuArms {
-    off("devgen")
+    offs(&["devgen", "arena"])
 }
 
 fn mapal_main(ll: &str) -> &str {
@@ -65,7 +79,7 @@ fn transfers(ll: &str) -> Vec<String> {
                 .map(|s| s.trim_end_matches(')').to_owned())
                 .unwrap_or_default();
             Some(match name {
-                "h2d" | "alloc" => format!("{name} {bytes}"),
+                "h2d" | "alloc" | "arena" => format!("{name} {bytes}"),
                 "d2h" => format!("d2h {bytes}"),
                 other => other.to_owned(),
             })
@@ -323,4 +337,88 @@ fn golden_resident_host_modules() {
     insta::assert_snapshot!("resident_loop", emit(&loop_src(), no_devgen()));
     let unclean = e2e_src().replace("(t * 7 + 13) % 101 - 50", "(t * 7 + 13) / (t % 5 + 1) - 50");
     insta::assert_snapshot!("resident_unclean", emit(&unclean, on()));
+}
+
+// --- S54 `arena` (R6) ------------------------------------------------------
+
+/// The `add i64 %base, OFF` of every arena member, in emission order.
+fn offsets(ll: &str) -> Vec<u64> {
+    let lines: Vec<&str> = mapal_main(ll).lines().collect();
+    lines
+        .windows(2)
+        .filter(|w| w[0].contains("@mapal_gpu_arena("))
+        .map(|w| {
+            w[1].rsplit(", ")
+                .next()
+                .expect("offset")
+                .parse()
+                .expect("a literal")
+        })
+        .collect()
+}
+
+#[test]
+fn arena_lays_disjoint_lives_on_shared_bytes() {
+    let ll = emit(&chain_src(), shipped());
+    // a, b, e (device-built), c = a·b, d = c·e; 4096 floats each. d is born
+    // after a and b die (at c's site): it takes a's bytes. c's site reads a
+    // and b while writing c, and d's reads c and e: those never share.
+    let n = 4096 * 4;
+    assert_eq!(offsets(&ll), [0, n, 2 * n, 3 * n, 0]);
+    let t = transfers(&ll);
+    assert!(!t.iter().any(|x| x.starts_with("alloc")), "{t:?}");
+    assert!(
+        t.iter()
+            .filter(|x| x.starts_with("arena"))
+            .all(|x| *x == format!("arena {}", 4 * n)),
+        "{t:?}"
+    );
+    // No free at a death: the arena goes once, at exit.
+    let main = mapal_main(&ll);
+    assert_eq!(main.matches("@mapal_gpu_free(").count(), 1, "{main}");
+    assert!(main.contains("call void @mapal_gpu_free(ptr %darena)"));
+    // The OFF arm is S53's: one buffer per object, freed at its death.
+    let off = transfers(&emit(&chain_src(), on()));
+    assert_eq!(off.iter().filter(|x| x.starts_with("alloc")).count(), 5);
+    assert!(!off.iter().any(|x| x.starts_with("arena")));
+}
+
+#[test]
+fn arena_device_only_objects_have_no_host_slot() {
+    // e2e: `ta`, `krange` (never built), a, b (device-built), c (kept; one
+    // element read). None has host bytes; `c[0]` lands in a scratch cell.
+    let ll = emit(&e2e_src(), shipped());
+    let main = mapal_main(&ll);
+    assert!(
+        !main.contains("alloca [4096 x") && !main.contains("alloca [64 x"),
+        "{main}"
+    );
+    assert!(!main.contains("@mapal_rt_alloc("), "{main}");
+    assert!(main.contains("call void @mapal_gpu_d2h(ptr %s"), "{main}");
+    let ll = emit(&e2e_src(), on());
+    let main = mapal_main(&ll);
+    assert!(main.contains("alloca [4096 x float]") && main.contains("alloca [4096 x i32]"));
+    // A copied-in operand has host bytes: devgen off, a and b keep their slots
+    // (and `ta`, which their host loops read); c and `krange` still have none.
+    let ll = emit(&e2e_src(), off("devgen"));
+    let main = mapal_main(&ll);
+    assert_eq!(main.matches("alloca [4096 x float]").count(), 2, "{main}");
+    assert_eq!(main.matches("alloca [4096 x i32]").count(), 1, "{main}");
+    assert!(!main.contains("alloca [64 x"), "{main}");
+}
+
+#[test]
+fn arena_keeps_loop_scoped_and_escaping_objects_in_their_own_buffers() {
+    // `w` is read inside the loop (dead at a loop position); `x0` is the
+    // loop's borrowed init (escapes); `x` is the carry. None is in the arena.
+    let on_ = transfers(&emit(&loop_src(), off("devgen")));
+    let off_ = transfers(&emit(&loop_src(), no_devgen()));
+    assert!(!on_.iter().any(|x| x.starts_with("arena")), "{on_:?}");
+    assert_eq!(on_, off_);
+}
+
+#[test]
+fn golden_arena_host_modules() {
+    insta::assert_snapshot!("arena_e2e", emit(&e2e_src(), shipped()));
+    insta::assert_snapshot!("arena_chain", emit(&chain_src(), shipped()));
 }
