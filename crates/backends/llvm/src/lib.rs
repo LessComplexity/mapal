@@ -61,14 +61,19 @@ pub enum MovePanel {
     Force(u64, u64),
 }
 
-/// The GPU tile kernel's rungs (S52). **All on is the shipped path.** Each can be
-/// turned off only so its effect can be measured on a part — an A/B needs an
-/// OFF arm of the same compiler, the `MovePanel::Off` precedent — and a rung
-/// that shows no effect on any part is deleted, not kept as a knob.
-/// Values are identical either way: every rung moves operands, never the order
-/// a cell folds them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The GPU tile kernel's rungs (S52), as a set: `true` = the rung is in it.
+///
+/// **What ships is the profile's measured table** (S53,
+/// [`TargetProfile::gpu_rungs`]): a rung is ON on a part only where its arm
+/// measured positive there. [`GpuArms`] forces a rung on or off so its effect
+/// can be measured — an A/B needs both arms of the same compiler, the
+/// `MovePanel::Off` precedent — and a rung that shows no effect on any part is
+/// deleted, not kept as a knob. Values are identical either way: every rung
+/// moves operands, never the order a cell folds them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GpuRungs {
+    /// Take the profile's measured rung table; off = every rung on (S52).
+    pub arch: bool,
     /// Space a thread's register-tile chunks by the bank geometry.
     pub interleave: bool,
     /// Fully unroll the panel's `bk` register steps.
@@ -89,20 +94,73 @@ pub struct GpuRungs {
     pub ldmatrix: bool,
 }
 
-impl Default for GpuRungs {
-    fn default() -> Self {
-        Self {
-            interleave: true,
-            unroll: true,
-            min_blocks: true,
-            warp: true,
-            prefetch: true,
-            mma: true,
-            cp_async: true,
-            wide: true,
-            ldmatrix: true,
-        }
+impl GpuRungs {
+    /// Every rung on — what S52 shipped on every part.
+    pub const ALL: Self = Self {
+        arch: true,
+        interleave: true,
+        unroll: true,
+        min_blocks: true,
+        warp: true,
+        prefetch: true,
+        mma: true,
+        cp_async: true,
+        wide: true,
+        ldmatrix: true,
+    };
+
+    /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
+    /// table use.
+    pub const NAMES: [&'static str; 10] = [
+        "arch-rungs",
+        "interleave",
+        "unroll",
+        "min-blocks",
+        "warp",
+        "prefetch",
+        "mma",
+        "async",
+        "wide",
+        "ldmatrix",
+    ];
+
+    /// The rung called `name`, `None` for an unknown name.
+    pub fn rung(&mut self, name: &str) -> Option<&mut bool> {
+        Some(match name {
+            "arch-rungs" => &mut self.arch,
+            "interleave" => &mut self.interleave,
+            "unroll" => &mut self.unroll,
+            "min-blocks" => &mut self.min_blocks,
+            "warp" => &mut self.warp,
+            "prefetch" => &mut self.prefetch,
+            "mma" => &mut self.mma,
+            "async" => &mut self.cp_async,
+            "wide" => &mut self.wide,
+            "ldmatrix" => &mut self.ldmatrix,
+            _ => return None,
+        })
     }
+
+    pub fn get(mut self, name: &str) -> bool {
+        self.rung(name).is_some_and(|r| *r)
+    }
+
+    /// `(self ∪ on) ∖ off`.
+    pub fn with(mut self, arms: GpuArms) -> Self {
+        for n in Self::NAMES {
+            let r = self.rung(n).expect("a listed name");
+            *r = (*r || arms.on.get(n)) && !arms.off.get(n);
+        }
+        self
+    }
+}
+
+/// Measurement arms over the profile's rung table (S53): a rung in `on` is
+/// forced on, one in `off` forced off. Both empty by default — the shipped path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuArms {
+    pub on: GpuRungs,
+    pub off: GpuRungs,
 }
 
 /// A reduced-precision face — ADR-0032 D1's lattice below `contract`. Unlike
@@ -206,8 +264,8 @@ pub struct EmitOpts {
     /// value-invariant, which the differential suite enforces by running under
     /// a non-default profile.
     pub target: &'static str,
-    /// The GPU tile kernel's rungs; see [`GpuRungs`].
-    pub gpu: GpuRungs,
+    /// Measurement arms over the GPU rung table; see [`GpuArms`].
+    pub gpu: GpuArms,
     /// A reduced-precision face, when the program admits one; see [`Reduced`].
     pub reduced: Option<Reduced>,
 }
@@ -227,7 +285,7 @@ impl Default for EmitOpts {
             // `native` falls back to `generic` when detection fails, and tests
             // that must be reproducible across machines pin `generic` by name.
             target: "native",
-            gpu: GpuRungs::default(),
+            gpu: GpuArms::default(),
             reduced: None,
         }
     }
@@ -383,7 +441,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             if id == entry {
                 fe.set_perf_timing(opts.perf_timing);
             }
-            fe.set_gpu_rungs(opts.gpu, opts.reduced);
+            fe.set_gpu_arms(opts.gpu, opts.reduced);
             if let Some(&site) = body_sites.get(id) {
                 fe.set_task_body_site(site);
             }

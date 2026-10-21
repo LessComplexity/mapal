@@ -2052,3 +2052,50 @@ fn further_paren(c: char) -> bool {
 fn regex_lite_find<'a>(hay: &'a str, needle: &str) -> Option<&'a str> {
     hay.lines().find(|l| l.contains(needle))
 }
+
+/// `benches/gpu/gen_tiles.py`'s `mm_<n>` timing site.
+fn gpu_mm(n: u64) -> CategoryIr {
+    let src = format!(
+        "fn main() {{
+    {nn} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {n} -> iota -> krange;
+    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }}
+    }} -> c;
+    c[0] -> println;
+}}
+",
+        nn = n * n
+    );
+    mapal_rewrite::rewrite(lower_src(&src)).ir
+}
+
+/// S53 `arch-rungs`: the rtx-4090's table takes `cp.async` only where the site
+/// under-fills the part (1024²: one warp per scheduler) — not at 4096², the
+/// v6 row where the async arm cost 8% — and the `arch-rungs` OFF arm restores
+/// S52's every-rung-on kernel.
+#[test]
+fn rtx_4090_streams_with_cp_async_only_under_filled() {
+    let device = |n, arms: mapal_backend_llvm::GpuArms| {
+        let opts = EmitOpts {
+            target: "rtx-4090",
+            contract: true,
+            gpu: arms,
+            ..EmitOpts::default()
+        };
+        mapal_backend_llvm::emit_detailed(&gpu_mm(n), &opts)
+            .expect("emit")
+            .device
+            .expect("a GPU site")
+    };
+    let streams = |d: String| d.contains("call void @llvm.nvvm.cp.async");
+    assert!(!streams(device(4096, Default::default())));
+    assert!(streams(device(1024, Default::default())));
+    let mut off = mapal_backend_llvm::GpuArms::default();
+    *off.off.rung("arch-rungs").expect("a rung") = true;
+    assert!(streams(device(4096, off)));
+}
