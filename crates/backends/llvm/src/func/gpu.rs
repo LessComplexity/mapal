@@ -760,13 +760,31 @@ impl Kernel<'_> {
     fn block_ids(&mut self) -> (String, String) {
         let bx = self.sreg("ctaid.x");
         let by = self.sreg("ctaid.y");
-        match self.raster {
-            (gx, h) if h > 1 => {
-                self.line(format!("; raster: {h} block-rows per group"));
-                raster_block(self, &bx, &by, gx, h)
-            }
-            _ => (bx, by),
+        let (gx, h) = self.raster;
+        if h < 2 {
+            return (bx, by);
         }
+        self.line(format!("; raster: {h} block-rows per group"));
+        let (c, r) = raster_block(self, &bx, &by, gx, h);
+        (self.opaque(&c), self.opaque(&r))
+    }
+
+    /// `v` through a register move LLVM cannot see into. The remap bounds a
+    /// block's row and column, so InstCombine turns the kernel's address adds
+    /// into `or disjoint`, which NVPTX does not fold into immediate offsets:
+    /// the H100 FMA tile went from 127 to 145 registers and one block per SM
+    /// (`l2-raster-h100-pcie.txt`, `off-l2-gate`). Unbounded, the addresses
+    /// are the row-major kernel's.
+    fn opaque(&mut self, v: &str) -> String {
+        let (ty, bits, c) = match self.idx {
+            "i32" => ("i32", 32, "r"),
+            _ => ("i64", 64, "l"),
+        };
+        let t = self.tmp();
+        self.line(format!(
+            "{t} = call {ty} asm \"mov.b{bits} $0, $1;\", \"={c},{c}\"({ty} {v})"
+        ));
+        t
     }
 
     fn sreg(&mut self, reg: &str) -> String {
