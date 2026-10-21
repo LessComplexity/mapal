@@ -107,8 +107,10 @@ pub(crate) fn launch(
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let shaped = site.a.clane == 0 && site.b.ci == 0;
+    // The fill key reads the S52 geometry (no S53 geometry rung): the table's
+    // rows were measured on grids classified by it.
     let base = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem))
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false))
         .flatten();
     let (blocks, threads) = match base {
         Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
@@ -128,7 +130,7 @@ pub(crate) fn launch(
         && shaped
         && vector_a(site)
         && vector_b(site))
-    .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide))
+    .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill))
     .flatten();
     if let Some(m) = mma {
         return Launch {
@@ -141,17 +143,20 @@ pub(crate) fn launch(
             rungs,
         };
     }
-    let tiled = base.map(|g| {
-        let streamed = rungs
-            .cp_async
-            .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
-            .flatten();
-        match streamed {
-            Some(a) => a,
-            None if rungs.prefetch => prefetch_depth(g, e),
-            None => g,
-        }
-    });
+    let tiled = shaped
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, rungs.fill))
+        .flatten()
+        .map(|g| {
+            let streamed = rungs
+                .cp_async
+                .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
+                .flatten();
+            match streamed {
+                Some(a) => a,
+                None if rungs.prefetch => prefetch_depth(g, e),
+                None => g,
+            }
+        });
     match tiled {
         Some(g) => Launch {
             tiled: Some(g),

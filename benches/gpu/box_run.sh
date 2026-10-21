@@ -42,7 +42,7 @@ bench() { # <n> <stem> <label> [--contract]
     say "# n=$n face=$label"
     ./tile_bench "$n" "$n" "$n" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
 }
-for n in 1024 2048 4096 8192; do
+for n in 1024 1536 2048 3072 4096 8192; do
     bench "$n" "$PROF/mm_$n" _exact
     for v in "$PROF/mm_${n}".*.launch; do
         [ -f "$v" ] || continue

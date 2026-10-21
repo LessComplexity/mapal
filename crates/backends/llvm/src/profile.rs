@@ -195,16 +195,27 @@ impl Gpu {
         self.sm() >= 80
     }
 
+    /// Warp schedulers per SM: four since sm_70 (Volta through Blackwell),
+    /// each issuing one warp per cycle. An ISA table fact, like
+    /// [`Self::has_mma_sync`]. Older parts are not profiled; 1 leaves the fill
+    /// rule no stronger than "a block per SM".
+    pub fn schedulers(&self) -> u64 {
+        if self.sm() >= 70 { 4 } else { 1 }
+    }
+
+    /// The warps a grid needs before every scheduler holds
+    /// [`GPU_RESIDENT_BLOCKS`] of them — that constant's reason applied per
+    /// scheduler: one warp issues while the other waits on a load.
+    pub fn fill_warps(&self) -> u64 {
+        GPU_RESIDENT_BLOCKS * self.schedulers() * self.sms
+    }
+
     /// How full a grid of `blocks × threads` keeps the part: warps per warp
     /// scheduler, across every SM.
     pub fn warps_per_scheduler(&self, blocks: u64, threads: u64) -> u64 {
-        blocks * threads.div_ceil(self.warp) / (self.sms * GPU_SCHEDULERS_PER_SM)
+        blocks * threads.div_ceil(self.warp) / (self.sms * self.schedulers())
     }
 }
-
-/// Warp schedulers per SM: four on every part since sm_70 — an ISA fact, like
-/// [`GPU_VEC_BYTES`].
-pub const GPU_SCHEDULERS_PER_SM: u64 = 4;
 
 /// Which grids a measured rung decision covers. The key is
 /// [`Gpu::warps_per_scheduler`] at the site: below [`GPU_RESIDENT_BLOCKS`] a
@@ -971,7 +982,10 @@ impl TargetProfile {
     ///    a 64 × 32 warp tile.
     /// 2. **Warps per block** from `regs_per_sm` over twice the accumulators,
     ///    split across [`GPU_RESIDENT_BLOCKS`]; halved while the grid has fewer
-    ///    blocks than SMs.
+    ///    blocks than SMs. Before that, `fill` (S53 rung `warp-fill`) halves the
+    ///    warp tile's longer side (`wn` on a tie), down to one m16n8 tile, while
+    ///    the grid has fewer warps than [`Gpu::fill_warps`] — overriding `wide`
+    ///    on a small site. Warps per block stay those of the unshrunk tile.
     /// 3. **Padding** from the fragment access patterns ([`conflict_free_pad`]).
     /// 4. **Panel depth and stages.** `bk` is the largest power of two (≥ the
     ///    mma's k) for which two stages fit a block's share of shared memory
@@ -983,7 +997,14 @@ impl TargetProfile {
     /// buffers of its A and B fragments (`2·(4·mt + 2·nt)`), and
     /// [`MMA_ADDR_REGS`] of addresses — against the whole file. 255 registers
     /// ⇒ 32 tiles, 4 × 8 = a 64 × 64 warp tile (CUTLASS's), 224 registers.
-    pub fn gpu_mma_tile(&self, rows: u64, c: u64, k: u64, wide: bool) -> Option<GpuMmaTile> {
+    pub fn gpu_mma_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+    ) -> Option<GpuMmaTile> {
         let g = self.gpu()?;
         if !g.has_mma_sync() {
             return None;
@@ -1012,6 +1033,16 @@ impl TargetProfile {
             }
             (mt, tiles / mt, 2 * tiles * acc_per_tile)
         };
+        let (mut mt, mut nt) = (mt, nt);
+        while fill && (rows / (mt * MMA_M)) * (c / (nt * MMA_N)) < g.fill_warps() {
+            if nt * MMA_N >= mt * MMA_M && nt > 1 {
+                nt /= 2;
+            } else if mt > 1 {
+                mt /= 2;
+            } else {
+                break;
+            }
+        }
         let resident_threads = g.regs_per_sm / regs_est;
         let warps = (resident_threads / GPU_RESIDENT_BLOCKS / g.warp).max(1);
         // Square-most block tile: warps_y·wm ≈ warps_x·wn.
@@ -1099,14 +1130,19 @@ impl TargetProfile {
     ///    the accumulators; `regs_per_sm` over that is the resident-thread
     ///    budget, split across [`GPU_RESIDENT_BLOCKS`] blocks so one computes
     ///    while another waits at the barrier. 65 536 / 128 / 2 = 256 = 16 × 16.
-    /// 3. **Fill the machine.** While the grid has fewer blocks than SMs, halve
+    /// 3. **Fill the schedulers** (`fill`, S53 rung `warp-fill`). While the
+    ///    grid has fewer warps than [`Gpu::fill_warps`], halve the register
+    ///    tile's longer side (`tn` on a tie), down to one vector. Grid warps
+    ///    are `rows·c / (tm·tn·warp)`, which no thread-grid split changes;
+    ///    threads per block stay those of the unshrunk tile (step 2).
+    /// 4. **Fill the machine.** While the grid has fewer blocks than SMs, halve
     ///    the thread grid (x then y), down to one warp — a block left idle is a
     ///    whole SM idle, which no tile shape wins back.
-    /// 4. **Panel depth.** Blocks per SM = the tightest of registers, threads
+    /// 5. **Panel depth.** Blocks per SM = the tightest of registers, threads
     ///    and the block-slot limit; `bk` is the largest power of two whose two
     ///    panels fit one block's share of shared memory, dividing `k`, at least
     ///    one vector deep, and loadable in whole vectors by every thread.
-    pub fn gpu_tile(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+    pub fn gpu_tile(&self, rows: u64, c: u64, k: u64, elem: &Ty, fill: bool) -> Option<GpuTile> {
         let g = self.gpu()?;
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
@@ -1117,8 +1153,17 @@ impl TargetProfile {
         while (2 * t) * (2 * t) * regs_per_elem <= budget {
             t *= 2;
         }
-        let (tm, tn) = (t, t);
-        let regs_est = 2 * tm * tn * regs_per_elem;
+        let regs_est = 2 * t * t * regs_per_elem;
+        let (mut tm, mut tn) = (t, t);
+        while fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps() {
+            if tn >= tm && tn > lanes {
+                tn /= 2;
+            } else if tm > lanes {
+                tm /= 2;
+            } else {
+                break;
+            }
+        }
 
         let resident_threads = g.regs_per_sm / regs_est;
         let threads = (resident_threads / GPU_RESIDENT_BLOCKS).min(g.max_threads_per_block);
@@ -2653,29 +2698,34 @@ mod tests {
     #[test]
     fn gpu_tile_geometry_is_derived_from_device_facts() {
         let f32 = Ty::f32();
-        let g = |p: &TargetProfile, n| {
-            let x = p.gpu_tile(n, n, n, &f32).expect("divisible square site");
+        // `fill` on and off: `warp-fill` is a no-op on these 4096 sites.
+        let g = |p: &TargetProfile, n, fill| {
+            let x = p
+                .gpu_tile(n, n, n, &f32, fill)
+                .expect("divisible square site");
             (x.bm(), x.bn(), x.threads(), x.bk, x.blocks_per_sm)
         };
-        // 255 registers ⇒ 8×8 accumulators; 65 536 / 128 / 2 ⇒ 256 threads;
-        // 4090 4096²: 1024 blocks ≥ 128 SMs, 2 per SM ⇒ 49 KB ⇒ bk 32.
-        assert_eq!(g(&RTX_4090, 4096), (128, 128, 256, 32, 2));
-        // 1024²: 64 blocks < 128 SMs ⇒ halve x once ⇒ 128 blocks.
-        assert_eq!(g(&RTX_4090, 1024), (128, 64, 128, 32, 4));
-        // H100's 228 KB per SM doubles the panel depth.
-        assert_eq!(g(&H100, 4096), (128, 128, 256, 64, 2));
+        for fill in [false, true] {
+            // 255 registers ⇒ 8×8 accumulators; 65 536 / 128 / 2 ⇒ 256 threads;
+            // 4090 4096²: 1024 blocks ≥ 128 SMs, 2 per SM ⇒ 49 KB ⇒ bk 32.
+            assert_eq!(g(&RTX_4090, 4096, fill), (128, 128, 256, 32, 2));
+            // H100's 228 KB per SM doubles the panel depth.
+            assert_eq!(g(&H100, 4096, fill), (128, 128, 256, 64, 2));
+        }
+        // OFF arm, 1024²: 64 blocks < 128 SMs ⇒ halve x once ⇒ 128 blocks.
+        assert_eq!(g(&RTX_4090, 1024, false), (128, 64, 128, 32, 4));
         // 132 SMs: 128 blocks is still short ⇒ halve y too.
-        assert_eq!(g(&H100, 1024), (64, 64, 64, 32, 8));
+        assert_eq!(g(&H100, 1024, false), (64, 64, 64, 32, 8));
         // A CPU profile has no GPU geometry, and an indivisible site has none.
-        assert_eq!(GENERIC.gpu_tile(4096, 4096, 4096, &f32), None);
-        assert_eq!(RTX_4090.gpu_tile(1000, 1000, 1000, &f32), None);
+        assert_eq!(GENERIC.gpu_tile(4096, 4096, 4096, &f32, true), None);
+        assert_eq!(RTX_4090.gpu_tile(1000, 1000, 1000, &f32, true), None);
         // 5090: 24 resident blocks per SM (the box's device query, S53), which
         // the thread and register budgets never reach here: 1024² halves to
         // 64-thread blocks ⇒ 256 blocks ≥ 170 SMs, 8 per SM by registers ⇒
         // 11.8 KB each ⇒ bk 16.
         assert_eq!(RTX_5090.gpu().map(|g| g.max_blocks_per_sm), Some(24));
-        assert_eq!(g(&RTX_5090, 4096), (128, 128, 256, 32, 2));
-        assert_eq!(g(&RTX_5090, 1024), (64, 64, 64, 16, 8));
+        assert_eq!(g(&RTX_5090, 4096, false), (128, 128, 256, 32, 2));
+        assert_eq!(g(&RTX_5090, 1024, false), (64, 64, 64, 16, 8));
     }
 
     /// The fill a site's base geometry gives: 4090 1024² is 128 blocks of 4
@@ -2685,7 +2735,9 @@ mod tests {
     fn warps_per_scheduler_reads_the_base_grid() {
         let f32 = Ty::f32();
         let wps = |p: &TargetProfile, n| {
-            let g = p.gpu_tile(n, n, n, &f32).expect("divisible square site");
+            let g = p
+                .gpu_tile(n, n, n, &f32, false)
+                .expect("divisible square site");
             let blocks = (n / g.bm()) * (n / g.bn());
             p.gpu()
                 .expect("gpu")
@@ -2758,7 +2810,7 @@ mod tests {
     fn gpu_mma_tile_is_derived_from_device_facts() {
         let t = |p: &TargetProfile, n| {
             let x = p
-                .gpu_mma_tile(n, n, n, false)
+                .gpu_mma_tile(n, n, n, false, true)
                 .expect("divisible square site");
             (
                 x.wm(),
@@ -2779,14 +2831,66 @@ mod tests {
         // H100: 113 KB per block ⇒ bk 32 (35.8 KB) ⇒ 3 stages.
         assert_eq!(t(&H100, 4096), (64, 32, 128, 128, 32, 3, 4, 8));
         // Pre-sm_80 has no `mma.sync` TF32; a CPU has no tile at all.
-        assert_eq!(GENERIC.gpu_mma_tile(4096, 4096, 4096, false), None);
+        assert_eq!(GENERIC.gpu_mma_tile(4096, 4096, 4096, false, true), None);
         // The wide rule: 4×8 tiles (64×64 warp, 224 registers) ⇒ 292 resident
         // threads ⇒ 4 warps per block ⇒ 2×2 warps = 128×128 (CUTLASS's).
-        let w = RTX_4090.gpu_mma_tile(4096, 4096, 4096, true).expect("wide");
+        let w = RTX_4090
+            .gpu_mma_tile(4096, 4096, 4096, true, true)
+            .expect("wide");
         assert_eq!(
             (w.wm(), w.wn(), w.bm(), w.bn(), w.bk, w.stages),
             (64, 64, 128, 128, 16, 2)
         );
+    }
+
+    /// `warp-fill` (S53): the tile shrinks until the grid holds
+    /// 2 · 4 schedulers · SMs warps, before the thread grid splits for blocks.
+    #[test]
+    fn gpu_warp_fill_shrinks_the_tile_until_every_scheduler_has_two_warps() {
+        let f32 = Ty::f32();
+        let gpu = |p: &TargetProfile| *p.gpu().expect("gpu");
+        assert_eq!(gpu(&RTX_4090).schedulers(), 4);
+        assert_eq!(gpu(&RTX_4090).fill_warps(), 1024);
+        let fma = |p: &TargetProfile, n, fill| {
+            let x = p.gpu_tile(n, n, n, &f32, fill).expect("divisible");
+            let warps = (n / x.tm) * (n / x.tn) / 32;
+            (x.tm, x.tn, x.bm(), x.bn(), x.threads(), warps)
+        };
+        // 4090 1024²: 8×8 gives 512 warps (1 per scheduler) ⇒ halve tn ⇒ 8×4,
+        // 1024 warps (2 per scheduler); 16×16 threads ⇒ 128×64, 128 blocks.
+        assert_eq!(fma(&RTX_4090, 1024, false), (8, 8, 128, 64, 128, 512));
+        assert_eq!(fma(&RTX_4090, 1024, true), (8, 4, 128, 64, 256, 1024));
+        // H100 PCIe (114 SMs) needs 912 ⇒ 8×4; H100 SXM (132) 1056 and the
+        // 5090 (170) 1360 ⇒ 4×4, 64×64 blocks, 2048 warps.
+        assert_eq!(fma(&H100_PCIE, 1024, true), (8, 4, 128, 64, 256, 1024));
+        assert_eq!(fma(&H100, 1024, true), (4, 4, 64, 64, 256, 2048));
+        assert_eq!(fma(&RTX_5090, 1024, true), (4, 4, 64, 64, 256, 2048));
+        // Never below one vector: a 256² site floors at 4×4 and then splits
+        // the thread grid for blocks as before.
+        assert_eq!(fma(&RTX_4090, 256, true).0, 4);
+        assert_eq!(fma(&RTX_4090, 256, true).1, 4);
+
+        let mma = |p: &TargetProfile, n, fill| {
+            let x = p.gpu_mma_tile(n, n, n, true, fill).expect("divisible");
+            (x.wm(), x.wn(), x.bm(), x.bn(), (n / x.wm()) * (n / x.wn()))
+        };
+        // Wide 64×64 warp tile at 1024²: 256 warps (0.5 per scheduler) ⇒
+        // 64×32 ⇒ 32×32, 1024 warps; 2×2 warps per block ⇒ 64×64.
+        assert_eq!(mma(&RTX_4090, 1024, false), (64, 64, 128, 64, 256));
+        assert_eq!(mma(&RTX_4090, 1024, true), (32, 32, 64, 64, 1024));
+        // No-op wherever the grid already fills the schedulers.
+        for p in [&RTX_4090, &H100, &H100_PCIE, &RTX_5090] {
+            for n in [3072, 4096] {
+                assert_eq!(
+                    p.gpu_tile(n, n, n, &f32, true),
+                    p.gpu_tile(n, n, n, &f32, false)
+                );
+                assert_eq!(
+                    p.gpu_mma_tile(n, n, n, true, true),
+                    p.gpu_mma_tile(n, n, n, true, false)
+                );
+            }
+        }
     }
 
     /// The placeholder honesty pin. `cuda-ada` inherits CPU-shaped constants it
