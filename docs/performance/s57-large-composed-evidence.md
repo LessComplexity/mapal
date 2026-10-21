@@ -140,6 +140,9 @@ attention-plus-MLP program. Every reference preserves the staged association
 The recurrent program updates one input row and derives K/V before that projection.
 It is not a complete transformer model.
 
+The following table is the preserved pre-repair `b4152c5` baseline. Post-repair evidence
+is reported separately below.
+
 | Check | Observed result |
 | --- | --- |
 | Exact interpreter versus scalar binary32 reference | All 4 sources bit-for-bit equal |
@@ -149,14 +152,24 @@ It is not a complete transformer model.
 | RTX 5090 final-only recurrence | Shipped LLVM byte-identical to both-retention-OFF control |
 | GPU values and timing | Unvalidated |
 
-The source with full recurrent checkpoints reproducibly panics at
-`crates/mapal-rewrite/src/replay.rs:989`, reporting an unmapped feeder
-`ObjectId(5907v1)` (exit 101). Its SHA256 is
+The full recurrent checkpoint source triggered `replay.rs:989` with unmapped
+`ObjectId(5907v1)` (exit 101) in that frozen build. Its SHA256 is
 `0e4c05b403550da3a3afaeebcea8323e2af1dca887aa6a94d95c1e0dd7c57142`.
-The same source passes the interpreter. A no-rewrite native diagnostic times out at
-120 seconds; a no-rewrite A100 emission produces CPU-only LLVM. Neither replaces
-the failed optimized checkpoint coverage. **No compiler fix or numerical relaxation
-has been applied.**
+A subsequent instrumented diagnostic proved that this is an acyclic token/value exit
+pair inside the existing canonical driver cone but outside its SCC. The generic
+[replay repair and proof](../../benches/results-s54-gpu/s57-loop-route-replay/README.md)
+are now applied: reconstruction includes existing decide/advance work before feeding
+loop routes. No observations or numerical rules are removed or relaxed.
+
+The eight previously failing GPU emission configurations now complete: RTX 5090/A100 ×
+Exact/Contract × shipped/full-recompute. Raw, identity-replayed and fully rewritten
+interpreter runs agree on all 8,408 numeric checkpoint values and 8,838 output lines.
+Five new regressions fail before the fix and pass after it; the full rewrite suite passes
+86/86 and the required-clang workspace suite passes 1,181/0/1 ignored. This establishes
+compiler and interpreter coverage, not CUDA correctness. Tiny native Exact/Contract
+runs pass; original native Exact, Contract and one separate Contract `--no-tile` emission
+each reach a bounded 40-second timeout. That backend limit remains unresolved.
+The earlier no-rewrite timeout and CPU-only A100 diagnostic remain historical evidence.
 
 Checkpoint observations change placement: the matrix check source contains 12 arena
 requests and 1,496 scalar readbacks; its final-only source contains 9 arena requests
@@ -203,13 +216,16 @@ profitability or completion of asynchronous device access.
 
 ## Provenance and remaining work
 
-The [bounded replay investigation](../../benches/results-s54-gpu/s57-large-composed-preparation/recurrent-checkpoint-root-cause.md)
-locates the recurrent-checkpoint failure before GPU emission. A source-level candidate is
-that loop replay reconstructs only the strongly connected region before reading an
-acyclic exit-payload pack, although the existing loop plan includes that payload's
-computation. The exact failed object has not yet been traced to the pack; no fix is
-selected or applied. The report records the post-freeze diagnostic and regression scope,
-including an actual identity replay so an empty-plan bypass cannot hide the issue.
+The [original bounded investigation](../../benches/results-s54-gpu/s57-large-composed-preparation/recurrent-checkpoint-root-cause.md)
+records the candidate before instrumentation. The later
+[diagnostic and semantic proof](../../benches/results-s54-gpu/s57-loop-route-replay/PROOF.md)
+binds both failed objects to that candidate, preserves the five old-code failures and
+all emitted artifacts, and documents the applied generic repair. The frozen certification
+index below is retained unchanged; it must not be mistaken for the post-repair result.
+
+Both approved correctness-pilot rental attempts failed at allocation before upload or
+GPU execution. [Sanitized diagnosis and cleanup](../../benches/results-s54-gpu/s57-correctness-pilot-allocation-failures/allocation-diagnosis.md)
+record the exact boundary; no PyTorch, ordering or composed CUDA result exists yet.
 
 The [certification index](../../benches/results-s54-gpu/s57-large-composed-preparation/composition/certification-summary.json)
 records passes, failures and frozen-input checks. An independent root

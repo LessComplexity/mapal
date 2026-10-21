@@ -127,7 +127,7 @@ The builder exposes **typed primitives only** (no raw add-object/add-edge); comp
 | defined by `TimeMs` (S29) | one op edge, source = the **bare** `IoToken` (no packed source, unlike `Print`) | `fb.time_ms(replayed_token, loc)` — mints the fresh `(IoToken, f64)` pair. Identity replay only: no pass ever plans a `TimeMs` (see §3 — it is impure by `is_pure` and token-bearing by ty, which excludes it from CSE, forwarding, DCE removal and lifting without a single `TimeMs` special case) |
 | defined by `Output` | op edge | `output(replayed_src, slot, loc)` |
 | Return slot writes | `Pair` into Return | the writing primitive replayed with `Dest::Ret{slot}` (canonical form, ir L3-4) |
-| `LoopMerge` + routes + exits | the quartet | canonicity and per-merge layout are **delegated to `mapal_ir::CategoryIr::loop_plan(f, merge)`** (ir §13, BL7 — the one source of truth; `is_canonical` gates on `loop_plan(...).is_some()` for every `loop_structure` merge, `replay` reads the same `LoopPlan` back). Replay init → `begin_loop` → in-SCC morphisms in body order (merge ↦ `merge_of(lh)`) → `loop_back(next_state', cond')` from the back route's slot feeders → `loop_exit(value', cond', dest)` from the exit route's slot feeders → `end_loop`. Route objects are never materialized. **Exit attribution (S12): by route-feeder membership in the specific merge's SCC (the interp driver's rule, now encapsulated in `loop_plan`) — never by reachability, which mis-attributed a downstream loop's exit to an upstream merge; two sequential canonical loops in one fn are canonical and rewritable** (pinned by `identity.rs::two_sequential_loops_rewrite_not_skipped`) |
+| `LoopMerge` + routes + exits | the quartet | canonicity and per-merge layout are **delegated to `mapal_ir::CategoryIr::loop_plan(f, merge)`** (ir §13, BL7 — the one source of truth; `is_canonical` gates on `loop_plan(...).is_some()` for every `loop_structure` merge, `replay` reads the same `LoopPlan` back). Replay init → `begin_loop` → canonical driver region in the global object-topological suborder (SCC objects plus targets of existing `decide_order`/`advance_order`; merge ↦ `merge_of(lh)`; classification through `reconstruct_a`) → `loop_back(next_state', cond')` from the back route's slot feeders → `loop_exit(value', cond', dest)` from the exit route's slot feeders → `end_loop`. Route objects are never materialized. **Exit attribution (S12): by route-feeder membership in the specific merge's SCC (the interp driver's rule, now encapsulated in `loop_plan`) — never by reachability, which mis-attributed a downstream loop's exit to an upstream merge; two sequential canonical loops in one fn are canonical and rewritable** (pinned by `identity.rs::two_sequential_loops_rewrite_not_skipped`) |
 
 - **Id remap**: `SecondaryMap<ObjectId_old, ObjectId_new>`, built during the walk. `alias?` is resolved (transitively) *before* lookup; `constify?` short-circuits to a fresh `constant(v)`; `drop` objects are skipped.
 - `inline` redirects a selected call through the callee replay recipe. `lift` reconstructs the planned SCC as a captured collection op and marks the old merge/routes/SCC complete; both reuse the same remap and primitive emitter.
@@ -136,7 +136,20 @@ The builder exposes **typed primitives only** (no raw add-object/add-edge); comp
 - **Shared primitive-source products** (a product feeding both an explicit consumer and an internally-packing primitive) are validate-legal but not lower-emitted; the replayer handles them soundly by letting the primitive re-pack (one duplicate product; values identical). Recorded, not optimized.
 - **Identity replay is a first-class product**: `replay(ir, empty_plan)` must satisfy R1 against `ir` on the 10 in-Core examples — this is the harness's own soundness anchor and the first thing built (plan WP1).
 
-### 1.2 Plan-consistency rules (global — every pass, enforced by plan.rs, asserted by replay)
+#**Route reconstruction completeness (S57).** `Trn replay` consumes the existing `Dat`
+`LoopPlan`, `RewritePlan` and old-to-new object map in the same compiler-memory location.
+A loop's required exit value may be acyclic: a token/value pair derived from the merge
+is in its canonical driver cone but outside the SCC. `replay.rs:reconstruct_loop` must
+rebuild that work before feeding `loop_exit`; SCC membership alone does not establish
+route readiness. Existing decide/advance orders supply membership, the global object order
+supplies deterministic reconstruction order, and `reconstruct_a` supplies the same
+alias/drop/constify/internal-pack policy as ordinary replay. No second loop model, new
+location, transmission or backend fact is introduced. Invariant producers and sequential
+loop ownership remain governed by `CategoryIr::loop_plan`; noncanonical shapes retain
+R6's existing rejection boundary. `tests/loop_routes.rs` forces empty-plan replay so a
+fixpoint driver's no-op shortcut cannot conceal missing route work.
+
+## 1.2 Plan-consistency rules (global — every pass, enforced by plan.rs, asserted by replay)
 
 The design review (S12, 4-lens adversarial) converged three independent blockers onto one missing generalization: the exclusions §3.2 gave CSE are really **laws of the plan itself**. Promoted here; the per-pass sections inherit them.
 

@@ -3,7 +3,9 @@
 Current continuation: **2026-10-21, S57 frozen GPU validation complete; generic proof work continuing.**
 The only checkout is `s54-gpu-fusion`; historical worktrees remain safely archived.
 LLVM/CUDA example targets no longer collide, both profile tests register once, and constant folding now preserves guard-owned dependencies, including loop payloads.
-Required-clang host release tests passed twice: **1176 passed / 0 failed / 1 ignored**. Latest drift: **0 dead / 563 references**.
+After the proved loop-route replay repair, the required-clang host workspace passes
+**1181 passed / 0 failed / 1 ignored**; frozen pre-repair validation remains bound to b4152c5.
+Latest drift: **0 dead / 563 references**.
 The disputed GPU selections are resolved at `b4152c5`: 5090 streams OFF, H100 retention/window OFF,
 and the 5090 derived raster gate restored. Independent selection runs and the final host suite pass;
 all five primaries now pass every validation/cleanup gate, including H100 PCIe.

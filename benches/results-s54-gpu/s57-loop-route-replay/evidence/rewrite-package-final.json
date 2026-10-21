@@ -1,0 +1,18 @@
+{
+  "name": "rewrite-package-final",
+  "argv": [
+    "cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--release",
+    "-p",
+    "mapal-rewrite"
+  ],
+  "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+  "CARGO_TARGET_DIR": "/private/tmp/mapal-replay-diagnostic/target",
+  "exit": 0,
+  "seconds": 5.251265833008802,
+  "test_sha256": "e6423f871f1aa512da714a20680969fa2038f763df6686445f378a796c63ce9f",
+  "replay_sha256": "13060ed30adc9737fedce93c4b015e8faf0d1eba2169d0de90523d21c784347c"
+}

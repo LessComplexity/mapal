@@ -80,8 +80,10 @@ The [large/composed preparation](../../performance/s57-large-composed-evidence.m
 The RTX 5090 16K/rectangular extension validates 98/100 invocations; both failed arms
 are the same requested-TF32 fallback and remain rejected. All six 16K base/repeat
 sampled value gates pass. This is separate from the frozen matrix.
-Its recurrent checkpoint source exposes a reproducible rewrite panic; optimized
-checkpoint coverage and all new GPU results remain open. No source fix has been applied.
+The recurrent checkpoint replay panic is now repaired through existing loop-driver facts.
+All eight previously failing GPU emissions complete and full interpreter checkpoints
+match; actual composed GPU correctness/timing remains open. Native large emission still
+reaches a bounded timeout. The required-clang workspace passes 1,181/0/1 ignored.
 
 ## Continuing performance work
 

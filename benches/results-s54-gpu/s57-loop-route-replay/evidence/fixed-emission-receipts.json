@@ -1,0 +1,417 @@
+{
+  "commands": [
+    {
+      "name": "original5907/gpu/a100/contract/full-recompute",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=a100",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/a100/contract/full-recompute/device.ll",
+        "--contract",
+        "--gpu-off=retain-delta,retain-resident"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.36437537499296,
+      "timeout_seconds": 40,
+      "stdout_sha256": "95e35a44859211d7a71a5b3bcbb2e49124dd835a314d7ffe658f353e19492c61",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "95e35a44859211d7a71a5b3bcbb2e49124dd835a314d7ffe658f353e19492c61",
+          "bytes": 925677
+        },
+        "device.ll": {
+          "sha256": "ea7152fcfbdc4d497333bf5487ba4c22cc4102bf74ecbc9d87a92b6e0961f7c6",
+          "bytes": 49545
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/a100/contract/shipped",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=a100",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/a100/contract/shipped/device.ll",
+        "--contract"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 4.850807584007271,
+      "timeout_seconds": 40,
+      "stdout_sha256": "5deb3c2c4e7a383a4d8e18c866d58435eb2041233fde91f95e8d7d3926130481",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "5deb3c2c4e7a383a4d8e18c866d58435eb2041233fde91f95e8d7d3926130481",
+          "bytes": 927710
+        },
+        "device.ll": {
+          "sha256": "ea7152fcfbdc4d497333bf5487ba4c22cc4102bf74ecbc9d87a92b6e0961f7c6",
+          "bytes": 49545
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/a100/exact/full-recompute",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=a100",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/a100/exact/full-recompute/device.ll",
+        "--gpu-off=retain-delta,retain-resident"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.354730124992784,
+      "timeout_seconds": 40,
+      "stdout_sha256": "b31a39636545aeeb1147d9d0e810351bdc58dc5ea101823c733d0e590500b72c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "b31a39636545aeeb1147d9d0e810351bdc58dc5ea101823c733d0e590500b72c",
+          "bytes": 925678
+        },
+        "device.ll": {
+          "sha256": "131c870a4a97acbf82c7d6140dcb3ad16b123f4d1fab45f511f456816730f044",
+          "bytes": 49505
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/a100/exact/shipped",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=a100",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/a100/exact/shipped/device.ll"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 4.877221791990451,
+      "timeout_seconds": 40,
+      "stdout_sha256": "dcc43f986076ee0f3c790aef1624072ef6a5250ffc32bc431642c42b65d4fdee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "dcc43f986076ee0f3c790aef1624072ef6a5250ffc32bc431642c42b65d4fdee",
+          "bytes": 927711
+        },
+        "device.ll": {
+          "sha256": "131c870a4a97acbf82c7d6140dcb3ad16b123f4d1fab45f511f456816730f044",
+          "bytes": 49505
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/rtx-5090/contract/full-recompute",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=rtx-5090",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/rtx-5090/contract/full-recompute/device.ll",
+        "--contract",
+        "--gpu-off=retain-delta,retain-resident"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.2118123749969527,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e34c16974b25613b7a42b57657d280bc2bc3cee5673139f296715f0b10697f4b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "e34c16974b25613b7a42b57657d280bc2bc3cee5673139f296715f0b10697f4b",
+          "bytes": 925685
+        },
+        "device.ll": {
+          "sha256": "1f491711bc173b5d10852e0b558e19ffb72ff5e8658714f0a258d22fc3745beb",
+          "bytes": 49545
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/rtx-5090/contract/shipped",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=rtx-5090",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/rtx-5090/contract/shipped/device.ll",
+        "--contract"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.2303853330085985,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e34c16974b25613b7a42b57657d280bc2bc3cee5673139f296715f0b10697f4b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "e34c16974b25613b7a42b57657d280bc2bc3cee5673139f296715f0b10697f4b",
+          "bytes": 925685
+        },
+        "device.ll": {
+          "sha256": "1f491711bc173b5d10852e0b558e19ffb72ff5e8658714f0a258d22fc3745beb",
+          "bytes": 49545
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/rtx-5090/exact/full-recompute",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=rtx-5090",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/rtx-5090/exact/full-recompute/device.ll",
+        "--gpu-off=retain-delta,retain-resident"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.226179333010805,
+      "timeout_seconds": 40,
+      "stdout_sha256": "0956db86421814f1a2ae95f8a59e43164b6971afa37867f9690232168b37dad2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "0956db86421814f1a2ae95f8a59e43164b6971afa37867f9690232168b37dad2",
+          "bytes": 925683
+        },
+        "device.ll": {
+          "sha256": "8987f3470eef313188f06bcb6e46ebda32f403f97669187fd5a4449777f22e25",
+          "bytes": 49505
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/gpu/rtx-5090/exact/shipped",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=rtx-5090",
+        "--device-out=/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/gpu/rtx-5090/exact/shipped/device.ll"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 3.2260364169924287,
+      "timeout_seconds": 40,
+      "stdout_sha256": "0956db86421814f1a2ae95f8a59e43164b6971afa37867f9690232168b37dad2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifacts": {
+        "host.ll": {
+          "sha256": "0956db86421814f1a2ae95f8a59e43164b6971afa37867f9690232168b37dad2",
+          "bytes": 925683
+        },
+        "device.ll": {
+          "sha256": "8987f3470eef313188f06bcb6e46ebda32f403f97669187fd5a4449777f22e25",
+          "bytes": 49505
+        }
+      },
+      "host_print_call_count": 1028,
+      "kernel_entry_definitions": 13
+    },
+    {
+      "name": "original5907/native/contract/emit",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=apple-m",
+        "--contract"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": "timeout",
+      "seconds": 40.00364016699314,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "original5907/native/exact/emit",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=apple-m"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": "timeout",
+      "seconds": 40.00444508300279,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "original5907/native-no-tile/contract/emit",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "-",
+        "--rewrite",
+        "--target=apple-m",
+        "--contract",
+        "--no-tile"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": "timeout",
+      "seconds": 40.00295016699238,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "original5907/semantics",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/audit_semantics",
+        "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/semantic-outputs"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 18.26069858299161,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "8d56b45032f111023577f14a296e9ed51e7a088fbb906d6597336337bec9074f"
+    },
+    {
+      "name": "tiny674/native/contract/emit",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/rewrite-investigation/variants/tiny-counter-print-only/source.mapal",
+        "-",
+        "--rewrite",
+        "--target=apple-m",
+        "--contract"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.05953508299717214,
+      "timeout_seconds": 40,
+      "stdout_sha256": "c01ec92e16f76a3fb3ee60977928b85ac3c703c374cc7daebecdf6cbc2ca652f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "tiny674/native/contract/link",
+      "argv": [
+        "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+        "-O2",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/contract/host.ll",
+        "/Volumes/LessComplex/Personal/mapal/target/release/libmapal_rt.a",
+        "-o",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/contract/program"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.1524485830013873,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "131d57d737911492250b316203e627d318f7baf6dcfa715f514200ab4f92e9df"
+    },
+    {
+      "name": "tiny674/native/contract/run",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/contract/program"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.13304283299657982,
+      "timeout_seconds": 40,
+      "stdout_sha256": "82c1315e6c757f33c4a77ca58b2a184f5a88614470c05ec77f3d28918db6b8ae",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "tiny674/native/exact/emit",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+        "/private/tmp/mapal-s56-gpu/large-composed/rewrite-investigation/variants/tiny-counter-print-only/source.mapal",
+        "-",
+        "--rewrite",
+        "--target=apple-m"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.19492354200338013,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e08971eda7e7031547d17feb778623389a93cf5779c430aa20218b8c178d8d58",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "tiny674/native/exact/link",
+      "argv": [
+        "/opt/homebrew/Cellar/llvm/22.1.8/bin/clang-22",
+        "-O2",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/exact/host.ll",
+        "/Volumes/LessComplex/Personal/mapal/target/release/libmapal_rt.a",
+        "-o",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/exact/program"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.46215912500338163,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "131d57d737911492250b316203e627d318f7baf6dcfa715f514200ab4f92e9df"
+    },
+    {
+      "name": "tiny674/native/exact/run",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/native/exact/program"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.1336565840028925,
+      "timeout_seconds": 40,
+      "stdout_sha256": "82c1315e6c757f33c4a77ca58b2a184f5a88614470c05ec77f3d28918db6b8ae",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "tiny674/semantics",
+      "argv": [
+        "/private/tmp/mapal-replay-diagnostic/target/release/examples/audit_semantics",
+        "/private/tmp/mapal-s56-gpu/large-composed/rewrite-investigation/variants/tiny-counter-print-only/source.mapal",
+        "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/tiny674/semantic-outputs"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "status": 0,
+      "seconds": 0.2147112910024589,
+      "timeout_seconds": 40,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "10d940bc1b03bbdeef591d55cfb15bf6e49757be188082d2b33adeb0b87c243c"
+    }
+  ],
+  "gpu_pass_count": 8,
+  "timeout_count": 3,
+  "scope": "saved compiler output only; no GPU or performance claim"
+}

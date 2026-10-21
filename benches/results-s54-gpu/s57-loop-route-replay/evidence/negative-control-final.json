@@ -1,0 +1,20 @@
+{
+  "name": "negative-control-final",
+  "argv": [
+    "cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--release",
+    "-p",
+    "mapal-rewrite",
+    "--test",
+    "loop_routes"
+  ],
+  "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+  "CARGO_TARGET_DIR": "/private/tmp/mapal-replay-diagnostic/target",
+  "exit": 101,
+  "seconds": 1.5265384999947855,
+  "test_sha256": "e6423f871f1aa512da714a20680969fa2038f763df6686445f378a796c63ce9f",
+  "replay_sha256": "cbbbc4346f7b8adb31993774cd1216bdef78b7e2bd5226be32debce15f69e1b5"
+}

@@ -1,0 +1,4 @@
+   Compiling mapal-rewrite v0.0.1 (/private/tmp/mapal-replay-diagnostic/source/crates/mapal-rewrite)
+    Finished `release` profile [optimized] target(s) in 1.31s
+     Running tests/loop_routes.rs (/private/tmp/mapal-replay-diagnostic/target/release/deps/loop_routes-d01867208666c671)
+error: test failed, to rerun pass `-p mapal-rewrite --test loop_routes`

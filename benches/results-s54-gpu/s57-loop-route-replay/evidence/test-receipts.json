@@ -1,0 +1,121 @@
+{
+  "tests": [
+    {
+      "name": "negative-control",
+      "exit": 101,
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--release",
+        "-p",
+        "mapal-rewrite",
+        "--test",
+        "loop_routes"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "CARGO_TARGET_DIR": "/private/tmp/mapal-replay-diagnostic/target",
+      "counts": {
+        "passed": 0,
+        "failed": 5,
+        "ignored": 0
+      },
+      "logs": {
+        "/private/tmp/mapal-replay-diagnostic/evidence/negative-control.stdout": "62a2feff2f640584acd07c61564c94f0ded0c5a2d2739690e1967e8a61252e57",
+        "/private/tmp/mapal-replay-diagnostic/evidence/negative-control.stderr": "6f02a786cdf4f5a49761edb6662fda1845735207268c8f15e21a8ce5c1afd3ce"
+      }
+    },
+    {
+      "name": "focused-tests",
+      "exit": 0,
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--release",
+        "-p",
+        "mapal-rewrite",
+        "--test",
+        "loop_routes",
+        "--test",
+        "identity",
+        "--test",
+        "guard_loops",
+        "--test",
+        "const_fold"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "CARGO_TARGET_DIR": "/private/tmp/mapal-replay-diagnostic/target",
+      "counts": {
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0
+      },
+      "logs": {
+        "/private/tmp/mapal-replay-diagnostic/evidence/focused-tests.stdout": "a0a6a448ad19d3fd2142a0b7fbe92b4e05b0b8599d60a62569cb8578adc61f07",
+        "/private/tmp/mapal-replay-diagnostic/evidence/focused-tests.stderr": "f2e50cdf8113549984db6b03653bdd485596fbe53a08a7e9ead8ab11b4bec116"
+      }
+    },
+    {
+      "name": "rewrite-package",
+      "exit": 0,
+      "argv": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--release",
+        "-p",
+        "mapal-rewrite"
+      ],
+      "cwd": "/private/tmp/mapal-replay-diagnostic/source",
+      "CARGO_TARGET_DIR": "/private/tmp/mapal-replay-diagnostic/target",
+      "counts": {
+        "passed": 86,
+        "failed": 0,
+        "ignored": 0
+      },
+      "logs": {
+        "/private/tmp/mapal-replay-diagnostic/evidence/rewrite-package.stdout": "ad4c8c87e13dfb641a47d747cdf1410fbd12364abc057a4b19a3776632d7807b",
+        "/private/tmp/mapal-replay-diagnostic/evidence/rewrite-package.stderr": "aae83f547d334b1006faf8c646f0b2df6a867e6fa32c37c9ef5aa01a989aecee"
+      }
+    }
+  ],
+  "interpreter_scalar_checkpoint_comparisons": [
+    {
+      "leg": "before.stdout",
+      "path": "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/semantic-outputs/before.stdout",
+      "sha256": "a2c55572b781333adde1ce6e31d74a16120f5785da905ca922b82708b83d1a03",
+      "passed": true,
+      "numeric_values": 8408,
+      "consumed_lines": 8838,
+      "actual_lines": 8838,
+      "first_mismatches": []
+    },
+    {
+      "leg": "identity.stdout",
+      "path": "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/semantic-outputs/identity.stdout",
+      "sha256": "a2c55572b781333adde1ce6e31d74a16120f5785da905ca922b82708b83d1a03",
+      "passed": true,
+      "numeric_values": 8408,
+      "consumed_lines": 8838,
+      "actual_lines": 8838,
+      "first_mismatches": []
+    },
+    {
+      "leg": "rewritten.stdout",
+      "path": "/private/tmp/mapal-replay-diagnostic/evidence/fixed-checks/original5907/semantic-outputs/rewritten.stdout",
+      "sha256": "a2c55572b781333adde1ce6e31d74a16120f5785da905ca922b82708b83d1a03",
+      "passed": true,
+      "numeric_values": 8408,
+      "consumed_lines": 8838,
+      "actual_lines": 8838,
+      "first_mismatches": []
+    }
+  ],
+  "regression_source_sha256": "2151045c75349c3d974eae31cd73de2da11b5824dcf241e7cba4966cead00afe",
+  "fixed_source_sha256": "13060ed30adc9737fedce93c4b015e8faf0d1eba2169d0de90523d21c784347c",
+  "patch_sha256": "3e0132cb046639b1d4d37cdc9c437df39d432b70d746bcc4723538186e338fc0"
+}

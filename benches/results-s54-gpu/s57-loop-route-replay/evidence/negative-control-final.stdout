@@ -1,0 +1,46 @@
+
+running 5 tests
+test non_scc_route_work_honors_constify_plan ... FAILED
+test pure_computed_exit_payload_survives_identity_and_each_pass ... FAILED
+test observed_loop_exit_payload_survives_identity_and_each_pass ... FAILED
+test exit_step_skips_advance_effects_and_traps ... FAILED
+test sequential_loop_routes_keep_invariants_and_ownership ... FAILED
+
+failures:
+
+---- non_scc_route_work_honors_constify_plan stdout ----
+
+thread 'non_scc_route_work_honors_constify_plan' (13046519) panicked at crates/mapal-rewrite/src/replay.rs:989:28:
+replay: feeder ObjectId(14v1) (from ObjectId(14v1)) is not mapped
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pure_computed_exit_payload_survives_identity_and_each_pass stdout ----
+
+thread 'pure_computed_exit_payload_survives_identity_and_each_pass' (13046521) panicked at crates/mapal-rewrite/src/replay.rs:989:28:
+replay: feeder ObjectId(14v1) (from ObjectId(14v1)) is not mapped
+
+---- observed_loop_exit_payload_survives_identity_and_each_pass stdout ----
+
+thread 'observed_loop_exit_payload_survives_identity_and_each_pass' (13046520) panicked at crates/mapal-rewrite/src/replay.rs:989:28:
+replay: feeder ObjectId(21v1) (from ObjectId(21v1)) is not mapped
+
+---- exit_step_skips_advance_effects_and_traps stdout ----
+
+thread 'exit_step_skips_advance_effects_and_traps' (13046518) panicked at crates/mapal-rewrite/src/replay.rs:989:28:
+replay: feeder ObjectId(24v1) (from ObjectId(24v1)) is not mapped
+
+---- sequential_loop_routes_keep_invariants_and_ownership stdout ----
+
+thread 'sequential_loop_routes_keep_invariants_and_ownership' (13046522) panicked at crates/mapal-rewrite/src/replay.rs:989:28:
+replay: feeder ObjectId(14v1) (from ObjectId(14v1)) is not mapped
+
+
+failures:
+    exit_step_skips_advance_effects_and_traps
+    non_scc_route_work_honors_constify_plan
+    observed_loop_exit_payload_survives_identity_and_each_pass
+    pure_computed_exit_payload_survives_identity_and_each_pass
+    sequential_loop_routes_keep_invariants_and_ownership
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
