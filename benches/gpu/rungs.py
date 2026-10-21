@@ -1,23 +1,59 @@
 #!/usr/bin/env python3
 """The GPU_RUNGS_OFF rule over one part's sessions (box_run results files, different boxes).
-Per rung and (fill, face) class: fill = Under at n=1024 (warp-fill acts there on every part),
-Filled at n>=2048; face = Exact for _exact, Contract for _c and _tf.
-At one size, speedup s = (OFF ms / its bench's cuBLAS ms) / (ON ms / its cuBLAS ms), medians within one run. A size is
-  stable+  when s > 1.01 in every session (ON faster, the sign holds across boxes),
-  stable-  when s < 0.99 in every session,
-and `*` marks disjoint min-max ranges. The rule: a rung ships ON in a class iff some size is stable+.
+
+Evidence, per arm (`off-<rung>` = shipped ON, `on-<rung>` = shipped OFF), as an OFF/ON speedup
+(>1 = ON faster), medians within one run:
+  kernels  `# n=… face=<f>.<arm>` tile_bench rows, each bench normalized by its own cuBLAS leg
+           (cancels the clock drift of a power-capped box between benches);
+  probes   `probe prog=pt_<probe>_<n> … arm=<arm>` rows, the program's own `iter ms` (S54);
+  e2e      `e2e prog=<prog> … arm=<arm>` rows, process wall;
+  decode   `decode prog=decode_<T>_<d>[_c].<arm>` rows, process wall.
+Probe, e2e and decode arms run interleaved in one session, so their ratio needs no reference leg.
+
+A class is (rung, fill, face). Face: Exact (_exact), Contract (_c, the FMA face), Tf32 (_tf).
+Fill is read from the grid the rung's decision is taken on: `Any` for a rung decided once per
+module (gpu.rs `host_rungs`: its rows must cover every fill), else Under at n <= 1024 and Filled
+above — `Gpu::warps_per_scheduler` of a site's base FMA grid on all five parts (profile.rs test
+`warps_per_scheduler_reads_the_base_grid`).
+
+At one size: stable+ when s > 1.01 in every session, stable- when s < 0.99 in every session,
+`*` = disjoint min-max ranges. The rule: a rung ships ON in a class iff some size is stable+.
 Status against what ships now: ok / CONTRADICTS (strong: a size stable with disjoint ranges in every
-session the other way) / contradicts (weak: no stable+ size where it ships ON, or vice versa without
-disjoint ranges). Composite arms (arch-rungs = the whole table, fma-regs = idx32+affine+pad+wide-fma)
-are shown, never decided.
-usage: python3 benches/gpu/rungs.py <results-session-1> [<results-session-2>...] """
-import re, sys
+session the other way) / contradicts (weak). Composite arms (arch-rungs = the whole table,
+fma-regs = idx32+affine+pad+wide-fma, `a+b` arms) are shown, never decided.
+
+Then the RungOff rows the rule asks for, merged across classes where they agree (a `Contract`
+row covers the TF32 face too: profile.rs `Face::covers`), to paste into GPU_RUNGS_OFF.
+
+usage: python3 benches/gpu/rungs.py <results-session-1> [<results-session-2>...]
+       python3 benches/gpu/rungs.py --selftest
+"""
+import os
+import re
+import statistics
+import sys
 from collections import defaultdict
 
 EPS = 0.01  # no effect within ±1%: the same ratio differs by a median 0.5-1.2% between two boxes (S54 base vs confirm)
+# Rungs decided once per module (gpu.rs `host_rungs`); an S54 item whose rung is read there adds it.
+HOST = {'resident', 'devgen', 'eager-init', 'retain-delta'}
+COMPOSITE = {'arch-rungs', 'fma-regs'}
+FACE = {'_exact': 'Exact', '_c': 'Contract', '_tf': 'Tf32'}
 
 
-def rows_of(path):
+def fill_of(rung, n):
+    return 'Any' if rung in HOST else ('Under' if n <= 1024 else 'Filled')
+
+
+def profile_of(path):
+    for l in open(path):
+        m = re.match(r'== (\S+) sm_', l)
+        if m:
+            return m[1]
+    return '?'
+
+
+def kernel_rows(path):
     rows, cur = {}, {}
     for l in open(path):
         m = re.match(r'# n=(\d+) face=(\S+)', l)
@@ -32,32 +68,72 @@ def rows_of(path):
     return rows
 
 
-def arms(path):
-    rows, out = rows_of(path), {}
+def split_arm(arm):
+    """`off-<rung>` / `on-<rung>` -> (shipped, rung); anything else (on, s52, PREV tags) -> None."""
+    d, _, rung = arm.partition('-')
+    return (('ON' if d == 'off' else 'OFF'), rung) if d in ('off', 'on') and rung else None
+
+
+def kernel_arms(path):
+    rows, out = kernel_rows(path), {}
     for (n, key), r in rows.items():
-        if '.' not in key:
-            continue
-        face, arm = key.split('.', 1)
-        if not (arm.startswith('off-') or arm.startswith('on-')) or (n, face) not in rows:
+        face, _, arm = key.partition('.')
+        sa = split_arm(arm)
+        if not sa or (n, face) not in rows or face not in FACE:
             continue
         base = rows[(n, face)]
-        d, rung = arm.split('-', 1)
-        on, off = (base, r) if d == 'off' else (r, base)
+        on, off = (base, r) if sa[0] == 'ON' else (r, base)
         disj = on['mapal'][2] < off['mapal'][0] or off['mapal'][2] < on['mapal'][0]
-        # Normalized by each bench's own cuBLAS leg: cancels the clock drift between benches
-        # (power-capped boxes drift 5-10% over a run; table.py's cuBLAS-normalized column).
         sp = (off['mapal'][1] / off['cublas'][1]) / (on['mapal'][1] / on['cublas'][1])
-        out[(rung, face, n)] = (sp, disj, 'ON' if d == 'off' else 'OFF', on['mapal'][1], off['mapal'][1])
+        out[(sa[1], face, f'{face} {n}', n)] = (sp, disj, sa[0])
+    return out
+
+
+def null_ab(path):
+    """The shipped kernel benched again as arm `null` (bundle.sh): the same text's cuBLAS-normalized
+    ratio — the session's own noise floor for one A/B, position in the bench order included."""
+    rows = kernel_rows(path)
+    return {f'{face} {n}': (rows[(n, face)]['mapal'][1] / rows[(n, face)]['cublas'][1])
+            / (r['mapal'][1] / r['cublas'][1])
+            for (n, key), r in rows.items() for face in [key.removesuffix('.null')]
+            if key.endswith('.null') and (n, face) in rows}
+
+
+def program_arms(path):
+    """Probe / e2e / decode arms: {(rung, face, size label, n): (speedup, disjoint, shipped)}."""
+    xs = defaultdict(list)  # (kind, prog, face, arm) -> samples
+    for l in open(path):
+        m = re.match(r'(probe|e2e) prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ wall_us=(\d+) .*?out=\[(.*?)\]', l)
+        if m:
+            kind, prog, face, arm, wall, out = m.groups()
+            it = re.search(r'iter ms=([\d.e+-]+)', out)
+            v = float(it[1]) if kind == 'probe' and it else int(wall) / 1000
+            xs[(kind, prog, face, arm)].append(v)
+            continue
+        m = re.match(r'decode prog=(decode_\d+_\d+)(_c)?(?:\.(\S+))? rep=\d+ rc=0 wall_s=([\d.]+)', l)
+        if m:
+            prog, c, arm, wall = m.groups()
+            xs[('decode', prog, '_c' if c else '_exact', arm or 'on')].append(float(wall) * 1000)
+    out = {}
+    for (kind, prog, face, arm), v in xs.items():
+        sa = split_arm(arm)
+        base = xs.get((kind, prog, face, 'on'))
+        if not sa or not base:
+            continue
+        on, off = (base, v) if sa[0] == 'ON' else (v, base)
+        disj = max(on) < min(off) or max(off) < min(on)
+        n = max(int(x) for x in re.findall(r'_(\d+)', prog))
+        label = f"{prog.removeprefix('pt_')}{face}"
+        out[(sa[1], face, label, n)] = (statistics.median(off) / statistics.median(on), disj, sa[0])
     return out
 
 
 def classes(files):
-    sess = [arms(f) for f in files]
-    cls = defaultdict(lambda: defaultdict(dict))  # class -> (face, n) -> session -> value
+    sess = [{**kernel_arms(f), **program_arms(f)} for f in files]
+    cls = defaultdict(lambda: defaultdict(dict))  # class -> size label -> session -> value
     for i, a in enumerate(sess):
-        for (rung, face, n), v in a.items():
-            c = (rung, 'Under' if n == 1024 else 'Filled', 'Exact' if face == '_exact' else 'Contract')
-            cls[c][(face, n)][i] = v
+        for (rung, face, label, n), v in a.items():
+            cls[(rung, fill_of(rung, n), FACE[face])][label][i] = v
     out = []
     for c, sizes in sorted(cls.items()):
         shipped = {v[2] for s in sizes.values() for v in s.values()}
@@ -68,7 +144,7 @@ def classes(files):
         strong_neg = [k for k in neg if all(v[1] for v in full[k].values())]
         verdict = 'ON' if pos else 'OFF'
         sh = '/'.join(sorted(shipped))
-        if c[0] in ('arch-rungs', 'fma-regs'):
+        if c[0] in COMPOSITE or '+' in c[0]:
             status = 'composite'
         elif sh == verdict:
             status = 'ok'
@@ -77,15 +153,92 @@ def classes(files):
         else:
             status = 'contradicts'
         cells = '; '.join(
-            f"{face} {n}: " + ' '.join(f"{s[i][0]:.3f}{'*' if s[i][1] else ''}" for i in sorted(s))
-            for (face, n), s in sorted(sizes.items()))
+            f"{label}: " + ' '.join(f"{s[i][0]:.3f}{'*' if s[i][1] else ''}" for i in sorted(s))
+            for label, s in sorted(sizes.items()))
         out.append((c, sh, verdict, status, cells, sizes))
     return out, len(sess)
 
 
+FACES = {'Any': ('Exact', 'Contract', 'Tf32'), 'Contract': ('Contract', 'Tf32'), 'Exact': ('Exact',),
+         'Tf32': ('Tf32',)}
+FILLS = {'Any': ('Any', 'Under', 'Filled'), 'Under': ('Under',), 'Filled': ('Filled',)}
+
+
+def covers(key, cls):
+    """profile.rs `gpu_rungs`: a row's fill and face cover a class's (a `Contract` row covers TF32)."""
+    return cls[0] in FILLS[key[0]] and cls[1] in FACES[key[1]]
+
+
+def merge(offs, ons):
+    """The fewest (fill, face) keys covering every OFF class and no ON class, widest first; an
+    unmeasured class is free either way. Returns (keys, OFF classes no key can take)."""
+    todo, keys = set(offs), []
+    for fi in ('Any', 'Under', 'Filled'):
+        for fa in ('Any', 'Contract', 'Exact', 'Tf32'):
+            k = (fi, fa)
+            if any(covers(k, c) for c in todo) and not any(covers(k, c) for c in ons):
+                keys.append(k)
+                todo -= {c for c in todo if covers(k, c)}
+    return keys, sorted(todo)
+
+
+def rows(out, files):
+    """RungOff rows the rule asks for: every class it says OFF, merged per rung."""
+    by = defaultdict(lambda: ([], []))
+    for (rung, fill, face), sh, v, st, cells, _ in out:
+        if st != 'composite':
+            by[rung][0 if v == 'OFF' else 1].append(((fill, face), cells, sh))
+    names = ' / '.join(os.path.basename(f) for f in files)
+    res = []
+    for rung, (offs, ons) in sorted(by.items()):
+        keys, left = merge([c for c, _, _ in offs], [c for c, _, _ in ons])
+        for k in keys:
+            mine = [(cells, sh) for c, cells, sh in offs if covers(k, c)]
+            ev = '; '.join(cells for cells, _ in mine)
+            res.append((rung, k, any(sh != 'OFF' for _, sh in mine),
+                        f"{names} OFF/ON (kernels cuBLAS-normalized, programs interleaved): {ev} "
+                        f"(ms in the files): no size ON-faster in every session"))
+        for c in left:
+            res.append((rung, c, None, 'no key: OFF here, ON on the TF32 face (an FMA-only Face would take it)'))
+    return res
+
+
+def selftest():
+    U, F, A = 'Under', 'Filled', 'Any'
+    # An unmeasured class (no arm: the text did not change) is free, so the widest key.
+    assert merge([(U, 'Contract'), (F, 'Contract')], []) == ([(A, A)], [])
+    assert merge([(U, 'Tf32'), (F, 'Tf32')], [(U, 'Contract')]) == ([(A, 'Tf32')], [])
+    assert merge([(A, 'Exact'), (A, 'Contract')], []) == ([(A, A)], [])
+    assert merge([(U, 'Tf32')], [(U, 'Contract'), (F, 'Tf32')]) == ([(U, 'Tf32')], [])
+    assert merge([(U, 'Contract')], [(U, 'Tf32')]) == ([], [(U, 'Contract')])
+    assert merge([(U, 'Exact'), (F, 'Contract')], [(F, 'Exact')]) == ([(A, 'Contract'), (U, A)], [])
+    assert fill_of('resident', 1024) == A and fill_of('min-blocks', 1024) == U and fill_of('pad', 2048) == F
+    assert split_arm('off-warp-fill') == ('ON', 'warp-fill') and split_arm('on-async') == ('OFF', 'async')
+    assert split_arm('s52') is None and split_arm('on') is None
+    print('selftest ok')
+
+
 if __name__ == '__main__':
-    out, ns = classes(sys.argv[1:])
+    if sys.argv[1:] == ['--selftest']:
+        selftest()
+        sys.exit()
+    files = sys.argv[1:]
+    out, ns = classes(files)
     print(f"| rung | fill | face | shipped | rule ({ns} session{'s' if ns > 1 else ''}) | status | OFF/ON speedup per size, per session (`*` disjoint) |")
     print('|---|---|---|---|---|---|---|')
     for (rung, fill, face), sh, v, st, cells, _ in out:
         print(f"| {rung} | {fill} | {face} | {sh} | {v} | {st} | {cells} |")
+    for f in files:
+        nl = null_ab(f)
+        if nl:
+            print(f"\nnull A/B (shipped vs itself), {os.path.basename(f)}: max |s-1| = "
+                  f"{max(abs(s - 1) for s in nl.values()):.3f}; "
+                  + '; '.join(f"{k}: {s:.3f}" for k, s in sorted(nl.items())))
+    print(f"\n// GPU_RUNGS_OFF rows the rule asks for on {profile_of(files[0])} (new = a class it ships ON today)")
+    for rung, (fill, face), new, cite in rows(out, files):
+        if new is None:
+            print(f"    // {rung} {fill} {face}: {cite}")
+            continue
+        print(f"    // {'new' if new else 'held'}\n    RungOff {{\n        profile: \"{profile_of(files[0])}\",\n"
+              f"        rung: \"{rung}\",\n        fill: Fill::{fill},\n        face: Face::{face},\n"
+              f"        cite: \"{cite}\",\n    }},")

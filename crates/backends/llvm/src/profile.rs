@@ -261,12 +261,32 @@ pub enum Fill {
 /// Which face a measured rung decision covers: the conformance face (`mul.rn`
 /// + `add.rn`, two instructions per step) and the contract face (one `fma`)
 /// hold different registers live, so a staging rung can pay on one and cost
-/// on the other. The TF32 face is a contract face.
+/// on the other. The TF32 face is a contract face: a `Contract` row covers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Face {
     Any,
     Exact,
     Contract,
+    /// The TF32 face alone (S54): its kernel is `mma`, not the FMA tile, so a
+    /// rung that shapes both (`min-blocks`) can pay on one and cost on the
+    /// other — the kernel the rung folds into, read off the face.
+    Tf32,
+}
+
+impl Face {
+    /// The face a site is emitted on.
+    pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
+        match (reduced, contract) {
+            (Some(crate::Reduced::Tf32), _) => Face::Tf32,
+            (None, true) => Face::Contract,
+            (None, false) => Face::Exact,
+        }
+    }
+
+    /// Whether a row keyed `self` covers a site on face `site`.
+    pub fn covers(self, site: Face) -> bool {
+        self == Face::Any || self == site || (self == Face::Contract && site == Face::Tf32)
+    }
 }
 
 /// One measured decision: `rung` ships OFF on `profile` for grids `fill` on
@@ -1358,15 +1378,15 @@ impl TargetProfile {
     /// measured part of its architecture ([`GPU_MEASURED`]); with none, every
     /// rung: another architecture's losses are not this one's.
     pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
+        self.gpu_rungs_on(warps_per_scheduler, Face::of(contract, None))
+    }
+
+    /// [`Self::gpu_rungs`] on a site's face, TF32 included.
+    pub fn gpu_rungs_on(&self, warps_per_scheduler: u64, face: Face) -> crate::GpuRungs {
         let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
             Fill::Under
         } else {
             Fill::Filled
-        };
-        let face = if contract {
-            Face::Contract
-        } else {
-            Face::Exact
         };
         let arch = self.gpu().map(|g| g.arch);
         let same: Vec<&str> = GPU_MEASURED
@@ -1378,7 +1398,7 @@ impl TargetProfile {
         for d in GPU_RUNGS_OFF {
             if same.contains(&d.profile)
                 && (d.fill == Fill::Any || d.fill == fill)
-                && (d.face == Face::Any || d.face == face)
+                && d.face.covers(face)
             {
                 *r.rung(d.rung).expect("a GpuRungs name") = false;
             }
@@ -3487,6 +3507,14 @@ mod tests {
         assert_eq!(wps(&RTX_4090, 2048), 4);
         assert_eq!(wps(&RTX_5090, 1024), 0);
         assert_eq!(wps(&H100_PCIE, 1024), 1);
+        // S54 arch-select: `benches/gpu/rungs.py` classes a measured size by
+        // this fill — Under at n ≤ 1024, Filled above — on every measured part.
+        for p in GPU_MEASURED {
+            for n in [512, 1024, 2048, 4096, 8192] {
+                let under = wps(p, n) < GPU_RESIDENT_BLOCKS;
+                assert_eq!(under, n <= 1024, "{} {n}: {}", p.name, wps(p, n));
+            }
+        }
     }
 
     /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
@@ -3519,38 +3547,47 @@ mod tests {
             } else {
                 Fill::Filled
             };
-            for contract in [false, true] {
-                let face = if contract {
-                    Face::Contract
-                } else {
-                    Face::Exact
-                };
+            // S54: a `Contract` row covers the TF32 face (a contract face);
+            // a `Tf32` row covers it alone.
+            for face in [Face::Exact, Face::Contract, Face::Tf32] {
                 for p in measured {
-                    let r = p.gpu_rungs(wps, contract);
+                    let r = p.gpu_rungs_on(wps, face);
                     assert!(r.arch);
                     for n in crate::GpuRungs::NAMES {
                         let cited = GPU_RUNGS_OFF.iter().any(|d| {
                             d.profile == p.name
                                 && d.rung == n
                                 && (d.fill == Fill::Any || d.fill == fill)
-                                && (d.face == Face::Any || d.face == face)
+                                && (d.face == Face::Any
+                                    || d.face == face
+                                    || (d.face == Face::Contract && face == Face::Tf32))
                         });
-                        assert_eq!(!r.get(n), cited, "{} {n} {wps} {contract}", p.name);
+                        assert_eq!(!r.get(n), cited, "{} {n} {wps} {face:?}", p.name);
                     }
                 }
                 // An unmeasured part takes its architecture's measured part;
                 // with none, every rung (another architecture's losses are not its own).
                 for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
-                    assert_eq!(p.gpu_rungs(wps, contract), m.gpu_rungs(wps, contract));
+                    assert_eq!(p.gpu_rungs_on(wps, face), m.gpu_rungs_on(wps, face));
                 }
                 let mut other = A100;
                 other.name = "unmeasured";
                 if let Machine::Gpu(g) = &mut other.machine {
                     g.arch = "sm_87";
                 }
-                assert_eq!(other.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+                assert_eq!(other.gpu_rungs_on(wps, face), crate::GpuRungs::ALL);
+            }
+            for contract in [false, true] {
+                assert_eq!(
+                    RTX_3090.gpu_rungs(wps, contract),
+                    RTX_3090.gpu_rungs_on(wps, Face::of(contract, None))
+                );
             }
         }
+        let tf32 = Some(crate::Reduced::Tf32);
+        assert_eq!(Face::of(true, tf32), Face::Tf32);
+        assert_eq!(Face::of(true, None), Face::Contract);
+        assert_eq!(Face::of(false, None), Face::Exact);
     }
 
     /// S53 `pad`: the register-staged transposed-A store. With all four lanes
