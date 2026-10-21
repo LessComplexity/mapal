@@ -129,14 +129,18 @@ def probe_table(path):
               f"| {' '.join(gates.get((probe, n), [])) or ('pass' if lg else '')} |")
     arms = [(k, rs) for k, rs in sorted(runs.items()) if k[2] != 'on']
     if arms:
-        print("\n| probe | face | arm | iter ms arm | iter ms on | arm / on (>1 = on faster) |")
-        print("|---|---|---|---:|---:|---:|")
+        print("\n| probe | face | arm | iter ms arm | iter ms on | arm / on (>1 = on faster) "
+              "| traced kernel ms arm | on | arm / on |")
+        print("|---|---|---|---:|---:|---:|---:|---:|---:|")
     for (prog, face, arm), rs in arms:
         on = runs.get((prog, face, 'on'))
         a = [r['iter'] for r in rs if r['iter'] is not None]
         o = [r['iter'] for r in on or [] if r['iter'] is not None]
+        ka = [r['kernel'] for r in rs]
+        ko = [r['kernel'] for r in on or []]
         if a and o:
-            print(f"| {prog} | {face} | {arm} | {med(a):.3f} | {med(o):.3f} | {med(a) / med(o):.3f}{ovl(a, o)} |")
+            print(f"| {prog} | {face} | {arm} | {med(a):.3f} | {med(o):.3f} | {med(a) / med(o):.3f}{ovl(a, o)} "
+                  f"| {med(ka):.3f} | {med(ko):.3f} | {med(ka) / med(ko):.3f}{ovl(ka, ko)} |")
 
 
 for path in sys.argv[1:]:

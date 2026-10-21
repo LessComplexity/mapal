@@ -361,6 +361,19 @@ HBM every wave); no other part drops.
 
 **OFF arms.** `raster`, `l2-window`.
 
+**As built (`s54/l2-raster`).** The formula above has no solution on any part at 8192 (one
+128-row panel over `k` is 4 MB, so `h·bm + wave_cols·bn` panels never fit 3 MB of a 6 MB L2), and
+"1 when the whole B fits" would group on the 4090 at 8192 too (B = 256 MB). Built instead, in
+`Gpu::raster`: `h` = the power of two dividing `gy` that minimises the panels one wave reads,
+`(h·bm + ⌈W/h⌉·bn)` (16 for a 164- or 256-block wave of 128×128 blocks), behind a gate that keeps
+row-major while one block's panels over `k`, `(bm + bn)·k·elem`, fit `l2_bytes` — what the part
+streams between the launch neighbours that share an `a` slab. That gate reproduces the measured
+pattern (only the 3090 at 8192: 8 MB vs 6 MB) and the unit outcomes (3090: 1, 1, 16; every other
+part 1). It is a model, so it is a rung: `l2-gate` OFF groups wherever the grid is more than one
+wave, the arm that tests the gate on every part. `l2-window` takes the chain intermediate whose
+next reader is the next launch, else the operand read by the most blocks (`a`: `gx`, `b`: `gy`),
+when its bytes fit `l2_bytes`; `hitRatio` = set-aside / window, both device attributes.
+
 **Tests.** Unit: `raster` on the 3090 at 2048 / 4096 / 8192 (1, 1, > 1) and on the 4090 (1 at
 every size). Box: `tile_bench` kernels at 1024–8192 all faces on all five parts (the arm is
 one-line, every part gets a row); the chain probes at 4096 for `l2-window`.
