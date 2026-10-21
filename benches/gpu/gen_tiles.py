@@ -403,7 +403,7 @@ def twin(n):
 
 
 (out / "px_twin_128.mapal").write_text(probe_program(128, twin(128), False))
-for n in (512, 1024, 2048):
+for n in (512, 1024, 2048, 4096):
     (out / f"pt_twin_{n}.mapal").write_text(probe_program(n, twin(n), True))
 # `fan`: the twin's two outputs joined by a third site (g = c · d), every output
 # read at the corners only — device-only, so streams open: the differential of

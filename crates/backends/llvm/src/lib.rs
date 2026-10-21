@@ -132,9 +132,9 @@ pub struct GpuRungs {
     /// separate streams (one per chain), an event on every cross-chain edge,
     /// when every such site's output stays on the device. Off: one stream.
     pub streams: bool,
-    /// Open the streams only where two independent grids fit one wave
-    /// together (the wave rule, `func/resident.rs:waves_merge`); off =
-    /// whenever two chains exist. A measurement arm for the rule itself.
+    /// Open the streams only where two independent grids' last waves fit one
+    /// wave (the wave rule, `func/resident.rs:waves_merge`); off = whenever
+    /// two chains exist. A measurement arm for the rule itself.
     pub stream_gate: bool,
     /// Page-lock (`cuMemHostRegister`) a host array that crosses the bus
     /// repeatedly (a copy inside a loop), once, before its first copy. Off:

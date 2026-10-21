@@ -41,6 +41,16 @@ fn on() -> GpuArms {
     GpuArms::default()
 }
 
+/// The measurement arm with `rungs` forced on — the mechanism, whatever the
+/// part's measured table ships (`pinned` and `pdl` ship OFF on every part).
+fn forced(rungs: &[&str]) -> GpuArms {
+    let mut a = GpuArms::default();
+    for r in rungs {
+        *a.on.rung(r).expect("a rung") = true;
+    }
+    a
+}
+
 fn mapal_main(ll: &str) -> &str {
     let start = ll
         .find("define internal void @mapal_main(")
@@ -180,10 +190,13 @@ fn fanout(n: u64) -> String {
 }
 
 const H100: &str = "h100-pcie";
+/// A part whose measured table ships `streams` ON (the A100; the RTX 5090 is
+/// the other).
+const ON_PART: &str = "a100";
 
 #[test]
 fn independent_device_only_sites_take_two_streams() {
-    let ll = host(&twin(64), H100, on());
+    let ll = host(&twin(64), ON_PART, on());
     let t = calls(&ll);
     let pos = |x: &str| {
         t.iter()
@@ -210,7 +223,7 @@ fn independent_device_only_sites_take_two_streams() {
 fn a_whole_copy_out_keeps_one_stream() {
     // indep's join reads c and d whole on the host: the host is between the
     // chains, so there is nothing to overlap (measured slower on five parts).
-    let ll = host(&indep(64), H100, on());
+    let ll = host(&indep(64), ON_PART, on());
     assert!(!ll.contains("@mapal_gpu_launchv("));
     assert!(!ll.contains("@mapal_gpu_event("));
     assert_eq!(init_flags(&ll) & 2, 0);
@@ -218,7 +231,7 @@ fn a_whole_copy_out_keeps_one_stream() {
 
 #[test]
 fn diamond_waits_on_its_join_edge_only() {
-    let t = calls(&host(&diamond(64), H100, on()));
+    let t = calls(&host(&diamond(64), ON_PART, on()));
     let launches: Vec<&String> = t.iter().filter(|c| c.starts_with("launchv")).collect();
     // c and d1 are one chain; d2 reads c from the other.
     assert_eq!(launches, ["launchv 1", "launchv 1", "launchv 2"], "{t:?}");
@@ -234,7 +247,7 @@ fn diamond_waits_on_its_join_edge_only() {
 
 #[test]
 fn two_chains_with_no_edge() {
-    let t = calls(&host(&mlp2(64), H100, on()));
+    let t = calls(&host(&mlp2(64), ON_PART, on()));
     let mut launches: Vec<&String> = t.iter().filter(|c| c.starts_with("launchv")).collect();
     launches.sort();
     assert_eq!(
@@ -247,18 +260,29 @@ fn two_chains_with_no_edge() {
 
 #[test]
 fn a_single_chain_keeps_one_stream() {
-    let ll = host(&fanout(64), H100, on());
+    let ll = host(&fanout(64), ON_PART, on());
     assert!(!ll.contains("@mapal_gpu_launchv("), "fanout is one chain");
     assert_eq!(init_flags(&ll) & 2, 0);
 }
 
 #[test]
 fn a_filled_part_keeps_one_stream_unless_the_gate_is_off() {
-    // 1024² on the H100 PCIe: the two grids do not fit one wave together.
-    let gated = host(&twin(1024), H100, on());
+    // 1024² on the ON_PART PCIe: the two grids do not fit one wave together.
+    let gated = host(&twin(1024), ON_PART, on());
     assert!(!gated.contains("@mapal_gpu_launchv("));
-    let forced = host(&twin(1024), H100, off(&["stream-gate"]));
+    let forced = host(&twin(1024), ON_PART, off(&["stream-gate"]));
     assert!(forced.contains("@mapal_gpu_launchv("));
+}
+
+#[test]
+fn a_part_whose_table_turns_streams_off_keeps_one_stream() {
+    for part in ["rtx-3090", "rtx-4090", H100, "h100"] {
+        assert!(
+            !host(&twin(64), part, on()).contains("@mapal_gpu_launchv("),
+            "{part}"
+        );
+    }
+    assert!(host(&twin(64), "rtx-5090", on()).contains("@mapal_gpu_launchv("));
 }
 
 #[test]
@@ -276,7 +300,9 @@ fn every_off_arm_is_the_one_stream_pageable_text() {
     // Streams off alone: one stream; pins are a separate rung.
     let ll = host(&twin(64), H100, off(&["streams"]));
     assert!(!ll.contains("@mapal_gpu_launchv("));
-    let ll = host(&relu_loop(64), H100, off(&["streams"]));
+    let mut a = forced(&["pinned"]);
+    *a.off.rung("streams").expect("a rung") = true;
+    let ll = host(&relu_loop(64), H100, a);
     assert!(ll.contains("@mapal_gpu_pin("));
 }
 
@@ -318,8 +344,10 @@ fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
     let ll = host(&indep(64), H100, off(&["devgen", "streams"]));
     assert_eq!(mapal_main(&ll).matches("@mapal_gpu_h2d(").count(), 4);
     assert!(!ll.contains("@mapal_gpu_pin("));
+    // Shipped: no part's table pins (the sign followed the host's copy path).
+    assert!(!host(&relu_loop(64), H100, on()).contains("@mapal_gpu_pin("));
     // In the loop, each pin sits right before the copy of the array it pins.
-    let ll = host(&relu_loop(64), H100, on());
+    let ll = host(&relu_loop(64), H100, forced(&["pinned"]));
     let main = mapal_main(&ll);
     let lines: Vec<&str> = main.lines().collect();
     let mut pinned = Vec::new();
@@ -355,13 +383,8 @@ fn a_one_element_read_is_not_pinned() {
 #[test]
 fn pdl_is_hopper_and_later_only() {
     let src = diamond(64);
-    let h = emit(&src, H100, on());
-    let dev = h.device.expect("device unit");
-    let kernels = dev.matches("define ptx_kernel void @mapal_tile_").count();
-    assert!(kernels > 0);
-    assert_eq!(dev.matches("griddepcontrol.wait;").count(), kernels);
-    assert_eq!(init_flags(&h.text) & 4, 4);
-    for part in ["rtx-4090", "rtx-3090", "a100"] {
+    // Shipped: OFF on both sm_90+ parts measured (no stable sign).
+    for part in [H100, "rtx-5090"] {
         let e = emit(&src, part, on());
         assert!(
             !e.device.expect("device").contains("griddepcontrol"),
@@ -369,9 +392,20 @@ fn pdl_is_hopper_and_later_only() {
         );
         assert_eq!(init_flags(&e.text) & 4, 0, "{part}");
     }
-    let e = emit(&src, "rtx-5090", on());
+    let h = emit(&src, H100, forced(&["pdl"]));
+    let dev = h.device.expect("device unit");
+    let kernels = dev.matches("define ptx_kernel void @mapal_tile_").count();
+    assert!(kernels > 0);
+    assert_eq!(dev.matches("griddepcontrol.wait;").count(), kernels);
+    assert_eq!(init_flags(&h.text) & 4, 4);
+    for part in ["rtx-4090", "rtx-3090", "a100"] {
+        let e = emit(&src, part, forced(&["pdl"]));
+        assert!(
+            !e.device.expect("device").contains("griddepcontrol"),
+            "{part}"
+        );
+        assert_eq!(init_flags(&e.text) & 4, 0, "{part}");
+    }
+    let e = emit(&src, "rtx-5090", forced(&["pdl"]));
     assert!(e.device.expect("device").contains("griddepcontrol.wait;"));
-    let off_h = emit(&src, H100, off(&["pdl"]));
-    assert!(!off_h.device.expect("device").contains("griddepcontrol"));
-    assert_eq!(init_flags(&off_h.text) & 4, 0);
 }

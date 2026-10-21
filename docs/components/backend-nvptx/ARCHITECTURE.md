@@ -143,17 +143,20 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   *As built (S54 `streams`, `resident.rs:chains`):* straight-line sites are covered by chains in
   topo order (a site continues the chain whose last site is a `PathPlan` ancestor). Streams open
   only when (a) every one of those sites' outputs stays in `Gmem` — a whole `d2h` puts the host
-  between the chains, and every such probe (indep, diamond, mlp2 at 512 with a host join) ran
-  2–20% slower on streams on five parts — and (b) "under one wave", read off the launch
-  geometry's own residency: two independent grids of `b` blocks on a part holding
-  `w = sms · blocks_per_sm` fit together, `b_a/w_a + b_b/w_b ≤ 1`. (The first build also opened
-  multi-wave grids whose last waves fit one wave, and deferred chained copy-outs to their host
-  reader; measured slower — 8–37% at 2048–4096 — and dropped.) With streams open, frees between
+  between the chains (diamond and mlp2 with a host join ran 0.60–0.96× on streams on every part,
+  indep flipped sign between sessions) — and (b) the general form of "under one wave", read off
+  the launch geometry's own residency: two independent grids of `b` blocks on a part holding
+  `w = sms · blocks_per_sm` save a wave when their last waves fit one,
+  `t_a/w_a + t_b/w_b ≤ 1`, `t = b − w(⌈b/w⌉ − 1)` (A100 at 2048, ~1.2 waves each: 3 waves
+  instead of 4, measured 21–27% faster on device-only sites in two sessions). (The first build
+  also deferred chained copy-outs to their host reader; those programs measured 8–37% slower and
+  no longer open streams.) With streams open, frees between
   the first and last chained launch move after the last (one device wait), every chained buffer
   is allocated before the first chained launch, a one-element `d2h` runs on its producer's
   stream, and a chain stream joins program order (the legacy stream) at each launch by an event
   the runtime records only when legacy work was enqueued since. After R1/R2 fold the joins onto
-  the device, indep/diamond/mlp2 take the device-only shape (`twin`). `pinned`: a host array
+  the device, indep/diamond/mlp2 take the device-only shape (`twin`). Shipped ON on the A100 and
+  RTX 5090 only (`GPU_RUNGS_OFF`; `benches/results-s54-gpu/streams-tables.md`). `pinned`: a host array
   copied inside a loop is page-locked once before its first copy (a copy that runs once never
   repays the registration). `pdl`: every tile kernel opens with
   `griddepcontrol.wait; griddepcontrol.launch_dependents`, and a kernel launched right behind
