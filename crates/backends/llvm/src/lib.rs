@@ -61,7 +61,8 @@ pub enum MovePanel {
     Force(u64, u64),
 }
 
-/// The GPU tile kernel's rungs (S52). **All on is the shipped path.** Each can be
+/// The GPU tile kernel's rungs (S52). **All on is the shipped path**, except
+/// `pool`, which measured negative on every part (its field says why). Each can be
 /// turned off only so its effect can be measured on a part — an A/B needs an
 /// OFF arm of the same compiler, the `MovePanel::Off` precedent — and a rung
 /// that shows no effect on any part is deleted, not kept as a knob.
@@ -87,6 +88,22 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// Host runtime (S53): start the CUDA context and module load on a thread
+    /// as `main`'s first call, so it overlaps the host work before the first
+    /// site. Off: the first site creates them. ON on every part:
+    /// `benches/results-s53-gpu/host-runtime-*.txt`, `e2e_4096` 37–197 ms less
+    /// per process (the site's wait drops to init − host work before it);
+    /// `e2e_1024` (6–19 ms of host work to overlap) within noise, except one
+    /// 5090 box whose threaded context creation ran ~40 ms slower.
+    pub eager_init: bool,
+    /// Host runtime (S53): device buffers from the stream-ordered pool, kept
+    /// across sites. Off: `cuMemAlloc` / `cuMemFree` per site. **Shipped OFF**
+    /// (`emit --gpu-on=pool` is its arm): the pool's first allocation costs
+    /// 4–19 ms (not growing from 12 to 192 MB), a one-site program
+    /// saves only the 0.1–3.0 ms `cuMemFree`, and 23 of 24 `e2e_*` medians ran
+    /// 3–17 ms slower with it. It can pay only after several site executions;
+    /// no GPU program has more than one yet.
+    pub pool: bool,
 }
 
 impl Default for GpuRungs {
@@ -101,6 +118,8 @@ impl Default for GpuRungs {
             cp_async: true,
             wide: true,
             ldmatrix: true,
+            eager_init: true,
+            pool: false,
         }
     }
 }
@@ -418,7 +437,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Two kernels, detected independently: `@mapal_sme_panel(` cannot match
     // `@mapal_sme_panel_acc(` because of the paren, so the KC variant appears
     // only where the KC nest actually called it.
-    if funcs.contains("@mapal_gpu_tile(") {
+    let gpu_host = funcs.contains("@mapal_gpu_tile(");
+    if gpu_host {
         out.push_str(crate::func::gpu::GPU_DECLS);
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
@@ -451,7 +471,14 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             out.push_str(&sme_panel(t, ti, tj, PanelWrite::Accumulate));
         }
     }
-    out.push_str(&emit_main_wrapper(ir));
+    // The runtime's init is `main`'s first call exactly when a site calls the
+    // runtime: the same gate as `GPU_DECLS`.
+    let prologue = if gpu_host {
+        crate::func::gpu::init_call(opts.gpu)
+    } else {
+        String::new()
+    };
+    out.push_str(&emit_main_wrapper(ir, &prologue));
     let device = opts
         .tiling
         .then(|| {

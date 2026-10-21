@@ -49,9 +49,22 @@ declare void @llvm.nvvm.cp.async.wait.group(i32 immarg)\n\
 declare float @llvm.fma.f32(float, float, float)\n\
 declare double @llvm.fma.f64(double, double, double)\n";
 
-/// The host-side runtime entry, declared only when some site called it.
-pub(crate) const GPU_DECLS: &str =
-    "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
+/// The host-side runtime entries, declared only when some site called one.
+pub(crate) const GPU_DECLS: &str = "declare void @mapal_gpu_init(i32)\n\
+    declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
+
+/// `mapal_gpu_init`'s flag bits; `mapal_gpu.c` reads the same two.
+pub(crate) const GPU_INIT_EAGER: u32 = 1;
+pub(crate) const GPU_INIT_POOL: u32 = 2;
+
+/// `main`'s first call in a module with a GPU site: hands the runtime its two
+/// host rungs. With both off the runtime does nothing until the first site,
+/// the S52 path.
+pub(crate) fn init_call(rungs: crate::GpuRungs) -> String {
+    let flags =
+        u32::from(rungs.eager_init) * GPU_INIT_EAGER + u32::from(rungs.pool) * GPU_INIT_POOL;
+    format!("  call void @mapal_gpu_init(i32 {flags})\n")
+}
 
 /// Threads per block of the one-thread-per-cell kernel.
 /// ponytail: a literal, not derived — the fallback is a correctness path; derive

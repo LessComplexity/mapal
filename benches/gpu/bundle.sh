@@ -54,7 +54,8 @@ for spec in "$@"; do
             for rung in wide ldmatrix; do
                 emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
             done
-            for rung in interleave unroll min-blocks warp async; do
+            # host-runtime moves no kernel: its arm is the A/A row (same PTX).
+            for rung in interleave unroll min-blocks warp async host-runtime; do
                 emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
             done
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
@@ -64,6 +65,15 @@ for spec in "$@"; do
                     cp "$from/$prof/${b}_c.ptx" "$d/${b}_c.$tag.ptx"
                     cp "$from/$prof/${b}_c.launch" "$d/${b}_c.$tag.launch"
                 fi
+            done
+            ;;
+        *)
+            # Host-runtime arms (S53): the same PTX, the host object with one
+            # rung flipped (eager-init ships ON, pool OFF); the differential
+            # and the e2e wall-time A/B run them.
+            for arm in off-eager-init on-pool; do
+                emit_one "$f" "$d/$b.$arm" "$prof" "$sm" "--gpu-${arm/-/=}"
+                emit_one "$f" "$d/${b}_c.$arm" "$prof" "$sm" --contract "--gpu-${arm/-/=}"
             done
             ;;
         esac

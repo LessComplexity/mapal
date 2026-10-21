@@ -73,15 +73,22 @@ fn main() -> ExitCode {
                         "async" => opts.gpu.cp_async = false,
                         "wide" => opts.gpu.wide = false,
                         "ldmatrix" => opts.gpu.ldmatrix = false,
+                        "eager-init" => opts.gpu.eager_init = false,
+                        "host-runtime" => {
+                            opts.gpu.eager_init = false;
+                            opts.gpu.pool = false;
+                        }
                         other => {
                             eprintln!(
-                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix)"
+                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix, eager-init, host-runtime)"
                             );
                             return ExitCode::from(2);
                         }
                     }
                 }
             }
+            // S53: the ON arm of a rung that ships OFF.
+            "--gpu-on=pool" => opts.gpu.pool = true,
             // A reduced-precision face (ADR-0032 D1): changes values by the
             // format's bound and admits the tensor cores.
             "--precision=tf32" => opts.reduced = Some(mapal_backend_llvm::Reduced::Tf32),

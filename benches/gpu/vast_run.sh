@@ -45,6 +45,7 @@ log "bundle uploaded"
 if [ "${PROFILE:-0}" = 1 ]; then
     "${SSH[@]}" "cd /w && bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || log "box_profile exit $?"
     "${SSH[@]}" "cat /w/prof-$PROF.tgz" > "$RES/prof-$PROF.tgz" 2>/dev/null || true
+    "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || true  # + the e2e rows
     log "profile fetched: $(wc -c < "$RES/prof-$PROF.tgz") bytes"
 fi
 log "results fetched: $(grep -c '' "$RES/results-$PROF.txt") lines"
