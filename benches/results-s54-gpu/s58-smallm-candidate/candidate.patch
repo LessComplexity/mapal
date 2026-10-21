@@ -1,0 +1,126 @@
+--- a/crates/backends/llvm/src/profile.rs
++++ b/crates/backends/llvm/src/profile.rs
+@@ -2209,6 +2209,13 @@
+             halve_x = !halve_x;
+         }
+ 
++        // A successful original geometry already fits rows. Redistribute only
++        // excess row threads after occupancy shrinking, keeping its warp count.
++        while rows > 0 && ty > 1 && ty * tm > rows {
++            ty /= 2;
++            tx *= 2;
++        }
++
+         let geom = |bk| GpuTile {
+             tm,
+             tn,
+@@ -3778,6 +3785,37 @@
+         );
+     }
+ 
++    #[test]
++    fn ordered_skinny_tiles_fit_rows_and_preserve_resource_checks() {
++        let elem = Ty::f32();
++        for p in [&A100, &RTX_4090, &RTX_5090] {
++            for (n, k) in [(18432, 7168), (2048, 7168), (1024, 4096)] {
++                for wide in [false, true] {
++                    for fill in [false, true] {
++                        let g = p.gpu_tile(16, n, k, &elem, wide, fill).unwrap_or_else(|| {
++                            panic!(
++                                "M16 cooperative tile: {} n={n} k={k} wide={wide} fill={fill}",
++                                p.name
++                            )
++                        });
++                        assert_eq!(16 % g.bm(), 0);
++                        assert_eq!(n % g.bn(), 0);
++                        assert_eq!(k % g.bk, 0);
++                        assert!(g.threads() >= p.gpu().unwrap().warp);
++                        assert!(g.smem_bytes(4) <= p.gpu().unwrap().smem_per_block);
++                        assert_eq!(p.gpu_tile(1, n, k, &elem, wide, fill), None);
++                        for rows in [2, 4, 8] {
++                            if let Some(small) = p.gpu_tile(rows, n, k, &elem, wide, fill) {
++                                assert!(small.threads() >= p.gpu().unwrap().warp);
++                                assert_eq!(rows % small.bm(), 0);
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
+     /// The GPU tile geometry is arithmetic over device facts — these pins are
+     /// the derivation worked by hand, so a changed rule shows up as a changed
+     /// number here rather than as a slower kernel on a box.
+--- a/crates/backends/llvm/src/func/gpu.rs
++++ b/crates/backends/llvm/src/func/gpu.rs
+@@ -2987,7 +2987,7 @@
+ mod tests {
+     use super::*;
+     use crate::GpuRungs;
+-    use crate::profile::{H100, H100_PCIE, RTX_4090, RTX_5090};
++    use crate::profile::{A100, H100, H100_PCIE, RTX_4090, RTX_5090};
+     use mapal_ir::TileRead;
+     use proptest::prelude::*;
+ 
+@@ -3046,6 +3046,60 @@
+             site(128, 128, 128, true, true, Ty::f64()),
+         ]);
+         v
++    }
++
++    #[test]
++    fn skinny_cooperative_copies_cover_each_panel_once() {
++        use std::collections::BTreeSet;
++        for p in [&A100].into_iter().chain(PARTS) {
++            for (n, depth) in [(18432, 7168), (2048, 7168), (1024, 4096)] {
++                for (arm, brm) in [(true, true), (false, true), (true, false)] {
++                    for elem in [Ty::f32(), Ty::f64()] {
++                        let s = site(16, n, depth, arm, brm, elem);
++                        let selected = launch(&s, p, false, crate::GpuArms::default(), None);
++                        println!(
++                            "{} N{n} K{depth} A_rm{arm} B_rm{brm} {:?}: {:?}",
++                            p.name, s.elem, selected.tiled
++                        );
++                        for r in arms() {
++                            let Some(g) = launch(&s, p, false, force(r), None).tiled else {
++                                continue;
++                            };
++                            let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
++                            for (i, (map, loads)) in lane_maps(&s, &g).into_iter().enumerate() {
++                                let mut seen = BTreeSet::new();
++                                let vec = if i == 0 {
++                                    vector_a(&s) && g.stages < 2
++                                } else {
++                                    vector_b(&s)
++                                };
++                                let width = if vec { lanes } else { 1 };
++                                for copy in 0..loads {
++                                    for tid in 0..g.threads() {
++                                        let (row, col) =
++                                            map.coords(&mut Num, &(tid + copy * g.threads()));
++                                        for v in 0..width {
++                                            assert!(
++                                                seen.insert((row, col + v)),
++                                                "duplicate panel element"
++                                            );
++                                        }
++                                        assert!(affine_delta(map, g.threads(), copy).is_some());
++                                    }
++                                }
++                                let (rows, cols) = if i == 0 {
++                                    (g.bm(), g.bk)
++                                } else {
++                                    (g.bk, g.bn())
++                                };
++                                assert_eq!(seen.len() as u64, rows * cols);
++                                assert!(seen.iter().all(|&(row, col)| row < rows && col < cols));
++                            }
++                        }
++                    }
++                }
++            }
++        }
+     }
+ 
+     /// Arms that emit exactly the rung set `r`, whatever the profile's table.

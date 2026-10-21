@@ -1,0 +1,26 @@
+{
+  "validator": "root independent after retrieval",
+  "utc": "2026-10-21T22:26:38.852656+00:00",
+  "all_adapter_hashes": 1078,
+  "all_matrix_hashes": 108,
+  "ordinary_frozen": {
+    "pass": true,
+    "ordinary_processes": 200,
+    "case_face_cells": 10,
+    "manifest_sha256": "141f7bdca06b2f770761b735b02ae12f6891ba80cb9b461ec88fcd59780209e8",
+    "summary_sha256": "5a6b8380b0ae821196f28291a252454780c241c32ebc7ced707509730e0ae665",
+    "runs_sha256": "e2599d8e463f3e303731c598cf41bc6e4c59eb65b01a059c49b8ecbc9645b9e4",
+    "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+  },
+  "ordinary_candidate": {
+    "pass": true,
+    "ordinary_processes": 200,
+    "case_face_cells": 10,
+    "manifest_sha256": "7b492228ccdce858e3ff26ef6592d67b0035cd8848a5b710329f4bd31e0f260e",
+    "summary_sha256": "42162587f858e802a66478cf0b9387c163762289f6fa746b30a4e95bc873fb7f",
+    "runs_sha256": "4613e1659abeed6aa8807ffd3464cdf4758bb1ae335608255797e247b93a0dd9",
+    "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+  },
+  "matrix_error": "ValueError: Command failed: verify-pytorch-compiled",
+  "timing_admitted": false
+}

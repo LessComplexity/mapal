@@ -1,0 +1,16 @@
+{
+  "problem": "fresh source preparation initially omitted --contract when --precision=tf32 was requested; caught before GPU by96/114PTXidentity comparison",
+  "original_frozen_request": [
+    "--contract",
+    "--precision=tf32"
+  ],
+  "corrected_request": [
+    "--contract",
+    "--precision=tf32"
+  ],
+  "evidence": "combined-vs-isolated-correct-flags.json",
+  "corrected_identity_cases": 114,
+  "corrected_identity_byte_identical": 114,
+  "gpu_executions_with_bad_recipe": 0,
+  "precision_policy_or_tolerance_changed": false
+}

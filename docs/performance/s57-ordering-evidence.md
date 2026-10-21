@@ -1,9 +1,13 @@
 # S57 generated ordering evidence
 
+S58 update: the ordering correction is integrated and both frozen/corrected revisions
+pass 200 ordinary GPU processes. See [current evidence](s58-parallel-development.md).
+The investigation and isolated-candidate history below retain their original evidence boundary.
+
 2026-10-21. These are **compiler-output investigations**, using frozen source
 `b4152c5f4d9ad802d0388c1c64b628091d494e6a`. A later isolated ordering candidate is documented
-below; no ordering fix has been applied to shared source and no GPU execution or disassembly
-has occurred for these fixtures. Each fixture has Exact/Contract host and device LLVM,
+below; at the S57 cutoff no ordering fix had been applied and no GPU execution or disassembly
+had occurred for these fixtures. Each fixture has Exact/Contract host and device LLVM,
 interpreter output, exact commands and before/after source/binary hash receipts.
 The original temporary artifact paths in those receipts are preserved; the linked copies
 are byte-identical.
@@ -65,7 +69,7 @@ validation is complete; ordinary ordering execution remains pending. Future chan
 show their before/after LLVM or runtime evidence, including refuted cases and controls;
 no performance gain is inferred here.
 
-## Reviewed ordering candidate — unapplied
+## Reviewed ordering candidate — unapplied at S57
 
 The [candidate receipt](../../benches/results-s54-gpu/s57-ordering-candidate/candidate-receipt.json)
 binds the patch, exact commands and recovery snapshot. It factors the existing grouped-writer
@@ -85,7 +89,7 @@ case intentionally selects the existing conservative placement. These establish 
 dependencies and API guarantees, not observed GPU wrong values or performance gains.
 
 Both authorized ordinary-execution attempts failed at Vast allocation before upload; their
-instances are independently absent. No third attempt is authorized. The candidate remains
+instances are independently absent. At that cutoff no third attempt was authorized. The candidate remained
 isolated at `/private/tmp/mapal-ordering-fix/source` pending task 1.3, with a hash-verified
 2,385-file, 59,511,743-byte recovery under
 `.claude/worktrees/_archive-s54-20261021/s57-ordering-candidate-20261021T212439Z`.

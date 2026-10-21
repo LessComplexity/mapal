@@ -1,0 +1,21 @@
+{
+  "approved": true,
+  "renewal_sha256": "8eb5a434e95bf54e6fd2428fe2e76729f741427720f2bc609b2454559413b20a",
+  "launcher_sha256": "34b5bd4177fa51ea435850860a9b6b9db76b54d9c39896eac99f715d9c88156d",
+  "failure_abort_policy_resolved": true,
+  "reviewed_utc": "2026-10-21T22:13:43.216294+00:00",
+  "reviewer": "/root",
+  "authorization": "User explicitly authorized parallel development/testing agents and machines in latest message; bounded reviewed correctness run under original cumulative $1, <=$0.80/hour, 55-minute attempt and $8/hour aggregate caps.",
+  "scope": "One newly bound attempt: frozen ordinary ordering200, ordering-candidate ordinary200, then frozen matrix+explicit Torch correctness. All phases must pass; timeouts/failures abort subsequent phases. No timing admission.",
+  "independent_checks": [
+    "312 candidate source hashes verified; only resident.rs and streams.rs differ from a14feda",
+    "144 candidate archive files match independently reviewed source bundle, safe regular paths",
+    "All six upload payload hashes match receipt",
+    "Candidate real bundle validator passed",
+    "Adapter12-mode stub suite passed; old adapter negative control recorded",
+    "Launcher13-mode stub suite passed after test bytecode side effect removed",
+    "Exact diff reviewed: ordering failure gate, separate baseline/candidate validators and distinct result paths",
+    "No credentials in reviewed benchmark payload; raw provider operations stay local/private",
+    "Owned-instance-only cleanup and single-attempt claim preserved"
+  ]
+}

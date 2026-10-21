@@ -4,7 +4,8 @@ Maps [ARCHITECTURE.md](ARCHITECTURE.md) §§2–7 to the GPU leg inside the LLVM
 not a separate backend crate (FRAMEWORK §4.2, §4.5, §6.3). Paths are repository-relative.
 The mechanisms below are built; disputed per-architecture selections are resolved, while
 the frozen S54 validation matrix and both confirmations pass. This map records code locations, not performance verdicts.
-STATUS distinguishes finite benchmark acceptance from the targeted ordering proof still open.
+STATUS distinguishes finite benchmark acceptance from the S58 ordering correction and
+remaining allocation/performance work.
 
 ## Dat — facts and placement records
 
@@ -34,7 +35,7 @@ backend; the geometry queries stay in `mapal-ir` (ARCHITECTURE §2; FRAMEWORK §
 | R3/R4: resident device launch or ordinary host operation | `crates/backends/llvm/src/func/gpu.rs:FnEmit::emit_tiled_map_gpu`; `crates/backends/llvm/src/func/ops.rs:FnEmit::emit_morphism` (resident replacement or `emit_op` fallback) |
 | R5: prove row-local retention, launch into the resident row and upload changed rows | `crates/backends/llvm/src/func/retain.rs:retained_sites`; `crates/backends/llvm/src/func/resident.rs:FnEmit::emit_row_resident`, `crates/backends/llvm/src/func/resident.rs:FnEmit::emit_delta_h2d` |
 | R6: classify device uses, keep/upload/element reads, death and arena offsets | `crates/backends/llvm/src/func/resident.rs:FnEmit::resident_plan`, `crates/backends/llvm/src/func/resident.rs:FnEmit::resident_after`, `crates/backends/llvm/src/func/resident.rs:FnEmit::arena`, `crates/backends/llvm/src/func/resident.rs:color`, `crates/backends/llvm/src/func/resident.rs:FnEmit::host_free` |
-| R7: order independent chains and dependent launches | `crates/backends/llvm/src/func/resident.rs:FnEmit::chains`; `crates/backends/llvm/src/func/gpu.rs:pdl` |
+| R7: resolve grouped physical writers and order independent chains, feeder events and element readback | `crates/backends/llvm/src/func/resident.rs:grouped_writer`, `crates/backends/llvm/src/func/resident.rs:ResidentPlan::stream_of`, `crates/backends/llvm/src/func/resident.rs:FnEmit::chains`; `crates/backends/llvm/src/func/gpu.rs:pdl` |
 | Grid raster and L2-window policy (§7) | `crates/backends/llvm/src/profile.rs:Gpu::raster`; `crates/backends/llvm/src/func/resident.rs:FnEmit::l2_window` |
 | Site/host rung selection and device translation unit (§3, §7) | `crates/backends/llvm/src/func/gpu.rs:rungs_at`, `crates/backends/llvm/src/func/gpu.rs:host_rungs`, `crates/backends/llvm/src/func/gpu.rs:device_module`; `crates/backends/llvm/src/profile.rs:TargetProfile::gpu_rungs_on` |
 
@@ -43,11 +44,11 @@ The existing composition limits remain explicit: `set_gpu_arms` forms groups bef
 sites and unproven row-local shapes. These are ARCHITECTURE §5/§7's placement constraints,
 not exceptions introduced by this map (FRAMEWORK §4.5 laws 1 and 5).
 
-Planned correction, still unapplied: the [ordering candidate](../../performance/s57-ordering-evidence.md#reviewed-ordering-candidate--unapplied)
-reuses grouped ownership for `ResidentPlan::stream_of` and the legacy-consumer veto.
-Its private `grouped_writer` helper factors the existing `FnEmit::arena` query; it is a
-candidate symbol, not shared implementation. Shared source retains the missing member
-dependency cases documented there until ordinary GPU validation and integration.
+The [S58 ordering correction](../../performance/s58-parallel-development.md) reuses
+grouped ownership for `ResidentPlan::stream_of` and the legacy-consumer veto.
+Its private `grouped_writer` helper factors the existing `FnEmit::arena` query.
+Canonical aliases resolve to the physical writer before selecting a stream; unknown
+ownership remains on the legacy path. Runtime calls and allocation/free policy are unchanged.
 
 The [saved host LLVM audit](../../../benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md)
 distinguishes these existing host hints from device attributes and explicit runtime
@@ -83,6 +84,8 @@ kernel durations do not measure untraced stream overlap (`crates/mapal-rt/gpu/ma
 | Remote failure propagation and rental cleanup | `benches/gpu/vast_run.sh:run_rc`, `benches/gpu/vast_run.sh:cleanup` |
 | Static launch/copy/arena placement counts | `benches/gpu/fusion_report.py:analyze`; static call counts do not establish runtime correctness |
 | Kernel A/B, null controls and program measurements | `benches/gpu/rungs.py:kernel_arms`, `benches/gpu/rungs.py:null_ab`, `benches/gpu/rungs.py:program_arms`; summaries `benches/gpu/table.py:probe_table`, `benches/gpu/table.py:decode_table` |
+| Executed-image observation prototype: exact PTX, pending load/context and callback-lifetime cubin copy (GPU behavior unvalidated) | `benches/gpu/capture_images/capture.cpp:Pending`, `benches/gpu/capture_images/capture.cpp:callback`, `benches/gpu/capture_images/capture.cpp:writefile`, `benches/gpu/capture_images/capture.cpp:InitializeInjection` |
+| Observation admission: completed-process hashes, ELF/function, module/context joins and exact launch contract; always excludes ordinary timing | `benches/gpu/capture_images/validate.py:validate`, `benches/gpu/capture_images/validate.py:elf_kernel`; bounded launcher `benches/gpu/capture_images/run_capture.py` (script entry) |
 
 The selection table's presence is not final validation. Acceptance still requires complete
 integrated correctness and measurement evidence, independent confirmations and reconciled

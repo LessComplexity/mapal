@@ -414,3 +414,240 @@ fn pdl_is_hopper_and_later_only() {
     let e = emit(&src, "rtx-5090", forced(&["pdl"]));
     assert!(e.device.expect("device").contains("griddepcontrol.wait;"));
 }
+
+// Combined streams + epilogue regressions: the standalone R7 helper disables fusion.
+fn grouped(src: &str, contract: bool) -> Emission {
+    let mut gpu = forced(&["streams"]);
+    *gpu.off.rung("stream-gate").expect("rung") = true;
+    emit_detailed(
+        &lower_src(src),
+        &EmitOpts {
+            target: "rtx-5090",
+            contract,
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("combined placement emits")
+}
+
+const GROUPED_MEMBER: &str = r#"fn main() {
+    4096 -> iota -> ta;
+    64 -> iota -> krange;
+    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 64 + k] * b[k * 64 + j] }
+    } -> c1;
+    c1 -> map { v -> v * 2.0 } -> h1;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + e[i * 64 + k] * f[k * 64 + j] }
+    } -> c2;
+    c2 -> map { v -> v * 2.0 } -> h2;
+    h2[0] -> println;
+    h2[4095] -> println;
+    h1[0] -> println;
+    h1[4095] -> println;
+    a[0] -> println;
+    b[0] -> println;
+    e[0] -> println;
+    f[0] -> println;
+    c1[0] -> println;
+    c1[4095] -> println;
+    c2[0] -> println;
+    c2[4095] -> println;
+}
+"#;
+
+const GROUPED_FORK: &str = r#"fn main() {
+    4096 -> iota -> ta;
+    64 -> iota -> krange;
+    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 64 + k] * b[k * 64 + j] }
+    } -> c1;
+    c1 -> map { v -> v * 2.0 } -> h1;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + h1[i * 64 + k] * e[k * 64 + j] }
+    } -> left;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + h1[i * 64 + k] * f[k * 64 + j] }
+    } -> right;
+    right[0] -> println;
+    right[4095] -> println;
+    left[0] -> println;
+    left[4095] -> println;
+    h1[0] -> println;
+    h1[4095] -> println;
+    a[0] -> println;
+    b[0] -> println;
+    e[0] -> println;
+    f[0] -> println;
+    c1[0] -> println;
+    c1[4095] -> println;
+}
+"#;
+
+const GROUPED_ROW_FOLD: &str = r#"fn main() {
+    4096 -> iota -> ta;
+    64 -> iota -> krange;
+    ta -> map { t -> (t % 7 + 1) -> widen_f32 } -> a;
+    ta -> map { t -> (t % 5 + 2) -> widen_f32 } -> b;
+    ta -> map { t -> (t % 11 + 1) -> widen_f32 } -> e;
+    ta -> map { t -> (t % 13 + 1) -> widen_f32 } -> f;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 64 + k] * b[k * 64 + j] }
+    } -> c1;
+    c1 -> map { v -> v * 2.0 } -> h1;
+    ta -> map { t ->
+        t / 64 -> i;
+        t % 64 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + e[i * 64 + k] * f[k * 64 + j] }
+    } -> c2;
+    c2 -> map { v -> v * 2.0 } -> h2;
+    krange -> map { i -> (0.0, krange) -> fold { acc, j -> acc + h1[i * 64 + j] } } -> rows;
+    rows[0] -> println;
+    rows[63] -> println;
+    h2[0] -> println;
+    h2[4095] -> println;
+    h1[0] -> println;
+    h1[4095] -> println;
+    a[0] -> println;
+    b[0] -> println;
+    e[0] -> println;
+    f[0] -> println;
+    c1[0] -> println;
+    c1[4095] -> println;
+    c2[0] -> println;
+    c2[4095] -> println;
+}
+"#;
+
+#[test]
+fn grouped_member_corners_wait_on_the_physical_writer() {
+    for contract in [false, true] {
+        let t = calls(&grouped(GROUPED_MEMBER, contract).text);
+        let launches: Vec<_> = t.iter().filter(|x| x.starts_with("launchv")).collect();
+        assert_eq!(launches, ["launchv 1", "launchv 2"], "{t:?}");
+        let reads: Vec<_> = t.iter().filter(|x| x.starts_with("d2h")).collect();
+        assert_eq!(
+            reads,
+            [
+                "d2h_on 2", "d2h_on 2", "d2h_on 1", "d2h_on 1", "d2h", "d2h", "d2h", "d2h",
+                "d2h_on 1", "d2h_on 1", "d2h_on 2", "d2h_on 2"
+            ],
+            "{t:?}"
+        );
+        assert!(!t.iter().any(|x| x.starts_with("event")), "{t:?}");
+    }
+}
+
+#[test]
+fn grouped_member_fork_waits_only_for_the_other_chain() {
+    for contract in [false, true] {
+        let t = calls(&grouped(GROUPED_FORK, contract).text);
+        let launches: Vec<_> = t.iter().filter(|x| x.starts_with("launchv")).collect();
+        assert_eq!(launches, ["launchv 1", "launchv 1", "launchv 2"], "{t:?}");
+        let events: Vec<_> = t.iter().filter(|x| x.starts_with("event")).collect();
+        assert_eq!(events, ["event 1>2"], "{t:?}");
+        let wait = t.iter().position(|x| x == "event 1>2").expect("wait");
+        assert_eq!(t[wait + 1], "launchv 2", "{t:?}");
+    }
+}
+
+#[test]
+fn grouped_member_capture_uses_one_producer_wait() {
+    // h1 is an external Gmem capture of c2's group, not c2's tile operand.
+    let src = GROUPED_MEMBER.replace(
+        "    c2 -> map { v -> v * 2.0 } -> h2;",
+        "    ta -> map { t -> c2[t] + h1[t] + h1[t] } -> h2;",
+    );
+    for contract in [false, true] {
+        let e = grouped(&src, contract);
+        let t = calls(&e.text);
+        let launches: Vec<_> = t.iter().filter(|x| x.starts_with("launchv")).collect();
+        assert_eq!(launches, ["launchv 1", "launchv 2"], "{t:?}");
+        // a,b,raw result,h1 capture,stored h2: the capture is in Epi.caps().
+        assert!(
+            mapal_main(&e.text).contains("i32 2, i32 5, ptr"),
+            "{}",
+            e.text
+        );
+        let events: Vec<_> = t.iter().filter(|x| x.starts_with("event")).collect();
+        assert_eq!(events, ["event 1>2"], "{t:?}");
+        let wait = t.iter().position(|x| x == "event 1>2").expect("wait");
+        // A stored epilogue output is allocated after the event; the next launch
+        // must be the consuming group. Do not hoist that live allocation.
+        let next_launch = t[wait + 1..].iter().find(|x| x.starts_with("launch"));
+        assert_eq!(next_launch.map(String::as_str), Some("launchv 2"), "{t:?}");
+    }
+}
+
+#[test]
+fn grouped_member_legacy_cell_keeps_the_conservative_fallback() {
+    let src = GROUPED_MEMBER.replace("    h2[0] -> println;",
+        "    ta -> map { t -> h1[4095 - t] } -> rev;\n    rev[0] -> println;\n    rev[4095] -> println;\n    h2[0] -> println;");
+    for contract in [false, true] {
+        for src in [src.clone(), src.replace("h1[4095 - t]", "c1[4095 - t]")] {
+            let e = grouped(&src, contract);
+            assert!(e.device.expect("device").contains("; cell"));
+            assert_eq!(init_flags(&e.text) & 2, 0, "unordered legacy consumer");
+            let t = calls(&e.text);
+            assert!(
+                !t.iter()
+                    .any(|x| x == "launchv 1" || x == "launchv 2" || x.starts_with("event")),
+                "{t:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
+    for contract in [false, true] {
+        let e = grouped(GROUPED_ROW_FOLD, contract);
+        let t = calls(&e.text);
+        let first = t.iter().position(|x| x == "launchv 1").expect("producer");
+        assert_eq!(t[first + 1], "d2h_on 1", "{t:?}");
+        assert!(
+            mapal_main(&e.text)
+                .lines()
+                .any(|l| l.contains("@mapal_gpu_d2h_on(i32 1,") && l.contains("i64 16384)"))
+        );
+        // The existing base-output row-fold veto also remains conservative.
+        let raw = GROUPED_ROW_FOLD.replace("acc + h1[i * 64 + j]", "acc + c1[i * 64 + j]");
+        let e = grouped(&raw, contract);
+        assert_eq!(init_flags(&e.text) & 2, 0);
+    }
+}
+
+#[test]
+fn grouped_loop_carry_views_stay_on_the_legacy_stream() {
+    for contract in [false, true] {
+        let e = grouped(&relu_loop(64), contract);
+        assert_eq!(init_flags(&e.text) & 2, 0);
+        let t = calls(&e.text);
+        assert!(
+            !t.iter()
+                .any(|x| x == "launchv 1" || x == "launchv 2" || x.starts_with("event")),
+            "{t:?}"
+        );
+    }
+}

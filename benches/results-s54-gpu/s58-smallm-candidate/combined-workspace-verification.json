@@ -1,0 +1,43 @@
+{
+  "final_distinct_passed": 1190,
+  "final_failed": 0,
+  "ignored": 1,
+  "initial": {
+    "passed": 1150,
+    "failed": 40
+  },
+  "targeted_retry": {
+    "groups": [
+      [
+        38,
+        0,
+        0
+      ],
+      [
+        14,
+        0,
+        0
+      ]
+    ],
+    "exit": 0
+  },
+  "initial_failure_cause": "Isolated snapshot tests link a fixed target/debug/libmapal_rt.a path, ignoring the external Cargo target directory. Built unmodified runtime there; both failing targets then passed. No compiler/runtime source change.",
+  "source_snapshot": "a14feda + reviewed ordering and final smallM candidate",
+  "commands": [
+    "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-s58-integration-target cargo test --offline --locked --workspace --release --no-fail-fast -- --test-threads=1",
+    "CARGO_TARGET_DIR=/private/tmp/mapal-s58-combined/source/target cargo build --offline --locked -p mapal-rt",
+    "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-s58-integration-target cargo test --offline --locked --release -p mapal-backend-llvm --test differential --test retain_delta -- --test-threads=1"
+  ],
+  "logs": {
+    "combined-workspace-retry.log": "f2e9927e4cb66b8d82b710af2b7120db62f0c618aeea5bd51d49f27c0f814634",
+    "combined-runtime-build.log": "ba3503d1e6ef28addf3c334fc50dfe8d9d37ecbe5fd0a310a8ae389ff8389547",
+    "combined-workspace.log.gz": "db2f17187fd0d8b438a4d928c4d8d6413f9647efebdaef9406e5a004b17b2e9e"
+  },
+  "compressed_log": {
+    "file": "combined-workspace.log.gz",
+    "uncompressed_sha256": "ca3ca85c2bb00107b9cf8afa74f27a51d02d0b23ea10a2bf20bb2b30f4221d08",
+    "bytes": 1702838,
+    "gzip_bytes": 246561,
+    "original_retained": "/private/tmp/mapal-s58-combined/workspace.log"
+  }
+}

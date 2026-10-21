@@ -1,0 +1,48 @@
+--- /private/tmp/mapal-s58-gpu/staging-v58/run_checks.py	2026-10-21 18:05:39
++++ /private/tmp/mapal-s58-gpu/staging-v59/run_checks.py	2026-10-21 18:08:43
+@@ -40,7 +40,7 @@
+     records = []
+     env = {k: v for k, v in os.environ.items() if not k.startswith('PIP_')}
+     env.update(PYTHONDONTWRITEBYTECODE='1', PIP_CONFIG_FILE='/dev/null')
+-    summary = {'pass': False, 'ordering_pass': False, 'matrix_numeric_pass': False,
++    summary = {'pass': False, 'ordering_pass': False, 'candidate_ordering_pass': False, 'matrix_numeric_pass': False,
+                'matrix_proof_complete': False, 'timing_admitted': False,
+                'runner_sha256': sha(__file__), 'commands': records,
+                'total_workload_seconds': TOTAL_SECONDS}
+@@ -104,6 +104,27 @@
+         summary['ordering_pass'] = order_ok and summary.get('ordering_summary', {}).get('pass') is True
+         if not summary['ordering_pass']:
+             raise ValueError('Ordering correctness failed; later phases aborted')
++        if not run('ordering-verify', [sys.executable, ROOT / 'verify_ordering.py',
++            ROOT / 'ordering-runtime-bundle', OUT / 'ordering-values', '--manifest-sha',
++            '141f7bdca06b2f770761b735b02ae12f6891ba80cb9b461ec88fcd59780209e8'], 60):
++            raise ValueError('Frozen ordering independent verification failed; later phases aborted')
++        if not run('candidate-ordering-payload-check', [sys.executable,
++            ROOT / 'ordering-candidate-bundle/box_ordering.py', ROOT / 'ordering-candidate-bundle',
++            OUT / 'unused-candidate', '--check-only'], 60):
++            raise ValueError('Candidate ordering payload check failed; later phases aborted')
++        candidate_ok = run('candidate-ordering', [sys.executable,
++            ROOT / 'ordering-candidate-bundle/box_ordering.py', ROOT / 'ordering-candidate-bundle',
++            OUT / 'candidate-ordering-values', '--reps', '20', '--timeout', '60'], 300)
++        candidate_summary = OUT / 'candidate-ordering-values/summary.json'
++        if candidate_summary.exists():
++            summary['candidate_ordering_summary'] = json.loads(candidate_summary.read_text())
++        summary['candidate_ordering_pass'] = candidate_ok and summary.get('candidate_ordering_summary', {}).get('pass') is True
++        if not summary['candidate_ordering_pass']:
++            raise ValueError('Candidate ordering correctness failed; later phases aborted')
++        if not run('candidate-ordering-verify', [sys.executable, ROOT / 'verify_ordering.py',
++            ROOT / 'ordering-candidate-bundle', OUT / 'candidate-ordering-values', '--manifest-sha',
++            '7b492228ccdce858e3ff26ef6592d67b0035cd8848a5b710329f4bd31e0f260e'], 60):
++            raise ValueError('Candidate ordering independent verification failed; later phases aborted')
+         # This explicit, logged bootstrap is separate from both unchanged harnesses.
+         bootstrap = [
+             ('apt-update', ['apt-get', 'update'], 180),
+@@ -146,7 +167,7 @@
+         if matrix_report.exists():
+             summary['matrix_verification'] = json.loads(matrix_report.read_text())
+         summary['matrix_numeric_pass'] = matrix_ok and summary.get('matrix_verification', {}).get('numeric_pass') is True
+-        summary['pass'] = summary['ordering_pass'] and summary['matrix_numeric_pass']
++        summary['pass'] = summary['ordering_pass'] and summary['candidate_ordering_pass'] and summary['matrix_numeric_pass']
+     except Exception as exc:
+         summary['error'] = type(exc).__name__ + ': ' + str(exc)
+     finally:

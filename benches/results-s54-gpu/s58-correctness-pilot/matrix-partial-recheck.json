@@ -1,0 +1,76 @@
+{
+  "pass": true,
+  "mapal_raw_strict_bit_rechecks": [
+    {
+      "id": "check-exact",
+      "traced": false,
+      "pass": true,
+      "numeric_values": 1496,
+      "strict_bits": true
+    },
+    {
+      "id": "check-exact",
+      "traced": true,
+      "pass": true,
+      "numeric_values": 1496,
+      "strict_bits": true
+    },
+    {
+      "id": "check-contract",
+      "traced": false,
+      "pass": true,
+      "numeric_values": 1496,
+      "strict_bits": true
+    },
+    {
+      "id": "check-contract",
+      "traced": true,
+      "pass": true,
+      "numeric_values": 1496,
+      "strict_bits": true
+    },
+    {
+      "id": "run-exact",
+      "traced": false,
+      "pass": true,
+      "numeric_values": 128,
+      "strict_bits": true
+    },
+    {
+      "id": "run-exact",
+      "traced": true,
+      "pass": true,
+      "numeric_values": 128,
+      "strict_bits": true
+    },
+    {
+      "id": "run-contract",
+      "traced": false,
+      "pass": true,
+      "numeric_values": 128,
+      "strict_bits": true
+    },
+    {
+      "id": "run-contract",
+      "traced": true,
+      "pass": true,
+      "numeric_values": 128,
+      "strict_bits": true
+    }
+  ],
+  "values_checked": 6496,
+  "handwritten_reports": {
+    "naive": {
+      "pass": true
+    },
+    "cublas": {
+      "pass": true
+    }
+  },
+  "pytorch_reports": {
+    "eager": {
+      "pass": true,
+      "run_final_gate_pass": true
+    }
+  }
+}

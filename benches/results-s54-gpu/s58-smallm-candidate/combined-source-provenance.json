@@ -1,0 +1,9 @@
+{
+  "source_head": "a14feda53406b0f1eaa6b1947afaa81728055c2b",
+  "source_manifest_sha256": "b4a7bbecacd477e2720965e31de87ce526f7f66c0ecdf51856c5a9d65a5ad185",
+  "ordering_patch_sha256": "0813872210b157aabc1887ece05e7d72d68744f420a07ef2efd0b8b29c5fbbbe",
+  "smallm_patch_sha256": "019870a820e4a2c5cb6aa5389e1229a685b01ea8f9876fc98fc1d247b736ea2b",
+  "emitter_sha256": "ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307",
+  "source_files": 3343,
+  "scope": "root combined snapshot: a14feda + reviewed ordering + final smallM candidate; shared smallM not yet applied"
+}

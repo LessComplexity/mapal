@@ -1,0 +1,10 @@
+{
+  "command": "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-s58-integration-target cargo test --offline --locked --workspace --release --no-fail-fast -- --test-threads=1",
+  "exit": 0,
+  "passed": 1188,
+  "failed": 0,
+  "ignored": 1,
+  "log_sha256": "d8e7576680706b732372977fe38a8aaac8ba4448a99dd92347fb024c75080925",
+  "source_head": "a14feda53406b0f1eaa6b1947afaa81728055c2b",
+  "ordering_patch_sha256": "0813872210b157aabc1887ece05e7d72d68744f420a07ef2efd0b8b29c5fbbbe"
+}
