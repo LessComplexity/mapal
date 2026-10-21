@@ -168,6 +168,10 @@ bench() { # <n> <stem> <label> [--contract|--tf32]
     say "# n=$n face=$label"
     ./tile_bench "$n" "$n" "$n" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
 }
+# S54 arch-select: the session's first bench ran 3.6% off its own repeat (the `null` arm,
+# arch-select-rtx-3090.txt _exact 1024): one discarded bench first.
+[ -f "$PROF/mm_1024.launch" ] && { read -r k gx gy blk sm < "$PROF/mm_1024.launch"
+    ./tile_bench 1024 1024 1024 "$PROF/mm_1024.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" > /dev/null 2>&1; }
 for n in 1024 1536 2048 3072 4096 8192; do
     for face in _exact _c _tf; do
         case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac

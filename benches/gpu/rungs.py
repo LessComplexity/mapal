@@ -17,15 +17,18 @@ above — `Gpu::warps_per_scheduler` of a site's base FMA grid on all five parts
 `warps_per_scheduler_reads_the_base_grid`).
 
 At one size: stable+ when s > 1.01 in every session, stable- when s < 0.99 in every session,
-`*` = disjoint min-max ranges. The rule: a rung ships ON in a class iff some size is stable+.
-Status against what ships now: ok / CONTRADICTS (strong: a size stable with disjoint ranges in every
-session the other way) / contradicts (weak). Composite arms (arch-rungs = the whole table,
-fma-regs = idx32+affine+pad+wide-fma, `a+b` arms) are shown, never decided.
+`*` = disjoint min-max ranges. `rule` (plan-s54 §3): a rung ships ON in a class iff some size is
+stable+ — it decides a rung measured for the first time (`--new`). A rung already in the table flips
+only on evidence (`ships`): ON -> OFF when some size is stable- and none stable+, OFF -> ON the other
+way; no effect (no stable size), a class some session did not measure, and mixed signs (stable+ at one
+size, stable- at another: no (fill, face) key separates them) keep what ships. Composite arms
+(arch-rungs = the whole table, fma-regs = idx32+affine+pad+wide-fma, `a+b` arms) are shown, never
+decided. Every session's `null` arm (the shipped kernel benched again) prints the noise floor.
 
-Then the RungOff rows the rule asks for, merged across classes where they agree (a `Contract`
-row covers the TF32 face too: profile.rs `Face::covers`), to paste into GPU_RUNGS_OFF.
+Then the RungOff rows that ship, merged across classes where they agree (a `Contract` row covers
+the TF32 face too: profile.rs `Face::covers`), to paste into GPU_RUNGS_OFF.
 
-usage: python3 benches/gpu/rungs.py <results-session-1> [<results-session-2>...]
+usage: python3 benches/gpu/rungs.py [--new <rung>,...] <results-session-1> [<results-session-2>...]
        python3 benches/gpu/rungs.py --selftest
 """
 import os
@@ -75,7 +78,7 @@ def split_arm(arm):
 
 
 def kernel_arms(path):
-    rows, out = kernel_rows(path), {}
+    rows, out, nulls = kernel_rows(path), {}, null_ab(path)
     for (n, key), r in rows.items():
         face, _, arm = key.partition('.')
         sa = split_arm(arm)
@@ -85,6 +88,10 @@ def kernel_arms(path):
         on, off = (base, r) if sa[0] == 'ON' else (r, base)
         disj = on['mapal'][2] < off['mapal'][0] or off['mapal'][2] < on['mapal'][0]
         sp = (off['mapal'][1] / off['cublas'][1]) / (on['mapal'][1] / on['cublas'][1])
+        # Against the shipped row's repeat (`null`) when the session has one: the shipped bench's own
+        # offset (null s = shipped / repeat) cancels.
+        ns = nulls.get(f'{face} {n}', 1.0)
+        sp = sp * ns if sa[0] == 'ON' else sp / ns
         out[(sa[1], face, f'{face} {n}', n)] = (sp, disj, sa[0])
     return out
 
@@ -128,7 +135,11 @@ def program_arms(path):
     return out
 
 
-def classes(files):
+def classes(files, new=()):
+    """Per class: (class, shipped, rule, target, status, cells). `rule` is the plan's rule (ON iff
+    some size is stable+); it decides a rung in `new` (measured for the first time). A rung already
+    in the table flips only on evidence: ON -> OFF when some size is stable- and none stable+, OFF ->
+    ON the other way round; no effect (no stable size) and mixed signs keep what ships."""
     sess = [{**kernel_arms(f), **program_arms(f)} for f in files]
     cls = defaultdict(lambda: defaultdict(dict))  # class -> size label -> session -> value
     for i, a in enumerate(sess):
@@ -142,20 +153,29 @@ def classes(files):
         neg = [k for k, s in full.items() if all(v[0] < 1 - EPS for v in s.values())]
         strong_pos = [k for k in pos if all(v[1] for v in full[k].values())]
         strong_neg = [k for k in neg if all(v[1] for v in full[k].values())]
-        verdict = 'ON' if pos else 'OFF'
         sh = '/'.join(sorted(shipped))
+        # A class some session did not measure is not decided here (one session is not a sign).
+        rule = ('ON' if pos else 'OFF') if full or len(sess) == 1 else 'n/a'
+        if c[0] in new:
+            target = rule if rule != 'n/a' and not (pos and neg) else sh
+        else:
+            target = {('ON', False, True): 'OFF', ('OFF', True, False): 'ON'}.get((sh, bool(pos), bool(neg)), sh)
         if c[0] in COMPOSITE or '+' in c[0]:
             status = 'composite'
-        elif sh == verdict:
+        elif rule == 'n/a':
+            status = f'{max(len(s) for s in sizes.values())} of {len(sess)} sessions'
+        elif pos and neg:
+            status = 'mixed (held)'
+        elif target != sh:
+            status = 'FLIP (disjoint)' if strong_pos or strong_neg else 'FLIP'
+        elif sh == rule:
             status = 'ok'
-        elif (verdict == 'OFF' and strong_neg) or (verdict == 'ON' and strong_pos):
-            status = 'CONTRADICTS'
         else:
-            status = 'contradicts'
+            status = 'no effect (held)'
         cells = '; '.join(
             f"{label}: " + ' '.join(f"{s[i][0]:.3f}{'*' if s[i][1] else ''}" for i in sorted(s))
             for label, s in sorted(sizes.items()))
-        out.append((c, sh, verdict, status, cells, sizes))
+        out.append((c, sh, rule, target, status, cells))
     return out, len(sess)
 
 
@@ -183,11 +203,11 @@ def merge(offs, ons):
 
 
 def rows(out, files):
-    """RungOff rows the rule asks for: every class it says OFF, merged per rung."""
+    """The RungOff rows that ship: every class whose target is OFF, merged per rung."""
     by = defaultdict(lambda: ([], []))
-    for (rung, fill, face), sh, v, st, cells, _ in out:
+    for (rung, fill, face), sh, _, target, st, cells in out:
         if st != 'composite':
-            by[rung][0 if v == 'OFF' else 1].append(((fill, face), cells, sh))
+            by[rung][0 if target == 'OFF' else 1].append(((fill, face), cells, sh))
     names = ' / '.join(os.path.basename(f) for f in files)
     res = []
     for rung, (offs, ons) in sorted(by.items()):
@@ -197,7 +217,7 @@ def rows(out, files):
             ev = '; '.join(cells for cells, _ in mine)
             res.append((rung, k, any(sh != 'OFF' for _, sh in mine),
                         f"{names} OFF/ON (kernels cuBLAS-normalized, programs interleaved): {ev} "
-                        f"(ms in the files): no size ON-faster in every session"))
+                        f"(ms in the files)"))
         for c in left:
             res.append((rung, c, None, 'no key: OFF here, ON on the TF32 face (an FMA-only Face would take it)'))
     return res
@@ -215,6 +235,25 @@ def selftest():
     assert fill_of('resident', 1024) == A and fill_of('min-blocks', 1024) == U and fill_of('pad', 2048) == F
     assert split_arm('off-warp-fill') == ('ON', 'warp-fill') and split_arm('on-async') == ('OFF', 'async')
     assert split_arm('s52') is None and split_arm('on') is None
+    # The two rules on synthetic sessions: `off-x` (shipped ON) loses 5% at 1024 in both; `on-y`
+    # (shipped OFF) gains 0.5% (no effect); `off-z` (new rung) gains 0.5% (no effect).
+    import tempfile
+    def bench(key, ms):
+        return (f"# n=1024 face={key}\ntime leg=mapal n=30 min_ms={ms} med_ms={ms} max_ms={ms}\n"
+                f"time leg=cublas n=30 min_ms=1 med_ms=1 max_ms=1\nratio x\n")
+    text = (bench('_c', 1.0) + bench('_c.off-x', 0.95) + bench('_c.on-y', 0.995) + bench('_c.off-z', 1.005))
+    paths = []
+    for _ in range(2):
+        f = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+        f.write('== part sm_00\n' + text)
+        f.close()
+        paths.append(f.name)
+    got = {c[0]: (sh, rule, target) for c, sh, rule, target, _, _ in classes(paths, {'z'})[0]}
+    assert got == {'x': ('ON', 'OFF', 'OFF'), 'y': ('OFF', 'OFF', 'OFF'), 'z': ('ON', 'OFF', 'OFF')}, got
+    got = {c[0]: target for c, _, _, target, _, _ in classes(paths)[0]}
+    assert got == {'x': 'OFF', 'y': 'OFF', 'z': 'ON'}, got  # z not new: no effect holds ON
+    for p in paths:
+        os.unlink(p)
     print('selftest ok')
 
 
@@ -222,19 +261,21 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--selftest']:
         selftest()
         sys.exit()
-    files = sys.argv[1:]
-    out, ns = classes(files)
-    print(f"| rung | fill | face | shipped | rule ({ns} session{'s' if ns > 1 else ''}) | status | OFF/ON speedup per size, per session (`*` disjoint) |")
-    print('|---|---|---|---|---|---|---|')
-    for (rung, fill, face), sh, v, st, cells, _ in out:
-        print(f"| {rung} | {fill} | {face} | {sh} | {v} | {st} | {cells} |")
+    args = sys.argv[1:]
+    new = set(args[1].split(',')) if args[:1] == ['--new'] else set()
+    files = args[2:] if new else args
+    out, ns = classes(files, new)
+    print(f"| rung | fill | face | shipped | rule ({ns} session{'s' if ns > 1 else ''}) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |")
+    print('|---|---|---|---|---|---|---|---|')
+    for (rung, fill, face), sh, v, target, st, cells in out:
+        print(f"| {rung} | {fill} | {face} | {sh} | {v} | {target} | {st} | {cells} |")
     for f in files:
         nl = null_ab(f)
         if nl:
             print(f"\nnull A/B (shipped vs itself), {os.path.basename(f)}: max |s-1| = "
                   f"{max(abs(s - 1) for s in nl.values()):.3f}; "
                   + '; '.join(f"{k}: {s:.3f}" for k, s in sorted(nl.items())))
-    print(f"\n// GPU_RUNGS_OFF rows the rule asks for on {profile_of(files[0])} (new = a class it ships ON today)")
+    print(f"\n// GPU_RUNGS_OFF rows that ship on {profile_of(files[0])} (new = a class that ships ON today)")
     for rung, (fill, face), new, cite in rows(out, files):
         if new is None:
             print(f"    // {rung} {fill} {face}: {cite}")
