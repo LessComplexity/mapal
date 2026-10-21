@@ -1,0 +1,54 @@
+--- rejected-v1/run_gate.py
++++ v2/run_gate.py
+@@ -10,21 +10,43 @@
+   if h(root/name)!=sha:raise ValueError('packet hash mismatch:'+name)
+  if m['ordinary_processes']!=640 or m['counter_processes']!=28:raise ValueError('wrong gate scope')
+  return m
++def stop_phase(child):
++ if child.poll() is None:
++  os.killpg(child.pid,signal.SIGTERM)
++  try:child.wait(timeout=5)
++  except subprocess.TimeoutExpired:
++   os.killpg(child.pid,signal.SIGKILL);child.wait()
++
+ def run(root,out):
++ root,out=pathlib.Path(root).resolve(),pathlib.Path(out).resolve()
++ if out.is_relative_to(root) or root.is_relative_to(out):raise ValueError('separate results directory required')
+  check(root);out.mkdir(exist_ok=False);started=time.monotonic();rows=[]
+  def phase(name,command,timeout):
+   remaining=1500-(time.monotonic()-started)
+-  if remaining<=0:raise ValueError('global1500second deadline')
+-  with (out/(name+'.stdout')).open('xb') as o,(out/(name+'.stderr')).open('xb') as e:
+-   p=subprocess.Popen([str(x) for x in command],stdout=o,stderr=e,start_new_session=True)
+-   try:rc=p.wait(timeout=min(timeout,remaining))
+-   except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait();rc=124
+-   except BaseException:
+-    if p.poll() is None:os.killpg(p.pid,signal.SIGKILL);p.wait()
+-    raise
++  if remaining<=5:raise ValueError('global1500second deadline')
++  child=None;cancelled=False
++  def cancel(signum,frame):
++   nonlocal cancelled
++   cancelled=True
++   if child is not None:raise SystemExit(128+signum)
++  previous=signal.signal(signal.SIGTERM,cancel)
++  try:
++   with (out/(name+'.stdout')).open('xb') as o,(out/(name+'.stderr')).open('xb') as e:
++    try:
++     if cancelled:raise SystemExit(143)
++     child=subprocess.Popen([str(x) for x in command],stdout=o,stderr=e,start_new_session=True)
++     if cancelled:raise SystemExit(143)
++     try:rc=child.wait(timeout=min(timeout,remaining)-5)
++     except subprocess.TimeoutExpired:stop_phase(child);rc=124
++    except BaseException:
++     if child is not None:stop_phase(child)
++     raise
++   if cancelled:raise SystemExit(143)
++  finally:signal.signal(signal.SIGTERM,previous)
+   rows.append({'phase':name,'command':[str(x) for x in command],'exit':rc,'timeout_seconds':timeout})
+   (out/'phases.json').write_text(json.dumps(rows,indent=2)+'\n')
+   if rc:raise ValueError('phase failed:'+name)
++
+  try:
+   for variant in ['before','after']:
+    bundle=root/(variant+'-bundle');phase(variant+'-check',[sys.executable,bundle/'box_ordering.py',bundle,out/'unused','--check-only'],30)

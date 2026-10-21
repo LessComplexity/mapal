@@ -1,0 +1,22 @@
+--- /private/tmp/mapal-s58-gpu/combined-v61/launch_once.py	2026-10-21 18:37:33
++++ /private/tmp/mapal-s58-gpu/combined-v62/launch_once.py	2026-10-21 18:45:57
+@@ -1,6 +1,6 @@
+ """Single reviewed combined attempt; no automatic retries or unrelated destruction."""
+ import datetime as dt,hashlib,json,math,os,pathlib,shlex,shutil,signal,subprocess,time
+-P=pathlib.Path('/private/tmp/mapal-s58-gpu/combined-v61');UNRELATED={57065574,57100404};RATE_LIMIT=.8;MAX_SECONDS=1800
++P=pathlib.Path('/private/tmp/mapal-s58-gpu/combined-v62');UNRELATED={57065574,57100404};RATE_LIMIT=.772548887;MAX_SECONDS=1800
+ sha=lambda p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+ read=lambda p:json.loads(pathlib.Path(p).read_text())
+ def write(p,x):pathlib.Path(p).write_text(json.dumps(x,indent=2)+'\n')
+@@ -16,9 +16,9 @@
+ def prepare():
+  packet=read(P/'packet.json');review=read(P/'root-review.json');require(review.get('approved')is True and review.get('packet_sha256')==sha(P/'packet.json')and review.get('launcher_sha256')==sha(__file__),'Fresh bound root review missing')
+  require(review.get('single_attempt')is True,'Exactly one attempt required');require(not(P/'launch-claim.json').exists(),'Single attempt already consumed')
+- require(sha(packet['prior_budget_path'])==packet['prior_budget_sha256'],'Prior budget changed');prior=read(packet['prior_budget_path']);require(abs(prior['remaining_original_one_dollar_usd']-.5962744434792181)<1e-12,'Original remaining budget changed')
++ require(sha(packet['prior_budget_path'])==packet['prior_budget_sha256'],'Prior budget changed');prior=read(packet['prior_budget_path']);require(abs(prior['remaining_original_one_dollar_planning_usd']-.4862744434792181)<1e-12,'Original remaining budget changed')
+  snap=read(P/'offers-sanitized.json');require(sha(P/'offers-sanitized.json')==packet['offer_snapshot_sha256'],'Reviewed snapshot changed');age=(dt.datetime.now(dt.timezone.utc)-dt.datetime.fromisoformat(snap['queried_utc'])).total_seconds();require(0<=age<=600,'Fresh offer required')
+- offer=packet['offer'];matches=[x for x in snap['offers']if x['id']==offer['id']];require(matches==[offer],'Reviewed offer changed');rate=offer['dph_total'];require(math.isfinite(rate)and 0<rate<=RATE_LIMIT,'Hourly rate exceeds cap');require(.5*rate+.10<=prior['remaining_original_one_dollar_usd'],'New attempt exceeds remaining cap')
++ offer=packet['offer'];matches=[x for x in snap['offers']if x['id']==offer['id']];require(matches==[offer],'Reviewed offer changed');rate=offer['dph_total'];require(math.isfinite(rate)and 0<rate<=RATE_LIMIT,'Hourly rate exceeds cap');require(.5*rate+.10<=prior['remaining_original_one_dollar_planning_usd'],'New attempt exceeds remaining cap')
+  require(offer['gpu_name']=='RTX 5090'and offer['num_gpus']==1 and offer['cpu_arch']=='amd64'and offer['cuda_max_good']>=13,'Wrong target');require(offer['inet_down_cost']<=.002604167 and offer['inet_up_cost']<=.00390625,'Transfer rate exceeds reserve')
+  stage=pathlib.Path(packet['staging']);require({x.name for x in stage.iterdir()}==set(packet['files']),'Staging inventory changed')
+  for n,h in packet['files'].items():require(sha(stage/n)==h,'Staging changed: '+n)

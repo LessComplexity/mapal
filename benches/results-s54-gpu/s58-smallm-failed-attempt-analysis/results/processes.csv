@@ -1,0 +1,2 @@
+case,phase,arm,M,N,K,face,outcome,mapal_min_ms,mapal_med_ms,mapal_max_ms,cublas_med_ms,cutlass_med_ms,wall_seconds,regs,local_bytes,smem,block,grid,maximum_rss_kib,user_seconds,system_seconds
+rtx-5090__gate__dense_m1_n512_k7168__exact,full_gate,old,1,512,7168,exact,launch_not_started,,,,,,,,,,,,,,

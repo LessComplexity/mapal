@@ -1,0 +1,10 @@
+{
+  "pass": true,
+  "static_files": 6,
+  "static_bytes": 12859592,
+  "all_static_payload_bytes_identical": true,
+  "runtime_lease_excluded": true,
+  "launcher_only_expected_operational_substitutions": true,
+  "prior_claim_sha256": "6222535700f8198f5d3e6bc4c69f9bc19cfa2afa6f8ea682147d8c984da66434",
+  "new_claim_absent": true
+}

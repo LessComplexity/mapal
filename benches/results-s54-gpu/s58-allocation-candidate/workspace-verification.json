@@ -1,0 +1,12 @@
+{
+  "command": "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-s58-allocation/target cargo test --offline --locked --release --workspace -- --test-threads=1",
+  "passed": 1190,
+  "failed": 0,
+  "ignored": 1,
+  "targets": 88,
+  "log_sha256": "9481fa75a26f2ef91a1bc26e0ef65b26e65b443ea68cf9348bc4c1f1ceaa85a4",
+  "candidate_patch_sha256": "2c8cdc1964abbd0516a46c5da1e02a76ba59e214e205275c8e478dc23e85ffd5",
+  "fixed_path_native_runtime_built_before_tests": true,
+  "hardware_validated": false,
+  "shared_candidate_applied": false
+}

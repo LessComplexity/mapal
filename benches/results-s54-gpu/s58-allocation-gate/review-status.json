@@ -1,0 +1,8 @@
+{
+  "version": "v2",
+  "hardware_executed": false,
+  "local_review_pass": true,
+  "v1_preserved": "rejected-v1",
+  "ordinary_processes_planned": 640,
+  "counter_processes_planned": 28
+}

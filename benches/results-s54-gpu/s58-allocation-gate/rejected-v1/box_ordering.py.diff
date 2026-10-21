@@ -1,0 +1,35 @@
+--- v59/box_ordering.py
++++ allocation-gate/box_ordering.py
+@@ -10,13 +10,7 @@
+ import time
+ from pathlib import Path
+ 
+-EXPECTED = {
+-    'materialized-raw': (12, 'e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383'),
+-    'forked-tile': (12, '81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9'),
+-    'omitted-raw': (8, 'b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c'),
+-    'member-rowfold': (14, 'b96a946fa7474ab09f59d0e41eaa6b63ed3fc87ada405348567c18fddbcb52ee'),
+-    'base-rowfold': (14, 'd8d16d80de36b8c279d52d2bfb9ff1b938ddabc81f77aa0aac72d1f246ade824'),
+-}
++EXPECTED = {'independent': (2, 'e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642'), 'diamond': (2, '578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e'), 'mlp2': (4, '0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136'), 'single-chain': (4, '7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e'), 'materialized-raw': (12, 'e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383'), 'omitted-raw': (8, 'b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c'), 'forked-tile': (12, '81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9'), 'loop': (2, 'fb7e984efadce3f118cee49c3d6a9a11376bbddc71a717708be209424f0310cf')}
+ 
+ 
+ def digest(path):
+@@ -74,7 +68,7 @@
+     keys = [(row['case'], row['face']) for row in manifest['cases']]
+     wanted = {(name, face) for name in EXPECTED for face in ['exact', 'contract']}
+     if len(keys) != len(wanted) or set(keys) != wanted:
+-        raise ValueError('Require all five cases, both faces, exactly once')
++        raise ValueError('Require all eight cases, both faces, exactly once')
+     for row in manifest['cases']:
+         count, sha = EXPECTED[row['case']]
+         oracle = bundle / 'cases' / row['case'] / 'oracle.stdout'
+@@ -156,7 +150,7 @@
+                 row['disassembly'] = execute([objdump, '-dr', str(exe)], result / (stem + '.disassembly.txt'),
+                                              result / (stem + '.disassembly.stderr'), 60)
+         write_json(result / 'build-receipt.json', receipt)
+-        if len(builds) != 10 or any(r['link']['exit'] or r.get('disassembly', {}).get('exit', 1) for r in builds):
++        if len(builds) != 16 or any(r['link']['exit'] or r.get('disassembly', {}).get('exit', 1) for r in builds):
+             raise ValueError('Link/disassembly failed; no GPU cases executed')
+         with (result / 'runs.jsonl').open('x') as record:
+             for rep in range(1, repetitions + 1):

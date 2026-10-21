@@ -1,0 +1,17 @@
+{
+  "pass": true,
+  "checkpoint_arrays": 6,
+  "checkpoint_values": 1024,
+  "final_values": 128,
+  "faces": [
+    "fp32",
+    "fmaf"
+  ],
+  "checkpoint_gate_matches_saved_report": true,
+  "frozen_runner_sha256": "a718f81ead3b2b5b02b4315a622cbabd71036407e0f1d2a03ebaa18fbb601d18",
+  "report_sha256": "1f0cdb785781abd6346cf2c37c3fa6b4b635a8736a3026614916cf23fbd0099e",
+  "checkpoint_values_sha256": "58878429b045803805ed05595b146bce6e80906f72a9ce94fc09b8225e880b03",
+  "run_final_sha256": "05461dc4ad3e685fb242e9a64517d00a5730b36c500524d9138ef2451a5774af",
+  "gpu_executed_by_recheck": false,
+  "timing_admitted": false
+}

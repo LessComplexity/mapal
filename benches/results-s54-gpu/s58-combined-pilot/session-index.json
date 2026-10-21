@@ -1,0 +1,9 @@
+{
+  "slug": "inbox/2026-10-21-86934540",
+  "status": "created_or_updated",
+  "content_hash": "869345406f516d4d20cd22a2bcd84a6fef84b5a97cc64147f49dff89f2b95e0d",
+  "source_kind": "capture-cli",
+  "exit": 0,
+  "session": "docs/sessions/2026-10-21-s58-parallel-proof-and-validation.md",
+  "session_sha256": "c46977de15c7c94e31027a93f9d3628231ddff8ea2471dbc445a7ff3c39b2c2c"
+}

@@ -1,0 +1,47 @@
+{
+  "verdict": "incomplete infrastructure failure before first primary gate process; no accepted numeric or performance comparison",
+  "invocation": "combined-v62 rental, byte-identical combined-v61 payload/output directory",
+  "sealed_packet_manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+  "packet_archive_sha256": "6f4535d08a49cc92ad8ffdd7863e814e7343cbbf6a916105ad864bc85a48b9b3",
+  "outer_summary_sha256": "583303f73165086508f5629234963f107d2fe8745ca1e2b43bdae60475641577",
+  "smallm_summary_sha256": "8f2dff2b47fd94790e552f3799a716395a97d354905131d8c25dfcdff81bd324",
+  "verification_counts": {
+    "sealed_payload_files": 2866,
+    "outer_files": 180,
+    "harness_binaries": 2,
+    "hashed_record_and_metadata_files": 25
+  },
+  "independent_analyzer_sha256": "2fe42cb0b030e8805d50b9d1b5b10b34dece48cc1541321601f491237dfe4b6a",
+  "tests": {
+    "synthetic_mutation_tests": 8,
+    "pass": true,
+    "log_sha256": "573c7a39ab4409212a88650cc9ecc56b497eecbf7a34f15b8540530b01df0ed7"
+  },
+  "record_distinction": {
+    "scheduled_records": 1,
+    "expected_records": 234,
+    "first_record_outcome": "launch_not_started",
+    "process_status_receipt_exists": false,
+    "first_stdout_bytes": 0,
+    "first_stderr_bytes": 0,
+    "primary_numeric_admissions": 0,
+    "primary_timing_processes": 0,
+    "admitted_timing_cells": 0,
+    "numeric_quarantines": 0,
+    "negative_controls_verified": 3
+  },
+  "actual_failure": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+  "raw_root": "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61",
+  "bundle": "/private/tmp/mapal-s58-smallm-bench",
+  "reproduce": [
+    "python3 -B /Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s58-smallm-failed-attempt-analysis/analyze.py --bundle /private/tmp/mapal-s58-smallm-bench --results /private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values --outer-summary /private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/summary.json --out /private/tmp/mapal-s58-independent-replay"
+  ],
+  "no_gpu_execution_or_performance_acceptance_by_analyzer": true,
+  "limits": [
+    "Every-cell ordered proof applies only to each recorded bounded gate shape; full timing shapes check 256 sampled cells.",
+    "TF32 uses the unchanged 4x cuBLAS diagnostic gate, not an absolute accuracy guarantee; library errors remain diagnostics.",
+    "Two ABBA process observations and thirty events each are descriptive; null/control envelopes are not confidence intervals.",
+    "cuBLAS mode readback does not identify its executed kernel arithmetic. Driver JIT machine-image capture is separate.",
+    "No default switch or automated production acceptance is performed."
+  ]
+}

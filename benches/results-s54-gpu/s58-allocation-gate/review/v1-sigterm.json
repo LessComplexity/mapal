@@ -1,0 +1,6 @@
+{
+  "cc_dead_after_outer_sigterm": false,
+  "phase_dead_after_outer_sigterm": false,
+  "no_gpu_network_rental": true,
+  "all_fixture_processes_stopped": true
+}

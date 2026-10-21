@@ -1,0 +1,191 @@
+{
+  "case": {
+    "id": "matrix-m16-d8-h16",
+    "kind": "matrix",
+    "M": 16,
+    "d": 8,
+    "h": 16
+  },
+  "mode": "compiled",
+  "scope": "matrix",
+  "variant": "full",
+  "step": null,
+  "requested_device": "cuda:0",
+  "policy_status": "root accepted small-case gate conditionally; generated/runtime adherence remains untested",
+  "policy_sha256": "14e704561e756669f2d1d883ea9dc48018965f4cb84b86a100799859bdaef4ae",
+  "runner_sha256": "a718f81ead3b2b5b02b4315a622cbabd71036407e0f1d2a03ebaa18fbb601d18",
+  "numerics_sha256": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a",
+  "input_receipt_sha256": "fa999c4095e413bde6b45b18d0b5fcce89565c7ed269a13ff154db0a9f6574b9",
+  "input_files": {
+    "contract.json": "c70bfce10584331121080d084f84313ecf3d82ebfed7c686392606516eb4c50b",
+    "generated-manifest.json": "60b63e7c490d726d502fd0f7a59688b7a88f5b296a02620b381ee0c8a1d29ca7",
+    "certification-summary.json": "8fe816d625af54da3efbb7ed61d8a23c73bc328abc94f6e4c1c38317f651f2c2",
+    "recurrent-t16-d8-h16.fp32.json": "6eedd184c1e855cdaec9c3f9f613508acbbd753c381d9f7753fdb0436b6d5ad1",
+    "recurrent-t16-d8-h16.fmaf.json": "5cf702e1e6a7214ad8a6af0ed88cddbbca282a170d61d33b87cb0dfb634de94c",
+    "matrix-m16-d8-h16.fp32.json": "e283d834158ec46b930c71fc1916a88f8f30557663230cf611553b26def4c963",
+    "matrix-m16-d8-h16.fmaf.json": "8a2f4b72f68f94e980800c570223200546df4633d5fe8ab3161a30cfb0a2db4a"
+  },
+  "python": "3.10.12",
+  "runtime_tested": true,
+  "pass": true,
+  "arithmetic": "FP32 parallel GEMM; no claim of Mapal Exact/Contract bitwise association",
+  "compiler": {
+    "backend": "inductor",
+    "fullgraph": true,
+    "dynamic": false,
+    "cudagraphs": false
+  },
+  "environment": {
+    "torch": "2.13.0+cu130",
+    "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+    "torch_cuda": "13.0",
+    "precision": {
+      "api": "fp32_precision",
+      "global": "ieee",
+      "cuda_matmul": "ieee"
+    },
+    "deterministic_algorithms": true,
+    "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+    "cpu_threads": 112,
+    "torch_config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.12.0 (Git Hash 80afa71049cd69a3df32adcccb623b12cd7baa22)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - CUDA Runtime 13.0\n  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120\n  - CuDNN 92.0  (built against CUDA 13.2)\n  - Magma 2.6.1\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=cf30153c4c131c8164ee7798e5022d810682e2cb, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xfatbin -compress-all --threads 2 -compress-mode=size -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CUDA_VERSION=13.0, CUDNN_VERSION=9.20.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DHAS_CUPTI -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.13.0, USE_CUDA=1, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+    "gpu": "_CudaDeviceProperties(name='NVIDIA GeForce RTX 5090', major=12, minor=0, total_memory=32109MB, multi_processor_count=170, uuid=4134b943-8701-c4ea-21de-1fb48a84f04b, pci_bus_id=56, pci_device_id=0, pci_domain_id=0, L2_cache_size=96MB)"
+  },
+  "first_checker_call_sync_wall_ms": 2752.836121013388,
+  "checkpoint_checks": {
+    "candidate_gate_pass": true,
+    "references": {
+      "fp32": {
+        "candidate_gate_pass": true,
+        "checkpoints": [
+          {
+            "step": -1,
+            "name": "p",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 8.335344992012971e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "hraw",
+            "cells": 256,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.4875719694279092e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "h",
+            "cells": 256,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 2.2158954038679907e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "mraw",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.1093893682433236e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "m",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.3998608541680355e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "y",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 2.569881500642674e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          }
+        ]
+      },
+      "fmaf": {
+        "candidate_gate_pass": true,
+        "checkpoints": [
+          {
+            "step": -1,
+            "name": "p",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 8.335344992012971e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "hraw",
+            "cells": 256,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.4875719694279092e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "h",
+            "cells": 256,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 2.2158954038679907e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "mraw",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.1093893682433236e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "m",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 1.3998608541680355e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          },
+          {
+            "step": -1,
+            "name": "y",
+            "cells": 128,
+            "pass": true,
+            "max_abs_error": 0.0,
+            "max_component_budget": 2.569881500642674e-08,
+            "failed_cells": 0,
+            "first_failed_indices": []
+          }
+        ]
+      }
+    }
+  },
+  "first_run_graph_call_sync_wall_ms": 392.6326989894733,
+  "run_final_gate_pass": true
+}

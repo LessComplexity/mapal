@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "elapsed_seconds_before_independent_cleanup": 891.228426207992,
+  "end_utc": "2026-10-21T23:02:55.543452+00:00",
+  "wrapper_cutoff_seconds_from_create": 1650,
+  "absolute_limit_seconds": 1800
+}
