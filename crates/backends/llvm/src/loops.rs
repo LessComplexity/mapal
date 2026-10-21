@@ -28,6 +28,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     // entry: init → merge.slot (init is loop-invariant, already computed by the
     // topo LoopEnter deferral — ir §13).
     fe.copy_obj(plan.init, plan.merge);
+    fe.resident_loop_enter(plan.merge, plan.init);
 
     let header = fe.label();
     let advance = fe.label();
@@ -59,6 +60,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
         fe.emit_morphism(mo);
     }
     fe.copy_component(plan.back_route, 0, plan.merge);
+    fe.resident_loop_back(plan.merge);
     fe.line(format!("br label %{header}"));
 
     // Exit: copy each exit route's payload (slot 0) to its exit object.
@@ -69,6 +71,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
             (m.source, m.target)
         };
         fe.copy_component(route, 0, tgt);
+        fe.resident_loop_exit(plan.merge, tgt);
     }
     fe.line(format!("br label %{after}"));
     fe.label_line(&after);

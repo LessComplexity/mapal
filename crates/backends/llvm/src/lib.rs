@@ -87,6 +87,14 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// Keep an object's device copy between sites (S53, plan-s53 §2.3): copy
+    /// in at the producer, carry loop state on the device, copy out only what
+    /// the host reads, free at death. Off: one `mapal_gpu_tile` round trip
+    /// per site (S52).
+    pub resident: bool,
+    /// Under `resident`, compute a closed-form producer that only device sites
+    /// read on the device (`mapal_gen_<id>`) instead of copying it in.
+    pub devgen: bool,
 }
 
 impl Default for GpuRungs {
@@ -101,6 +109,8 @@ impl Default for GpuRungs {
             cp_async: true,
             wide: true,
             ldmatrix: true,
+            resident: true,
+            devgen: true,
         }
     }
 }
@@ -349,6 +359,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Functions first: the arena declarations are gated on the emitted text
     // (below), so the bodies have to exist before the header is assembled.
     let mut funcs = String::new();
+    // `devgen` (S53): the producers each function computes on the device, and
+    // every function's emitted text — a device-built producer's body is the
+    // host's own, appended to the device unit.
+    let mut gens: Vec<(u64, mapal_ir::FuncId, String)> = Vec::new();
+    let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
             funcs.push_str(&FnEmit::emit_parallel(
@@ -387,7 +402,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             if let Some(&site) = body_sites.get(id) {
                 fe.set_task_body_site(site);
             }
-            funcs.push_str(&fe.emit());
+            gens.extend(fe.gen_kernels());
+            let text = fe.emit();
+            funcs.push_str(&text);
+            texts.insert(id, text);
         }
         funcs.push('\n');
     }
@@ -421,6 +439,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if funcs.contains("@mapal_gpu_tile(") {
         out.push_str(crate::func::gpu::GPU_DECLS);
     }
+    if funcs.contains("@mapal_gpu_alloc(") {
+        out.push_str(crate::func::gpu::RESIDENT_DECLS);
+    }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
@@ -452,10 +473,21 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         }
     }
     out.push_str(&emit_main_wrapper(ir));
+    let gens: Vec<crate::func::gpu::GenKernel> = gens
+        .into_iter()
+        .map(|(gid, body, elem)| (gid, fnames[body].clone(), elem, texts[body].clone()))
+        .collect();
     let device = opts
         .tiling
         .then(|| {
-            crate::func::gpu::device_module(ir, profile, opts.contract, opts.gpu, opts.reduced)
+            crate::func::gpu::device_module(
+                ir,
+                profile,
+                opts.contract,
+                opts.gpu,
+                opts.reduced,
+                &gens,
+            )
         })
         .flatten();
     Ok(Emission {

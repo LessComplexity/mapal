@@ -6,8 +6,20 @@ use super::*;
 
 impl<'a> FnEmit<'a> {
     /// Emit one morphism (DESIGN §2 op table). Called by the straight-line walk
-    /// and by the loop driver for decide/advance cones.
+    /// and by the loop driver for decide/advance cones. Under `resident` a
+    /// producer may be built on the device instead, and its device copy is
+    /// placed and freed around it (`func/resident.rs`).
     pub(crate) fn emit_morphism(&mut self, m: MorphismId) {
+        if self.resident.is_none() {
+            return self.emit_op(m);
+        }
+        if !self.resident_instead(m) {
+            self.emit_op(m);
+        }
+        self.resident_after(m);
+    }
+
+    fn emit_op(&mut self, m: MorphismId) {
         self.emit_checkpoint(m);
         let morph = self.ir.morphism(m).expect("morphism resolves");
         let op = morph.op;
@@ -29,6 +41,12 @@ impl<'a> FnEmit<'a> {
                     } else {
                         self.emit_memcpy(&dst, &src, &sllt);
                     }
+                } else if let Some(llt) = self.big_aggregate(source)
+                    && let Some((cllt, dst)) = self.component_ptr(target, slot)
+                {
+                    debug_assert_eq!(cllt, llt, "a product field lowers as its type");
+                    let src = self.slots[source].clone();
+                    self.emit_memcpy(&dst, &src, &llt);
                 } else if let Some((sllt, sval)) = self.load_whole(source)
                     && let Some((_, ptr)) = self.component_ptr(target, slot)
                 {
@@ -590,6 +608,7 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "{ep} = getelementptr {arr_llt}, ptr {arr_ptr}, i64 0, i64 {i64idx}"
         ));
+        self.resident_elem(m, source, &ep, &i64idx);
         let v = self.tmp();
         self.line(format!("{v} = load {elem_llt}, ptr {ep}"));
         self.store_obj(target, &elem_llt, &v);

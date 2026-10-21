@@ -357,6 +357,14 @@ pub(crate) struct FnEmit<'a> {
     /// change the launch (the prefetch rung's panel depth).
     gpu_rungs: crate::GpuRungs,
     reduced: Option<crate::Reduced>,
+    /// S53 `resident`: where each array's device copy lives and moves
+    /// (`func/resident.rs`). `None` off a GPU profile, with the rung off, or
+    /// in a function with no device site — the S52 emission exactly.
+    resident: Option<resident::ResidentPlan>,
+    /// Object → its device slot (`alloca i64`, 0 = no buffer).
+    dslots: SecondaryMap<ObjectId, String>,
+    /// Objects whose device copy is current at this point of the walk.
+    dvalid: SecondaryMap<ObjectId, ()>,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -618,6 +626,7 @@ mod frame;
 pub(crate) mod gpu;
 mod ops;
 mod packed;
+mod resident;
 mod sme;
 mod tile;
 mod trio;
