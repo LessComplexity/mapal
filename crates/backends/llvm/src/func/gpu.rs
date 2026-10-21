@@ -25,8 +25,8 @@
 use super::*;
 use crate::Reduced;
 use crate::profile::{
-    GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M, MMA_N, WARPGROUP_WARPS,
-    WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
+    GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
+    MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
 };
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
@@ -52,9 +52,47 @@ declare void @llvm.nvvm.cp.async.wait.group(i32 immarg)\n\
 declare float @llvm.fma.f32(float, float, float)\n\
 declare double @llvm.fma.f64(double, double, double)\n";
 
-/// The host-side runtime entry, declared only when some site called it.
-pub(crate) const GPU_DECLS: &str =
-    "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
+/// The host-side runtime entries, declared only when some site called one.
+pub(crate) const GPU_DECLS: &str = "declare void @mapal_gpu_init(i32)\n\
+    declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
+
+/// `mapal_gpu_init`'s flag bit; `mapal_gpu.c` reads the same one.
+pub(crate) const GPU_INIT_EAGER: u32 = 1;
+
+/// `main`'s first call in a module with a GPU site: hands the runtime its host
+/// rung. Off, the runtime does nothing until the first site, the S52 path.
+pub(crate) fn init_call(rungs: crate::GpuRungs) -> String {
+    let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER;
+    format!("  call void @mapal_gpu_init(i32 {flags})\n")
+}
+
+/// The rungs a GPU profile ships for one decision (S53): its measured table at
+/// `wps` warps per scheduler on this face — every rung under the arm
+/// `--gpu-off=arch-rungs` — then the measurement arms.
+pub(crate) fn rungs_at(
+    profile: &TargetProfile,
+    wps: u64,
+    contract: bool,
+    arms: crate::GpuArms,
+) -> crate::GpuRungs {
+    let table = if arms.off.arch {
+        crate::GpuRungs::ALL
+    } else {
+        profile.gpu_rungs(wps, contract)
+    };
+    table.with(arms)
+}
+
+/// The host rungs (`resident`, `devgen`, `retain-delta`, `eager-init`) are
+/// decided per module, not per site: their table rows cover every fill, so any
+/// fill reads them.
+pub(crate) fn host_rungs(
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+) -> crate::GpuRungs {
+    rungs_at(profile, GPU_RESIDENT_BLOCKS, contract, arms)
+}
 
 /// The clock fence's device half: a `time` read on a GPU profile waits for
 /// every launch before it (`FnEmit::emit_time_ms`). Declared only beside a
@@ -127,12 +165,12 @@ pub(crate) fn launch(
         Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
         None => ((site.rows * site.c).div_ceil(NAIVE_THREADS), NAIVE_THREADS),
     };
-    let table = if arms.off.arch {
-        crate::GpuRungs::ALL
-    } else {
-        profile.gpu_rungs(gpu.warps_per_scheduler(blocks, threads), contract)
-    };
-    let rungs = table.with(arms);
+    let rungs = rungs_at(
+        profile,
+        gpu.warps_per_scheduler(blocks, threads),
+        contract,
+        arms,
+    );
     // Tensor cores: only on a face that admits them (TF32), f32 operands both
     // streamed with 16-byte copies, on a part with `mma.sync`.
     let tensor = rungs.mma

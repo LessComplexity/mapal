@@ -106,3 +106,9 @@ def e2e(n):
 
 for n in (1024, 4096):
     (out / f"e2e_{n}.mapal").write_text(e2e(n))
+
+# S53: the e2e site behind an input that traps (division by zero at t = 77), so
+# the program exits 101 before its first site, while the eager init may still
+# be running. The interpreter and the CPU build trap the same way.
+(out / "e2e_trap.mapal").write_text(
+    bench(1024).replace("(t * 7 + 13) % 101 - 50 -> widen_f32", "1000 / (t - 77) -> widen_f32"))

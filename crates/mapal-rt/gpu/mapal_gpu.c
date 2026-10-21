@@ -15,6 +15,7 @@
  * exits 102, the CUDA backend's protocol, so a harness never mistakes it for a
  * trap (101) or a value. */
 #include <cuda.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,11 +42,33 @@ static double now_ms(void) {
     }                                                                          \
   } while (0)
 
-static CUmodule module;
+/* The host-runtime rung (S53), passed by the emitter's first call in `main`
+ * (`mapal_gpu_init`; the bit is `GPU_INIT_EAGER` in
+ * crates/backends/llvm/src/func/gpu.rs). A program without that call runs the
+ * S52 path: init at the first site. */
+enum { EAGER = 1 };
+static unsigned flags;
 
-static void load_module(void) {
-  if (module)
-    return;
+static CUmodule module;
+static CUcontext ctx;
+static pthread_t init_thread;
+static int init_state; /* 0 not started, 1 running on init_thread, 2 ready */
+/* Trace: wall time of cuInit, of the primary context, of the
+ * PTX read + module load, and when mapal_gpu_init ran. */
+static double init_ms, ctx_ms, module_ms, t_init;
+
+/* cuInit, the primary context and the module: everything a site needs before
+ * its first call, none of which depends on the program's values. */
+static void init_all(void) {
+  double t0 = now_ms();
+  CUdevice dev;
+  CK(cuInit(0));
+  double t1 = now_ms();
+  CK(cuDeviceGet(&dev, 0));
+  CK(cuDevicePrimaryCtxRetain(&ctx, dev));
+  CK(cuCtxSetCurrent(ctx));
+  double t2 = now_ms();
+
   const char *path = getenv("MAPAL_PTX");
   if (!path) {
     fprintf(stderr, "mapal_gpu: MAPAL_PTX is not set\n");
@@ -66,15 +89,51 @@ static void load_module(void) {
   }
   ptx[n] = 0;
   fclose(f);
-
-  CUdevice dev;
-  CUcontext ctx;
-  CK(cuInit(0));
-  CK(cuDeviceGet(&dev, 0));
-  CK(cuDevicePrimaryCtxRetain(&ctx, dev));
-  CK(cuCtxSetCurrent(ctx));
   CK(cuModuleLoadData(&module, ptx));
   free(ptx);
+  init_ms = t1 - t0;
+  ctx_ms = t2 - t1;
+  module_ms = now_ms() - t2;
+}
+
+static void *init_main(void *unused) {
+  (void)unused;
+  init_all();
+  return 0;
+}
+
+/* A program that exits (a trap, 101) before its first site joins the init
+ * first, so the driver is never torn down under a running cuInit. */
+static void join_init(void) {
+  if (init_state == 1 && !pthread_equal(pthread_self(), init_thread))
+    pthread_join(init_thread, 0);
+}
+
+/* The first call of `main` in a module with a GPU site. Rung `eager-init`:
+ * start the init on a thread, so context creation overlaps the host work
+ * before the first site. A failed pthread_create falls back to the lazy path. */
+void mapal_gpu_init(uint32_t f) {
+  flags = f;
+  t_init = now_ms();
+  if ((flags & EAGER) && pthread_create(&init_thread, 0, init_main, 0) == 0) {
+    init_state = 1;
+    atexit(join_init);
+  }
+}
+
+/* Every site calls it; returns the ms this site waited for the init. */
+static double load_module(void) {
+  if (init_state == 2)
+    return 0;
+  double t0 = now_ms();
+  if (init_state == 1) {
+    pthread_join(init_thread, 0);
+    CK(cuCtxSetCurrent(ctx)); /* the context is current on the init thread */
+  } else {
+    init_all();
+  }
+  init_state = 2;
+  return now_ms() - t0;
 }
 
 void mapal_gpu_tile(uint64_t id, const void *a, uint64_t a_bytes,
@@ -85,7 +144,8 @@ void mapal_gpu_tile(uint64_t id, const void *a, uint64_t a_bytes,
     trace = getenv("MAPAL_GPU_TRACE") != 0;
   double t[8];
   t[0] = now_ms();
-  load_module();
+  int first = init_state != 2;
+  double wait_ms = load_module();
   t[1] = now_ms();
   char name[32];
   snprintf(name, sizeof name, "mapal_tile_%016llx", (unsigned long long)id);
@@ -95,8 +155,8 @@ void mapal_gpu_tile(uint64_t id, const void *a, uint64_t a_bytes,
     CK(cuFuncSetAttribute(fn, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
                           (int)smem));
 
-  CUdeviceptr da, db, dout;
   t[2] = now_ms();
+  CUdeviceptr da, db, dout;
   CK(cuMemAlloc(&da, a_bytes));
   CK(cuMemAlloc(&db, b_bytes));
   CK(cuMemAlloc(&dout, out_bytes));
@@ -114,14 +174,19 @@ void mapal_gpu_tile(uint64_t id, const void *a, uint64_t a_bytes,
   CK(cuMemFree(db));
   CK(cuMemFree(dout));
   t[7] = now_ms();
+  /* The init phases and `lead_ms` (mapal_gpu_init to this site, the host work
+   * the init can overlap) belong to the first site; `wait_ms` is what this
+   * site paid for them: all of them on the lazy path. */
   if (trace)
     fprintf(stderr,
-            "mapal_gpu_trace kernel=%s load_ms=%.3f lookup_ms=%.3f alloc_ms=%.3f "
-            "h2d_ms=%.3f kernel_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
-            "bytes_out=%llu\n",
-            name, t[1] - t[0], t[2] - t[1], t[3] - t[2], t[4] - t[3],
-            t[5] - t[4], t[6] - t[5], t[7] - t[6],
-            (unsigned long long)(a_bytes + b_bytes),
+            "mapal_gpu_trace kernel=%s flags=%u lead_ms=%.3f init_ms=%.3f "
+            "ctx_ms=%.3f module_ms=%.3f wait_ms=%.3f lookup_ms=%.3f "
+            "alloc_ms=%.3f h2d_ms=%.3f kernel_ms=%.3f d2h_ms=%.3f "
+            "free_ms=%.3f bytes_in=%llu bytes_out=%llu\n",
+            name, flags, first && t_init ? t[0] - t_init : 0,
+            first ? init_ms : 0, first ? ctx_ms : 0, first ? module_ms : 0,
+            wait_ms, t[2] - t[1], t[3] - t[2], t[4] - t[3], t[5] - t[4],
+            t[6] - t[5], t[7] - t[6], (unsigned long long)(a_bytes + b_bytes),
             (unsigned long long)out_bytes);
 }
 
