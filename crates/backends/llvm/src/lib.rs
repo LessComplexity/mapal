@@ -128,6 +128,12 @@ pub struct GpuRungs {
     /// as `main`'s first call, so it overlaps the host work before the first
     /// site. Off: the first site creates them.
     pub eager_init: bool,
+    /// Under `resident` (S54 R6): every straight-line device object with a
+    /// death lives at a compile-time offset of one per-function allocation
+    /// laid out by interval coloring over `LastUsePlan` positions, and a
+    /// device-only object gets no host slot. Off: one `cuMemAlloc` /
+    /// `cuMemFree` per object and a host slot for every array (S53).
+    pub arena: bool,
 }
 
 impl GpuRungs {
@@ -153,11 +159,12 @@ impl GpuRungs {
         devgen: true,
         retain_delta: true,
         eager_init: true,
+        arena: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 20] = [
+    pub const NAMES: [&'static str; 21] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -178,6 +185,7 @@ impl GpuRungs {
         "devgen",
         "retain-delta",
         "eager-init",
+        "arena",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -203,6 +211,7 @@ impl GpuRungs {
             "devgen" => &mut self.devgen,
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
+            "arena" => &mut self.arena,
             _ => return None,
         })
     }
@@ -553,7 +562,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // A module talks to the GPU runtime when a site calls it: the S52 round
     // trip (`mapal_gpu_tile`) or `resident`'s split entries (`mapal_gpu_alloc`
     // precedes every one of them).
-    let resident = funcs.contains("@mapal_gpu_alloc(");
+    // `arena` (S54): a function whose every device object sits in its arena
+    // calls `mapal_gpu_arena` and no `mapal_gpu_alloc`.
+    let arena = funcs.contains("@mapal_gpu_arena(");
+    let resident = funcs.contains("@mapal_gpu_alloc(") || arena;
     let round_trip = funcs.contains("@mapal_gpu_tile(");
     let gpu_host = resident || round_trip;
     if gpu_host {
@@ -570,6 +582,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     }
     if resident {
         out.push_str(crate::func::gpu::RESIDENT_DECLS);
+    }
+    if arena {
+        out.push_str(crate::func::gpu::ARENA_DECL);
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");

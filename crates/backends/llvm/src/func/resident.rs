@@ -23,6 +23,12 @@
 //!   every reader is on the device is computed there (`mapal_gen_<id>`): no
 //!   host loop, no copy. Inputs left with no reader at all are not produced.
 //!
+//! - **`arena`** (S54 R6) — every buffer freed at a straight-line death sits at
+//!   a compile-time offset of one per-function allocation: interval coloring
+//!   over `LastUsePlan` positions, so objects whose lives are disjoint share
+//!   bytes. A device-only object (kept, device-built, or never built) gets no
+//!   host slot: the host neither allocates nor pages it.
+//!
 //! Every rule names an object relation, never a workload: on a decode loop the
 //! same rules keep the weights resident and carry the state — what a hand
 //! written program calls a cache is what falls out.
@@ -87,6 +93,58 @@ pub(crate) struct ResidentPlan {
     /// Producers no reader is left for (every reader is device-built).
     pub skip: SecondaryMap<MorphismId, ()>,
     pub carries: Vec<Carry>,
+    /// S54 `arena`: the device arena and the host-free objects.
+    pub arena: Option<Arena>,
+}
+
+/// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
+/// guarantee (CUDA C Programming Guide: an address returned by the driver's
+/// allocators is aligned to at least 256 bytes), so an arena member is
+/// addressed exactly as its own allocation would be.
+pub(crate) const ARENA_ALIGN: u64 = 256;
+
+/// One function's device arena (S54 R6), a pure function of the plan.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Arena {
+    /// The allocation, a multiple of [`ARENA_ALIGN`]; 0 = no member.
+    pub bytes: u64,
+    /// Each member's byte offset: the objects freed at a straight-line death.
+    pub offset: SecondaryMap<ObjectId, u64>,
+    /// Device-only arrays: no host slot (no `%Frame` field, no paging).
+    pub host_free: SecondaryMap<ObjectId, ()>,
+}
+
+/// First-fit interval coloring: `live[i] = (birth, death, bytes)` occupies
+/// `[birth, death]` (inclusive: a site reading one object while writing
+/// another holds both); in birth order each takes the lowest
+/// [`ARENA_ALIGN`]-aligned offset no time-overlapping object holds. Returns
+/// the offsets and the arena size.
+pub(crate) fn color(live: &[(u32, u32, u64)]) -> (Vec<u64>, u64) {
+    let size = |i: usize| live[i].2.div_ceil(ARENA_ALIGN) * ARENA_ALIGN;
+    let mut order: Vec<usize> = (0..live.len()).collect();
+    order.sort_by_key(|&i| (live[i].0, i));
+    let mut off = vec![0; live.len()];
+    let (mut placed, mut total): (Vec<usize>, u64) = (Vec::new(), 0);
+    for i in order {
+        let (b, d, _) = live[i];
+        let mut busy: Vec<(u64, u64)> = placed
+            .iter()
+            .filter(|&&j| live[j].0 <= d && b <= live[j].1)
+            .map(|&j| (off[j], off[j] + size(j)))
+            .collect();
+        busy.sort_unstable();
+        let mut at = 0;
+        for (s, e) in busy {
+            if at + size(i) <= s {
+                break;
+            }
+            at = at.max(e);
+        }
+        off[i] = at;
+        total = total.max(at + size(i));
+        placed.push(i);
+    }
+    (off, total)
 }
 
 impl ResidentPlan {
@@ -340,7 +398,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// Build the plan. `None` when the function has no device site.
-    pub(crate) fn resident_plan(&self, devgen: bool) -> Option<ResidentPlan> {
+    pub(crate) fn resident_plan(&self, devgen: bool, arena: bool) -> Option<ResidentPlan> {
         let sites = self.device_sites();
         if sites.is_empty() {
             return None;
@@ -497,7 +555,90 @@ impl<'a> FnEmit<'a> {
                 }
             }
         }
+        if arena {
+            plan.arena = Some(self.arena(&plan));
+        }
         Some(plan)
+    }
+
+    /// S54 `arena` (R6). Device side: the objects `free_after` frees — produced
+    /// once and dead at a morphism that runs once — colored by their
+    /// `[producer, death]` positions; anything used from a guard arm stays out
+    /// (its arm runs at the `Phi`, past its position). Host side: an array no
+    /// host morphism writes or reads whole — kept, device-built or never built
+    /// — has no host slot. Carry objects keep both: the loop state holds the
+    /// array inline.
+    fn arena(&self, plan: &ResidentPlan) -> Arena {
+        let gated_use = |o: ObjectId| {
+            self.ir.out_edges(o).iter().any(|&m| {
+                self.gated.contains_key(m)
+                    || self
+                        .ir
+                        .out_edges(self.ir.morphism(m).expect("m").target)
+                        .iter()
+                        .any(|&m2| self.gated.contains_key(m2))
+            })
+        };
+        let members: Vec<ObjectId> = plan
+            .free_after
+            .values()
+            .flatten()
+            .copied()
+            .filter(|&o| !gated_use(o))
+            .collect();
+        let live: Vec<(u32, u32, u64)> = members
+            .iter()
+            .map(|&o| {
+                let birth = self
+                    .ir
+                    .in_edges(o)
+                    .iter()
+                    .filter_map(|&p| self.lup.position(p))
+                    .min();
+                let death = self.lup.death(o);
+                let bytes = self.array_bytes(&self.obj_ty(o));
+                (
+                    birth.expect("produced"),
+                    death.expect("freed at death"),
+                    bytes,
+                )
+            })
+            .collect();
+        let (offs, bytes) = color(&live);
+        let mut a = Arena {
+            bytes,
+            ..Arena::default()
+        };
+        for (o, off) in members.into_iter().zip(offs) {
+            a.offset.insert(o, off);
+        }
+        let built = plan.devgen.keys().chain(plan.skip.keys());
+        let built: Vec<ObjectId> = built
+            .map(|m| self.ir.morphism(m).expect("m").target)
+            .collect();
+        for o in plan.keep.keys().chain(built) {
+            if !plan.is_carry_next(o)
+                && plan.alias(o) == o
+                && !self.lup.escapes(o)
+                && self.ir.try_owner(o) == Some(self.f)
+            {
+                a.host_free.insert(o, ());
+            }
+        }
+        a
+    }
+
+    /// `o` has no host slot (S54 `arena`).
+    pub(super) fn host_free(&self, o: ObjectId) -> bool {
+        self.resident
+            .as_ref()
+            .and_then(|p| p.arena.as_ref())
+            .is_some_and(|a| a.host_free.contains_key(o))
+    }
+
+    fn arena_offset(&self, o: ObjectId) -> Option<(u64, u64)> {
+        let a = self.resident.as_ref()?.arena.as_ref()?;
+        Some((a.bytes, *a.offset.get(o)?))
     }
 
     fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, TileSite>, o: ObjectId) -> bool {
@@ -524,6 +665,17 @@ impl<'a> FnEmit<'a> {
     fn dalloc(&mut self, o: ObjectId, bytes: u64) -> String {
         let slot = self.dslot(o);
         let d = self.tmp();
+        // An arena member: base + offset, the arena made on the first ask
+        // (lazily, so `eager-init` still overlaps the host work before it).
+        if let Some((total, off)) = self.arena_offset(o) {
+            let base = self.tmp();
+            self.line(format!(
+                "{base} = call i64 @mapal_gpu_arena(ptr %darena, i64 {total})"
+            ));
+            self.line(format!("{d} = add i64 {base}, {off}"));
+            self.line(format!("store i64 {d}, ptr {slot}"));
+            return d;
+        }
         self.line(format!(
             "{d} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {bytes})"
         ));
@@ -584,6 +736,9 @@ impl<'a> FnEmit<'a> {
             self.dvalid.insert(t, ());
         }
         for o in frees {
+            if self.arena_offset(o).is_some() {
+                continue; // its bytes are the arena's, released at exit
+            }
             let slot = self.dslot(o);
             self.line(format!("call void @mapal_gpu_free(ptr {slot})"));
             self.dvalid.remove(o);
@@ -738,13 +893,29 @@ impl<'a> FnEmit<'a> {
 
     /// Function exit: free every buffer still held (a no-op on freed slots).
     pub(super) fn resident_teardown(&mut self) {
-        let slots: Vec<String> = self.dslots.values().cloned().collect();
+        let slots: Vec<String> = self
+            .dslots
+            .iter()
+            .filter(|&(o, _)| self.arena_offset(o).is_none())
+            .map(|(_, s)| s.clone())
+            .collect();
         let mut seen = std::collections::BTreeSet::new();
         for s in slots {
             if seen.insert(s.clone()) {
                 self.line(format!("call void @mapal_gpu_free(ptr {s})"));
             }
         }
+        if self.arena_slot() {
+            self.line("call void @mapal_gpu_free(ptr %darena)");
+        }
+    }
+
+    /// The function has arena members, so `%darena` exists.
+    pub(crate) fn arena_slot(&self) -> bool {
+        self.resident
+            .as_ref()
+            .and_then(|p| p.arena.as_ref())
+            .is_some_and(|a| a.bytes > 0)
     }
 }
 
@@ -759,5 +930,42 @@ fn array_elem(ty: &Ty) -> &Ty {
     match ty {
         Ty::Array { elem, .. } => elem,
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ARENA_ALIGN, color};
+
+    /// Disjoint lives share bytes; overlapping ones (an inclusive end: the
+    /// site that reads one object writes the next) never do.
+    #[test]
+    fn color_shares_bytes_exactly_across_disjoint_lives() {
+        let mb = 64 << 20;
+        // The e2e chain: a, b, e built first; c = a·b at 3; d = c·e at 4; d[0] at 5.
+        let (off, total) = color(&[(0, 3, mb), (1, 3, mb), (2, 4, mb), (3, 4, mb), (4, 5, mb)]);
+        assert_eq!(
+            off,
+            [0, mb, 2 * mb, 3 * mb, 0],
+            "d takes a's bytes, not c's or e's"
+        );
+        assert_eq!(total, 4 * mb);
+        // Born where the other dies: both live at that morphism.
+        let (off, _) = color(&[(0, 2, 100), (2, 3, 100)]);
+        assert_ne!(off[0], off[1]);
+        // Strictly after: shared.
+        let (off, total) = color(&[(0, 2, 100), (3, 4, 100)]);
+        assert_eq!((off[0], off[1], total), (0, 0, ARENA_ALIGN));
+    }
+
+    /// Every offset is `cuMemAlloc`'s alignment, and a hole is reused first-fit.
+    #[test]
+    fn color_aligns_and_fills_holes() {
+        // x dies early; y lives long; z (born after x) takes x's hole below y.
+        let (off, total) = color(&[(0, 1, 10), (0, 9, 300), (2, 9, 5)]);
+        assert!(off.iter().all(|o| o % ARENA_ALIGN == 0), "{off:?}");
+        assert_eq!(off, [0, ARENA_ALIGN, 0]);
+        assert_eq!(total, 3 * ARENA_ALIGN);
+        assert_eq!(color(&[]), (vec![], 0));
     }
 }
