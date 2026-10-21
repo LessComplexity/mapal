@@ -74,6 +74,33 @@ impl BoundsProof {
     }
 }
 
+/// Which cells of a loop-carried array one iteration writes (S53 `retain-delta`,
+/// [`CategoryIr::write_delta`]): where the value crossing the back edge can
+/// differ from the merge value it started the iteration as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Delta {
+    /// Only cells `[start, start + stride)` can differ. `next` is the object
+    /// whose value crosses the back edge into this carried slot (the last
+    /// write of the chain) — it differs from its own previous-iteration value
+    /// only there too.
+    Rows {
+        stride: u64,
+        start: Affine,
+        next: ObjectId,
+    },
+    /// Anything else: the whole array may differ (the status quo).
+    Top,
+}
+
+/// `a·var + b` in the wrapping arithmetic of `var`'s int type, `var` an int
+/// view of the loop's merge — the counter, as this iteration reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Affine {
+    pub var: ObjectId,
+    pub a: i64,
+    pub b: i64,
+}
+
 /// A [`PathPlan`] task identifier. Task ids are indices into
 /// [`PathPlan::tasks`].
 pub type TaskId = usize;
@@ -2941,6 +2968,175 @@ impl CategoryIr {
     pub fn bounds_proof(&self, f: FuncId) -> BoundsProof {
         let mut visited: Vec<FuncId> = Vec::new();
         self.bounds_proof_inner(f, &mut visited).0
+    }
+
+    /// The write delta of every loop-carried array in `f` (S53 `retain-delta`
+    /// — the fact [`bounds_proof`](Self::bounds_proof) never had: it ranges
+    /// `Index`, and `Update` stays trap-capable). Keyed by the carried array's
+    /// merge view: the `LoopMerge` itself when the loop carries one value, its
+    /// `Proj{k}` otherwise.
+    ///
+    /// [`Delta::Rows`] when the value crossing the back edge is reached from
+    /// that view through `Update`s only (`Proj`-of-`Pair` hops are transparent)
+    /// whose indices are all `a·t + b_j` — one int merge view `t`, one `a`, in
+    /// `t`'s wrapping arithmetic — and the `b_j` cover one contiguous range.
+    /// [`Delta::Top`] for every other carried array. Canonical loops only.
+    ///
+    /// Why wrapping is enough: every index is `X + b_j` for the same wrapped
+    /// `X = a·t`, and an executed `Update` traps unless its index is in
+    /// `[0, n)` — so when the iteration completes, its cells are exactly
+    /// `[start, start + stride)` with `start = X + b_min ≥ 0`.
+    pub fn write_delta(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
+        let mut out = SecondaryMap::new();
+        for scc in self.loop_structure(f) {
+            let &[merge] = scc.merges.as_slice() else {
+                continue;
+            };
+            let Some(plan) = self.loop_plan(f, merge) else {
+                continue;
+            };
+            let Some(next) = self.pair_slot_source(plan.back_route, 0) else {
+                continue;
+            };
+            let merge_ty = &self.objects[merge].ty;
+            let slots: Vec<(Option<u32>, ObjectId)> = match merge_ty {
+                Ty::Tuple(ts) => (0..ts.len() as u32)
+                    .filter_map(|k| Some((Some(k), self.pair_slot_source(next, k)?)))
+                    .collect(),
+                _ => vec![(None, next)],
+            };
+            for (k, nk) in slots {
+                let comp = k.map_or(Some(merge_ty), |k| merge_ty.component_ty(k));
+                if !matches!(comp, Some(Ty::Array { .. })) {
+                    continue;
+                }
+                let is_view = |o: ObjectId| match k {
+                    None => o == merge,
+                    Some(k) => self.in_edges(o).iter().any(|&m| {
+                        let mm = &self.morphisms[m];
+                        mm.source == merge && mm.op == Operation::Proj { index: k }
+                    }),
+                };
+                // Walk back from the back-route value to the view.
+                let (mut o, mut idxs, mut view) = (nk, Vec::new(), None);
+                for _ in 0..self.objects.len() {
+                    if is_view(o) {
+                        view = Some(o);
+                        break;
+                    }
+                    let Some(&m) = self.in_edges(o).first() else {
+                        break;
+                    };
+                    let mm = &self.morphisms[m];
+                    let step = match mm.op {
+                        Operation::Update => self.pair_slot_source(mm.source, 1).and_then(|i| {
+                            idxs.push(i);
+                            self.pair_slot_source(mm.source, 0)
+                        }),
+                        Operation::Proj { .. } => self.proj_of_pair(o),
+                        _ => None,
+                    };
+                    let Some(prev) = step else { break };
+                    o = prev;
+                }
+                let first_view = || match k {
+                    None => Some(merge),
+                    Some(k) => self.out_edges(merge).iter().find_map(|&m| {
+                        let mm = &self.morphisms[m];
+                        (mm.op == Operation::Proj { index: k }).then_some(mm.target)
+                    }),
+                };
+                let Some(key) = view.or_else(first_view) else {
+                    continue;
+                };
+                let delta = view
+                    .and_then(|_| self.rows_of(&idxs, merge, nk))
+                    .unwrap_or(Delta::Top);
+                out.insert(key, delta);
+            }
+        }
+        out
+    }
+
+    /// The [`Delta::Rows`] of one iteration's `Update` indices, or `None`.
+    fn rows_of(&self, idxs: &[ObjectId], merge: ObjectId, next: ObjectId) -> Option<Delta> {
+        let (mut var, mut a, mut bs) = (None, None, Vec::new());
+        for &i in idxs {
+            let (ai, bi) = self.affine_in(i, merge, &mut var, 0)?;
+            if *a.get_or_insert(ai) != ai {
+                return None;
+            }
+            bs.push(bi);
+        }
+        let var = var?;
+        let bits = match self.objects[var].ty {
+            Ty::Int { bits, .. } => u32::from(bits),
+            _ => return None,
+        };
+        // Wrap into the counter's width: the program computes there.
+        let wrap = |x: i128| -> i64 {
+            let m = 1i128 << bits;
+            let r = x.rem_euclid(m);
+            (if r >= m / 2 { r - m } else { r }) as i64
+        };
+        let mut bs: Vec<i64> = bs.into_iter().map(wrap).collect();
+        bs.sort_unstable();
+        bs.dedup();
+        let (&lo, &hi) = (bs.first()?, bs.last()?);
+        let stride = u64::try_from(i128::from(hi) - i128::from(lo) + 1).ok()?;
+        (stride == bs.len() as u64).then_some(Delta::Rows {
+            stride,
+            start: Affine {
+                var,
+                a: wrap(a?),
+                b: lo,
+            },
+            next,
+        })
+    }
+
+    /// `o` as `(a, b)` with `o = a·var + b`, `var` an int `Proj` of `merge`
+    /// (the first one met; a second is `None`). Exact over `i128`; `Add`,
+    /// `Sub`, and `Mul` by a constant only. Depth-guarded (J1).
+    fn affine_in(
+        &self,
+        o: ObjectId,
+        merge: ObjectId,
+        var: &mut Option<ObjectId>,
+        depth: u32,
+    ) -> Option<(i128, i128)> {
+        if depth > 64 {
+            return None;
+        }
+        let obj = &self.objects[o];
+        if obj.kind == ObjectKind::Constant {
+            return match obj.value {
+                Some(Value::I32(x)) => Some((0, x.into())),
+                Some(Value::I64(x)) => Some((0, x.into())),
+                _ => None,
+            };
+        }
+        let mm = &self.morphisms[*self.in_edges(o).first()?];
+        match mm.op {
+            Operation::Proj { .. } if mm.source == merge && matches!(obj.ty, Ty::Int { .. }) => {
+                (*var.get_or_insert(o) == o).then_some((1, 0))
+            }
+            Operation::Proj { .. } => self.affine_in(self.proj_of_pair(o)?, merge, var, depth + 1),
+            Operation::Add | Operation::Sub | Operation::Mul => {
+                let x = self.pair_slot_source(mm.source, 0)?;
+                let y = self.pair_slot_source(mm.source, 1)?;
+                let (xa, xb) = self.affine_in(x, merge, var, depth + 1)?;
+                let (ya, yb) = self.affine_in(y, merge, var, depth + 1)?;
+                match mm.op {
+                    Operation::Add => Some((xa.checked_add(ya)?, xb.checked_add(yb)?)),
+                    Operation::Sub => Some((xa.checked_sub(ya)?, xb.checked_sub(yb)?)),
+                    _ if xa == 0 => Some((ya.checked_mul(xb)?, yb.checked_mul(xb)?)),
+                    _ if ya == 0 => Some((xa.checked_mul(yb)?, xb.checked_mul(yb)?)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     /// The recursive worker: returns the proof AND the full range map so a

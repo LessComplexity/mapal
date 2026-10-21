@@ -18,7 +18,18 @@ python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
     case $(basename "$b") in mm_*|e2e_*) continue ;; esac
-    [ -s "$b.expect" ] || "$RUN" "$f" --budget 20000000000 > "$b.expect"
+    if [ ! -s "$b.expect" ]; then
+        case $(basename "$b") in
+        # 1024 decode steps of two 1024x256x256 sites: days in the interpreter.
+        # The CPU build's conformance face is the interpreter bit for bit (the
+        # backend differential suite's invariant), and it is the rung-OFF path.
+        decode_1024_*)
+            "$EMIT" "$f" - --rewrite --target=apple-m > "$b.cpu.ll"
+            clang -O2 "$b.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu" 2>/dev/null
+            "$b.cpu" > "$b.expect" ;;
+        *) "$RUN" "$f" --budget 20000000000 > "$b.expect" ;;
+        esac
+    fi
     if [ ! -s "${b}_c.expect" ]; then
         "$EMIT" "$f" - --rewrite --contract --target=apple-m > "$b.cpu_c.ll"
         clang -O2 "$b.cpu_c.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu_c" 2>/dev/null
@@ -47,6 +58,14 @@ for spec in "$@"; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        # Program-level rungs (S53): the whole program with the rung off, both
+        # faces — the differential checks the OFF arm too, box_run times it.
+        case $b in decode_*)
+            for rung in retain-delta; do
+                emit_one "$f" "$d/$b.off-$rung" "$prof" "$sm" "--gpu-off=$rung"
+                emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
+            done ;;
+        esac
         # Measurement arms (S52): the shipped kernel with one rung off, FMA face;
         # and the TF32 face (tensor cores).
         case $b in mm_*)

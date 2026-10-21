@@ -4144,3 +4144,112 @@ fn guard_plan_gates_arm_inside_loop_body() {
         }
     }
 }
+
+// --- write_delta (S53 `retain-delta`) ----------------------------------------
+
+/// A canonical loop carrying `(x: [i32; n], t: i32)` that writes `x[idx(t, j)]
+/// <- 1` for `j < d`, then `t + 1`. Returns the graph, the fn, and the `x` and
+/// `t` merge views.
+fn update_loop(
+    n: u64,
+    d: i32,
+    idx: impl Fn(&mut mapal_ir::FnBuilder<'_>, ObjectId, i32) -> ObjectId,
+) -> (mapal_ir::CategoryIr, mapal_ir::FuncId, ObjectId, ObjectId) {
+    let arr = Ty::Array {
+        elem: Box::new(Ty::i32()),
+        size: n,
+    };
+    let mut b = IrBuilder::new();
+    let f = b.declare(FuncKind::Named, "w", Ty::i32(), arr, L).unwrap();
+    let (xv, tv);
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let z = fb.constant(Value::I32(0), L).unwrap();
+        let x0 = fb
+            .pack_array(&vec![z; n as usize], Dest::Fresh(None), L)
+            .unwrap();
+        let init = fb.pack(&[x0, z], Dest::Fresh(None), L).unwrap();
+        let lh = fb.begin_loop(init, L).unwrap();
+        let merge = fb.merge_of(&lh);
+        xv = fb.proj(merge, 0, Dest::Fresh(None), L).unwrap();
+        tv = fb.proj(merge, 1, Dest::Fresh(None), L).unwrap();
+        let lim = fb.constant(Value::I32(4), L).unwrap();
+        let cond = fb
+            .binop(Operation::Lt, tv, lim, Dest::Fresh(None), L)
+            .unwrap();
+        let one = fb.constant(Value::I32(1), L).unwrap();
+        let mut cur = xv;
+        for j in 0..d {
+            let i = idx(&mut fb, tv, j);
+            cur = fb.update(cur, i, one, Dest::Fresh(None), L).unwrap();
+        }
+        let t1 = fb
+            .binop(Operation::Add, tv, one, Dest::Fresh(None), L)
+            .unwrap();
+        let next = fb.pack(&[cur, t1], Dest::Fresh(None), L).unwrap();
+        fb.loop_back(&lh, next, cond, L).unwrap();
+        fb.loop_exit(&lh, xv, cond, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.end_loop(lh).unwrap();
+        fb.finish().unwrap();
+    }
+    (b.seal(f).unwrap(), f, xv, tv)
+}
+
+/// `c·t + k` as builder morphisms.
+fn affine_ix(fb: &mut mapal_ir::FnBuilder<'_>, t: ObjectId, c: i32, k: i32) -> ObjectId {
+    let c = fb.constant(Value::I32(c), L).unwrap();
+    let k = fb.constant(Value::I32(k), L).unwrap();
+    let ct = fb
+        .binop(Operation::Mul, t, c, Dest::Fresh(None), L)
+        .unwrap();
+    fb.binop(Operation::Add, ct, k, Dest::Fresh(None), L)
+        .unwrap()
+}
+
+fn rows(d: mapal_ir::Delta) -> Option<(u64, ObjectId, i64, i64)> {
+    match d {
+        mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.var, start.a, start.b)),
+        mapal_ir::Delta::Top => None,
+    }
+}
+
+#[test]
+fn write_delta_matmul4_cell_is_rows_1_t() {
+    // matmul4_loop's `c[t] <- v`: one cell, at the counter.
+    let (ir, f, xv, tv) = update_loop(16, 1, |_, t, _| t);
+    let wd = ir.write_delta(f);
+    assert_eq!(wd.len(), 1);
+    assert_eq!(rows(wd[xv]), Some((1, tv, 1, 0)));
+}
+
+#[test]
+fn write_delta_decode_row_is_rows_d_td() {
+    // The decode loop's row write: `x[t·d + j] <- …` for `j < d`.
+    let (ir, f, xv, tv) = update_loop(32, 8, |fb, t, j| affine_ix(fb, t, 8, j));
+    assert_eq!(rows(ir.write_delta(f)[xv]), Some((8, tv, 8, 0)));
+}
+
+#[test]
+fn write_delta_column_write_is_top() {
+    // loop_rewrite: `x[j·d + t]` — d cells a stride apart, not one range.
+    let (ir, f, xv, _) = update_loop(64, 8, |fb, t, j| affine_ix(fb, t, 1, 8 * j));
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}
+
+#[test]
+fn write_delta_non_affine_index_is_top() {
+    // `x[t·t]`: the index is not affine in the counter.
+    let (ir, f, xv, _) = update_loop(16, 1, |fb, t, _| {
+        fb.binop(Operation::Mul, t, t, Dest::Fresh(None), L)
+            .unwrap()
+    });
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}
+
+#[test]
+fn write_delta_unwritten_carry_is_top() {
+    // The array crosses the back edge unchanged: nothing to retain from.
+    let (ir, f, xv, _) = update_loop(16, 0, |_, t, _| t);
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}

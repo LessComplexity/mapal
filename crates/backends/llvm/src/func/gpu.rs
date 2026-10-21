@@ -224,7 +224,10 @@ pub(crate) fn device_module(
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
-        for (_, site) in ir.tile_plan(f).sites.iter() {
+        let plan = ir.tile_plan(f);
+        // A retained site's restricted pass (S53) launches its one-row kernel.
+        let retained = super::retain::retained_sites(ir, f, profile, rungs);
+        for site in plan.sites.values().chain(retained.values().map(|r| &r.row)) {
             if gpu_site(site, profile) {
                 let name = kernel_name(kernel_id(site, profile, contract, reduced));
                 kernels
@@ -1192,6 +1195,54 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_ptr}, i64 {a_bytes}, ptr {b_ptr}, \
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
+            l.gx, l.gy, l.block, l.smem
+        ));
+    }
+
+    /// A retained site's restricted pass (S53, `func/retain.rs`): output row
+    /// `row` (an `i64` SSA value) of `site`, as the one-row site `one` whose
+    /// `a` is read from the row's first cell and whose output lands at the
+    /// row's first cell. Only the row's `a` span and output cross the bus.
+    pub(super) fn emit_tiled_map_gpu_row(
+        &mut self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        one: &TileSite,
+        row: &str,
+    ) {
+        let eb = elem_bytes_of(&site.elem);
+        let elem_llt = lower_ty(&site.elem).expect("tile element lowers");
+        let src_ty = self.obj_ty(source);
+        let (_, b_len) = array_parts(src_ty.component_ty(site.b.slot).expect("tile b array"));
+        let a_ptr = self
+            .array_operand_ptr(source, Some(site.a.slot))
+            .expect("tile a ptr");
+        let b_ptr = self
+            .array_operand_ptr(source, Some(site.b.slot))
+            .expect("tile b ptr");
+        let o_ptr = self.slot(target).expect("tile output slot");
+        let a_cells = self.tmp();
+        self.line(format!("{a_cells} = mul i64 {row}, {}", site.a.ci));
+        let a_off = self.tmp();
+        self.line(format!("{a_off} = add i64 {a_cells}, {}", site.a.base));
+        let a_row = self.tmp();
+        self.line(format!(
+            "{a_row} = getelementptr {elem_llt}, ptr {a_ptr}, i64 {a_off}"
+        ));
+        let o_off = self.tmp();
+        self.line(format!("{o_off} = mul i64 {row}, {}", site.c));
+        let o_row = self.tmp();
+        self.line(format!(
+            "{o_row} = getelementptr {elem_llt}, ptr {o_ptr}, i64 {o_off}"
+        ));
+        let a_bytes = ((one.k - 1) * one.a.ck + 1) * eb;
+        let (b_bytes, o_bytes) = (b_len * eb, one.c * eb);
+        let id = kernel_id(one, self.profile, self.contract, self.reduced) as i64;
+        let l = launch(one, self.profile, self.gpu_rungs, self.reduced);
+        self.line(format!(
+            "call void @mapal_gpu_tile(i64 {id}, ptr {a_row}, i64 {a_bytes}, ptr {b_ptr}, \
+             i64 {b_bytes}, ptr {o_row}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
             l.gx, l.gy, l.block, l.smem
         ));
     }

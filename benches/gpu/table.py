@@ -29,3 +29,38 @@ for path in sys.argv[1:]:
         m, c, t = r['mapal'], r['cublas'], r['cutlass']
         print(f"| {r['n']} | {r['face']} | {m[1]:.3f} | {m[3]:.1f} | {c[1]:.3f} | {c[3]:.1f} | {t[1]:.3f} | {t[3]:.1f} "
               f"| {c[1] / m[1]:.2f}×{ov(m, c)} | {t[1] / m[1]:.2f}×{ov(m, t)} | {r.get('bits')} | {r.get('geom')} |")
+
+    # S53 decode e2e (box_run.sh): per program arm, wall and traced phases over
+    # the reps; medians, min–max for the overlap call.
+    wall, ph, launches, floor = {}, {}, {}, None
+    for l in open(path):
+        m = re.match(r'decode prog=(\S+) rep=\d+ rc=0 wall_s=([\d.]+)', l)
+        if m:
+            wall.setdefault(m[1], []).append(float(m[2]))
+        m = re.match(r'decode_trace prog=(\S+) rep=\d+ phases (.*)', l)
+        if m:
+            d = dict(kv.split('=') for kv in m[2].split())
+            ph.setdefault(m[1], []).append({k: float(v) for k, v in d.items()})
+        m = re.match(r'decode_trace prog=(\S+) rep=1 launch kernel=(\S+) out=(\d+) n=(\d+)', l)
+        if m:
+            launches.setdefault(m[1], []).append(f"{m[4]}×{int(m[3]) // 1024}K")
+        m = re.match(r'decode_floor T=\d+ d=\d+ .* med_ms=([\d.]+)', l)
+        if m:
+            floor = float(m[1])
+    if wall:
+        med = lambda v: sorted(v)[len(v) // 2]
+        print("\n| decode 1024×256 | wall s (med, min–max) | ON/OFF | kernel ms | h2d ms | d2h ms | alloc+free ms | load ms | launches (n×out) |")
+        print("|---|---:|---:|---:|---:|---:|---:|---:|---|")
+        for prog in sorted(wall, key=lambda p: (p.split('.')[0], '.off' not in p)):
+            w = wall[prog]
+            off = wall.get(prog.split('.')[0] + '.off-retain-delta') if '.off-' not in prog else None
+            ratio = ''
+            if off:
+                ov = '' if (max(w) < min(off) or max(off) < min(w)) else ' ~'
+                ratio = f"{med(off) / med(w):.2f}×{ov}"
+            p = ph.get(prog, [])
+            g = lambda k: med([x.get(k, 0) for x in p]) if p else float('nan')
+            print(f"| {prog} | {med(w):.3f} ({min(w):.3f}–{max(w):.3f}) | {ratio} | {g('kernel_ms'):.1f} | {g('h2d_ms'):.1f} "
+                  f"| {g('d2h_ms'):.1f} | {g('alloc_ms') + g('free_ms'):.1f} | {g('load_ms'):.1f} | {' '.join(launches.get(prog, []))} |")
+        if floor is not None:
+            print(f"\nhand-written cuBLAS sgemv KV cache (device time, whole loop): {floor:.3f} ms")
