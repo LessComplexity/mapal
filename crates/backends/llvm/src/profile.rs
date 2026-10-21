@@ -220,13 +220,26 @@ pub enum Fill {
     Filled,
 }
 
-/// One measured decision: `rung` ships OFF on `profile` for grids `when`,
-/// because the results row `cite` measured its arm not positive there.
+/// Which face a measured rung decision covers: the conformance face (`mul.rn`
+/// + `add.rn`, two instructions per step) and the contract face (one `fma`)
+/// hold different registers live, so a staging rung can pay on one and cost
+/// on the other. The TF32 face is a contract face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Face {
+    Any,
+    Exact,
+    Contract,
+}
+
+/// One measured decision: `rung` ships OFF on `profile` for grids `fill` on
+/// face `face`, because the results row `cite` measured its arm not positive
+/// there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RungOff {
     pub profile: &'static str,
     pub rung: &'static str,
-    pub when: Fill,
+    pub fill: Fill,
+    pub face: Face,
     pub cite: &'static str,
 }
 
@@ -234,50 +247,75 @@ pub struct RungOff {
 /// that says so** (S53; the [`DispatchCost`] precedent — a measured number
 /// lives only on the profile it was measured on). A profile is *measured* when
 /// it has a row here; every rung not listed for it is ON. Rows cite
-/// `benches/results-*-gpu/<file>`, rung arm vs the default it was measured
-/// against, medians.
+/// `benches/results-s53-gpu/<file>` (`-confirm` = the second session, on a
+/// different box): the ON vs OFF arm medians, ms. Box-to-box noise is ±5% at
+/// 4096–8192; a rung whose sign changes between sessions counts as no effect.
 pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-4090",
         rung: "async",
-        when: Fill::Filled,
-        cite: "v6-rtx-4090.txt n=4096 _c.off-async 2.795 vs 3.032 ms; n=1024 (under) on wins 0.070 vs 0.102",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.368/3.027/28.393 vs off 0.359/2.823/25.554 ms, \
+               -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; kept under-filled (n=1024 on 0.070 \
+               vs off 0.101) and on the exact face (n=2048 on 0.524/0.523 vs off 0.544/0.544 ms, ≈0 at 4096/8192)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "unroll",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.359/2.823/25.554 vs off 0.361/2.817/25.419 ms, \
+               -confirm.txt on 0.363/2.843/27.976 vs off 0.362/2.843/26.796 ms; kept under-filled (n=1024 on 0.070 \
+               vs off 0.084)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "warp",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-4090-confirm.txt _c n=2048/4096/8192 on 0.362/2.843/26.796 vs off 0.355/2.813/25.311 ms; \
+               arch-rungs-rtx-4090.txt (unroll on) on 0.359/2.823/25.554 vs off 0.364/2.863/25.788 ms: no stable sign",
     },
     RungOff {
         profile: "rtx-4090",
         rung: "ldmatrix",
-        when: Fill::Any,
-        cite: "v6-rtx-4090.txt _tf.off-ldmatrix 0.084/0.254/1.728/14.192 vs 0.083/0.255/1.726/14.153 ms, n=1024..8192",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms",
     },
     RungOff {
         profile: "h100-pcie",
         rung: "async",
-        when: Fill::Any,
-        cite: "v6-h100-pcie.txt _c.off-async 0.139/0.682/3.938/33.356 vs 0.147/0.724/4.259/36.158 ms, n=1024..8192",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "arch-rungs-h100-pcie.txt _c n=1024..8192 on 0.146/0.717/4.188/37.655 vs off 0.139/0.675/3.889/33.640 ms; \
+               _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "min-blocks",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-rungs-h100-pcie.txt _c n=1024 on 0.139 vs off 0.122 ms (v2/v4/v5/v6-h100*.txt the same sign); \
+               kept filled (n=2048/4096/8192 on 0.675/3.889/33.640 vs off 0.793/4.753/41.168 ms)",
     },
     RungOff {
         profile: "h100-pcie",
         rung: "ldmatrix",
-        when: Fill::Filled,
-        cite: "v6-h100-pcie.txt _tf.off-ldmatrix 0.215/1.337/12.291 vs 0.213/1.355/12.370 ms, n=2048..8192; n=1024 (under) on wins 0.047 vs 0.051",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "arch-rungs-h100-pcie.txt _tf n=2048/4096/8192 on 0.212/1.404/12.002 vs off 0.213/1.284/11.986 ms; \
+               kept under-filled (n=1024 on 0.047 vs off 0.051)",
     },
     RungOff {
         profile: "rtx-5090",
         rung: "async",
-        when: Fill::Filled,
-        cite: "v6-rtx-5090.txt _c.off-async 0.324/2.672/22.863 vs 0.330/2.744/23.703 ms, n=2048..8192; n=1024 (under) on wins 0.074 vs 0.094",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "ldmatrix",
-        when: Fill::Any,
-        cite: "v6-rtx-5090.txt _tf.off-ldmatrix 0.223/1.509/12.030 vs 0.223/1.501/11.770 ms, n=2048..8192",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "wide",
-        when: Fill::Any,
-        cite: "v6-rtx-5090.txt _tf.off-wide 0.221/1.493/12.041 vs 0.223/1.501/11.770 ms, n=2048..8192",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-5090.txt _c n=2048/4096/8192 on 0.320/2.346/20.277 vs off 0.315/2.328/19.542 ms, \
+               -confirm.txt on 0.358/3.043/27.908 vs off 0.352/2.991/27.069 ms; kept under-filled (n=1024 on 0.074 \
+               vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192)",
     },
 ];
 
@@ -850,20 +888,29 @@ impl TargetProfile {
         }
     }
 
-    /// **The GPU rungs this part ships at a site this full** (S53): every rung
-    /// on, minus this profile's rows of [`GPU_RUNGS_OFF`] that cover the fill.
-    /// An unmeasured profile gets the intersection of the measured parts' sets
-    /// — only what was positive on every part measured.
-    pub fn gpu_rungs(&self, warps_per_scheduler: u64) -> crate::GpuRungs {
+    /// **The GPU rungs this part ships at a site this full, on this face**
+    /// (S53): every rung on, minus this profile's rows of [`GPU_RUNGS_OFF`]
+    /// that cover the fill and the face. An unmeasured profile gets the
+    /// intersection of the measured parts' sets — only what was positive on
+    /// every part measured.
+    pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
         let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
             Fill::Under
         } else {
             Fill::Filled
         };
+        let face = if contract {
+            Face::Contract
+        } else {
+            Face::Exact
+        };
         let measured = GPU_RUNGS_OFF.iter().any(|d| d.profile == self.name);
         let mut r = crate::GpuRungs::ALL;
         for d in GPU_RUNGS_OFF {
-            if (!measured || d.profile == self.name) && (d.when == Fill::Any || d.when == fill) {
+            if (!measured || d.profile == self.name)
+                && (d.fill == Fill::Any || d.fill == fill)
+                && (d.face == Face::Any || d.face == face)
+            {
                 *r.rung(d.rung).expect("a GpuRungs name") = false;
             }
         }
@@ -2650,15 +2697,16 @@ mod tests {
         assert_eq!(wps(&H100_PCIE, 1024), 1);
     }
 
-    /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
-    /// Hopper; every OFF names its results row; an unmeasured part gets the
-    /// intersection of the measured parts' sets.
+    /// The rung table (S53): on the contract face `cp.async` pays only
+    /// under-filled on Ada, never on Hopper; every OFF names its results row;
+    /// an unmeasured part gets the intersection of the measured parts' sets.
     #[test]
     fn gpu_rungs_are_the_measured_table() {
-        assert!(RTX_4090.gpu_rungs(1).cp_async);
-        assert!(!RTX_4090.gpu_rungs(4).cp_async);
-        assert!(!H100_PCIE.gpu_rungs(1).cp_async);
-        assert!(RTX_5090.gpu_rungs(0).cp_async);
+        assert!(RTX_4090.gpu_rungs(1, true).cp_async);
+        assert!(!RTX_4090.gpu_rungs(4, true).cp_async);
+        assert!(RTX_4090.gpu_rungs(4, false).cp_async);
+        assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
+        assert!(RTX_5090.gpu_rungs(0, true).cp_async);
 
         let measured = [&RTX_4090, &H100_PCIE, &RTX_5090];
         for d in GPU_RUNGS_OFF {
@@ -2675,23 +2723,31 @@ mod tests {
             } else {
                 Fill::Filled
             };
-            for p in measured {
-                let r = p.gpu_rungs(wps);
-                assert!(r.arch);
-                for n in crate::GpuRungs::NAMES {
-                    let cited = GPU_RUNGS_OFF.iter().any(|d| {
-                        d.profile == p.name
-                            && d.rung == n
-                            && (d.when == Fill::Any || d.when == fill)
-                    });
-                    assert_eq!(!r.get(n), cited, "{} {n} at {wps} warps/scheduler", p.name);
+            for contract in [false, true] {
+                let face = if contract {
+                    Face::Contract
+                } else {
+                    Face::Exact
+                };
+                for p in measured {
+                    let r = p.gpu_rungs(wps, contract);
+                    assert!(r.arch);
+                    for n in crate::GpuRungs::NAMES {
+                        let cited = GPU_RUNGS_OFF.iter().any(|d| {
+                            d.profile == p.name
+                                && d.rung == n
+                                && (d.fill == Fill::Any || d.fill == fill)
+                                && (d.face == Face::Any || d.face == face)
+                        });
+                        assert_eq!(!r.get(n), cited, "{} {n} {wps} {contract}", p.name);
+                    }
                 }
-            }
-            for p in [&CUDA_ADA, &H100] {
-                let r = p.gpu_rungs(wps);
-                for n in crate::GpuRungs::NAMES {
-                    let all = measured.iter().all(|m| m.gpu_rungs(wps).get(n));
-                    assert_eq!(r.get(n), all, "{} {n}: the intersection", p.name);
+                for p in [&CUDA_ADA, &H100] {
+                    let r = p.gpu_rungs(wps, contract);
+                    for n in crate::GpuRungs::NAMES {
+                        let all = measured.iter().all(|m| m.gpu_rungs(wps, contract).get(n));
+                        assert_eq!(r.get(n), all, "{} {n}: the intersection", p.name);
+                    }
                 }
             }
         }
