@@ -120,6 +120,9 @@ pub struct GpuRungs {
     /// S53 retention at part-of-object scope: a row-local site over a carried
     /// array whose iteration writes one row ([`mapal_ir::Delta::Rows`])
     /// recomputes only that row into its retained output (`func/retain.rs`).
+    /// Ships OFF on every measured part: a function it fires in keeps S52 round
+    /// trips, and `resident` alone ran decode 1.3–1.8× faster
+    /// (`integrated-*.txt`). Kept for planning the two together.
     pub retain_delta: bool,
     /// Host runtime (S53): start the CUDA context and module load on a thread
     /// as `main`'s first call, so it overlaps the host work before the first
