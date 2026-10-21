@@ -487,6 +487,20 @@ resolves, `gpu_rungs_are_the_measured_table`. Box: the integrated build on all f
 **Expected.** Per-part tables with every loss: the exact face stays 0.5–0.66× (kernel); A100
 TF32 stays 0.57–0.69×; the chain probes reach their kernel ratios where placement was the loss.
 
+**As built** (`s54/arch-select`). The table rung is `arch-rungs` (`--gpu-off=arch-select`); its
+OFF arm runs on every probe and kernel. `Face::Tf32` was needed: the 3090's `min-blocks` pays on
+the FMA tile and costs 11% on `mma`. `rungs.py` reads probe, e2e and decode arms, corrects a
+kernel arm by the session's `null` repeat of the shipped bench, decides a first measurement by
+this plan's rule and flips a decided row only on a stable sign in every session (mixed-sign
+classes hold); one coordinate step per class — on the 3090 four single flips that each paid on
+warp-fill's tile lost 6% together, so warp-fill alone shipped. Rows changed: 3090 (warp-fill OFF
+and min-blocks ON under-filled FMA, min-blocks OFF on TF32, min-blocks ON exact), A100 (idx32 ON
+filled contract, ldmatrix OFF under-filled TF32; wide-fma stays OFF — it costs beside idx32),
+H100 (warp-fill OFF under-filled contract); 4090 and 5090 unchanged. Items 1–7 merged into this
+branch (the integration fixes are in ARCHITECTURE §7 "The rules together"; the arena now dates an
+epilogue member at its site). Results: `benches/results-s54-gpu/arch-select-*.txt`,
+`integrated-*.txt`, `baseline-tables.md` §S54 integrated.
+
 ## 5. Rejected, one line each
 
 - **Demand-restricted sites** (#7): no program in the suite reads a strict subset of a GEMM, and
