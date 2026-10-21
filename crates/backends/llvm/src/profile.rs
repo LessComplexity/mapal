@@ -194,7 +194,92 @@ impl Gpu {
     pub fn has_mma_sync(&self) -> bool {
         self.sm() >= 80
     }
+
+    /// How full a grid of `blocks × threads` keeps the part: warps per warp
+    /// scheduler, across every SM.
+    pub fn warps_per_scheduler(&self, blocks: u64, threads: u64) -> u64 {
+        blocks * threads.div_ceil(self.warp) / (self.sms * GPU_SCHEDULERS_PER_SM)
+    }
 }
+
+/// Warp schedulers per SM: four on every part since sm_70 — an ISA fact, like
+/// [`GPU_VEC_BYTES`].
+pub const GPU_SCHEDULERS_PER_SM: u64 = 4;
+
+/// Which grids a measured rung decision covers. The key is
+/// [`Gpu::warps_per_scheduler`] at the site: below [`GPU_RESIDENT_BLOCKS`] a
+/// scheduler has no second warp to issue while one waits — the reason the
+/// thread budget is split in two, applied per scheduler — so the site is
+/// latency-bound and a rung that hides latency pays differently.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fill {
+    Any,
+    /// Fewer than [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
+    Under,
+    /// At least [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
+    Filled,
+}
+
+/// One measured decision: `rung` ships OFF on `profile` for grids `when`,
+/// because the results row `cite` measured its arm not positive there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RungOff {
+    pub profile: &'static str,
+    pub rung: &'static str,
+    pub when: Fill,
+    pub cite: &'static str,
+}
+
+/// **The GPU rung table: every rung a measured part ships OFF, with the row
+/// that says so** (S53; the [`DispatchCost`] precedent — a measured number
+/// lives only on the profile it was measured on). A profile is *measured* when
+/// it has a row here; every rung not listed for it is ON. Rows cite
+/// `benches/results-*-gpu/<file>`, rung arm vs the default it was measured
+/// against, medians.
+pub const GPU_RUNGS_OFF: &[RungOff] = &[
+    RungOff {
+        profile: "rtx-4090",
+        rung: "async",
+        when: Fill::Filled,
+        cite: "v6-rtx-4090.txt n=4096 _c.off-async 2.795 vs 3.032 ms; n=1024 (under) on wins 0.070 vs 0.102",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "ldmatrix",
+        when: Fill::Any,
+        cite: "v6-rtx-4090.txt _tf.off-ldmatrix 0.084/0.254/1.728/14.192 vs 0.083/0.255/1.726/14.153 ms, n=1024..8192",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "async",
+        when: Fill::Any,
+        cite: "v6-h100-pcie.txt _c.off-async 0.139/0.682/3.938/33.356 vs 0.147/0.724/4.259/36.158 ms, n=1024..8192",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "ldmatrix",
+        when: Fill::Filled,
+        cite: "v6-h100-pcie.txt _tf.off-ldmatrix 0.215/1.337/12.291 vs 0.213/1.355/12.370 ms, n=2048..8192; n=1024 (under) on wins 0.047 vs 0.051",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async",
+        when: Fill::Filled,
+        cite: "v6-rtx-5090.txt _c.off-async 0.324/2.672/22.863 vs 0.330/2.744/23.703 ms, n=2048..8192; n=1024 (under) on wins 0.074 vs 0.094",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "ldmatrix",
+        when: Fill::Any,
+        cite: "v6-rtx-5090.txt _tf.off-ldmatrix 0.223/1.509/12.030 vs 0.223/1.501/11.770 ms, n=2048..8192",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide",
+        when: Fill::Any,
+        cite: "v6-rtx-5090.txt _tf.off-wide 0.221/1.493/12.041 vs 0.223/1.501/11.770 ms, n=2048..8192",
+    },
+];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
 /// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
@@ -763,6 +848,26 @@ impl TargetProfile {
             Machine::Cpu => None,
             Machine::Gpu(g) => Some(g),
         }
+    }
+
+    /// **The GPU rungs this part ships at a site this full** (S53): every rung
+    /// on, minus this profile's rows of [`GPU_RUNGS_OFF`] that cover the fill.
+    /// An unmeasured profile gets the intersection of the measured parts' sets
+    /// — only what was positive on every part measured.
+    pub fn gpu_rungs(&self, warps_per_scheduler: u64) -> crate::GpuRungs {
+        let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
+            Fill::Under
+        } else {
+            Fill::Filled
+        };
+        let measured = GPU_RUNGS_OFF.iter().any(|d| d.profile == self.name);
+        let mut r = crate::GpuRungs::ALL;
+        for d in GPU_RUNGS_OFF {
+            if (!measured || d.profile == self.name) && (d.when == Fill::Any || d.when == fill) {
+                *r.rung(d.rung).expect("a GpuRungs name") = false;
+            }
+        }
+        r
     }
 
     /// **The `cp.async` panel pipeline for an FMA tile (sm_80+).** Panels stream
@@ -1418,13 +1523,13 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
 };
 
 /// RTX 5090 — consumer Blackwell (`sm_120`, not the datacenter `sm_100`),
-/// 170 SMs.
+/// 170 SMs. Resident blocks per SM is 24, as on Ada: the box's device query
+/// reports `max_blocks_per_sm=24` (`v6-rtx-5090.txt`, `facts` line).
 pub const RTX_5090: TargetProfile = TargetProfile {
     name: "rtx-5090",
     machine: Machine::Gpu(Gpu {
         arch: "sm_120",
         sms: 170,
-        max_blocks_per_sm: 32,
         ..ADA_SM
     }),
     ..GENERIC
@@ -2517,6 +2622,79 @@ mod tests {
         // A CPU profile has no GPU geometry, and an indivisible site has none.
         assert_eq!(GENERIC.gpu_tile(4096, 4096, 4096, &f32), None);
         assert_eq!(RTX_4090.gpu_tile(1000, 1000, 1000, &f32), None);
+        // 5090: 24 resident blocks per SM (the box's device query, S53), which
+        // the thread and register budgets never reach here: 1024² halves to
+        // 64-thread blocks ⇒ 256 blocks ≥ 170 SMs, 8 per SM by registers ⇒
+        // 11.8 KB each ⇒ bk 16.
+        assert_eq!(RTX_5090.gpu().map(|g| g.max_blocks_per_sm), Some(24));
+        assert_eq!(g(&RTX_5090, 4096), (128, 128, 256, 32, 2));
+        assert_eq!(g(&RTX_5090, 1024), (64, 64, 64, 16, 8));
+    }
+
+    /// The fill a site's base geometry gives: 4090 1024² is 128 blocks of 4
+    /// warps over 128 × 4 schedulers = 1 (under-filled); 2048² is 256 blocks
+    /// of 8 warps = 4.
+    #[test]
+    fn warps_per_scheduler_reads_the_base_grid() {
+        let f32 = Ty::f32();
+        let wps = |p: &TargetProfile, n| {
+            let g = p.gpu_tile(n, n, n, &f32).expect("divisible square site");
+            let blocks = (n / g.bm()) * (n / g.bn());
+            p.gpu()
+                .expect("gpu")
+                .warps_per_scheduler(blocks, g.threads())
+        };
+        assert_eq!(wps(&RTX_4090, 1024), 1);
+        assert_eq!(wps(&RTX_4090, 2048), 4);
+        assert_eq!(wps(&RTX_5090, 1024), 0);
+        assert_eq!(wps(&H100_PCIE, 1024), 1);
+    }
+
+    /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
+    /// Hopper; every OFF names its results row; an unmeasured part gets the
+    /// intersection of the measured parts' sets.
+    #[test]
+    fn gpu_rungs_are_the_measured_table() {
+        assert!(RTX_4090.gpu_rungs(1).cp_async);
+        assert!(!RTX_4090.gpu_rungs(4).cp_async);
+        assert!(!H100_PCIE.gpu_rungs(1).cp_async);
+        assert!(RTX_5090.gpu_rungs(0).cp_async);
+
+        let measured = [&RTX_4090, &H100_PCIE, &RTX_5090];
+        for d in GPU_RUNGS_OFF {
+            assert!(
+                measured.iter().any(|p| p.name == d.profile),
+                "{d:?}: not a measured profile"
+            );
+            assert!(crate::GpuRungs::ALL.rung(d.rung).is_some(), "{d:?}");
+            assert!(d.cite.contains(".txt") && d.cite.contains("ms"), "{d:?}");
+        }
+        for wps in [0, 1, 2, 4, 64] {
+            let fill = if wps < GPU_RESIDENT_BLOCKS {
+                Fill::Under
+            } else {
+                Fill::Filled
+            };
+            for p in measured {
+                let r = p.gpu_rungs(wps);
+                assert!(r.arch);
+                for n in crate::GpuRungs::NAMES {
+                    let cited = GPU_RUNGS_OFF.iter().any(|d| {
+                        d.profile == p.name
+                            && d.rung == n
+                            && (d.when == Fill::Any || d.when == fill)
+                    });
+                    assert_eq!(!r.get(n), cited, "{} {n} at {wps} warps/scheduler", p.name);
+                }
+            }
+            for p in [&CUDA_ADA, &H100] {
+                let r = p.gpu_rungs(wps);
+                for n in crate::GpuRungs::NAMES {
+                    let all = measured.iter().all(|m| m.gpu_rungs(wps).get(n));
+                    assert_eq!(r.get(n), all, "{} {n}: the intersection", p.name);
+                }
+            }
+        }
     }
 
     /// The tensor-core geometry, worked by hand from the device facts.
