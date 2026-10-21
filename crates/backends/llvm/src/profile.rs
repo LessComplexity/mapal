@@ -758,10 +758,11 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         profile: "rtx-5090",
         rung: "l2-gate",
         fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-rtx-5090-run2.txt / -run3.txt mm_8192 gated/ungated cuBLAS-normalized exact 0.982 / 0.951, \
-               contract 0.980 / 0.959, TF32 0.970 / 0.949 (gated ms 34.913/23.173/13.156 vs ungated \
-               34.347/22.844/12.757; 35.970/23.788/13.347 vs 34.317/22.840/12.671); mm_4096 0.992-1.005, no effect",
+        face: Face::Contract,
+        cite: "l2-raster-rtx-5090-run2.txt / -run3.txt / -final.txt mm_8192 TF32 grouped 1.031 / 1.054 / 1.014 x \
+               faster (cuBLAS-normalized; ms 13.156 vs 12.757, 13.347 vs 12.671, 11.042 vs 10.877); FMA 1.020 / 1.043 / \
+               1.003; mm_4096 0.973-1.007. Exact keeps the gate: 1.018 / 1.052 / 0.999 (ms 34.913 vs 34.347, \
+               35.970 vs 34.317, 29.751 vs 29.530), not faster in every session",
     },
     RungOff {
         profile: "rtx-3090",
