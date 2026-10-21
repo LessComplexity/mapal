@@ -30,11 +30,13 @@
 //
 // usage: chain_bench <probe> <n> <reps> [mapal values...]
 //   probe: epi bias ew pro indep mlp fanout diamond residual rowsum mlp2 loop
+//          decode_<T> (n = d; the eager decode loop with and without a cache, S54)
 #include <cublasLt.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -213,11 +215,124 @@ struct Leg {
   std::function<void()> run;
 };
 
+// --- S54 `decode_<T> <d>`: gen_tiles.py `decode` as an eager framework loop
+// (one launch per op, one stream, nothing synchronized inside the loop), the
+// way a user writes it, with the operand laws of tile_bench's `--decode`:
+//   cache    the hand-written KV cache: per step the token row, K[t] and V[t]
+//            (two sgemv into the cache rows), q, s = K·q, o = sᵀ·V (all T rows).
+//   nocache  the same loop recomputing K = x·Wk and V = x·Wv whole every step
+//            (two sgemm) — what the program says, without a hand-written cache.
+// Host wall (steady_clock around the loop and its final synchronize) and event
+// time, launches per step; gated on Mapal's out[0] and out[d-1].
+__global__ void dec_row(float *xrow, const float *o, int t, int d) {
+  int j = blockIdx.x * blockDim.x + threadIdx.x;
+  if (j < d) xrow[j] = (float)(((t * d + j) * 7 + 13) % 101 - 50) / 64.0f + o[j];
+}
+__global__ void dec_q(float *q, int t, int d, float div) {
+  int k = blockIdx.x * blockDim.x + threadIdx.x;
+  if (k < d) q[k] = (float)(((t * d + k) * 5 + 3) % 97 - 48) / div;
+}
+static int decode_main(int T, int d, int reps, int argc, char **argv) {
+  CUDA(cudaFree(0));
+  const float div = 16.0f * d;
+  std::vector<float> wk((size_t)d * d), wv((size_t)d * d);
+  for (int i = 0; i < d * d; ++i) {
+    wk[i] = (float)((i * 7 + 13) % 101 - 50) / div;
+    wv[i] = (float)((i * 11 + 57) % 103 - 51) / div;
+  }
+  float *dWk, *dWv, *dx, *dK, *dV, *dq, *ds, *dout;
+  CUDA(cudaMalloc(&dWk, wk.size() * 4));
+  CUDA(cudaMalloc(&dWv, wv.size() * 4));
+  CUDA(cudaMalloc(&dx, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dK, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dV, (size_t)T * d * 4));
+  CUDA(cudaMalloc(&dq, d * 4));
+  CUDA(cudaMalloc(&ds, T * 4));
+  CUDA(cudaMalloc(&dout, d * 4));
+  CUDA(cudaMemcpy(dWk, wk.data(), wk.size() * 4, cudaMemcpyHostToDevice));
+  CUDA(cudaMemcpy(dWv, wv.data(), wv.size() * 4, cudaMemcpyHostToDevice));
+  cublasHandle_t h;
+  BLAS(cublasCreate(&h));
+  BLAS(cublasSetMathMode(h, CUBLAS_DEFAULT_MATH));
+  const float one = 1.0f, zero = 0.0f;
+  const int tb = 256;
+  int nl = 0;
+  auto loop = [&](bool cache) {
+    nl = 0;
+    CUDA(cudaMemset(dx, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dK, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dV, 0, (size_t)T * d * 4));
+    CUDA(cudaMemset(dout, 0, d * 4));
+    for (int t = 0; t < T; ++t) {
+      float *xr = dx + (size_t)t * d;
+      dec_row<<<(d + tb - 1) / tb, tb>>>(xr, dout, t, d);
+      if (cache) {  // Row-major W (d×d) is column-major Wᵀ: K[t] = Wᵀ·x[t].
+        BLAS(cublasSgemv(h, CUBLAS_OP_N, d, d, &one, dWk, d, xr, 1, &zero, dK + (size_t)t * d, 1));
+        BLAS(cublasSgemv(h, CUBLAS_OP_N, d, d, &one, dWv, d, xr, 1, &zero, dV + (size_t)t * d, 1));
+      } else {  // Row-major K = x·W is column-major Kᵀ = Wᵀ·xᵀ.
+        BLAS(cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, d, T, d, &one, dWk, d, dx, d, &zero, dK, d));
+        BLAS(cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, d, T, d, &one, dWv, d, dx, d, &zero, dV, d));
+      }
+      dec_q<<<(d + tb - 1) / tb, tb>>>(dq, t, d, div);
+      BLAS(cublasSgemv(h, CUBLAS_OP_T, d, T, &one, dK, d, dq, 1, &zero, ds, 1));
+      BLAS(cublasSgemv(h, CUBLAS_OP_N, d, T, &one, dV, d, ds, 1, &zero, dout, 1));
+      nl += 6;
+    }
+  };
+  std::vector<double> want;
+  for (int i = 4; i < argc; ++i) want.push_back(strtod(argv[i], nullptr));
+  int bad = 0;
+  for (bool cache : {true, false}) {
+    const char *leg = cache ? "cache" : "nocache";
+    loop(cache);
+    CUDA(cudaDeviceSynchronize());
+    std::vector<float> o(d);
+    CUDA(cudaMemcpy(o.data(), dout, d * 4, cudaMemcpyDeviceToHost));
+    double ss = 0;
+    for (float v : o) ss += (double)v * v;
+    const double rms = std::sqrt(ss / d);
+    double dev = 0;
+    const float got[2] = {o[0], o[d - 1]};
+    for (size_t c = 0; c < want.size() && c < 2; ++c)
+      dev = std::max(dev, std::fabs(got[c] - want[c]) / std::max(std::fabs(want[c]), rms));
+    const bool ok = std::isfinite(rms) && rms > 0 && (want.size() < 2 || dev <= 1e-3);
+    bad += !ok;
+    printf("chain_values probe=decode T=%d d=%d leg=%s values=%.9g,%.9g gate=%s vs_mapal=%.3e\n", T, d, leg, got[0],
+           got[1], ok ? (want.size() < 2 ? "pass-no-mapal" : "pass") : "FAIL", dev);
+  }
+  cudaEvent_t e0, e1;
+  CUDA(cudaEventCreate(&e0));
+  CUDA(cudaEventCreate(&e1));
+  std::vector<double> wall[2], ev[2];
+  for (int r = 0; r < reps; ++r)
+    for (int L = 0; L < 2; ++L) {
+      auto t0 = std::chrono::steady_clock::now();
+      CUDA(cudaEventRecord(e0));
+      loop(L == 0);
+      CUDA(cudaEventRecord(e1));
+      CUDA(cudaEventSynchronize(e1));
+      wall[L].push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+      float x;
+      CUDA(cudaEventElapsedTime(&x, e0, e1));
+      ev[L].push_back(x);
+    }
+  for (int L = 0; L < 2; ++L) {
+    std::sort(wall[L].begin(), wall[L].end());
+    std::sort(ev[L].begin(), ev[L].end());
+    printf("chain probe=decode T=%d d=%d leg=%s launches=%d per_step=6 reps=%d wall_min_ms=%.3f wall_med_ms=%.3f "
+           "wall_max_ms=%.3f event_med_ms=%.3f\n",
+           T, d, L == 0 ? "cache" : "nocache", nl, reps, wall[L].front(), wall[L][reps / 2], wall[L].back(),
+           ev[L][reps / 2]);
+  }
+  return bad ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 4) {
     fprintf(stderr, "usage: %s <probe> <n> <reps> [mapal values...]\n", argv[0]);
     return 2;
   }
+  if (!strncmp(argv[1], "decode_", 7)) return decode_main(atoi(argv[1] + 7), atoi(argv[2]), atoi(argv[3]), argc, argv);
   const std::string probe = argv[1];
   n = atoi(argv[2]);
   nn = (long long)n * n;

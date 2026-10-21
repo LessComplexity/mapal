@@ -134,20 +134,25 @@ for o in "$PROF"/pt_*.host.o; do
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 
-# retain-delta: the decode loop end to end, shipped vs the rung flipped (off: `resident`
-# then takes the function) vs every site a round trip (the arm the rung was
-# measured against), both faces, interleaved; the launches per kernel from rep 1.
+# The decode loop end to end, both faces, interleaved: shipped vs each R5 rung
+# off (S54 `retain-resident`, `delta-h2d`, `lane-stride`), the s54-base placement
+# (all three off), and every site a round trip (S53's arm); one untraced process
+# (`wall_s`) and one under MAPAL_GPU_TRACE (`traced_wall_s`: a traced launch
+# synchronizes); the launches per kernel from rep 1.
 if [ -x prog_decode_1024_256 ]; then
     say "-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1"
     for r in 1 2 3; do
         for face in "" _c; do
-            for arm in "" .off-retain-delta .on-retain-delta .off-retain-delta+resident; do
+            for arm in "" .off-retain-resident .off-delta-h2d .off-lane-stride \
+                .off-retain-resident+delta-h2d+lane-stride .off-retain-delta .on-retain-delta .off-retain-delta+resident; do
                 b=decode_1024_256$face$arm
                 [ -x "prog_$b" ] || continue
                 t0=$(date +%s%N)
-                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1 >"dec_$b.out"); rc=$?
+                MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" >/dev/null 2>&1
                 t1=$(date +%s%N)
-                say "decode prog=$b rep=$r rc=$rc wall_s=$(awk -v d=$((t1 - t0)) 'BEGIN { printf "%.3f", d / 1e9 }') out=[$(tr '\n' ' ' < "dec_$b.out")] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
+                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1 >"dec_$b.out"); rc=$?
+                t2=$(date +%s%N)
+                say "decode prog=$b rep=$r rc=$rc wall_s=$(awk -v d=$((t1 - t0)) 'BEGIN { printf "%.3f", d / 1e9 }') traced_wall_s=$(awk -v d=$((t2 - t1)) 'BEGIN { printf "%.3f", d / 1e9 }') out=[$(tr '\n' ' ' < "dec_$b.out")] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
                 [ "$r" = 1 ] && grep 'op=launch' <<< "$tr" | grep -o 'kernel=[^ ]*' | sort | uniq -c |
                     while read -r n k; do say "decode_launch prog=$b $k n=$n"; done
             done
@@ -155,6 +160,11 @@ if [ -x prog_decode_1024_256 ]; then
     done
     say "-- decode floor: hand-written cuBLAS sgemv KV cache (tile_bench --decode)"
     ./tile_bench --decode 1024 256 "$REPS" 2>&1 | tee -a "$LOG"
+    # S54: the eager loop a framework user writes, with and without a
+    # hand-written cache (host wall, launches), gated on Mapal's out[0], out[d-1].
+    vals=$(head -2 dec_decode_1024_256.out | tr '\n' ' ')
+    # shellcheck disable=SC2086  # the values are separate arguments
+    [ -x chain_bench ] && ./chain_bench decode_1024 256 "$REPS" $vals 2>&1 | tee -a "$LOG"
 fi
 
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"

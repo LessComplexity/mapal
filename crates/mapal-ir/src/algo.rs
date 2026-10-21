@@ -810,12 +810,27 @@ impl CategoryIr {
     /// Recognize affine map/fold sites whose cell chains may be interleaved
     /// without changing their operation or operand order.
     pub fn tile_plan(&self, f: FuncId) -> TilePlan {
+        self.tile_plan_with(f, false)
+    }
+
+    /// [`Self::tile_plan`] plus the one-row sites whose lane operand is read
+    /// at a lane stride other than 1: `out[j] = fold_k a[k]·b[j·s + k]`, a
+    /// product against a transposed operand (`q·Kᵀ`). Geometry only — the
+    /// stride is the program's. `tile_plan` keeps refusing them: the CPU tile
+    /// ladder walks `b` at unit lane stride; a backend whose realization
+    /// addresses any affine read (the GPU's one-thread-per-cell kernel) asks
+    /// for this plan instead.
+    pub fn tile_plan_strided(&self, f: FuncId) -> TilePlan {
+        self.tile_plan_with(f, true)
+    }
+
+    fn tile_plan_with(&self, f: FuncId, strided: bool) -> TilePlan {
         let mut sites = SecondaryMap::new();
         let Some(fd) = self.func(f) else {
             return TilePlan { sites };
         };
         for &m in &fd.morphisms {
-            if let Some(site) = self.tile_site(m) {
+            if let Some(site) = self.tile_site(m, strided) {
                 sites.insert(m, site);
             }
         }
@@ -973,7 +988,7 @@ impl CategoryIr {
         }
     }
 
-    fn tile_site(&self, site: MorphismId) -> Option<TileSite> {
+    fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
         let map = self.morphisms.get(site)?;
         let Operation::Map {
             body,
@@ -1072,6 +1087,7 @@ impl CategoryIr {
                     c,
                     depth,
                     seed.clone(),
+                    false,
                 ) else {
                     continue;
                 };
@@ -1101,6 +1117,7 @@ impl CategoryIr {
             mapped_size,
             depth,
             seed,
+            strided,
         )
     }
 
@@ -1136,6 +1153,7 @@ impl CategoryIr {
         c: u64,
         k: u64,
         seed: Value,
+        strided: bool,
     ) -> Option<TileSite> {
         let Operation::Fold {
             body,
@@ -1235,6 +1253,9 @@ impl CategoryIr {
         let (a, b, mul_a_first) = match (read0.clane, read1.clane) {
             (0, 1) => (read0, read1, true),
             (1, 0) => (read1, read0, false),
+            // `tile_plan_strided`, one row only: `b` walks the lanes at stride `l`.
+            (0, l) if strided && l > 1 => (read0, read1, true),
+            (l, 0) if strided && l > 1 => (read1, read0, false),
             _ => return None,
         };
 
@@ -3087,8 +3108,21 @@ impl CategoryIr {
     /// `X = a·t`, and an executed `Update` traps unless its index is in
     /// `[0, n)` — so when the iteration completes, its cells are exactly
     /// `[start, start + stride)` with `start = X + b_min ≥ 0`.
+    ///
+    /// **Same consumers (S54).** A captures-0 `Map` over a `Rows` value `v`,
+    /// `y[c] = m(v[c])`, run every iteration (in the loop body, not in a guard
+    /// arm), differs from its own previous-iteration value only where `v`
+    /// does: `y` gets the same `Δ`, keyed by `y` itself (`next: y`; it is no
+    /// view), and so on down a chain of such maps. Never the other way: a
+    /// back-edge value that is a map's output is rewritten whole (`Top`).
     pub fn write_delta(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
         let mut out = SecondaryMap::new();
+        let gated: Vec<MorphismId> = self
+            .guard_plan(f)
+            .into_iter()
+            .filter(GuardSite::gated)
+            .flat_map(|s| s.on_true.own.into_iter().chain(s.on_false.own))
+            .collect();
         for scc in self.loop_structure(f) {
             let &[merge] = scc.merges.as_slice() else {
                 continue;
@@ -3154,6 +3188,34 @@ impl CategoryIr {
                     .and_then(|_| self.rows_of(&idxs, merge, nk))
                     .unwrap_or(Delta::Top);
                 out.insert(key, delta);
+                let Delta::Rows { stride, start, .. } = delta else {
+                    continue;
+                };
+                let mut frontier = vec![nk];
+                while let Some(v) = frontier.pop() {
+                    for &m in self.out_edges(v) {
+                        let mm = &self.morphisms[m];
+                        let in_body =
+                            plan.advance_order.contains(&m) || plan.decide_order.contains(&m);
+                        if matches!(mm.op, Operation::Map { captures: 0, .. })
+                            && mm.source == v
+                            && in_body
+                            && !gated.contains(&m)
+                            && !out.contains_key(mm.target)
+                        {
+                            let next = mm.target;
+                            out.insert(
+                                next,
+                                Delta::Rows {
+                                    stride,
+                                    start,
+                                    next,
+                                },
+                            );
+                            frontier.push(next);
+                        }
+                    }
+                }
             }
         }
         out
