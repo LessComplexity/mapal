@@ -1,71 +1,101 @@
 # Component: backend-nvptx
 
-Status: **planned — no code.** The component exists because a ratified plan grounds it
-(FRAMEWORK grounding rule: a component is real when it maps to code *or an explicit plan*), not
-because a crate exists. There is no `crates/backends/nvptx/`, and per plan-s41 §2 there may never
-be one — the packaging choice is deliberately open and the default for the leg is a `Machine`
-discriminator inside `backends/llvm`.
+Status: **built inside the LLVM backend; final S54 validation matrix passed; targeted ordering remains open.**
+Last updated: 2026-10-21 · S57 frozen validation complete; generic proof work continuing.
 
-Last updated: 2026-07-29 · **S41 — plan ratified, step 1 of 8 built and gated.**
-Spec references: ADR-0033 (second-consumer proof obligation, D3/D4) · ADR-0032 (backend-genericity
-contract, D1/D3/D4/D5) · ADR-0020 (backend emission contract — the differential duty) ·
-FRAMEWORK §4.2 (placement is a span), §4.5 law 1 (placement honesty), §7.6 (the physical aspect).
-Depends on: ir (`tile_plan`, `elem_plan`, `guard_plan`), backend-llvm (the shared emitter).
-Depended on by: nothing yet.
+The S41 packaging choice is realized as the GPU leg of `mapal-backend-llvm`, with the
+CUDA-driver runtime in `mapal-rt`. The component has no separate backend crate.
+[ARCHITECTURE.md](ARCHITECTURE.md) owns the placement rules;
+[IMPLEMENTATION.md](IMPLEMENTATION.md) maps their Dat/Trn/Loc/Trm to current code.
+This replaces the obsolete S41 “planned — no code” status.
 
-## Where to dig
+## Built
 
-| Doc | What it holds |
-| --- | --- |
-| [`plans/plan-s41-the-nvptx-leg.md`](plans/plan-s41-the-nvptx-leg.md) | **the whole component today** — model, the §2.2 gates, the seam decision, toolchain, build order, tests, done-bar |
-| `../../../benches/sme/README.md` | the SME probe artifacts and the measured ceiling |
-| `../backend-cuda/STATUS.md` | the emitter NVPTX replaces (163 tests green, rung 0, exempt in Gate A until this lands) |
+- GPU profiles, device LLVM/PTX generation, tiled and tensor-core realizations, host launch
+  glue and CUDA-driver transmissions are present. The implementation map names their seams.
+- S54 placement composes epilogues, cell kernels, row folds, residency/death, retained rows,
+  delta uploads and independent streams in one resident plan. Grid raster and L2 windows
+  select existing realizations; they add no numerical semantics.
+- The per-profile `GPU_RUNGS_OFF` table and forced measurement arms are present. Table
+  presence does not establish that every selection is accepted.
+- Current smoke execution checks values and expected traps before timing. Remote failures
+  preserve results and propagate failure through the rental wrapper, which destroys its instance.
 
-## The model, in one line
+Dependencies: IR geometry, bounds, loops, uses and task dependencies; LLVM host/device emission;
+GPU runtime transmissions. Device capabilities and selection remain backend facts.
+FRAMEWORK §4.5 laws 1–6 and ADR-0020's differential duty apply across these boundaries.
+A staged shared-memory panel is readable only after its barrier completes the transmission.
 
-The GPU tile kernel is **the same `Trn`** as the CPU tile kernel at a **second `Loc`** — a new
-`TrnLoc` row over one transformation (FRAMEWORK §4.2). Nothing in `Dat` or `Trn` changes: no new
-`Operation`, no new `Ty` variant, no `validate()` change, **no `mapal-ir` edit**. What is new is
-physical: `Loc` gains `SM`/`Gmem`/`Smem`, `Trm` gains `h2d`/`d2h`/`g2s`/`s2r`/`launch`, and the
-packed panel gets a second `DataLoc` at `Smem`.
+## Current evidence
 
-The load-bearing consequence: **`__syncthreads` (`llvm.nvvm.barrier0`) is not an idiom to
-remember — it is the morphism that completes `g2s`.** Reading the staged panel before it is
-Coherence Law 1 failing (§7.6's read-before-DMA race), so the framework names the missing
-transmission before the differential does.
+- Host validation after the recovered guarded-ConstFold repair: two required-clang workspace
+  runs, each **1,176 passed / 0 failed / 1 ignored**; all release examples build. See
+  [S56 validation baseline](../../sessions/2026-10-21-s56-validation-baseline.md).
+- Fresh RTX 5090 smoke: **66 value passes / 14 expected-trap passes / 0 failures**. Source,
+  binary and bundle hashes plus rental cleanup are recorded in
+  [the smoke manifest](../../../benches/results-s54-gpu/s56-smoke-rtx-5090.json).
+- Historical `integrated-*-prefix.txt` files are complete runs made **before** the arena repair,
+  and contain failures. They do not certify the current integrated build.
+- Selection recovery is complete at source `b4152c5`: RTX 5090 streams OFF; H100 retention
+  and L2-window OFF; the RTX 5090 derived L2 gate restored. The two independent 5090 hosts
+  favor streams OFF in all 32 changed-cell comparisons with disjoint iteration ranges.
+  H100 and raster choices follow the declared conservative acceptance rule; the report
+  preserves traced-kernel and TF32 counterevidence. See
+  [per-architecture selection](../../performance/s54-per-arch-selection.md).
+- All three selection runs passed complete timing, value, resource and nsys inventories,
+  and their rentals were independently confirmed absent. The H100 host repeats a previously
+  measured physical host. Older selection runners omit some process-status fields, explicitly
+  disclosed in their receipts; final bundles enforce those fields.
+- The final source passes required-clang workspace tests: **1,176 / 0 / 1 ignored** in 76.5 s.
+  All five final bundles are built. RTX 3090, A100, RTX 4090, H100 PCIe and RTX 5090 primary runs
+  pass all required result/profiling/cleanup gates. The independent RTX 4090 confirmation
+  also passes and is cleaned up; its favorable FMA4096 median ratios repeat, while the
+  FMA8192 win does not. H100 PCIe passed all 812 differential cases and 22 traps,
+  every measurement/profiling gate, and independent cleanup at 20:37:43 UTC; its
+  7,956 exported numeric fields and 4,140 raw kernel samples independently check.
+  The replacement RTX 5090 confirmation also passes all gates and was independently
+  absent at 20:55:19 UTC. Its 8,050 numeric fields and 4,320 raw kernel samples check.
+  Streams OFF has lower medians in all eight changed cells, with six disjoint ranges
+  and two overlaps. Host timing differences remain unexplained; they are not attributed
+  to driver or power settings without evidence.
 
-## What is built
+## Reconciliation and targeted proof still open
 
-- [x] **Step 1 — the machine class.** `Machine::{Cpu, Gpu(Gpu)}` + `TargetProfile::gpu()` + the
-      `CUDA_ADA` profile, in `crates/backends/llvm/src/profile.rs`. Gated: 159/159 emissions
-      byte-identical, 9/9 profile tests. Every pre-S41 profile pinned `Cpu`; `cuda-ada`'s
-      CPU-shaped fields pinned as inherited placeholders, not GPU measurements.
-- [x] **The §2.2 gates** (the durable part — these outlive the leg):
-      **Gate A**, `crates/mapal-ir/tests/consumer_coverage.rs` — ADR-0033's hand-run grep,
-      automated; every backend is `Required` or `Exempt` with a reason *and an end condition*; an
-      unlisted backend directory fails; a stale exemption fails; and a self-check keeps the gate
-      from passing vacuously. **Gate B**, appended to
-      `crates/backends/llvm/tests/tile_sites_pin.rs` — the record's field values snapshotted, plus
-      proof it is a pure function of the graph.
+Completed validation: [verify-s54-gpu-selection](../../../openspec/changes/archive/2026-10-21-verify-s54-gpu-selection/proposal.md).
+Generic ordering/allocation and composed-workload plans remain active.
 
-## What is not built
+1. The final five-profile matrix and both independent confirmations are complete and
+   all corresponding task rentals are independently absent.
+2. Both S54 reports and the §4.5 review are reconciled; drift passes and the validation
+   change is archived. The uncovered composition duties below remain explicit.
 
-- [ ] Steps 2–4: the device module preamble (`nvptx64-nvidia-cuda`, `ptx_kernel`, `addrspace`),
-      the thread-index prologue, the naive kernel, the smem rung. **No hardware needed for any of
-      them** — `llc -march=nvptx64` is on the dev Mac.
-- [ ] Step 5: host launch glue (driver API) replacing the four `mapal_par_*` sites for the GPU
-      class. Those four now live in one file (`func/drive.rs`) after the S41 split.
-- [ ] Steps 6–8: box bring-up (repo checkout only — CUDA 13.3.1 is already installed at
-      `/opt/cuda`), the hardware differential, the one compute-only measurement.
-- [ ] `guard_plan` on the GPU. S40 recorded "NVPTX inherits gating from scratch" and S39 that a
-      gate has four realizations of which warp divergence is one. **Deliberately out of the S41
-      leg** — a gate on a matmul tile site is not what this leg tests.
+Separate proof duty discovered during validation: [stored-member ordering](../../performance/s57-ordering-evidence.md).
+Frozen emitted LLVM demonstrates missing explicit producer edges in host-readback and
+different-chain tile cases. GPU consequences are not yet tested. The §4.5 review leaves
+those composition/readiness duties open; the benchmark matrix must not be described as
+proof for all programs. No source fix has been applied during the freeze.
 
-## Needs work / open questions
+The [large/composed preparation](../../performance/s57-large-composed-evidence.md) adds
+96 successful temporary primitive emissions and small arithmetic certification.
+The RTX 5090 16K/rectangular extension validates 98/100 invocations; both failed arms
+are the same requested-TF32 fallback and remain rejected. All six 16K base/repeat
+sampled value gates pass. This is separate from the frozen matrix.
+Its recurrent checkpoint source exposes a reproducible rewrite panic; optimized
+checkpoint coverage and all new GPU results remain open. No source fix has been applied.
 
-| Item | Detail |
-| --- | --- |
-| **The seam is undecided by design** | plan §2: packaging (own crate vs `Machine` discriminator) is a default, not a verdict. Branch budget ~6 outside the four known sites, and **any** branch inside `emit_morphism` is the trip signal. §8.5 judges it on built code. |
-| ADR-0033 D4(a)/(b) | which `TileRead` fields the smem emitter consumes, and which facts it needed that the record does not carry. Predicted: warp size, smem capacity, bank geometry, launch shape — all per-`Loc` capabilities, none of them `mapal-ir` facts. A **negative** answer is a successful discharge (D4). |
-| `<TJ x elem>` is one field with two readings | S38's finding: SIMD lanes on CPU, per-thread registers on GPU. Unresolved whether that ambiguity is benign or a genuine record gap. |
-| Hardware verification debt | inherited from backend-cuda: no CUDA change since S23 has hardware verification. The box GPU now makes that cheap rather than a rental. |
+## Continuing performance work
+
+The user authorized a generic compiler phase after frozen validation: use derived
+dependency, lifetime and placement facts across algorithms, starting with allocation
+under streams and evaluating explicit graph construction afterward. Plan it through
+OpenSpec and preserve guards, carries, aliases and host observations as proof boundaries.
+The [current comparison](../../performance/s54-current-library-comparison.md) and
+[integrated report](../../performance/s54-gpu-fusion.md) distinguish kernel, program,
+retention and allocation effects across families. Exact-face and Ampere/Hopper TF32
+library gaps remain separate from placement acceptance. ADR-0039's precision policy remains
+an explicit decision for the user; this validation does not change it. The older clock-fence
+helper and eager-init race questions also remain open until independently checked.
+
+Plans of record: [S41 NVPTX leg](plans/plan-s41-the-nvptx-leg.md),
+[S54 placement](plans/plan-s54-fusion-placement.md). Historical measurements and decisions
+remain immutable in [the S54 handoff](../../sessions/2026-10-21-s54-fusion-placement.md).

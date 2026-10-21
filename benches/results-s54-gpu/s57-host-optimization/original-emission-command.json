@@ -1,0 +1,18 @@
+{
+  "name": "gpu/recurrent-t16-d8-h16.run/rtx-5090/contract/shipped",
+  "argv": [
+    "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+    "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.run.mapal",
+    "-",
+    "--rewrite",
+    "--target=rtx-5090",
+    "--device-out=/private/tmp/mapal-s56-gpu/large-composed/composition/certification-01/gpu/recurrent-t16-d8-h16.run/rtx-5090/contract/shipped/device.ll",
+    "--contract"
+  ],
+  "cwd": "/Volumes/LessComplex/Personal/mapal",
+  "status": 0,
+  "seconds": 0.0413,
+  "timeout_seconds": 120,
+  "stdout_sha256": "49d79c826244cb63ac6c1daa088b307b814f79e115bbc7676446d7f5a3a22c7d",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

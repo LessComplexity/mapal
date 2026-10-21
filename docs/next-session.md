@@ -1,20 +1,118 @@
-# Current continuation — S56
+# Current continuation — S57 generic proof work
 
-Read [S56 validation baseline](sessions/2026-10-21-s56-validation-baseline.md), then [S55 consolidation](sessions/2026-10-21-s55-worktree-consolidation.md) and the original [S54 handoff](sessions/2026-10-21-s54-fusion-placement.md).
-The single checkout is `s54-gpu-fusion`. Preserve `.claude/worktrees/_archive-s54-20261021/` and the untracked `oainotes.md`.
+The only checkout is `s54-gpu-fusion` at `b4152c5`. Preserve the ignored recovery archives
+under `.claude/worktrees/_archive-s54-20261021/` and untracked `oainotes.md`. Do not push.
+Most S57 reports/evidence are durable local files but not yet committed. The newest immutable checkpoint is
+[S57 frozen validation complete](sessions/2026-10-21-s57-frozen-validation-complete.md).
+The earlier20:45 checkpoint remains historical; this mutable continuation tracks later work.
 
-Item 1 is complete: unique LLVM `emit` / CUDA `emit_cuda` executables, repaired profile test registration, guard-preserving ConstFold repair, and six stale mappings resolved. Host release tests pass twice: **1176 / 0 / 1 ignored**; drift **0 / 460**.
+## Completed frozen validation
 
-Continue the ready OpenSpec change `verify-s54-gpu-selection` in order:
-1. Finish the small GPU harness patch review and run fresh differential-only smoke on the historical arena failure cases. Saved integrated prefixes contain pre-fix failures; the post-fix run never completed.
-2. Resolve 5090 streams, H100 retain-resident and raster/L2-window conflicts using current integrated A/Bs and conservative treatment of noisy gains. The only currently offered H100 PCIe is prior machine81035; it cannot count as a third independent host.
-3. Complete final RTX3090/A100 SXM4/RTX4090/H100 PCIe/RTX5090 measurements and independent 4090/5090 confirmations. H100 uses **sm_90a**. Build fresh bundles with current oracles; the rewriter changed, so old oracles are not automatically reusable.
-4. Write `performance/s54-gpu-fusion.md` and `s54-per-arch-selection.md`, including losses, then reconcile component mappings/model/status and root status; drift must pass before archive.
+All five primaries (RTX 3090, A100 SXM4, RTX 4090, H100 PCIe, RTX 5090) and both
+independent RTX 4090/5090 confirmations pass complete numerical, timing/status, library,
+resource and profiling gates. Every corresponding rental is independently absent.
+The last 5090 confirmation was absent at 20:55:19 UTC. Independent checks cover
+54,121 numeric fields and 27,900 raw kernel samples with zero differences.
 
-After verification, prioritize 4090 `pt_mlp2_4096` and decode's library gap. Numerical precision policy and ADR-0039 remain Sapir's decision. The historical CPU handoff below remains relevant to its own open items.
+- [Full measured tables](performance/s54-gpu-fusion.md): all 126 shipped kernel rows,
+  all arms/losses/control CSVs, composed/decode comparisons and timing-boundary limits.
+- [Selection decisions](performance/s54-per-arch-selection.md): 5090 streams OFF,
+  H100 retention/window OFF, restored derived 5090 raster gate. No precision-policy change.
+- [16K and rectangular extension](performance/s57-large-composed-evidence.md): 98/100
+  invocations pass; both failures are the requested-TF32 small-M fallback. All 16K gates
+  pass, but cuBLAS is faster. No application-wide BF16/FP8 or transformer claim.
+- [Disassembly evidence](performance/s57-ptx-sass-gap.md): small-M scalar fallback and
+  differing TF32 conversion/tie semantics are proved; a profitable replacement is not.
+- [CPU/GPU call effects](../benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md):
+  host LLVM vectorization is present; device completion is not LLVM stack lifetime.
+  Joint cost-based CPU/GPU placement and generic paged KV allocation are not implemented.
+
+Final 5090 confirmation has lower stream-OFF medians in all eight changed cells, but two
+ranges overlap. Its 4K TF32 Mapal/cuBLAS times are 4.4472/1.8883ms versus primary
+1.5460/1.3906ms. Saved PTX, launch geometry and runtime resources match; the cause remains
+unresolved. Decode allocations remain 8 versus 12,288, but ordinary wall is 5,046/14,480ms
+versus primary 450/1,292ms. Never mix traced kernel duration with ordinary wall.
+The primary 5090 Exact8192 identical-PTX null is unstable (34.64→48.37ms); preserve it.
+
+All frozen results are archived with hash verification. The earlier five-bundle/four-primary
+archive has 41,051 files/2,423,639,312 bytes. Separate immutable archives preserve H100,
+4090 confirmation and final 5090 confirmation. The latter contains 21 files/20,057,698 bytes;
+[receipt](../benches/results-s54-gpu/final-integrated-5090-confirmation-recovery.json).
+Frozen host tests: 1,176 passed/0 failed/1 ignored; no production-source change since.
+
+## Correctness pilot: one failed allocation, no GPU result
+
+The user approved one 13.4MB correctness-only attempt: ordinary ordering first (200 fresh
+processes), then small composed matrix verification against handwritten CUDA/cuBLAS and
+explicit PyTorch2.13.0/cu130. Limits: $1 total, <=$0.80/hour, <=55 minutes, existing
+$8/hour aggregate cap; equivalent hosts allowed before launch. No timing admission.
+The reviewed adapter additionally installs hash-pinned pip25.3 because Jammy pip22.0.2
+cannot produce the required `--report`; the two private archives are unchanged.
+Seven adapter and eight launcher stub tests pass. Official image/wheel metadata accounts
+for about7.89GB of single-copy transfers; actual installation remains untested.
+
+The v5 launch on offer56695170, machine54112/host146915, returned `success=false` with
+contract57110891. The wrapper exited after2.1s before SSH/upload/workload and destroyed
+that ID. Independent absence is21:02:29 UTC. No ordering/matrix execution occurred;
+provider image transfer and actual billing are not inferred from the logs. This consumed
+the approved single attempt; **do not retry without additional user authorization**.
+The failed attempt and approved preparation have a separate immutable 221-file,
+29,423,503-byte archive; [receipt](../benches/results-s54-gpu/s57-correctness-pilot-v5-failed-recovery.json).
+The user then approved one additional same-payload attempt under the original cumulative
+$1 cap. It also failed at allocation before upload: offer51669617, machine143204/host556515,
+contract57111469; exit1 after2.3s, independent absence21:07:38 UTC. Both attempts produced
+no GPU results. No further attempt is authorized. Read-only startup diagnosis is in progress.
+
+Operational base: `/private/tmp/mapal-s56-gpu`.
+
+```sh
+python3 /private/tmp/mapal-s56-gpu/final_status.py
+cat /private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/verification.json
+cat /private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest-v5.json
+```
+
+At21:08 UTC there are zero active task rentals. Never touch unrelated instances
+`57065574` or `57100404`. GPU agent owns rental/upload/cleanup. Preserve the frozen benchmark payloads/tools as evidence. Both bound launchers are now
+closed; apply a source repair only after its separate proof/review. Isolated diagnostic
+snapshots remain under the paths below. Do not run integrated timing acceptance on correctness-only output.
+Keep numerical success, arithmetic-route proof and timing admission distinct.
+
+## Next authorized work, in order
+
+1. Frozen-report reconciliation is complete: new confirmation presentation checked,
+   FRAMEWORK §4.5 review reconciled, drift zero-dead, strict validation passed and
+   `verify-s54-gpu-selection` archived as `2026-10-21-verify-s54-gpu-selection`.
+   Benchmark success does not close targeted ordering duties.
+2. Diagnose the two pre-upload allocation failures before proposing any further ordinary
+   ordering/matrix pilot. The approved attempts are exhausted; no GPU result exists.
+   Payloads and exact validators remain under `ordering-runtime/`, `large-composed/`
+   and `correctness-pair/` in the operational base. Timeout aborts all later phases.
+3. Repair the recurrent checkpoint compiler failure through
+   `repair-loop-route-replay`. Diagnostic snapshot:
+   `/private/tmp/mapal-replay-diagnostic/source`, isolated build in sibling `target`.
+   Both tiny674 and original5907 now identify an acyclic `(IoToken, Array)` exit payload
+   inside the canonical loop driver cone but outside its SCC, left unmapped during
+   round1 ConstFold replay. Temporary tracing establishes the exact cause; a generic
+   repair/regression is being tested only in that snapshot. No shared source fix yet.
+4. Apply `eliminate-unmaterialized-gpu-allocations` only after dependency proof. The
+   [ordering evidence](performance/s57-ordering-evidence.md) establishes missing emitted
+   edges for stored-member host readback and another-chain tile consumption. Same-stream
+   and member-row-fold suspicions were refuted for inspected shapes. The planned touch map
+   uses existing group ownership, alias canonicalization and output-storage facts.
+   Preserve the arena guard. A nonzero free currently synchronizes; omitting an allocation
+   can remove that incidental wait. Predicted allocation counts are not measured gains.
+5. Continue `benchmark-large-composed-gpu-workloads`: full recurrent checkpoints after
+   replay repair; matched numerical contracts and clocks across Mapal, naive/handwritten,
+   cuBLAS and PyTorch eager/compiled; then retention/allocation controls across families.
+   Matrix payload arithmetic is statically certified; no new GPU composition timing yet.
+
+Proof rule: infer from shapes and dataflow, record a candidate, then prove emitted code and
+runtime behavior before changing the compiler. Current `.rna` TF32 ties differ from the
+undecided ties-even proposal; do not change numerical policy as a performance fix. Logical
+last use differs from asynchronous completion. Static IR can build graph topology, while
+buffer binding/instantiation and replay still need runtime work.
 
 ---
-
 
 (S52's handoff, kept below for the CPU-side items it still carries. The S53 workflow header it replaced:
 workflow `mapal-s53-gpu-optimizations`, run `wf_40012e53-58d`; item branches `s53/<key>`.)

@@ -18,6 +18,7 @@
 | backend-llvm | `crates/backends/llvm/` — entry `mapal_backend_llvm::emit(&CategoryIr) -> Result<String, EmitError>` (ADR-0020; `src/{ty,module,func,loops}.rs`) | [DESIGN](components/backend-llvm/DESIGN.md) | [IMPLEMENTATION](components/backend-llvm/IMPLEMENTATION.md) | built/tested |
 | mapal-rt | `crates/mapal-rt/` — shared runtime seam (ADR-0020; owned by backend-llvm per its DESIGN §1): 7 `mapal_print_*` externs (Rust `Display` = interp render parity) + `mapal_trap` → exit 101; **S24: the parallel scheduler (11 `mapal_par_*` externs — work-stealing pool, rank-seeded static schedule, watermark waits, CAS-min trap flag, registration-time pinning; `MAPAL_PAR` env; std-only)**; **S25: cgroup-quota-aware width (`cpu.max` v2 / cfs v1 parsers; `MAPAL_PAR` override absolute) + `mapal_perf_begin`/`mapal_perf_end` compute-timer externs (pool-warm then `Instant`; `MAPAL_PERF total ms=` stdout grammar)**; **S29: `mapal_time_ms` (the `time` builtin's clock seam, one process-lifetime `Instant` epoch) + the heap arena `mapal_rt_alloc`/`mapal_rt_free_all` (a `Mutex<Vec<(usize, Layout)>>` registry over `std::alloc`) — the llvm backend places entry-block blocks ≥ `HEAP_MIN_BYTES` (256 KB) there, which is what lets matmul2048 run on a 64 MB stack**; `staticlib`+`rlib` | [DESIGN](components/backend-llvm/DESIGN.md) §1 + [plan-parallel-orchestrator](components/backend-llvm/plans/plan-parallel-orchestrator.md) | `crates/mapal-rt/src/lib.rs` | built |
 | backend-cuda | `crates/backends/cuda/` — entry `mapal_backend_cuda::emit(&CategoryIr) -> Result<String, EmitError>` (ADR-0020; `src/{ty,module,func,kernel,loops,arena}.rs`) + `emit_with_opts(&CategoryIr, &EmitOpts)` (S20: `perf_timing` — CUDA-event `MAPAL_PERF` instrumentation; `emit` = defaults, byte-identical) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPLEMENTATION](components/backend-cuda/IMPLEMENTATION.md) | built/tested (M3, S15; arenas + emitter-quality S20) |
+| backend-nvptx | GPU leg in `crates/backends/llvm/src/func/` and `crates/backends/llvm/src/profile.rs`; CUDA-driver transmissions in `crates/mapal-rt/gpu/mapal_gpu.c` | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPLEMENTATION](components/backend-nvptx/IMPLEMENTATION.md) | built; frozen S54 matrix passed; targeted ordering open |
 | backend-verilog | `crates/backends/verilog/` | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPLEMENTATION](components/backend-verilog/IMPLEMENTATION.md) | stub |
 | cli | `crates/mapal-cli/` | [DESIGN](components/cli/DESIGN.md) | [IMPLEMENTATION](components/cli/IMPLEMENTATION.md) | stub |
 
@@ -44,6 +45,13 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 > to be trusted to stay true, because a backend that stops consuming `tile_plan` or
 > `elem_plan` fails the suite. New component: `components/backend-nvptx/` — planned,
 > no crate, grounded by a ratified plan (`plans/plan-s41-the-nvptx-leg.md`).
+
+> **S56 recovery (2026-10-21).** That GPU leg is now built inside LLVM. Its current
+> [implementation map](components/backend-nvptx/IMPLEMENTATION.md) covers the second
+> realization of tile sites, cell/row-fold geometry, loop deltas, lifetime and task
+> dependencies. Device capabilities and selection stay in the backend; the shared
+> geometry remains deduced IR data. Final integrated acceptance is recorded in the
+> [component status](components/backend-nvptx/STATUS.md).
 
 | last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`crates/mapal-ir/src/algo.rs`); consumed by llvm in-place `Update` (`crates/backends/llvm/src/func/ops.rs:FnEmit::update_in_place_source`) + cuda in-place `Update` and back-edge freeing (`crates/backends/cuda/src/func.rs:in_place_update`, `crates/backends/cuda/src/func.rs:FnEmit::emit_back_edge_frees`); CUDA arena last-use coloring remains planned (`crates/backends/cuda/src/arena.rs` module documentation) | deduced (recomputed, never stored) |
 

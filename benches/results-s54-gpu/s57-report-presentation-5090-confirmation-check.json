@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "utc": "2026-10-21T21:03:54.536825+00:00",
+  "report": "/Volumes/LessComplex/Personal/mapal/docs/performance/s54-gpu-fusion.md",
+  "report_sha256": "78ba609501c367a00be9dd39792432a2a5d3353388dfd5d95ff397d34ff046f7",
+  "kernel_rows": 18,
+  "stream_rows": 8,
+  "numeric_table_fields": 162,
+  "scope": "New5090 Markdown table fields checked against independently raw-verified CSVs; narrative provenance and decode reviewed separately. Not an additional GPU run.",
+  "inputs": {
+    "s57-integrated-rtx-5090-confirm-retry3-kernels.csv": "1219082d995e3ce4aa017962de9f0cd05562003b49b8598d6c89eeb25a5e022e",
+    "s57-integrated-rtx-5090-confirm-retry3-programs.csv": "a0b1c2b05a692aa8bbe13e26431901e45474442a4b2d24e7ec3eda91cf737174",
+    "s57-integrated-rtx-5090-confirm-retry3-independent-csv-check.json": "1ecbb9da0c51dd5aa12c5bac3c7d45ecf34c34702022e201976cf23ddddf1610"
+  }
+}

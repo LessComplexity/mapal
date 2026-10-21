@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "nvcc",
+    "-O3",
+    "-std=c++17",
+    "-arch=sm_120",
+    "-Icutlass/include",
+    "-Icutlass/tools/util/include",
+    "tile_bench.cu",
+    "-lcublas",
+    "-lcuda",
+    "-o",
+    "/w/trace/primitive-results/tile_bench"
+  ],
+  "exit": 0,
+  "seconds": 8.531,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "7bedfd328ed922c4323b43f69f7a0fbc1e7b917c05eacdb40738be40ae05c9f5"
+}

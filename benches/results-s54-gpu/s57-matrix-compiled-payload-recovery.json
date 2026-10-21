@@ -1,0 +1,9 @@
+{
+  "utc": "2026-10-21T20:13:56.425137+00:00",
+  "archive": ".claude/worktrees/_archive-s54-20261021/s57-matrix-compiled-payload",
+  "file_count": 165,
+  "bytes": 38087127,
+  "all_match": true,
+  "scope": "Locally built/reviewed only; remote linking/GPU values/arithmetic proof/timing admission pending.",
+  "receipt_sha256": "4e0025d38f373ebb6d23fad6843650754c212e0b9dd1b721c2a1fe24f1e6a861"
+}

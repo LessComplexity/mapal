@@ -1,0 +1,136 @@
+{
+  "created_utc": "2026-10-21T20:41:38.142683+00:00",
+  "scope": "Accepted fifth primary result directory including raw profiling, strict verification, analysis and independent CSV checks; frozen bundle already preserved in original primary recovery",
+  "archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/final-integrated-h100-recovery",
+  "files": [
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/analysis-summary-final.json",
+      "relative_path": "analysis-summary-final.json",
+      "bytes": 2731988,
+      "sha256": "7d14f7d31ae0f7315ad17c6a17d2c28a19f41deed42874fa6bf9ffe418da94dc"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/approval-reference.json",
+      "relative_path": "approval-reference.json",
+      "bytes": 289,
+      "sha256": "e143004ef086c28e8beed7571664ad6b788d228cbd1d0ec65f48776345286839"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/capture-create.sh",
+      "relative_path": "capture-create.sh",
+      "bytes": 281,
+      "sha256": "0bc2dd4c22f5af87f73be787485d87e6d74ad34f39d4720ef81f2e351c47efdb"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/cleanup.json",
+      "relative_path": "cleanup.json",
+      "bytes": 240,
+      "sha256": "ebf60fb608784c6774354da346fbfd0b87f4015a2d24d792aa8b48c8ce68d2af"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/create-response.json",
+      "relative_path": "create-response.json",
+      "bytes": 137,
+      "sha256": "a6d5d43ebef946b18628627882790164b091e6e05d80184a31ea9280835338c8"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/execution.json",
+      "relative_path": "execution.json",
+      "bytes": 365,
+      "sha256": "2fc25da2dfae872d773f55d31ae978e5c91145b8cb3ceda2bc82e48231f8d98f"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/independent-csv-check.json",
+      "relative_path": "independent-csv-check.json",
+      "bytes": 15555,
+      "sha256": "458c403076ba8e62906d74e45d8120d50a5280a22239101c170f48fb012f05a3"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/independent-overlap-check.csv",
+      "relative_path": "independent-overlap-check.csv",
+      "bytes": 153285,
+      "sha256": "32fa9616d259aa42b0be96de4714c5d4c935cdbac2c70cb3cc3235e639e51f9d"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/instance-h100-pcie",
+      "relative_path": "instance-h100-pcie",
+      "bytes": 9,
+      "sha256": "efa0c1daf3dbee3e615099d8a8a3b82262cc48a03bf69a04fdc580a24ce1e617"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/instance-identity.json",
+      "relative_path": "instance-identity.json",
+      "bytes": 304,
+      "sha256": "0c9ebd108d069d86365cdbe1a31051a2e1cd1975d96bca2dee5491dbe8cec3b4"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/ncu-h100-pcie.csv",
+      "relative_path": "ncu-h100-pcie.csv",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/prof-h100-pcie.tgz",
+      "relative_path": "prof-h100-pcie.tgz",
+      "bytes": 14829738,
+      "sha256": "af2aeb6cfc23913924cea4c2d2a6804428a253f783224e77ad4c16ef6156a07e"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/request.json",
+      "relative_path": "request.json",
+      "bytes": 1532,
+      "sha256": "c7d472f20c67c7ad64c73eeb0f8c6f4015f57e793fa9fa8ccd9a193f95f4e682"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/results-h100-pcie.txt",
+      "relative_path": "results-h100-pcie.txt",
+      "bytes": 1211159,
+      "sha256": "1aec766486bd84f117245adb7b4e28576456cca43c6a3aca5e192baeef2f77ce"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/run-h100-pcie.out",
+      "relative_path": "run-h100-pcie.out",
+      "bytes": 1211598,
+      "sha256": "f62cc65ee8738a82d664d1db70b76a64ce352b2fa76b7ebbc6548c31c9784805"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/trace-h100-pcie.tgz",
+      "relative_path": "trace-h100-pcie.tgz",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/vast-h100-pcie.log",
+      "relative_path": "vast-h100-pcie.log",
+      "bytes": 288,
+      "sha256": "75c2114a4c0fee8154739f6e07ea843b7db08fe915ecc8c6a81464c93b4a738f"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/vast_run.sh",
+      "relative_path": "vast_run.sh",
+      "bytes": 4634,
+      "sha256": "3e2d67a015810bdd98be23d9cac17c8f438c0b4d83d96563e4ae504b0ea6c487"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/verification.json",
+      "relative_path": "verification.json",
+      "bytes": 13942,
+      "sha256": "be1f44257d1ff38f27533ec95f45264fdd45be04c8268a4988e4d2e552b8202b"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/verification.out",
+      "relative_path": "verification.out",
+      "bytes": 13942,
+      "sha256": "be1f44257d1ff38f27533ec95f45264fdd45be04c8268a4988e4d2e552b8202b"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/integrated/results/h100-pcie-primary-retry2/wrapper.log",
+      "relative_path": "wrapper.log",
+      "bytes": 496,
+      "sha256": "c71bc7c6cf26895de76c14fd3a2004b5eee200949cfd5336ba364648be5fd7ee"
+    }
+  ],
+  "file_count": 21,
+  "total_bytes": 20189782,
+  "all_copies_match": true
+}

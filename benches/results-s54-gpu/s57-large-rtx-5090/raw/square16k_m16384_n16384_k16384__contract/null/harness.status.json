@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/w/trace/primitive-results/tile_bench",
+    "16384",
+    "16384",
+    "16384",
+    "/w/run-bundle-rtx-5090/cases/square16k_m16384_n16384_k16384__contract/null.ptx",
+    "mapal_tile_357103a87c7d9d92",
+    "128",
+    "128",
+    "256",
+    "16640",
+    "30",
+    "--contract"
+  ],
+  "exit": 0,
+  "seconds": 21.361,
+  "stdout_sha256": "b90ca188b8a7b0fa706878f96f239566286ef281fbf77ba6b5aa491d472129dd",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

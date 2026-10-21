@@ -1,0 +1,9 @@
+{
+  "created_utc": "2026-10-21T19:58:00.727080+00:00",
+  "archive": ".claude/worktrees/_archive-s54-20261021/s57-handwritten-matrix-preparation",
+  "file_count": 167,
+  "bytes": 68150518,
+  "all_match": true,
+  "scope": "Prepared only; peer review, local LLVM build, GPU verification and arithmetic proof remain pending. No timing admission.",
+  "receipt_sha256": "734c3717fec2fa9d89c3d65c19c513f1ea2b65d4f9db0aa3de98e7fe52a89f1c"
+}

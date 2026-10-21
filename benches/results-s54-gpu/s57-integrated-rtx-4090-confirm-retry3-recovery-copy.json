@@ -1,0 +1,10 @@
+{
+  "utc": "2026-10-21T20:08:26.073568+00:00",
+  "tag": "rtx-4090-confirm-retry3",
+  "all_match": true,
+  "file_count": 21,
+  "bytes": 19741843,
+  "accepted": true,
+  "archive": ".claude/worktrees/_archive-s54-20261021/final-integrated-confirmations-recovery/rtx-4090-confirm-retry3",
+  "receipt_sha256": "a2acb5cf001391501b8806551d66abc3ae47aefa4ded116b08e64d99f92f7967"
+}

@@ -16,11 +16,9 @@
 The compiler is a pipe-and-filter pipeline (FRAMEWORK §7.1) whose correctness story is
 "every stage is a typed weld": naming each weld's datum and each pass's `t_from → t_to`
 makes a miscompile a *located* defect (a weld whose types don't meet, a pass reading
-data nothing delivered) instead of an argument. The physical pair is degenerate today
-— which the map states rather than fights — and the one place it becomes real (the
-backend/runtime seam) is exactly where the project's hardest theorem (E1 done-protocol)
-and biggest cost (H↔D transfer) live. The map keeps that seam visible before any
-backend exists.
+data nothing delivered) instead of an argument. The physical pair appears at the
+backend/runtime seam: native processes and GPU memory/launch boundaries realize emitted
+programs. The component models below keep those transmissions and their obligations visible.
 
 ## 2. The four atoms (at a glance)
 
@@ -58,6 +56,11 @@ two-site execution (S15)**: the host process and the GPU device, with kernels, d
 buffers, and the trap flag resident on the device. FPGA fabric remains a planned `Loc`
 (verilog).
 
+The LLVM GPU leg also realizes `Host`, `Gmem`, `Smem` and `Reg`, with placement over
+the same IR transformations. Its CUDA-driver copies, launches, staging barriers and
+cross-stream events are mapped in [backend-nvptx](components/backend-nvptx/IMPLEMENTATION.md)
+(FRAMEWORK §4.2 and §4.5). This is a leg of LLVM, not a separate compiler pipeline.
+
 **Trm** — **none inside the pipeline** (every pass handoff is a same-`Loc` `Trn`). Real at
 the backend harness boundaries: the llvm differential's `stdout`/exit-code capture (S13),
 and **the first `Trm`s whose cost is real, priced, and latency-visible (S15)**: backend-cuda's
@@ -78,6 +81,7 @@ the E1 `valid/busy/done/result` handshake.
 | rewrite | plan+replay rewriter: const fold/CSE/DCE + map fusion, R1 property harness + testgen | tested (S12) | [DESIGN](components/rewrite/DESIGN.md) | [IMPL](components/rewrite/IMPLEMENTATION.md) |
 | backend-llvm | `F_LLVM` emit (+ `mapal-rt` runtime seam, ADR-0020) | built (P5/M2, S13) | [DESIGN](components/backend-llvm/DESIGN.md) | [IMPL](components/backend-llvm/IMPLEMENTATION.md) |
 | backend-cuda | `F_CUDA` emit (host/device split; kernels + H↔D `Trm`s) | built (P6/M3, S15) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPL](components/backend-cuda/IMPLEMENTATION.md) |
+| backend-nvptx | LLVM GPU realization and placement over IR geometry; CUDA-driver `Trm`s | built; frozen S54 matrix passed; targeted ordering open | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPL](components/backend-nvptx/IMPLEMENTATION.md) |
 | backend-verilog | `F_Verilog` emit + done-protocol | planned (P7/M4) | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPL](components/backend-verilog/IMPLEMENTATION.md) |
 | cli | `mapal build\|run\|dump-ir\|test`, `render` | planned (M5) | [DESIGN](components/cli/DESIGN.md) | [IMPL](components/cli/IMPLEMENTATION.md) |
 
@@ -88,8 +92,8 @@ Status detail: [`docs/STATUS.md`](STATUS.md) (global roll-up, HANDOFF §7.1.1).
 | `Trn` / `Dat` | Placements | Why it matters |
 | --- | --- | --- |
 | `validate` | debug-assert after seal AND the property-test harness — never a mandatory production pass | the oracle's independence is the point; "seal Ok ⇒ validate empty" is a *tested* law, not a call chain |
-| running a Mapal program | `interp` (built) AND each backend target (planned) | one meaning, many realizations — the differential tests are the commuting squares; the interp fibre is authoritative (HANDOFF §7.3) |
-| `Print{newline}` effect | interp's writer-style token now; each backend's runtime later | E2: effect order is semantics — every placement must observe the same token order |
+| running a Mapal program | interp, LLVM CPU/GPU and CUDA built; Verilog planned | one meaning, many realizations — the differential tests are the commuting squares; the interp fibre is authoritative (HANDOFF §7.3) |
+| `Print{newline}` effect | interp's writer-style token and built backend runtimes | E2: effect order is semantics — every placement must observe the same token order |
 
 ## 5. Coherence checklist (§4.5 / §8) against the implementation
 

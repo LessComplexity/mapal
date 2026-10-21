@@ -1,0 +1,212 @@
+[
+  {
+    "fixture": "forked-tile",
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/forked-tile/forked-tile.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/forked-tile/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "forked-tile",
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/forked-tile/forked-tile.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/forked-tile/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "forked-tile",
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/forked-tile/forked-tile.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-cell",
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-cell/member-cell.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-cell/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-cell",
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-cell/member-cell.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-cell/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-cell",
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-cell/member-cell.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-rowfold",
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-rowfold/member-rowfold.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-rowfold/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-rowfold",
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-rowfold/member-rowfold.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-rowfold/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "member-rowfold",
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/member-rowfold/member-rowfold.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-cell",
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-cell/base-cell.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-cell/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-cell",
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-cell/base-cell.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-cell/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-cell",
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-cell/base-cell.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-rowfold",
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-rowfold/base-rowfold.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-rowfold/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-rowfold",
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-rowfold/base-rowfold.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue,devmap,rowfold",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-rowfold/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "fixture": "base-rowfold",
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/consumers/base-rowfold/base-rowfold.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  }
+]

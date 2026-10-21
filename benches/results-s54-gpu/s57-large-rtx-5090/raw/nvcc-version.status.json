@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "nvcc",
+    "--version"
+  ],
+  "exit": 0,
+  "seconds": 0.009,
+  "stdout_sha256": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

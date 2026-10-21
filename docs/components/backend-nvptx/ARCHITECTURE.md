@@ -12,6 +12,10 @@ what a *multi-computation* program looks like at the device: five parts measured
 Every per-cell consumer of a tile site ran on the host behind a whole copy-out; chains paid a
 copy-out and a copy-in; independent sites ran one after another.
 
+Built realizations are mapped in [IMPLEMENTATION.md](IMPLEMENTATION.md). Selection acceptance
+and current validation state belong in [STATUS.md](STATUS.md); historical measurements below
+motivate the placement rules but do not certify the final integrated build.
+
 ## 1. Why model it categorically
 
 Because the expensive thing is not a kernel, it is a **transmission** the program never asked
@@ -83,20 +87,23 @@ exact face is bit-identical to the interpreter wherever a morphism runs (S53 dif
 a straight-line object's slot is a compile-time offset of the function's one allocation), `Smem` (one
 block's shared memory), `Reg` (one thread). Adjacency: `Host ↔ Gmem` over PCIe; `Gmem → Smem →
 Reg` inside an SM; `Reg → Gmem` by a store. A value in `Reg` is visible to one thread, in `Smem`
-to one block, in `Gmem` to every block **after a grid-wide wait**.
+to one block, in `Gmem` to a consumer **after producer writes are ordered before that consumer**.
 
 | `Trm` | `c_from → c_to` | carries | cost fact (S52/S54 traces) |
 | --- | --- | --- | --- |
 | `h2d` | `Host → Gmem` | a whole array, or (S54) the rows `Δ` wrote | 64 MB: 3–5 ms pageable; `cuMemcpyHtoD` |
 | `d2h` | `Gmem → Host` | a whole array, or one element | 64 MB: 3.2–7.3 ms; synchronous (S54: on the producer's stream, `cuMemcpyDtoHAsync` + that stream's sync) |
 | `launch` | `Host → Gmem` (control) | a kernel and its pointer arguments | 5–10 µs; asynchronous on a stream |
-| grid-wide wait | `Gmem → Gmem` | the fact that every block stored | implicit between launches on one stream; an event across streams (`mapal_gpu_event`) |
 | `g2s` (stage) | `Gmem → Smem` | a panel | `cp.async` / vector loads; completed by `barrier0` |
 | `s2r` | `Smem → Reg` | a fragment | `ld.shared` / `ldmatrix` |
 | store | `Reg → Gmem` | an output tile | one vector store per `lanes` columns; **S54 `rowfold-layout`: per `lanes` rows of a column (column-major)** |
 
 Law 2: each of these crosses a boundary; a same-location flow (the host loop, the register
-step) is a `Trn`. Law 1: the host fold reads `d` at `Host`, so `d` is delivered by `d2h` or the
+step) is a `Trn`. Producer-before-consumer ordering within the shared `Gmem` location is
+control, not an array transmission: one stream provides launch order, and cross-stream
+dependencies use an event (`mapal_gpu_event`). That event records and waits without moving
+the array; the implementation map names this ordering separately from data copies.
+Law 1: the host fold reads `d` at `Host`, so `d` is delivered by `d2h` or the
 fold does not run — there is no third option, which is why the whole-sum programs keep their
 copy-out until ADR-0028's canonical tree exists.
 
@@ -121,7 +128,9 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   tile kernel then runs its lanes and its grid down the rows too. Measured (S54,
   `rowfold-*.txt`): the strided fold it replaces costs only 0.01–0.1 ms at 4096 (L1 serves each
   sector to a thread's next steps) and the column-major tile store costs 0–4% (GDDR) to 8–22%
-  (H100), so the rung ships OFF; it is free only with a staged (shared-memory) store.
+  (H100). Selection is per profile and face: the current table enables this layout on RTX 4090
+  Contract and A100 Exact and disables it on the other measured classes. Final acceptance is
+  recorded in STATUS; the placement condition remains the sole-reader proof.
 - **R1 (fold into the store).** A per-cell morphism `m` runs **inside** device kernel `S`,
   between the accumulator and the store, when every operand of `m` is (i) `S`'s output at
   footprint `Same`, (ii) a member of `S`'s group already (a chain `x → y → z` composes by
@@ -143,7 +152,8 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   closed-form and read only at the cell's own index (`Same`) is evaluated in the cell, never
   stored (`cell-law`): `ew` is one kernel that reads nothing.
 - **R3 (kernel boundary).** A reader whose footprint is `Panel` or `Whole` of a device output
-  needs every block's store: `Gmem` plus a grid-wide wait — a `launch`. This is amendment 9's
+  needs every producer block's store: `Gmem` plus producer-before-consumer ordering at the next
+  `launch`. This is amendment 9's
   sentence with the fact that decides it. The output stays in `Gmem` (`resident`); the reader
   launches on it.
 - **R4 (host).** A whole-array float fold (ADR-0028 D4), an unproven index (device traps are
@@ -183,15 +193,19 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   is allocated before the first chained launch, a one-element `d2h` runs on its producer's
   stream, and a chain stream joins program order (the legacy stream) at each launch by an event
   the runtime records only when legacy work was enqueued since. After R1/R2 fold the joins onto
-  the device, indep/diamond/mlp2 take the device-only shape (`twin`). Shipped ON on the A100 and
-  RTX 5090 only (`GPU_RUNGS_OFF`; `benches/results-s54-gpu/streams-tables.md`). `pinned`: a host array
+  the device, indep/diamond/mlp2 take the device-only shape (`twin`). The current table enables
+  streams only on A100. S56's two integrated RTX 5090 hosts favor OFF in every changed cell;
+  [the selection report](../../performance/s54-per-arch-selection.md) records this decision and
+  its evidence. `pinned`: a host array
   copied inside a loop is page-locked once before its first copy (a copy that runs once never
   repays the registration). `pdl`: every tile kernel opens with
   `griddepcontrol.wait; griddepcontrol.launch_dependents`, and a kernel launched right behind
   another on its stream is a programmatic dependent launch.
 
 **Kernel boundaries are the consequence.** A program's launches are exactly the R0/R2 sites
-after R1's groups, and the `Trm`s are exactly R3's waits, R4's and R6's copies, R7's events.
+after R1's groups. R4/R6 determine host/device array transmissions, while R3/R7 determine
+ordering between device producers and consumers; launches and intra-device staging/stores
+use the boundary transmissions listed in §4.
 "Fuse" is never spelled in the code; the probes' static counts (`benches/gpu/fusion_report.py`)
 and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 
@@ -220,8 +234,9 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 3. **Placement totality.** Every morphism has a `TrnLoc` after R0–R7; the fallthrough is R4,
    which is always defined. A `CellSite` the kernel cannot address falls to R4, not to a panic.
 4. **Dependency mediation.** A device reader of a host-produced array is mediated by `h2d`
-   (R6); a host reader of a device output by `d2h`; two streams by an event. The trace counts
-   each; the static report counts the calls.
+   (R6); a host reader of a device output by `d2h`. Device streams share `Gmem`, so their
+   dependency needs ordering rather than a new data transmission; an event supplies that
+   ordering. The trace and static report expose the corresponding runtime calls.
 5. **Composition soundness.** A group (R1) is the composite of its members: its stores are the
    union of the members' outside-needed outputs, nothing redescribed. The device unit's text for
    the group is the host bodies' text, so `data(C) = ⊎ data(members)`.
@@ -230,22 +245,24 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 
 ## 7. What a rung is here
 
-Every placement clause is a measurement-only arm (`GpuRungs` field, `emit --gpu-off=<name>`,
-an arm in `bundle.sh`), shipped ON per part only by a `GPU_RUNGS_OFF` row whose cite names the
-probe program and the ON/OFF medians: `epilogue` (R1), `devmap` and `cell-law` (R2), `rowfold`
+Every placement clause has a measurement arm (`GpuRungs` field, `emit --gpu-off=<name>`,
+an arm in `bundle.sh`). Rungs default ON; a matching `GPU_RUNGS_OFF` row disables one for its
+profile, fill and face, with a citation to the supporting measurement: `epilogue` (R1), `devmap` and `cell-law` (R2), `rowfold`
 and `rowfold-layout` (R0 for folds, the store order), `lane-stride` (R0 for strided one-row
 sites), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
 policy from `l2_bytes`; `l2-gate` is `raster`'s measurement arm, the derivation without its L2
-gate). OFF is today's text byte for byte. Neither `raster` nor `l2-window` is a `Trn` or a `Trm`:
+gate). An OFF arm disables that rung while preserving the other selected rungs; it is not a
+historical compiler baseline. Neither `raster` nor `l2-window` is a `Trn` or a `Trm`:
 the grid order is how one realization walks its blocks, the window a cache policy on a `launch`
 over `Gmem` the graph proves is read again — `l2-window`'s output case is R6's residency seen from
 the L2 (a chain's intermediate, read by the next launch). A rung's fill key is the grid it
 ends up in: the host kernel for an epilogue, its own grid for a cell kernel, the union for
 streams (`profile.rs:Fill`).
 
-The table is a rung too (`arch-rungs`; `emit --gpu-off=arch-select`): OFF ships every rung ON,
-the S52 text, so ON vs OFF prices the per-part selection on every kernel and probe. A row's face
+The table is a rung too (`arch-rungs`; `emit --gpu-off=arch-select`): OFF bypasses the table and
+enables every rung, including S54 mechanisms, so ON vs OFF prices the per-part selection on
+every kernel and probe. It is not S52 or a placement-disabled baseline. A row's face
 key is the kernel the rung folds into: `Exact`, `Contract` (the FMA tile, and TF32 with it — a
 contract face), `Tf32` (the `mma` kernel alone; S54: the 3090's `.minnctapersm` pays on the FMA
 tile and costs 11% on `mma`). `benches/gpu/rungs.py` decides a rung measured for the first time
@@ -275,6 +292,18 @@ launch). Static before/after on five parts: `benches/results-s54-gpu/arch-select
 
 ## 8. What is not placed here
 
+- Joint CPU/GPU cost-based placement and concurrent CPU task execution remain open questions.
+  `Host` and `Gmem` are existing `Loc`; `Emission` carries separate host/device modules.
+  In the built `emit_detailed` transformation, GPU profiles disable CPU task parallelism,
+  inherit generic host profile facts, and `emit_tiled_map_realize` selects eligible GPU
+  sites before CPU fallbacks. Host LLVM still receives ordinary optimization. This is a
+  current realization limit, not evidence that host work is unoptimized or that moving a
+  particular operation would improve performance (FRAMEWORK §4.5 laws 1, 4 and 6).
+- Paged placement of retained `Dat` and cross-request shared-block ownership remain open
+  questions. Existing `Arena` offsets, retained rows and `Trm` readiness do not implement
+  a runtime page map, reference counts or completion-aware page retirement. A proposed
+  placement must preserve values, bounds, aliases, writes and all consumers' completion
+  before reuse (FRAMEWORK §4.5 laws 1, 4 and 5); no paging gain is established here.
 - The whole float sum on the device (ADR-0028 D4; the canonical-tree re-pin is Sapir's call).
 - Precision placement (ADR-0039 is a candidate; no storage type, no flag deletion).
 - Demand-restricted sites (every reader `Const(k)` → compute only those rows): correct and
