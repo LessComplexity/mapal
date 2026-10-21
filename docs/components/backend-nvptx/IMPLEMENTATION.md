@@ -43,6 +43,12 @@ The existing composition limits remain explicit: `set_gpu_arms` forms groups bef
 sites and unproven row-local shapes. These are ARCHITECTURE §5/§7's placement constraints,
 not exceptions introduced by this map (FRAMEWORK §4.5 laws 1 and 5).
 
+Planned correction, still unapplied: the [ordering candidate](../../performance/s57-ordering-evidence.md#reviewed-ordering-candidate--unapplied)
+reuses grouped ownership for `ResidentPlan::stream_of` and the legacy-consumer veto.
+Its private `grouped_writer` helper factors the existing `FnEmit::arena` query; it is a
+candidate symbol, not shared implementation. Shared source retains the missing member
+dependency cases documented there until ordinary GPU validation and integration.
+
 The [saved host LLVM audit](../../../benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md)
 distinguishes these existing host hints from device attributes and explicit runtime
 dependencies. In the inspected recurrence, GPU declarations expose neither device memory

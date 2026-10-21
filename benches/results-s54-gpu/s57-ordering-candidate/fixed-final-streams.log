@@ -1,0 +1,25 @@
+   Compiling mapal-backend-llvm v0.0.1 (/private/tmp/mapal-ordering-fix/source/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 5.58s
+     Running tests/streams.rs (target/release/deps/streams-65bd56ffb4529b4f)
+
+running 17 tests
+test a_one_element_read_is_not_pinned ... ok
+test independent_device_only_sites_take_two_streams ... ok
+test a_single_chain_keeps_one_stream ... ok
+test grouped_loop_carry_views_stay_on_the_legacy_stream ... ok
+test diamond_waits_on_its_join_edge_only ... ok
+test a_whole_copy_out_keeps_one_stream ... ok
+test a_filled_part_keeps_one_stream_unless_the_gate_is_off ... ok
+test grouped_member_capture_uses_one_producer_wait ... ok
+test grouped_member_corners_wait_on_the_physical_writer ... ok
+test two_chains_with_no_edge ... ok
+test grouped_member_fork_waits_only_for_the_other_chain ... ok
+test pins_are_the_arrays_that_cross_the_bus_repeatedly ... ok
+test grouped_member_legacy_cell_keeps_the_conservative_fallback ... ok
+test a_part_whose_table_turns_streams_off_keeps_one_stream ... ok
+test grouped_member_row_fold_keeps_its_ordered_whole_copy ... ok
+test pdl_is_hopper_and_later_only ... ok
+test every_off_arm_is_the_one_stream_pageable_text ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

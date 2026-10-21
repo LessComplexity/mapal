@@ -1,7 +1,8 @@
 # S57 generated ordering evidence
 
 2026-10-21. These are **compiler-output investigations**, using frozen source
-`b4152c5f4d9ad802d0388c1c64b628091d494e6a`. No source fix, GPU execution or disassembly
+`b4152c5f4d9ad802d0388c1c64b628091d494e6a`. A later isolated ordering candidate is documented
+below; no ordering fix has been applied to shared source and no GPU execution or disassembly
 has occurred for these fixtures. Each fixture has Exact/Contract host and device LLVM,
 interpreter output, exact commands and before/after source/binary hash receipts.
 The original temporary artifact paths in those receipts are preserved; the linked copies
@@ -59,7 +60,34 @@ dependency safe. Larger variants require their own oracle and emitted-edge check
 they are not silently included in this baseline.
 
 The [planned allocation change](../../openspec/changes/eliminate-unmaterialized-gpu-allocations/proposal.md)
-must resolve this proof obligation before applying dead allocation elimination. Source and
-binary edits remain deferred until the frozen validation completes. Future changes must
+must resolve this proof obligation before applying dead allocation elimination. Frozen
+validation is complete; ordinary ordering execution remains pending. Future changes must
 show their before/after LLVM or runtime evidence, including refuted cases and controls;
 no performance gain is inferred here.
+
+## Reviewed ordering candidate — unapplied
+
+The [candidate receipt](../../benches/results-s54-gpu/s57-ordering-candidate/candidate-receipt.json)
+binds the patch, exact commands and recovery snapshot. It factors the existing grouped-writer
+query in `resident.rs`, canonicalizes aliases in `ResidentPlan::stream_of`, and uses that
+physical producer for launch selection, feeder events and element readback. The legacy
+consumer veto uses the same ownership relation. The arena guard, allocation/free calls,
+runtime ABI, chain prologue and loop/guard eligibility remain unchanged.
+
+The [runtime/API proof](../../benches/results-s54-gpu/s57-ordering-candidate/producer-completion-proof.md)
+ties nonblocking stream behavior, event recording/waiting and producer-stream readback to
+the actual runtime. Exact final regressions against old production fail in the four intended
+cases (member readback, cross-chain fork, epilogue capture and conservative legacy-cell
+fallback), while two controls pass. The restored candidate passes all 50 focused checks.
+Seven fixtures in Exact/Contract produce 14 device LLVM units byte-identical to baseline;
+materialized-raw, fork and capture allocation/free call counts are unchanged. The legacy-cell
+case intentionally selects the existing conservative placement. These establish emitted
+dependencies and API guarantees, not observed GPU wrong values or performance gains.
+
+Both authorized ordinary-execution attempts failed at Vast allocation before upload; their
+instances are independently absent. No third attempt is authorized. The candidate remains
+isolated at `/private/tmp/mapal-ordering-fix/source` pending task 1.3, with a hash-verified
+2,385-file, 59,511,743-byte recovery under
+`.claude/worktrees/_archive-s54-20261021/s57-ordering-candidate-20261021T212439Z`.
+Build caches and duplicate prior inputs are excluded. No allocation elimination has been
+applied; removing a nonzero free can remove an incidental completion wait.

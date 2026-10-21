@@ -1,0 +1,9 @@
+   Compiling mapal-backend-llvm v0.0.1 (/private/tmp/mapal-ordering-fix/source/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 2.01s
+     Running unittests src/lib.rs (target/release/deps/mapal_backend_llvm-5a567d755e090304)
+
+running 1 test
+test func::resident::tests::grouped_stream_lookup_uses_aliases_and_keeps_unknowns_legacy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.00s
+

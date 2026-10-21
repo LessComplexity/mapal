@@ -3,9 +3,10 @@
 The only checkout is `s54-gpu-fusion`. Frozen GPU measurements bind source `b4152c5`;
 the completed validation records are locally committed as `0ca0507`. Preserve the ignored recovery archives
 under `.claude/worktrees/_archive-s54-20261021/` and untracked `oainotes.md`. Do not push.
-The shared source now includes the proved loop-route replay repair. The newest immutable checkpoint is
-[S57 frozen validation complete](sessions/2026-10-21-s57-frozen-validation-complete.md).
-The earlier20:45 checkpoint remains historical; this mutable continuation tracks later work.
+The shared source includes the proved loop-route replay repair, locally committed as `627a17c`.
+The newest immutable checkpoint is
+[S57 proof work closed](sessions/2026-10-21-s57-proof-work-closed.md).
+Earlier checkpoints remain historical; this mutable continuation tracks later work.
 
 ## Completed frozen validation
 
@@ -46,7 +47,7 @@ repaired emitter is `/private/tmp/mapal-replay-shared-host-target/release/exampl
 SHA `b8de9090d5f3ddcdc9a36543e5385f665440134f85a4a9985d5aecc3a58bd759`.
 The old `target/release/examples/emit` intentionally remains the frozen baseline.
 
-## Correctness pilot: one failed allocation, no GPU result
+## Correctness pilot: two failed allocations, no GPU result
 
 The user approved one 13.4MB correctness-only attempt: ordinary ordering first (200 fresh
 processes), then small composed matrix verification against handwritten CUDA/cuBLAS and
@@ -80,7 +81,7 @@ cat /private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/veri
 cat /private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest-v5.json
 ```
 
-At21:20 UTC there are zero active task rentals. Never touch unrelated instances
+At the final handoff there are zero active task rentals or local task jobs. Never touch unrelated instances
 `57065574` or `57100404`. GPU agent owns rental/upload/cleanup. Preserve the frozen benchmark payloads/tools as evidence. Both bound launchers are now
 closed; apply a source repair only after its separate proof/review. Isolated diagnostic
 snapshots remain under the paths below. Do not run integrated timing acceptance on correctness-only output.
@@ -92,8 +93,9 @@ Keep numerical success, arithmetic-route proof and timing admission distinct.
    FRAMEWORK §4.5 review reconciled, drift zero-dead, strict validation passed and
    `verify-s54-gpu-selection` archived as `2026-10-21-verify-s54-gpu-selection`.
    Benchmark success does not close targeted ordering duties.
-2. Diagnose the two pre-upload allocation failures before proposing any further ordinary
-   ordering/matrix pilot. The approved attempts are exhausted; no GPU result exists.
+2. Read-only diagnosis of both pre-upload allocation failures is complete without a proved
+   cause. The approved attempts are exhausted; no GPU result exists. Any further ordinary
+   ordering/matrix pilot needs new authorization; do not rerun a consumed launcher.
    Payloads and exact validators remain under `ordering-runtime/`, `large-composed/`
    and `correctness-pair/` in the operational base. Timeout aborts all later phases.
 3. **Replay repair complete:** `repair-loop-route-replay` is archived. Exact diagnostics
@@ -105,13 +107,18 @@ Keep numerical success, arithmetic-route proof and timing admission distinct.
    are recorded; no GPU execution is claimed. Three bounded original native-emission
    timeouts remain an independent backend question. Full reproduction is archived locally.
 
-4. Apply `eliminate-unmaterialized-gpu-allocations` only after dependency proof. The
+4. Continue `eliminate-unmaterialized-gpu-allocations` (3/15 tasks). The
    [ordering evidence](performance/s57-ordering-evidence.md) establishes missing emitted
    edges for stored-member host readback and another-chain tile consumption. Same-stream
    and member-row-fold suspicions were refuted for inspected shapes. The planned touch map
    uses existing group ownership, alias canonicalization and output-storage facts.
+   Runtime/API proof and a reviewed ordering-only candidate are now preserved in the
+   [candidate packet](../benches/results-s54-gpu/s57-ordering-candidate/candidate-receipt.json).
+   Four exact regression tests fail on old production, two controls pass; the candidate
+   passes 50 focused checks and preserves all 14 device LLVM units. It remains **unapplied**
+   at `/private/tmp/mapal-ordering-fix/source` pending ordinary GPU baseline task1.3.
    Preserve the arena guard. A nonzero free currently synchronizes; omitting an allocation
-   can remove that incidental wait. Predicted allocation counts are not measured gains.
+   can remove that incidental wait. No allocation removal or measured gain is claimed.
 5. Continue `benchmark-large-composed-gpu-workloads`: full recurrent checkpoints after
    replay repair; matched numerical contracts and clocks across Mapal, naive/handwritten,
    cuBLAS and PyTorch eager/compiled; then retention/allocation controls across families.
