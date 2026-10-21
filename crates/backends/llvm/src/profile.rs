@@ -687,6 +687,31 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
                files' trace totals)",
     },
+    // S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`): host placement rungs, decided on
+    // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
+    // own `load_ms` (context + module: 170–790 ms and, on the H100s, ±200 ms between processes,
+    // which no arm changes). ON where OFF/ON > 1.01 in both sessions (two boxes); the process wall
+    // is in the files beside it. `delta-h2d` and `lane-stride` measured ON on all five parts.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "retain-resident",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "retain-resident-rtx-5090.txt / retain-resident-rtx-5090-confirm.txt decode_1024_256 OFF/ON loop \
+               1.008 / 1.016 (ON 343–360 / 328–366 ms vs OFF 345–363 / 336–351 ms, overlapping), process wall \
+               1.022 / 1.005: not > 1% in both sessions. The whole K/V site is launch-bound there: traced kernel \
+               76 vs 82 ms over 1024 steps",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "retain-resident",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "retain-resident-rtx-4090.txt / retain-resident-rtx-4090-confirm.txt decode_1024_256 OFF/ON loop \
+               1.025 / 0.981 (ON 337–367 / 357–411 ms vs OFF 341–365 / 341–419 ms, overlapping), process wall \
+               1.011 / 0.988: the sign changes between sessions. The whole K/V site costs what the row does \
+               there (traced kernel 103 vs 105 and 108 vs 110 ms over 1024 steps, exact)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -3549,6 +3574,24 @@ mod tests {
                     g.arch = "sm_87";
                 }
                 assert_eq!(other.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+            }
+        }
+    }
+
+    /// S54 R5 (`retain-resident-*.txt`): the delta upload and the strided
+    /// one-row site ship on every measured part; retention on the resident
+    /// buffer only where the whole K/V site costs more than its row (not the
+    /// 4090, not the 5090).
+    #[test]
+    fn r5_rungs_are_the_measured_table() {
+        for p in GPU_MEASURED {
+            for wps in [0, 64] {
+                for contract in [false, true] {
+                    let r = p.gpu_rungs(wps, contract);
+                    assert!(r.resident && r.delta_h2d && r.lane_stride, "{}", p.name);
+                    let off = ["rtx-4090", "rtx-5090"].contains(&p.name);
+                    assert_eq!(r.retain_resident, !off, "{}", p.name);
+                }
             }
         }
     }

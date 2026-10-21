@@ -138,10 +138,11 @@ done
 # off (S54 `retain-resident`, `delta-h2d`, `lane-stride`), the s54-base placement
 # (all three off), and every site a round trip (S53's arm); one untraced process
 # (`wall_s`) and one under MAPAL_GPU_TRACE (`traced_wall_s`: a traced launch
-# synchronizes); the launches per kernel from rep 1.
+# synchronizes); the launches per kernel from rep 1. Five repetitions: an arm
+# within 10% of ON needs its sign stable across them and across boxes.
 if [ -x prog_decode_1024_256 ]; then
     say "-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1"
-    for r in 1 2 3; do
+    for r in 1 2 3 4 5; do
         for face in "" _c; do
             for arm in "" .off-retain-resident .off-delta-h2d .off-lane-stride \
                 .off-retain-resident+delta-h2d+lane-stride .off-retain-delta .on-retain-delta .off-retain-delta+resident; do

@@ -120,3 +120,18 @@ The emulator caught one real bug before any box ran: the strided site on the con
 emitted `llvm.fma`, while the CPU (which does not tile it) keeps the map's `fmul` + `fadd`; the
 contract-face oracle differed in the last digits. Fixed: a strided site keeps the host step
 (`gpu.rs:kernel_text`, `contract && b.clane == 1`).
+
+== 4. Dynamic counts on the box (decode_1024_256, MAPAL_GPU_TRACE totals; identical on all five
+parts, both faces; retain-resident-<part>.txt)
+
+| arm | launches | h2d | d2h | bytes in | bytes out |
+|---|---:|---:|---:|---:|---:|
+| on (shipped) | 4096 | 2048 | 1024 | 3,144,704 | 1,048,576 |
+| off-retain-resident | 4096 | 2048 | 1024 | 3,144,704 | 1,048,576 |
+| off-delta-h2d | 4096 | 2048 | 1024 | 1,074,790,400 | 1,048,576 |
+| off-lane-stride | 3072 | 2048 | 2048 | 6,290,432 | 3,144,704 |
+| off-retain-resident+delta-h2d+lane-stride (= s54-base) | 3072 | 2048 | 2048 | 1,077,936,128 | 1,074,790,400 |
+| off-retain-delta+resident (S52 round trips) | 4096 | 8192 | 4096 | 4,837,081,088 | 2,152,726,528 |
+
+ON per step after the first: x's written row (1 KB) and q (1 KB) in, o (1 KB) out, four launches
+(K row, V row, s, o). s54-base per step: x whole (1 MB) and s (4 KB) in, K whole (1 MB) and o out.
