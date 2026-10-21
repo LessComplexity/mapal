@@ -234,6 +234,21 @@ pub struct GpuRungs {
     /// tile site's, so it is built either way) no effect: 0.98–1.02 wherever the
     /// ranges are not swamped by the box's outliers.
     pub cell_law: bool,
+    /// S54 R7: device sites with no `PathPlan` path between them launch on
+    /// separate streams (one per chain), an event on every cross-chain edge,
+    /// when every such site's output stays on the device. Off: one stream.
+    pub streams: bool,
+    /// Open the streams only where two independent grids' last waves fit one
+    /// wave (the wave rule, `func/resident.rs:waves_merge`); off = whenever
+    /// two chains exist. A measurement arm for the rule itself.
+    pub stream_gate: bool,
+    /// Page-lock (`cuMemHostRegister`) a host array that crosses the bus
+    /// repeatedly (a copy inside a loop), once, before its first copy. Off:
+    /// pageable copies.
+    pub pinned: bool,
+    /// sm_90+: a site launched right behind another kernel on its stream is a
+    /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
+    pub pdl: bool,
 }
 
 impl GpuRungs {
@@ -271,11 +286,15 @@ impl GpuRungs {
         epilogue: true,
         devmap: true,
         cell_law: true,
+        streams: true,
+        stream_gate: true,
+        pinned: true,
+        pdl: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 32] = [
+    pub const NAMES: [&'static str; 36] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -308,6 +327,10 @@ impl GpuRungs {
         "epilogue",
         "devmap",
         "cell-law",
+        "streams",
+        "stream-gate",
+        "pinned",
+        "pdl",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -345,6 +368,10 @@ impl GpuRungs {
             "epilogue" => &mut self.epilogue,
             "devmap" => &mut self.devmap,
             "cell-law" => &mut self.cell_law,
+            "streams" => &mut self.streams,
+            "stream-gate" => &mut self.stream_gate,
+            "pinned" => &mut self.pinned,
+            "pdl" => &mut self.pdl,
             _ => return None,
         })
     }
@@ -658,6 +685,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             );
             if id == entry {
                 fe.set_perf_timing(opts.perf_timing);
+                // S54 `streams`: the device sites' independence (the host
+                // stays sequential on a GPU profile).
+                fe.set_path_plan(path_plan.as_ref().filter(|_| profile.gpu().is_some()));
             }
             fe.set_gpu_arms(opts.gpu, opts.reduced);
             if let Some(&site) = body_sites.get(id) {
@@ -727,11 +757,17 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         if funcs.contains("@mapal_gpu_launch_l2(") {
             out.push_str(crate::func::gpu::GPU_L2_DECL);
         }
+        // `streams`, `pinned` (S54): each entry declared only when called.
+        for (call, decl) in crate::func::gpu::S54_DECLS {
+            if funcs.contains(call) {
+                out.push_str(decl);
+            }
+        }
     }
     if arena {
         out.push_str(crate::func::gpu::ARENA_DECL);
     }
-    // `epilogue` and `devmap` both launch over n pointers: one declaration.
+    // `epilogue`, `devmap` and `streams` launch over n pointers: one declaration.
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
     }
@@ -768,11 +804,16 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // The runtime's init is `main`'s first call exactly when a site calls the
     // runtime: the same gate as `GPU_INIT_DECL`.
     let prologue = if gpu_host {
-        crate::func::gpu::init_call(crate::func::gpu::host_rungs(
-            profile,
-            opts.contract,
-            opts.gpu,
-        ))
+        crate::func::gpu::init_call(
+            crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu),
+            // Streams are opened where a launch names one: `launchv` on stream 0
+            // is also `epilogue`'s and `devmap`'s (S54 integration).
+            funcs
+                .split("@mapal_gpu_launchv(i64 ")
+                .skip(1)
+                .any(|t| t.split(", ").nth(1).is_some_and(|s| s != "i32 0")),
+            crate::func::gpu::pdl(profile, opts.contract, opts.gpu),
+        )
     } else {
         String::new()
     };

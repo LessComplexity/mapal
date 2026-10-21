@@ -38,8 +38,11 @@ import sys
 from collections import defaultdict
 
 EPS = 0.01  # no effect within ±1%: the same ratio differs by a median 0.5-1.2% between two boxes (S54 base vs confirm)
-# Rungs decided once per module (gpu.rs `host_rungs`); an S54 item whose rung is read there adds it.
-HOST = {'resident', 'devgen', 'eager-init', 'retain-delta'}
+# Rungs decided once per module (gpu.rs `host_rungs`). S54's placement rungs are read there too,
+# except `epilogue`, `raster` and `l2-gate`, which a site's own launch reads at its fill.
+HOST = {'resident', 'devgen', 'eager-init', 'retain-delta', 'arena', 'devmap', 'cell-law', 'delta-h2d',
+        'retain-resident', 'lane-stride', 'rowfold', 'rowfold-layout', 'streams', 'stream-gate', 'pinned',
+        'pdl', 'l2-window'}
 COMPOSITE = {'arch-rungs', 'fma-regs'}
 FACE = {'_exact': 'Exact', '_c': 'Contract', '_tf': 'Tf32'}
 

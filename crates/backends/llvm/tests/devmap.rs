@@ -21,7 +21,7 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
     // R2 alone (S54 integration): R1 (`epilogue`) takes these programs'
     // per-cell steps into the sites' stores first, and `arena` lays out their
     // allocations; each item's own tests pin those.
-    for r in ["epilogue", "arena"] {
+    for r in ["epilogue", "arena", "streams", "pinned", "pdl"] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
     emit_detailed(

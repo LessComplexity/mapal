@@ -34,15 +34,16 @@ fn on() -> GpuArms {
     off("arena")
 }
 
-/// The shipped emission, `arena` included.
+/// The shipped emission, `arena` included; S54's R7 host rungs (`streams`,
+/// `pinned`, `pdl`) held off — they have their own tests (`tests/streams.rs`).
 fn shipped() -> GpuArms {
-    GpuArms::default()
+    offs(&[])
 }
 
-/// The measurement arm with each of `rungs` forced off.
+/// The measurement arm with each of `rungs` forced off (and R7 held off).
 fn offs(rungs: &[&str]) -> GpuArms {
     let mut a = GpuArms::default();
-    for r in rungs {
+    for r in rungs.iter().chain(&["streams", "pinned", "pdl"]) {
         *a.off.rung(r).expect("a rung") = true;
     }
     a

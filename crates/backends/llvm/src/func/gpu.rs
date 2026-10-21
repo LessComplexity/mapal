@@ -59,14 +59,28 @@ pub(crate) const GPU_INIT_DECL: &str = "declare void @mapal_gpu_init(i32)\n";
 pub(crate) const GPU_TILE_DECL: &str =
     "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
 
-/// `mapal_gpu_init`'s flag bit; `mapal_gpu.c` reads the same one.
+/// `mapal_gpu_init`'s flag bits; `mapal_gpu.c` reads the same ones.
 pub(crate) const GPU_INIT_EAGER: u32 = 1;
+/// S54: the module launches on chain streams (the runtime creates them).
+pub(crate) const GPU_INIT_STREAMS: u32 = 2;
+/// S54: every tile kernel opens with `griddepcontrol.wait` ([`pdl`]), so the
+/// runtime may launch one right behind another as a dependent launch.
+pub(crate) const GPU_INIT_PDL: u32 = 4;
 
 /// `main`'s first call in a module with a GPU site: hands the runtime its host
-/// rung. Off, the runtime does nothing until the first site, the S52 path.
-pub(crate) fn init_call(rungs: crate::GpuRungs) -> String {
-    let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER;
+/// rungs. Off, the runtime does nothing until the first site, the S52 path.
+pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool) -> String {
+    let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER
+        + u32::from(streams) * GPU_INIT_STREAMS
+        + u32::from(pdl) * GPU_INIT_PDL;
     format!("  call void @mapal_gpu_init(i32 {flags})\n")
+}
+
+/// S54 `pdl`: programmatic dependent launch exists from sm_90 (PTX ISA:
+/// `griddepcontrol` requires sm_90). One answer for the kernel text and the
+/// runtime flag — a kernel launched dependent without the wait would race.
+pub(crate) fn pdl(profile: &TargetProfile, contract: bool, arms: crate::GpuArms) -> bool {
+    profile.gpu().is_some_and(|g| g.sm() >= 90) && host_rungs(profile, contract, arms).pdl
 }
 
 /// The rungs a GPU profile ships for one decision (S53): its measured table at
@@ -133,6 +147,22 @@ pub(crate) const LAUNCHV_DECL: &str =
 
 /// The most pointers one launch passes (`mapal_gpu.c`'s argument array).
 pub(crate) const LAUNCHV_MAX: usize = 16;
+
+/// S54 entries (`streams`, `pinned`), each declared only where it is called,
+/// so a module that never opens a stream or pins keeps its S53 text.
+/// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
+pub(crate) const S54_DECLS: [(&str, &str); 4] = [
+    (
+        "@mapal_gpu_event(",
+        "declare void @mapal_gpu_event(i32, i32)\n",
+    ),
+    (
+        "@mapal_gpu_d2h_on(",
+        "declare void @mapal_gpu_d2h_on(i32, ptr, i64, i64, i64)\n",
+    ),
+    ("@mapal_gpu_pin(", "declare void @mapal_gpu_pin(ptr, i64)\n"),
+    ("@mapal_gpu_unpin(", "declare void @mapal_gpu_unpin()\n"),
+];
 
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
 /// launches it with exactly this many, so the two must agree.
@@ -203,6 +233,21 @@ pub(crate) struct Launch {
     /// The rungs this site's kernel is emitted with: the profile's table at
     /// the site's fill, under the measurement arms.
     pub rungs: crate::GpuRungs,
+}
+
+impl Launch {
+    /// Blocks one wave holds: every SM times the blocks resident at this
+    /// geometry (the derived tile's own count; for the one-thread-per-cell
+    /// kernel, the thread and block limits of one SM).
+    pub(crate) fn wave(&self, gpu: &Gpu) -> u64 {
+        let per_sm = self
+            .wgmma
+            .map(|w| w.blocks_per_sm)
+            .or(self.mma.map(|m| m.blocks_per_sm))
+            .or(self.tiled.map(|t| t.blocks_per_sm))
+            .unwrap_or_else(|| (gpu.max_threads_per_sm / self.block).min(gpu.max_blocks_per_sm));
+        gpu.sms * per_sm.max(1)
+    }
 }
 
 /// The staged kernel needs the separable shape the CPU's register-blocked rung
@@ -949,6 +994,7 @@ fn kernel_text(
         contract: contract && site.b.clane == 1,
         rungs: l.rungs,
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
+        pdl: pdl(profile, contract, arms),
         async_tail: None,
         sync_tail: None,
         raster: (l.gx, l.raster),
@@ -1163,6 +1209,8 @@ struct Kernel<'s> {
     contract: bool,
     rungs: crate::GpuRungs,
     profile_gpu: Gpu,
+    /// S54 `pdl`: open with `griddepcontrol.wait` (and let a dependent launch).
+    pdl: bool,
     /// The panel loop's induction values, threaded from its head to its latch.
     async_tail: Option<(String, String, u64)>,
     sync_tail: Option<(String, String)>,
@@ -1510,6 +1558,13 @@ impl Kernel<'_> {
             self.epi_params(align)
         ));
         self.epi_entry();
+        // A dependent launch may start while its producer drains: nothing is
+        // read before the producer's grid is complete. Then let this grid's
+        // own dependent start. Both are no-ops on a plain launch.
+        if self.pdl {
+            self.asm("griddepcontrol.wait;");
+            self.asm("griddepcontrol.launch_dependents;");
+        }
     }
 
     /// One thread per output cell, `k` walked in order — the correctness path
@@ -2677,6 +2732,7 @@ impl<'a> FnEmit<'a> {
             // S54 `rowfold-layout`: stored in the order its only reader reads.
             let m = *self.ir.in_edges(target).first().expect("site morphism");
             let col = plan.rowfold.values().any(|r| r.colmajor == Some(m));
+            let streams = !plan.chain.is_empty();
             // S54 `epilogue`: the per-cell consumers this site's store evaluates
             // (none when a fold is its only reader: `col` and a group exclude).
             let epi = self.epi_kernel(m);
@@ -2698,9 +2754,11 @@ impl<'a> FnEmit<'a> {
                 self.gpu_arms,
                 self.reduced,
             );
-            // ponytail: a grouped launch (`launchv`) carries no L2 window; give
-            // it one when a part ships both on one site.
+            // ponytail: a grouped launch (`launchv`) and a function on streams
+            // (whose launches order through `launch_on`) carry no L2 window; give
+            // them one when a part ships both on one program.
             let window = (epi.is_none()
+                && !streams
                 && host_rungs(self.profile, self.contract, self.gpu_arms).l2_window)
                 .then(|| self.l2_window(m, site, &l))
                 .flatten();

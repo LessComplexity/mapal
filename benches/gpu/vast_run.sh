@@ -53,13 +53,15 @@ for _ in 1 2 3 4 5; do
 done
 [ "$up" = 1 ] || { log "bundle upload failed 5 times"; exit 1; }
 log "bundle uploaded"
-# E2E_ARMS / PROBE_ARMS / PROBE_REPS / E2E_REPS reach box_run.sh (unset: its defaults).
-"${SSH[@]}" "cd /w && E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
+# The e2e and probe sections' arms and repetitions, and box_profile's traced
+# probes, pass through (unset: their defaults).
+ENVS="E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}'"
+"${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
 if [ "${PROFILE:-0}" = 1 ]; then
-    "${SSH[@]}" "cd /w && bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || log "box_profile exit $?"
+    "${SSH[@]}" "cd /w && $ENVS bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || log "box_profile exit $?"
     "${SSH[@]}" "cat /w/prof-$PROF.tgz" > "$RES/prof-$PROF.tgz" 2>/dev/null || true
     # + the e2e rows; a box lost during the profile keeps the results already fetched.
     "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt.new" 2>/dev/null &&
