@@ -41,22 +41,36 @@ emit_one() {
         > "$stem.launch"
 }
 
+# arms <src> <base-stem> <prof> <sm> <face flags> -- <rung>...: for every rung,
+# the kernel with it forced off and forced on (S53). An arm whose kernel and
+# launch equal the shipped one is not an arm and is dropped, so what stays is
+# exactly the opposite of the profile's decision at that size.
+arms() {
+    local src=$1 base=$2 prof=$3 sm=$4 flags=() s; shift 4
+    while [ "$1" != -- ]; do flags+=("$1"); shift; done; shift
+    for rung in "$@"; do
+        for dir in off on; do
+            s="$base.$dir-$rung"
+            emit_one "$src" "$s" "$prof" "$sm" ${flags[@]+"${flags[@]}"} "--gpu-$dir=$rung"
+            if cmp -s "$s.ptx" "$base.ptx" && cmp -s "$s.launch" "$base.launch"; then rm -f "$s".*; fi
+        done
+    done
+}
+
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
-        # Measurement arms (S52): the shipped kernel with one rung off, FMA face;
-        # and the TF32 face (tensor cores).
+        # Measurement arms: the shipped kernel with one rung flipped, on the
+        # FMA face, the TF32 face (tensor cores) and the exact face.
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            for rung in wide ldmatrix; do
-                emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
-            done
-            for rung in interleave unroll min-blocks warp async; do
-                emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
-            done
+            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix arch-rungs
+            arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
+                interleave unroll min-blocks warp prefetch async arch-rungs
+            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch arch-rungs
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
             for prev in ${PREV:-}; do
                 tag=${prev%%=*}; from=${prev#*=}

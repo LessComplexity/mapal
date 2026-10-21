@@ -67,17 +67,13 @@ impl<'a> FnEmit<'a> {
             profile,
             heap_ok: false,
             heap_used: false,
-            gpu_rungs: crate::GpuRungs::default(),
+            gpu_arms: crate::GpuArms::default(),
             reduced: None,
         }
     }
 
-    pub(crate) fn set_gpu_rungs(
-        &mut self,
-        rungs: crate::GpuRungs,
-        reduced: Option<crate::Reduced>,
-    ) {
-        self.gpu_rungs = rungs;
+    pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms, reduced: Option<crate::Reduced>) {
+        self.gpu_arms = arms;
         self.reduced = reduced;
     }
 

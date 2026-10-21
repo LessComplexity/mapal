@@ -59,27 +59,25 @@ fn main() -> ExitCode {
             // S52: where the device (nvptx64) translation unit goes on a GPU
             // profile. Required when one is produced — a GPU program whose
             // kernels were silently dropped would fail only at launch.
-            // S52: measurement-only OFF arms for the GPU rungs (an A/B needs
-            // the same compiler with one rung off). Unknown names are errors.
-            _ if a.starts_with("--gpu-off=") => {
-                for rung in a["--gpu-off=".len()..].split(',') {
-                    match rung {
-                        "interleave" => opts.gpu.interleave = false,
-                        "unroll" => opts.gpu.unroll = false,
-                        "min-blocks" => opts.gpu.min_blocks = false,
-                        "warp" => opts.gpu.warp = false,
-                        "prefetch" => opts.gpu.prefetch = false,
-                        "mma" => opts.gpu.mma = false,
-                        "async" => opts.gpu.cp_async = false,
-                        "wide" => opts.gpu.wide = false,
-                        "ldmatrix" => opts.gpu.ldmatrix = false,
-                        other => {
-                            eprintln!(
-                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix)"
-                            );
-                            return ExitCode::from(2);
-                        }
-                    }
+            // S52/S53: measurement-only arms for the GPU rungs (an A/B needs
+            // the same compiler with one rung flipped against the profile's
+            // table). Unknown names are errors.
+            _ if a.starts_with("--gpu-off=") || a.starts_with("--gpu-on=") => {
+                let (flag, list) = a.split_once('=').expect("matched on `=`");
+                let mask = if flag == "--gpu-on" {
+                    &mut opts.gpu.on
+                } else {
+                    &mut opts.gpu.off
+                };
+                for rung in list.split(',') {
+                    let Some(r) = mask.rung(rung) else {
+                        eprintln!(
+                            "{flag}: unknown rung `{rung}` ({})",
+                            mapal_backend_llvm::GpuRungs::NAMES.join(", ")
+                        );
+                        return ExitCode::from(2);
+                    };
+                    *r = true;
                 }
             }
             // A reduced-precision face (ADR-0032 D1): changes values by the

@@ -353,9 +353,9 @@ pub(crate) struct FnEmit<'a> {
     /// This emitter lowered at least one block to the arena ⟹ it owes a
     /// teardown.
     heap_used: bool,
-    /// The GPU kernel rungs (S52) — the host needs them because a rung can
+    /// The GPU rung arms (S52/S53) — the host needs them because a rung can
     /// change the launch (the prefetch rung's panel depth).
-    gpu_rungs: crate::GpuRungs,
+    gpu_arms: crate::GpuArms,
     reduced: Option<crate::Reduced>,
 }
 

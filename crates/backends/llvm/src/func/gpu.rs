@@ -80,6 +80,9 @@ pub(crate) struct Launch {
     pub gy: u64,
     pub block: u64,
     pub smem: u64,
+    /// The rungs this site's kernel is emitted with: the profile's table at
+    /// the site's fill, under the measurement arms.
+    pub rungs: crate::GpuRungs,
 }
 
 /// The staged kernel needs the separable shape the CPU's register-blocked rung
@@ -89,14 +92,32 @@ pub(crate) struct Launch {
 /// is staged with vector loads when its fast axis is unit-stride and aligned
 /// ([`vector_a`], [`vector_b`]) and element by element otherwise. Anything else
 /// takes the one-thread-per-cell kernel.
+///
+/// The rungs are decided here, once per site (S53): the site's fill is its
+/// grid at the base FMA geometry (or the one-thread-per-cell grid), in warps
+/// per scheduler; the profile's measured table at that fill, then the arms.
 pub(crate) fn launch(
     site: &TileSite,
     profile: &TargetProfile,
-    rungs: crate::GpuRungs,
+    arms: crate::GpuArms,
     reduced: Option<Reduced>,
 ) -> Launch {
     let e = elem_bytes_of(&site.elem);
+    let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let shaped = site.a.clane == 0 && site.b.ci == 0;
+    let base = shaped
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem))
+        .flatten();
+    let (blocks, threads) = match base {
+        Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
+        None => ((site.rows * site.c).div_ceil(NAIVE_THREADS), NAIVE_THREADS),
+    };
+    let table = if arms.off.arch {
+        crate::GpuRungs::ALL
+    } else {
+        profile.gpu_rungs(gpu.warps_per_scheduler(blocks, threads))
+    };
+    let rungs = table.with(arms);
     // Tensor cores: only on a face that admits them (TF32), f32 operands both
     // streamed with 16-byte copies, on a part with `mma.sync`.
     let mma = (rungs.mma
@@ -108,30 +129,27 @@ pub(crate) fn launch(
     .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide))
     .flatten();
     if let Some(m) = mma {
-        let warp = profile.gpu().expect("gpu").warp;
         return Launch {
             tiled: None,
             mma: Some(m),
             gx: site.c / m.bn(),
             gy: site.rows / m.bm(),
-            block: m.threads(warp),
+            block: m.threads(gpu.warp),
             smem: m.smem_bytes(),
+            rungs,
         };
     }
-    let tiled = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem))
-        .flatten()
-        .map(|g| {
-            let streamed = rungs
-                .cp_async
-                .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
-                .flatten();
-            match streamed {
-                Some(a) => a,
-                None if rungs.prefetch => prefetch_depth(g, e),
-                None => g,
-            }
-        });
+    let tiled = base.map(|g| {
+        let streamed = rungs
+            .cp_async
+            .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
+            .flatten();
+        match streamed {
+            Some(a) => a,
+            None if rungs.prefetch => prefetch_depth(g, e),
+            None => g,
+        }
+    });
     match tiled {
         Some(g) => Launch {
             tiled: Some(g),
@@ -140,14 +158,16 @@ pub(crate) fn launch(
             gy: site.rows / g.bm(),
             block: g.threads(),
             smem: g.smem_bytes(e),
+            rungs,
         },
         None => Launch {
             tiled: None,
             mma: None,
-            gx: (site.rows * site.c).div_ceil(NAIVE_THREADS),
+            gx: blocks,
             gy: 1,
             block: NAIVE_THREADS,
             smem: 0,
+            rungs,
         },
     }
 }
@@ -219,7 +239,7 @@ pub(crate) fn device_module(
     ir: &CategoryIr,
     profile: &TargetProfile,
     contract: bool,
-    rungs: crate::GpuRungs,
+    arms: crate::GpuArms,
     reduced: Option<Reduced>,
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
@@ -229,7 +249,7 @@ pub(crate) fn device_module(
                 let name = kernel_name(kernel_id(site, profile, contract, reduced));
                 kernels
                     .entry(name.clone())
-                    .or_insert_with(|| kernel_text(&name, site, profile, contract, rungs, reduced));
+                    .or_insert_with(|| kernel_text(&name, site, profile, contract, arms, reduced));
             }
         }
     }
@@ -263,17 +283,17 @@ fn kernel_text(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
-    rungs: crate::GpuRungs,
+    arms: crate::GpuArms,
     reduced: Option<Reduced>,
 ) -> String {
-    let l = launch(site, profile, rungs, reduced);
+    let l = launch(site, profile, arms, reduced);
     let mut k = Kernel {
         out: String::new(),
         next: 0,
         t: lower_ty(&site.elem).expect("float elem lowers"),
         site,
         contract,
-        rungs,
+        rungs: l.rungs,
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
         async_tail: None,
         sync_tail: None,
@@ -1188,7 +1208,7 @@ impl<'a> FnEmit<'a> {
         // LLVM reads an `i64` literal as signed; the runtime prints the same
         // 64 bits back as hex, so the two units agree on the name.
         let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
-        let l = launch(site, self.profile, self.gpu_rungs, self.reduced);
+        let l = launch(site, self.profile, self.gpu_arms, self.reduced);
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_ptr}, i64 {a_bytes}, ptr {b_ptr}, \
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
