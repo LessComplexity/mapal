@@ -151,6 +151,11 @@ pub struct Gpu {
     pub max_threads_per_sm: u64,
     /// Resident blocks per SM.
     pub max_blocks_per_sm: u64,
+    /// The device-wide L2, in bytes (`cudaDevAttrL2CacheSize`, the box's
+    /// `facts l2_bytes=`). One cache every SM shares — the GPU reading of the
+    /// CPU's shared last level, not a per-SM quantity (S54 `raster`,
+    /// `l2-window`).
+    pub l2_bytes: u64,
 }
 
 /// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
@@ -241,6 +246,53 @@ impl Gpu {
     /// `sm_90a` (PTX ISA: "Requires sm_90a"); Blackwell replaced it.
     pub fn has_wgmma(&self) -> bool {
         self.sm() == 90 && self.arch.ends_with('a')
+    }
+
+    /// **The block-row group height a tile grid is walked in (S54 `raster`)**,
+    /// for a `rows × c × k` site in `bm × bn` blocks, `wave` of them in flight
+    /// (`sms · blocks_per_sm`), `elem` bytes per element; 1 = the hardware's
+    /// row-major order, the OFF text.
+    ///
+    /// The grid is `gx = c / bn` by `gy = rows / bm`: every `a` row-panel is
+    /// read by `gx` blocks, every `b` column-panel by `gy` (the reuse counts).
+    /// Row-major order (`ctaid.x` fastest) runs an `a` panel's readers back to
+    /// back but puts a `b` panel's `gx` launches apart, so one wave reads
+    /// `⌈wave / gx⌉` `a` panels and `min(wave, gx)` `b` panels. Walking `h`
+    /// block-rows per column instead, a wave reads `h` `a` panels and
+    /// `⌈wave / h⌉` `b` panels: the `h` minimising those bytes,
+    /// `(h·bm + ⌈wave / h⌉·bn)·k·elem` — a power of two dividing `gy`, the
+    /// smaller on a tie.
+    ///
+    /// `gate` (rung `l2-gate`): keep row-major while one block's panels over
+    /// the whole reduction, `(bm + bn)·k·elem`, fit [`Gpu::l2_bytes`] — what the
+    /// part streams between two launch neighbours, the readers of one `a`
+    /// slab, so their sharing survives in L2. The measured anchor: every part
+    /// with it in L2 holds its 4096 ratio to cuBLAS at 8192; the 3090 at 8192
+    /// (8 MB of panels, 6 MB of L2) is the one that drops (S54
+    /// `baseline-tables.md`). A grid that is one wave keeps row-major: every
+    /// block is in flight at once, whatever the order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn raster(
+        &self,
+        bm: u64,
+        bn: u64,
+        wave: u64,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: u64,
+        gate: bool,
+    ) -> u64 {
+        let (gx, gy) = (c / bn.max(1), rows / bm.max(1));
+        let wave = wave.max(1);
+        if gx < 2 || gy < 2 || gx * gy <= wave || (gate && (bm + bn) * k * elem <= self.l2_bytes) {
+            return 1;
+        }
+        (0..=gy.ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|h| gy.is_multiple_of(*h))
+            .min_by_key(|&h| h * bm + wave.div_ceil(h) * bn)
+            .unwrap_or(1)
     }
 }
 
@@ -2206,7 +2258,7 @@ pub const CUDA_ADA: TargetProfile = TargetProfile {
 };
 
 /// The `sm_89` per-SM facts (CUDA C Programming Guide, compute capability 8.9),
-/// with the RTX 4070 Ti's 60 SMs.
+/// with the RTX 4070 Ti's 60 SMs and its 48 MB L2 (AD104, Ada whitepaper).
 const ADA_SM: Gpu = Gpu {
     warp: 32,
     max_threads_per_block: 1024,
@@ -2219,13 +2271,19 @@ const ADA_SM: Gpu = Gpu {
     smem_reserved_per_block: 1024,
     max_threads_per_sm: 1536,
     max_blocks_per_sm: 24,
+    l2_bytes: 48 * 1024 * 1024,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
 /// cross-compilation spelling, `benches/gpu/devquery.cu` on the box is its check.
 pub const RTX_4090: TargetProfile = TargetProfile {
     name: "rtx-4090",
-    machine: Machine::Gpu(Gpu { sms: 128, ..ADA_SM }),
+    // 72 MB L2: `facts l2_bytes=75497472` (base-rtx-4090.txt).
+    machine: Machine::Gpu(Gpu {
+        sms: 128,
+        l2_bytes: 72 * 1024 * 1024,
+        ..ADA_SM
+    }),
     ..GENERIC
 };
 
@@ -2241,6 +2299,8 @@ pub const H100: TargetProfile = TargetProfile {
         smem_per_block: 227 * 1024,
         max_threads_per_sm: 2048,
         max_blocks_per_sm: 32,
+        // 50 MB (H100 whitepaper; unmeasured on the SXM part).
+        l2_bytes: 50 * 1024 * 1024,
         ..ADA_SM
     }),
     ..GENERIC
@@ -2256,6 +2316,8 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         smem_per_block: 227 * 1024,
         max_threads_per_sm: 2048,
         max_blocks_per_sm: 32,
+        // `facts l2_bytes=52428800` (base-h100-pcie.txt).
+        l2_bytes: 50 * 1024 * 1024,
         ..ADA_SM
     }),
     ..GENERIC
@@ -2269,6 +2331,8 @@ pub const RTX_5090: TargetProfile = TargetProfile {
     machine: Machine::Gpu(Gpu {
         arch: "sm_120",
         sms: 170,
+        // `facts l2_bytes=100663296` (base-rtx-5090.txt).
+        l2_bytes: 96 * 1024 * 1024,
         ..ADA_SM
     }),
     ..GENERIC
@@ -2286,6 +2350,8 @@ pub const RTX_3090: TargetProfile = TargetProfile {
         arch: "sm_86",
         sms: 82,
         max_blocks_per_sm: 16,
+        // `facts l2_bytes=6291456` (base-rtx-3090.txt).
+        l2_bytes: 6 * 1024 * 1024,
         ..ADA_SM
     }),
     ..GENERIC
@@ -2308,6 +2374,8 @@ pub const A100: TargetProfile = TargetProfile {
         smem_per_block: 163 * 1024,
         max_threads_per_sm: 2048,
         max_blocks_per_sm: 32,
+        // `facts l2_bytes=41943040` (base-a100*.txt, PCIe 40GB and SXM4).
+        l2_bytes: 40 * 1024 * 1024,
         ..ADA_SM
     }),
     ..GENERIC
@@ -3551,6 +3619,46 @@ mod tests {
                 assert_eq!(other.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
             }
         }
+    }
+
+    /// S54: `Gpu::l2_bytes` is the box's `facts l2_bytes=` on every measured
+    /// part (`benches/results-s54-gpu/base-<part>.txt`), and the whitepaper
+    /// figure on the two parts no box has reported (the 4070 Ti, H100 SXM).
+    #[test]
+    fn l2_bytes_is_the_device_query() {
+        let mb = 1024 * 1024;
+        for (p, facts) in [
+            (&RTX_3090, 6_291_456),
+            (&A100, 41_943_040),
+            (&RTX_4090, 75_497_472),
+            (&H100_PCIE, 52_428_800),
+            (&RTX_5090, 100_663_296),
+            (&H100, 50 * mb),
+            (&CUDA_ADA, 48 * mb),
+        ] {
+            assert_eq!(p.gpu().expect("gpu").l2_bytes, facts, "{}", p.name);
+        }
+    }
+
+    /// S54 `raster`: the group height minimises the panels one wave reads,
+    /// keeps row-major under the L2 gate and on a one-wave grid, and only
+    /// ever divides the grid's height.
+    #[test]
+    fn raster_is_the_wave_panel_minimum_behind_the_l2_gate() {
+        let g = RTX_3090.gpu().expect("gpu");
+        let wave = 82 * 2;
+        // 128×128 blocks, f32: one block's panels are 1 KB per k.
+        assert_eq!(g.raster(128, 128, wave, 4096, 4096, 4096, 4, true), 1); // 4 MB ≤ 6 MB
+        assert_eq!(g.raster(128, 128, wave, 8192, 8192, 8192, 4, true), 16); // 8 MB > 6 MB
+        // h + ⌈164 / h⌉ panels: 8 → 29, 16 → 27, 32 → 38.
+        assert_eq!(g.raster(128, 128, wave, 8192, 8192, 8192, 4, false), 16);
+        assert_eq!(g.raster(128, 128, wave, 4096, 4096, 4096, 4, false), 16);
+        // One wave (16 × 8 blocks ≤ 164): order changes nothing.
+        assert_eq!(g.raster(128, 128, wave, 1024, 2048, 8192, 4, false), 1);
+        // A grid 3 blocks high: the largest power of two dividing it is 1.
+        assert_eq!(g.raster(128, 128, wave, 384, 8192, 8192, 4, false), 1);
+        let big = RTX_4090.gpu().expect("gpu");
+        assert_eq!(big.raster(128, 128, 256, 8192, 8192, 8192, 4, true), 1); // 8 MB ≤ 72 MB
     }
 
     /// S53 `pad`: the register-staged transposed-A store. With all four lanes

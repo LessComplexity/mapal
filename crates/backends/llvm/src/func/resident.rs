@@ -62,6 +62,15 @@ pub(crate) struct Carry {
     pub exit: Option<ObjectId>,
 }
 
+/// The buffer of a resident launch an L2 access-policy window covers (S54
+/// `l2-window`, [`FnEmit::l2_window`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Window {
+    A,
+    B,
+    Out,
+}
+
 /// A producer computed on the device (`devgen`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Gen {
@@ -498,6 +507,50 @@ impl<'a> FnEmit<'a> {
             }
         }
         Some(plan)
+    }
+
+    /// **S54 `l2-window`: the buffer of site `m`'s launch the graph proves is
+    /// read again soonest**, and its bytes. The output, when the next device
+    /// site by `LastUsePlan` position reads it (a chain's intermediate: reuse
+    /// distance one launch — its stores persist for the reader); else the
+    /// operand whose panels the most blocks read (`a` row-panel: `gx` blocks,
+    /// `b` column-panel: `gy`; on a tie `b`, whose readers row-major order puts
+    /// `gx` launches apart). Only a buffer whose bytes fit the part's `l2_bytes`:
+    /// a window larger than the cache it reserves persists nothing whole.
+    pub(super) fn l2_window(
+        &self,
+        m: MorphismId,
+        site: &TileSite,
+        l: &gpu::Launch,
+    ) -> Option<(Window, u64)> {
+        let l2 = self.profile.gpu()?.l2_bytes;
+        let morph = self.ir.morphism(m).expect("site");
+        let out = self.array_bytes(&self.obj_ty(morph.target));
+        let pos = |m| self.lup.position(m);
+        let next = self
+            .device_sites()
+            .iter()
+            .filter(|&(m2, _)| pos(m2) > pos(m))
+            .min_by_key(|&(m2, _)| pos(m2))
+            .map(|(m2, s2)| {
+                let src = self.ir.morphism(m2).expect("site").source;
+                [s2.a.slot, s2.b.slot]
+                    .iter()
+                    .any(|&k| self.pair_source(src, k) == Some(morph.target))
+            });
+        if next == Some(true) && out <= l2 {
+            return Some((Window::Out, out));
+        }
+        let src_ty = self.obj_ty(morph.source);
+        let bytes = |slot| self.array_bytes(src_ty.component_ty(slot).expect("tile operand"));
+        [
+            (Window::B, l.gy, bytes(site.b.slot)),
+            (Window::A, l.gx, bytes(site.a.slot)),
+        ]
+        .into_iter()
+        .filter(|&(_, _, b)| b <= l2)
+        .max_by_key(|&(w, reuse, _)| (reuse, w == Window::B))
+        .map(|(w, _, b)| (w, b))
     }
 
     fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, TileSite>, o: ObjectId) -> bool {

@@ -67,6 +67,8 @@ fn transfers(ll: &str) -> Vec<String> {
             Some(match name {
                 "h2d" | "alloc" => format!("{name} {bytes}"),
                 "d2h" => format!("d2h {bytes}"),
+                // S54 `l2-window`: a cache policy, not a transfer.
+                "launch_l2" => "launch".to_owned(),
                 other => other.to_owned(),
             })
         })
@@ -144,7 +146,7 @@ fn e2e_copies_in_after_the_producers_and_out_one_element() {
         .match_indices("@mapal_gpu_h2d(")
         .map(|(i, _)| i)
         .collect();
-    let launch = main.find("@mapal_gpu_launch(").expect("launch");
+    let launch = main.find("@mapal_gpu_launch").expect("launch");
     assert_eq!(h2d.len(), 2, "one copy-in per operand");
     assert!(a_fill < h2d[0] && h2d[0] < b_fill && b_fill < h2d[1] && h2d[1] < launch);
     assert_eq!(
@@ -213,7 +215,7 @@ fn loop_copies_w_in_outside_the_loop_and_carries_x_on_the_device() {
     let bs = blocks(mapal_main(&ll));
     let advance = bs
         .iter()
-        .position(|(_, t)| t.contains("@mapal_gpu_launch("))
+        .position(|(_, t)| t.contains("@mapal_gpu_launch"))
         .expect("the site's block");
     let label = &bs[advance].0;
     let header = bs
@@ -323,4 +325,47 @@ fn golden_resident_host_modules() {
     insta::assert_snapshot!("resident_loop", emit(&loop_src(), no_devgen()));
     let unclean = e2e_src().replace("(t * 7 + 13) % 101 - 50", "(t * 7 + 13) / (t % 5 + 1) - 50");
     insta::assert_snapshot!("resident_unclean", emit(&unclean, on()));
+}
+
+/// The `(a, b, o, window)` SSA names of every launch in `mapal_main`.
+fn launch_args(ll: &str) -> Vec<(String, String, String, Option<String>)> {
+    mapal_main(ll)
+        .lines()
+        .filter(|l| l.contains("@mapal_gpu_launch"))
+        .map(|l| {
+            let ptrs: Vec<String> = l
+                .split("i64 ")
+                .skip(2)
+                .map(|s| s.split([',', ')']).next().unwrap_or("").to_owned())
+                .collect();
+            let win = l.contains("_l2(").then(|| ptrs[3].clone());
+            (ptrs[0].clone(), ptrs[1].clone(), ptrs[2].clone(), win)
+        })
+        .collect()
+}
+
+/// S54 `l2-window`: in a chain, the first site's output is what the next
+/// launch reads (reuse distance one launch), so its window covers the output;
+/// the last site's output goes to the host, so its window is the operand the
+/// most blocks read: `a` (each row-panel read by the grid's 4 columns) over
+/// `b` (2 rows) on this 64×64 site's 4×2 grid. Off: no window, the S53 text.
+#[test]
+fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
+    let ll = emit(&chain_src(), on());
+    let l = launch_args(&ll);
+    assert_eq!(l.len(), 2, "{ll}");
+    assert!(
+        mapal_main(&ll).contains("i32 4, i32 2, "),
+        "a 4×2 grid:\n{ll}"
+    );
+    assert_eq!(
+        l[0].3.as_ref(),
+        Some(&l[0].2),
+        "c, read by the next launch:\n{ll}"
+    );
+    assert_eq!(l[1].3.as_ref(), Some(&l[1].0), "the last site's a:\n{ll}");
+    assert!(ll.contains("declare void @mapal_gpu_launch_l2("));
+    let off = emit(&chain_src(), off("l2-window"));
+    assert!(launch_args(&off).iter().all(|x| x.3.is_none()), "{off}");
+    assert!(!off.contains("launch_l2"), "{off}");
 }

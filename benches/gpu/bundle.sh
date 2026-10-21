@@ -38,7 +38,7 @@ for f in "$OUT"/tiles/*.mapal; do
         # Too big for the interpreter (1024 decode steps; a 2048² filled site):
         # the CPU build's conformance face is the interpreter bit for bit (the
         # backend differential suite's invariant).
-        decode_1024_*|wide_*)
+        decode_1024_*|wide_*|deep_*)
             "$EMIT" "$f" - --rewrite --target=apple-m > "$b.cpu.ll"
             clang -O2 "$b.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu" 2>/dev/null
             "$b.cpu" > "$b.expect" ;;
@@ -62,7 +62,7 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
+    grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
         python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
         > "$stem.launch"
 }
@@ -92,7 +92,11 @@ arms() {
     done
 }
 
-KERNEL_RUNGS="interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs"
+# The arms per program kind; an item's bundle narrows them to its own rungs
+# (e.g. KERNEL_RUNGS="raster l2-gate" TF32_RUNGS="raster l2-gate" HOST_RUNGS="l2-window raster").
+KERNEL_RUNGS=${KERNEL_RUNGS:-"interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs raster l2-gate"}
+TF32_RUNGS=${TF32_RUNGS:-"mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs raster l2-gate"}
+HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta l2-window raster"}
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
@@ -106,8 +110,7 @@ for spec in "$@"; do
             # at the four sizes the decisions cite, the shipped kernel at all.
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             case $b in mm_1536|mm_3072) ;; *)
-                arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- \
-                    mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs
+                arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- $TF32_RUNGS
                 arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
                 arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
                 ;;
@@ -117,8 +120,7 @@ for spec in "$@"; do
             # host rung off for the differential and the e2e wall-time A/B.
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
-                arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- $HOST_RUNGS
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
@@ -150,6 +152,8 @@ for spec in "$@"; do
 done
 
 cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
+# PROBE_ARMS="on off-<rung>...": the probe arms box_run.sh times (its default otherwise).
+if [ -n "${PROBE_ARMS:-}" ]; then echo "$PROBE_ARMS" > "$OUT/probe_arms"; fi
 cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 if [ ! -d "$OUT/cutlass" ]; then

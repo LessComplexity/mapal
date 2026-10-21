@@ -221,7 +221,7 @@ fn resident_yields_to_a_retained_site() {
     assert_eq!(tile_calls(&on).len(), 5);
     assert!(!on.contains("@mapal_gpu_alloc("));
     let shipped = at(GpuArms::default());
-    assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch("));
+    assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch"));
 }
 
 #[test]

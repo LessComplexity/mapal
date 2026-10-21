@@ -2097,7 +2097,7 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
             [
                 "@mapal_gpu_gen(",
                 "@mapal_time_ms(",
-                "@mapal_gpu_launch(",
+                "@mapal_gpu_launch", // `_l2(` too: a window changes no order
                 "@mapal_gpu_sync(",
             ]
             .into_iter()
@@ -2111,7 +2111,7 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
             "@mapal_gpu_gen(",
             "@mapal_gpu_sync(",
             "@mapal_time_ms(",
-            "@mapal_gpu_launch(",
+            "@mapal_gpu_launch",
             "@mapal_gpu_sync(",
             "@mapal_time_ms("
         ],

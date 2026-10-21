@@ -22,6 +22,7 @@
 //! The geometry is [`TargetProfile::gpu_tile`]'s: derived from device facts and
 //! the site's extents, never a literal here.
 
+use super::resident::Window;
 use super::*;
 use crate::Reduced;
 use crate::profile::{
@@ -101,6 +102,12 @@ pub(crate) fn host_rungs(
 pub(crate) const GPU_SYNC: &str = "call void @mapal_gpu_sync()";
 pub(crate) const GPU_SYNC_DECL: &str = "declare void @mapal_gpu_sync()\n";
 
+/// S54 `l2-window`: a resident launch with an L2 access-policy window over
+/// one of its buffers. Declared only when a launch calls it, so a module
+/// without one is the text it was before the rung.
+pub(crate) const GPU_L2_DECL: &str =
+    "declare void @mapal_gpu_launch_l2(i64, i64, i64, i64, i32, i32, i32, i32, i64, i64)\n";
+
 /// The split entries `resident` emits (`mapal_gpu.c`): a device pointer is an
 /// `i64`, a device slot a `ptr` to one.
 pub(crate) const RESIDENT_DECLS: &str = "\
@@ -147,6 +154,9 @@ pub(crate) struct Launch {
     pub gy: u64,
     pub block: u64,
     pub smem: u64,
+    /// The block-row group height the kernel walks its grid in (S54
+    /// `raster`, [`Gpu::raster`]); 1 = row-major, no remap emitted.
+    pub raster: u64,
     /// The rungs this site's kernel is emitted with: the profile's table at
     /// the site's fill, under the measurement arms.
     pub rungs: crate::GpuRungs,
@@ -200,6 +210,19 @@ pub(crate) fn launch(
     let wgmma = (tensor && rungs.wgmma)
         .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
         .flatten();
+    let raster = |bm: u64, bn: u64, per_sm: u64| match rungs.raster {
+        true => gpu.raster(
+            bm,
+            bn,
+            gpu.sms * per_sm,
+            site.rows,
+            site.c,
+            site.k,
+            e,
+            rungs.l2_gate,
+        ),
+        false => 1,
+    };
     if let Some(w) = wgmma {
         return Launch {
             tiled: None,
@@ -209,6 +232,7 @@ pub(crate) fn launch(
             gy: site.rows / w.bm(),
             block: w.threads(gpu.warp),
             smem: w.smem_bytes(),
+            raster: raster(w.bm(), w.bn(), w.blocks_per_sm),
             rungs,
         };
     }
@@ -224,6 +248,7 @@ pub(crate) fn launch(
             gy: site.rows / m.bm(),
             block: m.threads(gpu.warp),
             smem: m.smem_bytes(),
+            raster: raster(m.bm(), m.bn(), m.blocks_per_sm),
             rungs,
         };
     }
@@ -272,6 +297,7 @@ pub(crate) fn launch(
             gy: site.rows / g.bm(),
             block: g.threads(),
             smem: g.smem_bytes(e),
+            raster: raster(g.bm(), g.bn(), g.blocks_per_sm),
             rungs,
         },
         None => Launch {
@@ -282,6 +308,7 @@ pub(crate) fn launch(
             gy: 1,
             block: NAIVE_THREADS,
             smem: 0,
+            raster: 1,
             rungs,
         },
     }
@@ -490,6 +517,7 @@ fn kernel_text(
         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
         async_tail: None,
         sync_tail: None,
+        raster: (l.gx, l.raster),
     };
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
@@ -549,6 +577,20 @@ impl Arith for Kernel<'_> {
     fn sum(&mut self, a: &String, b: &String) -> String {
         self.op("add", a, b)
     }
+}
+
+/// S54 `raster`: the block `(bx, by)` of a `gx`-wide grid, launched as
+/// `by·gx + bx`, walked `h` block-rows per column: launch groups of `h·gx`,
+/// each down `h` rows, then the next column. A bijection on the grid when `h`
+/// divides its height ([`Gpu::raster`] only derives such an `h`).
+fn raster_block<A: Arith>(ar: &mut A, bx: &A::V, by: &A::V, gx: u64, h: u64) -> (A::V, A::V) {
+    let row = ar.imm("mul", by, gx);
+    let lin = ar.sum(&row, bx);
+    let group = ar.imm("udiv", &lin, h * gx);
+    let local = ar.imm("urem", &lin, h * gx);
+    let top = ar.imm("mul", &group, h);
+    let dy = ar.imm("urem", &local, h);
+    (ar.imm("udiv", &local, h), ar.sum(&top, &dy))
 }
 
 /// Where linear copy `li` (`tid + p·threads`) of a staged panel lands, as
@@ -684,6 +726,8 @@ struct Kernel<'s> {
     /// The panel loop's induction values, threaded from its head to its latch.
     async_tail: Option<(String, String, u64)>,
     sync_tail: Option<(String, String)>,
+    /// `(gx, h)`: the grid width and the group height of [`raster_block`].
+    raster: (u64, u64),
 }
 
 impl Kernel<'_> {
@@ -709,6 +753,20 @@ impl Kernel<'_> {
         };
         self.line(format!("{t} = {code}{flags} {} {lhs}, {rhs}", self.idx));
         t
+    }
+
+    /// The block's `(column, row)` in the grid: `ctaid.x`, `ctaid.y`, remapped
+    /// by [`raster_block`] when the derived group height is above 1.
+    fn block_ids(&mut self) -> (String, String) {
+        let bx = self.sreg("ctaid.x");
+        let by = self.sreg("ctaid.y");
+        match self.raster {
+            (gx, h) if h > 1 => {
+                self.line(format!("; raster: {h} block-rows per group"));
+                raster_block(self, &bx, &by, gx, h)
+            }
+            _ => (bx, by),
+        }
     }
 
     fn sreg(&mut self, reg: &str) -> String {
@@ -982,8 +1040,7 @@ impl Kernel<'_> {
         let smem = "@mapal_smem";
 
         let tid = self.sreg("tid.x");
-        let bx = self.sreg("ctaid.x");
-        let by = self.sreg("ctaid.y");
+        let (bx, by) = self.block_ids();
         let wg = self.op("udiv", &tid, WARPGROUP_WARPS * warp);
         let warp_id = self.op("udiv", &tid, warp);
         let w = self.op("urem", &warp_id, WARPGROUP_WARPS);
@@ -1249,8 +1306,7 @@ impl Kernel<'_> {
         let smem = "@mapal_smem";
 
         let tid = self.sreg("tid.x");
-        let bx = self.sreg("ctaid.x");
-        let by = self.sreg("ctaid.y");
+        let (bx, by) = self.block_ids();
         let warp_id = self.op("udiv", &tid, warp);
         let lane = self.op("urem", &tid, warp);
         let wr = self.op("udiv", &warp_id, g.warps_x);
@@ -1523,8 +1579,7 @@ impl Kernel<'_> {
         };
         self.header(name, threads, GPU_VEC_BYTES, blocks);
         let tid = self.sreg("tid.x");
-        let bx = self.sreg("ctaid.x");
-        let by = self.sreg("ctaid.y");
+        let (bx, by) = self.block_ids();
         // Warp shape (S52 rung `warp`): lay a warp's 32 lanes out as
         // `warp / wx` rows × `wx` columns of threads, `wx` = the lanes one
         // shared-memory wavefront serves with vector loads (128 B / 16 B = 8).
@@ -1917,12 +1972,32 @@ impl<'a> FnEmit<'a> {
                 self.gpu_arms,
                 self.reduced,
             );
+            let m = self.ir.in_edges(target)[0];
+            let window = host_rungs(self.profile, self.contract, self.gpu_arms)
+                .l2_window
+                .then(|| self.l2_window(m, site, &l))
+                .flatten();
             self.emit_site_resident(source, target, site, |a, b, o| {
-                format!(
-                    "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
-                     i32 {}, i32 {}, i32 {}, i32 {})",
+                let geom = format!(
+                    "i32 {}, i32 {}, i32 {}, i32 {}",
                     l.gx, l.gy, l.block, l.smem
-                )
+                );
+                match window {
+                    None => format!(
+                        "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, {geom})"
+                    ),
+                    Some((w, bytes)) => {
+                        let p = match w {
+                            Window::A => a,
+                            Window::B => b,
+                            Window::Out => o,
+                        };
+                        format!(
+                            "call void @mapal_gpu_launch_l2(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
+                             {geom}, i64 {p}, i64 {bytes})"
+                        )
+                    }
+                }
             });
             return;
         }
@@ -2113,6 +2188,73 @@ mod tests {
                 ]
             })
             .collect()
+    }
+
+    /// S54 `raster` at the kernels the box times, on the tile each face
+    /// actually takes: the 3090 groups at 8192 only (one block's panels, 8 MB,
+    /// past its 6 MB L2), on all three faces; every other part keeps
+    /// row-major at every size — the part is chosen by `l2_bytes`, not by a
+    /// table row. Without the gate every part groups where the grid is more
+    /// than a wave.
+    #[test]
+    fn raster_fires_where_one_blocks_panels_leave_the_l2() {
+        use crate::profile::{A100, RTX_3090};
+        let parts: [&TargetProfile; 6] =
+            [&RTX_3090, &A100, &RTX_4090, &H100_PCIE, &H100, &RTX_5090];
+        let faces = [(false, None), (true, None), (true, Some(Reduced::Tf32))];
+        for p in parts {
+            for n in [1024, 2048, 4096, 8192] {
+                for (contract, reduced) in faces {
+                    let s = site(n, n, n, true, true, Ty::f32());
+                    let l = launch(&s, p, contract, crate::GpuArms::default(), reduced);
+                    let want_grouped = p.name == "rtx-3090" && n == 8192;
+                    assert_eq!(
+                        l.raster > 1,
+                        want_grouped,
+                        "{} {n} {contract} {reduced:?}",
+                        p.name
+                    );
+                    let mut off = GpuRungs::default();
+                    off.l2_gate = true;
+                    let arms = crate::GpuArms {
+                        on: GpuRungs::default(),
+                        off,
+                    };
+                    let u = launch(&s, p, contract, arms, reduced);
+                    if n == 8192 {
+                        assert!(u.raster > 1, "{} {contract} {reduced:?}", p.name);
+                    }
+                    if u.raster > 1 {
+                        assert!(l.gy % u.raster == 0);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The block map is a bijection on the grid for every height it is
+    /// derived for (a power of two dividing `gy`), evaluated by the same code
+    /// that emits it.
+    #[test]
+    fn raster_block_is_a_bijection_on_the_grid() {
+        for (gx, gy) in [(2, 2), (12, 8), (64, 64), (32, 16), (3, 32), (1, 4)] {
+            for h in (0..=u64::ilog2(gy)).map(|p| 1u64 << p) {
+                let mut seen = vec![false; (gx * gy) as usize];
+                for by in 0..gy {
+                    for bx in 0..gx {
+                        let (c, r) = raster_block(&mut Num, &bx, &by, gx, h);
+                        assert!(c < gx && r < gy, "{gx}x{gy} h={h}");
+                        assert!(!std::mem::replace(&mut seen[(r * gx + c) as usize], true));
+                    }
+                }
+                // Within a group, consecutive launches walk down a column.
+                let (c0, r0) = raster_block(&mut Num, &0, &0, gx, h);
+                let (c1, r1) = raster_block(&mut Num, &1, &0, gx, h);
+                if h > 1 && gx > 1 {
+                    assert_eq!((c0, r0, c1, r1), (0, 0, 0, 1));
+                }
+            }
+        }
     }
 
     /// `idx32`: every S52 site indexes in `i32`; an operand past 2³¹ elements
