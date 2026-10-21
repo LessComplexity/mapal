@@ -130,7 +130,7 @@ pub struct GpuRungs {
     pub eager_init: bool,
     /// S54 R7: device sites with no `PathPlan` path between them launch on
     /// separate streams (one per chain), an event on every cross-chain edge,
-    /// each whole copy-out moved to its first host reader. Off: one stream.
+    /// when every such site's output stays on the device. Off: one stream.
     pub streams: bool,
     /// Open the streams only where two independent grids fit one wave
     /// together (the wave rule, `func/resident.rs:waves_merge`); off =

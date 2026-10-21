@@ -405,3 +405,12 @@ def twin(n):
 (out / "px_twin_128.mapal").write_text(probe_program(128, twin(128), False))
 for n in (512, 1024, 2048):
     (out / f"pt_twin_{n}.mapal").write_text(probe_program(n, twin(n), True))
+# `fan`: the twin's two outputs joined by a third site (g = c · d), every output
+# read at the corners only — device-only, so streams open: the differential of
+# two chains and the cross-chain wait before the join. g's corners depend on a
+# whole row of c and a whole column of d.
+fan_body = twin(128)[1] + site('g', 'c', 'd', 128)
+(out / "px_fan_128.mapal").write_text(
+    probe_program(128, ('abef', fan_body, [('c', 128 * 128), ('d', 128 * 128), ('g', 128 * 128)]), True)
+    .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
+    .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))

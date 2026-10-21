@@ -13,7 +13,6 @@ impl<'a> FnEmit<'a> {
         if self.resident.is_none() {
             return self.emit_op(m);
         }
-        self.resident_before(m);
         if !self.resident_instead(m) {
             self.emit_op(m);
         }
