@@ -304,15 +304,6 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "rtx-4090",
-        rung: "unroll",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.359/2.823/25.554 vs off 0.361/2.817/25.419 ms, \
-               -confirm.txt on 0.363/2.843/27.976 vs off 0.362/2.843/26.796 ms; kept under-filled (n=1024 on 0.070 \
-               vs off 0.084)",
-    },
-    RungOff {
-        profile: "rtx-4090",
         rung: "warp",
         fill: Fill::Filled,
         face: Face::Contract,
@@ -376,9 +367,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         profile: "h100-pcie",
         rung: "affine",
         fill: Fill::Any,
-        face: Face::Exact,
+        face: Face::Any,
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; _c n=1024 on 0.131 vs off 0.127 ms; \
+               integrated-h100-pcie.txt _c n=2048/4096/8192 on 0.656/3.950/36.832 vs off 0.632/3.793/36.889 ms",
     },
     RungOff {
         profile: "h100-pcie",
@@ -390,10 +382,20 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "h100-pcie",
-        rung: "affine",
+        rung: "min-blocks",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "integrated-h100-pcie.txt (with idx32+pad, the cap spills 8-16 B) _c n=2048/4096/8192 on \
+               0.656/3.950/36.832 vs off 0.618/3.729/37.530 ms, _exact on 1.118/6.521/57.781 vs off \
+               1.089/6.366/58.483 ms; kept under-filled on the exact face (n=1024 on 0.193 vs off 0.213 ms)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "warp",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms",
+        cite: "integrated-h100-pcie.txt _c n=1024 on 0.139 vs off 0.136 ms; kept filled (n=2048/4096/8192 on \
+               0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -465,6 +467,49 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "warp-fill-rtx-5090.txt _tf n=2048 on 0.2314 vs off 0.2252 ms, disjoint; _c and _exact PTX \
                byte-identical at every filled size",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-rtx-4090.txt decode_1024_256 wall, rung on (resident yields) 1589/1568 ms vs off \
+               (resident takes the loop) 905/886 ms exact/contract, 3 procs, disjoint; against S52 round trips the rung \
+               measured 1.57/1.65x (retain-delta-rtx-4090.txt) — resident is the better arm",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-h100-pcie.txt decode_1024_256 wall, rung on (resident yields) 1756/1906 ms vs off \
+               (resident takes the loop) 1109/1144 ms exact/contract, 3 procs; against S52 round trips 1.53/1.50x \
+               (retain-delta-h100-pcie.txt)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "integrated-rtx-5090.txt (with warp-fill's 4x4 tile) n=1024 _c on 0.0635 vs off 0.0573 ms, _exact on \
+               0.0737 vs off 0.0676 ms, disjoint; before warp-fill it paid (arch-rungs-rtx-5090.txt n=1024 on 0.074 vs \
+               off 0.092 ms)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "integrated-rtx-5090.txt _tf n=1024 on 0.0492 vs off 0.0389 ms, disjoint",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-rtx-5090.txt decode_1024_256 wall, rung on (resident yields) 825/847 ms vs off \
+               (resident takes the loop) 630/616 ms exact/contract, 3 procs, disjoint; against S52 round trips \
+               1.63/1.63x (retain-delta-rtx-5090.txt)",
     },
 ];
 
@@ -3227,7 +3272,7 @@ mod tests {
     }
 
     /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
-    /// Hopper; every OFF names its results row; an unmeasured part takes the
+    /// Hopper or Blackwell's contract face; every OFF names its results row; an unmeasured part takes the
     /// measured part of its architecture.
     #[test]
     fn gpu_rungs_are_the_measured_table() {
@@ -3238,7 +3283,8 @@ mod tests {
         assert!(!RTX_4090.gpu_rungs(4, false).cp_async);
         assert!(RTX_4090.gpu_rungs(1, false).cp_async);
         assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
-        assert!(RTX_5090.gpu_rungs(0, true).cp_async);
+        // 5090 under-filled: async paid on the S52 tile, not on warp-fill's.
+        assert!(!RTX_5090.gpu_rungs(0, true).cp_async);
 
         let measured = GPU_MEASURED;
         for d in GPU_RUNGS_OFF {

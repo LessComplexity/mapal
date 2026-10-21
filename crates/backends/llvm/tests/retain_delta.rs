@@ -120,6 +120,7 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
         target,
         ..EmitOpts::default()
     };
+    opts.gpu.on.retain_delta = on;
     opts.gpu.off.retain_delta = !on;
     opts.gpu.off.resident = true;
     let em = emit_detailed(ir, &opts).expect("emits");
@@ -195,8 +196,9 @@ fn decode_retains_k_and_v_only() {
     assert_eq!(kernels(&on_dev), kernels(&off_dev) + 1);
 }
 
-/// Shipped arms (`resident` on): a function with a retained site keeps the
-/// round trips the rung was measured with; with the rung off, `resident` takes
+/// With the rung on (`resident` on too), a function with a retained site keeps
+/// the round trips the rung was measured with; with the rung off — what ships:
+/// the integrated run measured `resident` faster on decode — `resident` takes
 /// the function.
 #[test]
 fn resident_yields_to_a_retained_site() {
@@ -213,13 +215,13 @@ fn resident_yields_to_a_retained_site() {
         .expect("emits")
         .text
     };
+    let mut on = GpuArms::default();
+    on.on.retain_delta = true;
+    let on = at(on);
+    assert_eq!(tile_calls(&on).len(), 5);
+    assert!(!on.contains("@mapal_gpu_alloc("));
     let shipped = at(GpuArms::default());
-    assert_eq!(tile_calls(&shipped).len(), 5);
-    assert!(!shipped.contains("@mapal_gpu_alloc("));
-    let mut off = GpuArms::default();
-    off.off.retain_delta = true;
-    let off = at(off);
-    assert!(tile_calls(&off).is_empty() && off.contains("@mapal_gpu_launch("));
+    assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch("));
 }
 
 #[test]
