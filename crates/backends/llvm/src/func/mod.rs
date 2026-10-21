@@ -361,6 +361,11 @@ pub(crate) struct FnEmit<'a> {
     /// (`func/resident.rs`). `None` off a GPU profile, with the rung off, or
     /// in a function with no device site — the S52 emission exactly.
     resident: Option<resident::ResidentPlan>,
+    /// S54 `cell-law`: this emission is a body's device variant, in which
+    /// capture slot `s` arrives as its element value `%cv<s>` of the given
+    /// type (every read of it is at the cell's own index) instead of as an
+    /// array pointer. Empty: the host body.
+    cell_vals: Vec<(u32, String)>,
     /// Object → its device slot (`alloca i64`, 0 = no buffer).
     dslots: SecondaryMap<ObjectId, String>,
     /// Objects whose device copy is current at this point of the walk.

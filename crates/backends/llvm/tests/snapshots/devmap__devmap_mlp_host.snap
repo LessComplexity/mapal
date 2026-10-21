@@ -1,0 +1,120 @@
+---
+source: crates/backends/llvm/tests/devmap.rs
+expression: mapal_main(&mlp.text)
+---
+define internal void @mapal_main() {
+entry:
+  %o2 = alloca [4096 x i32]
+  %o3 = alloca [4096 x float]
+  %o4 = alloca [4096 x float]
+  %o5 = alloca [4096 x float]
+  %o6 = alloca [64 x i32]
+  %o7 = alloca { ptr, ptr, ptr, ptr }
+  %o8 = alloca [4096 x float]
+  %o9 = alloca [4096 x float]
+  %o10 = alloca { ptr, ptr, ptr, ptr }
+  %o11 = alloca [4096 x float]
+  %o12 = alloca { ptr, i32 }
+  %o13 = alloca float
+  %o14 = alloca float
+  %o16 = alloca { ptr, i32 }
+  %o17 = alloca float
+  %o18 = alloca float
+  %d0 = alloca i64
+  store i64 0, ptr %d0
+  %d2 = alloca i64
+  store i64 0, ptr %d2
+  %d4 = alloca i64
+  store i64 0, ptr %d4
+  %d15 = alloca i64
+  store i64 0, ptr %d15
+  %d17 = alloca i64
+  store i64 0, ptr %d17
+  %dv20 = alloca [2 x i64]
+  %d26 = alloca i64
+  store i64 0, ptr %d26
+  %t1 = call i64 @mapal_gpu_alloc(ptr %d0, i64 16384)
+  call void @mapal_gpu_gen(i64 7650753812336464083, i64 %t1, i64 4096)
+  %t3 = call i64 @mapal_gpu_alloc(ptr %d2, i64 16384)
+  call void @mapal_gpu_gen(i64 -1388309480315592338, i64 %t3, i64 4096)
+  %t5 = call i64 @mapal_gpu_alloc(ptr %d4, i64 16384)
+  call void @mapal_gpu_gen(i64 8798211682856956301, i64 %t5, i64 4096)
+  %t6 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o7, i32 0, i32 3
+  store ptr %o2, ptr %t6
+  %t7 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o10, i32 0, i32 3
+  store ptr %o2, ptr %t7
+  %t8 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o7, i32 0, i32 0
+  store ptr %o6, ptr %t8
+  %t9 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o10, i32 0, i32 0
+  store ptr %o6, ptr %t9
+  %t10 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o7, i32 0, i32 1
+  store ptr %o3, ptr %t10
+  %t11 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o7, i32 0, i32 2
+  store ptr %o4, ptr %t11
+  %t12 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o10, i32 0, i32 2
+  store ptr %o5, ptr %t12
+  %t13 = load i64, ptr %d0
+  %t14 = load i64, ptr %d2
+  %t16 = call i64 @mapal_gpu_alloc(ptr %d15, i64 16384)
+  call void @mapal_gpu_launch(i64 8361890428176430356, i64 %t13, i64 %t14, i64 %t16, i32 4, i32 2, i32 32, i32 5376)
+  call void @mapal_gpu_free(ptr %d0)
+  call void @mapal_gpu_free(ptr %d2)
+  %t18 = call i64 @mapal_gpu_alloc(ptr %d17, i64 16384)
+  %t19 = load i64, ptr %d15
+  %t21 = getelementptr [2 x i64], ptr %dv20, i64 0, i64 0
+  store i64 %t18, ptr %t21
+  %t22 = getelementptr [2 x i64], ptr %dv20, i64 0, i64 1
+  store i64 %t19, ptr %t22
+  call void @mapal_gpu_launchv(i64 -1123254420643137662, i32 0, i32 2, ptr %dv20, i32 16, i32 1, i32 256, i32 0)
+  call void @mapal_gpu_free(ptr %d15)
+  %t23 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o10, i32 0, i32 1
+  store ptr %o9, ptr %t23
+  %t24 = load i64, ptr %d17
+  %t25 = load i64, ptr %d4
+  %t27 = call i64 @mapal_gpu_alloc(ptr %d26, i64 16384)
+  call void @mapal_gpu_launch(i64 8361890428176430356, i64 %t24, i64 %t25, i64 %t27, i32 4, i32 2, i32 32, i32 5376)
+  call void @mapal_gpu_free(ptr %d17)
+  call void @mapal_gpu_free(ptr %d4)
+  %t28 = getelementptr { ptr, i32 }, ptr %o12, i32 0, i32 0
+  store ptr %o11, ptr %t28
+  %t29 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 0
+  store ptr %o11, ptr %t29
+  %t30 = getelementptr { ptr, i32 }, ptr %o12, i32 0, i32 1
+  store i32 0, ptr %t30
+  %t31 = getelementptr { ptr, i32 }, ptr %o12, i32 0, i32 1
+  %t32 = load i32, ptr %t31
+  %t33 = sext i32 %t32 to i64
+  %t34 = getelementptr [4096 x float], ptr %o11, i64 0, i64 %t33
+  %t35 = load i64, ptr %d26
+  %t36 = mul i64 %t33, 4
+  call void @mapal_gpu_d2h(ptr %t34, i64 %t35, i64 %t36, i64 4)
+  %t37 = load float, ptr %t34
+  store float %t37, ptr %o13
+  %t38 = load float, ptr %o13
+  store float %t38, ptr %o14
+  %t39 = load float, ptr %o14
+  call void @mapal_print_f32(float %t39, i1 zeroext true)
+  %t40 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 1
+  store i32 4095, ptr %t40
+  %t41 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 1
+  %t42 = load i32, ptr %t41
+  %t43 = sext i32 %t42 to i64
+  %t44 = getelementptr [4096 x float], ptr %o11, i64 0, i64 %t43
+  %t45 = load i64, ptr %d26
+  %t46 = mul i64 %t43, 4
+  call void @mapal_gpu_d2h(ptr %t44, i64 %t45, i64 %t46, i64 4)
+  %t47 = load float, ptr %t44
+  store float %t47, ptr %o17
+  call void @mapal_gpu_free(ptr %d26)
+  %t48 = load float, ptr %o17
+  store float %t48, ptr %o18
+  %t49 = load float, ptr %o18
+  call void @mapal_print_f32(float %t49, i1 zeroext true)
+  call void @mapal_gpu_free(ptr %d0)
+  call void @mapal_gpu_free(ptr %d2)
+  call void @mapal_gpu_free(ptr %d4)
+  call void @mapal_gpu_free(ptr %d15)
+  call void @mapal_gpu_free(ptr %d17)
+  call void @mapal_gpu_free(ptr %d26)
+  ret void
+}

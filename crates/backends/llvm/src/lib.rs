@@ -209,6 +209,31 @@ pub struct GpuRungs {
     /// printed values are identical (`benches/results-s54-gpu/epilogue-*.txt`,
     /// `epilogue-tables.md`). Only the filled class (n ≥ 2048) was measured.
     pub epilogue: bool,
+    /// S54 `devmap` (ARCHITECTURE R2): a per-cell map whose operands are
+    /// already in device memory runs as its own one-thread-per-cell kernel
+    /// instead of a host loop behind a whole copy-out. Off: every per-cell map
+    /// on the host (the S53 placement).
+    ///
+    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): arm
+    /// `off-devmap` iter / ON iter, medians of 5, every multi-computation probe
+    /// (bias, diamond, epi, fanout, indep, loop, mlp, residual) at 2048 and 4096
+    /// on both faces, `benches/results-s54-gpu/devmap-<part>.txt`: RTX 3090
+    /// 1.76–3.51, A100 1.30–2.53, RTX 4090 1.89–4.03, H100 PCIe 1.32–15.5, RTX
+    /// 5090 1.76–4.76; `ew` 7–121 (the host loops it replaces).
+    pub devmap: bool,
+    /// S54 `cell-law`, under `devmap`: a captured array whose producer is
+    /// closed-form in the index (`devgen`'s law) and which a cell reads only at
+    /// its own index is evaluated in the cell, never stored or loaded. Off: the
+    /// cell loads it from its `devgen` buffer.
+    ///
+    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): `ew`, arm
+    /// `off-cell-law` iter / ON iter at 4096 exact / contract, `devmap-<part>.txt`:
+    /// RTX 3090 6.15 / 7.00, A100 1.27 / 1.19 (`-confirm.txt`, another box,
+    /// 2.12 / 2.20), RTX 4090 8.70 / 9.32, H100 PCIe 1.11 / 3.16 (`-confirm.txt`
+    /// 1.31 / 1.42), RTX 5090 1.99 / 1.99. On `residual` (the operand is also a
+    /// tile site's, so it is built either way) no effect: 0.98–1.02 wherever the
+    /// ranges are not swamped by the box's outliers.
+    pub cell_law: bool,
 }
 
 impl GpuRungs {
@@ -244,11 +269,13 @@ impl GpuRungs {
         rowfold: true,
         rowfold_layout: true,
         epilogue: true,
+        devmap: true,
+        cell_law: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 30] = [
+    pub const NAMES: [&'static str; 32] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -279,6 +306,8 @@ impl GpuRungs {
         "rowfold",
         "rowfold-layout",
         "epilogue",
+        "devmap",
+        "cell-law",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -314,6 +343,8 @@ impl GpuRungs {
             "rowfold" => &mut self.rowfold,
             "rowfold-layout" => &mut self.rowfold_layout,
             "epilogue" => &mut self.epilogue,
+            "devmap" => &mut self.devmap,
+            "cell-law" => &mut self.cell_law,
             _ => return None,
         })
     }
@@ -591,6 +622,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // `epilogue` (S54): the grouped sites, and the bodies their kernels call.
     let mut epis: Vec<crate::func::gpu::EpiSite> = Vec::new();
     let mut epi_calls: Vec<(String, mapal_ir::FuncId, Vec<u32>)> = Vec::new();
+    // `devmap` (S54): each function's cell kernels and the bodies they call.
+    let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
@@ -634,6 +667,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             let (es, cs) = fe.epi_sites();
             epis.extend(es);
             epi_calls.extend(cs);
+            cells.extend(fe.cell_kernels());
             let text = fe.emit();
             funcs.push_str(&text);
             texts.insert(id, text);
@@ -697,6 +731,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if arena {
         out.push_str(crate::func::gpu::ARENA_DECL);
     }
+    // `epilogue` and `devmap` both launch over n pointers: one declaration.
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
     }
@@ -787,6 +822,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
                 &gens,
                 &epis,
                 &epi_bodies,
+                &cells,
             )
         })
         .flatten();

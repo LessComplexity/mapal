@@ -423,6 +423,14 @@ def probe_program(n, spec, timed, w=None):
 for name, spec in probes(128).items():
     (out / f"px_{name}_128.mapal").write_text(probe_program(128, spec, False))
 (out / "px_loop_256.mapal").write_text(probe_program(256, loop_act(256, 3), False, w='w'))
+# S54 `devmap`: `ew` read at eight cells across the grid instead of folded whole,
+# so its cells run on the device (px_ew's whole host fold is R2's negative
+# control: with every operand closed-form, it stays on the host).
+_names, _body, _ = probes(128)['ew']
+(out / "px_ewc_128.mapal").write_text(
+    head(128) + probe_ops(_names, 128) + _body
+    + "".join(f"    z[{i}] -> println;\n" for i in (0, 1, 255, 256, 8191, 8192, 12345, 128 * 128 - 1))
+    + "}\n")
 for n in (2048, 4096):
     for name, spec in probes(n).items():
         (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))

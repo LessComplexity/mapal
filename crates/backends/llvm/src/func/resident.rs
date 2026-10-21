@@ -37,8 +37,7 @@
 //! always correct: a missed retention costs a copy, never a value.
 
 use super::*;
-use mapal_ir::Footprint;
-use mapal_ir::{Affine, Delta};
+use mapal_ir::{Affine, CellSite, Delta, Footprint};
 
 /// One use of an array object, seen through the products that carry it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +167,43 @@ impl Epi {
     }
 }
 
+/// A per-cell map placed on the device (S54 `devmap`, ARCHITECTURE R2): its
+/// own one-thread-per-cell kernel, `out[i] = body(caps…, x[i])` with the
+/// host's body text, launched on the device copies of its operands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Cell {
+    pub id: u64,
+    pub body: FuncId,
+    /// The extent: one thread per output cell.
+    pub n: u64,
+    /// The mapped array, loaded per cell; `None` when its element is the
+    /// index itself (an `iota`'s law), formed in the kernel.
+    pub mapped: Option<ObjectId>,
+    /// The captured arrays in slot order, passed by reference as the host
+    /// passes them.
+    pub caps: Vec<ObjectId>,
+    /// `cell-law`: the capture slots evaluated in the cell instead of loaded,
+    /// each with its producer's closed-form body (`devgen`'s law).
+    pub laws: Vec<(u32, FuncId)>,
+}
+
+impl Cell {
+    /// The arrays the kernel reads, with the product slot each sits in
+    /// (`None`: the bare mapped source of a capture-free map).
+    fn operands(&self) -> Vec<(ObjectId, Option<u32>)> {
+        let k = self.caps.len() as u32;
+        let mapped = self.mapped.map(|o| (o, (k > 0).then_some(k)));
+        let caps = (0..k)
+            .filter(|&s| !self.law(s))
+            .map(|s| (self.caps[s as usize], Some(s)));
+        mapped.into_iter().chain(caps).collect()
+    }
+
+    fn law(&self, slot: u32) -> bool {
+        self.laws.iter().any(|&(s, _)| s == slot)
+    }
+}
+
 /// The placement decisions for one function — a pure function of the IR, the
 /// profile and the rungs, computed before the walk.
 #[derive(Clone, Debug, Default)]
@@ -191,6 +227,8 @@ pub(crate) struct ResidentPlan {
     pub delta: SecondaryMap<ObjectId, DeltaUp>,
     /// Row folds run on the device (S54 `rowfold`).
     pub rowfold: SecondaryMap<MorphismId, super::rowfold::RowFold>,
+    /// Per-cell maps run as their own device kernels (`devmap`).
+    pub cells: SecondaryMap<MorphismId, Cell>,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -288,6 +326,7 @@ impl<'a> FnEmit<'a> {
     fn slot_use(
         &self,
         sites: &SecondaryMap<MorphismId, DevSite>,
+        cells: &SecondaryMap<MorphismId, Cell>,
         m2: MorphismId,
         slot: u32,
     ) -> Use {
@@ -306,6 +345,16 @@ impl<'a> FnEmit<'a> {
                 Use::Dev
             };
         }
+        // A cell kernel loads every capture it does not evaluate, and the
+        // mapped array unless its element is the index.
+        if let Some(c) = cells.get(m2) {
+            let cap = (slot as usize) < c.caps.len();
+            return if (cap && !c.law(slot)) || (!cap && c.mapped.is_some()) {
+                Use::Dev
+            } else {
+                Use::None
+            };
+        }
         let op = self.ir.morphism(m2).expect("morphism resolves").op;
         if op == Operation::Index && slot == 0 && self.bp.proven(m2) {
             return Use::Elem(m2);
@@ -318,6 +367,7 @@ impl<'a> FnEmit<'a> {
     fn uses(
         &self,
         sites: &SecondaryMap<MorphismId, DevSite>,
+        cells: &SecondaryMap<MorphismId, Cell>,
         o: ObjectId,
         fwd: &[MorphismId],
     ) -> Vec<Use> {
@@ -330,12 +380,14 @@ impl<'a> FnEmit<'a> {
                     if self.pointer_only_array_component(morph.target, slot) =>
                 {
                     for &m2 in self.ir.out_edges(morph.target) {
-                        out.push(self.slot_use(sites, m2, slot));
+                        out.push(self.slot_use(sites, cells, m2, slot));
                     }
                 }
                 Operation::Map { captures: 0, .. } if self.member_src(m, 0).is_some() => {
                     out.push(Use::Dev)
                 }
+                // A capture-free cell maps `o` itself.
+                _ if cells.contains_key(m) => out.push(self.slot_use(sites, cells, m, 0)),
                 _ => out.push(Use::Host),
             }
         }
@@ -379,8 +431,12 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The loop-carry candidates (F3), each checked against its uses.
-    fn carries(&self, sites: &SecondaryMap<MorphismId, DevSite>) -> Vec<Carry> {
-        let site_out = |o: ObjectId| self.produced_on_device(sites, o);
+    fn carries(
+        &self,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        cells: &SecondaryMap<MorphismId, Cell>,
+    ) -> Vec<Carry> {
+        let site_out = |o: ObjectId| self.produced_on_device(sites, cells, o);
         let mut out = Vec::new();
         for scc in self.ir.loop_structure(self.f) {
             for &merge in &scc.merges {
@@ -447,13 +503,13 @@ impl<'a> FnEmit<'a> {
                     let fwd: Vec<MorphismId> =
                         next_pair.iter().chain(exit_pair.iter()).copied().collect();
                     let device_only = |o: ObjectId| {
-                        self.uses(sites, o, &fwd)
+                        self.uses(sites, cells, o, &fwd)
                             .iter()
                             .all(|u| !matches!(u, Use::Host))
                     };
                     let read = views
                         .iter()
-                        .any(|&v| self.uses(sites, v, &fwd).contains(&Use::Dev));
+                        .any(|&v| self.uses(sites, cells, v, &fwd).contains(&Use::Dev));
                     if read && device_only(next) && views.iter().all(|&v| device_only(v)) {
                         out.push(Carry {
                             merge,
@@ -816,15 +872,189 @@ impl<'a> FnEmit<'a> {
         out
     }
 
-    /// Build the plan. `None` when the function has no device site.
+    /// The `devmap` gate on a [`CellSite`] (`cell_plan`: a classifiable leaf
+    /// body over array captures, every read classified): outside every guard
+    /// arm, a body whose text names no runtime symbol (clean) and lowers to
+    /// the host's bits on the device ([`Self::device_leaf`]), number elements, an
+    /// input product with no erased component, and no more pointers than one
+    /// launch passes. A closed-form producer is `devgen`'s, not a cell.
+    fn cell_of(&self, m: MorphismId, site: &CellSite) -> Option<Cell> {
+        let morph = self.ir.morphism(m)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        let number = |t: &Ty| matches!(t, Ty::Float { .. } | Ty::Int { .. });
+        let Ty::Array { elem, .. } = self.obj_ty(morph.target) else {
+            return None;
+        };
+        if self.gated.contains_key(m)
+            || self.gen_law(m).is_some()
+            || !self.attrs.clean(body)
+            || !self.device_leaf(body)
+            || !is_float(&elem)
+        {
+            return None;
+        }
+        let caps = (0..captures)
+            .map(|k| self.pair_source(morph.source, k))
+            .collect::<Option<Vec<_>>>()?;
+        let mapped = if captures == 0 {
+            morph.source
+        } else {
+            self.pair_source(morph.source, captures)?
+        };
+        let input = self.obj_ty(self.ir.func(body)?.input);
+        let whole = captures == 0 || residual_arity(&input) == captures as usize + 1;
+        // Over an `iota` the element is the index; any other mapped array is read.
+        let loaded = site.reads.iter().any(|r| r.slot == captures);
+        if !whole || !number(array_elem(&self.obj_ty(mapped))) {
+            return None;
+        }
+        let laws =
+            if !loaded && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).cell_law {
+                self.laws(body, site, &caps)
+            } else {
+                Vec::new()
+            };
+        let cell = Cell {
+            id: gpu::cell_id(&self.fnames[body], site.extent, self.profile),
+            body,
+            n: site.extent,
+            mapped: loaded.then_some(mapped),
+            caps,
+            laws,
+        };
+        // The output, then every operand: one pointer each.
+        (cell.operands().len() < gpu::LAUNCHV_MAX).then_some(cell)
+    }
+
+    /// `cell-law`'s fact: the captures of a cell over an `iota` that are
+    /// closed-form (`devgen`'s law, `x[i] = f(i)`) and read only at the cell's
+    /// own index (every read `Same`, and the capture used for nothing but
+    /// those reads). Such a read is `f(i)`, evaluated in the cell: nothing
+    /// stores `x`, nothing loads it.
+    fn laws(&self, body: FuncId, site: &CellSite, caps: &[ObjectId]) -> Vec<(u32, FuncId)> {
+        let Some(fd) = self.ir.func(body) else {
+            return Vec::new();
+        };
+        let only_read = |s: u32| {
+            self.ir.out_edges(fd.input).iter().all(|&p| {
+                let x = self.ir.morphism(p).expect("morphism resolves");
+                x.op != Operation::Proj { index: s }
+                    || self.ir.out_edges(x.target).iter().all(|&q| {
+                        let y = self.ir.morphism(q).expect("morphism resolves");
+                        matches!(y.op, Operation::Pair { slot: 0, .. })
+                            && self.ir.out_edges(y.target).iter().all(|&r| {
+                                self.ir.morphism(r).expect("morphism resolves").op
+                                    == Operation::Index
+                            })
+                    })
+            })
+        };
+        caps.iter()
+            .enumerate()
+            .filter_map(|(s, &c)| {
+                let s = s as u32;
+                let mut reads = site.reads.iter().filter(|r| r.slot == s).peekable();
+                let same = reads.peek().is_some() && reads.all(|r| r.foot == Footprint::Same);
+                let law = self.gen_law(*self.ir.in_edges(c).first()?)?;
+                (same && only_read(s)).then_some((s, law))
+            })
+            .collect()
+    }
+
+    /// R2 (ARCHITECTURE §5): the per-cell maps that run on the device. A cell
+    /// runs there when every operand is already in device memory — a device
+    /// site's or an earlier cell's output, a carried state, a tile operand
+    /// (copied in for its site anyway), or closed-form (`devgen` builds it) —
+    /// and either some operand lives only there or no host reader needs the
+    /// output whole: a whole-host reader forces a copy-out, which costs no
+    /// more than copying the operands out only when one of them is device-only.
+    ///
+    /// Cells and carries decide each other (a carried view is an operand; a
+    /// cell's output can be the next state), so both are the greatest fixed
+    /// point from "every candidate": each round drops the cells whose operands
+    /// or readers the round before no longer supports. Nothing is added, so it
+    /// ends; with `devmap` off there is no candidate and the carries are S53's.
+    fn cell_sites(
+        &self,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        devgen: bool,
+    ) -> (SecondaryMap<MorphismId, Cell>, Vec<Carry>) {
+        let mut cells = SecondaryMap::new();
+        // A Map / Fold body runs once per element of its site: a launch there
+        // would be one per element.
+        let body = self.ir.morphisms().any(|(_, x)| {
+            matches!(x.op, Operation::Map { body, .. } | Operation::Fold { body, .. } if body == self.f)
+        });
+        if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
+            for (m, site) in self.ir.cell_plan(self.f).iter() {
+                // An epilogue member (R1) runs in its site's store already.
+                if !sites.contains_key(m)
+                    && self.member_src(m, 0).is_none()
+                    && let Some(c) = self.cell_of(m, site)
+                {
+                    cells.insert(m, c);
+                }
+            }
+        }
+        let mut feeders: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        for (m, site) in sites.iter() {
+            let src = self.ir.morphism(m).expect("site").source;
+            for slot in site.reads() {
+                if let Some(f) = self.pair_source(src, slot) {
+                    feeders.insert(f, ());
+                }
+            }
+        }
+        loop {
+            let carries = self.carries(sites, &cells);
+            let carried = |o: ObjectId| {
+                carries
+                    .iter()
+                    .any(|c| c.views.contains(&o) || c.exit == Some(o))
+            };
+            let device_only = |o| carried(o) || self.produced_on_device(sites, &cells, o);
+            let there = |o| {
+                device_only(o)
+                    || feeders.contains_key(o)
+                    || (devgen
+                        && self
+                            .ir
+                            .in_edges(o)
+                            .iter()
+                            .any(|&p| self.gen_law(p).is_some()))
+            };
+            let drop: Vec<MorphismId> = cells
+                .iter()
+                .filter(|(m, c)| {
+                    let ops = c.operands();
+                    let t = self.ir.morphism(*m).expect("cell").target;
+                    let host = || self.uses(sites, &cells, t, &[]).contains(&Use::Host);
+                    !ops.iter().all(|&(o, _)| there(o))
+                        || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
+                })
+                .map(|(m, _)| m)
+                .collect();
+            if drop.is_empty() {
+                return (cells, carries);
+            }
+            for m in drop {
+                cells.remove(m);
+            }
+        }
+    }
+
+    /// Build the plan. `None` when the function has no device site or cell.
     pub(crate) fn resident_plan(&self, rungs: crate::GpuRungs) -> Option<ResidentPlan> {
         let (devgen, arena) = (rungs.devgen, rungs.arena);
         let sites = self.device_sites();
-        if sites.is_empty() {
+        let (cells, carries) = self.cell_sites(&sites, devgen);
+        if sites.is_empty() && cells.is_empty() {
             return None;
         }
         let mut plan = ResidentPlan {
-            carries: self.carries(&sites),
+            carries,
             ..ResidentPlan::default()
         };
         for (m, site) in sites.iter() {
@@ -834,10 +1064,11 @@ impl<'a> FnEmit<'a> {
         }
         let mut device = Vec::new(); // every object given a device copy here
 
-        // Device outputs, an epilogue's stored results among them (S54): kept
-        // on the device unless the host reads one whole.
+        // Device outputs — sites', cell kernels' (`devmap`), an epilogue's
+        // stored results (S54): kept on the device unless the host reads one whole.
         let outs: Vec<ObjectId> = sites
             .keys()
+            .chain(cells.keys())
             .map(|m| self.ir.morphism(m).expect("site").target)
             .chain(
                 self.groups
@@ -850,7 +1081,7 @@ impl<'a> FnEmit<'a> {
             let uses = if plan.is_carry_next(c) {
                 vec![] // checked device-only when the carry was admitted
             } else {
-                self.uses(&sites, c, &[])
+                self.uses(&sites, &cells, c, &[])
             };
             if uses.iter().all(|u| !matches!(u, Use::Host)) {
                 plan.keep.insert(c, ());
@@ -859,7 +1090,7 @@ impl<'a> FnEmit<'a> {
         for carry in &plan.carries {
             if let Some(x) = carry.exit
                 && self
-                    .uses(&sites, x, &[])
+                    .uses(&sites, &cells, x, &[])
                     .iter()
                     .all(|u| !matches!(u, Use::Host))
             {
@@ -873,7 +1104,7 @@ impl<'a> FnEmit<'a> {
             .chain(plan.carries.iter().flat_map(|c| c.views.iter().copied()))
             .collect();
         for o in kept {
-            for u in self.uses(&sites, o, &[]) {
+            for u in self.uses(&sites, &cells, o, &[]) {
                 if let Use::Elem(m) = u {
                     plan.elem.insert(m, ());
                 }
@@ -899,9 +1130,14 @@ impl<'a> FnEmit<'a> {
                 plan.skip.insert(mb.m, ());
             }
         }
+        for c in cells.values() {
+            for (o, _) in c.operands() {
+                read.insert(o, ());
+            }
+        }
         let carried = |o: ObjectId| plan.carries.iter().any(|c| c.views.contains(&o));
         for (o, _) in read.iter() {
-            if carried(o) || self.produced_on_device(&sites, o) {
+            if carried(o) || self.produced_on_device(&sites, &cells, o) {
                 continue;
             }
             let Some(&p) = self.ir.in_edges(o).first() else {
@@ -910,7 +1146,7 @@ impl<'a> FnEmit<'a> {
             if devgen
                 && let Some(body) = self.gen_law(p)
                 && self
-                    .uses(&sites, o, &[])
+                    .uses(&sites, &cells, o, &[])
                     .iter()
                     .all(|u| matches!(u, Use::Dev | Use::Elem(_) | Use::None))
             {
@@ -924,12 +1160,12 @@ impl<'a> FnEmit<'a> {
                     },
                 );
                 if self
-                    .uses(&sites, o, &[])
+                    .uses(&sites, &cells, o, &[])
                     .iter()
                     .any(|u| matches!(u, Use::Elem(_)))
                 {
                     plan.keep.insert(o, ());
-                    for u in self.uses(&sites, o, &[]) {
+                    for u in self.uses(&sites, &cells, o, &[]) {
                         if let Use::Elem(m) = u {
                             plan.elem.insert(m, ());
                         }
@@ -942,6 +1178,25 @@ impl<'a> FnEmit<'a> {
         }
         if rungs.delta_h2d {
             plan.delta = self.delta_uploads(&plan.upload);
+        }
+
+        // `cell-law`: a closed-form producer whose every reader evaluates it
+        // in a cell (an unloaded slot) is built nowhere.
+        if cells.values().any(|c| !c.laws.is_empty()) {
+            for (m, _) in self.ir.morphisms() {
+                let t = self.ir.morphism(m).expect("morphism resolves").target;
+                if self.ir.try_owner(t) == Some(self.f)
+                    && !self.lup.escapes(t)
+                    && self.gen_law(m).is_some()
+                    && !self.ir.out_edges(t).is_empty()
+                    && self
+                        .uses(&sites, &cells, t, &[])
+                        .iter()
+                        .all(|u| *u == Use::None)
+                {
+                    plan.skip.insert(m, ());
+                }
+            }
         }
 
         // Inputs no reader is left for: an `Iota`/`Fill` (trap-free by
@@ -959,14 +1214,16 @@ impl<'a> FnEmit<'a> {
             let unread = self.ir.out_edges(t).iter().all(|&c| {
                 let cm = self.ir.morphism(c).expect("morphism resolves");
                 match cm.op {
-                    Operation::Map { captures: 0, .. } => plan.devgen.contains_key(c),
+                    Operation::Map { captures: 0, .. } => {
+                        plan.devgen.contains_key(c) || plan.skip.contains_key(c)
+                    }
                     Operation::Pair { slot, .. } => {
                         self.pointer_only_array_component(cm.target, slot)
                             && self
                                 .ir
                                 .out_edges(cm.target)
                                 .iter()
-                                .all(|&m2| self.slot_use(&sites, m2, slot) == Use::None)
+                                .all(|&m2| self.slot_use(&sites, &cells, m2, slot) == Use::None)
                     }
                     _ => false,
                 }
@@ -1001,6 +1258,7 @@ impl<'a> FnEmit<'a> {
                 }
             }
         }
+        plan.cells = cells;
         if arena {
             plan.arena = Some(self.arena(&plan));
         }
@@ -1141,11 +1399,17 @@ impl<'a> FnEmit<'a> {
         .map(|(w, _, b)| (w, b))
     }
 
-    fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, DevSite>, o: ObjectId) -> bool {
-        self.ir
-            .in_edges(o)
-            .iter()
-            .any(|&m| sites.contains_key(m) || self.member_src(m, 0).is_some())
+    /// A device site's, a cell kernel's (`devmap`) or an epilogue member's
+    /// output (S54).
+    fn produced_on_device(
+        &self,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        cells: &SecondaryMap<MorphismId, Cell>,
+        o: ObjectId,
+    ) -> bool {
+        self.ir.in_edges(o).iter().any(|&m| {
+            sites.contains_key(m) || cells.contains_key(m) || self.member_src(m, 0).is_some()
+        })
     }
 
     // --- emission ---------------------------------------------------------
@@ -1209,6 +1473,10 @@ impl<'a> FnEmit<'a> {
             self.emit_rowfold(m, &r);
             return true;
         }
+        if let Some(c) = plan.cells.get(m).cloned() {
+            self.emit_cell(m, &c);
+            return true;
+        }
         let Some(g) = plan.devgen.get(m).cloned() else {
             return false;
         };
@@ -1221,6 +1489,137 @@ impl<'a> FnEmit<'a> {
         ));
         self.dvalid.insert(t, ());
         true
+    }
+
+    /// A cell's launch (`devmap`): its operands' device copies (copied in
+    /// here only when nothing placed one, as a site does), one thread per
+    /// cell, the output kept on the device unless the host reads it whole.
+    fn emit_cell(&mut self, m: MorphismId, c: &Cell) {
+        let morph = self.ir.morphism(m).expect("morphism resolves");
+        let (source, target) = (morph.source, morph.target);
+        let bytes = self.array_bytes(&self.obj_ty(target));
+        let mut ptrs = vec![self.dalloc(target, bytes)];
+        let mut temps = Vec::new();
+        for (o, slot) in c.operands() {
+            let at = self.resident.as_ref().map_or(o, |p| p.alias(o));
+            if self.dvalid.contains_key(at) {
+                ptrs.push(self.dload(o));
+                continue;
+            }
+            let ob = self.array_bytes(&self.obj_ty(o));
+            let h = self
+                .array_operand_ptr(source, slot)
+                .expect("cell operand ptr");
+            let s = format!("%d{}", self.fresh());
+            self.allocas
+                .push_str(&format!("  {s} = alloca i64\n  store i64 0, ptr {s}\n"));
+            let d = self.tmp();
+            self.line(format!(
+                "{d} = call i64 @mapal_gpu_alloc(ptr {s}, i64 {ob})"
+            ));
+            self.line(format!(
+                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {ob})"
+            ));
+            temps.push(s);
+            ptrs.push(d);
+        }
+        let args = format!("%dv{}", self.fresh());
+        let np = ptrs.len();
+        self.allocas
+            .push_str(&format!("  {args} = alloca [{np} x i64]\n"));
+        for (i, p) in ptrs.iter().enumerate() {
+            let g = self.tmp();
+            self.line(format!(
+                "{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"
+            ));
+            self.line(format!("store i64 {p}, ptr {g}"));
+        }
+        let (gx, block) = gpu::cell_grid(c.n);
+        self.line(format!(
+            "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
+            c.id as i64
+        ));
+        self.dvalid.insert(target, ());
+        for t in temps {
+            self.line(format!("call void @mapal_gpu_free(ptr {t})"));
+        }
+        let keep = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.keep.contains_key(target) || p.is_carry_next(target));
+        if !keep {
+            let h = self.slot(target).expect("cell output slot");
+            self.line(format!(
+                "call void @mapal_gpu_d2h(ptr {h}, i64 {}, i64 0, i64 {bytes})",
+                ptrs[0]
+            ));
+        }
+    }
+
+    /// The device kernels of this function's cells, each with the functions
+    /// it calls (name, text): the body — `cell-law`'s variant of it when a
+    /// capture is evaluated — and each evaluated capture's law.
+    pub(crate) fn cell_kernels(&self) -> Vec<gpu::CellKernel> {
+        let Some(plan) = &self.resident else {
+            return Vec::new();
+        };
+        plan.cells
+            .iter()
+            .map(|(m, c)| {
+                let morph = self.ir.morphism(m).expect("cell morphism");
+                let (out, _) = array_parts(&self.obj_ty(morph.target));
+                let input = self.obj_ty(self.ir.func(c.body).expect("cell body").input);
+                let arg =
+                    lower_body_input_ty(&input, c.caps.len() as u32).expect("cell input lowers");
+                let elem = c.mapped.map(|o| array_parts(&self.obj_ty(o)).0);
+                let vals: Vec<(u32, String)> = c
+                    .laws
+                    .iter()
+                    .map(|&(s, _)| (s, array_parts(&self.obj_ty(c.caps[s as usize])).0))
+                    .collect();
+                let name = &self.fnames[c.body];
+                let mut fns = vec![(
+                    if vals.is_empty() {
+                        name.clone()
+                    } else {
+                        gpu::cell_variant(name)
+                    },
+                    self.body_text(c.body, vals.clone()),
+                )];
+                let caps: Vec<Option<(String, String)>> = (0..c.caps.len() as u32)
+                    .map(|s| {
+                        let &(_, law) = c.laws.iter().find(|&&(x, _)| x == s)?;
+                        fns.push((self.fnames[law].clone(), self.body_text(law, Vec::new())));
+                        let t = vals.iter().find(|&&(x, _)| x == s)?.1.clone();
+                        Some((self.fnames[law].clone(), t))
+                    })
+                    .collect();
+                let kernel =
+                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps);
+                (fns, kernel)
+            })
+            .collect()
+    }
+
+    /// `f`'s text as the module emits it (a leaf body, so the text is a pure
+    /// function of the IR), or `cell-law`'s device variant of it.
+    fn body_text(&self, f: FuncId, vals: Vec<(u32, String)>) -> String {
+        let mut fe = FnEmit::new(
+            self.ir,
+            f,
+            self.fnames,
+            self.strings,
+            self.attrs,
+            self.tile_plan.is_some(),
+            self.packing,
+            self.contract,
+            self.kc_nest,
+            self.move_panel,
+            self.profile,
+        );
+        fe.set_gpu_arms(self.gpu_arms, self.reduced);
+        fe.cell_vals = vals;
+        fe.emit()
     }
 
     /// After `m`: copy its output in if a device site reads it, and free every

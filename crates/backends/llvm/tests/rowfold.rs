@@ -122,7 +122,12 @@ fn row_fold_refuses_a_product_and_a_second_read() {
     assert!(sites(&program("    c[0] -> println;\n")).is_empty());
 }
 
-fn emit(src: &str, gpu: GpuArms, contract: bool) -> (String, String) {
+fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
+    // R0 for folds alone (S54 integration): R1 (`epilogue`) and R2 (`devmap`)
+    // would place these programs' per-cell maps too; their own tests pin that.
+    for r in ["epilogue", "devmap"] {
+        *gpu.off.rung(r).expect("a rung") = true;
+    }
     let opts = EmitOpts {
         target: "rtx-4090",
         gpu,
