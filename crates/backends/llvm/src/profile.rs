@@ -678,6 +678,39 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions",
     },
+    // S54 `rowfold-layout` (the reader-chosen store order): the strided fold the
+    // row-major store leaves costs 0.01–0.1 ms at 4096 (L1 serves each sector to
+    // the next 7 steps), and the column-major store costs the FMA tile more. Read
+    // on the device clock (traced kernel sums, site + fold, column-major vs
+    // row-major): the rung changes only kernels, and the probes' own clock is
+    // host-noise-bound at that size (probe_rungs.py).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-3090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 9.081 vs 8.994, 9.856 vs 9.790; _c 4096 5.637 vs 5.624, 5.936 vs 5.929; 2048 within 0.4%: no \
+               size faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-5090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 3.478 vs 3.432, 3.378 vs 3.330; _c 4096 2.216 vs 2.153, 2.161 vs 2.088 (2048 2.5-2.8% faster, \
+               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-h100-pcie.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact 4096 7.851 vs \
+               6.451, 2048 1.311 vs 1.170; _c 4096 4.033 vs 3.760; -v2.txt / -v2-confirm.txt the same sign (_exact \
+               4096 8.97 vs 7.52 ms): the HBM part pays 8-22% for the column-major tile store",
+    },
     RungOff {
         profile: "a100",
         rung: "retain-delta",

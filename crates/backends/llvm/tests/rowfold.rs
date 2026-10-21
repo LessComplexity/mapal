@@ -139,6 +139,15 @@ fn off(rung: &str) -> GpuArms {
     a
 }
 
+/// Both rungs forced on: the placement under test, whatever the part's
+/// measured table ships (`rowfold-layout` ships OFF where it was measured).
+fn forced() -> GpuArms {
+    let mut a = GpuArms::default();
+    a.on.rowfold = true;
+    a.on.rowfold_layout = true;
+    a
+}
+
 /// `mapal_gpu_*` calls of the host text, in order, SSA names dropped.
 fn calls(ll: &str) -> Vec<String> {
     ll.lines()
@@ -171,7 +180,7 @@ fn launch_ids(ll: &str) -> Vec<String> {
 #[test]
 fn a_fold_over_a_device_output_is_a_device_site() {
     for contract in [false, true] {
-        let (on, dev) = emit(&rowsum(""), GpuArms::default(), contract);
+        let (on, dev) = emit(&rowsum(""), forced(), contract);
         // Two closed-form operands built on the device, the site, the fold,
         // then the two printed cells — one element each; `c` never crosses.
         assert_eq!(
@@ -195,7 +204,7 @@ fn a_fold_over_a_device_output_is_a_device_site() {
 fn the_layout_is_the_only_readers_order() {
     // The fold is `c`'s only reader: the site's kernel stores column-major (a
     // different kernel, so a different id) and the fold reads `c[i + k·rows]`.
-    let (on, dev) = emit(&rowsum(""), GpuArms::default(), false);
+    let (on, dev) = emit(&rowsum(""), forced(), false);
     let (row, row_dev) = emit(&rowsum(""), off("rowfold-layout"), false);
     let (ids, row_ids) = (launch_ids(&on), launch_ids(&row));
     assert_ne!(ids[0], row_ids[0], "the site stores in another order");
@@ -210,7 +219,7 @@ fn the_layout_is_the_only_readers_order() {
     // A second reader of `c` (one host element): the order is no longer the
     // fold's to choose — row-major, the arm's text exactly.
     let two = rowsum("    c[5] -> println;\n");
-    let (on2, dev2) = emit(&two, GpuArms::default(), false);
+    let (on2, dev2) = emit(&two, forced(), false);
     let (off2, off_dev2) = emit(&two, off("rowfold-layout"), false);
     assert_eq!(on2, off2);
     assert_eq!(dev2, off_dev2);
@@ -237,7 +246,7 @@ fn a_fold_over_a_host_array_stays_on_the_host() {
         )
     ));
     assert_eq!(sites(&src).len(), 2, "both are row folds");
-    let (on, dev) = emit(&src, GpuArms::default(), false);
+    let (on, dev) = emit(&src, forced(), false);
     assert_eq!(launch_ids(&on).len(), 2, "the site and `mx`");
     // `mx` crosses back whole (the host's `ex` reads it): its copy keeps no
     // pointer to the host slot, so the host loop that reads it still
