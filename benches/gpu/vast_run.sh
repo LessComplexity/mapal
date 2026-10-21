@@ -20,7 +20,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 120); do
+# START_TRIES x 10 s for the container to start (default 20 min; a slow image pull needs more).
+for _ in $(seq "${START_TRIES:-120}"); do
     st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("actual_status") or "", (d.get("status_msg") or "").split(chr(10))[0])' || true)
     [ "${st%% *}" = running ] && { st=running; break; }
     # A host that cannot start the container says so in status_msg: give the offer up now.

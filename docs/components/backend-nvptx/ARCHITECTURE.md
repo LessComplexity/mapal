@@ -111,7 +111,11 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
 - **R0′ (store order, S54 `rowfold-layout`).** When a device row fold is the *only* reader of a
   tile site's output (the exact use count) and reads it in row order, the site stores the output
   column-major (`o[j·rows + i]`) and the fold reads `c[i + k·rows]`: the fold's threads are the
-  rows, so a warp's reads are consecutive words. No other reader exists to see the layout.
+  rows, so a warp's reads are consecutive words. No other reader exists to see the layout. The
+  tile kernel then runs its lanes and its grid down the rows too. Measured (S54,
+  `rowfold-*.txt`): the strided fold it replaces costs only 0.01–0.1 ms at 4096 (L1 serves each
+  sector to a thread's next steps) and the column-major tile store costs 0–4% (GDDR) to 8–22%
+  (H100), so the rung ships OFF; it is free only with a staged (shared-memory) store.
 - **R1 (fold into the store).** A per-cell morphism `m` runs **inside** device kernel `S`,
   between the accumulator and the store, when every operand of `m` is (i) `S`'s output at
   footprint `Same`, (ii) a member of `S`'s group already (a chain `x → y → z` composes by
@@ -160,7 +164,7 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 | mlp | site → per-cell → site | 2 / whole / whole | 2 / 8 B / 0 |
 | indep, diamond | sites ∥ → per-cell join | 2–3 serial / whole | 2–3, join in the last store; streams under one wave |
 | fanout | one output, three readers | 2 / 3 × whole | 2 / whole once (the host reads `c`) |
-| rowsum | site → per-row fold | 1 / whole | 2 / 8 B (the two printed cells), `c` column-major (S54, built) |
+| rowsum | site → per-row fold | 1 / whole | 2 / 8 B (the two printed cells; S54 `rowfold`, built and measured) |
 | softmax_rows | site → row max, per-cell exp, row sum, per-cell quotient | 1 / whole | 2 / whole `c` + 16 KB `mx` (S54 `rowfold`: the max on the device; the sum folds a host array); R2 takes the rest |
 | loop | `x ← relu(x @ w)` × 8 | 8 / 8 × whole / 8 × whole | 8 / 0 / 0 |
 | decode | carried rows, invariant weights | 3 whole launches per step, 1 MB each way | row launches, 1 KB each way |

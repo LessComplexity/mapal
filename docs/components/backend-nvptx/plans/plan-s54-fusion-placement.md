@@ -269,6 +269,32 @@ bit-identical anywhere). Static: rowsum 2 / 4 B / 0. Box: vs `gemv` (sgemm + sge
 coalesces it; 3–10× slower strided). Per part the layout arm is the measurement: the 6 MB-L2 3090
 should show the largest layout effect.
 
+**Outcome (built on `s54/rowfold`; `benches/results-s54-gpu/rowfold-*.txt`).** `row_fold` (mapal-ir)
+takes `acc ⊕ e` with ⊕ ∈ {+, −, ×} and the compare-select max/min, so `softmax_rows`' row max is a
+site too; the device places a fold only over a device site's output (`rowfold.rs`: a fold over a
+host array stays — moving it in is the copy removed). Differential 26/26 on every part and session
+(a CPU emulation of the device unit passed every program, part, face and arm before renting). Static: rowsum 1 → 2 launches, 64 MB →
+8 B out; softmax_rows keeps `c`'s copy-out (its `exp` pass reads `c` on the host until R2).
+- **`rowfold` ships ON on every part.** Own clock, OFF/ON, two sessions per part (tables:
+  `rowfold-tables.md`): rowsum 2.3–9.9× (4096: 3090 2.3–3.2, A100 3.2–5.3, 4090 3.2–4.2, H100
+  3.6–9.5, 5090 5.9–8.3), softmax_rows 1.0–1.3× (one H100 cell 0.96, not disjoint: that box's host
+  clock spreads 5×). The first build lost softmax_rows (0.70–0.86×, `-v1.txt`): the fold's output
+  reached a host stack slot through `mapal_gpu_d2h`, LLVM counted it escaped and the host `exp` loop
+  lost its vector form; the call site now says `nocapture`.
+- **`rowfold-layout` ships OFF on 3090, H100 and 5090, ON only on the 4090's contract face and the
+  A100's exact face** (device clock, two sessions; `GPU_RUNGS_OFF`). The expectation was wrong
+  twice: the strided fold is 1.2–2× the coalesced one, not 3–10× (a thread's next steps hit the
+  sector L1 already holds), i.e. 0.01–0.1 ms at 4096; and the column-major tile store costs the FMA
+  tile 0–6% on the GDDR parts and 7–22% on H100 even after two fixes (a warp's lanes, then the grid
+  raster, run down the rows). Where it ships, it wins 1–2% of device time at 4096. It is free only
+  with a staged (shared-memory) store, which is item 1's epilogue.
+- **vs the library** (cuBLAS sgemm + warp-per-row sum or sgemv; library order ≠ oracle order):
+  rowsum 4096 contract, library / Mapal's clock 0.52–0.83 (Mapal behind on every part: the clock
+  holds the outputs' `cuMemAlloc`/`cuMemFree`: 4090 trace alloc 1.3 ms, free 2.3 ms a run, iter 5.0 vs
+  kernels 2.6 — item 6's arena), kernels alone 0.89–1.19 (3090 ahead, 4090 and H100
+  even); exact face 0.40–0.55 / 0.47–0.75. softmax_rows stays 0.02–0.17× the fused library kernel —
+  its per-cell `exp` and quotient run on the host (R2's item); its kernels alone 0.43–1.22.
+
 ### 4.5 `retain-resident` — retention on the resident buffer, delta upload (R5)
 
 **Shape.** Inside a loop: `write_delta → Delta::Rows{stride, start}` of the carried `x`
