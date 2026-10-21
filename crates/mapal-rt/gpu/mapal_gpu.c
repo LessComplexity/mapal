@@ -323,8 +323,13 @@ void mapal_gpu_free(uint64_t *slot) {
 
 /* The clock fence's device half (plan-s53): the emitter calls this before every
  * `time` read on a GPU profile, so the clock never closes over a kernel still
- * running. No module loaded means no launch yet: nothing to wait for. */
+ * running. No module loaded means no launch yet: nothing to wait for. An eager
+ * init still running is device work in flight too (S54: a program whose first
+ * launch is after the read — every operand built in its kernel — would
+ * otherwise time the context inside its clock): it is joined. */
 void mapal_gpu_sync(void) {
+  if (init_state == 1)
+    load_module();
   if (init_state == 2)
     CK(cuCtxSynchronize());
 }

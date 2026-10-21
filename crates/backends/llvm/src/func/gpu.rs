@@ -399,6 +399,123 @@ fn gen_kernel_text(id: u64, callee: &str, elem: &str) -> String {
     )
 }
 
+/// A cell kernel's id (`devmap`): FNV-1a over its body's name, extent and
+/// profile. The kernel is named like a site's (`mapal_tile_<id>`), which is
+/// how `mapal_gpu_launchv` finds it; the `cell` key keeps the two apart.
+pub(crate) fn cell_id(body: &str, n: u64, profile: &TargetProfile) -> u64 {
+    format!("cell|{body}|{n}|{}", profile.name)
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+}
+
+/// A cell kernel's launch: one thread per cell, [`NAIVE_THREADS`] per block
+/// (a one-load, one-store-per-thread kernel is bandwidth-bound at any block
+/// size a part accepts — the `devgen` reason), as many blocks as cover `n`.
+pub(crate) fn cell_grid(n: u64) -> (u64, u64) {
+    (n.div_ceil(NAIVE_THREADS), NAIVE_THREADS)
+}
+
+/// `cell-law`'s device variant of body `name` (`FnEmit::cell_vals`).
+pub(crate) fn cell_variant(name: &str) -> String {
+    format!("{name}_cell")
+}
+
+/// `out[i] = body(caps…, x[i])`, one thread per cell (`devmap`): the host's
+/// body text runs on the device, so the cell is the host's bit for bit. The
+/// parameters are the output, then the mapped array when it is loaded (`elem`
+/// is its element type; `None` forms the element from the index, an `iota`),
+/// then each captured array the cell loads — generic pointers to the body, as
+/// the host passes them by reference. A capture `Some((law, ty))` is not a
+/// parameter: `cell-law` evaluates `law(i)` and `callee` (the body's variant)
+/// takes the value after its input.
+pub(crate) fn cell_kernel_text(
+    id: u64,
+    callee: &str,
+    n: u64,
+    out: &str,
+    arg: &str,
+    elem: Option<&str>,
+    caps: &[Option<(String, String)>],
+) -> String {
+    let mut params = vec!["ptr addrspace(1) %o".to_string()];
+    if elem.is_some() {
+        params.push("ptr addrspace(1) %x".into());
+    }
+    params.extend(
+        caps.iter()
+            .enumerate()
+            .filter(|(_, c)| c.is_none())
+            .map(|(k, _)| format!("ptr addrspace(1) %c{k}")),
+    );
+    let mut body = String::new();
+    let e_ty = match elem {
+        Some(t) => {
+            body.push_str(&format!(
+                "  %xp = getelementptr inbounds {t}, ptr addrspace(1) %x, i64 %i\n  %e = load {t}, ptr addrspace(1) %xp\n"
+            ));
+            t
+        }
+        None => {
+            body.push_str("  %e = trunc i64 %i to i32\n");
+            "i32"
+        }
+    };
+    let mut call_arg = if caps.is_empty() {
+        format!("{e_ty} %e")
+    } else {
+        let mut prev = "poison".to_string();
+        for (k, c) in caps.iter().enumerate() {
+            if c.is_some() {
+                continue; // the variant never reads the pointer
+            }
+            body.push_str(&format!(
+                "  %g{k} = addrspacecast ptr addrspace(1) %c{k} to ptr\n  %a{k} = insertvalue {arg} {prev}, ptr %g{k}, {k}\n"
+            ));
+            prev = format!("%a{k}");
+        }
+        body.push_str(&format!(
+            "  %a = insertvalue {arg} {prev}, {e_ty} %e, {}\n",
+            caps.len()
+        ));
+        format!("{arg} %a")
+    };
+    for (k, c) in caps.iter().enumerate() {
+        if let Some((law, t)) = c {
+            body.push_str(&format!("  %v{k} = call {t} @{law}(i32 %e)\n"));
+            call_arg.push_str(&format!(", {t} %v{k}"));
+        }
+    }
+    format!(
+        "define ptx_kernel void @{name}({params}) \"nvvm.maxntid\"=\"{NAIVE_THREADS}\" {{\n\
+         entry:\n\
+         \x20 %t = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n\
+         \x20 %b = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\
+         \x20 %t64 = zext i32 %t to i64\n\
+         \x20 %b64 = zext i32 %b to i64\n\
+         \x20 %base = mul i64 %b64, {NAIVE_THREADS}\n\
+         \x20 %i = add i64 %base, %t64\n\
+         \x20 %in = icmp ult i64 %i, {n}\n\
+         \x20 br i1 %in, label %body, label %done\n\
+         body:\n\
+         {body}\
+         \x20 %v = call {out} @{callee}({call_arg})\n\
+         \x20 %p = getelementptr inbounds {out}, ptr addrspace(1) %o, i64 %i\n\
+         \x20 store {out} %v, ptr addrspace(1) %p\n\
+         \x20 br label %done\n\
+         done:\n\
+         \x20 ret void\n\
+         }}\n",
+        name = kernel_name(id),
+        params = params.join(", "),
+    )
+}
+
+/// A `devmap` cell for the device unit: the functions its kernel calls
+/// (`(name, emitted text)`), then the kernel text.
+pub(crate) type CellKernel = (Vec<(String, String)>, String);
+
 /// The device translation unit: one kernel per GPU tile site in `ir`, in name
 /// order. `None` when no site offloads (every CPU profile, and a GPU profile
 /// on a program with no tile site).
@@ -409,6 +526,7 @@ pub(crate) fn device_module(
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
     gens: &[GenKernel],
+    cells: &[CellKernel],
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
@@ -425,7 +543,7 @@ pub(crate) fn device_module(
             }
         }
     }
-    if kernels.is_empty() {
+    if kernels.is_empty() && gens.is_empty() && cells.is_empty() {
         return None;
     }
     let mut out = String::from("; mapal-backend-llvm device module\n");
@@ -460,6 +578,21 @@ pub(crate) fn device_module(
         }
         out.push('\n');
         out.push_str(&gen_kernel_text(*id, callee, elem));
+    }
+    // `devmap`: each body once (shared with `devgen`'s), then its kernel.
+    for (fns, kernel) in cells {
+        for (callee, text) in fns {
+            assert!(
+                !text.contains("@mapal_"),
+                "cell body {callee} names a host runtime symbol"
+            );
+            if bodies.insert(callee.clone()) {
+                out.push('\n');
+                out.push_str(text);
+            }
+        }
+        out.push_str("\n; cell\n");
+        out.push_str(kernel);
     }
     out.push('\n');
     out.push_str(&md);

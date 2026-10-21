@@ -128,6 +128,16 @@ pub struct GpuRungs {
     /// as `main`'s first call, so it overlaps the host work before the first
     /// site. Off: the first site creates them.
     pub eager_init: bool,
+    /// S54 `devmap` (ARCHITECTURE R2): a per-cell map whose operands are
+    /// already in device memory runs as its own one-thread-per-cell kernel
+    /// instead of a host loop behind a whole copy-out. Off: every per-cell map
+    /// on the host (the S53 placement).
+    pub devmap: bool,
+    /// S54 `cell-law`, under `devmap`: a captured array whose producer is
+    /// closed-form in the index (`devgen`'s law) and which a cell reads only at
+    /// its own index is evaluated in the cell, never stored or loaded. Off: the
+    /// cell loads it from its `devgen` buffer.
+    pub cell_law: bool,
 }
 
 impl GpuRungs {
@@ -153,11 +163,13 @@ impl GpuRungs {
         devgen: true,
         retain_delta: true,
         eager_init: true,
+        devmap: true,
+        cell_law: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 20] = [
+    pub const NAMES: [&'static str; 22] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -178,6 +190,8 @@ impl GpuRungs {
         "devgen",
         "retain-delta",
         "eager-init",
+        "devmap",
+        "cell-law",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -203,6 +217,8 @@ impl GpuRungs {
             "devgen" => &mut self.devgen,
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
+            "devmap" => &mut self.devmap,
+            "cell-law" => &mut self.cell_law,
             _ => return None,
         })
     }
@@ -477,6 +493,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // every function's emitted text — a device-built producer's body is the
     // host's own, appended to the device unit.
     let mut gens: Vec<(u64, mapal_ir::FuncId, String)> = Vec::new();
+    // `devmap` (S54): each function's cell kernels and the bodies they call.
+    let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
@@ -517,6 +535,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
                 fe.set_task_body_site(site);
             }
             gens.extend(fe.gen_kernels());
+            cells.extend(fe.cell_kernels());
             let text = fe.emit();
             funcs.push_str(&text);
             texts.insert(id, text);
@@ -630,6 +649,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
                 opts.gpu,
                 opts.reduced,
                 &gens,
+                &cells,
             )
         })
         .flatten();

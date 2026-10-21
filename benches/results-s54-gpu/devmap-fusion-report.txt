@@ -1,0 +1,190 @@
+S54 devmap static fusion report (benches/gpu/fusion_report.py; placement is profile-independent:
+the five profiles' tables are compared below). Before = --gpu-off=devmap (the s54-base placement),
+cell-law off = devmap with --gpu-off=cell-law, after = the shipped emission.
+
+### before (off-devmap), exact, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 2 | 1 |
+| pt_diamond_4096 | 1 | 4 | 0 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 |
+| pt_epi_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 1 | 1 |
+| pt_ew_4096 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 |
+| pt_fanout_4096 | 1 | 3 | 0 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 |
+| pt_indep_4096 | 1 | 4 | 0 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 |
+| pt_loop_4096 | 1 | 1 | 0 | 1 (1 L) | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 |
+| pt_mlp2_4096 | 1 | 6 | 0 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 |
+| pt_mlp_4096 | 1 | 3 | 0 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 1 | 0 | 1 | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 3 | 1 |
+| px_diamond_128 | 1 | 4 | 0 | 3 | 4 | 0 | 0 B | 2 | 131072 B | 3 | 1 |
+| px_epi_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 2 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 |
+| px_fanout_128 | 1 | 3 | 0 | 2 | 3 | 0 | 0 B | 2 | 131072 B | 4 | 3 |
+| px_indep_128 | 1 | 4 | 0 | 2 | 4 | 0 | 0 B | 2 | 131072 B | 3 | 1 |
+| px_loop_256 | 1 | 1 | 0 | 1 (1 L) | 1 | 1 | 262144 B | 1 | 262144 B | 4 | 1 |
+| px_mlp2_128 | 1 | 6 | 0 | 4 | 6 | 2 | 131072 B | 4 | 262144 B | 5 | 4 |
+| px_mlp_128 | 1 | 3 | 0 | 2 | 3 | 1 | 65536 B | 2 | 131072 B | 2 | 2 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 1 | 0 | 1 | 1 | 1 | 65536 B | 1 | 65536 B | 4 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### cell-law off, exact, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_ew_4096 | 0 | 2 | 1 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 6 | 24 B | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_loop_4096 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 64.0 MB | 2 | 8 B | 2 | 0 |
+| pt_mlp2_4096 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 4 | 16 B | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_diamond_128 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_epi_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 2 | 1 | 1 | 2 | 0 | 0 B | 8 | 32 B | 0 | 0 |
+| px_fanout_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 3 | 196608 B | 3 | 3 |
+| px_indep_128 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 262144 B | 1 | 262144 B | 3 | 1 |
+| px_mlp2_128 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 2 | 131072 B | 2 | 2 |
+| px_mlp_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### after, exact, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_ew_4096 | 0 | 0 | 1 | 1 | 0 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 6 | 24 B | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_loop_4096 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 64.0 MB | 2 | 8 B | 2 | 0 |
+| pt_mlp2_4096 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 4 | 16 B | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_diamond_128 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_epi_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 0 | 1 | 1 | 0 | 0 | 0 B | 8 | 32 B | 0 | 0 |
+| px_fanout_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 3 | 196608 B | 3 | 3 |
+| px_indep_128 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 262144 B | 1 | 262144 B | 3 | 1 |
+| px_mlp2_128 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 2 | 131072 B | 2 | 2 |
+| px_mlp_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### before (off-devmap), contract, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 2 | 1 |
+| pt_diamond_4096 | 1 | 4 | 0 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 |
+| pt_epi_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 1 | 1 |
+| pt_ew_4096 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 |
+| pt_fanout_4096 | 1 | 3 | 0 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 |
+| pt_indep_4096 | 1 | 4 | 0 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 |
+| pt_loop_4096 | 1 | 1 | 0 | 1 (1 L) | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 |
+| pt_mlp2_4096 | 1 | 6 | 0 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 |
+| pt_mlp_4096 | 1 | 3 | 0 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 1 | 0 | 1 | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 3 | 1 |
+| px_diamond_128 | 1 | 4 | 0 | 3 | 4 | 0 | 0 B | 2 | 131072 B | 3 | 1 |
+| px_epi_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 2 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 |
+| px_fanout_128 | 1 | 3 | 0 | 2 | 3 | 0 | 0 B | 2 | 131072 B | 4 | 3 |
+| px_indep_128 | 1 | 4 | 0 | 2 | 4 | 0 | 0 B | 2 | 131072 B | 3 | 1 |
+| px_loop_256 | 1 | 1 | 0 | 1 (1 L) | 1 | 1 | 262144 B | 1 | 262144 B | 4 | 1 |
+| px_mlp2_128 | 1 | 6 | 0 | 4 | 6 | 2 | 131072 B | 4 | 262144 B | 5 | 4 |
+| px_mlp_128 | 1 | 3 | 0 | 2 | 3 | 1 | 65536 B | 2 | 131072 B | 2 | 2 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 1 | 0 | 1 | 1 | 1 | 65536 B | 1 | 65536 B | 4 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### cell-law off, contract, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_ew_4096 | 0 | 2 | 1 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 6 | 24 B | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_loop_4096 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 64.0 MB | 2 | 8 B | 2 | 0 |
+| pt_mlp2_4096 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 4 | 16 B | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_diamond_128 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_epi_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 2 | 1 | 1 | 2 | 0 | 0 B | 8 | 32 B | 0 | 0 |
+| px_fanout_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 3 | 196608 B | 3 | 3 |
+| px_indep_128 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 262144 B | 1 | 262144 B | 3 | 1 |
+| px_mlp2_128 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 2 | 131072 B | 2 | 2 |
+| px_mlp_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### after, contract, n=4096
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | cell kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_diamond_4096 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_ew_4096 | 0 | 0 | 1 | 1 | 0 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_fanout_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 6 | 24 B | 0 | 0 |
+| pt_indep_4096 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_loop_4096 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 64.0 MB | 2 | 8 B | 2 | 0 |
+| pt_mlp2_4096 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 4 | 16 B | 0 | 0 |
+| pt_mlp_4096 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_pro_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_residual_4096 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 |
+| pt_rowsum_4096 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 |
+| px_bias_128 | 1 | 3 | 1 | 2 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_diamond_128 | 1 | 4 | 1 | 4 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_epi_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_ew_128 | 0 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 5 | 0 |
+| px_ewc_128 | 0 | 0 | 1 | 1 | 0 | 0 | 0 B | 8 | 32 B | 0 | 0 |
+| px_fanout_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 3 | 196608 B | 3 | 3 |
+| px_indep_128 | 1 | 4 | 1 | 3 | 4 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 | 2 (2 L) | 1 | 1 | 262144 B | 1 | 262144 B | 3 | 1 |
+| px_mlp2_128 | 1 | 8 | 2 | 6 | 8 | 0 | 0 B | 2 | 131072 B | 2 | 2 |
+| px_mlp_128 | 1 | 3 | 1 | 3 | 3 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_pro_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_residual_128 | 1 | 2 | 1 | 2 | 2 | 0 | 0 B | 1 | 65536 B | 1 | 1 |
+| px_rowsum_128 | 1 | 2 | 0 | 1 | 2 | 0 | 0 B | 1 | 65536 B | 0 | 1 |
+### the same 'after' table (exact, n=4096) on every profile: lines differing from rtx-4090's
+rtx-3090: 0 differing rows
+a100: 0 differing rows
+h100-pcie: 0 differing rows
+h100: 0 differing rows
+rtx-5090: 0 differing rows

@@ -62,8 +62,10 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
-        python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
+    # A program whose only device code is cells or gens (S54 `devmap`) has no
+    # site launch: an empty launch line.
+    { grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -1 |
+        python3 -c 'import sys,re; s=sys.stdin.read(); m=re.search(r"i64 (-?\d+)",s); n=re.findall(r"i32 (\d+)",s); m and print(f"mapal_tile_{int(m.group(1)) & (2**64-1):016x}", *n)' \
         > "$stem.launch"
 }
 
@@ -93,6 +95,8 @@ arms() {
 }
 
 KERNEL_RUNGS="interleave unroll min-blocks warp prefetch async warp-fill idx32 affine pad wide-fma fma-regs arch-rungs"
+# The whole-program arms; HOST_RUNGS="<rung>..." narrows them (an item's own rungs).
+HOST_RUNGS=${HOST_RUNGS:-async resident devgen eager-init retain-delta devmap cell-law}
 for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
@@ -118,7 +122,7 @@ for spec in "$@"; do
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    $HOST_RUNGS
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
