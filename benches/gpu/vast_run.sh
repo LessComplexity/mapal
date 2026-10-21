@@ -4,7 +4,7 @@
 # which bills until you run `vastai destroy instance <id>`).
 #
 # usage: benches/gpu/vast_run.sh <offer_id> <profile> <sm_NN> <bundle_dir> <results_dir> [reps]
-# PROBE_ARMS / PROBE_REPS / E2E_REPS pass through to box_run.sh.
+# DIFFERENTIAL_ONLY / PROBE_ARMS / PROBE_REPS / E2E_REPS pass through to box_run.sh.
 set -euo pipefail
 OFFER=$1; PROF=$2; SM=$3; BUNDLE=$4; RES=$5; REPS=${6:-30}
 IMAGE=${IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}
@@ -55,13 +55,17 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}'"
-"${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || log "box_run exit $?"
-"${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || true
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}'"
+run_rc=0
+"${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_run exit $run_rc"; }
+"${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || {
+    log "results retrieval failed"
+    [ "$run_rc" -ne 0 ] || run_rc=1
+}
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
-if [ "${PROFILE:-0}" = 1 ]; then
-    "${SSH[@]}" "cd /w && $ENVS bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || log "box_profile exit $?"
+if [ "$run_rc" -eq 0 ] && [ "${PROFILE:-0}" = 1 ] && [ "${DIFFERENTIAL_ONLY:-0}" != 1 ]; then
+    "${SSH[@]}" "cd /w && $ENVS bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_profile exit $run_rc"; }
     "${SSH[@]}" "cat /w/prof-$PROF.tgz" > "$RES/prof-$PROF.tgz" 2>/dev/null || true
     # + the e2e rows; a box lost during the profile keeps the results already fetched.
     "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt.new" 2>/dev/null &&
@@ -70,3 +74,4 @@ if [ "${PROFILE:-0}" = 1 ]; then
     log "profile fetched: $(wc -c < "$RES/prof-$PROF.tgz") bytes"
 fi
 log "results fetched: $(grep -c '' "$RES/results-$PROF.txt") lines"
+exit "$run_rc"

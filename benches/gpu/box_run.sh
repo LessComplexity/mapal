@@ -8,6 +8,7 @@
 # E2E_ARMS narrows the e2e section's arms; PROBE_ARMS / PROBE_REPS the probe section
 # (default: the bundle's `probe_arms` file, else on + every off-<rung> arm the bundle
 # built for the probe; 5 repetitions).
+# DIFFERENTIAL_ONLY=1 stops after value and trap checks, without compiling harnesses.
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -20,22 +21,11 @@ link() { cc "$1" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stub
 : > "$LOG"
 say "== $PROF $SM $(date -u +%FT%TZ)"
 nvidia-smi --query-gpu=name,driver_version,clocks.max.sm,clocks.sm,power.limit,temperature.gpu,persistence_mode --format=csv | tee -a "$LOG"
-nvcc --version | tail -1 | tee -a "$LOG"
-
-# The harness is built for the plain arch (sm_90a -> sm_90): the Mapal leg is
-# PTX the driver JITs for the device, and the library legs stay as measured before.
-nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
-    tile_bench.cu -lcublas -lcuda -o tile_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
-[ -x tile_bench ] || { say "HARNESS BUILD FAILED"; exit 1; }
-# S54: the library legs of the multi-computation probes (a failed build skips
-# only the probe section's library rows).
-nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
-    chain_bench.cu -lcublasLt -lcublas -o chain_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
-[ -x chain_bench ] || say "CHAIN HARNESS BUILD FAILED"
 
 say "-- differential (GPU stdout vs oracle)"
 pass=0; fail=0
 for o in "$PROF"/*.host.o; do
+    [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     case $b in mm_*|e2e_*|loop_mm_*|pt_*) continue ;; esac
     # `<prog>[_c][.<arm>]`: every arm of a face answers to that face's oracle.
@@ -44,11 +34,19 @@ for o in "$PROF"/*.host.o; do
     case $stem in *_tf)
         exp="tiles/$stem.ref"
         if [ ! -s "$exp" ]; then
-            link "$PROF/$stem.off-epilogue.host.o" "prog_ref_$stem"
-            MAPAL_PTX="$PROF/$stem.off-epilogue.ptx" "./prog_ref_$stem" > "$exp" 2>&1
+            if ! { link "$PROF/$stem.off-epilogue.host.o" "prog_ref_$stem" &&
+                MAPAL_PTX="$PROF/$stem.off-epilogue.ptx" "./prog_ref_$stem" > "$exp" 2>&1; }; then
+                rm -f "$exp"
+                fail=$((fail + 1)); say "FAIL $b TF32 reference failed"; continue
+            fi
         fi ;;
     esac
-    link "$o" "prog_$b"
+    if [ ! -f "$exp" ]; then
+        fail=$((fail + 1)); say "FAIL $b missing oracle $exp"; continue
+    fi
+    if ! link "$o" "prog_$b"; then
+        fail=$((fail + 1)); say "FAIL $b link failed"; continue
+    fi
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
         pass=$((pass + 1)); say "PASS $b $(tr '\n' ' ' <<< "$got")"
@@ -60,13 +58,42 @@ say "differential: $pass pass, $fail fail"
 
 # eager-init: a program that traps before its first site exits 101 in every
 # arm, with the init thread possibly still running (the runtime joins it).
+trap_pass=0; trap_fail=0
 for o in "$PROF"/e2e_trap*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
-    link "$o" "prog_$b"
+    if ! link "$o" "prog_$b"; then
+        trap_fail=$((trap_fail + 1)); say "TRAP-FAIL $b link failed"; continue
+    fi
     got=$(MAPAL_PTX="$PROF/$b.ptx" timeout 60 "./prog_$b" 2>&1); rc=$?
-    if [ $rc -eq 101 ]; then say "TRAP-PASS $b rc=$rc $got"; else say "TRAP-FAIL $b rc=$rc $got"; fi
+    if [ $rc -eq 101 ]; then
+        trap_pass=$((trap_pass + 1)); say "TRAP-PASS $b rc=$rc $got"
+    else
+        trap_fail=$((trap_fail + 1)); say "TRAP-FAIL $b rc=$rc $got"
+    fi
 done
+say "traps: $trap_pass pass, $trap_fail fail"
+if [ "$fail" -ne 0 ] || [ "$trap_fail" -ne 0 ]; then
+    say "VALIDATION FAILED (value/trap failures)"
+    exit 1
+fi
+if [ "${DIFFERENTIAL_ONLY:-0}" = 1 ]; then
+    [ "$pass" -gt 0 ] || { say "VALIDATION FAILED (empty differential scope)"; exit 1; }
+    say "== done differential-only"
+    exit 0
+fi
+
+nvcc --version | tail -1 | tee -a "$LOG"
+# The harness is built for the plain arch (sm_90a -> sm_90): the Mapal leg is
+# PTX the driver JITs for the device, and the library legs stay as measured before.
+nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
+    tile_bench.cu -lcublas -lcuda -o tile_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+[ -x tile_bench ] || { say "HARNESS BUILD FAILED"; exit 1; }
+# S54: the library legs of the multi-computation probes (a failed build skips
+# only the probe section's library rows).
+nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
+    chain_bench.cu -lcublasLt -lcublas -o chain_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+[ -x chain_bench ] || say "CHAIN HARNESS BUILD FAILED"
 
 # Whole programs, both faces: the shipped emission, each host rung off, and
 # the S52 host object (`s52`, PREV), interleaved per repetition. One untraced
@@ -160,7 +187,7 @@ if [ -x prog_decode_1024_256 ]; then
     say "-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1"
     for r in 1 2 3 4 5; do
         for face in "" _c; do
-            for arm in "" .off-retain-resident .off-delta-h2d .off-lane-stride \
+            for arm in "" .off-retain-resident .on-retain-resident .off-delta-h2d .off-lane-stride \
                 .off-retain-resident+delta-h2d+lane-stride .off-retain-delta .on-retain-delta .off-retain-delta+resident; do
                 b=decode_1024_256$face$arm
                 [ -x "prog_$b" ] || continue
