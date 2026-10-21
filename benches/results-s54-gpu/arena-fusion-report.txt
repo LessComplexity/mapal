@@ -1,0 +1,146 @@
+S54 arena — static before/after (benches/gpu/fusion_report.py, rtx-4090, exact face). OFF = EMIT_FLAGS=--gpu-off=arena.
+dev allocs = cuMemAlloc call sites (each pairs with a cuMemFree); arena = the one allocation's bytes; host heap = mapal_rt_alloc blocks paged at function entry. 'same' = launches, gens, copies and host loops unchanged.
+
+| program | other columns | dev allocs off → on | arena (on) | host heap off → on |
+|---|---|---:|---:|---:|
+| pt_bias_2048 | same | 3 → 1 | 48.0 MB | 80.0 MB → 48.0 MB |
+| pt_diamond_2048 | same | 7 → 1 | 80.0 MB | 144.0 MB → 64.0 MB |
+| pt_epi_2048 | same | 3 → 1 | 48.0 MB | 80.0 MB → 32.0 MB |
+| pt_ew_2048 | same | 0 → 0 | 0 B | 64.0 MB → 64.0 MB |
+| pt_fanout_2048 | same | 5 → 1 | 64.0 MB | 112.0 MB → 32.0 MB |
+| pt_indep_2048 | same | 6 → 1 | 80.0 MB | 128.0 MB → 64.0 MB |
+| pt_loop_2048 | same | 3 → 3 | 0 B | 192.0 MB → 176.0 MB |
+| pt_mlp2_2048 | same | 12 → 1 | 112.0 MB | 208.0 MB → 80.0 MB |
+| pt_mlp_2048 | same | 6 → 1 | 64.0 MB | 112.0 MB → 32.0 MB |
+| pt_pro_2048 | same | 3 → 1 | 48.0 MB | 64.0 MB → 0 B |
+| pt_residual_2048 | same | 3 → 1 | 48.0 MB | 80.0 MB → 64.0 MB |
+| pt_rowsum_2048 | same | 3 → 1 | 48.0 MB | 64.0 MB → 16.0 MB |
+| mm_chain_2048 | same | 5 → 1 | 64.0 MB | 96.0 MB → 0 B |
+| mm_share_1024 | same | 5 → 1 | 16.0 MB | 24.0 MB → 0 B |
+| loop_mm_1024_8 | same | 3 → 3 | 0 B | 44.0 MB → 40.0 MB |
+| decode_1024_256 | same | 7 → 7 | 0 B | 9.5 MB → 7.0 MB |
+| pt_bias_4096 | same | 3 → 1 | 192.0 MB | 320.0 MB → 192.0 MB |
+| pt_diamond_4096 | same | 7 → 1 | 320.0 MB | 576.0 MB → 256.0 MB |
+| pt_epi_4096 | same | 3 → 1 | 192.0 MB | 320.0 MB → 128.0 MB |
+| pt_ew_4096 | same | 0 → 0 | 0 B | 256.0 MB → 256.0 MB |
+| pt_fanout_4096 | same | 5 → 1 | 256.0 MB | 448.0 MB → 128.0 MB |
+| pt_indep_4096 | same | 6 → 1 | 320.0 MB | 512.0 MB → 256.0 MB |
+| pt_loop_4096 | same | 3 → 3 | 0 B | 768.0 MB → 704.0 MB |
+| pt_mlp2_4096 | same | 12 → 1 | 448.0 MB | 832.0 MB → 320.0 MB |
+| pt_mlp_4096 | same | 6 → 1 | 256.0 MB | 448.0 MB → 128.0 MB |
+| pt_pro_4096 | same | 3 → 1 | 192.0 MB | 256.0 MB → 0 B |
+| pt_residual_4096 | same | 3 → 1 | 192.0 MB | 320.0 MB → 256.0 MB |
+| pt_rowsum_4096 | same | 3 → 1 | 192.0 MB | 256.0 MB → 64.0 MB |
+| e2e_1024 | same | 3 → 1 | 12.0 MB | 16.0 MB → 0 B |
+| e2e_4096 | same | 3 → 1 | 192.0 MB | 256.0 MB → 0 B |
+| e2e_chain_4096 | same | 5 → 1 | 256.0 MB | 384.0 MB → 0 B |
+
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+
+--- raw tables
+
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 2 | 1 | 3 | 0 B | 80.0 MB |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 7 | 0 B | 144.0 MB |
+| pt_epi_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 1 | 1 | 3 | 0 B | 80.0 MB |
+| pt_ew_2048 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 | 0 | 0 B | 64.0 MB |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 5 | 0 B | 112.0 MB |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 6 | 0 B | 128.0 MB |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 3 | 0 B | 192.0 MB |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 12 | 0 B | 208.0 MB |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 6 | 0 B | 112.0 MB |
+| pt_pro_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 | 3 | 0 B | 64.0 MB |
+| pt_residual_2048 | 1 | 1 | 1 | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 3 | 0 B | 80.0 MB |
+| pt_rowsum_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 0 | 1 | 3 | 0 B | 64.0 MB |
+| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 5 | 0 B | 96.0 MB |
+| mm_share_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 | 5 | 0 B | 24.0 MB |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 | 3 | 0 B | 44.0 MB |
+| decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 | 7 | 0 B | 9.5 MB |
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 2 | 1 | 1 | 48.0 MB | 48.0 MB |
+| pt_diamond_2048 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 1 | 80.0 MB | 64.0 MB |
+| pt_epi_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 1 | 1 | 1 | 48.0 MB | 32.0 MB |
+| pt_ew_2048 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 | 0 | 0 B | 64.0 MB |
+| pt_fanout_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 16.0 MB | 1 | 1 | 1 | 64.0 MB | 32.0 MB |
+| pt_indep_2048 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 32.0 MB | 2 | 1 | 1 | 80.0 MB | 64.0 MB |
+| pt_loop_2048 | 1 | 1 | 1 (1 L) | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 3 | 0 B | 176.0 MB |
+| pt_mlp2_2048 | 1 | 6 | 4 | 6 | 2 | 32.0 MB | 6 | 32.0 MB | 3 | 2 | 1 | 112.0 MB | 80.0 MB |
+| pt_mlp_2048 | 1 | 3 | 2 | 3 | 1 | 16.0 MB | 3 | 16.0 MB | 1 | 1 | 1 | 64.0 MB | 32.0 MB |
+| pt_pro_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 | 1 | 48.0 MB | 0 B |
+| pt_residual_2048 | 1 | 1 | 1 | 1 | 1 | 16.0 MB | 1 | 16.0 MB | 3 | 1 | 1 | 48.0 MB | 64.0 MB |
+| pt_rowsum_2048 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 16.0 MB | 0 | 1 | 1 | 48.0 MB | 16.0 MB |
+| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 1 | 64.0 MB | 0 B |
+| mm_share_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 | 1 | 16.0 MB | 0 B |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 | 3 | 0 B | 40.0 MB |
+| decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 | 7 | 0 B | 7.0 MB |
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 2 | 1 | 3 | 0 B | 320.0 MB |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 7 | 0 B | 576.0 MB |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 1 | 1 | 3 | 0 B | 320.0 MB |
+| pt_ew_4096 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 | 0 | 0 B | 256.0 MB |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 5 | 0 B | 448.0 MB |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 6 | 0 B | 512.0 MB |
+| pt_loop_4096 | 1 | 1 | 1 (1 L) | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 | 3 | 0 B | 768.0 MB |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 12 | 0 B | 832.0 MB |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 6 | 0 B | 448.0 MB |
+| pt_pro_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 | 3 | 0 B | 256.0 MB |
+| pt_residual_4096 | 1 | 1 | 1 | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 | 3 | 0 B | 320.0 MB |
+| pt_rowsum_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 | 3 | 0 B | 256.0 MB |
+| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 5 | 0 B | 96.0 MB |
+| mm_share_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 | 5 | 0 B | 24.0 MB |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 | 3 | 0 B | 44.0 MB |
+| decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 | 7 | 0 B | 9.5 MB |
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| pt_bias_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 2 | 1 | 1 | 192.0 MB | 192.0 MB |
+| pt_diamond_4096 | 1 | 4 | 3 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 1 | 320.0 MB | 256.0 MB |
+| pt_epi_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 1 | 1 | 1 | 192.0 MB | 128.0 MB |
+| pt_ew_4096 | 0 | 0 | 0 | 0 | 0 | 0 B | 0 | 0 B | 4 | 0 | 0 | 0 B | 256.0 MB |
+| pt_fanout_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 3 | 64.0 MB | 1 | 1 | 1 | 256.0 MB | 128.0 MB |
+| pt_indep_4096 | 1 | 4 | 2 | 4 | 0 | 0 B | 2 | 128.0 MB | 2 | 1 | 1 | 320.0 MB | 256.0 MB |
+| pt_loop_4096 | 1 | 1 | 1 (1 L) | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 | 3 | 0 B | 704.0 MB |
+| pt_mlp2_4096 | 1 | 6 | 4 | 6 | 2 | 128.0 MB | 6 | 128.0 MB | 3 | 2 | 1 | 448.0 MB | 320.0 MB |
+| pt_mlp_4096 | 1 | 3 | 2 | 3 | 1 | 64.0 MB | 3 | 64.0 MB | 1 | 1 | 1 | 256.0 MB | 128.0 MB |
+| pt_pro_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 2 | 8 B | 0 | 0 | 1 | 192.0 MB | 0 B |
+| pt_residual_4096 | 1 | 1 | 1 | 1 | 1 | 64.0 MB | 1 | 64.0 MB | 3 | 1 | 1 | 192.0 MB | 256.0 MB |
+| pt_rowsum_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 64.0 MB | 0 | 1 | 1 | 192.0 MB | 64.0 MB |
+| mm_chain_2048 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 1 | 64.0 MB | 0 B |
+| mm_share_1024 | 1 | 3 | 2 | 3 | 0 | 0 B | 2 | 8 B | 0 | 0 | 1 | 16.0 MB | 0 B |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 | 3 | 0 B | 40.0 MB |
+| decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 | 7 | 0 B | 7.0 MB |
+S54 static fusion report — emit --rewrite --target=rtx-4090 --gpu-off=arena (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| e2e_1024 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 4 B | 0 | 0 | 3 | 0 B | 16.0 MB |
+| e2e_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 4 B | 0 | 0 | 3 | 0 B | 256.0 MB |
+| e2e_chain_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 5 | 0 B | 384.0 MB |
+S54 static fusion report — emit --rewrite --target=rtx-4090  (face exact), HEAD 01db674
+Static counts from the emitted IR (benches/gpu/fusion_report.py); L = call sites inside a host loop.
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out | dev allocs | arena | host heap |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| e2e_1024 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 4 B | 0 | 0 | 1 | 12.0 MB | 0 B |
+| e2e_4096 | 1 | 2 | 1 | 2 | 0 | 0 B | 1 | 4 B | 0 | 0 | 1 | 192.0 MB | 0 B |
+| e2e_chain_4096 | 1 | 3 | 2 | 3 | 0 | 0 B | 1 | 4 B | 0 | 0 | 1 | 256.0 MB | 0 B |

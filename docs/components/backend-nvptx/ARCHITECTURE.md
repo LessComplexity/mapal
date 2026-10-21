@@ -76,7 +76,8 @@ exact face is bit-identical to the interpreter wherever a morphism runs (S53 dif
 
 ## 4. `Loc` and `Trm`
 
-`Loc`: `Host` (the frame arena), `Gmem` (device global, per-object slot `%d<k>`), `Smem` (one
+`Loc`: `Host` (the frame arena), `Gmem` (device global, per-object slot `%d<k>`; under `arena`
+a straight-line object's slot is a compile-time offset of the function's one allocation), `Smem` (one
 block's shared memory), `Reg` (one thread). Adjacency: `Host ↔ Gmem` over PCIe; `Gmem → Smem →
 Reg` inside an SM; `Reg → Gmem` by a store. A value in `Reg` is visible to one thread, in `Smem`
 to one block, in `Gmem` to every block **after a grid-wide wait**.
