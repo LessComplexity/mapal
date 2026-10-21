@@ -113,9 +113,10 @@ pub(crate) fn launch(
     let wgmma = (tensor && rungs.wgmma)
         .then(|| {
             let (r, c, k) = (site.rows, site.c, site.k);
+            let overlap = rungs.wgmma_overlap;
             profile
-                .gpu_wgmma_tile(r, c, k, rungs.wgmma_reg_stage)
-                .or_else(|| profile.gpu_wgmma_tile(r, c, k, false))
+                .gpu_wgmma_tile(r, c, k, rungs.wgmma_reg_stage, overlap)
+                .or_else(|| profile.gpu_wgmma_tile(r, c, k, false, overlap))
         })
         .flatten();
     if let Some(w) = wgmma {
@@ -596,8 +597,10 @@ impl Kernel<'_> {
     ///   warp's 16 rows, PTX ISA m64nNk8) and rounds them in the load.
     /// - Pipeline: panel `it + stages − 2` is copied into the stage panel
     ///   `it − 2` used — the group issued at `it − 1` may still be reading
-    ///   its own — and the wait for that group sits after the barrier, right
-    ///   before its fragment registers are rewritten.
+    ///   its own. Without `overlap` the wait for that group sits after the
+    ///   barrier, right before its fragment registers are rewritten; with it,
+    ///   `wait_group 1` before the barrier retires group `it − 2` only, so
+    ///   group `it − 1` computes while group `it` is issued.
     ///
     /// Accumulator `d[4j + 2h + e]` holds `cᵀ(16w + g + 8h, 8j + 2t + e)`;
     /// each warp-wide store fills four whole 32-byte sectors of `c`.
@@ -723,6 +726,12 @@ impl Kernel<'_> {
         let (it, itn) = (self.tmp(), self.tmp());
         let latch = if g.reg_stage { "%stored" } else { "%issued" };
         self.line(format!("{it} = phi i64 [0, %entry], [{itn}, {latch}]"));
+        if g.overlap {
+            // Group `it − 2` done here, in every warpgroup by the barrier
+            // below: its stage may be refilled and its fragment registers
+            // reused, while group `it − 1` keeps computing.
+            self.asm("wgmma.wait_group.sync.aligned 1;");
+        }
         self.line(format!(
             "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
             dist - 1
@@ -767,8 +776,10 @@ impl Kernel<'_> {
             staged.push(p);
         }
         self.line("call void @llvm.nvvm.cp.async.commit.group()");
-        // The previous group done: its fragment registers may be rewritten.
-        self.asm("wgmma.wait_group.sync.aligned 0;");
+        if !g.overlap {
+            // The previous group done: its fragment registers may be rewritten.
+            self.asm("wgmma.wait_group.sync.aligned 0;");
+        }
         let fb = self.op("add", &cbase, &b_org);
         let mut frags = Vec::new();
         for kk in 0..bk / WGMMA_K {

@@ -84,6 +84,23 @@ fn wgmma_reg_stage_off_rounds_the_landed_panel_in_place() {
     assert!(k.contains("fence.proxy.async.shared::cta"));
 }
 
+/// `wgmma-overlap`: group `it − 2` is retired before the panel barrier and
+/// group `it − 1` keeps computing; off, every group is waited before the next
+/// one's fragments load.
+#[test]
+fn wgmma_overlap_keeps_one_group_in_flight_across_the_issue() {
+    let on = device("h100-pcie", true, TF32, GpuRungs::default());
+    assert_eq!(on.matches("wgmma.wait_group.sync.aligned 1;").count(), 1);
+    assert_eq!(on.matches("wgmma.wait_group.sync.aligned 0;").count(), 1);
+    let off = GpuRungs {
+        wgmma_overlap: false,
+        ..GpuRungs::default()
+    };
+    let k = device("h100-pcie", true, TF32, off);
+    assert!(!k.contains("wgmma.wait_group.sync.aligned 1;"));
+    assert_eq!(k.matches("wgmma.wait_group.sync.aligned 0;").count(), 2);
+}
+
 /// The OFF arm is the S52 `mma.sync` kernel, unchanged (still `cvt.rna`).
 #[test]
 fn wgmma_off_is_the_mma_sync_kernel() {

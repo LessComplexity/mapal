@@ -313,6 +313,9 @@ pub struct GpuWgmmaTile {
     /// thread holds its `n·bk / threads` words of the next panel across the
     /// MMA issue (S53 `wgmma-reg-stage`).
     pub reg_stage: bool,
+    /// Two MMA groups in flight: each thread holds a second set of A
+    /// fragments (S53 `wgmma-overlap`).
+    pub overlap: bool,
 }
 
 impl GpuWgmmaTile {
@@ -1048,7 +1051,8 @@ impl TargetProfile {
     /// With `reg_stage` a thread also holds its `n·bk / threads` words of the
     /// next `a` panel ([`GpuWgmmaTile::reg_stage`]): warpgroups (step 2) and
     /// blocks per SM count them, and a thread they push past
-    /// `regs_per_thread` after the fill rejects that `bk`.
+    /// `regs_per_thread` after the fill rejects that `bk`. With `overlap` the
+    /// A fragments count twice ([`GpuWgmmaTile::overlap`]).
     ///
     /// The deepest valid `bk` wins; then as many stages as the share holds.
     pub fn gpu_wgmma_tile(
@@ -1057,6 +1061,7 @@ impl TargetProfile {
         c: u64,
         k: u64,
         reg_stage: bool,
+        overlap: bool,
     ) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
         if !g.has_wgmma() {
@@ -1073,7 +1078,8 @@ impl TargetProfile {
         // Per thread: accumulators, A fragments, staged `a` words, addresses.
         let regs = |n: u64, bk: u64, threads: u64| {
             let staged = if reg_stage { n * bk / threads } else { 0 };
-            n / 2 + 4 * (bk / WGMMA_K) + staged + WGMMA_ADDR_REGS
+            let frag_sets = if overlap { 2 } else { 1 };
+            n / 2 + frag_sets * 4 * (bk / WGMMA_K) + staged + WGMMA_ADDR_REGS
         };
         let mut best = None;
         let mut bk = WGMMA_K;
@@ -1123,6 +1129,7 @@ impl TargetProfile {
                     pad_b,
                     blocks_per_sm,
                     reg_stage,
+                    overlap,
                 };
                 // Whole 16-byte chunks per thread, and whole swizzle rows.
                 let whole = (n * bk / 4).is_multiple_of(threads)
@@ -2775,7 +2782,7 @@ mod tests {
     fn gpu_wgmma_tile_is_derived_from_hopper_facts() {
         let t = |n| {
             let x = H100_PCIE
-                .gpu_wgmma_tile(n, n, n, false)
+                .gpu_wgmma_tile(n, n, n, false, false)
                 .expect("sm_90a, divisible square site");
             assert_eq!(x.stage_words() * 4 % 1024, 0, "stages start on atoms");
             (
@@ -2801,7 +2808,7 @@ mod tests {
         // `wgmma` is sm_90a only: not Ada, not consumer Blackwell, not a CPU.
         for p in [&RTX_4090, &RTX_5090, &CUDA_ADA, &GENERIC] {
             for reg_stage in [false, true] {
-                let x = p.gpu_wgmma_tile(4096, 4096, 4096, reg_stage);
+                let x = p.gpu_wgmma_tile(4096, 4096, 4096, reg_stage, true);
                 assert_eq!(x, None, "{}", p.name);
             }
         }
@@ -2813,7 +2820,9 @@ mod tests {
     #[test]
     fn gpu_wgmma_tile_counts_the_staged_a_registers() {
         let t = |n| {
-            let x = H100_PCIE.gpu_wgmma_tile(n, n, n, true).expect("geometry");
+            let x = H100_PCIE
+                .gpu_wgmma_tile(n, n, n, true, false)
+                .expect("geometry");
             assert!(x.reg_stage);
             (x.bm(), x.bn(), x.groups, x.bk, x.stages, x.blocks_per_sm)
         };
@@ -2827,7 +2836,38 @@ mod tests {
         // 25 KB stages.
         assert_eq!(t(1024), (128, 64, 1, 32, 4, 2));
         // bk 64 would hold 256·64/256 = 64 more words: 128 + 32 + 64 + 72 = 296.
-        assert!(H100_PCIE.gpu_wgmma_tile(4096, 4096, 4096, true).unwrap().bk < 64);
+        assert!(
+            H100_PCIE
+                .gpu_wgmma_tile(4096, 4096, 4096, true, false)
+                .unwrap()
+                .bk
+                < 64
+        );
+    }
+
+    /// `wgmma-overlap` (S53): a second set of A fragments, `4·bk/8` more
+    /// registers per thread.
+    #[test]
+    fn gpu_wgmma_tile_counts_the_second_fragment_set() {
+        let t = |n, reg_stage| {
+            let x = H100_PCIE.gpu_wgmma_tile(n, n, n, reg_stage, true)?;
+            assert!(x.overlap);
+            Some((x.bm(), x.bn(), x.groups, x.bk, x.stages, x.blocks_per_sm))
+        };
+        // 2048–8192: bk 64 now fits — its 2·32 fragments cap n at
+        // 2·(255 − 64 − 72) = 238 ⇒ 128 (with the staged words, 128·64/256 =
+        // 32 more: 64 + 64 + 32 + 72 = 232); 2 warpgroups ⇒ 128 × 128, and
+        // three 66 KB stages fit the 227 KB share. The deepest bk wins over
+        // bk 32's 256 × 128.
+        for n in [2048, 4096, 8192] {
+            for reg_stage in [false, true] {
+                assert_eq!(t(n, reg_stage), Some((128, 128, 2, 64, 3, 1)), "{n}");
+            }
+        }
+        // 1024: 64 + 32 + 72 = 168 ⇒ 3 resident blocks, 3 stages; with the
+        // staged words 200 ⇒ 2 blocks, 4 stages.
+        assert_eq!(t(1024, false), Some((128, 64, 1, 32, 3, 3)));
+        assert_eq!(t(1024, true), Some((128, 64, 1, 32, 4, 2)));
     }
 
     /// The matrix descriptor's constant fields for the S52 bench geometries:
@@ -2838,7 +2878,7 @@ mod tests {
     fn wgmma_descriptor_fields_are_the_128b_swizzle_k_major_ones() {
         for n in [1024, 2048, 4096, 8192] {
             let d = H100_PCIE
-                .gpu_wgmma_tile(n, n, n, true)
+                .gpu_wgmma_tile(n, n, n, true, true)
                 .expect("geometry")
                 .desc_fields();
             assert_eq!(d & 0x3fff, 0, "start address");
