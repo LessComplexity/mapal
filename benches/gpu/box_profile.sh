@@ -26,10 +26,13 @@ if ! command -v nsys >/dev/null; then
     export PATH=$PATH:$(dirname "$(ls /opt/nvidia/nsight-systems/*/bin/nsys "$CUDA"/bin/nsys 2>/dev/null | head -1)" 2>/dev/null)
 fi
 if command -v nsys >/dev/null; then
-    read -r k gx gy blk sm < "$PROF/mm_4096_c.launch"
-    nsys profile -o prof/run --force-overwrite true -t cuda \
-        ./tile_bench 4096 4096 4096 "$PROF/mm_4096_c.ptx" "$k" "$gx" "$gy" "$blk" "$sm" 5 --contract > prof/nsys.out 2>&1
-    nsys stats -q -r cuda_gpu_kern_sum --format csv prof/run.nsys-rep > prof/kern.csv 2>&1
+    # 1024 and 8192 too (S53): which kernel cuBLAS picks at each end.
+    for n in 1024 4096 8192; do
+        read -r k gx gy blk sm < "$PROF/mm_${n}_c.launch"
+        nsys profile -o "prof/run-$n" --force-overwrite true -t cuda \
+            ./tile_bench $n $n $n "$PROF/mm_${n}_c.ptx" "$k" "$gx" "$gy" "$blk" "$sm" 5 --contract > "prof/nsys-$n.out" 2>&1
+        nsys stats -q -r cuda_gpu_kern_sum --format csv "prof/run-$n.nsys-rep" > "prof/kern-$n.csv" 2>&1
+    done
 else
     echo "nsys unavailable" > prof/kern.csv
 fi

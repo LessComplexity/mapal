@@ -67,10 +67,10 @@ for spec in "$@"; do
         # FMA face, the TF32 face (tensor cores) and the exact face.
         case $b in mm_*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix arch-rungs
+            arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- wide ldmatrix warp-fill arch-rungs
             arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- \
-                interleave unroll min-blocks warp prefetch async arch-rungs
-            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch arch-rungs
+                interleave unroll min-blocks warp prefetch async warp-fill arch-rungs
+            arms "$f" "$d/$b" "$prof" "$sm" -- async prefetch warp-fill arch-rungs
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".
             for prev in ${PREV:-}; do
                 tag=${prev%%=*}; from=${prev#*=}

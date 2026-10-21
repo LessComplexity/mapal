@@ -92,6 +92,9 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// Shrink the register / warp tile until the grid gives every warp
+    /// scheduler two warps (`warp-fill`, S53); OFF = blocks ≥ SMs only.
+    pub fill: bool,
 }
 
 impl GpuRungs {
@@ -107,11 +110,12 @@ impl GpuRungs {
         cp_async: true,
         wide: true,
         ldmatrix: true,
+        fill: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 10] = [
+    pub const NAMES: [&'static str; 11] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -122,6 +126,7 @@ impl GpuRungs {
         "async",
         "wide",
         "ldmatrix",
+        "warp-fill",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -137,6 +142,7 @@ impl GpuRungs {
             "async" => &mut self.cp_async,
             "wide" => &mut self.wide,
             "ldmatrix" => &mut self.ldmatrix,
+            "warp-fill" => &mut self.fill,
             _ => return None,
         })
     }
