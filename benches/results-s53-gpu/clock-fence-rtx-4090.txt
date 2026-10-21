@@ -1,0 +1,665 @@
+# S53 clock-fence (branch s53/clock-fence @ 17e18ab): box_run.sh + box_profile.sh (PROFILE=1), reps=30.
+# Bundle built with PREV="s52=<S52 bundle7>": `_c.s52` mm rows = S52's shipped PTX (byte-identical to this build's:
+# the control that no kernel moved); `e2e_*.s52` = S52's host objects (no clock fence) run in the same processes loop.
+# Tabulate: python3 benches/gpu/table.py <this file>  (second table: fenced iter ms vs the site's MAPAL_GPU_TRACE sum).
+== rtx-4090 sm_89 2026-10-21T00:19:26Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA GeForce RTX 4090, 580.119.02, 3105 MHz, 210 MHz, 300.00 W, 40, Enabled
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- differential (GPU stdout vs oracle)
+PASS at_256 -305.0057 -120.666664 -19.317451 
+PASS at_256_c -305.059 -120.66669 -19.317453 
+PASS bt_256 713.7606 -73.47622 -147.7619 
+PASS bt_256_c 713.7606 -73.47622 -147.7619 
+PASS odd_100 66.56736 21.77776 11.936509 
+PASS odd_100_c 66.57021 21.77777 11.936512 
+PASS rm_128_f64 13.76190476188507 27.698412698412707 -53.88888888888889 
+PASS rm_128_f64_c 13.761904761886747 27.69841269841266 -53.88888888888892 
+PASS rm_128x384x96 -24.066116 -48.190468 226.60318 
+PASS rm_128x384x96_c -24.068176 -48.19047 226.60318 
+PASS rm_256 623.73267 -136.60313 11.9365 
+PASS rm_256_c 623.6497 -136.60312 11.93653 
+differential: 12 pass, 0 fail
+-- timing vs cuBLAS / CUTLASS (f32, reps=30)
+# n=1024 face=_exact
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ab59f5e5845b59bb grid=16x8 block=128 smem=19200 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0932 med_ms=0.0942 max_ms=0.0952 tflops_med=22.80
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0922 tflops_med=23.83
+ratio mapal_vs_cublas=0.565 mapal_vs_cutlass=0.957 (>1 = mapal faster, medians)
+samples mapal=0.0952,0.0942,0.0942,0.0932,0.0942,0.0942,0.0932,0.0942,0.0942,0.0942,0.0932,0.0942,0.0942,0.0942,0.0942,0.0942,0.0941,0.0942,0.0942,0.0932,0.0932,0.0942,0.0932,0.0932,0.0942,0.0942,0.0942,0.0942,0.0932,0.0942 cublas=0.0543,0.0522,0.0543,0.0522,0.0532,0.0522,0.0532,0.0532,0.0543,0.0532,0.0532,0.0532,0.0543,0.0532,0.0533,0.0532,0.0532,0.0522,0.0543,0.0532,0.0543,0.0523,0.0532,0.0522,0.0532,0.0532,0.0522,0.0522,0.0532,0.0522 cutlass=0.0891,0.0911,0.0891,0.0891,0.0911,0.0901,0.0891,0.0911,0.0911,0.0901,0.0901,0.0891,0.0911,0.0891,0.0881,0.0901,0.0911,0.0901,0.0891,0.0891,0.0881,0.0911,0.0891,0.0922,0.0891,0.0881,0.0901,0.0901,0.0911,0.0901
+# n=1024 face=_c
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0676 med_ms=0.0686 max_ms=0.0696 tflops_med=31.30
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0922 tflops_med=23.83
+ratio mapal_vs_cublas=0.776 mapal_vs_cutlass=1.313 (>1 = mapal faster, medians)
+samples mapal=0.0696,0.0676,0.0686,0.0696,0.0686,0.0696,0.0696,0.0696,0.0686,0.0696,0.0676,0.0686,0.0686,0.0696,0.0696,0.0686,0.0686,0.0686,0.0696,0.0696,0.0686,0.0686,0.0686,0.0686,0.0696,0.0686,0.0686,0.0696,0.0696,0.0696 cublas=0.0533,0.0522,0.0522,0.0522,0.0532,0.0522,0.0543,0.0522,0.0532,0.0532,0.0532,0.0532,0.0543,0.0522,0.0543,0.0532,0.0543,0.0532,0.0532,0.0522,0.0532,0.0522,0.0532,0.0522,0.0532,0.0522,0.0532,0.0522,0.0543,0.0532 cutlass=0.0922,0.0911,0.0901,0.0901,0.0881,0.0901,0.0881,0.0901,0.0891,0.0901,0.0911,0.0912,0.0911,0.0901,0.0901,0.0901,0.0901,0.0891,0.0901,0.0911,0.0901,0.0891,0.0901,0.0891,0.0901,0.0922,0.0891,0.0922,0.0901,0.0901
+# n=1024 face=_tf
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_d0cfb9881535775e grid=16x8 block=64 smem=16896 regs=182 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0829 med_ms=0.0840 max_ms=0.0851 tflops_med=25.58
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0389 med_ms=0.0399 max_ms=0.0410 tflops_med=53.77
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0604 med_ms=0.0614 max_ms=0.0615 tflops_med=34.95
+ratio mapal_vs_cublas=0.476 mapal_vs_cutlass=0.732 (>1 = mapal faster, medians)
+samples mapal=0.0829,0.0829,0.0840,0.0840,0.0829,0.0851,0.0850,0.0840,0.0829,0.0840,0.0840,0.0840,0.0829,0.0850,0.0850,0.0840,0.0840,0.0840,0.0840,0.0850,0.0850,0.0840,0.0829,0.0840,0.0840,0.0850,0.0840,0.0829,0.0829,0.0829 cublas=0.0389,0.0399,0.0399,0.0389,0.0410,0.0399,0.0389,0.0389,0.0399,0.0399,0.0399,0.0399,0.0399,0.0399,0.0399,0.0399,0.0410,0.0389,0.0399,0.0399,0.0399,0.0399,0.0399,0.0389,0.0399,0.0399,0.0399,0.0389,0.0389,0.0389 cutlass=0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0614,0.0614,0.0604,0.0615,0.0614,0.0614,0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0614,0.0614,0.0614,0.0614,0.0614,0.0614
+# n=1024 face=_tf.off-ldmatrix
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_d0cfb9881535775e grid=16x8 block=64 smem=16896 regs=182 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0829 med_ms=0.0840 max_ms=0.0850 tflops_med=25.58
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0379 med_ms=0.0399 max_ms=0.0410 tflops_med=53.77
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0604 med_ms=0.0614 max_ms=0.0614 tflops_med=34.95
+ratio mapal_vs_cublas=0.476 mapal_vs_cutlass=0.732 (>1 = mapal faster, medians)
+samples mapal=0.0850,0.0840,0.0840,0.0840,0.0840,0.0840,0.0829,0.0840,0.0840,0.0850,0.0829,0.0850,0.0850,0.0840,0.0840,0.0840,0.0850,0.0840,0.0840,0.0840,0.0840,0.0840,0.0829,0.0840,0.0850,0.0829,0.0850,0.0829,0.0840,0.0840 cublas=0.0400,0.0379,0.0399,0.0389,0.0399,0.0389,0.0410,0.0399,0.0399,0.0399,0.0399,0.0389,0.0409,0.0399,0.0399,0.0399,0.0410,0.0389,0.0399,0.0389,0.0399,0.0389,0.0399,0.0399,0.0390,0.0399,0.0399,0.0399,0.0410,0.0389 cutlass=0.0604,0.0614,0.0614,0.0614,0.0604,0.0614,0.0614,0.0614,0.0604,0.0614,0.0604,0.0614,0.0614,0.0614,0.0604,0.0614,0.0604,0.0614,0.0614,0.0614,0.0614,0.0614,0.0614,0.0614,0.0604,0.0614,0.0614,0.0614,0.0604,0.0614
+# n=1024 face=_tf.off-wide
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_d0cfb9881535775e grid=16x8 block=128 smem=16896 regs=107 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0809 med_ms=0.0829 max_ms=0.0850 tflops_med=25.89
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0389 med_ms=0.0399 max_ms=0.0410 tflops_med=53.77
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0604 med_ms=0.0614 max_ms=0.0625 tflops_med=34.95
+ratio mapal_vs_cublas=0.481 mapal_vs_cutlass=0.741 (>1 = mapal faster, medians)
+samples mapal=0.0840,0.0819,0.0829,0.0819,0.0829,0.0829,0.0829,0.0819,0.0809,0.0829,0.0819,0.0829,0.0819,0.0819,0.0829,0.0819,0.0829,0.0840,0.0819,0.0819,0.0850,0.0829,0.0819,0.0819,0.0819,0.0810,0.0829,0.0829,0.0810,0.0829 cublas=0.0399,0.0389,0.0399,0.0389,0.0410,0.0399,0.0400,0.0389,0.0389,0.0399,0.0399,0.0389,0.0399,0.0399,0.0410,0.0399,0.0410,0.0399,0.0410,0.0389,0.0399,0.0399,0.0399,0.0389,0.0399,0.0389,0.0399,0.0410,0.0410,0.0410 cutlass=0.0604,0.0625,0.0604,0.0614,0.0604,0.0614,0.0604,0.0614,0.0614,0.0614,0.0604,0.0614,0.0604,0.0624,0.0604,0.0614,0.0614,0.0614,0.0604,0.0614,0.0604,0.0625,0.0614,0.0614,0.0604,0.0614,0.0614,0.0624,0.0604,0.0614
+# n=1024 face=_c.off-async
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=6144 regs=128 local_bytes=16
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0993 med_ms=0.1024 max_ms=0.1055 tflops_med=20.97
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0932 tflops_med=23.83
+ratio mapal_vs_cublas=0.520 mapal_vs_cutlass=0.880 (>1 = mapal faster, medians)
+samples mapal=0.1024,0.1014,0.1024,0.1024,0.1034,0.1024,0.1034,0.1014,0.0993,0.1034,0.1024,0.1014,0.1045,0.1044,0.1024,0.1024,0.1034,0.1055,0.1024,0.1014,0.1014,0.1024,0.1024,0.1014,0.1024,0.1024,0.1044,0.1014,0.1044,0.1024 cublas=0.0543,0.0532,0.0532,0.0532,0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0533,0.0532,0.0543,0.0532,0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0543,0.0522,0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532 cutlass=0.0891,0.0922,0.0891,0.0911,0.0891,0.0891,0.0891,0.0932,0.0922,0.0901,0.0881,0.0901,0.0901,0.0901,0.0881,0.0892,0.0891,0.0901,0.0891,0.0901,0.0891,0.0891,0.0901,0.0901,0.0901,0.0891,0.0911,0.0901,0.0891,0.0911
+# n=1024 face=_c.off-interleave
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0758 med_ms=0.0768 max_ms=0.0778 tflops_med=27.96
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0922 tflops_med=23.83
+ratio mapal_vs_cublas=0.693 mapal_vs_cutlass=1.173 (>1 = mapal faster, medians)
+samples mapal=0.0768,0.0768,0.0768,0.0768,0.0768,0.0768,0.0768,0.0768,0.0768,0.0758,0.0758,0.0768,0.0768,0.0768,0.0758,0.0758,0.0768,0.0758,0.0768,0.0758,0.0758,0.0768,0.0758,0.0768,0.0768,0.0758,0.0768,0.0758,0.0778,0.0758 cublas=0.0543,0.0522,0.0532,0.0522,0.0532,0.0522,0.0532,0.0532,0.0532,0.0522,0.0532,0.0522,0.0543,0.0522,0.0532,0.0532,0.0532,0.0532,0.0532,0.0523,0.0532,0.0532,0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0532,0.0522 cutlass=0.0891,0.0911,0.0881,0.0891,0.0901,0.0911,0.0891,0.0911,0.0901,0.0901,0.0901,0.0922,0.0891,0.0892,0.0891,0.0911,0.0891,0.0891,0.0881,0.0901,0.0901,0.0891,0.0911,0.0891,0.0891,0.0911,0.0891,0.0911,0.0891,0.0901
+# n=1024 face=_c.off-min-blocks
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0676 med_ms=0.0696 max_ms=0.0696 tflops_med=30.84
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0655 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0901 max_ms=0.0932 tflops_med=23.83
+ratio mapal_vs_cublas=0.765 mapal_vs_cutlass=1.294 (>1 = mapal faster, medians)
+samples mapal=0.0696,0.0686,0.0696,0.0696,0.0686,0.0676,0.0676,0.0696,0.0686,0.0686,0.0696,0.0696,0.0696,0.0696,0.0696,0.0696,0.0686,0.0686,0.0696,0.0696,0.0696,0.0686,0.0685,0.0696,0.0696,0.0676,0.0686,0.0696,0.0696,0.0686 cublas=0.0532,0.0522,0.0543,0.0655,0.0543,0.0532,0.0532,0.0522,0.0543,0.0532,0.0533,0.0523,0.0543,0.0522,0.0532,0.0532,0.0532,0.0532,0.0532,0.0522,0.0532,0.0532,0.0543,0.0522,0.0532,0.0532,0.0542,0.0532,0.0532,0.0532 cutlass=0.0901,0.0901,0.0891,0.0901,0.0891,0.0911,0.0881,0.0901,0.0870,0.0901,0.0891,0.0922,0.0911,0.0911,0.0901,0.0891,0.0901,0.0901,0.0901,0.0932,0.0922,0.0901,0.0881,0.0911,0.0911,0.0901,0.0911,0.0922,0.0901,0.0911
+# n=1024 face=_c.off-unroll
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=103 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0819 med_ms=0.0840 max_ms=0.0850 tflops_med=25.58
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0922 tflops_med=23.83
+ratio mapal_vs_cublas=0.634 mapal_vs_cutlass=1.073 (>1 = mapal faster, medians)
+samples mapal=0.0840,0.0829,0.0840,0.0840,0.0840,0.0829,0.0829,0.0820,0.0829,0.0829,0.0840,0.0829,0.0840,0.0829,0.0840,0.0829,0.0840,0.0840,0.0840,0.0840,0.0840,0.0829,0.0819,0.0840,0.0840,0.0840,0.0850,0.0829,0.0840,0.0830 cublas=0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0543,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0522,0.0532,0.0532,0.0522,0.0532,0.0522,0.0522 cutlass=0.0881,0.0911,0.0901,0.0891,0.0911,0.0901,0.0891,0.0911,0.0891,0.0911,0.0881,0.0901,0.0901,0.0911,0.0891,0.0911,0.0891,0.0922,0.0891,0.0901,0.0891,0.0901,0.0901,0.0911,0.0881,0.0911,0.0901,0.0901,0.0891,0.0901
+# n=1024 face=_c.off-warp
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0676 med_ms=0.0686 max_ms=0.0696 tflops_med=31.30
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0932 tflops_med=23.83
+ratio mapal_vs_cublas=0.776 mapal_vs_cutlass=1.313 (>1 = mapal faster, medians)
+samples mapal=0.0686,0.0686,0.0696,0.0686,0.0696,0.0696,0.0686,0.0696,0.0696,0.0686,0.0686,0.0696,0.0696,0.0696,0.0686,0.0686,0.0686,0.0686,0.0696,0.0687,0.0696,0.0696,0.0686,0.0686,0.0676,0.0687,0.0696,0.0686,0.0686,0.0686 cublas=0.0532,0.0522,0.0532,0.0532,0.0543,0.0532,0.0523,0.0532,0.0532,0.0532,0.0532,0.0522,0.0532,0.0522,0.0532,0.0532,0.0532,0.0522,0.0532,0.0522,0.0532,0.0522,0.0532,0.0522,0.0532,0.0532,0.0532,0.0522,0.0532,0.0522 cutlass=0.0901,0.0891,0.0881,0.0911,0.0901,0.0891,0.0901,0.0911,0.0911,0.0901,0.0881,0.0922,0.0891,0.0901,0.0891,0.0901,0.0891,0.0891,0.0891,0.0901,0.0901,0.0922,0.0901,0.0891,0.0901,0.0901,0.0901,0.0901,0.0901,0.0932
+# n=1024 face=_c.s52
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_565ffde502536326 grid=16x8 block=128 smem=19200 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.985e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0676 med_ms=0.0686 max_ms=0.0696 tflops_med=31.30
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0522 med_ms=0.0532 max_ms=0.0543 tflops_med=40.33
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0922 tflops_med=23.83
+ratio mapal_vs_cublas=0.776 mapal_vs_cutlass=1.313 (>1 = mapal faster, medians)
+samples mapal=0.0686,0.0686,0.0686,0.0686,0.0696,0.0696,0.0696,0.0696,0.0686,0.0686,0.0686,0.0696,0.0696,0.0696,0.0696,0.0686,0.0676,0.0686,0.0686,0.0686,0.0686,0.0696,0.0676,0.0686,0.0696,0.0696,0.0686,0.0676,0.0686,0.0696 cublas=0.0532,0.0522,0.0543,0.0532,0.0532,0.0532,0.0542,0.0532,0.0532,0.0532,0.0532,0.0522,0.0532,0.0522,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0543,0.0522,0.0543,0.0523,0.0543,0.0522,0.0532,0.0532,0.0532,0.0522 cutlass=0.0891,0.0922,0.0891,0.0901,0.0911,0.0891,0.0881,0.0891,0.0911,0.0891,0.0891,0.0911,0.0901,0.0901,0.0881,0.0911,0.0891,0.0911,0.0901,0.0881,0.0901,0.0901,0.0891,0.0911,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891
+# n=2048 face=_exact
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_04187107f6853118 grid=16x16 block=256 smem=33792 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.466e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.5212 med_ms=0.5253 max_ms=0.5939 tflops_med=32.70
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3267 med_ms=0.3297 max_ms=0.3686 tflops_med=52.10
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3297 med_ms=0.3359 max_ms=0.3543 tflops_med=51.15
+ratio mapal_vs_cublas=0.628 mapal_vs_cutlass=0.639 (>1 = mapal faster, medians)
+samples mapal=0.5263,0.5243,0.5212,0.5253,0.5212,0.5233,0.5233,0.5263,0.5233,0.5243,0.5222,0.5243,0.5233,0.5212,0.5222,0.5222,0.5222,0.5233,0.5755,0.5929,0.5929,0.5929,0.5919,0.5929,0.5929,0.5919,0.5929,0.5929,0.5939,0.5929 cublas=0.3277,0.3277,0.3277,0.3267,0.3287,0.3277,0.3308,0.3287,0.3287,0.3267,0.3287,0.3277,0.3277,0.3277,0.3287,0.3277,0.3297,0.3308,0.3666,0.3666,0.3676,0.3666,0.3686,0.3666,0.3676,0.3666,0.3686,0.3676,0.3676,0.3666 cutlass=0.3318,0.3308,0.3338,0.3359,0.3328,0.3338,0.3348,0.3328,0.3308,0.3348,0.3297,0.3328,0.3369,0.3348,0.3328,0.3348,0.3328,0.3359,0.3523,0.3533,0.3512,0.3512,0.3523,0.3543,0.3533,0.3533,0.3523,0.3533,0.3512,0.3533
+# n=2048 face=_c
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3604 med_ms=0.3717 max_ms=0.3983 tflops_med=46.22
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3267 med_ms=0.3420 max_ms=0.3676 tflops_med=50.23
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3307 med_ms=0.3338 max_ms=0.3512 tflops_med=51.46
+ratio mapal_vs_cublas=0.920 mapal_vs_cutlass=0.898 (>1 = mapal faster, medians)
+samples mapal=0.3635,0.3635,0.3656,0.3604,0.3615,0.3635,0.3625,0.3615,0.3656,0.3625,0.3625,0.3656,0.3635,0.3656,0.3635,0.3727,0.3727,0.3717,0.3738,0.3738,0.3738,0.3727,0.3717,0.3727,0.3983,0.3973,0.3973,0.3983,0.3973,0.3973 cublas=0.3287,0.3287,0.3277,0.3267,0.3297,0.3277,0.3277,0.3277,0.3287,0.3277,0.3308,0.3308,0.3308,0.3308,0.3328,0.3430,0.3430,0.3430,0.3441,0.3420,0.3430,0.3441,0.3441,0.3441,0.3656,0.3645,0.3666,0.3656,0.3676,0.3656 cutlass=0.3308,0.3318,0.3328,0.3369,0.3338,0.3348,0.3307,0.3328,0.3308,0.3338,0.3359,0.3369,0.3348,0.3338,0.3308,0.3308,0.3318,0.3318,0.3318,0.3318,0.3308,0.3318,0.3328,0.3410,0.3512,0.3512,0.3512,0.3512,0.3502,0.3512
+# n=2048 face=_tf
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_81ee01935cfe03a3 grid=16x16 block=128 smem=37888 regs=200 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.269e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.269e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.269e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.2540 med_ms=0.2550 max_ms=0.2570 tflops_med=67.38
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.2253 med_ms=0.2263 max_ms=0.2284 tflops_med=75.92
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.2284 med_ms=0.2304 max_ms=0.2314 tflops_med=74.57
+ratio mapal_vs_cublas=0.888 mapal_vs_cutlass=0.904 (>1 = mapal faster, medians)
+samples mapal=0.2560,0.2560,0.2550,0.2570,0.2550,0.2550,0.2550,0.2540,0.2540,0.2550,0.2560,0.2550,0.2550,0.2560,0.2550,0.2550,0.2550,0.2550,0.2550,0.2540,0.2550,0.2550,0.2550,0.2550,0.2540,0.2540,0.2540,0.2550,0.2550,0.2550 cublas=0.2273,0.2263,0.2273,0.2273,0.2263,0.2263,0.2283,0.2253,0.2273,0.2263,0.2273,0.2263,0.2263,0.2263,0.2273,0.2263,0.2284,0.2263,0.2263,0.2263,0.2273,0.2263,0.2263,0.2263,0.2263,0.2263,0.2273,0.2263,0.2284,0.2263 cutlass=0.2294,0.2294,0.2294,0.2304,0.2294,0.2304,0.2294,0.2304,0.2294,0.2304,0.2284,0.2304,0.2294,0.2314,0.2304,0.2304,0.2304,0.2304,0.2294,0.2304,0.2303,0.2294,0.2294,0.2304,0.2294,0.2294,0.2304,0.2314,0.2294,0.2314
+# n=2048 face=_tf.off-ldmatrix
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_81ee01935cfe03a3 grid=16x16 block=128 smem=37888 regs=198 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.269e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.269e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.269e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.2540 med_ms=0.2550 max_ms=0.2570 tflops_med=67.38
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.2253 med_ms=0.2263 max_ms=0.2273 tflops_med=75.92
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.2284 med_ms=0.2304 max_ms=0.2314 tflops_med=74.57
+ratio mapal_vs_cublas=0.888 mapal_vs_cutlass=0.904 (>1 = mapal faster, medians)
+samples mapal=0.2540,0.2540,0.2550,0.2550,0.2560,0.2550,0.2550,0.2560,0.2540,0.2560,0.2540,0.2540,0.2540,0.2550,0.2560,0.2550,0.2550,0.2540,0.2540,0.2550,0.2550,0.2560,0.2540,0.2540,0.2550,0.2540,0.2540,0.2550,0.2570,0.2550 cublas=0.2273,0.2263,0.2273,0.2263,0.2263,0.2263,0.2273,0.2263,0.2273,0.2253,0.2263,0.2263,0.2273,0.2273,0.2264,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2263 cutlass=0.2294,0.2304,0.2294,0.2304,0.2294,0.2294,0.2294,0.2294,0.2294,0.2314,0.2294,0.2304,0.2284,0.2314,0.2294,0.2294,0.2294,0.2304,0.2294,0.2304,0.2294,0.2314,0.2304,0.2304,0.2304,0.2304,0.2304,0.2304,0.2294,0.2314
+# n=2048 face=_tf.off-wide
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_81ee01935cfe03a3 grid=16x16 block=256 smem=37888 regs=122 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.269e-01
+values leg=cublas cells=256 maxrel_vs_f64=2.269e-01
+values leg=mapal cells=256 maxrel_vs_f64=2.269e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.2550 med_ms=0.2570 max_ms=0.2591 tflops_med=66.84
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.2253 med_ms=0.2263 max_ms=0.2284 tflops_med=75.90
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.2294 med_ms=0.2304 max_ms=0.2314 tflops_med=74.57
+ratio mapal_vs_cublas=0.881 mapal_vs_cutlass=0.896 (>1 = mapal faster, medians)
+samples mapal=0.2570,0.2580,0.2570,0.2570,0.2570,0.2570,0.2560,0.2570,0.2570,0.2570,0.2570,0.2570,0.2570,0.2570,0.2560,0.2570,0.2570,0.2560,0.2570,0.2570,0.2570,0.2591,0.2560,0.2560,0.2570,0.2550,0.2571,0.2560,0.2570,0.2580 cublas=0.2273,0.2263,0.2273,0.2263,0.2273,0.2263,0.2273,0.2273,0.2273,0.2273,0.2263,0.2263,0.2263,0.2263,0.2284,0.2263,0.2263,0.2263,0.2273,0.2273,0.2273,0.2263,0.2273,0.2263,0.2263,0.2263,0.2273,0.2253,0.2274,0.2263 cutlass=0.2294,0.2304,0.2294,0.2314,0.2304,0.2304,0.2304,0.2304,0.2294,0.2304,0.2294,0.2314,0.2294,0.2294,0.2294,0.2314,0.2294,0.2294,0.2294,0.2304,0.2294,0.2294,0.2294,0.2304,0.2294,0.2304,0.2294,0.2304,0.2304,0.2304
+# n=2048 face=_c.off-async
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=16384 regs=128 local_bytes=56
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3543 med_ms=0.3604 max_ms=0.3809 tflops_med=47.66
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3277 med_ms=0.3287 max_ms=0.3686 tflops_med=52.27
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3297 med_ms=0.3358 max_ms=0.3564 tflops_med=51.16
+ratio mapal_vs_cublas=0.912 mapal_vs_cutlass=0.932 (>1 = mapal faster, medians)
+samples mapal=0.3615,0.3594,0.3564,0.3584,0.3594,0.3564,0.3594,0.3584,0.3615,0.3543,0.3584,0.3604,0.3564,0.3604,0.3564,0.3604,0.3594,0.3594,0.3594,0.3594,0.3779,0.3779,0.3768,0.3789,0.3779,0.3789,0.3768,0.3789,0.3779,0.3809 cublas=0.3287,0.3277,0.3297,0.3287,0.3287,0.3297,0.3287,0.3277,0.3277,0.3287,0.3277,0.3287,0.3287,0.3287,0.3308,0.3287,0.3277,0.3287,0.3297,0.3287,0.3676,0.3676,0.3686,0.3676,0.3676,0.3686,0.3686,0.3676,0.3666,0.3686 cutlass=0.3338,0.3359,0.3358,0.3318,0.3308,0.3348,0.3328,0.3297,0.3338,0.3338,0.3328,0.3348,0.3338,0.3359,0.3338,0.3328,0.3338,0.3359,0.3328,0.3543,0.3523,0.3523,0.3512,0.3533,0.3533,0.3512,0.3523,0.3533,0.3523,0.3564
+# n=2048 face=_c.off-interleave
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3901 med_ms=0.4157 max_ms=0.4372 tflops_med=41.32
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3267 med_ms=0.3482 max_ms=0.3656 tflops_med=49.34
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3308 med_ms=0.3348 max_ms=0.3512 tflops_med=51.31
+ratio mapal_vs_cublas=0.837 mapal_vs_cutlass=0.805 (>1 = mapal faster, medians)
+samples mapal=0.3932,0.3922,0.3922,0.3912,0.3901,0.3922,0.3932,0.3912,0.3932,0.3901,0.3901,0.3912,0.3902,0.3953,0.4168,0.4178,0.4157,0.4168,0.4168,0.4168,0.4157,0.4178,0.4157,0.4157,0.4352,0.4362,0.4352,0.4372,0.4362,0.4362 cublas=0.3277,0.3267,0.3308,0.3267,0.3287,0.3276,0.3287,0.3277,0.3297,0.3287,0.3287,0.3297,0.3277,0.3502,0.3512,0.3512,0.3492,0.3482,0.3482,0.3492,0.3492,0.3492,0.3502,0.3482,0.3656,0.3645,0.3656,0.3635,0.3656,0.3645 cutlass=0.3318,0.3328,0.3308,0.3348,0.3338,0.3338,0.3328,0.3348,0.3338,0.3308,0.3318,0.3328,0.3338,0.3359,0.3348,0.3338,0.3328,0.3379,0.3348,0.3338,0.3338,0.3369,0.3348,0.3369,0.3482,0.3502,0.3502,0.3512,0.3502,0.3512
+# n=2048 face=_c.off-min-blocks
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3615 med_ms=0.3645 max_ms=0.3994 tflops_med=47.13
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3277 med_ms=0.3359 max_ms=0.3686 tflops_med=51.15
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3277 med_ms=0.3318 max_ms=0.3543 tflops_med=51.78
+ratio mapal_vs_cublas=0.921 mapal_vs_cutlass=0.910 (>1 = mapal faster, medians)
+samples mapal=0.3656,0.3635,0.3635,0.3625,0.3625,0.3645,0.3645,0.3615,0.3625,0.3635,0.3645,0.3625,0.3645,0.3666,0.3686,0.3656,0.3645,0.3656,0.3645,0.3635,0.3656,0.3666,0.3666,0.3645,0.3994,0.3973,0.3983,0.3973,0.3983,0.3994 cublas=0.3287,0.3277,0.3277,0.3277,0.3287,0.3277,0.3277,0.3286,0.3277,0.3287,0.3297,0.3277,0.3389,0.3359,0.3369,0.3379,0.3359,0.3359,0.3348,0.3369,0.3369,0.3359,0.3359,0.3369,0.3666,0.3676,0.3676,0.3686,0.3666,0.3676 cutlass=0.3338,0.3318,0.3308,0.3348,0.3318,0.3348,0.3338,0.3358,0.3318,0.3328,0.3338,0.3318,0.3287,0.3308,0.3287,0.3277,0.3297,0.3308,0.3287,0.3318,0.3287,0.3287,0.3297,0.3297,0.3523,0.3543,0.3523,0.3533,0.3533,0.3533
+# n=2048 face=_c.off-unroll
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=110 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3625 med_ms=0.3686 max_ms=0.4024 tflops_med=46.60
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3267 med_ms=0.3308 max_ms=0.3666 tflops_med=51.94
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3297 med_ms=0.3359 max_ms=0.3512 tflops_med=51.15
+ratio mapal_vs_cublas=0.897 mapal_vs_cutlass=0.911 (>1 = mapal faster, medians)
+samples mapal=0.3697,0.3645,0.3656,0.3645,0.3656,0.3666,0.3676,0.3656,0.3666,0.3666,0.3656,0.3645,0.3686,0.3625,0.3666,0.3686,0.3666,0.3686,0.4004,0.4014,0.4004,0.4004,0.4024,0.4004,0.4024,0.4024,0.4004,0.4004,0.4014,0.4004 cublas=0.3287,0.3267,0.3277,0.3277,0.3308,0.3287,0.3277,0.3277,0.3277,0.3267,0.3308,0.3297,0.3277,0.3277,0.3277,0.3318,0.3287,0.3297,0.3656,0.3666,0.3656,0.3656,0.3645,0.3635,0.3656,0.3645,0.3656,0.3645,0.3666,0.3635 cutlass=0.3297,0.3318,0.3328,0.3348,0.3318,0.3348,0.3328,0.3359,0.3318,0.3348,0.3328,0.3297,0.3338,0.3348,0.3359,0.3318,0.3338,0.3502,0.3502,0.3512,0.3492,0.3502,0.3492,0.3502,0.3492,0.3512,0.3492,0.3502,0.3492,0.3502
+# n=2048 face=_c.off-warp
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=123 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3574 med_ms=0.3594 max_ms=0.3871 tflops_med=47.80
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3276 med_ms=0.3389 max_ms=0.3686 tflops_med=50.69
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3277 med_ms=0.3318 max_ms=0.3533 tflops_med=51.78
+ratio mapal_vs_cublas=0.943 mapal_vs_cutlass=0.923 (>1 = mapal faster, medians)
+samples mapal=0.3615,0.3584,0.3584,0.3594,0.3574,0.3594,0.3594,0.3615,0.3604,0.3584,0.3584,0.3604,0.3635,0.3574,0.3584,0.3584,0.3594,0.3584,0.3604,0.3574,0.3584,0.3594,0.3584,0.3604,0.3850,0.3860,0.3871,0.3860,0.3850,0.3850 cublas=0.3276,0.3308,0.3277,0.3287,0.3287,0.3277,0.3287,0.3308,0.3287,0.3277,0.3287,0.3318,0.3287,0.3389,0.3400,0.3400,0.3400,0.3400,0.3379,0.3389,0.3389,0.3400,0.3389,0.3400,0.3686,0.3656,0.3676,0.3666,0.3666,0.3656 cutlass=0.3337,0.3369,0.3277,0.3348,0.3318,0.3328,0.3328,0.3297,0.3318,0.3308,0.3328,0.3328,0.3277,0.3297,0.3297,0.3287,0.3297,0.3287,0.3277,0.3287,0.3308,0.3308,0.3297,0.3379,0.3523,0.3533,0.3523,0.3533,0.3533,0.3533
+# n=2048 face=_c.s52
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_59027ed417ac8177 grid=16x16 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.347e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.345e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.347e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=2048 N=2048 K=2048 n=30 min_ms=0.3604 med_ms=0.3635 max_ms=0.3994 tflops_med=47.26
+time leg=cublas M=2048 N=2048 K=2048 n=30 min_ms=0.3267 med_ms=0.3287 max_ms=0.3686 tflops_med=52.27
+time leg=cutlass M=2048 N=2048 K=2048 n=30 min_ms=0.3287 med_ms=0.3338 max_ms=0.3543 tflops_med=51.46
+ratio mapal_vs_cublas=0.904 mapal_vs_cutlass=0.918 (>1 = mapal faster, medians)
+samples mapal=0.3666,0.3645,0.3635,0.3625,0.3625,0.3604,0.3604,0.3625,0.3635,0.3625,0.3625,0.3645,0.3666,0.3625,0.3656,0.3615,0.3625,0.3635,0.3615,0.3625,0.3626,0.3635,0.3973,0.3994,0.3994,0.3983,0.3984,0.3983,0.3973,0.3994 cublas=0.3267,0.3287,0.3287,0.3287,0.3277,0.3287,0.3297,0.3308,0.3308,0.3287,0.3287,0.3267,0.3287,0.3277,0.3277,0.3287,0.3287,0.3308,0.3288,0.3277,0.3287,0.3666,0.3676,0.3676,0.3686,0.3666,0.3666,0.3666,0.3676,0.3666 cutlass=0.3287,0.3297,0.3308,0.3328,0.3328,0.3318,0.3318,0.3338,0.3328,0.3287,0.3328,0.3318,0.3308,0.3338,0.3338,0.3328,0.3328,0.3349,0.3338,0.3359,0.3348,0.3533,0.3523,0.3543,0.3533,0.3523,0.3533,0.3523,0.3523,0.3533
+# n=4096 face=_exact
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_2dd01bc8b8404cf3 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=4.0387 med_ms=5.9423 max_ms=6.2802 tflops_med=23.13
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4412 med_ms=3.4488 max_ms=3.6372 tflops_med=39.85
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5784 med_ms=3.4744 max_ms=3.6669 tflops_med=39.56
+ratio mapal_vs_cublas=0.580 mapal_vs_cutlass=0.585 (>1 = mapal faster, medians)
+samples mapal=4.0397,4.0387,4.0612,4.0591,4.0581,4.0653,4.0632,6.2157,6.2771,6.2802,6.2751,6.2771,6.0539,6.0109,5.9955,6.0549,5.9853,5.9423,5.9965,5.8911,5.8941,5.8900,5.8941,5.8890,5.8900,5.9433,5.9156,5.8870,5.9945,5.9576 cublas=2.4576,2.4412,2.4494,2.4494,2.4515,2.4617,2.4883,3.6280,3.6372,3.6372,3.6362,3.6352,3.5092,3.4816,3.4990,3.5113,3.4509,3.4796,3.4806,3.4212,3.4171,3.4212,3.4243,3.4202,3.4212,3.4499,3.4202,3.4181,3.4796,3.4488 cutlass=2.5784,2.5856,2.5825,2.5948,2.6092,2.6204,3.6311,3.6669,3.6659,3.6669,3.6659,3.5942,3.5348,3.5031,3.5338,3.5349,3.4714,3.5031,3.4765,3.4427,3.4406,3.4417,3.4417,3.4427,3.4611,3.4744,3.4417,3.4908,3.5031,3.4724
+# n=4096 face=_c
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.8027 med_ms=4.0899 max_ms=4.3254 tflops_med=33.60
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4556 med_ms=3.5707 max_ms=3.7724 tflops_med=38.49
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5825 med_ms=3.5994 max_ms=3.8093 tflops_med=38.18
+ratio mapal_vs_cublas=0.873 mapal_vs_cutlass=0.880 (>1 = mapal faster, medians)
+samples mapal=2.8027,2.8375,2.8252,2.8273,2.8703,2.9082,2.8334,4.2015,4.3254,4.3192,4.3223,4.3182,4.3151,4.1718,4.0970,4.0909,4.0878,4.0940,4.0561,4.0550,4.0540,4.0950,4.0899,4.0858,4.0858,4.0878,4.1267,4.1206,4.0827,4.0919 cublas=2.4556,2.4822,2.5098,2.5016,2.5170,2.4842,3.0812,3.6700,3.7714,3.7693,3.7724,3.7704,3.7724,3.6352,3.5727,3.5717,3.5717,3.5379,3.5430,3.5400,3.5410,3.5707,3.5707,3.5707,3.5697,3.5738,3.6045,3.5707,3.5707,3.5717 cutlass=2.5876,2.5825,2.6163,2.6010,2.6163,2.6296,3.7007,3.7601,3.8093,3.8083,3.8083,3.8083,3.6905,3.6669,3.5994,3.6004,3.5994,3.5666,3.5666,3.5676,3.5953,3.6004,3.5983,3.6004,3.5994,3.6342,3.6321,3.5983,3.5983,3.5994
+# n=4096 face=_tf
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_3a8928c69c64c866 grid=32x32 block=128 smem=37888 regs=200 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.7695 med_ms=2.0306 max_ms=2.0480 tflops_med=67.68
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=1.6128 med_ms=1.8524 max_ms=1.8637 tflops_med=74.19
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=1.6374 med_ms=1.8780 max_ms=1.9098 tflops_med=73.18
+ratio mapal_vs_cublas=0.912 mapal_vs_cutlass=0.925 (>1 = mapal faster, medians)
+samples mapal=1.7715,1.7705,1.7725,1.7715,1.7705,1.7695,2.0419,2.0408,2.0398,2.0398,2.0419,2.0439,2.0449,2.0460,2.0449,2.0480,2.0480,2.0419,2.0439,2.0470,2.0214,2.0224,2.0224,2.0224,2.0234,2.0224,2.0306,2.0234,2.0275,2.0234 cublas=1.6128,1.6128,1.6129,1.6128,1.6128,1.7254,1.8565,1.8555,1.8565,1.8555,1.8555,1.8606,1.8616,1.8616,1.8616,1.8637,1.8637,1.8627,1.8627,1.8627,1.8514,1.8524,1.8514,1.8504,1.8514,1.8504,1.8514,1.8514,1.8524,1.8504 cutlass=1.6394,1.6404,1.6374,1.6384,1.6394,1.8913,1.8903,1.8893,1.8852,1.8893,1.8913,1.8934,1.8934,1.8944,1.9098,1.8964,1.8944,1.8924,1.8944,1.8780,1.8729,1.8749,1.8729,1.8739,1.8729,1.8739,1.8749,1.8749,1.8719,1.8719
+# n=4096 face=_tf.off-ldmatrix
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_3a8928c69c64c866 grid=32x32 block=128 smem=37888 regs=198 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.7664 med_ms=2.0183 max_ms=2.0767 tflops_med=68.10
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=1.6159 med_ms=1.8504 max_ms=1.8944 tflops_med=74.28
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=1.6394 med_ms=1.8739 max_ms=1.9251 tflops_med=73.34
+ratio mapal_vs_cublas=0.917 mapal_vs_cutlass=0.928 (>1 = mapal faster, medians)
+samples mapal=1.7725,1.7684,1.7674,1.7664,1.7684,1.7684,1.7665,1.7684,1.7695,1.7664,1.7715,1.7715,1.7705,1.7695,2.0562,2.0756,2.0746,2.0767,2.0756,2.0460,2.0337,2.0337,2.0316,2.0204,2.0204,2.0193,2.0193,2.0183,2.0183,2.0214 cublas=1.6159,1.6169,1.6159,1.6159,1.6169,1.6159,1.6159,1.6159,1.6169,1.6169,1.6230,1.6220,1.6200,1.6200,1.8862,1.8924,1.8944,1.8913,1.8934,1.8749,1.8647,1.8627,1.8555,1.8514,1.8524,1.8514,1.8514,1.8504,1.8514,1.8504 cutlass=1.6404,1.6394,1.6404,1.6415,1.6394,1.6425,1.6394,1.6415,1.6394,1.6425,1.6435,1.6425,1.6425,1.7439,1.9251,1.9231,1.9251,1.9241,1.9180,1.8964,1.8852,1.8893,1.8729,1.8749,1.8739,1.8739,1.8739,1.8739,1.8739,1.8739
+# n=4096 face=_tf.off-wide
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_3a8928c69c64c866 grid=32x32 block=256 smem=37888 regs=122 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=1.7807 med_ms=2.0500 max_ms=2.1002 tflops_med=67.04
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=1.6118 med_ms=1.8616 max_ms=1.8964 tflops_med=73.83
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=1.6374 med_ms=1.8852 max_ms=1.9292 tflops_med=72.90
+ratio mapal_vs_cublas=0.908 mapal_vs_cutlass=0.920 (>1 = mapal faster, medians)
+samples mapal=1.7889,1.7828,1.7838,1.7807,1.7859,1.7838,1.7828,1.7838,1.7828,1.7848,1.7879,1.7889,1.7859,1.7869,2.0931,2.0931,2.0931,2.1002,2.0972,2.0777,2.0634,2.0644,2.0634,2.0500,2.0531,2.0490,2.0511,2.0521,2.0521,2.0511 cublas=1.6138,1.6128,1.6128,1.6118,1.6128,1.6128,1.6128,1.6118,1.6128,1.6118,1.6179,1.6169,1.6200,1.6179,1.8924,1.8924,1.8944,1.8955,1.8964,1.8872,1.8749,1.8739,1.8698,1.8616,1.8637,1.8627,1.8627,1.8616,1.8627,1.8627 cutlass=1.6415,1.6384,1.6394,1.6394,1.6384,1.6394,1.6384,1.6374,1.6394,1.6435,1.6435,1.6425,1.6425,1.9220,1.9241,1.9251,1.9261,1.9292,1.9282,1.9108,1.8964,1.8995,1.8862,1.8862,1.8872,1.8852,1.8842,1.8852,1.8852,1.8852
+# n=4096 face=_c.off-async
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=16384 regs=128 local_bytes=56
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.7064 med_ms=3.8625 max_ms=4.1748 tflops_med=35.58
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4986 med_ms=3.6700 max_ms=3.9588 tflops_med=37.45
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5917 med_ms=3.7038 max_ms=4.0038 tflops_med=37.11
+ratio mapal_vs_cublas=0.950 mapal_vs_cutlass=0.959 (>1 = mapal faster, medians)
+samples mapal=2.7177,2.7197,2.7310,2.7238,2.7197,2.7064,4.0100,4.1748,4.1738,4.1738,4.1124,4.0090,3.8973,3.8615,3.8625,3.8257,3.8267,3.8277,3.8625,3.8615,3.8605,3.8615,3.8605,3.8994,3.8984,3.8984,3.8881,3.8625,3.9352,3.9342 cublas=2.4986,2.5160,2.5016,2.5088,2.5047,2.7494,3.8103,3.9557,3.9578,3.9588,3.8093,3.7018,3.7059,3.6710,3.6700,3.6342,3.6362,3.6362,3.6700,3.6690,3.6721,3.6700,3.6700,3.7018,3.7018,3.7018,3.6700,3.6690,3.7396,3.7315 cutlass=2.5917,2.6020,2.6040,2.6061,2.6143,3.8461,4.0018,4.0038,4.0018,4.0028,3.8461,3.7356,3.7345,3.7007,3.6659,3.6659,3.6659,3.6669,3.7007,3.7007,3.7007,3.7018,3.7038,3.7366,3.7356,3.7356,3.7007,3.7130,3.7724,3.7356
+# n=4096 face=_c.off-interleave
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.9727 med_ms=4.4104 max_ms=4.6664 tflops_med=31.16
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4699 med_ms=3.5420 max_ms=3.7376 tflops_med=38.80
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5999 med_ms=3.5666 max_ms=3.7724 tflops_med=38.54
+ratio mapal_vs_cublas=0.803 mapal_vs_cutlass=0.809 (>1 = mapal faster, medians)
+samples mapal=2.9983,2.9727,2.9921,2.9727,3.0106,3.0157,3.0392,3.0065,3.5625,4.5353,4.6664,4.6623,4.6612,4.5947,4.5138,4.4913,4.4943,4.4923,4.4503,4.4093,4.4104,4.4892,4.4564,4.4134,4.4104,4.4093,4.4104,4.3766,4.3735,4.4124 cublas=2.4812,2.4699,2.4760,2.4781,2.4750,2.4863,2.4852,2.4893,3.6301,3.6362,3.7366,3.7376,3.7366,3.6362,3.6035,3.6035,3.6024,3.5779,3.5707,3.5420,3.5420,3.6035,3.5410,3.5389,3.5400,3.5389,3.5420,3.5113,3.5103,3.5410 cutlass=2.6358,2.6122,2.6153,2.6071,2.6019,2.5999,2.6030,2.6296,3.6659,3.7724,3.7704,3.7714,3.7714,3.6669,3.6321,3.6321,3.6321,3.6004,3.5973,3.5666,3.5707,3.6332,3.5666,3.5676,3.5656,3.5666,3.5666,3.5359,3.5615,3.5666
+# n=4096 face=_c.off-min-blocks
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.8170 med_ms=4.1288 max_ms=4.3674 tflops_med=33.29
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4689 med_ms=3.6045 max_ms=3.8083 tflops_med=38.13
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.6327 med_ms=3.6332 max_ms=3.8451 tflops_med=37.83
+ratio mapal_vs_cublas=0.873 mapal_vs_cutlass=0.880 (>1 = mapal faster, medians)
+samples mapal=2.8170,2.8385,2.8283,3.7816,3.7816,4.3622,4.3674,4.3643,4.3162,4.2516,4.1677,4.1595,4.1615,4.1615,4.1646,4.1677,4.1656,4.1697,4.1277,4.1042,4.0899,4.1247,4.1247,4.1329,4.1267,4.1277,4.1247,4.1288,4.1267,4.1247 cublas=2.4873,2.5047,2.4689,3.3085,3.3075,3.8072,3.8052,3.8083,3.7038,3.6383,3.6352,3.6352,3.6372,3.6362,3.6332,3.6362,3.6372,3.6270,3.6045,3.5748,3.5738,3.6004,3.6045,3.6035,3.6035,3.6024,3.6035,3.6024,3.6045,3.6035 cutlass=2.6327,2.6429,2.9184,3.3260,3.8451,3.8451,3.8441,3.8451,3.7356,3.6659,3.6659,3.6680,3.6649,3.6669,3.6659,3.6659,3.6669,3.6332,3.6321,3.5994,3.6157,3.6321,3.6321,3.6332,3.6321,3.6321,3.6321,3.6332,3.6321,3.6321
+# n=4096 face=_c.off-unroll
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=110 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.8682 med_ms=4.1359 max_ms=4.2547 tflops_med=33.23
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4730 med_ms=3.5092 max_ms=3.6035 tflops_med=39.16
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.6010 med_ms=3.5359 max_ms=3.6332 tflops_med=38.87
+ratio mapal_vs_cublas=0.848 mapal_vs_cutlass=0.855 (>1 = mapal faster, medians)
+samples mapal=2.8682,3.8267,2.8846,2.8846,4.2516,4.2516,4.2527,4.2547,4.2506,4.1738,4.1349,4.1349,4.1359,4.1349,4.0991,4.0991,4.1001,4.1359,4.1359,4.1359,4.1370,4.1349,4.1748,4.1728,4.1359,4.1359,4.1370,4.1738,4.1759,4.1728 cublas=2.4730,2.5190,2.5211,3.0822,3.6035,3.6035,3.6024,3.6035,3.5400,3.5400,3.5103,3.5092,3.5092,3.4847,3.4785,3.4775,3.4796,3.5103,3.5092,3.5092,3.5113,3.5072,3.5400,3.5092,3.5123,3.5062,3.5092,3.5389,3.5389,3.5389 cutlass=2.6266,2.6081,2.6010,3.6332,3.6321,3.6321,3.6311,3.6321,3.5656,3.5676,3.5348,3.5348,3.5338,3.5031,3.5031,3.5031,3.5021,3.5359,3.5338,3.5348,3.5348,3.5564,3.5656,3.5359,3.5338,3.5348,3.5635,3.5666,3.5666,3.5676
+# n=4096 face=_c.off-warp
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=123 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.7863 med_ms=4.0960 max_ms=4.2199 tflops_med=33.55
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4781 med_ms=3.7007 max_ms=3.8083 tflops_med=37.14
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.6040 med_ms=3.7356 max_ms=3.8461 tflops_med=36.79
+ratio mapal_vs_cublas=0.903 mapal_vs_cutlass=0.912 (>1 = mapal faster, medians)
+samples mapal=2.7914,2.7945,2.8078,2.7863,4.2148,4.2179,4.2179,4.2199,4.2168,4.1728,4.0960,4.0970,4.0970,4.0980,4.0980,4.1001,4.0960,4.0571,4.0602,4.0602,4.0602,4.0602,4.0223,4.0581,4.0591,4.0591,4.0591,4.0591,4.1349,4.1339 cublas=2.5078,2.4781,2.4975,2.4955,3.8062,3.8083,3.8083,3.8052,3.8083,3.7386,3.7028,3.7028,3.7018,3.7028,3.7038,3.7018,3.7007,3.6710,3.6659,3.6680,3.6700,3.6454,3.6383,3.6710,3.6669,3.6700,3.6710,3.6690,3.7366,3.7222 cutlass=2.6153,2.6040,2.6071,3.8461,3.8451,3.8451,3.8451,3.8461,3.8441,3.7673,3.7356,3.7356,3.7356,3.7376,3.7356,3.7366,3.7028,3.7018,3.6997,3.7007,3.6997,3.6669,3.6659,3.7007,3.6997,3.7007,3.6997,3.7243,3.7714,3.7356
+# n=4096 face=_c.s52
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_ef9b0c1ddb04347e grid=32x32 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.464e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=2.7935 med_ms=4.1257 max_ms=4.2445 tflops_med=33.31
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.4556 med_ms=3.6035 max_ms=3.7048 tflops_med=38.14
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5702 med_ms=3.6332 max_ms=3.7356 tflops_med=37.83
+ratio mapal_vs_cublas=0.873 mapal_vs_cutlass=0.881 (>1 = mapal faster, medians)
+samples mapal=2.7935,2.8436,2.8283,2.8170,2.8211,4.2445,4.2342,4.2404,4.2394,4.2394,4.1667,4.0929,4.0878,4.0919,4.0888,4.0540,4.1697,4.1687,4.1636,4.1554,4.1216,4.1257,4.1329,4.1247,4.1298,4.1257,4.1626,4.1718,4.1226,4.1226 cublas=2.5037,2.5006,2.4740,2.4556,2.6880,3.7048,3.7038,3.7018,3.7038,3.6977,3.6352,3.5697,3.5707,3.5727,3.5574,3.5400,3.6372,3.6362,3.6372,3.6035,3.6045,3.6035,3.6045,3.6024,3.6045,3.6024,3.6362,3.6106,3.6035,3.6024 cutlass=2.5702,2.6112,2.5743,2.5795,3.7356,3.7356,3.7345,3.7356,3.7345,3.6823,3.6659,3.5994,3.5994,3.5994,3.5656,3.5758,3.6659,3.6669,3.6659,3.6332,3.6321,3.6332,3.6321,3.6332,3.6321,3.6567,3.6659,3.6332,3.6321,3.6332
+# n=8192 face=_exact
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_eeced1d59471854e grid=64x64 block=256 smem=33792 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.424e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=34.8416 med_ms=57.8540 max_ms=63.6938 tflops_med=19.00
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=27.1616 med_ms=28.8143 max_ms=31.5494 tflops_med=38.16
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=28.6228 med_ms=31.4778 max_ms=34.2272 tflops_med=34.93
+ratio mapal_vs_cublas=0.498 mapal_vs_cutlass=0.544 (>1 = mapal faster, medians)
+samples mapal=34.8416,53.8706,56.5893,56.7030,55.3943,57.3942,57.4228,56.9006,63.6938,62.3462,62.8357,61.1584,57.5754,57.7618,56.2831,58.0628,60.7918,62.9761,61.8424,59.4463,57.4444,56.6886,56.0404,58.5697,60.5338,61.4380,62.4200,61.3765,57.8540,57.3932 cublas=27.1616,27.3715,27.9286,27.9306,27.8098,28.3351,27.8948,30.6330,31.5494,31.1869,30.3493,28.4006,27.9695,27.9439,27.8200,29.5629,30.6289,31.0641,30.2490,29.4646,28.4774,28.2757,28.5399,29.3806,30.2019,30.6954,30.3391,29.4912,28.8143,28.4969 cutlass=31.4778,28.6228,29.2280,29.8650,29.3837,29.0365,29.2270,33.4602,34.2272,34.0306,31.9693,30.5254,28.7816,29.6356,30.5019,33.2216,33.3199,33.8678,33.2831,31.6170,30.7231,30.5234,30.9207,32.1004,33.9200,33.2820,32.1393,31.4870,30.6258,29.4646
+# n=8192 face=_c
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=23.1434 med_ms=41.1167 max_ms=45.0468 tflops_med=26.74
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=18.9635 med_ms=34.4699 max_ms=35.8973 tflops_med=31.90
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=21.3074 med_ms=32.6134 max_ms=35.7530 tflops_med=33.71
+ratio mapal_vs_cublas=0.838 mapal_vs_cutlass=0.793 (>1 = mapal faster, medians)
+samples mapal=23.1434,39.6513,39.5940,38.2700,38.2515,38.3959,38.6877,38.9878,40.5596,43.9009,44.9485,44.9823,44.7816,42.1335,40.5361,38.6273,38.9315,42.4069,42.9507,45.0468,44.7990,43.8026,41.1167,40.7951,40.5965,39.9524,41.8365,43.4770,44.3679,43.9398 cublas=18.9635,34.5958,31.3334,31.4716,31.4307,31.8689,31.6355,31.9560,35.3741,35.5809,35.6495,35.8973,35.7202,33.4490,32.2150,32.3359,32.6994,34.8733,35.1703,35.7673,35.8185,35.0884,33.7326,33.0936,32.2386,33.5913,34.4699,35.2819,35.1683,35.6352 cutlass=21.3074,32.3000,31.4409,31.3446,31.1214,30.9914,30.8582,30.4937,35.7530,35.3362,35.0065,35.0116,33.8708,31.6611,31.7563,31.4880,31.9560,34.2374,34.2036,34.6235,35.1836,33.6302,32.3041,31.4993,31.9519,32.6134,33.5657,34.2118,34.9327,34.7996
+# n=8192 face=_tf
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_4dffdd8c996c0559 grid=64x64 block=128 smem=37888 regs=200 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.551e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.551e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.551e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=13.8967 med_ms=17.2913 max_ms=19.5533 tflops_med=63.59
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=12.8697 med_ms=16.4649 max_ms=19.3700 tflops_med=66.78
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=15.7256 med_ms=16.1638 max_ms=18.0029 tflops_med=68.02
+ratio mapal_vs_cublas=0.952 mapal_vs_cutlass=0.935 (>1 = mapal faster, medians)
+samples mapal=13.8967,16.7844,17.0752,17.7213,17.2339,16.8397,17.2083,16.8325,17.2913,16.8356,17.1305,16.7188,17.0783,16.7250,17.1264,16.7199,17.3087,17.3066,18.9041,19.4417,19.0484,18.8426,18.2907,18.7382,19.5533,18.4125,17.3097,17.4275,16.8950,17.3435 cublas=12.8697,15.3795,16.9943,16.2140,16.2867,16.3256,16.1741,16.1772,16.1761,16.5960,15.7809,16.4833,15.7839,16.4649,15.8915,16.3666,16.1690,19.3700,18.3286,18.5836,18.7382,18.7597,18.9891,18.4351,18.2876,17.5903,17.1244,16.0358,17.2524,16.0573 cutlass=15.7256,15.8126,17.2851,16.0737,16.1638,16.0666,16.1577,16.1239,16.1413,16.2376,15.9273,16.1014,15.9283,16.1413,16.0410,16.1085,16.1833,17.7162,17.4838,17.7766,18.0029,17.8627,17.4131,17.5524,17.3138,16.9492,16.3840,16.0819,16.4116,16.0328
+# n=8192 face=_tf.off-ldmatrix
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_4dffdd8c996c0559 grid=64x64 block=128 smem=37888 regs=198 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.551e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.551e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.551e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=13.8752 med_ms=17.1571 max_ms=19.7652 tflops_med=64.08
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=13.0621 med_ms=16.6676 max_ms=19.2399 tflops_med=65.97
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=15.3149 med_ms=16.3267 max_ms=18.3460 tflops_med=67.34
+ratio mapal_vs_cublas=0.971 mapal_vs_cutlass=0.952 (>1 = mapal faster, medians)
+samples mapal=13.8752,16.3113,17.1725,17.0568,17.2145,16.9185,17.2513,16.9114,17.1571,16.7967,17.0967,16.8069,17.1049,16.9144,17.1049,16.9073,17.1551,19.1273,18.7587,18.7576,18.8242,19.7652,19.4918,18.4074,17.3947,17.8115,17.1571,17.3220,17.3906,17.0291 cublas=13.0621,15.1818,16.6676,16.2540,16.5437,16.3103,16.3912,16.5745,15.9232,16.5929,15.8454,16.6267,15.8802,16.6881,15.9365,16.7363,16.8223,19.2399,19.1908,19.1058,18.8365,18.8303,18.8119,17.7101,17.5790,16.5007,17.4356,16.5192,16.8212,16.7485 cutlass=15.3149,15.9908,16.3072,16.1823,16.2970,16.1055,16.2918,16.2652,16.1434,16.2478,16.1393,16.1997,16.2284,16.1587,16.3267,16.2447,18.0511,18.3460,18.0931,17.5473,17.7388,17.7623,17.7828,16.9390,16.7342,16.4229,16.6554,16.4301,16.5212,16.4332
+# n=8192 face=_tf.off-wide
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_4dffdd8c996c0559 grid=64x64 block=256 smem=37888 regs=122 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.551e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.551e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.551e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=14.0411 med_ms=17.4787 max_ms=19.7745 tflops_med=62.91
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=12.7528 med_ms=16.8694 max_ms=19.3167 tflops_med=65.18
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=15.0118 med_ms=16.4659 max_ms=18.3388 tflops_med=66.77
+ratio mapal_vs_cublas=0.965 mapal_vs_cutlass=0.942 (>1 = mapal faster, medians)
+samples mapal=14.0411,18.2753,17.6804,17.0875,17.4633,17.1950,17.4008,17.0691,17.4541,16.9984,17.4602,17.1827,17.3332,17.4397,17.2083,17.5708,17.0834,19.7745,19.7089,19.6055,19.5645,19.4365,18.4515,17.9538,18.2733,17.5002,17.4787,17.5135,17.1848,17.6804 cublas=12.7528,17.1244,16.0420,16.4536,16.5468,16.5663,16.1935,16.9021,16.0840,16.9964,16.0768,16.8694,16.3727,16.7721,16.4680,16.6144,19.2809,19.3167,19.0536,19.0587,19.0157,18.9768,18.3245,17.6589,16.9400,17.2093,16.6727,16.5171,16.9144,16.3348 cutlass=15.0118,17.3844,15.9928,16.5827,16.4260,16.2785,16.2683,16.4157,16.3881,16.4198,16.3604,16.2335,16.4659,16.2970,16.3195,16.4014,17.8811,17.9026,17.8964,18.1606,18.3388,17.9057,17.1551,16.9738,16.7854,16.5304,16.6083,16.4116,16.5642,16.4106
+# n=8192 face=_c.off-async
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=16384 regs=128 local_bytes=56
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=22.1143 med_ms=37.8429 max_ms=42.1499 tflops_med=29.05
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=29.9520 med_ms=35.1488 max_ms=37.5726 tflops_med=31.28
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=30.9146 med_ms=33.1530 max_ms=36.1042 tflops_med=33.16
+ratio mapal_vs_cublas=0.929 mapal_vs_cutlass=0.876 (>1 = mapal faster, medians)
+samples mapal=22.1143,33.9077,36.2353,36.5281,36.9725,37.1528,36.9019,36.0366,36.5578,42.1499,41.3972,41.1300,41.2344,37.8429,37.7928,36.3438,35.9700,38.7277,41.1474,41.1648,40.9170,40.1029,38.2167,37.7682,36.2301,36.8282,38.7113,40.4009,41.0245,40.3282 cublas=29.9520,33.1438,33.0353,33.1612,33.3701,33.4408,33.0537,33.2800,37.4006,37.5726,37.2900,37.3043,35.2532,34.6593,33.6916,33.6599,34.5702,35.9537,36.9213,36.9551,37.1589,35.9854,35.1488,33.9886,33.8248,34.6952,36.1144,36.5599,36.6469,36.7165 cutlass=33.5186,31.0077,31.1316,30.9146,31.0456,32.0195,31.8351,32.0154,35.4079,35.7038,36.1042,35.4540,32.8018,31.7921,32.0717,32.3277,32.9462,34.1238,35.0116,35.7294,34.9819,33.5616,32.1444,32.3830,32.3451,33.1530,34.0982,34.4197,35.4970,34.5815
+# n=8192 face=_c.off-interleave
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=127 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=24.2801 med_ms=44.4006 max_ms=48.2314 tflops_med=24.76
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=19.0310 med_ms=31.5392 max_ms=33.7050 tflops_med=34.86
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=24.3067 med_ms=31.4808 max_ms=35.1283 tflops_med=34.93
+ratio mapal_vs_cublas=0.710 mapal_vs_cutlass=0.709 (>1 = mapal faster, medians)
+samples mapal=24.2801,46.8828,42.0844,41.8304,41.0348,41.2467,41.6010,42.0045,44.4006,47.3170,48.0666,48.2314,45.9346,42.8134,43.1493,43.1565,42.4991,44.3955,47.5238,47.3498,46.8357,45.7318,44.5635,44.2972,41.9625,43.3500,45.4226,45.7513,47.3856,47.1962 cublas=19.0310,31.7573,29.5762,29.7513,29.6356,29.7626,29.9571,29.8138,33.4756,33.2605,33.7050,33.4080,31.5392,30.8132,30.3555,29.8967,30.4814,32.4168,33.0691,33.4582,33.1151,31.7379,30.8931,30.6821,30.2520,31.0088,32.1669,32.9533,33.1469,32.7854 cutlass=24.3067,29.4615,30.1957,30.5828,30.5777,30.5746,30.2285,29.9715,35.1283,34.7802,34.1340,33.7725,31.6887,30.4169,29.8619,30.4783,31.6948,32.2662,34.1463,34.7361,33.1151,31.4808,30.6391,30.9688,30.6104,30.7732,33.0199,33.4653,33.5002,33.1151
+# n=8192 face=_c.off-min-blocks
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=23.1117 med_ms=40.6938 max_ms=45.0826 tflops_med=27.02
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=18.9911 med_ms=33.8125 max_ms=36.0468 tflops_med=32.52
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=21.7283 med_ms=32.0932 max_ms=35.8902 tflops_med=34.26
+ratio mapal_vs_cublas=0.831 mapal_vs_cutlass=0.789 (>1 = mapal faster, medians)
+samples mapal=23.1117,40.6815,37.8563,38.8342,39.2325,39.6257,40.0189,39.7496,40.0323,45.0826,44.7867,44.6915,42.1775,41.5631,39.3318,39.3277,39.9268,43.0469,43.3398,43.9224,45.0314,42.8083,40.3825,40.6938,40.5606,39.9688,42.2257,43.0561,44.8164,44.2880 cublas=18.9911,34.4730,31.2412,31.9969,31.6672,31.8607,31.8454,31.6365,35.6557,35.8881,35.8103,35.9956,34.2190,32.9114,32.6124,32.2232,32.6359,34.7587,35.2840,35.8124,35.7059,33.8125,33.2339,32.7485,32.6973,33.4213,34.4433,35.2082,36.0468,34.9993 cutlass=21.7283,31.3989,31.0579,31.1665,30.6924,30.7487,31.4501,31.7307,35.0577,35.3966,35.8902,35.2307,32.0276,31.9560,31.5177,31.1644,31.6846,34.5948,35.0372,35.2205,33.7316,33.2882,32.0932,31.3969,31.9918,32.8038,34.1606,34.0111,35.0136,34.3091
+# n=8192 face=_c.off-unroll
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=110 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=23.8377 med_ms=42.5646 max_ms=46.3606 tflops_med=25.83
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=19.0085 med_ms=31.8751 max_ms=34.4668 tflops_med=34.49
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=26.9445 med_ms=31.9068 max_ms=35.7140 tflops_med=34.46
+ratio mapal_vs_cublas=0.749 mapal_vs_cutlass=0.750 (>1 = mapal faster, medians)
+samples mapal=23.8377,40.6815,38.9192,39.7855,40.1705,40.4378,40.8300,41.5437,41.1976,46.3606,45.8639,46.3288,44.6259,42.0372,41.8079,41.4198,40.0599,42.7684,45.5680,45.8936,45.2055,44.2655,42.6772,42.5646,40.3753,41.1556,43.5630,43.5640,46.0872,45.0130 cublas=19.0085,31.5484,30.2940,30.4404,30.5213,30.6002,30.6412,30.5398,33.0670,34.4668,34.2866,34.4125,32.6513,31.4614,30.8664,30.9934,31.0272,33.0578,34.1965,34.0244,33.8330,32.8069,31.8751,31.2801,31.0548,31.7788,32.6574,33.3885,34.3153,33.4111 cutlass=26.9445,30.6207,30.7825,30.6719,30.4189,30.3718,30.0329,30.5398,35.2829,35.7140,35.2410,33.9046,31.9314,30.8019,30.6340,31.2545,31.9068,32.7178,34.5795,35.1693,33.7664,32.1290,30.8470,31.4214,31.1706,31.4788,33.4367,33.7091,34.5139,33.9569
+# n=8192 face=_c.off-warp
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=123 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=23.0533 med_ms=39.6892 max_ms=44.1713 tflops_med=27.70
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=29.9735 med_ms=34.6051 max_ms=37.0770 tflops_med=31.77
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=30.3862 med_ms=33.1530 max_ms=36.2977 tflops_med=33.16
+ratio mapal_vs_cublas=0.872 mapal_vs_cutlass=0.835 (>1 = mapal faster, medians)
+samples mapal=23.0533,38.0887,37.8726,38.9448,38.0887,37.6269,38.0529,38.4113,40.6815,43.8180,43.7125,44.1713,42.4571,39.6892,39.4025,37.7170,38.0570,42.3936,42.3506,44.1477,43.7975,41.7874,39.5397,39.4660,39.1547,39.1260,41.5109,42.2953,43.4995,43.0582 cublas=29.9735,31.9099,32.5683,32.5786,33.1479,32.6144,32.6595,32.7219,36.7933,36.6275,36.6725,36.5732,34.9481,33.7910,33.0281,32.7199,33.8893,35.9905,37.0770,36.7340,36.4401,34.7331,34.4730,33.7961,32.9882,34.6051,35.8758,36.2291,36.3971,36.0581 cutlass=35.4058,30.3862,31.1654,31.8259,32.1147,31.5279,31.4808,31.0999,36.2977,36.2189,35.7755,35.0157,32.8090,31.6723,32.1065,32.1065,33.1500,35.2031,34.8805,35.1519,34.2395,33.5350,32.4475,31.6611,32.1915,33.1530,34.7474,34.9092,34.8047,34.5498
+# n=8192 face=_c.s52
+device name="NVIDIA GeForce RTX 4090" cc=8.9 driver=13000
+facts sms=128 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=75497472 sm_clock_khz=2520000 mem_clock_khz=10501000
+mapal kernel=mapal_tile_1bcec820640d171d grid=64x64 block=256 smem=33792 regs=125 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.217e-04
+values leg=cublas cells=256 maxrel_vs_f64=3.217e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.217e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=8192 K=8192 n=30 min_ms=23.2305 med_ms=41.6041 max_ms=44.7703 tflops_med=26.43
+time leg=cublas M=8192 N=8192 K=8192 n=30 min_ms=19.0300 med_ms=33.4019 max_ms=35.7059 tflops_med=32.92
+time leg=cutlass M=8192 N=8192 K=8192 n=30 min_ms=23.9165 med_ms=32.2867 max_ms=35.3464 tflops_med=34.05
+ratio mapal_vs_cublas=0.803 mapal_vs_cutlass=0.776 (>1 = mapal faster, medians)
+samples mapal=23.2305,41.6041,39.9913,39.3830,38.6990,38.5106,39.1496,39.6995,34.6522,44.7703,44.3382,44.0586,44.0392,42.3332,39.1383,39.2376,39.8694,41.6092,41.7546,43.9890,44.0238,43.0090,42.2738,39.6708,39.9411,40.4695,40.7644,41.9461,44.0310,44.0801 cublas=19.0300,35.7059,31.6252,31.7706,31.7747,31.8085,32.0594,31.9427,33.8668,35.4232,35.1652,35.1980,34.8764,32.4413,32.0348,31.8925,31.8894,33.4899,34.4003,35.1089,34.9164,34.9737,33.0291,32.8868,32.4792,32.3123,33.4019,34.0193,34.8375,34.8314 cutlass=23.9165,30.0923,31.0252,31.5269,31.5177,31.4358,30.9965,30.8634,34.3839,34.6388,35.3464,35.2870,33.1090,32.0051,31.3119,30.6862,30.7630,33.5790,33.7971,34.9061,35.1375,32.8878,32.2867,31.4778,31.0221,32.0389,32.8919,33.2401,33.8616,34.6030
+-- ncu (/usr/local/cuda/bin/ncu)
+ncu exit 1 lines 14 
+== done
+-- e2e: box_profile.sh, MAPAL_GPU_TRACE=1, 3 processes per program interleaved;
+-- <prog> = this build (clock fence), <prog>.s52 = S52 bundle7 host object (no fence), same PTX
+== e2e e2e_1024_c
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=126.529 lookup_ms=0.015 alloc_ms=0.128 h2d_ms=1.149 kernel_ms=0.341 d2h_ms=0.703 free_ms=0.247 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=129.14611
+wall_ms=190
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=123.471 lookup_ms=0.014 alloc_ms=0.128 h2d_ms=1.148 kernel_ms=0.342 d2h_ms=0.721 free_ms=0.247 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=126.21676599999999
+wall_ms=187
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=128.835 lookup_ms=0.016 alloc_ms=0.137 h2d_ms=1.141 kernel_ms=0.338 d2h_ms=0.705 free_ms=0.248 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=131.526934
+wall_ms=205
+== e2e e2e_1024_c.s52
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=130.289 lookup_ms=0.016 alloc_ms=0.145 h2d_ms=1.139 kernel_ms=0.339 d2h_ms=0.705 free_ms=0.256 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.1848130000000001
+wall_ms=196
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=129.778 lookup_ms=0.016 alloc_ms=0.136 h2d_ms=1.164 kernel_ms=0.342 d2h_ms=0.718 free_ms=0.246 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.183431
+wall_ms=195
+mapal_gpu_trace kernel=mapal_tile_565ffde502536326 load_ms=128.158 lookup_ms=0.016 alloc_ms=0.129 h2d_ms=1.139 kernel_ms=0.338 d2h_ms=0.706 free_ms=0.250 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.181127
+wall_ms=191
+== e2e e2e_1024
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=129.379 lookup_ms=0.020 alloc_ms=0.157 h2d_ms=1.141 kernel_ms=0.370 d2h_ms=0.706 free_ms=0.253 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=132.120551
+wall_ms=199
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=123.436 lookup_ms=0.017 alloc_ms=0.125 h2d_ms=1.162 kernel_ms=0.363 d2h_ms=0.707 free_ms=0.262 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=126.09823700000001
+wall_ms=186
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=122.980 lookup_ms=0.018 alloc_ms=0.129 h2d_ms=1.136 kernel_ms=0.371 d2h_ms=0.706 free_ms=0.247 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=125.838894
+wall_ms=200
+== e2e e2e_1024.s52
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=129.667 lookup_ms=0.020 alloc_ms=0.133 h2d_ms=1.157 kernel_ms=0.347 d2h_ms=0.706 free_ms=0.254 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.1938060000000001
+wall_ms=207
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=130.403 lookup_ms=0.019 alloc_ms=0.135 h2d_ms=1.152 kernel_ms=0.373 d2h_ms=0.706 free_ms=0.249 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.1718539999999997
+wall_ms=209
+mapal_gpu_trace kernel=mapal_tile_ab59f5e5845b59bb load_ms=128.671 lookup_ms=0.017 alloc_ms=0.127 h2d_ms=1.148 kernel_ms=0.368 d2h_ms=0.710 free_ms=0.249 bytes_in=8388608 bytes_out=4194304
+11107
+iter ms=1.1909119999999997
+wall_ms=193
+== e2e e2e_4096_c
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=130.492 lookup_ms=0.026 alloc_ms=0.169 h2d_ms=20.730 kernel_ms=3.171 d2h_ms=10.381 free_ms=2.459 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=167.473227
+wall_ms=303
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=126.264 lookup_ms=0.018 alloc_ms=0.162 h2d_ms=20.381 kernel_ms=3.649 d2h_ms=10.481 free_ms=2.491 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=163.48675500000002
+wall_ms=299
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=125.305 lookup_ms=0.017 alloc_ms=0.174 h2d_ms=20.584 kernel_ms=3.957 d2h_ms=10.362 free_ms=2.515 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=162.956782
+wall_ms=299
+== e2e e2e_4096_c.s52
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=128.615 lookup_ms=0.017 alloc_ms=0.159 h2d_ms=20.898 kernel_ms=3.595 d2h_ms=10.370 free_ms=2.344 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.742079
+wall_ms=314
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=124.948 lookup_ms=0.018 alloc_ms=0.160 h2d_ms=20.366 kernel_ms=3.633 d2h_ms=10.343 free_ms=2.313 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.595437999999998
+wall_ms=309
+mapal_gpu_trace kernel=mapal_tile_ef9b0c1ddb04347e load_ms=122.943 lookup_ms=0.017 alloc_ms=0.137 h2d_ms=20.832 kernel_ms=3.938 d2h_ms=10.367 free_ms=2.318 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.662118
+wall_ms=310
+== e2e e2e_4096
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=128.733 lookup_ms=0.024 alloc_ms=0.170 h2d_ms=20.744 kernel_ms=4.063 d2h_ms=10.389 free_ms=2.505 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=166.775612
+wall_ms=314
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=124.480 lookup_ms=0.023 alloc_ms=0.159 h2d_ms=20.398 kernel_ms=4.073 d2h_ms=10.950 free_ms=2.497 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=162.731962
+wall_ms=312
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=123.910 lookup_ms=0.022 alloc_ms=0.152 h2d_ms=20.592 kernel_ms=4.078 d2h_ms=10.381 free_ms=2.492 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=161.776866
+wall_ms=315
+== e2e e2e_4096.s52
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=127.863 lookup_ms=0.024 alloc_ms=0.147 h2d_ms=20.648 kernel_ms=4.073 d2h_ms=10.809 free_ms=2.332 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.582698
+wall_ms=305
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=127.829 lookup_ms=0.024 alloc_ms=0.150 h2d_ms=20.386 kernel_ms=4.072 d2h_ms=10.564 free_ms=2.330 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.599433
+wall_ms=302
+mapal_gpu_trace kernel=mapal_tile_2dd01bc8b8404cf3 load_ms=126.418 lookup_ms=0.021 alloc_ms=0.147 h2d_ms=20.563 kernel_ms=4.066 d2h_ms=10.791 free_ms=2.328 bytes_in=134217728 bytes_out=67108864
+74348
+iter ms=19.613616
+wall_ms=317

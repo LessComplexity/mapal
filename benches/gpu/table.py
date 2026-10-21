@@ -2,9 +2,45 @@
 """Tabulate a box_run results file: medians, TFLOP/s, ratios, overlap, geometry;
 then every rung arm against the default it flips (ON vs OFF, medians, and the
 same ratio normalized by each bench's own cuBLAS leg, which cancels clock drift
-between benches)."""
+between benches); and its `== e2e` sections (box_profile.sh): iter ms against
+the site trace."""
 import re
 import sys
+
+PHASES = ('load', 'lookup', 'alloc', 'h2d', 'kernel', 'd2h', 'free')
+
+
+def e2e_table(path):
+    """`== e2e <program>` sections (box_profile.sh output, one process per
+    `wall_ms=` line): the program's own `iter ms` against its site's trace."""
+    runs, prog, cur = {}, None, {}
+    for l in open(path):
+        m = re.match(r'== e2e (\S+)', l)
+        if m:
+            prog, cur = m[1], {}
+            continue
+        if prog is None:
+            continue
+        if l.startswith('mapal_gpu_trace'):
+            cur.update({p: float(re.search(rf'{p}_ms=([\d.]+)', l)[1]) for p in PHASES})
+        elif l.startswith('iter ms='):
+            cur['iter'] = float(l.split('=')[1])
+        elif l.startswith('wall_ms='):
+            cur['wall'] = float(l.split('=')[1])
+            runs.setdefault(prog, []).append(cur)
+            cur = {}
+    if not runs:
+        return
+    med = lambda xs: sorted(xs)[len(xs) // 2]
+    print("\n| program | procs | iter ms | trace sum | iter − sum (max abs) | load ms | site w/o load | wall ms |")
+    print("|---|---:|---:|---:|---:|---:|---:|---:|")
+    for prog, rs in runs.items():
+        total = [sum(r[p] for p in PHASES) for r in rs]
+        diff = max((r['iter'] - t for r, t in zip(rs, total)), key=abs)
+        print(f"| {prog} | {len(rs)} | {med([r['iter'] for r in rs]):.3f} | {med(total):.3f} | {diff:+.3f} "
+              f"| {med([r['load'] for r in rs]):.1f} | {med([t - r['load'] for r, t in zip(rs, total)]):.3f} "
+              f"| {med([r['wall'] for r in rs]):.0f} |")
+
 
 for path in sys.argv[1:]:
     rows, cur = [], {}
@@ -51,3 +87,4 @@ for path in sys.argv[1:]:
         norm = (off['mapal'][1] / off['cublas'][1]) / (on['mapal'][1] / on['cublas'][1])
         print(f"| {r['n']} | {face} | {rung} | {'ON' if direction == 'off' else 'OFF'} | {on['mapal'][1]:.3f} "
               f"| {off['mapal'][1]:.3f} | {speed:.3f}{ov(on['mapal'], off['mapal'])} | {norm:.3f} |")
+    e2e_table(path)
