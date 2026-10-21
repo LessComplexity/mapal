@@ -133,16 +133,23 @@ pub struct GpuRungs {
     /// keeps its output in its resident buffer — the whole site into it on a
     /// loop entry's first pass, the written row into it after — and the
     /// function stays resident. Off: a function with a retained site takes the
-    /// S52 round trips (`retain-delta` on) or retains nothing.
+    /// S52 round trips (`retain-delta` on) or retains nothing. Measured on
+    /// decode_1024_256 (`retain-resident-*.txt`, two boxes per part): the loop
+    /// 3–9% faster where the whole K/V site costs more than its row (3090,
+    /// A100, H100); no effect on the 4090 and the 5090 (rows in
+    /// `GPU_RUNGS_OFF`).
     pub retain_resident: bool,
     /// S54 R5's transmission: a host-written carried array with
     /// [`mapal_ir::Delta::Rows`] that a device site reads is uploaded as the
     /// rows the iteration wrote, after one whole upload per loop entry. Off:
-    /// the whole array every iteration.
+    /// the whole array every iteration. Decode loop 1.10–1.40× faster on every
+    /// part (1 MB → 1 KB per step).
     pub delta_h2d: bool,
     /// S54 R0 for one-row sites: a site whose lane operand is read at a lane
     /// stride other than 1 (`q·Kᵀ`, [`mapal_ir::CategoryIr::tile_plan_strided`])
     /// is a device site. Off: it stays a host map behind a whole copy-out.
+    /// Decode loop 1.30–1.58× faster on every part (no 1 MB copy-out of K, no
+    /// host fold over it).
     pub lane_stride: bool,
 }
 

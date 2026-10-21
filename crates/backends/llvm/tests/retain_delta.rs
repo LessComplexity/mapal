@@ -128,15 +128,18 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
     (em.text, em.device)
 }
 
-/// `(host, device)` on the 4090 with the measurement arms `off` (S54: the
-/// shipped table otherwise — `resident`, `retain-resident`, `delta-h2d`,
-/// `lane-stride` on), on `face`.
+/// `(host, device)` on the 4090 with S54's three R5 rungs forced on (the
+/// mechanism, not the 4090's measured table, which ships `retain-resident`
+/// off), then the measurement arms `off`, on `face`.
 fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     let mut opts = EmitOpts {
         target: "rtx-4090",
         contract,
         ..EmitOpts::default()
     };
+    opts.gpu.on.retain_resident = true;
+    opts.gpu.on.delta_h2d = true;
+    opts.gpu.on.lane_stride = true;
     for r in off {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }
@@ -244,9 +247,15 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
     let s53 = at(s53);
     assert_eq!(tile_calls(&s53).len(), 5);
     assert!(!s53.contains("@mapal_gpu_alloc("));
+    let mut r5 = GpuArms::default();
+    r5.on.retain_resident = true;
+    let r5 = at(r5);
+    assert!(tile_calls(&r5).is_empty() && r5.contains("@mapal_gpu_launch("));
+    assert_eq!(r5.matches("store i1 true, ptr").count(), 3, "K, V, x");
+    // The 4090's table (measured: no effect there) retains nothing; x still
+    // crosses as its row.
     let shipped = at(GpuArms::default());
-    assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch("));
-    assert_eq!(shipped.matches("store i1 true, ptr").count(), 3, "K, V, x");
+    assert_eq!(shipped.matches("store i1 true, ptr").count(), 1, "x");
 }
 
 // --- S54 `retain-resident`, `delta-h2d`, `lane-stride` ----------------------
