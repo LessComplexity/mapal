@@ -924,9 +924,9 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         rung: "l2-window",
         fill: Fill::Any,
         face: Face::Exact,
-        cite: "l2-raster-h100-pcie.txt / -run2.txt traced kernel ms off/on, exact: diamond_2048 1.004 / 1.007, \
-               mlp2_2048 1.002 / 1.000, mlp_2048 1.000 / 1.000 — none > 1.01; contract ships ON (mlp2_2048_c \
-               1.012 / 1.016, disjoint)",
+        cite: "l2-raster-h100-pcie.txt / -run2.txt / -run3.txt traced kernel ms off/on, exact: diamond_2048 \
+               1.007 / 1.004 / 1.008, mlp2_2048 1.000 / 1.002 / 1.000, mlp_2048 1.000 / 1.000 / 1.001 — none > \
+               1.01; contract ships ON (mlp2_2048_c 1.016 / 1.012 / 1.015, disjoint in all three)",
     },
     // S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`): host placement rungs, decided on
     // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
