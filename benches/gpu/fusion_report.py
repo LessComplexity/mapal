@@ -15,9 +15,11 @@ Counts are static: a call inside a host loop (a program `loop`) counts once and
 is flagged `L`.
 
 usage: fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
+       EMIT_ARGS="--gpu-off=<rung>" fusion_report.py ...   (a rung's OFF arm: the before of its before/after)
        fusion_report.py --selftest
 """
 import fnmatch
+import os
 import re
 import subprocess
 import sys
@@ -139,7 +141,8 @@ def report(profile, face, n, globs):
     stems = sorted(p.stem for p in tiles.glob(f"pt_*_{n}.mapal")) + EXISTING
     if globs:
         stems = [s for s in sorted(p.stem for p in tiles.glob("*.mapal")) if any(fnmatch.fnmatch(s, g) for g in globs)]
-    flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
+    flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face] \
+        + os.environ.get("EMIT_ARGS", "").split()
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     print(f"S54 static fusion report — emit --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")

@@ -69,14 +69,16 @@ fn main() -> ExitCode {
                 } else {
                     &mut opts.gpu.off
                 };
-                // An S53 item name stands for all of its rungs.
+                // An S53 item name stands for all of its rungs; S54's
+                // `arch-select` is the table rung, `arch-rungs`.
                 for rung in list.split(',').flat_map(|r| match r {
                     "fma-regs" => vec!["idx32", "affine", "pad", "wide-fma"],
+                    "arch-select" => vec!["arch-rungs"],
                     r => vec![r],
                 }) {
                     let Some(r) = mask.rung(rung) else {
                         eprintln!(
-                            "{flag}: unknown rung `{rung}` ({}, fma-regs)",
+                            "{flag}: unknown rung `{rung}` ({}, fma-regs, arch-select)",
                             mapal_backend_llvm::GpuRungs::NAMES.join(", ")
                         );
                         return ExitCode::from(2);

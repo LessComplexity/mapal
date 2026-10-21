@@ -25,7 +25,7 @@
 use super::*;
 use crate::Reduced;
 use crate::profile::{
-    GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
+    Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
     MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
 };
 
@@ -73,13 +73,13 @@ pub(crate) fn init_call(rungs: crate::GpuRungs) -> String {
 pub(crate) fn rungs_at(
     profile: &TargetProfile,
     wps: u64,
-    contract: bool,
+    face: Face,
     arms: crate::GpuArms,
 ) -> crate::GpuRungs {
     let table = if arms.off.arch {
         crate::GpuRungs::ALL
     } else {
-        profile.gpu_rungs(wps, contract)
+        profile.gpu_rungs_on(wps, face)
     };
     table.with(arms)
 }
@@ -92,7 +92,7 @@ pub(crate) fn host_rungs(
     contract: bool,
     arms: crate::GpuArms,
 ) -> crate::GpuRungs {
-    rungs_at(profile, GPU_RESIDENT_BLOCKS, contract, arms)
+    rungs_at(profile, GPU_RESIDENT_BLOCKS, Face::of(contract, None), arms)
 }
 
 /// The clock fence's device half: a `time` read on a GPU profile waits for
@@ -186,7 +186,7 @@ pub(crate) fn launch(
     let rungs = rungs_at(
         profile,
         gpu.warps_per_scheduler(blocks, threads),
-        contract,
+        Face::of(contract, reduced),
         arms,
     );
     // Tensor cores: only on a face that admits them (TF32), f32 operands both

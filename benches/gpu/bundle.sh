@@ -110,15 +110,22 @@ for spec in "$@"; do
                     mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs
                 arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
                 arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
+                # The shipped kernel again as an arm: one A/B's noise floor in
+                # this session, bench position included (rungs.py `null_ab`).
+                for v in "$b" "${b}_c" "${b}_tf"; do
+                    cp "$d/$v.ptx" "$d/$v.null.ptx"; cp "$d/$v.launch" "$d/$v.null.launch"
+                done
                 ;;
             esac ;;
         *)
-            # Whole programs: both staging paths for the differential, and every
-            # host rung off for the differential and the e2e wall-time A/B.
+            # Whole programs: both staging paths for the differential, every
+            # host rung off for the differential and the e2e wall-time A/B, and
+            # the part's whole rung table off (`arch-rungs`, S54 arch-select:
+            # what the per-part selection is worth on a multi-computation program).
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    async resident devgen eager-init retain-delta arch-rungs
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
