@@ -73,9 +73,11 @@ fn main() -> ExitCode {
                         "async" => opts.gpu.cp_async = false,
                         "wide" => opts.gpu.wide = false,
                         "ldmatrix" => opts.gpu.ldmatrix = false,
+                        "wgmma-hopper" => opts.gpu.wgmma = false,
+                        "wgmma-cover" => opts.gpu.wgmma_cover = false,
                         other => {
                             eprintln!(
-                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix)"
+                                "--gpu-off: unknown rung `{other}` (interleave, unroll, min-blocks, warp, prefetch, mma, async, wide, ldmatrix, wgmma-hopper, wgmma-cover)"
                             );
                             return ExitCode::from(2);
                         }

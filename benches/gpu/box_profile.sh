@@ -30,6 +30,14 @@ if command -v nsys >/dev/null; then
     nsys profile -o prof/run --force-overwrite true -t cuda \
         ./tile_bench 4096 4096 4096 "$PROF/mm_4096_c.ptx" "$k" "$gx" "$gy" "$blk" "$sm" 5 --contract > prof/nsys.out 2>&1
     nsys stats -q -r cuda_gpu_kern_sum --format csv prof/run.nsys-rep > prof/kern.csv 2>&1
+    for v in "$PROF"/mm_4096_tf.launch "$PROF"/mm_4096_tf.off-wgmma-hopper.launch; do
+        [ -f "$v" ] || continue
+        s=$(basename "$v" .launch)
+        read -r k gx gy blk sm < "$v"
+        nsys profile -o "prof/run_$s" --force-overwrite true -t cuda \
+            ./tile_bench 4096 4096 4096 "$PROF/$s.ptx" "$k" "$gx" "$gy" "$blk" "$sm" 5 --tf32 > "prof/nsys_$s.out" 2>&1
+        nsys stats -q -r cuda_gpu_kern_sum --format csv "prof/run_$s.nsys-rep" > "prof/kern_$s.csv" 2>&1
+    done
 else
     echo "nsys unavailable" > prof/kern.csv
 fi
