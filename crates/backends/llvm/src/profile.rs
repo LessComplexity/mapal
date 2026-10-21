@@ -707,9 +707,28 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         rung: "rowfold-layout",
         fill: Fill::Any,
         face: Face::Any,
-        cite: "rowfold-h100-pcie.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact 4096 7.851 vs \
-               6.451, 2048 1.311 vs 1.170; _c 4096 4.033 vs 3.760; -v2.txt / -v2-confirm.txt the same sign (_exact \
-               4096 8.97 vs 7.52 ms): the HBM part pays 8-22% for the column-major tile store",
+        cite: "rowfold-h100-pcie.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 7.851 vs 6.451, 9.101 vs 7.615; _c 4096 4.033 vs 3.760, 4.735 vs 4.441; 2048 the same sign; \
+               -v2.txt / -v2-confirm.txt too (_exact 4096 8.97 vs 7.52 ms): the HBM part pays 7-22% for the \
+               column-major tile store",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "rowfold-rtx-4090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 4.189 vs 4.018, 4.267 vs 4.160 (the exact tile pays 4-6% for the store); kept on the contract \
+               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "rowfold-a100.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _c 4096 \
+               8.326 vs 8.162, 10.694 vs 10.488; kept on the exact face: _exact 2048 2.392 vs 2.428, 3.080 vs \
+               3.120 and 4096 15.479 vs 15.568, 19.911 vs 20.027 ms",
     },
     RungOff {
         profile: "a100",
@@ -3582,6 +3601,21 @@ mod tests {
                     g.arch = "sm_87";
                 }
                 assert_eq!(other.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+            }
+        }
+    }
+
+    /// S54: `rowfold` ships on every measured part; the reader-chosen store
+    /// order only where its device time measured faster in two sessions — the
+    /// 4090's contract face and the A100's exact face.
+    #[test]
+    fn rowfold_rungs_are_the_measured_table() {
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
+                assert!(r.rowfold, "{} {contract}", p.name);
+                let layout = matches!((p.name, contract), ("rtx-4090", true) | ("a100", false));
+                assert_eq!(r.rowfold_layout, layout, "{} {contract}", p.name);
             }
         }
     }
