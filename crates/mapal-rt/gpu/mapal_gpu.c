@@ -252,6 +252,37 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
     fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f\n", name, ms);
 }
 
+/* A kernel over `nptr` device pointers (S54): a site whose store also
+ * evaluates per-cell consumers takes their operands and outputs after its
+ * own `a, b, out`. `stream` is the stream index; only 0 (the legacy default
+ * stream) exists until streams do. */
+void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr,
+                       const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                       uint32_t block, uint32_t smem) {
+  load_module();
+  char name[40];
+  CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  CUdeviceptr d[16];
+  void *args[16];
+  if (nptr > 16 || stream != 0) {
+    fprintf(stderr, "mapal_gpu: launchv nptr=%u stream=%u\n", nptr, stream);
+    exit(102);
+  }
+  for (uint32_t i = 0; i < nptr; i++) {
+    d[i] = (CUdeviceptr)ptrs[i];
+    args[i] = &d[i];
+  }
+  double t0 = now_ms();
+  CK(cuLaunchKernel(fn, gx, gy, 1, block, 1, 1, smem, 0, args, 0));
+  if (trace)
+    CK(cuCtxSynchronize());
+  double ms = now_ms() - t0;
+  tot.kernel += ms;
+  tot.n_launch++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f\n", name, ms);
+}
+
 /* `devgen`: fill `n` elements of `out` from the producer's element law. The
  * kernel is one thread per element, `MAPAL_GEN_THREADS` per block — the
  * emitter's naive-kernel width, mirrored here. */

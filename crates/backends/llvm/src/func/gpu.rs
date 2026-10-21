@@ -112,6 +112,15 @@ declare void @mapal_gpu_gen(i64, i64, i64)
 declare void @mapal_gpu_free(ptr)
 ";
 
+/// `mapal_gpu_launchv(id, stream, nptr, ptrs, gx, gy, block, smem)` (S54): a
+/// launch over any number of device pointers. Declared only when called, so a
+/// module without one is the text it was before.
+pub(crate) const LAUNCHV_DECL: &str =
+    "declare void @mapal_gpu_launchv(i64, i32, i32, ptr, i32, i32, i32, i32)\n";
+
+/// The most pointers one launch passes (`mapal_gpu.c`'s argument array).
+pub(crate) const LAUNCHV_MAX: usize = 16;
+
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
 /// launches it with exactly this many, so the two must agree.
 /// ponytail: the naive kernel's literal, for the same reason (a one-element-
