@@ -75,6 +75,7 @@ impl<'a> FnEmit<'a> {
             retain: SecondaryMap::new(),
             retain_flags: SecondaryMap::new(),
             row_bounds: None,
+            cell_vals: Vec::new(),
         }
     }
 

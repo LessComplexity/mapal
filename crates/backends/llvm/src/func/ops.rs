@@ -544,6 +544,21 @@ impl<'a> FnEmit<'a> {
         None
     }
 
+    /// `cell-law`'s device variant: the value standing for `source`'s array
+    /// read — `%cv<s>` when the array is capture view `s` of the input and the
+    /// slot arrives by value.
+    fn cell_val(&self, source: ObjectId) -> Option<String> {
+        let arr = self.pair_source(source, 0)?;
+        let &p = self.ir.in_edges(arr).first()?;
+        let morph = self.ir.morphism(p)?;
+        let Operation::Proj { index } = morph.op else {
+            return None;
+        };
+        (morph.source == self.ir.func(self.f)?.input
+            && self.cell_vals.iter().any(|&(s, _)| s == index))
+        .then(|| format!("%cv{index}"))
+    }
+
     /// Rule 4's in-place legality for the `Update` morphism `m` (plan-last-use
     /// §2; suggestions #2): the source array object, when the plan proves it
     /// `dead_after` this Update — every use ranked at/before it under rule 1's
@@ -574,6 +589,10 @@ impl<'a> FnEmit<'a> {
         let src_ty = self.obj_ty(source);
         let arr_ty = src_ty.component_ty(0).cloned().expect("index array");
         let (elem_llt, size) = array_parts(&arr_ty);
+        if let Some(v) = self.cell_val(source) {
+            self.store_obj(target, &elem_llt, &v);
+            return;
+        }
         let arr_llt = lower_ty(&arr_ty).expect("array lowers");
         let arr_ptr = self
             .array_operand_ptr(source, Some(0))
