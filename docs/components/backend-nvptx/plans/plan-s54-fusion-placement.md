@@ -161,6 +161,29 @@ A100 0.22 → ≈0.75×, 4090 0.19 → ≈1.0×, H100 0.24 → ≈1.0×, 5090 0.
 0.05–0.13 to ≈ the kernel ratio (1.0–1.2×, A100 0.68×). Register pressure on the 128-register
 `wide-fma` tile with a capture load is the unknown: the OFF arm is the control, per part.
 
+**Measured (branch `s54/epilogue`).** Built as v1 directly. A group value that a captured
+slot reads at `t` reaches the body's `_cell` variant through a one-cell buffer, which SROA turns
+into a register. No member reloads a store, and `c` is stored only for an outside reader. v0 was
+not built, so v0 vs v1 is unmeasured.
+
+- Static: as listed above, plus fanout 2 / 24 B / 0 (every reader of `c` is an element) and loop
+  1 launch in the loop / 8 B / 0 in the loop. The 64 MB initial upload of the carry stays.
+- Box (`epilogue-<part>.txt`, five parts and an H100 confirm): differential 206/206 everywhere.
+  ON vs `off-epilogue` on the nine probes, both faces, 2048 and 4096, OFF/ON medians:
+  1.55–3.24 (3090), 1.20–4.72 (A100), 1.73–4.85 (4090), 1.69–7.00 (5090), and on the H100 PCIe
+  0.26–3.84 and 1.10–20.44 (two contended hosts). The 0.26 is one row whose ON reps hit host
+  stalls; minima give 1.50–3.76 and 1.62–10.93. Ships ON everywhere.
+- Best library / Mapal's clock at 4096, contract: the eight straight-line probes went from
+  0.10–0.50 to 0.44–0.94, and `loop` from 0.05–0.14 to 0.07–0.42. Mapal still loses on every
+  probe and part. What is left is `cuMemFree`/`cuMemAlloc` inside the clock (about 2 ms at 4096,
+  item 6) and, in `loop`, the host copies of the carried state product (3 × 64 MB per step).
+- Kernel cost: on the H100's exact face the `epi` kernel is 13–21% slower ON in both sessions.
+  It uses 132 registers against 128, so one block is resident per SM instead of two
+  (`epilogue-ptxas.txt`). Elsewhere OFF/ON kernel time is 0.96–1.16 (3090, 4090, 5090; the worst
+  is the 4090's contract `bias`/`residual` at +3–4%) and 0.91–1.20 on the A100, whose clock drifts
+  both ways.
+- Tables: `benches/results-s54-gpu/epilogue-tables.md`.
+
 ### 4.2 `devmap` — per-cell maps and chains as device sites by `Trm` crossings (R2)
 
 **Shape.** A per-cell morphism (`cell_plan`, or `gen_law` for the closed-form case) whose

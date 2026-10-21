@@ -224,6 +224,16 @@ tile and costs 11% on `mma`). `benches/gpu/rungs.py` decides a rung measured for
 by the plan's rule (ON iff some size is > 1% faster in every session) and flips a decided row only
 when every session measures the other sign; host-read rungs (`gpu.rs:host_rungs`) key fill `Any`.
 
+**R1 as built** (`epilogue`, branch `s54/epilogue`): `mapal-ir` `cell_plan` gives each `Map` its
+`CellSite`; `resident.rs:epilogues` forms the groups before the residency plan (sites in
+execution order; a member's group value read only at `Same`, every other operand complete in
+`Gmem` at a cell-only footprint, the same loop phase as the site); members are skipped on the
+host and their reads are device uses, so `keep`, `devgen` and the loop carry follow unchanged.
+`gpu.rs:store_cells` evaluates the chain at each of the four store sites (`naive`, `tiled`,
+`mma`, `wgmma`) with the host body, or its `_cell` variant (a captured `Same` read from a
+one-cell buffer, which SROA turns into a register); `mapal_gpu_launchv` passes the extra
+pointers. Static counts: `benches/results-s54-gpu/epilogue-fusion-report.txt`.
+
 ## 8. What is not placed here
 
 - The whole float sum on the device (ADR-0028 D4; the canonical-tree re-pin is Sapir's call).

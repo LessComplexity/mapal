@@ -191,6 +191,24 @@ pub struct GpuRungs {
     /// the 4090's contract face and the A100's exact face (1–2% of device
     /// time); OFF rows in [`crate::profile::GPU_RUNGS_OFF`] elsewhere.
     pub rowfold_layout: bool,
+    /// S54 R1, under `resident`: a per-cell morphism whose cell `t` reads a
+    /// site's output at `t` (and other arrays complete on the device at a
+    /// cell-only footprint) is evaluated in that site's store — no launch, no
+    /// copy-out, and no store of the site's output when nothing else reads it
+    /// (`func/resident.rs:epilogues`). Off: the morphism runs on the host
+    /// behind the site's copy-out (S53).
+    ///
+    /// Ships ON on every measured part, so it has no `GPU_RUNGS_OFF` row. On
+    /// the nine probes it touches (epi, bias, residual, mlp, mlp2, indep,
+    /// diamond, fanout, loop) at n = 2048 and 4096, both faces, the OFF arm's
+    /// median clock was 1.55–3.24× ON's on the RTX 3090, 1.20–4.72× on the
+    /// A100, 1.73–4.85× on the RTX 4090, 1.69–7.00× on the RTX 5090 and on
+    /// the H100 PCIe 1.44–3.84× and 1.10–20.44× on two boxes. One H100 row
+    /// read 0.26 because of host stalls in three of its five ON reps; its
+    /// minima give 2.38. Every ratio of minima is at least 1.29, and the
+    /// printed values are identical (`benches/results-s54-gpu/epilogue-*.txt`,
+    /// `epilogue-tables.md`). Only the filled class (n ≥ 2048) was measured.
+    pub epilogue: bool,
 }
 
 impl GpuRungs {
@@ -225,11 +243,12 @@ impl GpuRungs {
         lane_stride: true,
         rowfold: true,
         rowfold_layout: true,
+        epilogue: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 29] = [
+    pub const NAMES: [&'static str; 30] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -259,6 +278,7 @@ impl GpuRungs {
         "lane-stride",
         "rowfold",
         "rowfold-layout",
+        "epilogue",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -293,6 +313,7 @@ impl GpuRungs {
             "lane-stride" => &mut self.lane_stride,
             "rowfold" => &mut self.rowfold,
             "rowfold-layout" => &mut self.rowfold_layout,
+            "epilogue" => &mut self.epilogue,
             _ => return None,
         })
     }
@@ -567,6 +588,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // every function's emitted text — a device-built producer's body is the
     // host's own, appended to the device unit.
     let mut gens: Vec<(u64, mapal_ir::FuncId, String)> = Vec::new();
+    // `epilogue` (S54): the grouped sites, and the bodies their kernels call.
+    let mut epis: Vec<crate::func::gpu::EpiSite> = Vec::new();
+    let mut epi_calls: Vec<(String, mapal_ir::FuncId, Vec<u32>)> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
@@ -607,6 +631,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
                 fe.set_task_body_site(site);
             }
             gens.extend(fe.gen_kernels());
+            let (es, cs) = fe.epi_sites();
+            epis.extend(es);
+            epi_calls.extend(cs);
             let text = fe.emit();
             funcs.push_str(&text);
             texts.insert(id, text);
@@ -670,6 +697,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if arena {
         out.push_str(crate::func::gpu::ARENA_DECL);
     }
+    if funcs.contains("@mapal_gpu_launchv(") {
+        out.push_str(crate::func::gpu::LAUNCHV_DECL);
+    }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
@@ -716,6 +746,35 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         .into_iter()
         .map(|(gid, body, elem)| (gid, fnames[body].clone(), elem, texts[body].clone()))
         .collect();
+    // An epilogue calls the host's body text, or its device variant: the
+    // same emitter with the cell-read slots as one-cell buffers.
+    let mut epi_bodies: Vec<(String, String)> = Vec::new();
+    for (callee, body, slots) in epi_calls {
+        if epi_bodies.iter().any(|(c, _)| *c == callee) {
+            continue;
+        }
+        let text = if slots.is_empty() {
+            texts[body].clone()
+        } else {
+            let mut fe = FnEmit::new(
+                ir,
+                body,
+                &fnames,
+                &strings,
+                &attrs,
+                opts.tiling,
+                opts.packing,
+                opts.contract,
+                opts.kc_nest,
+                opts.move_panel,
+                profile,
+            );
+            fe.set_gpu_arms(opts.gpu, opts.reduced);
+            fe.set_cell_slots(slots);
+            fe.emit()
+        };
+        epi_bodies.push((callee, text));
+    }
     let device = opts
         .tiling
         .then(|| {
@@ -726,6 +785,8 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
                 opts.gpu,
                 opts.reduced,
                 &gens,
+                &epis,
+                &epi_bodies,
             )
         })
         .flatten();

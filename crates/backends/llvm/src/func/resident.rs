@@ -37,6 +37,7 @@
 //! always correct: a missed retention costs a copy, never a value.
 
 use super::*;
+use mapal_ir::Footprint;
 use mapal_ir::{Affine, Delta};
 
 /// One use of an array object, seen through the products that carry it.
@@ -114,6 +115,56 @@ impl DevSite {
             DevSite::Tile(s) => vec![s.a.slot, s.b.slot],
             DevSite::RowFold(r) => vec![r.site.a.slot],
         }
+    }
+}
+
+/// Where one input slot of an epilogue member's body comes from in the site's
+/// kernel (S54 R1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EpiSrc {
+    /// Group value `k` at this cell: 0 is the site's accumulator, `j + 1`
+    /// member `j`'s result. A captured slot reads it only at `t` (`Same`).
+    Value(usize),
+    /// An array complete in `Gmem` before the launch, read at a cell-only
+    /// footprint through its device pointer.
+    Gmem(ObjectId),
+    /// The cell index `t` (the mapped `iota`).
+    Index,
+}
+
+/// One per-cell morphism evaluated in a site's store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Member {
+    pub m: MorphismId,
+    pub body: FuncId,
+    pub out: ObjectId,
+    /// A reader outside the group exists: the result is stored.
+    pub store: bool,
+    /// One per body input slot (`0..=captures`; a capture-free map has one).
+    pub srcs: Vec<EpiSrc>,
+}
+
+/// A device site's epilogue group (R1): its members in chain order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Epi {
+    /// A reader outside the group exists: the site's own output is stored.
+    pub store_out: bool,
+    pub chain: Vec<Member>,
+}
+
+impl Epi {
+    /// The distinct `Gmem` operands, in first-use order (the kernel's
+    /// pointer parameters after `a, b, out`).
+    pub(crate) fn caps(&self) -> Vec<ObjectId> {
+        let mut out = Vec::new();
+        for s in self.chain.iter().flat_map(|mb| &mb.srcs) {
+            if let EpiSrc::Gmem(o) = *s
+                && !out.contains(&o)
+            {
+                out.push(o);
+            }
+        }
+        out
     }
 }
 
@@ -247,6 +298,14 @@ impl<'a> FnEmit<'a> {
                 Use::None
             };
         }
+        // An epilogue member (S54): read in a site's store, or not at all.
+        if let Some(src) = self.member_src(m2, slot) {
+            return if src == EpiSrc::Index {
+                Use::None
+            } else {
+                Use::Dev
+            };
+        }
         let op = self.ir.morphism(m2).expect("morphism resolves").op;
         if op == Operation::Index && slot == 0 && self.bp.proven(m2) {
             return Use::Elem(m2);
@@ -273,6 +332,9 @@ impl<'a> FnEmit<'a> {
                     for &m2 in self.ir.out_edges(morph.target) {
                         out.push(self.slot_use(sites, m2, slot));
                     }
+                }
+                Operation::Map { captures: 0, .. } if self.member_src(m, 0).is_some() => {
+                    out.push(Use::Dev)
                 }
                 _ => out.push(Use::Host),
             }
@@ -318,7 +380,7 @@ impl<'a> FnEmit<'a> {
 
     /// The loop-carry candidates (F3), each checked against its uses.
     fn carries(&self, sites: &SecondaryMap<MorphismId, DevSite>) -> Vec<Carry> {
-        let site_out = |o: ObjectId| self.ir.in_edges(o).iter().any(|&m| sites.contains_key(m));
+        let site_out = |o: ObjectId| self.produced_on_device(sites, o);
         let mut out = Vec::new();
         for scc in self.ir.loop_structure(self.f) {
             for &merge in &scc.merges {
@@ -425,9 +487,23 @@ impl<'a> FnEmit<'a> {
             return None;
         };
         let fd = self.ir.func(body)?;
-        // Every op must lower to the same bits on the device as on the host.
-        // A float `%` does not: the host calls `fmodf`, NVPTX expands `frem` to
-        // `fma(-y, trunc(x / y), x)` (S53 review: 2051 of 4096 elements differ).
+        (*lb == body
+            && **inner == ElemSrc::Index
+            && self.obj_ty(fd.input) == Ty::i32()
+            && is_float(array_elem(&self.obj_ty(morph.target)))
+            && self.device_leaf(body))
+        .then_some(body)
+    }
+
+    /// A body the device runs with the host's own text: clean (no trap call,
+    /// no effect), a leaf (no `Call`/`Map`/`Fold`), and every op lowering to
+    /// the same bits on the device as on the host. A float `%` does not: the
+    /// host calls `fmodf`, NVPTX expands `frem` to `fma(-y, trunc(x / y), x)`
+    /// (S53 review: 2051 of 4096 elements differ).
+    fn device_leaf(&self, body: FuncId) -> bool {
+        let Some(fd) = self.ir.func(body) else {
+            return false;
+        };
         let leaf = fd.morphisms.iter().all(|&g| {
             let Some(x) = self.ir.morphism(g) else {
                 return false;
@@ -444,13 +520,264 @@ impl<'a> FnEmit<'a> {
                     Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. }
                 )
         });
-        (*lb == body
-            && **inner == ElemSrc::Index
-            && self.obj_ty(fd.input) == Ty::i32()
-            && is_float(array_elem(&self.obj_ty(morph.target)))
-            && self.attrs.clean(body)
-            && leaf)
-            .then_some(body)
+        self.attrs.clean(body) && leaf
+    }
+
+    /// The source of slot `slot` of epilogue member `m`, `None` when `m` is
+    /// in no group.
+    pub(super) fn member_src(&self, m: MorphismId, slot: u32) -> Option<EpiSrc> {
+        self.groups
+            .values()
+            .flat_map(|g| &g.chain)
+            .find(|mb| mb.m == m)
+            .and_then(|mb| mb.srcs.get(slot as usize).copied())
+    }
+
+    /// Emit this map body as its epilogue device variant (S54): the captured
+    /// arrays in `slots` arrive as one-cell buffers holding cell `t`.
+    pub(crate) fn set_cell_slots(&mut self, slots: Vec<u32>) {
+        self.cell_slots = slots;
+    }
+
+    /// Does the `Index` over product `source` read a one-cell buffer?
+    pub(super) fn cell_read(&self, source: ObjectId) -> bool {
+        if self.cell_slots.is_empty() {
+            return false;
+        }
+        let input = self.ir.func(self.f).expect("func resolves").input;
+        let Some(arr) = self.pair_source(source, 0) else {
+            return false;
+        };
+        matches!(self.ir.in_edges(arr), [m] if {
+            let mo = self.ir.morphism(*m).expect("morphism resolves");
+            mo.source == input
+                && matches!(mo.op, Operation::Proj { index } if self.cell_slots.contains(&index))
+        })
+    }
+
+    /// The `Map`s reading `v`: directly (capture-free) or through a product.
+    fn cell_readers(&self, v: ObjectId) -> Vec<MorphismId> {
+        let is_map = |m: MorphismId| {
+            matches!(
+                self.ir.morphism(m).expect("morphism resolves").op,
+                Operation::Map { .. }
+            )
+        };
+        let mut out = Vec::new();
+        for &m in self.ir.out_edges(v) {
+            let mo = self.ir.morphism(m).expect("morphism resolves");
+            match mo.op {
+                Operation::Map { captures: 0, .. } => out.push(m),
+                Operation::Pair { .. } => out.extend(
+                    self.ir
+                        .out_edges(mo.target)
+                        .iter()
+                        .copied()
+                        .filter(|&m2| is_map(m2)),
+                ),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// Does anything but the morphisms `ms` read `o` (through a product or
+    /// directly)?
+    fn read_outside(&self, o: ObjectId, ms: &[MorphismId]) -> bool {
+        self.ir.out_edges(o).iter().any(|&m| {
+            let mo = self.ir.morphism(m).expect("morphism resolves");
+            match mo.op {
+                Operation::Pair { .. } => self
+                    .ir
+                    .out_edges(mo.target)
+                    .iter()
+                    .any(|m2| !ms.contains(m2)),
+                _ => !ms.contains(&m),
+            }
+        })
+    }
+
+    /// **S54 R1: the per-cell morphisms each device site's store evaluates.**
+    ///
+    /// Sites in execution order; a `Map` joins site `s`'s group when its
+    /// [`CellSite`](mapal_ir::CellSite) reads a group value (the site's output,
+    /// or a member's) only at `t`, and every other operand is complete in
+    /// `Gmem` when `s` launches — produced by an earlier launch, or on the host
+    /// before `s` (then copied in or built on the device, as a site operand
+    /// is) — at a footprint that is a function of `t` alone (`Same`, `Row`,
+    /// `Col`, `Const`). Law 1 of the placement model: an operand is read only
+    /// where it is complete. Members run where the site runs (the same loop
+    /// phase, never a guard arm), their bodies are device leaves, and their
+    /// cells are the site's (`extent = rows · c`). A chain composes: a member
+    /// of a member joins. Each group value is stored only when a reader
+    /// outside the group exists — the use count; the rest live in a register.
+    pub(super) fn epilogues(&self) -> SecondaryMap<MorphismId, Epi> {
+        let mut out: SecondaryMap<MorphismId, Epi> = SecondaryMap::new();
+        let sites = self.device_sites();
+        let cells = self.ir.cell_plan(self.f);
+        if sites.is_empty() || cells.is_empty() {
+            return out;
+        }
+        // Where a morphism runs: straight-line, or one phase of one loop.
+        let mut region: SecondaryMap<MorphismId, (Option<ObjectId>, bool)> = SecondaryMap::new();
+        for m in self.straight_line().keys() {
+            region.insert(m, (None, false));
+        }
+        for scc in self.ir.loop_structure(self.f) {
+            for &mg in &scc.merges {
+                if let Some(plan) = self.ir.loop_plan(self.f, mg) {
+                    for &m in &plan.decide_order {
+                        region.insert(m, (Some(mg), false));
+                    }
+                    for &m in &plan.advance_order {
+                        region.insert(m, (Some(mg), true));
+                    }
+                }
+            }
+        }
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let target = |m: MorphismId| self.ir.morphism(m).expect("morphism resolves").target;
+        let mut order: Vec<MorphismId> = sites.keys().collect();
+        order.sort_by_key(|&m| pos(m));
+        // The launch after which a device-made object is complete in `Gmem`.
+        let mut made: SecondaryMap<ObjectId, MorphismId> = SecondaryMap::new();
+        for &s in &order {
+            made.insert(target(s), s);
+        }
+        let mut taken: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        for &s in &order {
+            // A row fold's store is a scalar per row: no group (S54 `rowfold`).
+            let DevSite::Tile(site) = &sites[s] else {
+                continue;
+            };
+            let l = gpu::launch(
+                site,
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.reduced,
+            );
+            let Some(&rs) = region.get(s) else {
+                continue;
+            };
+            if !l.rungs.epilogue {
+                continue;
+            }
+            let c = target(s);
+            let n = array_len(&self.obj_ty(c));
+            let before = |p: MorphismId| {
+                pos(p) < pos(s) && region.get(p).is_some_and(|&r| r == rs || r.0.is_none())
+            };
+            let mut values = vec![c];
+            let mut chain: Vec<Member> = Vec::new();
+            loop {
+                // Complete before `s` launches, where `s` runs.
+                let complete = |o: ObjectId| match made.get(o) {
+                    Some(&p) => p != s && before(p),
+                    None => matches!(self.ir.in_edges(o), [p] if before(*p)),
+                };
+                let mut cands: Vec<MorphismId> = values
+                    .iter()
+                    .flat_map(|&v| self.cell_readers(v))
+                    .filter(|&m| !taken.contains_key(m) && cells.contains_key(m))
+                    .collect();
+                cands.sort_by_key(|&m| pos(m));
+                cands.dedup();
+                let admit = |mc: MorphismId| -> Option<Member> {
+                    let morph = self.ir.morphism(mc)?;
+                    let Operation::Map { body, captures } = morph.op else {
+                        return None;
+                    };
+                    let cell = &cells[mc];
+                    let in_ty = self.obj_ty(self.ir.func(body)?.input);
+                    if region.get(mc) != Some(&rs)
+                        || cell.extent != n
+                        || !is_float(array_elem(&self.obj_ty(morph.target)))
+                        || !self.device_leaf(body)
+                    {
+                        return None;
+                    }
+                    let mut srcs = Vec::new();
+                    for slot in 0..=captures {
+                        let arr = if captures == 0 {
+                            morph.source
+                        } else {
+                            self.pair_source(morph.source, slot)?
+                        };
+                        let feet: Vec<Footprint> = cell
+                            .reads
+                            .iter()
+                            .filter(|r| r.slot == slot)
+                            .map(|r| r.foot)
+                            .collect();
+                        let src = match values.iter().position(|&v| v == arr) {
+                            // A group value read off its own cell needs every
+                            // block's store first: a kernel boundary (R3).
+                            Some(k) if feet.iter().all(|&f| f == Footprint::Same) => {
+                                EpiSrc::Value(k)
+                            }
+                            Some(_) => return None,
+                            None if slot == captures && feet.is_empty() => EpiSrc::Index,
+                            // ponytail: a mapped array outside the group is one
+                            // more load per cell; admit it when a program has one.
+                            None if slot == captures => return None,
+                            None if feet.contains(&Footprint::Other) || !complete(arr) => {
+                                return None;
+                            }
+                            None => EpiSrc::Gmem(arr),
+                        };
+                        if captures > 0 && crate::ty::erased_index(&in_ty, slot) != Some(slot) {
+                            return None;
+                        }
+                        srcs.push(src);
+                    }
+                    srcs.iter()
+                        .any(|s| matches!(s, EpiSrc::Value(_)))
+                        .then_some(Member {
+                            m: mc,
+                            body,
+                            out: morph.target,
+                            store: false,
+                            srcs,
+                        })
+                };
+                let Some(mb) = cands.into_iter().find_map(admit) else {
+                    break;
+                };
+                // `a, b, out`, every operand and every member's output.
+                let mut trial = Epi {
+                    store_out: true,
+                    chain: chain.clone(),
+                };
+                trial.chain.push(mb.clone());
+                if 3 + trial.caps().len() + trial.chain.len() > gpu::LAUNCHV_MAX {
+                    break;
+                }
+                taken.insert(mb.m, ());
+                values.push(mb.out);
+                made.insert(mb.out, s);
+                chain.push(mb);
+            }
+            if !chain.is_empty() {
+                out.insert(
+                    s,
+                    Epi {
+                        store_out: true,
+                        chain,
+                    },
+                );
+            }
+        }
+        // Stores from the use count, once every group is known (a later
+        // group's operand is an outside reader of an earlier group's value).
+        for (s, g) in out.iter_mut() {
+            let ms: Vec<MorphismId> = g.chain.iter().map(|mb| mb.m).collect();
+            g.store_out = self.read_outside(target(s), &ms);
+            for mb in &mut g.chain {
+                mb.store = self.read_outside(mb.out, &ms);
+            }
+        }
+        out
     }
 
     /// The `upload`s a loop's iteration writes only rows of (`delta-h2d`): the
@@ -507,9 +834,18 @@ impl<'a> FnEmit<'a> {
         }
         let mut device = Vec::new(); // every object given a device copy here
 
-        // Device outputs: kept on the device unless the host reads one whole.
-        for (m, _) in sites.iter() {
-            let c = self.ir.morphism(m).expect("site").target;
+        // Device outputs, an epilogue's stored results among them (S54): kept
+        // on the device unless the host reads one whole.
+        let outs: Vec<ObjectId> = sites
+            .keys()
+            .map(|m| self.ir.morphism(m).expect("site").target)
+            .chain(
+                self.groups
+                    .values()
+                    .flat_map(|g| g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out)),
+            )
+            .collect();
+        for c in outs {
             device.push(c);
             let uses = if plan.is_carry_next(c) {
                 vec![] // checked device-only when the carry was admitted
@@ -552,6 +888,15 @@ impl<'a> FnEmit<'a> {
                 if let Some(f) = self.pair_source(src, slot) {
                     read.insert(f, ());
                 }
+            }
+        }
+        // An epilogue's operands are read in the store: there, complete.
+        for g in self.groups.values() {
+            for o in g.caps() {
+                read.insert(o, ());
+            }
+            for mb in &g.chain {
+                plan.skip.insert(mb.m, ());
             }
         }
         let carried = |o: ObjectId| plan.carries.iter().any(|c| c.views.contains(&o));
@@ -717,11 +1062,21 @@ impl<'a> FnEmit<'a> {
         let built: Vec<ObjectId> = built
             .map(|m| self.ir.morphism(m).expect("m").target)
             .collect();
+        // An epilogue member (S54 R1) is skipped on the host too, but a stored
+        // one not kept is copied out to a host reader: it keeps its slot.
+        let copied_out = |o: ObjectId| {
+            !plan.keep.contains_key(o)
+                && self
+                    .groups
+                    .values()
+                    .any(|g| g.chain.iter().any(|mb| mb.out == o && mb.store))
+        };
         for o in plan.keep.keys().chain(built) {
             if !plan.is_carry_next(o)
                 && plan.alias(o) == o
                 && !self.lup.escapes(o)
                 && self.ir.try_owner(o) == Some(self.f)
+                && !copied_out(o)
             {
                 a.host_free.insert(o, ());
             }
@@ -787,7 +1142,10 @@ impl<'a> FnEmit<'a> {
     }
 
     fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, DevSite>, o: ObjectId) -> bool {
-        self.ir.in_edges(o).iter().any(|&m| sites.contains_key(m))
+        self.ir
+            .in_edges(o)
+            .iter()
+            .any(|&m| sites.contains_key(m) || self.member_src(m, 0).is_some())
     }
 
     // --- emission ---------------------------------------------------------
@@ -997,6 +1355,10 @@ impl<'a> FnEmit<'a> {
         source: ObjectId,
         target: ObjectId,
         slots: &[u32],
+        // `(kernel id, geometry)` of a tile site whose store evaluates an
+        // epilogue group (S54 R1): then the launch is `launchv` over the
+        // group's pointers instead of `call`'s.
+        grouped: Option<(i64, String)>,
         call: impl Fn(&[String], &str) -> String,
     ) {
         let src_ty = self.obj_ty(source);
@@ -1033,33 +1395,78 @@ impl<'a> FnEmit<'a> {
             ops.push(d);
         }
         let o_bytes = self.array_bytes(&self.obj_ty(target));
-        let dout = self.dalloc(target, o_bytes);
-        self.line(call(&ops, &dout));
-        self.dvalid.insert(target, ());
+        let m = self.ir.in_edges(target)[0];
+        let group = grouped.and_then(|ig| Some((ig, self.groups.get(m).cloned()?)));
+        // The values this launch leaves in `Gmem`: the site's output unless
+        // its group holds every reader (S54), and each stored member result.
+        let mut stored = Vec::new();
+        let dout = if group.as_ref().is_none_or(|(_, g)| g.store_out) {
+            let d = self.dalloc(target, o_bytes);
+            stored.push((target, d.clone()));
+            d
+        } else {
+            "0".to_string()
+        };
+        match &group {
+            None => self.line(call(&ops, &dout)),
+            Some(((id, geom), g)) => {
+                let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout];
+                for o in g.caps() {
+                    debug_assert!(self.dvalid.contains_key(o), "epilogue operand in Gmem");
+                    ptrs.push(self.dload(o));
+                }
+                for mb in g.chain.iter().filter(|mb| mb.store) {
+                    let bytes = self.array_bytes(&self.obj_ty(mb.out));
+                    let d = self.dalloc(mb.out, bytes);
+                    ptrs.push(d.clone());
+                    stored.push((mb.out, d));
+                }
+                let n = ptrs.len();
+                let arr = format!("%p{}", self.fresh());
+                self.allocas
+                    .push_str(&format!("  {arr} = alloca [{n} x i64]\n"));
+                for (i, p) in ptrs.iter().enumerate() {
+                    let g = self.tmp();
+                    self.line(format!(
+                        "{g} = getelementptr [{n} x i64], ptr {arr}, i64 0, i64 {i}"
+                    ));
+                    self.line(format!("store i64 {p}, ptr {g}"));
+                }
+                self.line(format!(
+                    "call void @mapal_gpu_launchv(i64 {id}, i32 0, i32 {n}, ptr {arr}, {geom})"
+                ));
+            }
+        }
+        for (o, _) in &stored {
+            self.dvalid.insert(*o, ());
+        }
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
         }
-        let keep = self
-            .resident
-            .as_ref()
-            .is_some_and(|p| p.keep.contains_key(target) || p.is_carry_next(target));
-        if !keep {
-            let h = self.slot(target).expect("tile output slot");
-            // A device fold's output lands in what was a host loop's slot: say
-            // the copy keeps no pointer to it, as the loop did not, or the slot
-            // counts as escaped and a later host loop that reads it loses its
-            // vector form (S54: softmax_rows' `exp` pass ran scalar, +17 ms).
-            // ponytail: every `d2h` is just as non-capturing; marked here only,
-            // so no other program's text moves.
-            let fold = self.ir.in_edges(target).first().is_some_and(|m| {
-                self.resident
-                    .as_ref()
-                    .is_some_and(|p| p.rowfold.contains_key(*m))
-            });
-            let h = if fold { format!("nocapture {h}") } else { h };
-            self.line(format!(
-                "call void @mapal_gpu_d2h(ptr {h}, i64 {dout}, i64 0, i64 {o_bytes})"
-            ));
+        for (o, d) in stored {
+            let keep = self
+                .resident
+                .as_ref()
+                .is_some_and(|p| p.keep.contains_key(o) || p.is_carry_next(o));
+            if !keep {
+                let bytes = self.array_bytes(&self.obj_ty(o));
+                let h = self.slot(o).expect("device output slot");
+                // A device fold's output lands in what was a host loop's slot: say
+                // the copy keeps no pointer to it, as the loop did not, or the slot
+                // counts as escaped and a later host loop that reads it loses its
+                // vector form (S54: softmax_rows' `exp` pass ran scalar, +17 ms).
+                // ponytail: every `d2h` is just as non-capturing; marked here only,
+                // so no other program's text moves.
+                let fold = self.ir.in_edges(o).first().is_some_and(|m| {
+                    self.resident
+                        .as_ref()
+                        .is_some_and(|p| p.rowfold.contains_key(*m))
+                });
+                let h = if fold { format!("nocapture {h}") } else { h };
+                self.line(format!(
+                    "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 0, i64 {bytes})"
+                ));
+            }
         }
     }
 

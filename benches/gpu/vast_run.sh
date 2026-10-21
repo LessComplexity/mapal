@@ -4,6 +4,7 @@
 # which bills until you run `vastai destroy instance <id>`).
 #
 # usage: benches/gpu/vast_run.sh <offer_id> <profile> <sm_NN> <bundle_dir> <results_dir> [reps]
+# PROBE_ARMS / PROBE_REPS / E2E_REPS pass through to box_run.sh.
 set -euo pipefail
 OFFER=$1; PROF=$2; SM=$3; BUNDLE=$4; RES=$5; REPS=${6:-30}
 IMAGE=${IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}
