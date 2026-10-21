@@ -52,8 +52,11 @@ for path in sys.argv[1:]:
             on = e2e.get((p, face, 'on'))
             rw = rp = ''
             if on and arm != 'on':
-                rw = f"{med(w) / med([r[0] for r in on]):.2f}×"
-                rp = f"{med(ph) / med([r[1] for r in on]):.2f}×"
+                ow, op = [r[0] for r in on], [r[1] for r in on]
+                # ` ~`: the arm's range overlaps ON's (min–max over the reps).
+                ovl = lambda a, b: '' if (max(a) < min(b) or max(b) < min(a)) else ' ~'
+                rw = f"{med(w) / med(ow):.2f}×{ovl(w, ow)}"
+                rp = f"{med(ph) / med(op):.2f}×{ovl(ph, op)}"
             fl = floor.get(p)
             fs = f"{med([x[0] for x in fl]):.1f} / {med([x[1] for x in fl]):.2f}" if fl and arm == 'on' else ''
             print(f"| {p} | {face} | {arm} | {med(w):.1f} ({rng(w)}) | {med(ph):.2f} ({rng(ph)}) | {rows[0][3]} | {rows[0][4]} | {rw} | {rp} | {fs} |")

@@ -31,6 +31,8 @@ hp=${url#ssh://root@}; host=${hp%:*}; port=${hp##*:}
 SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=30 -p "$port" "root@$host")
 for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && break; sleep 10; done
 log "ssh $host:$port up"
+# WAIT_FILE=<path>: rent while the bundle is still being built; upload once the path exists.
+while [ -n "${WAIT_FILE:-}" ] && [ ! -e "$WAIT_FILE" ]; do sleep 10; done
 
 up=0
 for _ in 1 2 3 4 5; do

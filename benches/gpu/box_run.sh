@@ -51,7 +51,7 @@ e2e() { # <prog> <floor: n gemms ops>
             [ -f "$PROF/$b.host.o" ] && cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" \
                 -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "e2e_$b" 2>&1 | tail -3
         done
-        for r in 1 2 3; do
+        for r in $(seq "${E2E_REPS:-7}"); do  # interleaved arms; medians
             for arm in $ARMS; do
                 b=$(arm_stem "$p$face" "$arm")
                 [ -x "e2e_$b" ] || continue
