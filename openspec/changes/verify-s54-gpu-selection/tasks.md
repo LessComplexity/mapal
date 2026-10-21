@@ -1,8 +1,9 @@
 ## 1. Reliable smoke execution
 
-- [ ] 1.1 Add differential-only mode, aggregate value/trap failures and propagate remote failure after result retrieval; verify pass, mismatch, wrong-trap, empty-scope and remote-failure cleanup cases using local stubs plus shell syntax checks.
+- [x] 1.1 Add differential-only mode, aggregate value/trap failures and propagate remote failure after result retrieval; verify pass, mismatch, wrong-trap, empty-scope and remote-failure cleanup cases using local stubs plus shell syntax checks.
 - [ ] 1.2 Time the forced-ON retain-resident arm and explicitly select both stream directions; verify available-arm enumeration from fresh bundles.
-- [ ] 1.3 Build fresh current smoke bundles and run on Vast; require exact inventory coverage and zero value/trap failures, recording source/tool provenance and instance cleanup.
+- [x] 1.4 Repair the existing mixed probe/decode report parsing boundary; verify saved decode, streams and L2-window result files summarize without dropping their intended records.
+- [x] 1.3 Build fresh current smoke bundles and run on Vast; require exact inventory coverage and zero value/trap failures, recording source/tool provenance and instance cleanup.
 
 ## 2. Resolve the disputed selections
 

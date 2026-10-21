@@ -54,8 +54,9 @@ def e2e_table(path):
 
 
 def decode_table(path):
-    """`decode prog=` lines (box_run.sh decode block)."""
+    """Decode program rows and the decode library legs (box_run.sh decode block)."""
     runs, launches, floor = {}, {}, None
+    libraries, gates = [], {}
     for l in open(path):
         if l.startswith('decode prog='):
             f = fields(l)
@@ -63,12 +64,17 @@ def decode_table(path):
         elif l.startswith('decode_launch prog='):
             f = fields(l)
             launches.setdefault(f['prog'], []).append(f"{f['n']}×{f['kernel'][-6:]}")
+        elif l.startswith('chain probe=decode '):
+            libraries.append(fields(l))
+        elif l.startswith('chain_values probe=decode '):
+            f = fields(l)
+            gates[(f['T'], f['d'], f['leg'])] = f['gate']
         m = re.match(r'decode_floor T=\d+ d=\d+ .* med_ms=([\d.]+)', l)
         if m:
             floor = float(m[1])
     if not runs:
         return
-    print("\n| decode | procs | wall s med (range) | on/arm (>1 = shipped faster) | kernel ms | h2d ms | d2h ms "
+    print("\n| decode | procs | wall s med (range) | arm/on (>1 = shipped faster) | kernel ms | h2d ms | d2h ms "
           "| alloc+free ms | load ms | launches |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
     for prog, rs in sorted(runs.items()):
@@ -84,6 +90,14 @@ def decode_table(path):
               f"| {' '.join(launches.get(prog, []))} |")
     if floor is not None:
         print(f"\nhand-written cuBLAS sgemv KV cache (device time, whole loop): {floor:.3f} ms")
+    if libraries:
+        print("\n| decode library | T | d | reps | wall ms min / med / max | event ms med | launches | gate |")
+        print("|---|---:|---:|---:|---:|---:|---:|---|")
+        for r in libraries:
+            gate = gates.get((r['T'], r['d'], r['leg']), 'missing')
+            print(f"| {r['leg']} | {r['T']} | {r['d']} | {r['reps']} "
+                  f"| {r['wall_min_ms']} / {r['wall_med_ms']} / {r['wall_max_ms']} "
+                  f"| {r['event_med_ms']} | {r['launches']} | {gate} |")
 
 
 def probe_table(path):
@@ -94,6 +108,9 @@ def probe_table(path):
     data. `lib/Mapal` > 1 = Mapal faster."""
     runs, legs, gates = {}, {}, {}
     for l in open(path):
+        # Decode library rows use T/d and wall/event times, not the probe n/ms schema.
+        if l.startswith(('chain probe=decode ', 'chain_values probe=decode ')):
+            continue
         if l.startswith('probe prog='):
             f = fields(l)
             it = re.search(r'iter ms=\s*([-\d.eE+]+)', l)
