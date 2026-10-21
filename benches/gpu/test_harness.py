@@ -61,7 +61,8 @@ chmod +x "$2"
         result = subprocess.run(
             ["bash", str(HERE / "box_run.sh"), "test", "sm_89", "1"],
             cwd=self.root, env={**self.env, "DIFFERENTIAL_ONLY": mode},
-            capture_output=True, text=True, timeout=10,
+            # Bound hangs; local process startup latency is not a performance assertion.
+            capture_output=True, text=True, timeout=30,
         )
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         log = (self.root / "results-test.txt").read_text()
@@ -122,6 +123,69 @@ chmod +x "$2"
         self.value("px_value_tf.off-epilogue", output="wrong", expected=None, rc=7)
         self.assertIn("TF32 reference failed", self.run_box(False))
 
+    def timing_stubs(self):
+        self.stub("date", 'case "$1" in +%s%N) echo 1000000000 ;; *) echo fixture-time ;; esac')
+        self.stub("nvcc", '''
+echo nvcc >> "$STUB_LOG"
+[ "$1" = --version ] && { echo stub-compiler; exit 0; }
+while [ "$1" != -o ]; do shift; done
+printf '#!/bin/bash\\nexit 0\\n' > "$2"
+chmod +x "$2"
+''')
+        self.env.update({"E2E_REPS": "1", "PROBE_REPS": "1", "E2E_ARMS": "on", "PROBE_ARMS": "on"})
+
+    def test_timed_process_status_after_plausible_output(self):
+        # The real pipeline must preserve the program's status through `tr`,
+        # and a failed traced run must not pass because its output looks valid.
+        self.timing_stubs()
+        for name, tag in (("e2e_1024", "e2e"), ("loop_mm_1024_8", "e2e"), ("pt_mlp_2048", "probe")):
+            for phase in ("none", "wall", "trace"):
+                with self.subTest(program=name, failure=phase):
+                    self.env["FAIL_PHASE"] = phase
+                    self.executable(self.root / "test" / f"{name}.host.o", '''
+printf '42\\niter ms=1\\n'
+if [ "${MAPAL_GPU_TRACE:-0}" = 1 ]; then
+    echo 'mapal_gpu_trace_total launches=1 kernel_ms=1' >&2
+    [ "$FAIL_PHASE" = trace ] && exit 9
+else
+    [ "$FAIL_PHASE" = wall ] && exit 7
+fi
+exit 0
+''')
+                    log = self.run_box(phase == "none", mode="0", nvcc=True)
+                    self.assertIn(f"{tag} prog={name} face=_exact arm=on rep=1", log)
+                    self.assertIn(f"rc={7 if phase == 'wall' else 0} trace_rc={9 if phase == 'trace' else 0}", log)
+                    self.assertIn("out=[42 iter ms=1 ]", log)
+                    self.assertEqual("VALIDATION FAILED" in log, phase != "none")
+                    (self.root / "test" / f"{name}.host.o").unlink()
+                    for binary in self.root.glob(f"*_{name}"):
+                        binary.unlink()
+
+    def test_decode_status_after_differential_passes(self):
+        self.timing_stubs()
+        (self.root / "tiles/decode_1024_256.expect").write_text("42\n")
+        self.executable(self.root / "test/decode_1024_256.host.o", '''
+echo 42
+if [ "${MAPAL_GPU_TRACE:-0}" = 1 ]; then
+    echo 'mapal_gpu_trace_total launches=1 kernel_ms=1' >&2
+    [ "$FAIL_PHASE" = trace ] && exit 9
+else
+    count=$(cat decode-calls 2>/dev/null || echo 0)
+    echo $((count + 1)) > decode-calls
+    [ "$count" -gt 0 ] && [ "$FAIL_PHASE" = wall ] && exit 7
+fi
+exit 0
+''')
+        for phase in ("none", "wall", "trace"):
+            with self.subTest(failure=phase):
+                self.env["FAIL_PHASE"] = phase
+                (self.root / "decode-calls").write_text("0\n")
+                log = self.run_box(phase == "none", mode="0", nvcc=True)
+                self.assertIn("differential: 1 pass, 0 fail", log)
+                self.assertIn(f"decode prog=decode_1024_256 rep=1 rc={9 if phase == 'trace' else 0} wall_s=", log)
+                self.assertIn(f"wall_rc={7 if phase == 'wall' else 0}", log)
+                self.assertEqual("VALIDATION FAILED" in log, phase != "none")
+
     def test_wrapper_retrieves_then_cleans_up_on_success_and_failure(self):
         self.stub("vastai", '''
 echo "vastai $*" >> "$STUB_LOG"
@@ -156,7 +220,7 @@ esac
                     ["bash", str(HERE / "vast_run.sh"), "456", "test", "sm_89",
                      str(bundle), str(res), "1"],
                     env={**self.env, "DIFFERENTIAL_ONLY": mode, "REMOTE_RC": str(rc)},
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True, text=True, timeout=30,
                 )
                 self.assertEqual(result.returncode, rc, result.stdout + result.stderr)
                 self.assertEqual((res / "results-test.txt").read_text(), "retained-result\n")

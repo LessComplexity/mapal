@@ -114,11 +114,12 @@ e2e() { # <prog> <floor: n gemms ops>
                 b=$(arm_stem "$p$face" "$arm")
                 [ -x "e2e_$b" ] || continue
                 t0=$(date +%s%N)
-                got=$(MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>/dev/null | tr '\n' ' ')
+                got=$(MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>/dev/null | tr '\n' ' '); rc=$?
                 t1=$(date +%s%N)
-                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>&1 >/dev/null)
+                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>&1 >/dev/null); trace_rc=$?
                 t2=$(date +%s%N)
-                say "e2e prog=$p face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
+                say "e2e prog=$p face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
+                [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (e2e $b rep=$r process exit)"; exit 1; }
             done
         done
     done
@@ -162,13 +163,14 @@ for o in "$PROF"/pt_*.host.o; do
                 s=$(arm_stem "$b$face" "$arm")
                 [ -x "pt_$s" ] || continue
                 t0=$(date +%s%N)
-                got=$(MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>/dev/null | tr '\n' ' ')
+                got=$(MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>/dev/null | tr '\n' ' '); rc=$?
                 t1=$(date +%s%N)
-                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null)
+                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
                 t2=$(date +%s%N)
-                say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
+                say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
                 # S54: each launch's kernel time under the trace, in launch order.
                 say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
+                [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
                 [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
             done
         done
@@ -192,11 +194,12 @@ if [ -x prog_decode_1024_256 ]; then
                 b=decode_1024_256$face$arm
                 [ -x "prog_$b" ] || continue
                 t0=$(date +%s%N)
-                MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" >/dev/null 2>&1
+                MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" >/dev/null 2>&1; wall_rc=$?
                 t1=$(date +%s%N)
                 tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1 >"dec_$b.out"); rc=$?
                 t2=$(date +%s%N)
-                say "decode prog=$b rep=$r rc=$rc wall_s=$(awk -v d=$((t1 - t0)) 'BEGIN { printf "%.3f", d / 1e9 }') traced_wall_s=$(awk -v d=$((t2 - t1)) 'BEGIN { printf "%.3f", d / 1e9 }') out=[$(tr '\n' ' ' < "dec_$b.out")] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
+                say "decode prog=$b rep=$r rc=$rc wall_s=$(awk -v d=$((t1 - t0)) 'BEGIN { printf "%.3f", d / 1e9 }') traced_wall_s=$(awk -v d=$((t2 - t1)) 'BEGIN { printf "%.3f", d / 1e9 }') out=[$(tr '\n' ' ' < "dec_$b.out")] $(grep -m1 mapal_gpu_trace_total <<< "$tr") wall_rc=$wall_rc"
+                [ "$rc" -eq 0 ] && [ "$wall_rc" -eq 0 ] || { say "VALIDATION FAILED (decode $b rep=$r process exit)"; exit 1; }
                 [ "$r" = 1 ] && grep 'op=launch' <<< "$tr" | grep -o 'kernel=[^ ]*' | sort | uniq -c |
                     while read -r n k; do say "decode_launch prog=$b $k n=$n"; done
             done

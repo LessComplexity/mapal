@@ -29,3 +29,15 @@ The rental runner SHALL retain available result logs and report remote execution
 #### Scenario: Failed remote run
 - **WHEN** remote execution fails
 - **THEN** the runner attempts result retrieval, returns failure and cleans up its temporary instance
+
+### Requirement: Timed programs preserve execution failures
+The full GPU runner SHALL record the process status of both ordinary and traced probe,
+end-to-end and decode executions, and SHALL fail when either execution returns nonzero.
+
+#### Scenario: Plausible output followed by failure
+- **WHEN** a timed program prints plausible values or timing and then exits unsuccessfully
+- **THEN** its record includes the failed status and the runner stops without successful completion
+
+#### Scenario: Traced execution fails
+- **WHEN** the ordinary execution succeeds but the traced execution fails
+- **THEN** the record preserves both statuses and the runner returns failure
