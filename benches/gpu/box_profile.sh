@@ -29,6 +29,7 @@ fi
 if command -v nsys >/dev/null; then
     # 1024 and 8192 too (S53): which kernel cuBLAS picks at each end.
     for n in 1024 4096 8192; do
+        [ -s "$PROF/mm_${n}_c.launch" ] || continue
         read -r k gx gy blk sm < "$PROF/mm_${n}_c.launch"
         # S53: nsys hung for 21 min on one 4090 host; never let it hold a rented box.
         timeout 300 nsys profile -o "prof/run-$n" --force-overwrite true -t cuda \
@@ -51,7 +52,7 @@ fi
 # this build and the S52 host object (`.s52`, PREV), one process each.
 # S54: three multi-computation probes (an epilogue, a chain through a per-cell
 # step, two independent sites) — where the transfers and host loops sit.
-PROBES="pt_epi_4096_c pt_mlp_4096_c pt_indep_4096_c"
+PROBES=${PROF_PROBES:-"pt_epi_4096_c pt_mlp_4096_c pt_indep_4096_c"}
 for b in e2e_1024 e2e_1024_c e2e_4096 e2e_4096_c e2e_1024.s52 e2e_1024_c.s52 e2e_4096.s52 e2e_4096_c.s52 $PROBES; do
     [ -f "$PROF/$b.host.o" ] || continue
     cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \

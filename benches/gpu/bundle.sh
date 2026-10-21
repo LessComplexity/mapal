@@ -7,6 +7,7 @@
 #   e.g. rtx-4090:sm_89 h100-pcie:sm_90a rtx-5090:sm_120 rtx-3090:sm_86 a100:sm_80
 # ONLY="<glob>..." builds only the programs whose stem matches one of the globs
 # (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
+# HOST_RUNGS="<rung>..." narrows the whole-program arms (default: every host rung).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -62,8 +63,10 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
-        python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
+    # A program whose sites all launch on chain streams (`launchv`) has no
+    # line here: only the mm_* kernel benches read it.
+    { grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -1 |
+        python3 -c 'import sys,re; s=sys.stdin.read(); m=re.search(r"i64 (-?\d+)",s); n=re.findall(r"i32 (\d+)",s); m and print(f"mapal_tile_{int(m.group(1)) & (2**64-1):016x}", *n)' \
         > "$stem.launch"
 }
 
@@ -117,8 +120,9 @@ for spec in "$@"; do
             # host rung off for the differential and the e2e wall-time A/B.
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
+                # shellcheck disable=SC2086  # one rung per word
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    ${HOST_RUNGS:-async resident devgen eager-init retain-delta streams stream-gate pinned pdl}
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \

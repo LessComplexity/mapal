@@ -84,9 +84,9 @@ to one block, in `Gmem` to every block **after a grid-wide wait**.
 | `Trm` | `c_from → c_to` | carries | cost fact (S52/S54 traces) |
 | --- | --- | --- | --- |
 | `h2d` | `Host → Gmem` | a whole array, or (S54) the rows `Δ` wrote | 64 MB: 3–5 ms pageable; `cuMemcpyHtoD` |
-| `d2h` | `Gmem → Host` | a whole array, or one element | 64 MB: 3.2–7.3 ms; synchronous |
+| `d2h` | `Gmem → Host` | a whole array, or one element | 64 MB: 3.2–7.3 ms; synchronous (S54: on the producer's stream, `cuMemcpyDtoHAsync` + that stream's sync) |
 | `launch` | `Host → Gmem` (control) | a kernel and its pointer arguments | 5–10 µs; asynchronous on a stream |
-| grid-wide wait | `Gmem → Gmem` | the fact that every block stored | implicit between launches on one stream; an event across streams |
+| grid-wide wait | `Gmem → Gmem` | the fact that every block stored | implicit between launches on one stream; an event across streams (`mapal_gpu_event`) |
 | `g2s` (stage) | `Gmem → Smem` | a panel | `cp.async` / vector loads; completed by `barrier0` |
 | `s2r` | `Smem → Reg` | a fragment | `ld.shared` / `ldmatrix` |
 | store | `Reg → Gmem` | an output tile | one vector store per `lanes` columns |
@@ -140,6 +140,20 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   is under one wave (`blocks < sms · max_blocks_per_sm`, from the launch geometry): a filled part
   has nothing to overlap. On sm_90+ a dependent launch in one stream may begin its prologue
   before the producer's grid drains (`griddepcontrol`).
+  *As built (S54 `streams`, `resident.rs:chains`):* straight-line sites are covered by chains in
+  topo order (a site continues the chain whose last site is a `PathPlan` ancestor); the wave
+  test is the general form of "under one wave" — two independent grids of `b` blocks on a part
+  holding `w = sms · blocks_per_sm` (the launch geometry's own residency) save a wave exactly
+  when their last waves fit in one, `t_a/w_a + t_b/w_b ≤ 1`, `t = b − w(⌈b/w⌉ − 1)` — so a part
+  can also open streams at a size whose grids are many waves long with short tails. With streams
+  open, a chained output's whole `d2h` moves from the launch to its first host reader (on the
+  producer's stream), frees between the first and last chained launch move after the last, and
+  every chained buffer is allocated (and its host copy page-locked) before the first chained
+  launch. A chain stream joins program order (the legacy stream) at each launch by an event the
+  runtime records only when legacy work was enqueued since. `pinned`: a host array that crosses
+  is page-locked once before its first copy. `pdl`: every tile kernel opens with
+  `griddepcontrol.wait; griddepcontrol.launch_dependents`, and a kernel launched right behind
+  another on its stream is a programmatic dependent launch.
 
 **Kernel boundaries are the consequence.** A program's launches are exactly the R0/R2 sites
 after R1's groups, and the `Trm`s are exactly R3's waits, R4's and R6's copies, R7's events.

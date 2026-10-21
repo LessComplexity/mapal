@@ -388,3 +388,9 @@ for n in (2048, 4096):
     for name, spec in probes(n).items():
         (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))
     (out / f"pt_loop_{n}.mapal").write_text(probe_program(n, loop_act(n, 8), True, w='w'))
+# S54 `streams`: the probes with independent sites (and `mlp`, `pdl`'s chain) at
+# sizes whose grids are under one wave on every part — where concurrency can pay.
+for n in (512, 1024):
+    for name, spec in probes(n).items():
+        if name in ('indep', 'diamond', 'mlp2', 'fanout', 'mlp'):
+            (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))

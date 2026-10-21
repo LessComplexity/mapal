@@ -75,7 +75,14 @@ impl<'a> FnEmit<'a> {
             retain: SecondaryMap::new(),
             retain_flags: SecondaryMap::new(),
             row_bounds: None,
+            path_plan: None,
         }
+    }
+
+    /// S54 `streams`: device sites read independence off the path plan; the
+    /// host itself stays sequential on a GPU profile.
+    pub(crate) fn set_path_plan(&mut self, plan: Option<&'a PathPlan>) {
+        self.path_plan = plan;
     }
 
     pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms, reduced: Option<crate::Reduced>) {

@@ -27,13 +27,19 @@ fn emit(src: &str, gpu: GpuArms) -> String {
     .expect("emits")
 }
 
+/// The S53 placement: S54's host rungs (`streams`, `pinned`, `pdl`) held off —
+/// they have their own tests (`tests/streams.rs`).
 fn on() -> GpuArms {
-    GpuArms::default()
+    let mut a = GpuArms::default();
+    for r in ["streams", "pinned", "pdl"] {
+        *a.off.rung(r).expect("a rung") = true;
+    }
+    a
 }
 
 /// The measurement arm with `rung` forced off.
 fn off(rung: &str) -> GpuArms {
-    let mut a = GpuArms::default();
+    let mut a = on();
     *a.off.rung(rung).expect("a rung") = true;
     a
 }
