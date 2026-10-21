@@ -686,6 +686,18 @@ impl<'a> FnEmit<'a> {
             .is_some_and(|p| p.keep.contains_key(target) || p.is_carry_next(target));
         if !keep {
             let h = self.slot(target).expect("tile output slot");
+            // A device fold's output lands in what was a host loop's slot: say
+            // the copy keeps no pointer to it, as the loop did not, or the slot
+            // counts as escaped and a later host loop that reads it loses its
+            // vector form (S54: softmax_rows' `exp` pass ran scalar, +17 ms).
+            // ponytail: every `d2h` is just as non-capturing; marked here only,
+            // so no other program's text moves.
+            let fold = self.ir.in_edges(target).first().is_some_and(|m| {
+                self.resident
+                    .as_ref()
+                    .is_some_and(|p| p.rowfold.contains_key(*m))
+            });
+            let h = if fold { format!("nocapture {h}") } else { h };
             self.line(format!(
                 "call void @mapal_gpu_d2h(ptr {h}, i64 {dout}, i64 0, i64 {o_bytes})"
             ));

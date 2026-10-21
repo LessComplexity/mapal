@@ -1703,19 +1703,33 @@ impl Kernel<'_> {
         // instead of 2 + 16 — two-thirds of the bytes. Off arm / a block too
         // narrow for it: row-major threads.
         let gpu = self.profile_gpu;
-        let wx = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
-        let wy = gpu.warp / wx;
+        let w = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
+        // S54 `rowfold-layout`: a column-major store runs a warp's fastest
+        // lanes down the rows — the row-major rule mirrored, so one store
+        // instruction still writes whole 128-byte lines (`col_store`). The
+        // shared-memory side is symmetric: `w` fragments of one panel, the
+        // rest of the other.
+        let (wx, wy) = if self.col {
+            (gpu.warp / w, w)
+        } else {
+            (w, gpu.warp / w)
+        };
         let (trow, tcol) = if self.rungs.warp && g.tx % wx == 0 && g.ty % wy == 0 && g.tx > wx {
             let warp = self.op("udiv", &tid, gpu.warp);
             let lane = self.op("urem", &tid, gpu.warp);
             let warps_x = g.tx / wx;
             let wr = self.op("udiv", &warp, warps_x);
             let wc = self.op("urem", &warp, warps_x);
-            let lr = self.op("udiv", &lane, wx);
-            let lc = self.op("urem", &lane, wx);
+            let (lr, lc) = if self.col {
+                (self.op("urem", &lane, wy), self.op("udiv", &lane, wy))
+            } else {
+                (self.op("udiv", &lane, wx), self.op("urem", &lane, wx))
+            };
             let r0 = self.op("mul", &wr, wy);
             let c0 = self.op("mul", &wc, wx);
             (self.op("add", &r0, &lr), self.op("add", &c0, &lc))
+        } else if self.col {
+            (self.op("urem", &tid, g.ty), self.op("udiv", &tid, g.ty))
         } else {
             (self.op("udiv", &tid, g.tx), self.op("urem", &tid, g.tx))
         };
