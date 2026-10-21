@@ -546,12 +546,10 @@ impl<'a> FnEmit<'a> {
     /// chains in topo order: a site continues the chain whose last site is one
     /// of its `PathPlan` ancestors, else opens one. Two chains are opened as
     /// streams only when the grids can actually share the part — the **wave
-    /// rule**: a grid of `b` blocks on a part holding `w` at once runs
-    /// `⌈b / w⌉` waves, the last one `b − w·(⌈b / w⌉ − 1)` blocks full; two
-    /// independent grids on separate streams save a wave exactly when their
-    /// last waves fit in one, `t_a / w_a + t_b / w_b ≤ 1` (a site's `w` is
-    /// `sms × blocks_per_sm` of its launch geometry). A filled part has nothing
-    /// to overlap, and its text stays the one-stream text. With streams open:
+    /// rule** ([`waves_merge`]): two independent grids fit one wave together,
+    /// `b_a / w_a + b_b / w_b ≤ 1` (a site's `w` is `sms × blocks_per_sm` of
+    /// its launch geometry). A filled part has nothing to overlap, and its text
+    /// stays the one-stream text. With streams open:
     /// a chained output's whole copy-out moves to its first host reader (when
     /// every reader is straight-line), so the next chain launches before the
     /// host waits; and the frees between the first and last chained launch
@@ -751,7 +749,7 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
-            self.pin(&h, bytes);
+            self.pin(m, &h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -776,6 +774,7 @@ impl<'a> FnEmit<'a> {
         l: gpu::Launch,
     ) {
         let src_ty = self.obj_ty(source);
+        let ms = self.ir.in_edges(target)[0];
         let mut ops = Vec::new();
         let mut temps = Vec::new();
         for slot in [site.a.slot, site.b.slot] {
@@ -802,7 +801,7 @@ impl<'a> FnEmit<'a> {
             self.line(format!(
                 "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
             ));
-            self.pin(&h, bytes);
+            self.pin(ms, &h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -857,7 +856,7 @@ impl<'a> FnEmit<'a> {
         let keep = plan.keep.contains_key(target) || plan.is_carry_next(target);
         if !keep && !plan.d2h_at.contains_key(target) {
             let h = self.slot(target).expect("tile output slot");
-            self.pin(&h, o_bytes);
+            self.pin(ms, &h, o_bytes);
             self.d2h(s, &h, &dout, "0", o_bytes);
         }
     }
@@ -876,10 +875,18 @@ impl<'a> FnEmit<'a> {
         }
     }
 
-    /// `pinned`: page-lock a host array right before it crosses (the runtime
-    /// does it once per array).
-    fn pin(&mut self, h: &str, bytes: u64) {
-        if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).pinned {
+    /// `pinned`: page-lock the host array a copy at `m` moves, when that copy
+    /// runs more than once — `m` inside a loop (or guard arm), so one
+    /// registration is paid for every crossing after it (the runtime pins an
+    /// array once). A copy that runs once is not pinned: registering costs
+    /// more than one pinned copy saves on every box measured
+    /// (`streams-<part>.txt`, S54 trace + `copy_rate`: 0.06–0.09 ms per MB
+    /// registered at 64 MB, 0.3–0.5 at 1 MB, against 0.002 (RTX 4090 box) to
+    /// 0.08 ms per MB (RTX 5090 box) saved per crossing).
+    fn pin(&mut self, m: MorphismId, h: &str, bytes: u64) {
+        if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).pinned
+            && !self.straight_line().contains_key(m)
+        {
             self.line(format!("call void @mapal_gpu_pin(ptr {h}, i64 {bytes})"));
         }
     }
@@ -891,10 +898,9 @@ impl<'a> FnEmit<'a> {
         first.is_some_and(|m| self.ir.morphism(m).expect("site").target == target)
     }
 
-    /// Before the first chained launch: every chained output's buffer and the
-    /// page lock of every chained output's host copy, so neither a `cuMemAlloc`
-    /// nor a `cuMemHostRegister` (each may wait for the device) lands between
-    /// two chains' launches.
+    /// Before the first chained launch: every chained output's buffer, so no
+    /// `cuMemAlloc` (which may wait for the device) lands between two chains'
+    /// launches.
     fn chain_prologue(&mut self, plan: &ResidentPlan) {
         let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
         let mut sites: Vec<MorphismId> = plan.chain.keys().collect();
@@ -903,10 +909,6 @@ impl<'a> FnEmit<'a> {
             let c = self.ir.morphism(m).expect("site").target;
             let bytes = self.array_bytes(&self.obj_ty(c));
             self.dalloc(c, bytes);
-            if !plan.keep.contains_key(c) && !plan.is_carry_next(c) {
-                let h = self.slot(c).expect("tile output slot");
-                self.pin(&h, bytes);
-            }
         }
     }
 
@@ -927,7 +929,6 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&self.obj_ty(o));
             let h = self.slot(o).expect("tile output slot");
             let d = self.dload(o);
-            self.pin(&h, bytes);
             self.d2h(s, &h, &d, "0", bytes);
         }
     }
@@ -976,7 +977,6 @@ impl<'a> FnEmit<'a> {
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
             let d = self.dalloc(merge, bytes);
-            self.pin(&h, bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -1013,7 +1013,6 @@ impl<'a> FnEmit<'a> {
             {
                 let d = self.dload(exit);
                 let h = self.slot(exit).expect("exit slot");
-                self.pin(&h, bytes);
                 self.line(format!(
                     "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 0, i64 {bytes})"
                 ));
@@ -1037,12 +1036,15 @@ impl<'a> FnEmit<'a> {
     }
 }
 
-/// The wave rule (S54 R7): grids of `(blocks, wave)` on separate streams take
-/// one wave fewer than back to back exactly when their last waves — `b − w·(⌈b
-/// / w⌉ − 1)` blocks each — fit in one: `t_a / w_a + t_b / w_b ≤ 1`.
+/// The wave rule (S54 R7): two grids of `(blocks, wave)` on separate streams
+/// run as one wave instead of two exactly when both fit one wave together,
+/// `b_a / w_a + b_b / w_b ≤ 1`. Grids of several waves are never opened, even
+/// when their last waves would share one: the first session measured that form
+/// 8–20% slower than one stream at 4096 on the RTX 3090 and RTX 5090 (two
+/// multi-wave GEMMs at once share L2 and DRAM for longer than one tail wave
+/// saves; `streams-rtx-3090.txt`, `streams-rtx-5090.txt`).
 pub(crate) fn waves_merge((ba, wa): (u64, u64), (bb, wb): (u64, u64)) -> bool {
-    let last = |b: u64, w: u64| b - w * (b.div_ceil(w) - 1);
-    last(ba, wa) * wb + last(bb, wb) * wa <= wa * wb
+    ba * wb + bb * wa <= wa * wb
 }
 
 fn array_len(ty: &Ty) -> u64 {
@@ -1071,8 +1073,8 @@ mod tests {
         // Under one wave each but not together: two waves either way.
         assert!(!waves_merge((128, 164), (128, 164)));
         // Many waves with short tails (the 3090 at 4096, 82 SMs × 2): 40 + 40
-        // of 164 — one wave saved of 14.
-        assert!(waves_merge((1024, 164), (1024, 164)));
+        // of 164 would share a wave, but multi-wave grids are never opened.
+        assert!(!waves_merge((1024, 164), (1024, 164)));
         // A tail of exactly half each fits; one block more does not.
         assert!(waves_merge((50, 100), (50, 100)));
         assert!(!waves_merge((51, 100), (50, 100)));
