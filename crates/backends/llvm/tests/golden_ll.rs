@@ -2044,6 +2044,88 @@ fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
     );
 }
 
+/// plan-s53 `clock-fence` on a GPU profile: the GPU e2e program
+/// (`benches/gpu/gen_tiles.py e2e`, n = 64) brackets exactly its site. S52's
+/// host read `t1` BEFORE the tile call and `t0` before the generation, so the
+/// program's `iter ms` timed the generation. Now the generation precedes the
+/// first read, and each read waits for the device first — a launch that
+/// returns early must not let the clock close over it.
+#[test]
+fn gpu_time_bracket_is_time_tile_sync_time() {
+    let e2e = |n: u32| {
+        format!(
+            "fn main() {{
+    {nn} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {n} -> iota -> krange;
+    () -> time -> t0;
+    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }}
+    }} -> c;
+    () -> time -> t1;
+    c[0] -> println;
+    \"iter ms=\" -> print;
+    t1 - t0 -> println;
+}}
+",
+            nn = n * n
+        )
+    };
+    let at = |src: &str, target: &'static str| {
+        let ir = mapal_rewrite::rewrite(lower_src(src)).ir;
+        emit_with_opts(
+            &ir,
+            &EmitOpts {
+                target,
+                ..EmitOpts::default()
+            },
+        )
+        .unwrap()
+    };
+    let ll = at(&e2e(64), "h100-pcie");
+    let host = mapal_main(&ll);
+    let calls: Vec<&str> = host
+        .lines()
+        .filter_map(|l| {
+            [
+                "@fn",
+                "@mapal_time_ms(",
+                "@mapal_gpu_tile(",
+                "@mapal_gpu_sync(",
+            ]
+            .into_iter()
+            .find(|c| l.contains(c))
+        })
+        .collect();
+    let first_read = calls.iter().position(|&c| c == "@mapal_time_ms(").unwrap();
+    assert!(
+        calls[..first_read].contains(&"@fn"),
+        "the generation runs before t0:\n{host}"
+    );
+    assert_eq!(
+        calls[first_read - 1..],
+        [
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms(",
+            "@mapal_gpu_tile(",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms("
+        ],
+        "time -> tile -> sync -> time:\n{host}"
+    );
+    assert!(ll.contains("declare void @mapal_gpu_sync()"), "{ll}");
+    // No device site, nothing to wait for: a CPU profile, and a GPU profile on
+    // a module whose `time` brackets host work only, emit no sync at all.
+    let host_only = "fn main() {\n    () -> time -> t0;\n    \
+                     () -> time -> t1;\n    t1 - t0 -> println;\n}\n";
+    for ll in [at(&e2e(64), "generic"), at(host_only, "h100-pcie")] {
+        assert!(!ll.contains("@mapal_gpu_sync"), "{ll}");
+    }
+}
+
 fn further_paren(c: char) -> bool {
     c == ')'
 }

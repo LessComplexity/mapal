@@ -2325,6 +2325,10 @@ impl CategoryIr {
     /// rely on this: they read loop-invariant operands when the header fires
     /// (S12 fix; previously a multi-hop invariant like `x * 2` inside a loop
     /// body was ordered after its `LoopEnter` and read-before-write).
+    ///
+    /// **Clock reads cut the order** ([`Self::fence_clocks`], plan-s53): the
+    /// work written before a `time` precedes it and the work written after it
+    /// follows. A function without one keeps the order above byte for byte.
     pub fn topo_order(&self, f: FuncId) -> Vec<MorphismId> {
         let nodes = self.func_objects(f);
 
@@ -2440,6 +2444,103 @@ impl CategoryIr {
             break;
         }
 
+        self.fence_clocks(f, order)
+    }
+
+    /// plan-s53 `clock-fence`: a clock read sits after the work written before
+    /// it and before the work written after it. Kahn alone cannot see that — a
+    /// `TimeMs` consumes only the token, so it is released the moment the token
+    /// is, and on the GPU e2e program (S52) `t0` landed before the input
+    /// generation and `t1` before the site: `t1 - t0` timed the generation.
+    /// `path_plan` fences the parallel walk by source position (S29/S33b); this
+    /// is the same key for every walk of `topo_order` — the sequential emitter,
+    /// the interpreter, and the plans that take positions from it.
+    ///
+    /// `own(m)` = 2 × (clocks written before `m`), + 1 if `m` is itself a clock;
+    /// `seg(m)` = max(`own(m)`, `seg` of every producer of `m.source`), to a
+    /// fixpoint, and every morphism incident to a loop SCC takes the SCC's
+    /// maximum — the loop runs as one unit at its header, so the header must
+    /// follow everything the loop reads. `seg` never decreases along an edge,
+    /// so the stable sort by it is still a topological order, and equal
+    /// segments keep Kahn's order. A clock inside a loop is not a cut: it reads
+    /// once per iteration, at its place in the cycle.
+    fn fence_clocks(&self, f: FuncId, mut order: Vec<MorphismId>) -> Vec<MorphismId> {
+        if !order
+            .iter()
+            .any(|&m| self.morphisms[m].op == Operation::TimeMs)
+        {
+            return order;
+        }
+        let loops = self.loop_structure(f);
+        let mut loop_of: SecondaryMap<ObjectId, usize> = SecondaryMap::new();
+        for (i, scc) in loops.iter().enumerate() {
+            for &o in &scc.objects {
+                loop_of.insert(o, i);
+            }
+        }
+        let is_cut = |m: MorphismId| {
+            let morph = &self.morphisms[m];
+            morph.op == Operation::TimeMs && !loop_of.contains_key(morph.source)
+        };
+        let mut cuts: Vec<u32> = order
+            .iter()
+            .filter(|&&m| is_cut(m))
+            .map(|&m| self.morphisms[m].loc.start)
+            .collect();
+        if cuts.is_empty() {
+            return order;
+        }
+        cuts.sort_unstable();
+        let own = |m: MorphismId| {
+            let before = cuts.partition_point(|&s| s < self.morphisms[m].loc.start) as u32;
+            2 * before + is_cut(m) as u32
+        };
+        let incident = |m: MorphismId| {
+            let morph = &self.morphisms[m];
+            loop_of
+                .get(morph.source)
+                .or_else(|| loop_of.get(morph.target))
+                .copied()
+        };
+
+        let mut seg: SecondaryMap<MorphismId, u32> = order.iter().map(|&m| (m, own(m))).collect();
+        loop {
+            let mut changed = false;
+            for &m in &order {
+                let from = self
+                    .in_edges(self.morphisms[m].source)
+                    .iter()
+                    .filter_map(|&p| seg.get(p).copied())
+                    .max()
+                    .unwrap_or(0);
+                if from > seg[m] {
+                    seg[m] = from;
+                    changed = true;
+                }
+            }
+            let mut top = vec![0; loops.len()];
+            for &m in &order {
+                if let Some(i) = incident(m) {
+                    top[i] = top[i].max(seg[m]);
+                }
+            }
+            for &m in &order {
+                if let Some(i) = incident(m)
+                    && seg[m] < top[i]
+                {
+                    seg[m] = top[i];
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        debug_assert!(
+            order.iter().all(|&m| !is_cut(m) || seg[m] == own(m)),
+            "a clock read was pushed past its own segment"
+        );
+        order.sort_by_key(|&m| seg[m]);
         order
     }
 

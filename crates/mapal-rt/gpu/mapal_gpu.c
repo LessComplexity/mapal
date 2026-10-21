@@ -124,3 +124,11 @@ void mapal_gpu_tile(uint64_t id, const void *a, uint64_t a_bytes,
             (unsigned long long)(a_bytes + b_bytes),
             (unsigned long long)out_bytes);
 }
+
+/* The clock fence's device half (plan-s53): the emitter calls this before every
+ * `time` read on a GPU profile, so the clock never closes over a kernel still
+ * running. No module loaded means no launch yet: nothing to wait for. */
+void mapal_gpu_sync(void) {
+  if (module)
+    CK(cuCtxSynchronize());
+}
