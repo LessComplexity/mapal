@@ -118,11 +118,14 @@ for spec in "$@"; do
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
-                # retain-delta's measured OFF arm: every site a round trip.
+                    async resident devgen eager-init retain-delta retain-resident delta-h2d lane-stride
+                # retain-delta's measured OFF arm: every site a round trip. S54:
+                # the s54-base placement (R5's three rungs off) in the same run.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
-                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident ;;
+                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-delta,resident
+                    emit_one "$f" "$d/$b$face.off-retain-resident+delta-h2d+lane-stride" "$prof" "$sm" \
+                        ${flags[@]+"${flags[@]}"} --gpu-off=retain-resident,delta-h2d,lane-stride ;;
                 esac
             done ;;
         esac

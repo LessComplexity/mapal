@@ -122,12 +122,28 @@ pub struct GpuRungs {
     /// recomputes only that row into its retained output (`func/retain.rs`).
     /// Ships OFF on every measured part: a function it fires in keeps S52 round
     /// trips, and `resident` alone ran decode 1.3–1.8× faster
-    /// (`integrated-*.txt`). Kept for planning the two together.
+    /// (`integrated-*.txt`). Since S54 it is the S52-round-trip arm only:
+    /// `retain-resident` plans the two together.
     pub retain_delta: bool,
     /// Host runtime (S53): start the CUDA context and module load on a thread
     /// as `main`'s first call, so it overlaps the host work before the first
     /// site. Off: the first site creates them.
     pub eager_init: bool,
+    /// S54 R5 under `resident`: a retained site (`func/retain.rs`'s rule)
+    /// keeps its output in its resident buffer — the whole site into it on a
+    /// loop entry's first pass, the written row into it after — and the
+    /// function stays resident. Off: a function with a retained site takes the
+    /// S52 round trips (`retain-delta` on) or retains nothing.
+    pub retain_resident: bool,
+    /// S54 R5's transmission: a host-written carried array with
+    /// [`mapal_ir::Delta::Rows`] that a device site reads is uploaded as the
+    /// rows the iteration wrote, after one whole upload per loop entry. Off:
+    /// the whole array every iteration.
+    pub delta_h2d: bool,
+    /// S54 R0 for one-row sites: a site whose lane operand is read at a lane
+    /// stride other than 1 (`q·Kᵀ`, [`mapal_ir::CategoryIr::tile_plan_strided`])
+    /// is a device site. Off: it stays a host map behind a whole copy-out.
+    pub lane_stride: bool,
 }
 
 impl GpuRungs {
@@ -153,11 +169,14 @@ impl GpuRungs {
         devgen: true,
         retain_delta: true,
         eager_init: true,
+        retain_resident: true,
+        delta_h2d: true,
+        lane_stride: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 20] = [
+    pub const NAMES: [&'static str; 23] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -178,6 +197,9 @@ impl GpuRungs {
         "devgen",
         "retain-delta",
         "eager-init",
+        "retain-resident",
+        "delta-h2d",
+        "lane-stride",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -203,6 +225,9 @@ impl GpuRungs {
             "devgen" => &mut self.devgen,
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
+            "retain-resident" => &mut self.retain_resident,
+            "delta-h2d" => &mut self.delta_h2d,
+            "lane-stride" => &mut self.lane_stride,
             _ => return None,
         })
     }

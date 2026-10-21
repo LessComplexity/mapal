@@ -34,10 +34,12 @@ machine fact enters the IR).
 | --- | --- | --- |
 | array `x: [T; n]` | immutable, static `n` | `Ty::Array` |
 | tile site `S` | `out[i,j] = fold_k a·b` with affine reads, `k > 0` | `algo.rs:TileSite`, `TileRead{ci,clane,ck}` |
+| strided one-row site | `out[j] = fold_k a[k]·b[j·s + k]`, `s ≠ 1` (`q·Kᵀ`) | **`tile_plan_strided` (S54)**; `tile_plan` (the CPU's) refuses it |
 | per-cell morphism `m` | a `Map` with no inner fold whose cell `t` reads a fixed set of cells | `algo.rs:ElemSrc::Apply` (law), **`cell_plan` (S54: the read footprint)** |
 | row fold `R` | a `Map` over rows whose body is one in-order `Fold` over an affine read | **`row_fold` (S54)** |
 | element read | a host `Index` at a proven constant | `BoundsProof::proven` |
 | carried state | a loop-state component and the rows one iteration writes | `LoopPlan`, `write_delta → Delta::Rows` |
+| delta of a derived object | a captures-0 map of a `Rows` value changes only in those rows | **`write_delta`'s Same consumers (S54)**, keyed by the image |
 | death | the position after which no morphism reads `x` | `LastUsePlan::death`, `escapes` |
 | independence | two sites with no dependency path | `PathPlan.tasks` |
 
@@ -65,7 +67,7 @@ body, no `Call`/`Map`/`Fold`, no float `%`) plus every `Index` proven.
 | row fold | `x → r` | host nest; **S54: `rowfold` kernel, one thread per row** |
 | whole float fold | `x → scalar` | host only (ADR-0028 D4: one in-order chain; one device thread is slower than the copy-out) |
 | element read | `x → T` | host load; one-element `d2h` (`resident.rs:Use::Elem`) |
-| restricted site | the site over the rows `Δ` says changed | `retain.rs:Retained.row` |
+| restricted site | the site over the rows `Δ` says changed | `retain.rs:Retained.row`; **S54: launched into the output's resident buffer at the row's offset (`resident.rs:emit_row_resident`)** |
 
 One `Trn` placed twice is two `TrnLoc` rows and may be two texts (FRAMEWORK §4.2). The rule
 that keeps them the same *value*: a per-cell body is emitted once (`drive.rs`) and the device
@@ -104,8 +106,10 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
 
 - **R0 (anchor).** A tile site with `k > 0` and plain affine reads is a device site
   (`gpu.rs:gpu_site`). Its output cell exists in the owning thread's `Reg` before the store.
-  A row fold is a device site (one thread per row, `k` in order). Every other `Trn` starts at
-  `Host`.
+  A strided one-row site is one too (`gpu.rs:tile_plan`, rung `lane-stride`): the
+  one-thread-per-cell kernel addresses any affine read. Its step keeps the host map's
+  `fmul` + `fadd` on the contract face, where the CPU does not tile it. A row fold is a
+  device site (one thread per row, `k` in order). Every other `Trn` starts at `Host`.
 - **R1 (fold into the store).** A per-cell morphism `m` runs **inside** device kernel `S`,
   between the accumulator and the store, when every operand of `m` is (i) `S`'s output at
   footprint `Same`, (ii) a member of `S`'s group already (a chain `x → y → z` composes by
@@ -128,9 +132,14 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   producer is not in: `Host`, delivered by `d2h`.
 - **R5 (retention, part of object).** Inside a loop, a device site over carried `x` whose
   iteration wrote rows `Δ` (`write_delta`), with `w` invariant and row-local reads, recomputes
-  only `Δ` into its **resident** output (`retain.rs` rule, now on the `resident` buffer). The
-  output inherits `Δ`, so R5 propagates through `Same` consumers and stops at the first `Panel`
-  reader. A host write to a carried array with `Δ::Rows` uploads `Δ`, not the array.
+  only `Δ` into its **resident** output (`retain.rs` rule, on the `resident` buffer: the whole
+  site on a loop entry's first pass, then the row kernel at the row's offset; rung
+  `retain-resident`). `Δ` passes through `Same` consumers (a captures-0 map of `x` has `x`'s
+  `Δ`) and stops at the first `Panel` reader. A host-written array with `Δ::Rows` that a
+  device site reads uploads `Δ`, not the array, after one whole upload per loop entry (rung
+  `delta-h2d`); a retained output a host reader needs crosses as its new row the same way. A
+  retained output that is a carried state's next is not retained (the back edge swaps its
+  buffer).
 - **R6 (residency and death).** An object a device site reads is copied in once after its
   producer; a device output is copied out only for a host reader, whole or one element; every
   buffer is freed at `death` (`resident.rs`). Device-only objects get no host slot and live in
@@ -183,7 +192,8 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 Every placement clause is a measurement-only arm (`GpuRungs` field, `emit --gpu-off=<name>`,
 an arm in `bundle.sh`), shipped ON per part only by a `GPU_RUNGS_OFF` row whose cite names the
 probe program and the ON/OFF medians: `epilogue` (R1), `devmap` (R2), `rowfold` and
-`rowfold-layout` (R0 for folds, the store order), `retain-resident` and `delta-h2d` (R5),
+`rowfold-layout` (R0 for folds, the store order), `lane-stride` (R0 for strided one-row
+sites), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
 policy from `l2_bytes`). OFF is today's text byte for byte. A rung's fill key is the grid it
 ends up in: the host kernel for an epilogue, its own grid for a cell kernel, the union for
