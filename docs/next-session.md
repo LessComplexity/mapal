@@ -1,9 +1,20 @@
 # Next Session (S55)
 
-**S54 is logged in `sessions/2026-10-21-s54-fusion-placement.md` — read it first.** Branch `s54-gpu-fusion`
-(local, not pushed). Fusion as placement built (epilogue, devmap, rowfold, arena, streams, retain-resident,
-l2-raster) and measured on RTX 3090 / A100 / RTX 4090 / H100 PCIe / RTX 5090; the workflow stopped before the
-final verify + integrated run — that is item 1 of the queue. `vastai show instances` empty at close.
+**Read `sessions/2026-10-21-s54-fusion-placement.md` first** — results, per-arch rung table, verifier conflicts, where
+every branch/worktree/result lives, resume commands. Branch `s54-gpu-fusion` (local, not pushed; base `s53-gpu-opt`).
+
+S54 built fusion as placement (epilogue, devmap, rowfold, arena, retain-resident/delta-h2d, streams, l2-raster) and
+Ampere profiles; measured on RTX 3090 / A100 SXM4 / RTX 4090 / H100 PCIe / RTX 5090; tests 1172/0. The workflow was
+stopped before the final verify + integrated run. `vastai show instances` empty at close.
+
+Start here:
+1. `git worktree list` -> remove `.claude/worktrees/wf_25b2dee4-01e-*` (after checking `git status` in each), `git worktree prune`,
+   `git checkout s54-gpu-fusion`; rerun `cargo test --workspace --release` twice (one earlier run showed 20 unreproduced failures).
+2. Resolve the three table-vs-verifier conflicts (streams 5090, retain-resident H100, l2-raster).
+3. One integrated 5-part run (bundle all five profiles, `vast_run.sh` per part, PROFILE=1), then write
+   `performance/s54-gpu-fusion.md` + `performance/s54-per-arch-selection.md` (results only, every loss).
+4. Biggest losses to attack: pt_mlp2_4096 on 4090 (Mapal 55.1 ms vs cuBLASLt 11.4 ms), decode loop 0.05–0.12× library,
+   exact face 0.34–0.66× cuBLAS, A100/H100 TF32 0.55–0.69× (ADR-0039 still undecided — Sapir's call).
 
 ---
 

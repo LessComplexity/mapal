@@ -41,6 +41,63 @@ an early binary and stopped; not reproduced. Suspect: `examples/emit` exists in 
 mapal-backend-cuda (cargo warns of an output filename collision), so a test that runs `target/release/examples/emit` can
 get the wrong binary depending on build order. Also: duplicated `#[test]` at `crates/backends/llvm/src/profile.rs:3123`.
 
+## Per-arch selection shipped (GPU_RUNGS_OFF, `crates/backends/llvm/src/profile.rs`)
+
+Every rung not listed for a part is ON there. `[fill/face]`: U=Under, F=Filled, A=Any; E=Exact, C=Contract, T=TF32; no bracket = Any/Any.
+Each row cites its results file in the source.
+
+| rung | OFF on |
+|---|---|
+| affine | rtx-4090[U/C], h100-pcie[A/E], h100-pcie[U/C], rtx-5090[F/E], rtx-5090[U/C], rtx-3090[U/A], a100[A/E] |
+| async | rtx-4090[F/A], h100-pcie, rtx-5090[F/C], rtx-5090[U/A], rtx-3090, a100 |
+| idx32 | rtx-4090[U/C], h100-pcie[A/E], rtx-5090[A/E], rtx-5090[U/C], rtx-3090[A/E], rtx-3090[U/C], a100[A/E], a100[U/C] |
+| interleave | rtx-3090[U/A], a100[U/A] |
+| l2-gate | rtx-5090[A/C] (= grid raster ON there) |
+| l2-window | rtx-3090, a100, rtx-4090, rtx-5090, h100-pcie[A/E] (ON only H100 contract) |
+| ldmatrix | rtx-4090, rtx-3090[A/C], a100[U/T] |
+| min-blocks | h100-pcie[U/C], h100-pcie[F/A], rtx-3090[A/T], a100[F/A] |
+| pad | h100-pcie[F/E], rtx-5090[A/E] |
+| pdl | h100-pcie, rtx-5090 |
+| pinned | all five |
+| raster | rtx-3090 |
+| retain-delta | all five |
+| retain-resident | rtx-5090, rtx-4090 |
+| rowfold-layout | rtx-3090, rtx-5090, h100-pcie, rtx-4090[A/E], a100[A/C] |
+| streams | rtx-3090, rtx-4090, h100-pcie |
+| unroll | a100[A/E] |
+| warp | rtx-4090[F/C], h100-pcie[U/C], rtx-3090[U/A], a100 |
+| warp-fill | h100-pcie[U/C], rtx-5090[F/C], rtx-3090[U/C] |
+| wide | rtx-5090[U/C], rtx-5090[F/C], rtx-3090[U/C], a100[U/C] |
+| wide-fma | h100-pcie, rtx-5090, rtx-3090[F/E], a100[F/A] |
+
+New S54 rungs (GpuRungs, `crates/backends/llvm/src/lib.rs`; OFF arm `emit --gpu-off=<name>`): epilogue, devmap, cell-law,
+rowfold, rowfold-layout, arena, retain-resident, lane-stride, delta-h2d, streams, stream-gate, pinned, pdl, raster, l2-gate, l2-window.
+Unmeasured profiles inherit by architecture (cuda-ada <- rtx-4090, h100 SXM <- h100-pcie); a profile with no measured
+architecture now takes every rung ON (was: union of OFF rows) — pinned by a test in profile.rs.
+
+## Table vs verifier conflicts (resolve in S55)
+- **streams**: shipped ON on rtx-5090 and a100; verifier: real on A100 only, "RTX 5090 should be taken out".
+- **retain-resident**: shipped ON on h100-pcie; verifier: ON only rtx-3090/a100 (small effect), not h100-pcie.
+- **l2-raster**: verifier real=false (kernel-only +1.2–1.6% on H100 l2-window, no e2e gain); rows merged anyway.
+- **arch-select**: never verified; its 4090/5090 `-table` confirm sessions were killed (`integrated-*-prefix.txt` partial).
+
+## Where things are
+- Branches (local): `s54-base` (foundation+plan), `s54/{epilogue,devmap,rowfold,arena,retain-resident,streams,l2-raster}`,
+  `s54/arch-select` = `s54-gpu-fusion` (all merged + per-arch tables + this log).
+- Worktrees: `.claude/worktrees/wf_25b2dee4-01e-{1,8..15}` hold those branches; plus older `agent-*` ones. Clean with
+  `git worktree remove <path>` then `git worktree prune` before `git checkout s54-gpu-fusion` in the main checkout.
+- Main checkout still on `s53-gpu-opt` with untracked `oainotes.md` (keep) and `docs/notes/s54-research-*.md` (copies committed here).
+- Plan: `docs/components/backend-nvptx/plans/plan-s54-fusion-placement.md` (all ideas ranked; rejected list).
+- Model: `docs/components/backend-nvptx/ARCHITECTURE.md` (placement rule: Loc/Trm, kernel boundaries as consequence).
+- Results: `benches/results-s54-gpu/` (`base-*`, `<item>-<part>*.txt`, `*-fusion-report.txt`, `baseline-tables.md`, `arch-select-*`).
+- Tools: `benches/gpu/fusion_report.py` (static launches/transfers per probe), library chain harness in `benches/gpu/`
+  (eager cuBLAS+kernels, cuBLASLt epilogues, CUTLASS, two streams), `bundle.sh ONLY="<stems>"`.
+- Workflow script (re-runnable as a template, resume only works in the same session):
+  `~/.claude/projects/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/workflows/scripts/mapal-s54-fusion-placement-wf_25b2dee4-01e.js`;
+  agent transcripts `.../subagents/workflows/wf_25b2dee4-01e/` (journal.jsonl has every builder/verifier report).
+- vast: GPU names RTX_3090, A100_SXM4 (profile a100 = SXM4), RTX_4090, H100_PCIE (fallback H100_SXM -> profile h100), RTX_5090.
+  Agents killed mid-run orphan boxes: after any stop run `vastai show instances` and `vastai destroy instance <id> -y`.
+
 ## Open (S55 queue, in order)
 0. Flaky test run above: rename one `emit` example, rerun twice.
 1. Verify `s54-gpu-fusion` (was arch-select): one integrated 5-part run (`integrated-*-prefix.txt` are partial), confirm 4090/5090 tables.
