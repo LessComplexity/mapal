@@ -139,6 +139,20 @@ pub struct GpuRungs {
     /// wall OFF/ON 1.17/1.09 (3090), 1.03/1.06 (A100), 1.16/1.23 (4090),
     /// 1.04/1.06 (H100 PCIe), 1.06/1.30 (5090), exact face, ms in the files.
     pub arena: bool,
+    /// S54: walk the tile grid in block-row groups (`TargetProfile` →
+    /// [`profile::Gpu::raster`]): a wave reads fewer distinct panels. Off:
+    /// the hardware's row-major order. Values are the same either way — a
+    /// grid order moves no cell's fold.
+    pub raster: bool,
+    /// Under `raster`, keep row-major order while one block's panels fit the
+    /// L2 (the derivation's gate). Off: group wherever the grid is more than
+    /// one wave — the arm that tests the gate on every part.
+    pub l2_gate: bool,
+    /// S54: launch a resident site with an L2 access-policy window
+    /// (`hitProp` persisting) over the object the graph proves read again —
+    /// the output the next launch reads, else the operand read by the most
+    /// blocks — when its bytes fit the L2 (`mapal_gpu_launch_l2`).
+    pub l2_window: bool,
 }
 
 impl GpuRungs {
@@ -165,11 +179,14 @@ impl GpuRungs {
         retain_delta: true,
         eager_init: true,
         arena: true,
+        raster: true,
+        l2_gate: true,
+        l2_window: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 21] = [
+    pub const NAMES: [&'static str; 24] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -191,6 +208,9 @@ impl GpuRungs {
         "retain-delta",
         "eager-init",
         "arena",
+        "raster",
+        "l2-gate",
+        "l2-window",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -217,6 +237,9 @@ impl GpuRungs {
             "retain-delta" => &mut self.retain_delta,
             "eager-init" => &mut self.eager_init,
             "arena" => &mut self.arena,
+            "raster" => &mut self.raster,
+            "l2-gate" => &mut self.l2_gate,
+            "l2-window" => &mut self.l2_window,
             _ => return None,
         })
     }
@@ -587,6 +610,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     }
     if resident {
         out.push_str(crate::func::gpu::RESIDENT_DECLS);
+        if funcs.contains("@mapal_gpu_launch_l2(") {
+            out.push_str(crate::func::gpu::GPU_L2_DECL);
+        }
     }
     if arena {
         out.push_str(crate::func::gpu::ARENA_DECL);

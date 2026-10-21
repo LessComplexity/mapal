@@ -6,7 +6,8 @@
 #    each followed by its library legs (chain_bench.cu); the decode loop,
 # 3. the timing harness vs cuBLAS and CUTLASS, every kernel arm.
 # E2E_ARMS narrows the e2e section's arms; PROBE_ARMS / PROBE_REPS the probe section
-# (default: on + every off-<rung> arm the bundle built for the probe; 5 repetitions).
+# (default: the bundle's `probe_arms` file, else on + every off-<rung> arm the bundle
+# built for the probe; 5 repetitions).
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -102,6 +103,7 @@ say "$(./tile_bench --h2d 64 10 2>&1)"
 # phases, launches and bytes — then the library legs (chain_bench.cu) on the
 # same probe, gated against the exact face's printed values.
 say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)"
+[ -z "${PROBE_ARMS:-}" ] && [ -s probe_arms ] && PROBE_ARMS=$(cat probe_arms)
 # S54 arch-select: by default every OFF arm the bundle built for the probe —
 # bundle.sh drops an arm equal to the shipped text, so these are exactly the
 # rungs this part ships ON there.

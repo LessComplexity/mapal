@@ -64,7 +64,15 @@ for name, M, N, K, al, bl, elem in CASES:
 # A float `%` in a closed-form operand: `devgen` must leave it to the host
 # (fmodf vs NVPTX's frem expansion differ).
 (out / "fmod_64.mapal").write_text(program(64, 64, 64, "rm", "rm", "f32").replace("x / 7.0", "x % 0.7"))
-print("wide_2048x2048x64\nfmod_64")
+# S54 `raster`: a site whose grid is more than one wave and whose block panels
+# over k (8 MB) leave the RTX 3090's 6 MB L2 — the differential of the grouped
+# block order (32 block-rows in two groups of 16 on the 3090; row-major on every
+# larger L2). Oracle: the CPU build (bundle.sh `deep_*`).
+(out / "deep_4096x1024x8192.mapal").write_text(program(4096, 1024, 8192, "rm", "rm", "f32"))
+# ... and the grouped order where the measured table turns the gate off (the RTX 5090:
+# 512 blocks of 128×128, more than its 340-block wave).
+(out / "wide_8192x1024x1024.mapal").write_text(program(8192, 1024, 1024, "rm", "rm", "f32"))
+print("wide_2048x2048x64\nfmod_64\ndeep_4096x1024x8192\nwide_8192x1024x1024")
 
 
 def bench(n):
