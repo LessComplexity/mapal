@@ -199,6 +199,39 @@ fn column_write_is_byte_identical_on_and_off() {
 }
 
 #[test]
+fn site_produced_carry_is_top_and_byte_identical() {
+    // loop_mm: the carried `x` is the site's own output (`x·W -> x`), so the
+    // back edge brings a whole new array, not an `Update` chain: Top.
+    let src = "fn main() {
+    256 -> iota -> tw;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 } -> w;
+    256 -> iota -> tc;
+    16 -> iota -> krange;
+    (0.5, 256) -> fill -> x0;
+    mut x: [f32; 256] <- x0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 8) -> {
+            -true-> {
+                tc -> map { c -> c / 16 -> i; c % 16 -> j; (0.0, krange) -> fold { acc, k -> acc + x[i * 16 + k] * w[k * 16 + j] } } -> x;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    out[0] -> println;
+}
+";
+    let ir = lower(src);
+    let wd: Vec<Delta> = ir.write_delta(ir.entry()).values().copied().collect();
+    assert_eq!(wd, [Delta::Top]);
+    let (on, _) = emit(&ir, "rtx-4090", true);
+    assert_eq!(tile_calls(&on).len(), 1, "the site is a GPU site");
+    assert_eq!(emit(&ir, "rtx-4090", true), emit(&ir, "rtx-4090", false));
+}
+
+#[test]
 fn cpu_profiles_are_untouched() {
     // Unmeasured on any CPU part: the rung does not fire there.
     let ir = lower(&decode(16, 8, "f32", false));
