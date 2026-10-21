@@ -1,8 +1,9 @@
 # Current continuation — S57 generic proof work
 
-The only checkout is `s54-gpu-fusion` at `b4152c5`. Preserve the ignored recovery archives
+The only checkout is `s54-gpu-fusion`. Frozen GPU measurements bind source `b4152c5`;
+the completed validation records are locally committed as `0ca0507`. Preserve the ignored recovery archives
 under `.claude/worktrees/_archive-s54-20261021/` and untracked `oainotes.md`. Do not push.
-Most S57 reports/evidence are durable local files but not yet committed. The newest immutable checkpoint is
+The shared source now includes the proved loop-route replay repair. The newest immutable checkpoint is
 [S57 frozen validation complete](sessions/2026-10-21-s57-frozen-validation-complete.md).
 The earlier20:45 checkpoint remains historical; this mutable continuation tracks later work.
 
@@ -38,7 +39,12 @@ All frozen results are archived with hash verification. The earlier five-bundle/
 archive has 41,051 files/2,423,639,312 bytes. Separate immutable archives preserve H100,
 4090 confirmation and final 5090 confirmation. The latter contains 21 files/20,057,698 bytes;
 [receipt](../benches/results-s54-gpu/final-integrated-5090-confirmation-recovery.json).
-Frozen host tests: 1,176 passed/0 failed/1 ignored; no production-source change since.
+Frozen host tests were 1,176/0/1 ignored. After the replay repair, the required-clang
+workspace passes **1,181/0/1 ignored**; all release examples and formatting pass. The four
+frozen compiler/runtime inputs and three LLVM tools remain byte-identical. The current
+repaired emitter is `/private/tmp/mapal-replay-shared-host-target/release/examples/emit`,
+SHA `b8de9090d5f3ddcdc9a36543e5385f665440134f85a4a9985d5aecc3a58bd759`.
+The old `target/release/examples/emit` intentionally remains the frozen baseline.
 
 ## Correctness pilot: one failed allocation, no GPU result
 
@@ -61,7 +67,10 @@ The failed attempt and approved preparation have a separate immutable 221-file,
 The user then approved one additional same-payload attempt under the original cumulative
 $1 cap. It also failed at allocation before upload: offer51669617, machine143204/host556515,
 contract57111469; exit1 after2.3s, independent absence21:07:38 UTC. Both attempts produced
-no GPU results. No further attempt is authorized. Read-only startup diagnosis is in progress.
+no GPU results. No further attempt is authorized. Read-only diagnosis found identical creation options
+to successful controls and no explicit account ineligibility; no detailed provider error
+or concrete startup cause was available. The [sanitized diagnosis](../benches/results-s54-gpu/s57-correctness-pilot-allocation-failures/allocation-diagnosis.md)
+and final closed-attempt recovery receipt preserve both failures.
 
 Operational base: `/private/tmp/mapal-s56-gpu`.
 
@@ -71,7 +80,7 @@ cat /private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/veri
 cat /private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest-v5.json
 ```
 
-At21:08 UTC there are zero active task rentals. Never touch unrelated instances
+At21:20 UTC there are zero active task rentals. Never touch unrelated instances
 `57065574` or `57100404`. GPU agent owns rental/upload/cleanup. Preserve the frozen benchmark payloads/tools as evidence. Both bound launchers are now
 closed; apply a source repair only after its separate proof/review. Isolated diagnostic
 snapshots remain under the paths below. Do not run integrated timing acceptance on correctness-only output.
@@ -87,13 +96,15 @@ Keep numerical success, arithmetic-route proof and timing admission distinct.
    ordering/matrix pilot. The approved attempts are exhausted; no GPU result exists.
    Payloads and exact validators remain under `ordering-runtime/`, `large-composed/`
    and `correctness-pair/` in the operational base. Timeout aborts all later phases.
-3. Repair the recurrent checkpoint compiler failure through
-   `repair-loop-route-replay`. Diagnostic snapshot:
-   `/private/tmp/mapal-replay-diagnostic/source`, isolated build in sibling `target`.
-   Both tiny674 and original5907 now identify an acyclic `(IoToken, Array)` exit payload
-   inside the canonical loop driver cone but outside its SCC, left unmapped during
-   round1 ConstFold replay. Temporary tracing establishes the exact cause; a generic
-   repair/regression is being tested only in that snapshot. No shared source fix yet.
+3. **Replay repair complete:** `repair-loop-route-replay` is archived. Exact diagnostics
+   proved omitted acyclic exit payloads674/5907; the repair reconstructs existing canonical
+   decide/advance work through the ordinary replay classifier. Five new tests fail on old
+   code and pass with the fix; full rewrite86/0, required-clang workspace1181/0/1 ignored.
+   Eight previously failing GPU emissions now complete. Full interpreter checkpoints match
+   8,408 numeric values/8,838 lines. [Proof and independent review](../benches/results-s54-gpu/s57-loop-route-replay/README.md)
+   are recorded; no GPU execution is claimed. Three bounded original native-emission
+   timeouts remain an independent backend question. Full reproduction is archived locally.
+
 4. Apply `eliminate-unmaterialized-gpu-allocations` only after dependency proof. The
    [ordering evidence](performance/s57-ordering-evidence.md) establishes missing emitted
    edges for stored-member host readback and another-chain tile consumption. Same-stream

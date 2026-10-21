@@ -1,0 +1,37 @@
+{
+  "utc": "2026-10-21T21:16:58.406724+00:00",
+  "pass": true,
+  "source_patch_sha256": "32384fc81b26faff5006019b37d330daab9475bc2e1aa799afde2091282d8203",
+  "command": "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-replay-shared-host-target cargo test --offline --locked --workspace --release --no-fail-fast -- --test-threads=1",
+  "runs": [
+    {
+      "run": "shared-workspace",
+      "exit": 101,
+      "suites": 88,
+      "passed": 1178,
+      "failed": 3,
+      "ignored": 1,
+      "stdout_sha256": "6ca92ef459e9a00196a1b50b5730b866457422f5693ce5fb8b2eefd8d5934a2e",
+      "stderr_sha256": "52393926424e468e6f831b00aaa00827b522c05a4f8b2ec905f74da086130890"
+    },
+    {
+      "run": "shared-workspace-unrestricted",
+      "exit": 0,
+      "suites": 88,
+      "passed": 1181,
+      "failed": 0,
+      "ignored": 1,
+      "stdout_sha256": "2fe7803048bc14c522bee9a90f867e9fe208c4e6966f995aa39be3d92c5daef3",
+      "stderr_sha256": "a0079b854f6667da63a5e4609ecbdc1b7f1046a61f46e1c70de3300bee865c80"
+    }
+  ],
+  "sandbox_failure_proof": "/usr/sbin/sysctl hw.l2cachesize returned Operation not permitted; three native profile detection tests failed in restricted run. Unrestricted full run passes all tests. No source change between these two runs.",
+  "format_check": {
+    "command": "cargo fmt --all --check",
+    "exit": 0
+  },
+  "source_files": {
+    "crates/mapal-rewrite/src/replay.rs": "13060ed30adc9737fedce93c4b015e8faf0d1eba2169d0de90523d21c784347c",
+    "crates/mapal-rewrite/tests/loop_routes.rs": "e6423f871f1aa512da714a20680969fa2038f763df6686445f378a796c63ce9f"
+  }
+}

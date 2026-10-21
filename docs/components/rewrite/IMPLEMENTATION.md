@@ -1,7 +1,7 @@
 # rewrite — implementation map
 
 > The functor DESIGN.md ("Categorical model") → code (ADR-0017). Rows updated WITH
-> the model and the code, in the same change (FRAMEWORK §6.3). Last: 2026-07-26 · S34 (`map(id) → id` read the Return writer only and deleted trapping bodies — the P0; `is_pure` is now the crate-wide purity predicate, shared by DCE and the identity law). Previously 2026-07-25 · S29 (`TimeMs` replay arm — identity only, no pass plans it). Previously 2026-07-24 · S27b (`LiftLoops` shipped after Inline; R-LF/R-LM plan+replay; matmul4 reaches `tile_plan`). Previously S27 (Inline default-first; loop-bearing-callee guard; cap 256; body Call stripping).
+> the model and the code, in the same change (FRAMEWORK §6.3). S57 (2026-10-21): loop replay now reconstructs required acyclic route payloads from the existing canonical driver plan; see the `reconstruct_loop` row and five `loop_routes` regressions below. Previously: 2026-07-26 · S34 (`map(id) → id` read the Return writer only and deleted trapping bodies — the P0; `is_pure` is now the crate-wide purity predicate, shared by DCE and the identity law). Previously 2026-07-25 · S29 (`TimeMs` replay arm — identity only, no pass plans it). Previously 2026-07-24 · S27b (`LiftLoops` shipped after Inline; R-LF/R-LM plan+replay; matmul4 reaches `tile_plan`). Previously S27 (Inline default-first; loop-bearing-callee guard; cap 256; body Call stripping).
 
 ## Objects (Dat) → code
 
@@ -29,6 +29,7 @@
 | `analyze_inline` | `&CategoryIr → RewritePlan` (mark a `Call` site iff callee morphisms ≤ `INLINE_MAX_BODY` ∧ callee ≠ entry ∧ **callee loop-free** (`loop_structure(g).is_empty()` — nested-SCC prevention, S27) ∧ no `Call` cycle; Calls inside Map/Fold body fns ARE planned (graph-wide walk); the Map/Fold morphisms themselves never elaborated. **S27: in the default `rewrite()` list, first**) | `src/inline.rs:analyze_inline` | built |
 | `analyze_lift` | `&CategoryIr → RewritePlan` (consume `loop_plan`; R-LF/R-LM exact two-component state, const `K >= 1`, 0/+1 counter, pure/token-free cone, exact exit; map additionally one identity `Update`, c-free value, `n == K`; `covers_loop_body` rejects unselected decide/advance work before whole-SCC replacement; key `lift` by merge) | `src/lift.rs:analyze_lift` | built |
 | `replay` | `(&CategoryIr, &RewritePlan) ⇀ CategoryIr` (recipe classification §1.1; **S29: `TimeMs` rebuilt via `fb.time_ms(feed(src))` — the bare token source, `dest` unused, exactly the `Print` shape**; loop quartet facts delegated to `mapal_ir::CategoryIr::loop_plan`; fused and lifted body synthesis; lift replay mints count object + `Iota`, captured Map/Fold, marks old SCC/routes complete; call substitution via `inline_call`/`inline_return`; fn-level DCE via post-plan reference liveness) | `src/replay.rs:replay` (+ `synthesize_lifted_body`, `reconstruct_lifted_loop`, `emit_lifted_return`) | built |
+| `reconstruct_loop` | canonical `LoopPlan` plus `RewritePlan` → rebuilt loop; include SCC objects and targets in existing decide/advance orders, process their global object-topological suborder through `reconstruct_a` before consuming route feeders; preserve alias/drop/internal-pack/constify handling | `src/replay.rs:{reconstruct_loop,reconstruct_a}` | built; S57 route-payload repair |
 | `rewrite` / `rewrite_with` | `CategoryIr → RewriteResult` (by-value; default fixpoint `Inline→LiftLoops→ConstFold→Cse→Dce→MapFusion`, `MAX_ROUNDS=32`; non-canonical ⇒ whole-graph identity; validate debug-asserted per replay) | `src/driver.rs:rewrite{,_with}` | built |
 
 ## Test / harness → code
@@ -43,6 +44,7 @@
 | inline strip pins (policy guards, substitution shapes, duplication, determinism/idempotence) + raw-vs-inlined proptest suites | `tests/inline.rs` |
 | R-LF/R-LM positives, every v1 rejection, zero-trip pin, and matmul4 zero-Call/zero-SCC Map-with-Fold acceptance | `tests/lift.rs`, `tests/inline.rs` |
 | LLVM tiled acceptance and 1,280 generated differential lift coverage | `crates/backends/llvm/tests/differential.rs` |
+| Acyclic route payload replay: forced empty plan, each pass/full pipeline, zero/multiple trips, printed effects, computed payload/constify, sequential loops and guarded traps | `tests/loop_routes.rs` (five tests; all fail before S57 repair) |
 | bench | `benches/rewrite_scale.rs` |
 
 ## Notes / divergences
