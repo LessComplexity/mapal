@@ -1,22 +1,17 @@
-# Next Session (S53)
+# Next Session (S54)
 
-**S52 is logged in `sessions/2026-10-20-s52-the-ptx-leg.md` — read it first.** Branch `s52-ptx-leg`
-(local). The GPU leg exists and is measured on RTX 4090 / H100 / RTX 5090; the S53 queue is at the
-end of that log. An optimization workflow (review → design → build → measure, per the log's queue)
-was launched at S52 close; its plan lands in
-`components/backend-nvptx/plans/plan-s53-gpu-optimizations.md`.
-
-**Workflow `mapal-s53-gpu-optimizations`** (run `wf_40012e53-58d`, launched 2026-10-20 at S52 close):
-research notes → `docs/notes/s53-research-*.md`; plan → `plan-s53-gpu-optimizations.md`; one branch
-per item `s53/<key>` with results in `benches/results-s53-gpu/`; integration branch `s53-gpu-opt`;
-record → `docs/performance/s53-gpu-optimizations.md`; log → `docs/sessions/2026-10-21-s53-*.md`.
-Script: `~/.claude/projects/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/workflows/scripts/mapal-s53-gpu-optimizations-wf_40012e53-58d.js`.
-If it died: check `git branch --list 's53/*'`, `vastai show instances` (destroy leftovers with `-y`), and
-resume with Workflow({scriptPath, resumeFromRunId: "wf_40012e53-58d"}) in the same Claude session.
+**S53 is logged in `sessions/2026-10-21-s53-gpu-optimizations.md` — read it first.** Branch `s53-gpu-opt`
+(local, not pushed; base `s52-ptx-leg`). Eight GPU items merged, one rung table measured on RTX 4090 /
+H100 PCIe / RTX 5090; record `performance/s53-gpu-optimizations.md`, results
+`benches/results-s53-gpu/integrated-*.txt`. FP32 contract face: 4090 1.04–1.05× cuBLAS, H100 PCIe
+1.11–1.14× CUTLASS, 5090 0.87–0.92× cuBLAS; H100 TF32 through `wgmma` 1.24–1.64× the S52 kernel. The S54
+queue is at the end of the log (first: `resident` × `retain-delta` together; the context wait in whole
+programs). `vastai show instances` was empty at close.
 
 ---
 
-(S52's handoff, kept below for the CPU-side items it still carries.)
+(S52's handoff, kept below for the CPU-side items it still carries. The S53 workflow header it replaced:
+workflow `mapal-s53-gpu-optimizations`, run `wf_40012e53-58d`; item branches `s53/<key>`.)
 
 # Next Session (S52)
 
