@@ -571,6 +571,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if resident {
         out.push_str(crate::func::gpu::RESIDENT_DECLS);
     }
+    if funcs.contains("@mapal_gpu_launchv(") {
+        out.push_str(crate::func::gpu::LAUNCHV_DECL);
+    }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
     let sme = sme_store || sme_acc;
