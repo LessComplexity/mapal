@@ -90,14 +90,6 @@ pub struct GpuRungs {
     /// On `sm_90a`, the TF32 face takes Hopper's `wgmma` kernel (S53); off,
     /// the `mma.sync` kernel. Both are bounded by TF32, neither is bit-exact.
     pub wgmma: bool,
-    /// Stage the `wgmma` kernel's `a` panel through registers, rounded on the
-    /// way (`ld.global` → `cvt.rn` → `st.shared`); off, `cp.async` plus an
-    /// in-place rounding pass over the landed panel (S53).
-    pub wgmma_reg_stage: bool,
-    /// Keep two `wgmma` groups in flight (`wait_group 1`, A fragment
-    /// registers double-buffered); off, each group is waited before the next
-    /// one's fragments load (S53).
-    pub wgmma_overlap: bool,
 }
 
 impl Default for GpuRungs {
@@ -113,8 +105,6 @@ impl Default for GpuRungs {
             wide: true,
             ldmatrix: true,
             wgmma: true,
-            wgmma_reg_stage: true,
-            wgmma_overlap: true,
         }
     }
 }

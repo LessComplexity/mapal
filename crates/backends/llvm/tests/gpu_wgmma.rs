@@ -48,57 +48,16 @@ fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
     assert!(k.contains("wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32"));
     assert!(!k.contains("mma.sync"));
     // RNE, never `rna` (ties away) — and nothing reaches `wgmma` unrounded:
-    // 4 per `a` chunk this thread stages (128·32/4/128 = 8 per panel; the
-    // two prologue panels and the one stored per iteration) and 4 per k8
-    // step of `bᵀ` fragments (32/8 = 4).
+    // per panel, 4 per staged `a` chunk this thread copied (128·32/4/128 = 8)
+    // and 4 per k8 step of `bᵀ` fragments (32/8 = 4).
     assert!(!k.contains("cvt.rna"));
-    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 3 * 8 * 4 + 4 * 4);
-    // `a` arrives through registers (`ld.global` → round → `st.shared`):
-    // never read back from shared memory to be rounded in place.
-    assert_eq!(
-        k.matches("load <4 x float>, ptr addrspace(1)").count(),
-        3 * 8
-    );
-    assert!(!k.contains("load <4 x float>, ptr addrspace(3)"));
-    // The stores are fenced to the async proxy before the barrier.
+    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 8 * 4 + 4 * 4);
+    // The rounded panel is fenced to the async proxy before the barrier.
     assert!(k.contains("fence.proxy.async.shared::cta"));
     // Descriptor: 128-byte swizzle, SBO one 1024-byte atom; the atoms need
     // the dynamic shared memory 1024-aligned.
     assert!(k.contains(&format!(", {}\n", 0x4000_0040_0001_0000u64)));
     assert!(k.contains("@mapal_smem = external addrspace(3) global [0 x i8], align 1024"));
-}
-
-/// `wgmma-reg-stage` off: `a` lands by `cp.async` and each thread rounds the
-/// chunks it copied in place, once per panel (the first S53 kernel).
-#[test]
-fn wgmma_reg_stage_off_rounds_the_landed_panel_in_place() {
-    let off = GpuRungs {
-        wgmma_reg_stage: false,
-        ..GpuRungs::default()
-    };
-    let k = device("h100-pcie", true, TF32, off);
-    assert!(k.contains("wgmma.mma_async"));
-    assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 8 * 4 + 4 * 4);
-    assert_eq!(k.matches("load <4 x float>, ptr addrspace(3)").count(), 8);
-    assert!(!k.contains("load <4 x float>, ptr addrspace(1)"));
-    assert!(k.contains("fence.proxy.async.shared::cta"));
-}
-
-/// `wgmma-overlap`: group `it − 2` is retired before the panel barrier and
-/// group `it − 1` keeps computing; off, every group is waited before the next
-/// one's fragments load.
-#[test]
-fn wgmma_overlap_keeps_one_group_in_flight_across_the_issue() {
-    let on = device("h100-pcie", true, TF32, GpuRungs::default());
-    assert_eq!(on.matches("wgmma.wait_group.sync.aligned 1;").count(), 1);
-    assert_eq!(on.matches("wgmma.wait_group.sync.aligned 0;").count(), 1);
-    let off = GpuRungs {
-        wgmma_overlap: false,
-        ..GpuRungs::default()
-    };
-    let k = device("h100-pcie", true, TF32, off);
-    assert!(!k.contains("wgmma.wait_group.sync.aligned 1;"));
-    assert_eq!(k.matches("wgmma.wait_group.sync.aligned 0;").count(), 2);
 }
 
 /// The OFF arm is the S52 `mma.sync` kernel, unchanged (still `cvt.rna`).
