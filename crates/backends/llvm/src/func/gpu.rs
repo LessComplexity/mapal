@@ -52,9 +52,10 @@ declare void @llvm.nvvm.cp.async.wait.group(i32 immarg)\n\
 declare float @llvm.fma.f32(float, float, float)\n\
 declare double @llvm.fma.f64(double, double, double)\n";
 
-/// The host-side runtime entries, declared only when some site called one.
-pub(crate) const GPU_DECLS: &str = "declare void @mapal_gpu_init(i32)\n\
-    declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
+/// The host-side runtime entries, each declared only when the module calls it.
+pub(crate) const GPU_INIT_DECL: &str = "declare void @mapal_gpu_init(i32)\n";
+pub(crate) const GPU_TILE_DECL: &str =
+    "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
 
 /// `mapal_gpu_init`'s flag bit; `mapal_gpu.c` reads the same one.
 pub(crate) const GPU_INIT_EAGER: u32 = 1;

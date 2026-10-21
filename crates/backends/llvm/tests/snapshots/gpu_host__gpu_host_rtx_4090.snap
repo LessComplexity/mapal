@@ -14,7 +14,6 @@ declare double @mapal_time_ms()
 declare void @mapal_trap(i32) noreturn
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @mapal_gpu_init(i32)
-declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)
 declare i64 @mapal_gpu_alloc(ptr, i64)
 declare void @mapal_gpu_h2d(i64, ptr, i64)
 declare void @mapal_gpu_d2h(ptr, i64, i64, i64)
