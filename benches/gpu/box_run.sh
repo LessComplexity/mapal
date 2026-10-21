@@ -52,6 +52,7 @@ say "differential: $pass pass, $fail fail"
 # eager-init: a program that traps before its first site exits 101 in every
 # arm, with the init thread possibly still running (the runtime joins it).
 for o in "$PROF"/e2e_trap*.host.o; do
+    [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     link "$o" "prog_$b"
     got=$(MAPAL_PTX="$PROF/$b.ptx" timeout 60 "./prog_$b" 2>&1); rc=$?
@@ -133,14 +134,14 @@ for o in "$PROF"/pt_*.host.o; do
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 
-# retain-delta: the decode loop end to end, shipped vs the rung off (`resident`
+# retain-delta: the decode loop end to end, shipped vs the rung flipped (off: `resident`
 # then takes the function) vs every site a round trip (the arm the rung was
 # measured against), both faces, interleaved; the launches per kernel from rep 1.
 if [ -x prog_decode_1024_256 ]; then
     say "-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1"
     for r in 1 2 3; do
         for face in "" _c; do
-            for arm in "" .off-retain-delta .off-retain-delta+resident; do
+            for arm in "" .off-retain-delta .on-retain-delta .off-retain-delta+resident; do
                 b=decode_1024_256$face$arm
                 [ -x "prog_$b" ] || continue
                 t0=$(date +%s%N)

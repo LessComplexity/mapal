@@ -1,0 +1,491 @@
+# base-h100-pcie: box_profile.sh evidence (h100-pcie)
+## ptxas mm_4096_c.off-affine
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+## ptxas mm_4096_c.off-arch-rungs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 207 registers, used 1 barriers
+## ptxas mm_4096_c.off-fma-regs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 157 registers, used 1 barriers
+## ptxas mm_4096_c.off-idx32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 153 registers, used 1 barriers
+## ptxas mm_4096_c.off-interleave
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+## ptxas mm_4096_c.off-pad
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+## ptxas mm_4096_c.off-prefetch
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 123 registers, used 1 barriers
+## ptxas mm_4096_c.off-unroll
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 110 registers, used 1 barriers
+## ptxas mm_4096_c.off-warp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+## ptxas mm_4096_c.on-async
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+## ptxas mm_4096_c.on-fma-regs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+## ptxas mm_4096_c.on-min-blocks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+## ptxas mm_4096_c.on-wide-fma
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+## ptxas mm_4096_c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+## ptxas mm_4096_tf.off-arch-rungs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+## ptxas mm_4096_tf.off-mma
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+## ptxas mm_4096_tf.off-wgmma-hopper
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 235 registers, used 1 barriers
+## ptxas mm_4096_tf.on-min-blocks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+## ptxas mm_4096_tf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+## ptxas mm_4096.off-arch-rungs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 253 registers, used 1 barriers
+## ptxas mm_4096.off-interleave
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+## ptxas mm_4096.off-prefetch
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 170 registers, used 1 barriers
+## ptxas mm_4096.off-unroll
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 126 registers, used 1 barriers
+## ptxas mm_4096.off-warp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+## ptxas mm_4096.on-affine
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 136 registers, used 1 barriers
+## ptxas mm_4096.on-async
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+## ptxas mm_4096.on-fma-regs
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+## ptxas mm_4096.on-idx32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    16 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+## ptxas mm_4096.on-min-blocks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+## ptxas mm_4096.on-pad
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 135 registers, used 1 barriers
+## ptxas mm_4096.on-wide-fma
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 16 bytes cumulative stack size
+## nsys kernels kern_mm_4096_tf
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+39.3,7372591,8,921573.9,921462.0,917669,926054,2604.8,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+36.4,6834060,8,854257.5,853718.0,852037,860293,2656.0,mapal_tile_dff0dae306997d77
+24.3,4557918,8,569739.8,570708.0,564516,574404,3549.4,sm90_xmma_gemm_f32f32_tf32f32_f32_nn_n_tilesize128x128x32_warpgroupsize1x1x1_execute_segment_k_off_kernel__5x_cublas
+
+## nsys kernels kern_mm_4096_tf.off-wgmma-hopper
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+45.5,9965408,8,1245676.0,1245048.0,1242696,1253288,3406.6,mapal_tile_dff0dae306997d77
+33.7,7377328,8,922166.0,921926.0,918278,927718,2733.5,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+20.8,4555231,8,569403.9,571155.5,562692,571748,3445.2,sm90_xmma_gemm_f32f32_tf32f32_f32_nn_n_tilesize128x128x32_warpgroupsize1x1x1_execute_segment_k_off_kernel__5x_cublas
+
+## nsys kernels kern-1024
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+41.1,1264904,8,158113.0,156337.0,155745,162241,2820.9,mapal_tile_07c6663c96748bdb
+34.1,1049831,8,131228.9,132705.0,126817,133377,2787.6,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+24.9,765445,8,95680.6,96208.5,87521,102497,4204.7,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+
+## nsys kernels kern-4096
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+35.2,36926059,8,4615757.4,4616877.0,4607101,4623422,5679.5,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+32.9,34469407,8,4308675.9,4310396.0,4300508,4314747,5258.8,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+31.9,33371860,8,4171482.5,4173898.5,4159803,4178202,7195.2,mapal_tile_eb50b87a44f46aa3
+
+## nsys kernels kern-8192
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+36.5,296746804,8,37093350.5,37086687.0,37075693,37118958,14930.8,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+32.9,267086226,8,33385778.3,33399126.0,33240055,33505495,92082.5,mapal_tile_3c6966e353d7136e
+30.6,248148891,8,31018611.4,31019846.5,30970792,31076263,38937.5,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+
+## nsys timeline tl_e2e_1024_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+42.5,947581,3,315860.3,186418.0,156188,604975,250836.5,cuMemAlloc_v2
+27.6,616785,3,205595.0,124479.0,124299,368007,140652.9,cuMemFree_v2
+25.2,562045,1,562045.0,562045.0,562045,562045,0.0,cuModuleLoadData
+2.3,50500,3,16833.3,10110.0,9320,31070,12335.6,cuLaunchKernel
+1.8,39449,1,39449.0,39449.0,39449,39449,0.0,cuMemcpyDtoH_v2
+0.6,12330,2,6165.0,6165.0,2270,10060,5508.4,cuCtxSynchronize
+0.1,3150,2,1575.0,1575.0,1090,2060,685.9,cuCtxSetCurrent
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+95.2,159618,1,159618.0,159618.0,159618,159618,0.0,mapal_tile_07c6663c96748bdb
+2.4,4032,1,4032.0,4032.0,4032,4032,0.0,mapal_gen_093825ecb41500cf
+2.4,3968,1,3968.0,3968.0,3968,3968,0.0,mapal_gen_eb67bbb3563f7336
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,1632,1,1632.0,1632.0,1632,1632,0.0,[CUDA memcpy Device-to-Host]
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+518177797,3968,8,4096,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_eb67bbb3563f7336
+518398470,4032,11,4096,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_093825ecb41500cf
+518613127,159618,15,16,8,1,256,1,1,73,0.000,0.012,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_07c6663c96748bdb
+519150187,1632,19,,,,,,,,,,0.000,2.451,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_e2e_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+76.5,4717599,3,1572533.0,181849.0,147529,4388221,2438517.7,cuMemFree_v2
+13.2,814433,3,271477.7,149819.0,141469,523145,217990.3,cuMemAlloc_v2
+8.0,490516,1,490516.0,490516.0,490516,490516,0.0,cuModuleLoadData
+0.8,52269,2,26134.5,26134.5,2390,49879,33579.8,cuCtxSynchronize
+0.8,51409,3,17136.3,9130.0,8620,33659,14311.3,cuLaunchKernel
+0.6,38599,1,38599.0,38599.0,38599,38599,0.0,cuMemcpyDtoH_v2
+0.1,3440,2,1720.0,1720.0,1080,2360,905.1,cuCtxSetCurrent
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.8,4171996,1,4171996.0,4171996.0,4171996,4171996,0.0,mapal_tile_eb50b87a44f46aa3
+1.1,45920,1,45920.0,45920.0,45920,45920,0.0,mapal_gen_7b59dfa488c6072f
+1.1,45824,1,45824.0,45824.0,45824,45824,0.0,mapal_gen_02743d924bf99060
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,1632,1,1632.0,1632.0,1632,1632,0.0,[CUDA memcpy Device-to-Host]
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+528758459,45824,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+528941692,45920,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+529187037,4171996,15,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+533764955,1632,19,,,,,,,,,,0.000,2.451,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_epi_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+78.6,8659964,1,8659964.0,8659964.0,8659964,8659964,0.0,cuMemcpyDtoH_v2
+7.8,860643,3,286881.0,145649.0,134959,580035,253935.1,cuMemAlloc_v2
+7.8,853723,3,284574.3,213268.0,139859,500596,190646.9,cuMemFree_v2
+4.7,519455,1,519455.0,519455.0,519455,519455,0.0,cuModuleLoadData
+0.6,68850,2,34425.0,34425.0,5620,63230,40736.4,cuCtxSynchronize
+0.4,44610,3,14870.0,8100.0,8090,28420,11734.6,cuLaunchKernel
+0.0,3820,2,1910.0,1910.0,1030,2790,1244.5,cuCtxSetCurrent
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.3,4167131,1,4167131.0,4167131.0,4167131,4167131,0.0,mapal_tile_eb50b87a44f46aa3
+1.4,58881,1,58881.0,58881.0,58881,58881,0.0,mapal_gen_7b59dfa488c6072f
+1.3,54945,1,54945.0,54945.0,54945,54945,0.0,mapal_gen_02743d924bf99060
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,4430141,1,4430141.0,4430141.0,4430141,4430141,0.0,[CUDA memcpy Device-to-Host]
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+528516928,54945,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+528695361,58881,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+528948355,4167131,15,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+533122270,4430141,16,,,,,,,,,,67.109,15099.494,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_indep_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+81.9,16642785,2,8321392.5,8321392.5,8293378,8349407,39618.5,cuMemcpyDtoH_v2
+8.0,1618915,6,269819.2,152453.5,135269,855682,287597.6,cuMemAlloc_v2
+6.6,1346508,6,224418.0,166613.5,135019,515615,145650.1,cuMemFree_v2
+2.8,563455,1,563455.0,563455.0,563455,563455,0.0,cuModuleLoadData
+0.4,76348,6,12724.7,9604.5,8110,28850,8040.4,cuLaunchKernel
+0.3,69469,2,34734.5,34734.5,5120,64349,41881.2,cuCtxSynchronize
+0.0,4010,2,2005.0,2005.0,990,3020,1435.4,cuCtxSetCurrent
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.3,8354838,2,4177419.0,4177419.0,4176667,4178171,1063.5,mapal_tile_eb50b87a44f46aa3
+0.7,59648,1,59648.0,59648.0,59648,59648,0.0,mapal_gen_2636abe3000d5fd9
+0.7,59201,1,59201.0,59201.0,59201,59201,0.0,mapal_gen_9033d04957187e8a
+0.7,58337,1,58337.0,58337.0,58337,58337,0.0,mapal_gen_7b59dfa488c6072f
+0.6,54849,1,54849.0,54849.0,54849,54849,0.0,mapal_gen_02743d924bf99060
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,8162422,2,4081211.0,4081211.0,4052891,4109531,40050.5,[CUDA memcpy Device-to-Host]
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+537899404,54849,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+538076813,58337,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+538240974,59201,14,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_9033d04957187e8a
+538454256,59648,17,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_2636abe3000d5fd9
+538712530,4178171,21,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+542895533,4109531,22,,,,,,,,,,67.109,16307.454,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+547609868,4176667,27,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+551791719,4052891,28,,,,,,,,,,67.109,16508.781,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_mlp_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+43.7,9180228,3,3060076.0,36139.0,15570,9128519,5255435.9,cuMemcpyDtoH_v2
+26.0,5467912,6,911318.7,216193.0,139299,4376902,1699780.1,cuMemFree_v2
+16.3,3417890,1,3417890.0,3417890.0,3417890,3417890,0.0,cuMemcpyHtoD_v2
+9.3,1942744,6,323790.7,184813.5,139189,715733,244506.5,cuMemAlloc_v2
+3.1,646395,1,646395.0,646395.0,646395,646395,0.0,cuModuleLoadData
+1.1,233318,2,116659.0,116659.0,4040,229278,159267.3,cuCtxSynchronize
+0.5,99558,5,19911.6,12300.0,8180,43089,15175.3,cuLaunchKernel
+0.0,4340,2,2170.0,2170.0,1080,3260,1541.5,cuCtxSetCurrent
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+98.0,8347094,2,4173547.0,4173547.0,4168731,4178363,6810.9,mapal_tile_eb50b87a44f46aa3
+0.7,57088,1,57088.0,57088.0,57088,57088,0.0,mapal_gen_9033d04957187e8a
+0.7,55617,1,55617.0,55617.0,55617,55617,0.0,mapal_gen_7b59dfa488c6072f
+0.6,53568,1,53568.0,53568.0,53568,53568,0.0,mapal_gen_02743d924bf99060
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+59.3,4893088,3,1631029.3,1600.0,1024,4890464,2822753.2,[CUDA memcpy Device-to-Host]
+40.7,3352790,1,3352790.0,3352790.0,3352790,3352790,0.0,[CUDA memcpy Host-to-Device]
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+544677630,53568,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+544910047,55617,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+545116577,57088,14,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_9033d04957187e8a
+545539012,4168731,18,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+549714431,4890464,19,,,,,,,,,,67.109,13690.208,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+560442981,3352790,23,,,,,,,,,,67.109,19998.441,Pageable,Device,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Host-to-Device]
+564348255,4178363,27,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+568913468,1600,31,,,,,,,,,,0.000,2.500,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+568991901,1024,32,,,,,,,,,,0.000,3.906,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## trace e2e_1024_c
+mapal_gpu_trace op=load flags=1 wait_ms=239.000 lead_ms=8.048 init_ms=112.698 ctx_ms=133.765 module_ms=0.328
+mapal_gpu_trace op=alloc ms=0.442 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_eb67bbb3563f7336 ms=0.071 n=1048576
+mapal_gpu_trace op=alloc ms=0.127 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_093825ecb41500cf ms=0.013 n=1048576
+mapal_gpu_trace op=alloc ms=0.115 bytes=4194304
+mapal_gpu_trace op=launch kernel=mapal_tile_07c6663c96748bdb ms=0.168
+mapal_gpu_trace op=free ms=0.154
+mapal_gpu_trace op=free ms=0.103
+mapal_gpu_trace op=d2h ms=0.037 bytes=4
+mapal_gpu_trace op=free ms=0.106
+11107
+iter ms=0.590535
+mapal_gpu_trace_total flags=1 load_ms=239.000 lead_ms=8.048 init_ms=112.698 ctx_ms=133.765 module_ms=0.328 alloc_ms=0.684 h2d_ms=0.000 kernel_ms=0.168 gen_ms=0.084 d2h_ms=0.037 free_ms=0.363 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_1024
+mapal_gpu_trace op=load flags=1 wait_ms=246.554 lead_ms=10.284 init_ms=112.311 ctx_ms=143.902 module_ms=0.384
+mapal_gpu_trace op=alloc ms=0.405 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_eb67bbb3563f7336 ms=0.053 n=1048576
+mapal_gpu_trace op=alloc ms=0.214 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_093825ecb41500cf ms=0.018 n=1048576
+mapal_gpu_trace op=alloc ms=0.208 bytes=4194304
+mapal_gpu_trace op=launch kernel=mapal_tile_ca2f6114b3534324 ms=0.241
+mapal_gpu_trace op=free ms=0.149
+mapal_gpu_trace op=free ms=0.106
+mapal_gpu_trace op=d2h ms=0.042 bytes=4
+mapal_gpu_trace op=free ms=0.110
+11107
+iter ms=0.8128719999999999
+mapal_gpu_trace_total flags=1 load_ms=246.554 lead_ms=10.284 init_ms=112.311 ctx_ms=143.902 module_ms=0.384 alloc_ms=0.827 h2d_ms=0.000 kernel_ms=0.241 gen_ms=0.071 d2h_ms=0.042 free_ms=0.365 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=120.270 lead_ms=132.177 init_ms=111.759 ctx_ms=140.088 module_ms=0.408
+mapal_gpu_trace op=alloc ms=0.854 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.087 n=16777216
+mapal_gpu_trace op=alloc ms=0.143 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.055 n=16777216
+mapal_gpu_trace op=alloc ms=0.136 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.179
+mapal_gpu_trace op=free ms=0.214
+mapal_gpu_trace op=free ms=0.140
+mapal_gpu_trace op=d2h ms=0.038 bytes=4
+mapal_gpu_trace op=free ms=0.162
+74348
+iter ms=4.737438
+mapal_gpu_trace_total flags=1 load_ms=120.270 lead_ms=132.177 init_ms=111.759 ctx_ms=140.088 module_ms=0.408 alloc_ms=1.133 h2d_ms=0.000 kernel_ms=4.179 gen_ms=0.142 d2h_ms=0.038 free_ms=0.516 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_4096
+mapal_gpu_trace op=load flags=1 wait_ms=124.941 lead_ms=126.093 init_ms=110.926 ctx_ms=139.355 module_ms=0.553
+mapal_gpu_trace op=alloc ms=0.567 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.083 n=16777216
+mapal_gpu_trace op=alloc ms=0.165 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.055 n=16777216
+mapal_gpu_trace op=alloc ms=0.144 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_d7d2247fbbd9f82c ms=7.356
+mapal_gpu_trace op=free ms=0.208
+mapal_gpu_trace op=free ms=0.143
+mapal_gpu_trace op=d2h ms=0.041 bytes=4
+mapal_gpu_trace op=free ms=0.166
+74348
+iter ms=7.9392
+mapal_gpu_trace_total flags=1 load_ms=124.941 lead_ms=126.093 init_ms=110.926 ctx_ms=139.355 module_ms=0.553 alloc_ms=0.876 h2d_ms=0.000 kernel_ms=7.356 gen_ms=0.138 d2h_ms=0.041 free_ms=0.517 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace pt_epi_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=100.001 lead_ms=158.538 init_ms=111.633 ctx_ms=146.221 module_ms=0.493
+mapal_gpu_trace op=alloc ms=0.540 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.082 n=16777216
+mapal_gpu_trace op=alloc ms=0.183 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.059 n=16777216
+mapal_gpu_trace op=alloc ms=0.163 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.190
+mapal_gpu_trace op=d2h ms=4.555 bytes=67108864
+mapal_gpu_trace op=free ms=0.224
+mapal_gpu_trace op=free ms=0.160
+mapal_gpu_trace op=free ms=0.233
+108.27773
+-104.92077
+iter ms=14.905519
+mapal_gpu_trace_total flags=1 load_ms=100.001 lead_ms=158.538 init_ms=111.633 ctx_ms=146.221 module_ms=0.493 alloc_ms=0.887 h2d_ms=0.000 kernel_ms=4.190 gen_ms=0.141 d2h_ms=4.555 free_ms=0.617 bytes_in=0 bytes_out=67108864 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace pt_indep_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=0.009 lead_ms=256.811 init_ms=111.026 ctx_ms=140.061 module_ms=0.476
+mapal_gpu_trace op=alloc ms=0.518 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.080 n=16777216
+mapal_gpu_trace op=alloc ms=0.156 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.057 n=16777216
+mapal_gpu_trace op=alloc ms=0.142 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_9033d04957187e8a ms=0.057 n=16777216
+mapal_gpu_trace op=alloc ms=0.134 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_2636abe3000d5fd9 ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.135 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.187
+mapal_gpu_trace op=d2h ms=5.739 bytes=67108864
+mapal_gpu_trace op=free ms=0.194
+mapal_gpu_trace op=free ms=0.144
+mapal_gpu_trace op=alloc ms=0.196 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.187
+mapal_gpu_trace op=d2h ms=5.710 bytes=67108864
+mapal_gpu_trace op=free ms=0.172
+mapal_gpu_trace op=free ms=0.135
+mapal_gpu_trace op=free ms=0.471
+mapal_gpu_trace op=free ms=0.178
+240.9961
+-298.4848
+iter ms=28.100014
+mapal_gpu_trace_total flags=1 load_ms=0.009 lead_ms=256.811 init_ms=111.026 ctx_ms=140.061 module_ms=0.476 alloc_ms=1.281 h2d_ms=0.000 kernel_ms=8.375 gen_ms=0.252 d2h_ms=11.449 free_ms=1.294 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=2 gens=4 allocs=6
+## trace pt_mlp_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=36.006 lead_ms=222.564 init_ms=113.292 ctx_ms=144.634 module_ms=0.436
+mapal_gpu_trace op=alloc ms=0.516 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.097 n=16777216
+mapal_gpu_trace op=alloc ms=0.141 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.056 n=16777216
+mapal_gpu_trace op=alloc ms=0.173 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_9033d04957187e8a ms=0.057 n=16777216
+mapal_gpu_trace op=alloc ms=0.132 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.187
+mapal_gpu_trace op=d2h ms=5.432 bytes=67108864
+mapal_gpu_trace op=free ms=0.196
+mapal_gpu_trace op=free ms=0.138
+mapal_gpu_trace op=alloc ms=0.215 bytes=67108864
+mapal_gpu_trace op=h2d ms=3.532 bytes=67108864
+mapal_gpu_trace op=free ms=0.207
+mapal_gpu_trace op=alloc ms=0.135 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.196
+mapal_gpu_trace op=free ms=0.166
+mapal_gpu_trace op=free ms=0.142
+mapal_gpu_trace op=d2h ms=0.027 bytes=4
+-1379.831
+mapal_gpu_trace op=d2h ms=0.012 bytes=4
+mapal_gpu_trace op=free ms=0.170
+1141.1611
+iter ms=23.495254
+mapal_gpu_trace_total flags=1 load_ms=36.006 lead_ms=222.564 init_ms=113.292 ctx_ms=144.634 module_ms=0.436 alloc_ms=1.312 h2d_ms=3.532 kernel_ms=8.383 gen_ms=0.210 d2h_ms=5.471 free_ms=1.020 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6

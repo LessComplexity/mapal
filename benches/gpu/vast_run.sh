@@ -21,8 +21,10 @@ cleanup() {
 trap cleanup EXIT
 
 for _ in $(seq 120); do
-    st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("actual_status") or "")' || true)
-    [ "$st" = running ] && break
+    st=$(vastai show instance "$id" --raw 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("actual_status") or "", (d.get("status_msg") or "").split(chr(10))[0])' || true)
+    [ "${st%% *}" = running ] && { st=running; break; }
+    # A host that cannot start the container says so in status_msg: give the offer up now.
+    case "$st" in *Error*) log "start failed: $st"; exit 1 ;; esac
     sleep 10
 done
 [ "$st" = running ] || { log "never reached running (last: $st)"; exit 1; }
@@ -34,9 +36,16 @@ log "ssh $host:$port up"
 # WAIT_FILE=<path>: rent while the bundle is still being built; upload once the path exists.
 while [ -n "${WAIT_FILE:-}" ] && [ ! -e "$WAIT_FILE" ]; do sleep 10; done
 
+# A bundle holds every part's directory: upload this part's only, and no LLVM
+# IR (the box reads host.o, ptx and launch).
+skip=(--exclude='*.ll')
+for x in "$BUNDLE"/*/; do
+    n=$(basename "$x")
+    if [ "$n" != "$PROF" ] && compgen -G "$x*.host.o" >/dev/null; then skip+=(--exclude="./$n"); fi
+done
 up=0
 for _ in 1 2 3 4 5; do
-    if tar -C "$BUNDLE" -czf - . | "${SSH[@]}" 'mkdir -p /w && tar -xzf - -C /w'; then up=1; break; fi
+    if tar -C "$BUNDLE" "${skip[@]}" -czf - . | "${SSH[@]}" 'mkdir -p /w && tar -xzf - -C /w'; then up=1; break; fi
     sleep 15
 done
 [ "$up" = 1 ] || { log "bundle upload failed 5 times"; exit 1; }

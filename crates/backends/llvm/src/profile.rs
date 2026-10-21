@@ -285,11 +285,14 @@ pub struct RungOff {
 /// that says so** (S53; the [`DispatchCost`] precedent — a measured number
 /// lives only on the profile it was measured on). A profile is *measured* when
 /// it is in [`GPU_MEASURED`]; every rung not listed for it is ON. Rows cite
-/// `benches/results-s53-gpu/<file>` (`-confirm` / `-run1` = another session, on
-/// a different box): the ON vs OFF arm medians, ms. Box-to-box noise is ±5% at
+/// `benches/results-s53-gpu/<file>` or (`base-*`, S54) `benches/results-s54-gpu/<file>`
+/// (`-confirm` / `-run1` = another session, on a different box): the ON vs OFF
+/// arm medians, ms, or (S54) OFF/ON divided by each bench's own cuBLAS leg, which
+/// cancels the clock drift of a power-capped box. Box-to-box noise is ±5% at
 /// 4096–8192. The rule a row follows: a rung ships OFF in a (fill, face) class
 /// when no size in the class measured it positive with a stable sign (a sign
-/// that changes between sessions is no effect).
+/// that changes between sessions is no effect; S54: within ±1% is no effect, the
+/// median spread of one ratio between two boxes).
 pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-4090",
@@ -384,10 +387,12 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "h100-pcie",
         rung: "pad",
-        fill: Fill::Any,
+        fill: Fill::Filled,
         face: Face::Exact,
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; base-h100-pcie.txt / -confirm.txt \
+               (S54) _exact n=2048/4096/8192 OFF/ON cuBLAS-normalized 0.889/0.855/0.860 vs 0.884/0.842/0.825 (ms in \
+               the files); ON under-filled since (n=1024 1.037 vs 1.031, disjoint in both)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -405,13 +410,6 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "integrated-h100-pcie.txt _c n=1024 on 0.139 vs off 0.136 ms; kept filled (n=2048/4096/8192 on \
                0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "pad",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.134 ms, ranges overlap: no effect",
     },
     RungOff {
         profile: "rtx-5090",
@@ -520,14 +518,184 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                (resident takes the loop) 630/616 ms exact/contract, 3 procs, disjoint; against S52 round trips \
                1.63/1.63x (retain-delta-rtx-5090.txt)",
     },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "base-rtx-5090.txt / base-rtx-5090-confirm.txt (S54) _tf n=2048/4096/8192 OFF/ON cuBLAS-normalized \
+               0.981/0.993/1.006 vs 0.982/0.999/1.031 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.996 vs 1.019; _exact n=1024 1.041 vs 1.006 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "async",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.906/0.896/0.928 vs 0.907/0.897/0.879; _exact n=2048/4096/8192 0.936/0.958/0.994 vs 0.925/0.930/0.958; _c n=1024 0.897 vs 0.878; _exact n=1024 1.000 vs 0.951 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.993/1.004/0.997 vs 1.000/1.005/0.995; _exact n=1024 1.003 vs 0.996 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "interleave",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 1.000; _exact n=1024 1.003 vs 0.991 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "ldmatrix",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "min-blocks",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 1.001/0.964/1.014 vs 1.004/0.950/1.009; _tf n=2048/4096/8192 0.998/0.998/1.008 vs 0.957/0.996/0.995; _c n=1024 1.006 vs 1.020; _tf n=1024 1.000 vs 0.999 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "min-blocks",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=1024 1.035 vs 1.002 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "warp",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.812 vs 1.009 (ms in \
+               the files): no size ON-faster in both sessions; kept filled: _tf n=2048/4096/8192 1.011/1.017/1.023 vs \
+               1.008/1.010/1.004, and with it off base-rtx-3090-verify.txt _tf 2048/4096 0.781/5.358 vs 0.741/5.129 ms \
+               (cuBLAS 0.681/5.141 vs 0.677/5.090)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "wide-fma",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.959/0.936/0.991 vs 0.956/0.904/0.961 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt decode_1024_256 wall, rung on (resident yields) 2.715/2.697 s vs off (resident takes \
+               the loop) 1.473/1.473 s exact/contract, 3 procs; base-rtx-3090-confirm.txt 1.386/1.396 vs 0.935/0.942 s (ms: \
+               the files' trace totals)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "affine",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 1.004/1.006/0.991 vs 1.019/1.012/0.986; _exact n=1024 0.997 vs 0.993 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "async",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.940/0.908/0.874 vs 0.951/0.917/0.883; _exact n=2048/4096/8192 0.790/0.894/0.901 vs 0.810/0.910/0.909; _c n=1024 0.862 vs 0.867; _exact n=1024 0.950 vs 0.940 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.996/1.006/0.999 vs 1.008/1.021/1.008; _exact n=2048/4096/8192 0.979/0.996/0.997 vs 1.008/1.003/1.004; _c n=1024 0.987 vs 0.987; _exact n=1024 0.993 vs 0.977 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 0.973/1.008/1.025 then 0.972/0.985/0.986, _exact 1.010/1.003/1.001 then 0.982/0.992/0.991: the sign changes between sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "interleave",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 0.993; _exact n=1024 1.009 vs 0.989 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "min-blocks",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized (cp.async): no size ON-faster in both sessions (_c n=2048/4096/8192 1.001/1.010/1.008 vs 1.013/1.001/1.002, ms in the files); with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 1.018/1.033/1.041 then 1.000/1.000/1.000, _exact 1.001/0.999/0.998 then 1.006/1.000/1.000: no stable sign; ON under-filled (_c n=1024 1.119 then 1.110, _exact 1.084 then 1.080)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "unroll",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.856/0.936/0.940 vs 0.871/0.941/0.944; _exact n=1024 1.018 vs 1.007 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "warp",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.991 vs 0.987; _exact n=1024 1.001 vs 0.991 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 0.986/0.970/0.966 (verify2: the on-warp contract kernel is byte-identical), _exact 0.988/0.995/0.995 then 1.016/1.006/1.005: no stable sign",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.986 vs 0.962 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "wide-fma",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt decode_1024_256 wall, rung on (resident yields) 2.229/2.233 s vs off (resident takes the \
+               loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
+               files' trace totals)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
 /// the rows of the measured part with its architecture (`cuda-ada` ← the
-/// 4090's, `h100` ← the H100 PCIe's); with none (Ampere, S54), every rung is
-/// ON — the S52 baseline the arms are measured against — until its own
-/// session adds rows.
-pub const GPU_MEASURED: [&TargetProfile; 3] = [&RTX_4090, &H100_PCIE, &RTX_5090];
+/// 4090's, `h100` ← the H100 PCIe's); with none, every rung is ON — the S52
+/// baseline the arms are measured against — until its own session adds rows.
+/// Ampere since S54: the RTX 3090 and the A100 (`a100` is the SXM4 part; its
+/// two sessions ran on an A100 PCIe and an A100 SXM4).
+pub const GPU_MEASURED: [&TargetProfile; 5] = [&RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
 /// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
@@ -3371,11 +3539,16 @@ mod tests {
                     }
                 }
                 // An unmeasured part takes its architecture's measured part;
-                // with none (Ampere), every rung.
+                // with none, every rung (another architecture's losses are not its own).
                 for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
                     assert_eq!(p.gpu_rungs(wps, contract), m.gpu_rungs(wps, contract));
                 }
-                assert_eq!(A100.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+                let mut other = A100;
+                other.name = "unmeasured";
+                if let Machine::Gpu(g) = &mut other.machine {
+                    g.arch = "sm_87";
+                }
+                assert_eq!(other.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
             }
         }
     }
@@ -3559,7 +3732,8 @@ mod tests {
 
     /// S54 Ampere: the compute-capability facts (CUDA C Programming Guide
     /// tables for 8.0 and 8.6; the `deviceQuery` values), the ISA gates they
-    /// open, and the geometry derived from them. Unmeasured: every rung ON.
+    /// open, and the geometry derived from them; the rung rows two S54 sessions
+    /// measured.
     #[test]
     fn ampere_profiles_carry_the_compute_capability_facts() {
         let f32 = Ty::f32();
@@ -3588,9 +3762,12 @@ mod tests {
                 .gpu_tile(4096, 4096, 4096, &f32, false, false)
                 .expect("tile");
             assert!(p.gpu_tile_async(t, 4096, &f32).is_some());
+            // S54, both parts: register staging beats cp.async on every grid
+            // and face; resident beats retain-delta on decode; tensor cores stay.
             for wps in [0, 1, 2, 64] {
                 for contract in [false, true] {
-                    assert_eq!(p.gpu_rungs(wps, contract), crate::GpuRungs::ALL);
+                    let r = p.gpu_rungs(wps, contract);
+                    assert!(!r.cp_async && !r.retain_delta && r.mma, "{} {wps}", p.name);
                 }
             }
         }
