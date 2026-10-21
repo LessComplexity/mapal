@@ -23,8 +23,9 @@ say "-- differential (GPU stdout vs oracle)"
 pass=0; fail=0
 for o in "$PROF"/*.host.o; do
     b=$(basename "$o" .host.o)
-    case $b in mm_*|e2e_*) continue ;; esac
-    base=${b%_c}; exp="tiles/$base.expect"; [ "$b" != "$base" ] && exp="tiles/${base}_c.expect"
+    case $b in mm_*|e2e_*|loop_mm_*) continue ;; esac
+    # `<prog>[_c][.off-<rung>]`: every arm of a face answers to that face's oracle.
+    stem=${b%%.*}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
     cc "$o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "prog_$b" 2>&1 | tail -3
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
@@ -34,6 +35,45 @@ for o in "$PROF"/*.host.o; do
     fi
 done
 say "differential: $pass pass, $fail fail"
+
+# Host-link arms (S53 `resident`): each e2e-shaped program, both faces, the
+# shipped emission vs each host rung off, interleaved per repetition. One
+# untraced process for the wall time, one traced for the phase totals; the
+# cuBLAS whole-program floor (`tile_bench --program`) next to it.
+say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
+ARMS="on off-devgen off-resident"
+arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
+e2e() { # <prog> <floor: n gemms ops>
+    local p=$1; shift
+    for face in "" _c; do
+        for arm in $ARMS; do
+            b=$(arm_stem "$p$face" "$arm")
+            [ -f "$PROF/$b.host.o" ] && cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" \
+                -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "e2e_$b" 2>&1 | tail -3
+        done
+        for r in 1 2 3; do
+            for arm in $ARMS; do
+                b=$(arm_stem "$p$face" "$arm")
+                [ -x "e2e_$b" ] || continue
+                t0=$(date +%s%N)
+                got=$(MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>/dev/null | tr '\n' ' ')
+                t1=$(date +%s%N)
+                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "./e2e_$b" 2>&1 >/dev/null)
+                t2=$(date +%s%N)
+                say "e2e prog=$p face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep mapal_gpu_trace_total <<< "$tr")"
+                if [ "$r" = 1 ]; then grep -v mapal_gpu_trace_total <<< "$tr" | sed "s/^/trace prog=$b /" >> "$LOG"; fi
+            done
+        done
+    done
+    for r in 1 2 3; do say "floor prog=$p rep=$r $(./tile_bench --program "$@" 2>&1)"; done
+}
+e2e e2e_1024 1024 1 2
+e2e e2e_4096 4096 1 2
+e2e mm_share_1024 1024 2 3
+e2e mm_chain_2048 2048 2 3
+e2e e2e_chain_4096 4096 2 3
+e2e loop_mm_1024_8 1024 8 2
+say "$(./tile_bench --h2d 64 10 2>&1)"
 
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
 bench() { # <n> <stem> <label> [--contract]

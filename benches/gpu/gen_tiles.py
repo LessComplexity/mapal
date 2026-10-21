@@ -106,3 +106,86 @@ def e2e(n):
 
 for n in (1024, 4096):
     (out / f"e2e_{n}.mapal").write_text(e2e(n))
+
+
+# --- S53 `resident`: programs with more than one site, or a loop, where the
+# question is where each object lives between sites (plan-s53 §2.3).
+
+def operand(name, n, mul, add, mod, off, scale):
+    """`name` = a formula over the index: closed form, so `devgen` may build it
+    on the device; `scale` keeps loop products bounded."""
+    return (f"    ta -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; "
+            f"v / {scale} }} -> {name};\n")
+
+
+def site(out, a, b, n):
+    return f"""    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + {a}[i * {n} + k] * {b}[k * {n} + j] }}
+    }} -> {out};
+"""
+
+
+def head(n):
+    return f"fn main() {{\n    {n * n} -> iota -> ta;\n    {n} -> iota -> krange;\n"
+
+
+def chain(n, timed=False, check=False):
+    """F1 through a chain: `c` is read only by the second site."""
+    t0, t1 = ("    () -> time -> t0;\n", "    () -> time -> t1;\n") if timed else ("", "")
+    tail = f"    d[0] -> println;\n"
+    if check:
+        tail = f"    (0.0, d) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n" + tail + f"    d[{n * n - 1}] -> println;\n"
+    if timed:
+        tail += '    "iter ms=" -> print;\n    t1 - t0 -> println;\n'
+    return (head(n) + operand("a", n, 7, 13, 101, 50, "7.0") + operand("b", n, 11, 57, 103, 51, "9.0")
+            + operand("e", n, 5, 3, 97, 48, "11.0") + t0 + site("c", "a", "b", n) + site("d", "c", "e", n)
+            + t1 + tail + "}\n")
+
+
+def share(n, check=False):
+    """F1 as a fan-out: `a` is read by two sites. `e` is read only by `Index`
+    (one-element copies); `d` whole when checked."""
+    tail = "    d[0] -> println;\n    e[0] -> println;\n"
+    if check:
+        tail = f"    (0.0, d) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n" + tail + f"    e[{n * n - 1}] -> println;\n"
+    return (head(n) + operand("a", n, 7, 13, 101, 50, "7.0") + operand("b", n, 11, 57, 103, 51, "9.0")
+            + operand("c", n, 5, 3, 97, 48, "11.0") + site("d", "a", "b", n) + site("e", "a", "c", n)
+            + tail + "}\n")
+
+
+def loop_mm(n, iters, check=False):
+    """F2 + F3: `w` is loop-invariant, `x` is carried from site to site. `w`'s
+    scale keeps |x| bounded over the iterations (no inf, no subnormals)."""
+    tail = "    out[0] -> println;\n"
+    if check:
+        tail = (f"    0.0 -> z: f32;\n    (z, out) -> fold {{ acc, v -> acc + v }} -> total;\n"
+                f"    total -> println;\n" + tail + f"    out[{n * n - 1}] -> println;\n")
+    return (head(n) + operand("x0", n, 7, 13, 101, 50, "7.0")
+            + operand("w", n, 11, 57, 103, 51, f"{8 * n}.0")
+            + f"""    mut x: [f32; {n * n}] <- x0;
+    mut it: i32 <- 0;
+    loop {{
+        (it < {iters}) -> {{
+            -true-> {{
+{site("x", "x", "w", n).replace("    ", "                ", 1)}                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+""" + tail + "}\n")
+
+
+# Differential versions (oracle-checked, both faces; the loop at 128 because
+# the interpreter takes minutes per 256³ iteration).
+(out / "chain_256.mapal").write_text(chain(256, check=True))
+(out / "share_256.mapal").write_text(share(256, check=True))
+(out / "loop_128_8.mapal").write_text(loop_mm(128, 8, check=True))
+print("chain_256\nshare_256\nloop_128_8")
+# Timed versions (MAPAL_GPU_TRACE + process wall, ON vs each OFF arm).
+(out / "mm_chain_2048.mapal").write_text(chain(2048))
+(out / "mm_share_1024.mapal").write_text(share(1024))
+(out / "loop_mm_1024_8.mapal").write_text(loop_mm(1024, 8))
+(out / "e2e_chain_4096.mapal").write_text(chain(4096, timed=True))

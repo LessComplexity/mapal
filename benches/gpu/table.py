@@ -29,3 +29,31 @@ for path in sys.argv[1:]:
         m, c, t = r['mapal'], r['cublas'], r['cutlass']
         print(f"| {r['n']} | {r['face']} | {m[1]:.3f} | {m[3]:.1f} | {c[1]:.3f} | {c[3]:.1f} | {t[1]:.3f} | {t[3]:.1f} "
               f"| {c[1] / m[1]:.2f}×{ov(m, c)} | {t[1] / m[1]:.2f}×{ov(m, t)} | {r.get('bits')} | {r.get('geom')} |")
+
+    # S53 host-link arms: `e2e ...` / `floor ...` lines (box_run.sh `e2e`).
+    e2e, floor = {}, {}
+    for l in open(path):
+        if l.startswith('e2e prog='):
+            f = dict(kv.split('=', 1) for kv in re.findall(r'(\w+=[^\s\[]+)', l))
+            key = (f['prog'], f['face'], f['arm'])
+            ph = sum(float(f.get(k + '_ms', 0)) for k in ('alloc', 'h2d', 'kernel', 'gen', 'd2h', 'free'))
+            e2e.setdefault(key, []).append((int(f['wall_us']) / 1e3, ph, float(f.get('load_ms', 0)),
+                                            int(f.get('bytes_in', 0)), int(f.get('bytes_out', 0))))
+        elif l.startswith('floor prog='):
+            f = dict(kv.split('=', 1) for kv in re.findall(r'(\w+=\S+)', l))
+            floor.setdefault(f['prog'], []).append((float(f['total_ms']), float(f['after_ctx_ms'])))
+    if e2e:
+        med = lambda xs: sorted(xs)[len(xs) // 2]
+        rng = lambda xs: f"{min(xs):.1f}–{max(xs):.1f}"
+        print("\n| program | face | arm | wall ms (med, range) | phases ms (med, excl. load) | bytes in | bytes out | arm/ON wall (>1 = ON faster) | arm/ON phases | cuBLAS floor ms (total / after ctx) |")
+        print("|---|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        for (p, face, arm), rows in e2e.items():
+            w, ph = [r[0] for r in rows], [r[1] for r in rows]
+            on = e2e.get((p, face, 'on'))
+            rw = rp = ''
+            if on and arm != 'on':
+                rw = f"{med(w) / med([r[0] for r in on]):.2f}×"
+                rp = f"{med(ph) / med([r[1] for r in on]):.2f}×"
+            fl = floor.get(p)
+            fs = f"{med([x[0] for x in fl]):.1f} / {med([x[1] for x in fl]):.2f}" if fl and arm == 'on' else ''
+            print(f"| {p} | {face} | {arm} | {med(w):.1f} ({rng(w)}) | {med(ph):.2f} ({rng(ph)}) | {rows[0][3]} | {rows[0][4]} | {rw} | {rp} | {fs} |")

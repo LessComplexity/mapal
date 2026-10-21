@@ -53,6 +53,23 @@ declare double @llvm.fma.f64(double, double, double)\n";
 pub(crate) const GPU_DECLS: &str =
     "declare void @mapal_gpu_tile(i64, ptr, i64, ptr, i64, ptr, i64, i32, i32, i32, i32)\n";
 
+/// The split entries `resident` emits (`mapal_gpu.c`): a device pointer is an
+/// `i64`, a device slot a `ptr` to one.
+pub(crate) const RESIDENT_DECLS: &str = "\
+declare i64 @mapal_gpu_alloc(ptr, i64)
+declare void @mapal_gpu_h2d(i64, ptr, i64)
+declare void @mapal_gpu_d2h(ptr, i64, i64, i64)
+declare void @mapal_gpu_launch(i64, i64, i64, i64, i32, i32, i32, i32)
+declare void @mapal_gpu_gen(i64, i64, i64)
+declare void @mapal_gpu_free(ptr)
+";
+
+/// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
+/// launches it with exactly this many, so the two must agree.
+/// ponytail: the naive kernel's literal, for the same reason (a one-element-
+/// per-thread fill is bandwidth-bound at any block size a part accepts).
+const GEN_THREADS: u64 = NAIVE_THREADS;
+
 /// Threads per block of the one-thread-per-cell kernel.
 /// ponytail: a literal, not derived — the fallback is a correctness path; derive
 /// it when an untiled site turns out to matter for speed.
@@ -212,6 +229,48 @@ pub(crate) fn kernel_name(id: u64) -> String {
     format!("mapal_tile_{id:016x}")
 }
 
+/// A `devgen` kernel's id: FNV-1a over its body's name, length and profile —
+/// the host passes it, the device unit names the kernel `mapal_gen_<id>`.
+pub(crate) fn gen_id(body: &str, n: u64, profile: &TargetProfile) -> u64 {
+    format!("gen|{body}|{n}|{}", profile.name)
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+}
+
+/// A `devgen` producer for the device unit: `(id, body fn name, element
+/// type, the body's own emitted text)`.
+pub(crate) type GenKernel = (u64, String, String, String);
+
+/// `out[i] = body(i)`, one thread per element: the host's own body text runs
+/// on the device (a clean leaf fn is scalar IR with no host symbol), so the
+/// element is the host's bit for bit.
+fn gen_kernel_text(id: u64, callee: &str, elem: &str) -> String {
+    format!(
+        "define ptx_kernel void @mapal_gen_{id:016x}(ptr addrspace(1) %o, i64 %n) \
+         \"nvvm.maxntid\"=\"{GEN_THREADS}\" {{\n\
+         entry:\n\
+         \x20 %t = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n\
+         \x20 %b = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\
+         \x20 %t64 = zext i32 %t to i64\n\
+         \x20 %b64 = zext i32 %b to i64\n\
+         \x20 %base = mul i64 %b64, {GEN_THREADS}\n\
+         \x20 %i = add i64 %base, %t64\n\
+         \x20 %in = icmp ult i64 %i, %n\n\
+         \x20 br i1 %in, label %body, label %done\n\
+         body:\n\
+         \x20 %x = trunc i64 %i to i32\n\
+         \x20 %v = call {elem} @{callee}(i32 %x)\n\
+         \x20 %p = getelementptr inbounds {elem}, ptr addrspace(1) %o, i64 %i\n\
+         \x20 store {elem} %v, ptr addrspace(1) %p\n\
+         \x20 br label %done\n\
+         done:\n\
+         \x20 ret void\n\
+         }}\n"
+    )
+}
+
 /// The device translation unit: one kernel per GPU tile site in `ir`, in name
 /// order. `None` when no site offloads (every CPU profile, and a GPU profile
 /// on a program with no tile site).
@@ -221,6 +280,7 @@ pub(crate) fn device_module(
     contract: bool,
     rungs: crate::GpuRungs,
     reduced: Option<Reduced>,
+    gens: &[GenKernel],
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
@@ -252,6 +312,22 @@ pub(crate) fn device_module(
         } else {
             out.push_str(k);
         }
+    }
+    // `devgen`: each body once, then its kernel. A body is a clean leaf, so
+    // its text names no host symbol — checked, since a stray one would fail
+    // only at `llc` on the bundle machine.
+    let mut bodies = std::collections::BTreeSet::new();
+    for (id, callee, elem, text) in gens {
+        assert!(
+            !text.contains("@mapal_"),
+            "devgen body {callee} names a host runtime symbol"
+        );
+        if bodies.insert(callee.clone()) {
+            out.push('\n');
+            out.push_str(text);
+        }
+        out.push('\n');
+        out.push_str(&gen_kernel_text(*id, callee, elem));
     }
     out.push('\n');
     out.push_str(&md);
@@ -1170,6 +1246,18 @@ impl<'a> FnEmit<'a> {
         target: ObjectId,
         site: &TileSite,
     ) {
+        if self.resident.is_some() {
+            let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
+            let l = launch(site, self.profile, self.gpu_rungs, self.reduced);
+            self.emit_site_resident(source, target, site, |a, b, o| {
+                format!(
+                    "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
+                     i32 {}, i32 {}, i32 {}, i32 {})",
+                    l.gx, l.gy, l.block, l.smem
+                )
+            });
+            return;
+        }
         let src_ty = self.obj_ty(source);
         let bytes = |ty: &Ty| {
             let (_, n) = array_parts(ty);

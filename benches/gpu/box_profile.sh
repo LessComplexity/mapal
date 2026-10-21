@@ -40,9 +40,9 @@ for n in 1024 4096; do
         cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
             -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null || continue
         for r in 1 2 3; do
-            t0=$(date +%s.%N)
+            t0=$(date +%s%N)
             MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$b.ptx" "prof/$b" >> "prof/$b.out" 2>&1
-            echo "wall_s=$(echo "$(date +%s.%N) - $t0" | bc)" >> "prof/$b.out"
+            echo "wall_us=$(( ($(date +%s%N) - t0) / 1000 ))" >> "prof/$b.out"   # no `bc` on the box
         done
     done
 done

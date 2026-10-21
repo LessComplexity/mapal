@@ -17,7 +17,7 @@ python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
 # contract face (per-step fmaf — the same fused step the GPU emits).
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
-    case $(basename "$b") in mm_*|e2e_*) continue ;; esac
+    case $(basename "$b") in mm_*|e2e_*|loop_mm_*) continue ;; esac
     [ -s "$b.expect" ] || "$RUN" "$f" --budget 20000000000 > "$b.expect"
     if [ ! -s "${b}_c.expect" ]; then
         "$EMIT" "$f" - --rewrite --contract --target=apple-m > "$b.cpu_c.ll"
@@ -36,7 +36,7 @@ emit_one() {
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
-    grep -o 'call void @mapal_gpu_tile(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
+    grep -oE 'call void @mapal_gpu_(tile|launch)\(i64 [-0-9]*.*' "$stem.host.ll" | head -1 |
         python3 -c 'import sys,re; s=sys.stdin.read(); i=int(re.search(r"i64 (-?\d+)",s).group(1)) & (2**64-1); n=re.findall(r"i32 (\d+)",s); print(f"mapal_tile_{i:016x}", *n)' \
         > "$stem.launch"
 }
@@ -47,14 +47,23 @@ for spec in "$@"; do
         b=$(basename "$f" .mapal)
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        # Host-link arms (S53 `resident`): every program but the square kernel
+        # benches, both faces, with each host rung off.
+        case $b in mm_[0-9]*) ;; *)
+            for rung in resident devgen; do
+                emit_one "$f" "$d/$b.off-$rung" "$prof" "$sm" "--gpu-off=$rung"
+                emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
+            done
+            ;;
+        esac
         # Measurement arms (S52): the shipped kernel with one rung off, FMA face;
         # and the TF32 face (tensor cores).
-        case $b in mm_*)
+        case $b in mm_[0-9]*)
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             for rung in wide ldmatrix; do
                 emit_one "$f" "$d/${b}_tf.off-$rung" "$prof" "$sm" --contract --precision=tf32 "--gpu-off=$rung"
             done
-            for rung in interleave unroll min-blocks warp async; do
+            for rung in interleave unroll min-blocks warp async resident; do
                 emit_one "$f" "$d/${b}_c.off-$rung" "$prof" "$sm" --contract "--gpu-off=$rung"
             done
             # Earlier shipped kernels, for a within-run comparison: PREV="v1=<bundle> v2=<bundle>".

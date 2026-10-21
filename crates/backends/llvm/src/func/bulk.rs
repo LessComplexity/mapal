@@ -486,6 +486,11 @@ impl<'a> FnEmit<'a> {
             let dst = self.slot(to).expect("array copy target slot");
             let llt = lower_ty(&self.obj_ty(from)).expect("array copy lowers");
             self.emit_memcpy(&dst, &src, &llt);
+        } else if let Some(llt) = self.big_aggregate(from)
+            && self.big_aggregate(to).as_ref() == Some(&llt)
+        {
+            let (dst, src) = (self.slots[to].clone(), self.slots[from].clone());
+            self.emit_memcpy(&dst, &src, &llt);
         } else if let Some((llt, val)) = self.load_whole(from) {
             self.store_obj(to, &llt, &val);
         }
@@ -500,6 +505,12 @@ impl<'a> FnEmit<'a> {
                 .expect("array route source ptr");
             let dst = self.slot(to).expect("array route target slot");
             let llt = lower_ty(&self.obj_ty(to)).expect("array route lowers");
+            self.emit_memcpy(&dst, &src, &llt);
+        } else if let Some(llt) = self.big_aggregate(to)
+            && self.obj_ty(route).component_ty(k) == Some(&self.obj_ty(to))
+            && let Some((_, src)) = self.component_ptr(route, k)
+        {
+            let dst = self.slots[to].clone();
             self.emit_memcpy(&dst, &src, &llt);
         } else if let Some((llt, val)) = self.load_component(route, k) {
             self.store_obj(to, &llt, &val);
