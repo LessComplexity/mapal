@@ -90,8 +90,12 @@ impl<'a> FnEmit<'a> {
         // retained output on the device while the restricted pass writes host
         // rows. Plan the two together when a program needs both.
         self.resident = (rungs.resident && self.profile.gpu().is_some() && self.retain.is_empty())
-            .then(|| self.resident_plan(rungs.devgen))
+            .then(|| self.resident_plan(rungs.devgen, rungs.arena))
             .flatten();
+        if self.arena_slot() {
+            self.allocas
+                .push_str("  %darena = alloca i64\n  store i64 0, ptr %darena\n");
+        }
     }
 
     /// The producers this function computes on the device (`devgen`): kernel
@@ -805,6 +809,12 @@ impl<'a> FnEmit<'a> {
             None => Some(source),
             Some(k) => self.pair_source(source, k),
         };
+        // S54 `arena`: a device-only array has no host address. Every host
+        // use of one is a pointer-only field or an element copy-out, which
+        // ask before coming here; anything else stops the emission.
+        if feeder.is_some_and(|f| self.host_free(f)) {
+            return None;
+        }
         if let Some(f) = feeder
             && self.ptr_resident.contains_key(f)
         {

@@ -5,8 +5,8 @@
 #    host-rung arm, interleaved; the S54 multi-computation probes the same way,
 #    each followed by its library legs (chain_bench.cu); the decode loop,
 # 3. the timing harness vs cuBLAS and CUTLASS, every kernel arm.
-# PROBE_ARMS / PROBE_REPS narrow the probe section (default: on, off-resident,
-# off-devgen; 5 repetitions).
+# E2E_ARMS narrows the e2e section's arms; PROBE_ARMS / PROBE_REPS the probe section (default: on, off-resident,
+# off-devgen, off-arena; 5 repetitions).
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -64,7 +64,7 @@ done
 # process for the wall time and the program's own `iter ms`, one traced for
 # the phase totals; the cuBLAS whole-program floor (`tile_bench --program`).
 say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
-ARMS="on off-resident off-devgen off-eager-init s52"
+ARMS=${E2E_ARMS:-on off-resident off-devgen off-eager-init off-arena s52}
 arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
 e2e() { # <prog> <floor: n gemms ops>
     local p=$1; shift
@@ -102,7 +102,7 @@ say "$(./tile_bench --h2d 64 10 2>&1)"
 # phases, launches and bytes — then the library legs (chain_bench.cu) on the
 # same probe, gated against the exact face's printed values.
 say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)"
-PROBE_ARMS=${PROBE_ARMS:-on off-resident off-devgen}
+PROBE_ARMS=${PROBE_ARMS:-on off-resident off-devgen off-arena}
 for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)

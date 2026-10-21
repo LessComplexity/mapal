@@ -7,6 +7,7 @@
 #   e.g. rtx-4090:sm_89 h100-pcie:sm_90a rtx-5090:sm_120 rtx-3090:sm_86 a100:sm_80
 # ONLY="<glob>..." builds only the programs whose stem matches one of the globs
 # (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
+# HOST_RUNGS="<rung>..." narrows the whole programs' arms (default: every host rung).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -118,7 +119,7 @@ for spec in "$@"; do
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    ${HOST_RUNGS:-async resident devgen eager-init retain-delta arena}
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \
