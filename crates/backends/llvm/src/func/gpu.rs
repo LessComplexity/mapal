@@ -95,10 +95,12 @@ pub(crate) struct Launch {
 ///
 /// The rungs are decided here, once per site (S53): the site's fill is its
 /// grid at the base FMA geometry (or the one-thread-per-cell grid), in warps
-/// per scheduler; the profile's measured table at that fill, then the arms.
+/// per scheduler; the profile's measured table at that fill and face, then the
+/// arms.
 pub(crate) fn launch(
     site: &TileSite,
     profile: &TargetProfile,
+    contract: bool,
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
 ) -> Launch {
@@ -115,7 +117,7 @@ pub(crate) fn launch(
     let table = if arms.off.arch {
         crate::GpuRungs::ALL
     } else {
-        profile.gpu_rungs(gpu.warps_per_scheduler(blocks, threads))
+        profile.gpu_rungs(gpu.warps_per_scheduler(blocks, threads), contract)
     };
     let rungs = table.with(arms);
     // Tensor cores: only on a face that admits them (TF32), f32 operands both
@@ -286,7 +288,7 @@ fn kernel_text(
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
 ) -> String {
-    let l = launch(site, profile, arms, reduced);
+    let l = launch(site, profile, contract, arms, reduced);
     let mut k = Kernel {
         out: String::new(),
         next: 0,
@@ -1208,7 +1210,13 @@ impl<'a> FnEmit<'a> {
         // LLVM reads an `i64` literal as signed; the runtime prints the same
         // 64 bits back as hex, so the two units agree on the name.
         let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
-        let l = launch(site, self.profile, self.gpu_arms, self.reduced);
+        let l = launch(
+            site,
+            self.profile,
+            self.contract,
+            self.gpu_arms,
+            self.reduced,
+        );
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_ptr}, i64 {a_bytes}, ptr {b_ptr}, \
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",

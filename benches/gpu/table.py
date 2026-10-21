@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Tabulate a box_run results file: medians, TFLOP/s, ratios, overlap, geometry."""
+"""Tabulate a box_run results file: medians, TFLOP/s, ratios, overlap, geometry;
+then every rung arm against the default it flips (ON vs OFF, medians, and the
+same ratio normalized by each bench's own cuBLAS leg, which cancels clock drift
+between benches)."""
 import re
 import sys
 
@@ -9,7 +12,7 @@ for path in sys.argv[1:]:
         m = re.match(r'# n=(\d+) face=(\S+)', l)
         if m:
             face, _, arm = m[2].partition('.')
-            cur = {'n': m[1], 'face': {'_exact': 'exact', '_c': 'FMA SHIPPED', '_tf': 'TF32 tensor'}[face] if not arm
+            cur = {'n': m[1], 'key': m[2], 'face': {'_exact': 'exact', '_c': 'FMA SHIPPED', '_tf': 'TF32 tensor'}[face] if not arm
                    else {'_exact': 'exact', '_c': 'fma', '_tf': 'tf32'}[face] + ' ' + arm}
             continue
         m = re.match(r'mapal kernel=\S+ grid=(\S+) block=(\d+) smem=(\d+) regs=(\d+) local_bytes=(\d+)', l)
@@ -31,3 +34,20 @@ for path in sys.argv[1:]:
         m, c, t = r['mapal'], r['cublas'], r['cutlass']
         print(f"| {r['n']} | {r['face']} | {m[1]:.3f} | {m[3]:.1f} | {c[1]:.3f} | {c[3]:.1f} | {t[1]:.3f} | {t[3]:.1f} "
               f"| {c[1] / m[1]:.2f}×{ov(m, c)} | {t[1] / m[1]:.2f}×{ov(m, t)} | {r.get('bits')} | {r.get('geom')} |")
+
+    by = {(r['n'], r['key']): r for r in rows}
+    arms = [r for r in rows if '.' in r['key'] and r['key'].split('.', 1)[1][:3] in ('off', 'on-')]
+    if arms:
+        print("\n| n | face | rung | default | ON ms | OFF ms | ON/OFF speedup | cuBLAS-normalized |")
+        print("|---|---|---|---|---:|---:|---:|---:|")
+    for r in arms:
+        face, arm = r['key'].split('.', 1)
+        base = by.get((r['n'], face))
+        if not base:
+            continue
+        direction, rung = arm.split('-', 1)
+        on, off = (base, r) if direction == 'off' else (r, base)
+        speed = off['mapal'][1] / on['mapal'][1]
+        norm = (off['mapal'][1] / off['cublas'][1]) / (on['mapal'][1] / on['cublas'][1])
+        print(f"| {r['n']} | {face} | {rung} | {'ON' if direction == 'off' else 'OFF'} | {on['mapal'][1]:.3f} "
+              f"| {off['mapal'][1]:.3f} | {speed:.3f}{ov(on['mapal'], off['mapal'])} | {norm:.3f} |")
