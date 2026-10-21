@@ -87,6 +87,9 @@ pub struct GpuRungs {
     pub wide: bool,
     /// Load tensor-core A fragments with `ldmatrix.x4`.
     pub ldmatrix: bool,
+    /// Shrink the register / warp tile until the grid gives every warp
+    /// scheduler two warps (`warp-fill`, S53); OFF = blocks ≥ SMs only.
+    pub fill: bool,
 }
 
 impl Default for GpuRungs {
@@ -101,6 +104,7 @@ impl Default for GpuRungs {
             cp_async: true,
             wide: true,
             ldmatrix: true,
+            fill: true,
         }
     }
 }

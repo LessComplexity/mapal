@@ -105,7 +105,7 @@ pub(crate) fn launch(
         && shaped
         && vector_a(site)
         && vector_b(site))
-    .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide))
+    .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill))
     .flatten();
     if let Some(m) = mma {
         let warp = profile.gpu().expect("gpu").warp;
@@ -119,7 +119,7 @@ pub(crate) fn launch(
         };
     }
     let tiled = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem))
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, rungs.fill))
         .flatten()
         .map(|g| {
             let streamed = rungs
