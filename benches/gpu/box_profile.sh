@@ -49,7 +49,10 @@ fi
 
 # The per-operation trace of the e2e programs (box_run.sh keeps the totals):
 # this build and the S52 host object (`.s52`, PREV), one process each.
-for b in e2e_1024 e2e_1024_c e2e_4096 e2e_4096_c e2e_1024.s52 e2e_1024_c.s52 e2e_4096.s52 e2e_4096_c.s52; do
+# S54: three multi-computation probes (an epilogue, a chain through a per-cell
+# step, two independent sites) — where the transfers and host loops sit.
+PROBES="pt_epi_4096_c pt_mlp_4096_c pt_indep_4096_c"
+for b in e2e_1024 e2e_1024_c e2e_4096 e2e_4096_c e2e_1024.s52 e2e_1024_c.s52 e2e_4096.s52 e2e_4096_c.s52 $PROBES; do
     [ -f "$PROF/$b.host.o" ] || continue
     cc "$PROF/$b.host.o" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" \
         -lcuda -lpthread -ldl -lm -o "prof/$b" 2>/dev/null || continue
@@ -59,9 +62,9 @@ done
 # allocation), kernels, transfers, and the gaps between them — what a program
 # pays around its kernels, not just inside them.
 if command -v nsys >/dev/null; then
-    for b in e2e_1024_c e2e_4096_c; do
+    for b in e2e_1024_c e2e_4096_c $PROBES; do
         [ -x "prof/$b" ] || continue
-        MAPAL_PTX="$PROF/$b.ptx" nsys profile -o "prof/tl_$b" --force-overwrite true -t cuda,osrt \
+        MAPAL_PTX="$PROF/$b.ptx" timeout 300 nsys profile -o "prof/tl_$b" --force-overwrite true -t cuda,osrt \
             "prof/$b" > "prof/tl_$b.out" 2>&1
         nsys stats -q --format csv -r cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum,cuda_gpu_trace \
             "prof/tl_$b.nsys-rep" > "prof/tl_$b.csv" 2>&1
