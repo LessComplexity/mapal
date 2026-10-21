@@ -432,6 +432,15 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms)",
     },
     RungOff {
+        profile: "h100-pcie",
+        rung: "warp-fill",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-h100-pcie.txt / base-h100-pcie-verify.txt (S54) _c n=1024 on 0.1512 / 0.1524 vs off 0.1445 / \
+               0.1464 ms (cuBLAS-normalized OFF/ON 0.952 / 0.957, disjoint in both); kept on the exact face (on 0.2144 / \
+               0.2163 vs off 0.2192 / 0.2214 ms, 1.025 / 1.028, disjoint in both)",
+    },
+    RungOff {
         profile: "rtx-5090",
         rung: "async",
         fill: Fill::Filled,
@@ -569,13 +578,6 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "rtx-3090",
-        rung: "idx32",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "rtx-3090",
         rung: "interleave",
         fill: Fill::Under,
         face: Face::Any,
@@ -588,26 +590,49 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions",
     },
+    // S54 arch-select: the FMA tile takes `.minnctapersm` under register
+    // staging on both faces (exact n=1024 1.032 / 1.094 / 1.090, the first
+    // against the shipped bench's null repeat), the TF32 `mma` kernel does not
+    // — the third face key.
     RungOff {
         profile: "rtx-3090",
         rung: "min-blocks",
         fill: Fill::Any,
-        face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 1.001/0.964/1.014 vs 1.004/0.950/1.009; _tf n=2048/4096/8192 0.998/0.998/1.008 vs 0.957/0.996/0.995; _c n=1024 1.006 vs 1.020; _tf n=1024 1.000 vs 0.999 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "min-blocks",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=1024 1.035 vs 1.002 (ms in the files): no size ON-faster in both sessions",
+        face: Face::Tf32,
+        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized: _tf n=1024 \
+               0.890/0.890/0.890 (ms 0.0993 shipped vs 0.1116 ON, cuBLAS 0.0881, both sessions), n=2048/4096/8192 \
+               0.997/1.002/1.000, 1.000/0.993/1.000, 0.994/0.994/1.006: never ON-faster; FMA face ON (_c n=1024 \
+               1.034/1.014/1.041, n=2048 1.057/1.052/1.086, n=8192 1.086/1.070/1.046; arch-select ms n=2048 0.8745 \
+               vs 0.8325, n=8192 51.971 vs 48.936)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "warp",
         fill: Fill::Under,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions",
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=1024 1.022 vs 0.991 (ms \
+               in the files); arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt _exact n=1024 0.911 / 1.002: no size \
+               ON-faster in both; ON under-filled contract since (S54 arch-select: _c n=1024 1.056 / 1.036 / 1.056 in \
+               arch-select / -verify2 / -verify, disjoint in two; ms 0.1546 shipped vs 0.1464 ON)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "warp-fill",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
+               every session: _c n=1024 0.934/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
+               n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881); kept on the exact face (_exact \
+               n=1024 1.057 / 0.961 / 0.960: no stable sign)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "unroll",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized: _c n=1024 \
+               0.947/0.959/0.940 (ms 0.1546 vs OFF 0.1464): OFF faster in every session; kept on the exact face \
+               (_exact n=1024 1.085 / 0.994 / 0.993: no stable sign) and filled (_c n=2048-8192 1.06-1.14 in all three)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -649,12 +674,26 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.940/0.908/0.874 vs 0.951/0.917/0.883; _exact n=2048/4096/8192 0.790/0.894/0.901 vs 0.810/0.910/0.909; _c n=1024 0.862 vs 0.867; _exact n=1024 0.950 vs 0.940 (ms in the files): no size ON-faster in both sessions",
     },
+    // S54 arch-select closes the open filled-contract row: two sessions on the
+    // shipped table (async and wide-fma off) put idx32 ON there.
     RungOff {
         profile: "a100",
         rung: "idx32",
         fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.996/1.006/0.999 vs 1.008/1.021/1.008; _exact n=2048/4096/8192 0.979/0.996/0.997 vs 1.008/1.003/1.004; _c n=1024 0.987 vs 0.987; _exact n=1024 0.993 vs 0.977 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 0.973/1.008/1.025 then 0.972/0.985/0.986, _exact 1.010/1.003/1.001 then 0.982/0.992/0.991: the sign changes between sessions",
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.979/0.996/0.997 vs \
+               1.008/1.003/1.004; _exact n=1024 0.993 vs 0.977 (ms in the files); arch-select-a100.txt / \
+               base-a100-verify3.txt _exact n=1024 0.900 / 0.899, n=2048/4096/8192 0.987/0.992/0.992 vs \
+               1.000/0.992/0.991: never ON-faster",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _c n=1024 0.987 / 0.989: never \
+               ON-faster; ON filled since (_c n=4096 1.015 / 1.013, n=8192 1.015 / 1.018; ms n=4096 8.153 / 7.904 \
+               shipped vs 8.034 / 7.800 ON, n=8192 62.890 / 59.666 vs 61.810 / 58.606)",
     },
     RungOff {
         profile: "a100",
@@ -696,7 +735,16 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         rung: "wide-fma",
         fill: Fill::Filled,
         face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions",
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions; S54 arch-select (arch-select-a100.txt / base-a100-verify3.txt): alone +1.0-1.7% (_c n=4096/8192 1.010/1.013 vs 1.010/1.017), but with idx32 ON (which ships) it costs: on-fma-regs (= idx32 + wide-fma on this face) n=4096 8.195 / 7.942 ms vs idx32 alone 8.034 / 7.800 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "ldmatrix",
+        fill: Fill::Under,
+        face: Face::Tf32,
+        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _tf n=1024 0.967 / 0.951 (ms 0.0840 / \
+               0.0840 ON vs 0.0881 / 0.0799 OFF, cuBLAS 0.0471 / 0.0481 vs 0.0512 / 0.0481); kept filled (n=2048/4096/8192 \
+               1.049/1.020/1.024 vs 1.017/1.024/1.022)",
     },
     RungOff {
         profile: "a100",
