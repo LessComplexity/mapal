@@ -29,6 +29,7 @@ use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
     MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
 };
+use mapal_ir::{RowFoldOp, RowFoldSite};
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
 /// every NVIDIA part since Kepler.
@@ -404,6 +405,37 @@ pub(crate) fn kernel_id(
     })
 }
 
+/// [`kernel_id`] of the site's kernel storing its output column-major
+/// (`rowfold-layout`, [`col_store`]); the row-major id unchanged.
+pub(crate) fn kernel_id_col(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    reduced: Option<Reduced>,
+    col: bool,
+) -> u64 {
+    if !col {
+        return kernel_id(site, profile, contract, reduced);
+    }
+    let key = format!("{site:?}|{}|{contract}|{reduced:?}|col", profile.name);
+    key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// Can this launch store its output column-major (`o[j·rows + i]`)? The FMA
+/// tile writes `lanes` consecutive rows of one column per vector, which needs
+/// whole vectors of rows (`tm % lanes == 0`); the one-thread-per-cell kernel
+/// one word. ponytail: the tensor-core kernels keep row-major — no program
+/// reads a TF32 site through a fold; add their store when one does.
+pub(crate) fn col_store(l: &Launch, site: &TileSite) -> bool {
+    let lanes = GPU_VEC_BYTES / elem_bytes_of(&site.elem);
+    l.mma.is_none()
+        && l.wgmma.is_none()
+        && l.tiled.is_none_or(|g| g.tm.is_multiple_of(lanes))
+        && site.rows.is_multiple_of(lanes)
+}
+
 pub(crate) fn kernel_name(id: u64) -> String {
     format!("mapal_tile_{id:016x}")
 }
@@ -450,6 +482,120 @@ fn gen_kernel_text(id: u64, callee: &str, elem: &str) -> String {
     )
 }
 
+/// A device row fold's kernel id (S54 `rowfold`): FNV-1a over the site (its
+/// read already re-addressed for a column-major producer) and the profile.
+/// Named `mapal_tile_<id>` like a site's, so the runtime's `launch` finds it.
+pub(crate) fn rowfold_id(site: &RowFoldSite, profile: &TargetProfile) -> u64 {
+    format!("rowfold|{site:?}|{}", profile.name)
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+}
+
+/// A row fold's launch `(blocks, threads)`: one thread per row, and the rows
+/// spread over every SM — a block of `rows / sms` threads rounded up to a
+/// warp, at most [`NAIVE_THREADS`]. A fold has one thread per row and no more
+/// (ADR-0028 D4), so few threads that the SMs they land on, not the block
+/// size, bound how many loads are in flight.
+pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile) -> (u64, u64) {
+    let g = profile.gpu().expect("a device fold has a GPU profile");
+    let threads = site
+        .rows
+        .div_ceil(g.sms)
+        .next_multiple_of(g.warp)
+        .min(NAIVE_THREADS);
+    (site.rows.div_ceil(threads), threads)
+}
+
+/// `o[i] = fold_k (seed, ⊕) a[base + ci·i + ck·k]`, one thread per row, `k`
+/// in order: the host fold's chain, so its bits. The step is the host's own
+/// instruction (`fadd`/`fsub`/`fmul`, or `fcmp` + `select` for a running
+/// max/min) in the source's operand order, never `contract`ed. The kernel
+/// takes the site ABI's three pointers; `%b` is unused.
+fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> String {
+    let (_, threads) = rowfold_grid(s, profile);
+    let t = lower_ty(&s.elem).expect("float elem lowers");
+    let e = elem_bytes_of(&s.elem);
+    let seed = const_literal(&s.seed);
+    let step = match s.op {
+        RowFoldOp::Arith { op, acc_first } => {
+            let code = match op {
+                Operation::Add => "fadd",
+                Operation::Sub => "fsub",
+                _ => "fmul",
+            };
+            let (x, y) = if acc_first {
+                ("%acc", "%v")
+            } else {
+                ("%v", "%acc")
+            };
+            format!("  %accn = {code} {t} {x}, {y}\n")
+        }
+        RowFoldOp::Select {
+            cmp,
+            acc_lhs,
+            acc_if_true,
+        } => {
+            let pred = match cmp {
+                Operation::Lt => "olt",
+                Operation::Gt => "ogt",
+                Operation::Le => "ole",
+                _ => "oge",
+            };
+            let (x, y) = if acc_lhs {
+                ("%acc", "%v")
+            } else {
+                ("%v", "%acc")
+            };
+            let (p, q) = if acc_if_true {
+                ("%acc", "%v")
+            } else {
+                ("%v", "%acc")
+            };
+            format!("  %c = fcmp {pred} {t} {x}, {y}\n  %accn = select i1 %c, {t} {p}, {t} {q}\n")
+        }
+    };
+    let (rows, k, ci, ck, base) = (s.rows, s.k, s.a.ci, s.a.ck, s.a.base);
+    format!(
+        "define ptx_kernel void @{name}(\
+         ptr addrspace(1) noalias readonly align {e} %a, \
+         ptr addrspace(1) noalias readonly align {e} %b, \
+         ptr addrspace(1) noalias align {e} %o) \"nvvm.maxntid\"=\"{threads}\" {{\n\
+         entry:\n\
+         \x20 %tid = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()\n\
+         \x20 %bid = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\
+         \x20 %t64 = zext i32 %tid to i64\n\
+         \x20 %b64 = zext i32 %bid to i64\n\
+         \x20 %row0 = mul i64 %b64, {threads}\n\
+         \x20 %i = add i64 %row0, %t64\n\
+         \x20 %in = icmp ult i64 %i, {rows}\n\
+         \x20 br i1 %in, label %body, label %done\n\
+         body:\n\
+         \x20 %ri = mul i64 %i, {ci}\n\
+         \x20 %r0 = add i64 %ri, {base}\n\
+         \x20 br label %kloop\n\
+         kloop:\n\
+         \x20 %k = phi i64 [0, %body], [%kn, %kloop]\n\
+         \x20 %acc = phi {t} [{seed}, %body], [%accn, %kloop]\n\
+         \x20 %kk = mul i64 %k, {ck}\n\
+         \x20 %x = add i64 %r0, %kk\n\
+         \x20 %p = getelementptr inbounds {t}, ptr addrspace(1) %a, i64 %x\n\
+         \x20 %v = load {t}, ptr addrspace(1) %p, align {e}\n\
+         {step}\
+         \x20 %kn = add i64 %k, 1\n\
+         \x20 %fin = icmp eq i64 %kn, {k}\n\
+         \x20 br i1 %fin, label %store, label %kloop\n\
+         store:\n\
+         \x20 %q = getelementptr inbounds {t}, ptr addrspace(1) %o, i64 %i\n\
+         \x20 store {t} %accn, ptr addrspace(1) %q, align {e}\n\
+         \x20 br label %done\n\
+         done:\n\
+         \x20 ret void\n\
+         }}\n"
+    )
+}
+
 /// The device translation unit: one kernel per GPU tile site in `ir`, in name
 /// order. `None` when no site offloads (every CPU profile, and a GPU profile
 /// on a program with no tile site).
@@ -467,13 +613,23 @@ pub(crate) fn device_module(
         let plan = tile_plan(ir, f, profile, rungs);
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);
-        for site in plan.sites.values().chain(retained.values().map(|r| &r.row)) {
+        // S54 `rowfold`: the device folds, and the sites that store for them.
+        let folds = super::rowfold::rowfold_sites(ir, f, profile, contract, arms, reduced);
+        let col = |m: MorphismId| folds.values().any(|r| r.colmajor == Some(m));
+        let sites = plan.sites.iter().map(|(m, s)| (s, col(m)));
+        for (site, col) in sites.chain(retained.values().map(|r| (&r.row, false))) {
             if gpu_site(site, profile) {
-                let name = kernel_name(kernel_id(site, profile, contract, reduced));
-                kernels
-                    .entry(name.clone())
-                    .or_insert_with(|| kernel_text(&name, site, profile, contract, arms, reduced));
+                let name = kernel_name(kernel_id_col(site, profile, contract, reduced, col));
+                kernels.entry(name.clone()).or_insert_with(|| {
+                    kernel_text(&name, site, profile, contract, arms, reduced, col)
+                });
             }
+        }
+        for r in folds.values() {
+            let name = kernel_name(rowfold_id(&r.site, profile));
+            kernels
+                .entry(name.clone())
+                .or_insert_with(|| rowfold_kernel_text(&name, &r.site, profile));
         }
     }
     if kernels.is_empty() {
@@ -528,6 +684,7 @@ fn kernel_text(
     contract: bool,
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
+    col: bool,
 ) -> String {
     let l = launch(site, profile, contract, arms, reduced);
     let rungs = l.rungs;
@@ -555,7 +712,12 @@ fn kernel_text(
         async_tail: None,
         sync_tail: None,
         raster: (l.gx, l.raster),
+        col,
     };
+    debug_assert!(
+        !col || col_store(&l, site),
+        "a column-major store this kernel has"
+    );
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
         (None, Some(m), _) => k.mma(name, m),
@@ -765,6 +927,9 @@ struct Kernel<'s> {
     sync_tail: Option<(String, String)>,
     /// `(gx, h)`: the grid width and the group height of [`raster_block`].
     raster: (u64, u64),
+    /// Store the output column-major, `o[j·rows + i]` (S54 `rowfold-layout`):
+    /// the order its only reader, a row fold, reads it in.
+    col: bool,
 }
 
 impl Kernel<'_> {
@@ -795,6 +960,14 @@ impl Kernel<'_> {
     /// The block's `(column, row)` in the grid: `ctaid.x`, `ctaid.y`, remapped
     /// by [`raster_block`] when the derived group height is above 1.
     fn block_ids(&mut self) -> (String, String) {
+        // Under the column-major store (S54 `rowfold-layout`) the grid's
+        // fastest axis runs down the rows too (the host swaps `gx`/`gy`): one
+        // wave's blocks write consecutive column runs, not 512-byte pieces
+        // 16 KB apart. That order is its own raster.
+        if self.col {
+            let by = self.sreg("ctaid.x");
+            return (self.sreg("ctaid.y"), by);
+        }
         let bx = self.sreg("ctaid.x");
         let by = self.sreg("ctaid.y");
         let (gx, h) = self.raster;
@@ -997,6 +1170,12 @@ impl Kernel<'_> {
         self.line(format!("{fin} = icmp eq {ix} {kn}, {}", s.k));
         self.line(format!("br i1 {fin}, label %store, label %kloop"));
         self.out.push_str("store:\n");
+        let cell = if self.col {
+            let jr = self.op("mul", &lane, s.rows);
+            self.op("add", &jr, &i)
+        } else {
+            cell
+        };
         let p = self.gep(1, "%o", &cell);
         self.line(format!("store {t} {accn}, ptr addrspace(1) {p}, align {e}"));
         self.line("br label %done");
@@ -1642,19 +1821,33 @@ impl Kernel<'_> {
         // instead of 2 + 16 — two-thirds of the bytes. Off arm / a block too
         // narrow for it: row-major threads.
         let gpu = self.profile_gpu;
-        let wx = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
-        let wy = gpu.warp / wx;
+        let w = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
+        // S54 `rowfold-layout`: a column-major store runs a warp's fastest
+        // lanes down the rows — the row-major rule mirrored, so one store
+        // instruction still writes whole 128-byte lines (`col_store`). The
+        // shared-memory side is symmetric: `w` fragments of one panel, the
+        // rest of the other.
+        let (wx, wy) = if self.col {
+            (gpu.warp / w, w)
+        } else {
+            (w, gpu.warp / w)
+        };
         let (trow, tcol) = if self.rungs.warp && g.tx % wx == 0 && g.ty % wy == 0 && g.tx > wx {
             let warp = self.op("udiv", &tid, gpu.warp);
             let lane = self.op("urem", &tid, gpu.warp);
             let warps_x = g.tx / wx;
             let wr = self.op("udiv", &warp, warps_x);
             let wc = self.op("urem", &warp, warps_x);
-            let lr = self.op("udiv", &lane, wx);
-            let lc = self.op("urem", &lane, wx);
+            let (lr, lc) = if self.col {
+                (self.op("urem", &lane, wy), self.op("udiv", &lane, wy))
+            } else {
+                (self.op("udiv", &lane, wx), self.op("urem", &lane, wx))
+            };
             let r0 = self.op("mul", &wr, wy);
             let c0 = self.op("mul", &wc, wx);
             (self.op("add", &r0, &lr), self.op("add", &c0, &lc))
+        } else if self.col {
+            (self.op("urem", &tid, g.ty), self.op("udiv", &tid, g.ty))
         } else {
             (self.op("udiv", &tid, g.tx), self.op("urem", &tid, g.tx))
         };
@@ -1980,6 +2173,41 @@ impl Kernel<'_> {
 
         // --- one vector store per `lanes` columns of each owned row
         self.out.push_str("done:\n");
+        if self.col {
+            // Column-major (`rowfold-layout`): one vector store per `lanes`
+            // rows of each owned column — a thread's rows come in runs of
+            // `lanes` consecutive ones (`col_store`).
+            for ic in 0..tm / lanes {
+                let r = self.op("add", &row0, &a_frag0);
+                let r = self.op("add", &r, ic * a_chunk);
+                for v in 0..tn / lanes {
+                    for j in 0..lanes {
+                        let cc = self.op("add", &col0, &b_frag0);
+                        let cc = self.op("add", &cc, v * b_chunk + j);
+                        let cr = self.op("mul", &cc, s.rows);
+                        let oi = self.op("add", &cr, &r);
+                        let mut vec = "poison".to_string();
+                        for il in 0..lanes {
+                            let i = ic * lanes + il;
+                            let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
+                            let nv = self.tmp();
+                            self.line(format!(
+                                "{nv} = insertelement {vt} {vec}, {t} {x}, i64 {il}"
+                            ));
+                            vec = nv;
+                        }
+                        let op = self.gep(1, "%o", &oi);
+                        self.line(format!(
+                            "store {vt} {vec}, ptr addrspace(1) {op}, align {GPU_VEC_BYTES}"
+                        ));
+                    }
+                }
+            }
+            self.out.push_str("  ret void\n}\n");
+            return;
+        }
         for i in 0..tm {
             let r = self.op("add", &row0, &a_frag0);
             let r = self.op("add", &r, (i / lanes) * a_chunk + i % lanes);
@@ -2018,8 +2246,11 @@ impl<'a> FnEmit<'a> {
         target: ObjectId,
         site: &TileSite,
     ) {
-        if self.resident.is_some() {
-            let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
+        if let Some(plan) = &self.resident {
+            // S54 `rowfold-layout`: stored in the order its only reader reads.
+            let m = *self.ir.in_edges(target).first().expect("site morphism");
+            let col = plan.rowfold.values().any(|r| r.colmajor == Some(m));
+            let id = kernel_id_col(site, self.profile, self.contract, self.reduced, col) as i64;
             let l = launch(
                 site,
                 self.profile,
@@ -2027,16 +2258,19 @@ impl<'a> FnEmit<'a> {
                 self.gpu_arms,
                 self.reduced,
             );
-            let m = self.ir.in_edges(target)[0];
             let window = host_rungs(self.profile, self.contract, self.gpu_arms)
                 .l2_window
                 .then(|| self.l2_window(m, site, &l))
                 .flatten();
-            self.emit_site_resident(source, target, site, |a, b, o| {
-                let geom = format!(
-                    "i32 {}, i32 {}, i32 {}, i32 {}",
-                    l.gx, l.gy, l.block, l.smem
-                );
+            // The column-major tile kernel takes its row block from `ctaid.x`.
+            let (gx, gy) = if col && l.tiled.is_some() {
+                (l.gy, l.gx)
+            } else {
+                (l.gx, l.gy)
+            };
+            self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], |ops, o| {
+                let (a, b) = (ops[0].as_str(), ops[1].as_str());
+                let geom = format!("i32 {gx}, i32 {gy}, i32 {}, i32 {}", l.block, l.smem);
                 match window {
                     None => format!(
                         "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, {geom})"
@@ -2347,7 +2581,7 @@ mod tests {
             for s in s52_sites() {
                 let l = launch(&s, p, false, force(GpuRungs::ALL), None);
                 assert!(max_index(&s, &l) < 1 << 31, "{} {s:?}", p.name);
-                let k = kernel_text("k", &s, p, false, force(GpuRungs::ALL), None);
+                let k = kernel_text("k", &s, p, false, force(GpuRungs::ALL), None, false);
                 assert!(k.contains("add nuw nsw i32"), "{} {s:?}", p.name);
             }
         }
@@ -2355,7 +2589,15 @@ mod tests {
         let big = site(1 << 16, 1 << 16, 1 << 16, true, true, Ty::f32());
         let l = launch(&big, &RTX_4090, false, force(GpuRungs::ALL), None);
         assert!(max_index(&big, &l) >= 1 << 31);
-        let k = kernel_text("k", &big, &RTX_4090, false, force(GpuRungs::ALL), None);
+        let k = kernel_text(
+            "k",
+            &big,
+            &RTX_4090,
+            false,
+            force(GpuRungs::ALL),
+            None,
+            false,
+        );
         assert!(!k.contains("nuw nsw i32") && k.contains("add i64"));
     }
 

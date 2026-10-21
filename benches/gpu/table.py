@@ -141,6 +141,20 @@ def probe_table(path):
         if a and o:
             print(f"| {prog} | {face} | {arm} | {med(a):.3f} | {med(o):.3f} | {med(a) / med(o):.3f}{ovl(a, o)} "
                   f"| {med(ka):.3f} | {med(ko):.3f} | {med(ka) / med(ko):.3f}{ovl(ka, ko)} |")
+    # S54 `probe_kernels`: each launch's traced kernel ms, in launch order (id prefix: ms).
+    ks = {}
+    for l in open(path):
+        if l.startswith('probe_kernels '):
+            f = fields(l)
+            for i, (kid, ms) in enumerate(re.findall(r'([0-9a-f]{16}) ms=([\d.]+)', l)):
+                ks.setdefault((f['prog'], f['face'], f['arm']), {}).setdefault(i, []).append((kid[:6], float(ms)))
+    if ks:
+        print("\n| probe | face | arm | traced kernel ms per launch, med (min–max) [id] |")
+        print("|---|---|---|---|")
+    for (prog, face, arm), by in sorted(ks.items()):
+        cells = [f"{med([m for _, m in v]):.3f} ({min(m for _, m in v):.3f}–{max(m for _, m in v):.3f}) [{v[0][0]}]"
+                 for _, v in sorted(by.items())]
+        print(f"| {prog} | {face} | {arm} | {' · '.join(cells)} |")
 
 
 for path in sys.argv[1:]:

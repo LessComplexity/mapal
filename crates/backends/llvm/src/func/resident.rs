@@ -99,6 +99,24 @@ pub(crate) struct DeltaUp {
     pub stride: u64,
 }
 
+/// A device site: a tile site (R0), or a row fold over a device output (R0
+/// for folds, S54 `rowfold`).
+#[derive(Clone, Debug)]
+pub(crate) enum DevSite {
+    Tile(TileSite),
+    RowFold(super::rowfold::RowFold),
+}
+
+impl DevSite {
+    /// The source slots the kernel loads.
+    fn reads(&self) -> Vec<u32> {
+        match self {
+            DevSite::Tile(s) => vec![s.a.slot, s.b.slot],
+            DevSite::RowFold(r) => vec![r.site.a.slot],
+        }
+    }
+}
+
 /// The placement decisions for one function — a pure function of the IR, the
 /// profile and the rungs, computed before the walk.
 #[derive(Clone, Debug, Default)]
@@ -120,6 +138,8 @@ pub(crate) struct ResidentPlan {
     pub arena: Option<Arena>,
     /// `upload`s that cross as the rows their iteration wrote (`delta-h2d`).
     pub delta: SecondaryMap<ObjectId, DeltaUp>,
+    /// Row folds run on the device (S54 `rowfold`).
+    pub rowfold: SecondaryMap<MorphismId, super::rowfold::RowFold>,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -189,13 +209,24 @@ impl ResidentPlan {
 
 impl<'a> FnEmit<'a> {
     /// The device sites of this function, by morphism.
-    fn device_sites(&self) -> SecondaryMap<MorphismId, TileSite> {
+    fn device_sites(&self) -> SecondaryMap<MorphismId, DevSite> {
         let mut out = SecondaryMap::new();
         if let Some(plan) = &self.tile_plan {
             for (m, site) in plan.sites.iter() {
                 if gpu::gpu_site(site, self.profile) {
-                    out.insert(m, site.clone());
+                    out.insert(m, DevSite::Tile(site.clone()));
                 }
+            }
+            let folds = super::rowfold::rowfold_sites(
+                self.ir,
+                self.f,
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                self.reduced,
+            );
+            for (m, r) in folds {
+                out.insert(m, DevSite::RowFold(r));
             }
         }
         out
@@ -205,12 +236,12 @@ impl<'a> FnEmit<'a> {
     /// consumes.
     fn slot_use(
         &self,
-        sites: &SecondaryMap<MorphismId, TileSite>,
+        sites: &SecondaryMap<MorphismId, DevSite>,
         m2: MorphismId,
         slot: u32,
     ) -> Use {
         if let Some(site) = sites.get(m2) {
-            return if site.a.slot == slot || site.b.slot == slot {
+            return if site.reads().contains(&slot) {
                 Use::Dev
             } else {
                 Use::None
@@ -227,7 +258,7 @@ impl<'a> FnEmit<'a> {
     /// A by-value `Pair` is `Fwd` when the carry owns it (`fwd`), else `Host`.
     fn uses(
         &self,
-        sites: &SecondaryMap<MorphismId, TileSite>,
+        sites: &SecondaryMap<MorphismId, DevSite>,
         o: ObjectId,
         fwd: &[MorphismId],
     ) -> Vec<Use> {
@@ -286,7 +317,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The loop-carry candidates (F3), each checked against its uses.
-    fn carries(&self, sites: &SecondaryMap<MorphismId, TileSite>) -> Vec<Carry> {
+    fn carries(&self, sites: &SecondaryMap<MorphismId, DevSite>) -> Vec<Carry> {
         let site_out = |o: ObjectId| self.ir.in_edges(o).iter().any(|&m| sites.contains_key(m));
         let mut out = Vec::new();
         for scc in self.ir.loop_structure(self.f) {
@@ -469,6 +500,11 @@ impl<'a> FnEmit<'a> {
             carries: self.carries(&sites),
             ..ResidentPlan::default()
         };
+        for (m, site) in sites.iter() {
+            if let DevSite::RowFold(r) = site {
+                plan.rowfold.insert(m, r.clone());
+            }
+        }
         let mut device = Vec::new(); // every object given a device copy here
 
         // Device outputs: kept on the device unless the host reads one whole.
@@ -512,7 +548,7 @@ impl<'a> FnEmit<'a> {
         let mut read: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
         for (m, site) in sites.iter() {
             let src = self.ir.morphism(m).expect("site").source;
-            for slot in [site.a.slot, site.b.slot] {
+            for slot in site.reads() {
                 if let Some(f) = self.pair_source(src, slot) {
                     read.insert(f, ());
                 }
@@ -731,9 +767,9 @@ impl<'a> FnEmit<'a> {
             .min_by_key(|&(m2, _)| pos(m2))
             .map(|(m2, s2)| {
                 let src = self.ir.morphism(m2).expect("site").source;
-                [s2.a.slot, s2.b.slot]
-                    .iter()
-                    .any(|&k| self.pair_source(src, k) == Some(morph.target))
+                s2.reads()
+                    .into_iter()
+                    .any(|k| self.pair_source(src, k) == Some(morph.target))
             });
         if next == Some(true) && out <= l2 {
             return Some((Window::Out, out));
@@ -750,7 +786,7 @@ impl<'a> FnEmit<'a> {
         .map(|(w, _, b)| (w, b))
     }
 
-    fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, TileSite>, o: ObjectId) -> bool {
+    fn produced_on_device(&self, sites: &SecondaryMap<MorphismId, DevSite>, o: ObjectId) -> bool {
         self.ir.in_edges(o).iter().any(|&m| sites.contains_key(m))
     }
 
@@ -809,6 +845,10 @@ impl<'a> FnEmit<'a> {
             return false;
         };
         if plan.skip.contains_key(m) {
+            return true;
+        }
+        if let Some(r) = plan.rowfold.get(m).cloned() {
+            self.emit_rowfold(m, &r);
             return true;
         }
         let Some(g) = plan.devgen.get(m).cloned() else {
@@ -956,13 +996,13 @@ impl<'a> FnEmit<'a> {
         &mut self,
         source: ObjectId,
         target: ObjectId,
-        site: &TileSite,
-        call: impl Fn(&str, &str, &str) -> String,
+        slots: &[u32],
+        call: impl Fn(&[String], &str) -> String,
     ) {
         let src_ty = self.obj_ty(source);
         let mut ops = Vec::new();
         let mut temps = Vec::new();
-        for slot in [site.a.slot, site.b.slot] {
+        for &slot in slots {
             let bytes = self.array_bytes(src_ty.component_ty(slot).expect("tile operand"));
             let feeder = self.pair_source(source, slot);
             if let Some(f) = feeder
@@ -994,7 +1034,7 @@ impl<'a> FnEmit<'a> {
         }
         let o_bytes = self.array_bytes(&self.obj_ty(target));
         let dout = self.dalloc(target, o_bytes);
-        self.line(call(&ops[0], &ops[1], &dout));
+        self.line(call(&ops, &dout));
         self.dvalid.insert(target, ());
         for t in temps {
             self.line(format!("call void @mapal_gpu_free(ptr {t})"));
@@ -1005,6 +1045,18 @@ impl<'a> FnEmit<'a> {
             .is_some_and(|p| p.keep.contains_key(target) || p.is_carry_next(target));
         if !keep {
             let h = self.slot(target).expect("tile output slot");
+            // A device fold's output lands in what was a host loop's slot: say
+            // the copy keeps no pointer to it, as the loop did not, or the slot
+            // counts as escaped and a later host loop that reads it loses its
+            // vector form (S54: softmax_rows' `exp` pass ran scalar, +17 ms).
+            // ponytail: every `d2h` is just as non-capturing; marked here only,
+            // so no other program's text moves.
+            let fold = self.ir.in_edges(target).first().is_some_and(|m| {
+                self.resident
+                    .as_ref()
+                    .is_some_and(|p| p.rowfold.contains_key(*m))
+            });
+            let h = if fold { format!("nocapture {h}") } else { h };
             self.line(format!(
                 "call void @mapal_gpu_d2h(ptr {h}, i64 {dout}, i64 0, i64 {o_bytes})"
             ));

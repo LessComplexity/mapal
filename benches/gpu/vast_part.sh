@@ -28,7 +28,7 @@ while :; do
             tried="$tried$o "
             echo "[$(date +%T)] try $g offer=$o dph=$dph pcie=$pcie cpu_ghz=$cpu host=$host machine=$mach geo=$geo" | tee -a "$RES/attempts-$PROF.log"
             rm -f "$RES/results-$PROF.txt"
-            PROFILE=1 bash "$HERE/vast_run.sh" "$o" "$PROF" "$SM" "$B" "$RES" "$REPS" < /dev/null
+            PROFILE=${PROFILE:-1} bash "$HERE/vast_run.sh" "$o" "$PROF" "$SM" "$B" "$RES" "$REPS" < /dev/null
             if grep -q '^== done' "$RES/results-$PROF.txt" 2>/dev/null; then
                 echo "[$(date +%T)] DONE $g offer=$o host=$host machine=$mach" | tee -a "$RES/attempts-$PROF.log"; exit 0
             fi

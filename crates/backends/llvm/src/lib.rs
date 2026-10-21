@@ -176,6 +176,21 @@ pub struct GpuRungs {
     /// Decode loop 1.30–1.58× faster on every part (no 1 MB copy-out of K, no
     /// host fold over it).
     pub lane_stride: bool,
+    /// S54 R0 for folds (`func/rowfold.rs`): a row-local in-order fold whose
+    /// read array a device site produced runs on the device, one thread per
+    /// row. Off: the host fold behind the output's whole copy-out. Ships ON on
+    /// every measured part: `rowfold-<part>.txt` rowsum 2.3–9.9× and
+    /// softmax_rows 1.0–1.3× the OFF arm's own clock, two sessions each.
+    pub rowfold: bool,
+    /// Under `rowfold`, when the fold is the producing site's only reader, the
+    /// site stores its output in the order the fold reads it (column-major),
+    /// so a warp's reads coalesce. Off: row-major store, strided fold reads.
+    /// Measured mostly no gain: the strided fold costs 0.01–0.1 ms at 4096
+    /// (L1 serves each sector to the next steps) and the column-major store
+    /// costs the FMA tile 0–6% (GDDR parts) to 7–22% (H100). Ships ON only on
+    /// the 4090's contract face and the A100's exact face (1–2% of device
+    /// time); OFF rows in [`crate::profile::GPU_RUNGS_OFF`] elsewhere.
+    pub rowfold_layout: bool,
 }
 
 impl GpuRungs {
@@ -208,11 +223,13 @@ impl GpuRungs {
         retain_resident: true,
         delta_h2d: true,
         lane_stride: true,
+        rowfold: true,
+        rowfold_layout: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 27] = [
+    pub const NAMES: [&'static str; 29] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -240,6 +257,8 @@ impl GpuRungs {
         "retain-resident",
         "delta-h2d",
         "lane-stride",
+        "rowfold",
+        "rowfold-layout",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -272,6 +291,8 @@ impl GpuRungs {
             "retain-resident" => &mut self.retain_resident,
             "delta-h2d" => &mut self.delta_h2d,
             "lane-stride" => &mut self.lane_stride,
+            "rowfold" => &mut self.rowfold,
+            "rowfold-layout" => &mut self.rowfold_layout,
             _ => return None,
         })
     }

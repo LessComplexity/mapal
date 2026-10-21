@@ -635,6 +635,7 @@ mod ops;
 mod packed;
 mod resident;
 mod retain;
+mod rowfold;
 mod sme;
 mod tile;
 mod trio;
