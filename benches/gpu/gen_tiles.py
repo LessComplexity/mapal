@@ -267,3 +267,122 @@ def decode(T, d, rewrite=False):
 for T, d in ((16, 8), (1024, 256)):
     (out / f"decode_{T}_{d}.mapal").write_text(decode(T, d))
 (out / "loop_rewrite_16_8.mapal").write_text(decode(16, 8, rewrite=True))
+
+# --- S54: multi-computation probes. Several computations in one program — a
+# tile site with per-cell consumers, chains, fan-out, fan-in, independent nets,
+# a reduction after a tile site, a loop with an activation — to show where
+# kernel boundaries fall by default (plan-s41 amendment 9: fusion is placement).
+# `px_<probe>_<n>`: the differential — checksum + corners of every output,
+# both faces, the interpreter's stdout as the oracle. `pt_<probe>_<n>`: timed
+# at 2048 / 4096 — `time` around the computations, then the corners of every
+# output (the values `chain_bench.cu`'s library legs are gated against); the box
+# runs them under MAPAL_GPU_TRACE. chain_bench.cu rebuilds each probe with the
+# same operand laws (OPS, BIAS) — change both or neither.
+OPS = {  # name: (mul, add, mod, off, divisor) — `(t·mul + add) % mod − off`, ÷ divisor
+    'a': (7, 13, 101, 50, '7.0'), 'b': (11, 57, 103, 51, '9.0'), 'e': (5, 3, 97, 48, '11.0'),
+    'f': (3, 1, 89, 44, '13.0'), 'g': (13, 7, 107, 53, '15.0'), 'p': (17, 29, 109, 54, '17.0'),
+}
+BIAS = {'bias': (13, 6, '5.0'), 'bias2': (11, 5, '4.0')}  # name: (mod, off, divisor) over the column j
+
+
+def probe_ops(names, n, w=None):
+    s = ''.join(operand(x, n, *OPS[x]) for x in names)
+    if w:  # the loop's weight: ÷ n keeps |x| O(0.1..10) over 8 relu steps (numpy, n = 128..4096)
+        s += operand(w, n, 11, 57, 103, 51, f"{n}.0")
+    return s
+
+
+def bias(name):
+    mod, off, div = BIAS[name]
+    return f"    krange -> map {{ t -> t % {mod} - {off} -> widen_f32 -> v; v / {div} }} -> {name};\n"
+
+
+def relu(e):
+    return f"{e} -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r"
+
+
+def probes(n):
+    """probe: (operands, vectors + computations, [(output, length)])."""
+    S = lambda o, a, b: site(o, a, b, n)
+    M = lambda o, src, e: f"    {src} -> map {{ v -> {e} }} -> {o};\n"
+    T = lambda o, e: f"    ta -> map {{ t -> {e} }} -> {o};\n"
+    N = n * n
+    return {
+        # per-cell consumers of a tile site (an epilogue; a column bias)
+        'epi': ('ab', S('c', 'a', 'b') + M('d', 'c', 'v * 0.5 + 1.0'), [('d', N)]),
+        'bias': ('ab', bias('bias') + S('c', 'a', 'b') + T('d', f'c[t] + bias[t % {n}]'), [('d', N)]),
+        # per-cell only, no fold: three maps
+        'ew': ('ab', M('x', 'a', 'v * 3.0') + M('y', 'x', 'v + 2.0') + T('z', 'y[t] * b[t]'), [('z', N)]),
+        # a per-cell producer of a tile site's operand (a prologue)
+        'pro': ('ab', M('a2', 'a', 'v * 0.25') + S('c', 'a2', 'b'), [('c', N)]),
+        # two independent sites joined per cell
+        'indep': ('abef', S('c', 'a', 'b') + S('d', 'e', 'f') + T('g', 'c[t] + d[t]'), [('g', N)]),
+        # a chain through a per-cell step
+        'mlp': ('abe', S('c', 'a', 'b') + M('h', 'c', 'v * 0.5') + S('d', 'h', 'e'), [('d', N)]),
+        # one intermediate, three readers: a per-cell map, a tile site, the host
+        'fanout': ('abe', S('c', 'a', 'b') + M('h', 'c', 'v * 0.5 + 1.0') + S('d', 'c', 'e'),
+                   [('c', N), ('h', N), ('d', N)]),
+        # fan-out to two sites, fan-in by a per-cell join
+        'diamond': ('abeg', S('c', 'a', 'b') + S('d1', 'c', 'e') + S('d2', 'c', 'g') + T('h', 'd1[t] + d2[t]'),
+                    [('h', N)]),
+        # a residual: the site's own operand added back per cell
+        'residual': ('ab', S('c', 'a', 'b') + T('d', 'c[t] + a[t]'), [('d', N)]),
+        # a per-row in-order fold after a tile site
+        'rowsum': ('ab', S('c', 'a', 'b')
+                   + f"    krange -> map {{ i -> (0.0, krange) -> fold {{ acc, j -> acc + c[i * {n} + j] }} }} -> r;\n",
+                   [('r', n)]),
+        # two independent two-layer MLPs (bias + relu between), at once
+        'mlp2': ('abefgp', bias('bias') + bias('bias2')
+                 + S('c1', 'a', 'b') + T('h1', relu(f'c1[t] + bias[t % {n}]')) + S('d1', 'h1', 'e')
+                 + S('c2', 'f', 'g') + T('h2', relu(f'c2[t] + bias2[t % {n}]')) + S('d2', 'h2', 'p'),
+                 [('d1', N), ('d2', N)]),
+    }
+
+
+def loop_act(n, iters):
+    """Carried state through a site and a per-cell activation: x ← relu(x·w)."""
+    return ('a', f"""    mut x: [f32; {n * n}] <- a;
+    mut it: i32 <- 0;
+    loop {{
+        (it < {iters}) -> {{
+            -true-> {{
+{site("y", "x", "w", n).replace("    ", "                ", 1)}                y -> map {{ v -> {relu('v')} }} -> x;
+                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+""", [('out', n * n)])
+
+
+def probe_program(n, spec, timed, w=None):
+    names, body, outs = spec
+    s = head(n) + probe_ops(names, n, w)
+    tail = "" if timed else "    0.0 -> zero: f32;\n"
+    for o, length in outs:
+        if not timed:
+            tail += f"    (zero, {o}) -> fold {{ acc, v -> acc + v }} -> s_{o};\n    s_{o} -> println;\n"
+        tail += f"    {o}[0] -> println;\n    {o}[{length - 1}] -> println;\n"
+    if timed:
+        # Declarations (a loop's `mut` state) stay outside the clock.
+        lines = body.splitlines(keepends=True)
+        decl = [x for x in lines if x.startswith("    mut ")]
+        rest = [x for x in lines if not x.startswith("    mut ")]
+        s += "".join(decl) + "    () -> time -> t0;\n" + "".join(rest) + "    () -> time -> t1;\n"
+        tail += '    "iter ms=" -> print;\n    t1 - t0 -> println;\n'
+    else:
+        s += body
+    return s + tail + "}\n"
+
+
+# The differential at 128 (the interpreter takes ~2 min per 256³ site and the
+# probes hold 25 sites; 128 is still several blocks per site on every part),
+# the loop 4 steps; the timed probes at 2048 and 4096, the loop 8 steps.
+for name, spec in probes(128).items():
+    (out / f"px_{name}_128.mapal").write_text(probe_program(128, spec, False))
+(out / "px_loop_128.mapal").write_text(probe_program(128, loop_act(128, 4), False, w='w'))
+for n in (2048, 4096):
+    for name, spec in probes(n).items():
+        (out / f"pt_{name}_{n}.mapal").write_text(probe_program(n, spec, True))
+    (out / f"pt_loop_{n}.mapal").write_text(probe_program(n, loop_act(n, 8), True, w='w'))

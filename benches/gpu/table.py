@@ -3,7 +3,8 @@
 then every rung arm against the default it flips (ON vs OFF, medians, and the
 same ratio normalized by each bench's own cuBLAS leg, which cancels clock drift
 between benches); then the whole-program rows (`e2e prog=`: process wall, the
-program's own `iter ms`, the MAPAL_GPU_TRACE totals) and the decode rows."""
+program's own `iter ms`, the MAPAL_GPU_TRACE totals), the S54 probe rows (Mapal
+next to the library legs, chain_bench.cu) and the decode rows."""
 import re
 import sys
 
@@ -85,6 +86,59 @@ def decode_table(path):
         print(f"\nhand-written cuBLAS sgemv KV cache (device time, whole loop): {floor:.3f} ms")
 
 
+def probe_table(path):
+    """S54 `probe prog=` (Mapal, per face × arm × rep) and `chain probe=` (library
+    legs, chain_bench.cu) lines: one row per probe and size. Mapal's number is the
+    program's own `iter ms` (the clock around every computation, transfers and
+    host loops included); a library leg's is cudaEvent GPU time on device-built
+    data. `lib/Mapal` > 1 = Mapal faster."""
+    runs, legs, gates = {}, {}, {}
+    for l in open(path):
+        if l.startswith('probe prog='):
+            f = fields(l)
+            it = re.search(r'iter ms=\s*([-\d.eE+]+)', l)
+            runs.setdefault((f['prog'], f['face'], f['arm']), []).append({
+                'iter': float(it[1]) if it else None, 'wall': int(f['wall_us']) / 1e3,
+                'kernel': float(f.get('kernel_ms', 'nan')), 'launches': f.get('launches', '?'),
+                'in': int(f.get('bytes_in', 0)), 'out': int(f.get('bytes_out', 0))})
+        elif l.startswith('chain probe='):
+            f = fields(l)
+            legs.setdefault((f['probe'], f['n']), {})[f['leg']] = (float(f['med_ms']), f['launches'])
+        elif l.startswith('chain_values '):
+            f = fields(l)
+            if f['gate'] != 'pass':
+                gates.setdefault((f['probe'], f['n']), []).append(f"{f['leg']}:{f['gate']}")
+    if not runs:
+        return
+    print("\n| probe | n | Mapal iter ms exact / contract | wall ms | kernel ms | launches | bytes in / out "
+          "| library legs med ms (launches) | best library | best lib / Mapal exact | gate |")
+    print("|---|---:|---:|---:|---:|---:|---:|---|---|---:|---|")
+    for (prog, face, arm), rs in sorted(runs.items()):
+        if face != '_exact' or arm != 'on':
+            continue
+        probe, n = prog[3:].rsplit('_', 1)
+        c = runs.get((prog, '_c', 'on'), [])
+        it = med([r['iter'] for r in rs if r['iter'] is not None] or [float('nan')])
+        itc = med([r['iter'] for r in c if r['iter'] is not None] or [float('nan')])
+        lg = legs.get((probe, n), {})
+        best = min(lg.items(), key=lambda kv: kv[1][0]) if lg else None
+        print(f"| {probe} | {n} | {it:.3f} / {itc:.3f} | {med([r['wall'] for r in rs]):.1f} "
+              f"| {med([r['kernel'] for r in rs]):.2f} | {rs[0]['launches']} | {rs[0]['in']} / {rs[0]['out']} "
+              f"| {' '.join(f'{k} {v[0]:.3f} ({v[1]})' for k, v in lg.items())} "
+              f"| {best[0] if best else ''} | {f'{best[1][0] / it:.2f}' if best else ''} "
+              f"| {' '.join(gates.get((probe, n), [])) or ('pass' if lg else '')} |")
+    arms = [(k, rs) for k, rs in sorted(runs.items()) if k[2] != 'on']
+    if arms:
+        print("\n| probe | face | arm | iter ms arm | iter ms on | arm / on (>1 = on faster) |")
+        print("|---|---|---|---:|---:|---:|")
+    for (prog, face, arm), rs in arms:
+        on = runs.get((prog, face, 'on'))
+        a = [r['iter'] for r in rs if r['iter'] is not None]
+        o = [r['iter'] for r in on or [] if r['iter'] is not None]
+        if a and o:
+            print(f"| {prog} | {face} | {arm} | {med(a):.3f} | {med(o):.3f} | {med(a) / med(o):.3f}{ovl(a, o)} |")
+
+
 for path in sys.argv[1:]:
     rows, cur = [], {}
     for l in open(path):
@@ -131,4 +185,5 @@ for path in sys.argv[1:]:
         print(f"| {r['n']} | {face} | {rung} | {'ON' if direction == 'off' else 'OFF'} | {on['mapal'][1]:.3f} "
               f"| {off['mapal'][1]:.3f} | {speed:.3f}{ov(on['mapal'], off['mapal'])} | {norm:.3f} |")
     e2e_table(path)
+    probe_table(path)
     decode_table(path)

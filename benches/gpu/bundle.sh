@@ -3,7 +3,10 @@
 # the emitted PTX and the host object of every program in benches/gpu, the
 # x86-64 Linux runtime, the oracle outputs, the harness source and CUTLASS.
 #
-# usage: benches/gpu/bundle.sh <outdir> <profile:sm>...   e.g. rtx-4090:sm_89 h100:sm_90
+# usage: benches/gpu/bundle.sh <outdir> <profile:sm>...
+#   e.g. rtx-4090:sm_89 h100-pcie:sm_90a rtx-5090:sm_120 rtx-3090:sm_86 a100:sm_80
+# ONLY="<glob>..." builds only the programs whose stem matches one of the globs
+# (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -12,12 +15,24 @@ EMIT="$ROOT/target/release/examples/emit"
 RUN="$ROOT/target/release/examples/run"
 mkdir -p "$OUT/tiles"
 python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
+read -r -a ONLY_GLOBS <<< "${ONLY:-}"
+keep() {
+    [ ${#ONLY_GLOBS[@]} -eq 0 ] && return 0
+    local g
+    for g in "${ONLY_GLOBS[@]}"; do
+        # shellcheck disable=SC2254  # the glob is the point
+        case $1 in $g) return 0 ;; esac
+    done
+    return 1
+}
 
 # The oracle: the interpreter on the conformance face; the CPU build on the
-# contract face (per-step fmaf — the same fused step the GPU emits).
+# contract face (per-step fmaf — the same fused step the GPU emits). The timed
+# probes (`pt_*`) have none: chain_bench.cu gates the libraries against them.
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
-    case $(basename "$b") in mm_*|e2e_*|loop_mm_*) continue ;; esac
+    keep "$(basename "$b")" || continue
+    case $(basename "$b") in mm_*|e2e_*|loop_mm_*|pt_*) continue ;; esac
     if [ ! -s "$b.expect" ]; then
         case $(basename "$b") in
         # Too big for the interpreter (1024 decode steps; a 2048² filled site):
@@ -82,6 +97,7 @@ for spec in "$@"; do
     prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
         b=$(basename "$f" .mapal)
+        keep "$b" || continue
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
         case $b in
@@ -134,8 +150,8 @@ for spec in "$@"; do
 done
 
 cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
-cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/box_run.sh" \
-    "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
+cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
+    "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 if [ ! -d "$OUT/cutlass" ]; then
     git clone -q --depth 1 https://github.com/NVIDIA/cutlass "$OUT/cutlass.git"
     mkdir -p "$OUT/cutlass/tools/util"

@@ -1,0 +1,13 @@
+S54 fusion probe (static, emit --rewrite --target=rtx-4090, both faces identical), HEAD 6d105b0, n=512.
+Programs: scratchpad s54/fuse/*.mapal. Counted: device entries, host gpu calls.
+
+probe  shape                                  launches gen d2h h2d  where the non-tile work ran
+epi    c=a@b; d=c*0.5+1                       1        2   1   0    host loop over c (whole c d2h)
+bias   c=a@b; d=c+bias[t%n]                   1        2   1   0    host loop
+ew     x=a*3; y=x+2; z=y*b  (no fold)         0        0   0   0    all host; no device unit emitted
+pro    a2=a*0.25; c=a2@b                      1        2   1   0    FUSED: devgen composed a2's closed form
+indep  c=a@b; d=e@f; g=c+d                    2        4   2   0    serial; each launch then whole d2h; g on host
+mlp    c=a@b; h=c*0.5; d=h@e                  2        3   2   1    c d2h -> h on host -> h h2d -> launch
+
+Cause: only TileSites with k>0 are device sites (func/gpu.rs gpu_site); a per-cell map (k=0) is never placed
+on the device, so a device output with any host reader is copied out whole (resident.rs "host reads").
