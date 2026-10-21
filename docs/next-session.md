@@ -1,20 +1,36 @@
 # Next Session (S55)
 
-**Read `sessions/2026-10-21-s54-fusion-placement.md` first** — results, per-arch rung table, verifier conflicts, where
-every branch/worktree/result lives, resume commands. Branch `s54-gpu-fusion` (local, not pushed; base `s53-gpu-opt`).
+**Read `sessions/2026-10-21-s55-worktree-consolidation.md` first**, then
+`sessions/2026-10-21-s54-fusion-placement.md` for the original results and verifier conflicts.
+The main checkout is now on `s54-gpu-fusion`; it is the only registered worktree.
+All historical branches remain. Dirty experiments and raw data from removed worktrees are preserved in
+`.claude/worktrees/_archive-s54-20261021/` (manifest, binary patches, tar archives, complete git bundle, restore README).
+Keep this ignored local archive until its experiments are no longer needed. `oainotes.md` remains untracked.
 
 S54 built fusion as placement (epilogue, devmap, rowfold, arena, retain-resident/delta-h2d, streams, l2-raster) and
-Ampere profiles; measured on RTX 3090 / A100 SXM4 / RTX 4090 / H100 PCIe / RTX 5090; tests 1172/0. The workflow was
-stopped before the final verify + integrated run. `vastai show instances` empty at close.
+Ampere profiles; measured on RTX 3090 / A100 SXM4 / RTX 4090 / H100 PCIe / RTX 5090. The workflow stopped before
+final verification and integration. Consolidation recovered two later l2-raster result/citation commits
+(`a613f53`, `4db1f48`); they do not change rung selections. The final integrated table remains provisional.
+
+Fresh validation: **1172 passed / 0 failed / 1 ignored twice** with normal host access and
+`MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1`.
+Sandbox runs encountered denied hardware queries and execution timeouts; see the consolidation log for evidence.
 
 Start here:
-1. `git worktree list` -> remove `.claude/worktrees/wf_25b2dee4-01e-*` (after checking `git status` in each), `git worktree prune`,
-   `git checkout s54-gpu-fusion`; rerun `cargo test --workspace --release` twice (one earlier run showed 20 unreproduced failures).
-2. Resolve the three table-vs-verifier conflicts (streams 5090, retain-resident H100, l2-raster).
-3. One integrated 5-part run (bundle all five profiles, `vast_run.sh` per part, PROFILE=1), then write
-   `performance/s54-gpu-fusion.md` + `performance/s54-per-arch-selection.md` (results only, every loss).
-4. Biggest losses to attack: pt_mlp2_4096 on 4090 (Mapal 55.1 ms vs cuBLASLt 11.4 ms), decode loop 0.05–0.12× library,
-   exact face 0.34–0.66× cuBLAS, A100/H100 TF32 0.55–0.69× (ADR-0039 still undecided — Sapir's call).
+1. Inspect the consolidation log's fresh test results. Stabilize the test/build baseline: the two `emit` examples
+   collide, a duplicated `#[test]` remains in `profile.rs`, and S54's earlier 20 failures are unexplained.
+   The collision is confirmed; it is not a proven cause of those failures. Use normal host access for hardware-detection tests.
+2. Before code changes, initialize OpenSpec with the supercharge rules (this repository has no OpenSpec root),
+   then propose/apply the validation and selection work there. Keep the existing S54 model and plan as source context.
+3. Resolve the three table-versus-verifier conflicts: RTX 5090 streams, H100 retain-resident, and l2-raster.
+4. Run one complete integrated five-part measurement with `PROFILE=1`, including final 4090/5090 confirmations.
+   Use **`h100-pcie:sm_90a`**, correcting `sm_90` in the immutable S54 log. Build the runtime (native + x86 Linux),
+   interpreter `run`, then LLVM `emit` last after workspace tests; `bundle.sh` assumes these already exist.
+   Exact commands and evidence requirements are in the consolidation log.
+5. Write `performance/s54-gpu-fusion.md` + `performance/s54-per-arch-selection.md` (results only, every loss),
+   reconcile component implementation/model/status and root status, and resolve the six recorded drift findings.
+6. Then attack the largest losses: pt_mlp2_4096 on 4090 (Mapal 55.1 ms vs cuBLASLt 11.4 ms), decode loop
+   0.05–0.12× library, exact face 0.34–0.66× cuBLAS, A100/H100 TF32 0.55–0.69×. ADR-0039 remains Sapir's decision.
 
 ---
 
