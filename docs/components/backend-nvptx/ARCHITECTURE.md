@@ -186,7 +186,11 @@ an arm in `bundle.sh`), shipped ON per part only by a `GPU_RUNGS_OFF` row whose 
 probe program and the ON/OFF medians: `epilogue` (R1), `devmap` (R2), `rowfold` and
 `rowfold-layout` (R0 for folds, the store order), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
-policy from `l2_bytes`). OFF is today's text byte for byte. A rung's fill key is the grid it
+policy from `l2_bytes`; `l2-gate` is `raster`'s measurement arm, the derivation without its L2
+gate). OFF is today's text byte for byte. Neither `raster` nor `l2-window` is a `Trn` or a `Trm`:
+the grid order is how one realization walks its blocks, the window a cache policy on a `launch`
+over `Gmem` the graph proves is read again — `l2-window`'s output case is R6's residency seen from
+the L2 (a chain's intermediate, read by the next launch). A rung's fill key is the grid it
 ends up in: the host kernel for an epilogue, its own grid for a cell kernel, the union for
 streams (`profile.rs:Fill`).
 
