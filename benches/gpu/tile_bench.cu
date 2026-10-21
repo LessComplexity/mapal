@@ -204,6 +204,9 @@ static int h2d_probe(int mb, int reps) {
     printf(" %s_ms=%.3f %s_gbps=%.2f", names[k], med, names[k], bytes / med / 1e6);
   }
   printf("\n");
+  return 0;
+}
+
 // --- S53 `--decode T d reps`: the library floor for the decode program
 // (gen_tiles.py `decode`), written the way a user would by hand: x, K, V, o
 // device-resident, preallocated; per step one tiny kernel writes token row t
