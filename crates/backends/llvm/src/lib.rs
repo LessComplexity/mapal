@@ -470,6 +470,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Functions first: the arena declarations are gated on the emitted text
     // (below), so the bodies have to exist before the header is assembled.
     let mut funcs = String::new();
+    // `devgen` (S53): the producers each function computes on the device, and
+    // every function's emitted text — a device-built producer's body is the
+    // host's own, appended to the device unit.
+    let mut gens: Vec<(u64, mapal_ir::FuncId, String)> = Vec::new();
+    let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
             funcs.push_str(&FnEmit::emit_parallel(
@@ -508,7 +513,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             if let Some(&site) = body_sites.get(id) {
                 fe.set_task_body_site(site);
             }
-            funcs.push_str(&fe.emit());
+            gens.extend(fe.gen_kernels());
+            let text = fe.emit();
+            funcs.push_str(&text);
+            texts.insert(id, text);
         }
         funcs.push('\n');
     }
@@ -539,7 +547,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // Two kernels, detected independently: `@mapal_sme_panel(` cannot match
     // `@mapal_sme_panel_acc(` because of the paren, so the KC variant appears
     // only where the KC nest actually called it.
-    let gpu_host = funcs.contains("@mapal_gpu_tile(");
+    // A module talks to the GPU runtime when a site calls it: the S52 round
+    // trip (`mapal_gpu_tile`) or `resident`'s split entries (`mapal_gpu_alloc`
+    // precedes every one of them).
+    let resident = funcs.contains("@mapal_gpu_alloc(");
+    let gpu_host = resident || funcs.contains("@mapal_gpu_tile(");
     if gpu_host {
         out.push_str(crate::func::gpu::GPU_DECLS);
         if funcs.contains(crate::func::gpu::GPU_SYNC) {
@@ -548,6 +560,9 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     } else {
         // No device work in the module: the clock fence's sync waits for nothing.
         funcs = funcs.replace(&format!("  {}\n", crate::func::gpu::GPU_SYNC), "");
+    }
+    if resident {
+        out.push_str(crate::func::gpu::RESIDENT_DECLS);
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");
@@ -591,10 +606,21 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         String::new()
     };
     out.push_str(&emit_main_wrapper(ir, &prologue));
+    let gens: Vec<crate::func::gpu::GenKernel> = gens
+        .into_iter()
+        .map(|(gid, body, elem)| (gid, fnames[body].clone(), elem, texts[body].clone()))
+        .collect();
     let device = opts
         .tiling
         .then(|| {
-            crate::func::gpu::device_module(ir, profile, opts.contract, opts.gpu, opts.reduced)
+            crate::func::gpu::device_module(
+                ir,
+                profile,
+                opts.contract,
+                opts.gpu,
+                opts.reduced,
+                &gens,
+            )
         })
         .flatten();
     Ok(Emission {

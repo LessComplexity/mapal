@@ -21,6 +21,8 @@
 // f64 must stay within 4x cuBLAS-TF32's own.
 //
 // usage: tile_bench M N K <mapal.ptx> <kernel> gx gy block smem reps [--contract|--tf32]
+//        tile_bench --program n gemms ops     (cuBLAS whole-program floor, S53)
+//        tile_bench --h2d mb reps             (pageable vs pinned copy rate, S53)
 #include <cublas_v2.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -31,6 +33,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -110,7 +113,105 @@ static float frand(uint64_t &s) {
   return (float)((s >> 40) & 0xFFFFFF) / (float)0x800000 - 1.0f;  // [-1, 1)
 }
 
+static double wall_ms() {
+  timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+
+// The bench programs' operand formula, `(t·mul + add) % mod − off`, built on
+// the device — what a hand-written CUDA program does instead of copying in.
+__global__ void gen_operand(float *o, long long n, int mul, int add, int mod, int off) {
+  long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) o[i] = (float)(((int)i * mul + add) % mod - off);
+}
+
+// --program n gemms ops: the cuBLAS whole-program floor for a Mapal e2e
+// program (S53 `resident`): context, handle, alloc, `ops` operands generated
+// on the device, `gemms` chained sgemms (each multiplies the last result by
+// the next operand, the loop's `x ← x·w` when ops < gemms + 1), one 4-byte
+// copy-out. One process = one program run; every phase synchronized.
+static int program_floor(int n, int gemms, int ops) {
+  double t0 = wall_ms();
+  CUDA(cudaFree(0));
+  double t1 = wall_ms();
+  cublasHandle_t h;
+  cublasCreate(&h);
+  double t2 = wall_ms();
+  size_t bytes = (size_t)n * n * 4;
+  std::vector<float *> m(ops + 2);
+  for (auto &p : m) CUDA(cudaMalloc(&p, bytes));
+  CUDA(cudaDeviceSynchronize());
+  double t3 = wall_ms();
+  const int mul[3] = {7, 11, 5}, add[3] = {13, 57, 3}, mod[3] = {101, 103, 97}, off[3] = {50, 51, 48};
+  long long cells = (long long)n * n;
+  for (int k = 0; k < ops; ++k)
+    gen_operand<<<(unsigned)((cells + 255) / 256), 256>>>(m[k], cells, mul[k % 3], add[k % 3],
+                                                           mod[k % 3], off[k % 3]);
+  CUDA(cudaDeviceSynchronize());
+  double t4 = wall_ms();
+  const float one = 1.0f, zero = 0.0f;
+  float *x = m[0], *y = m[ops], *spare = m[ops + 1];
+  for (int g = 0; g < gemms; ++g) {
+    float *w = m[1 + (g % (ops - 1))];
+    // Row-major y = x·w is column-major yᵀ = wᵀ·xᵀ.
+    cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, w, n, x, n, &zero, y, n);
+    x = y;
+    std::swap(y, spare);
+  }
+  CUDA(cudaDeviceSynchronize());
+  double t5 = wall_ms();
+  float v;
+  CUDA(cudaMemcpy(&v, x, 4, cudaMemcpyDeviceToHost));
+  double t6 = wall_ms();
+  printf("program n=%d gemms=%d ops=%d ctx_ms=%.3f handle_ms=%.3f alloc_ms=%.3f gen_ms=%.3f "
+         "gemm_ms=%.3f d2h_ms=%.3f after_ctx_ms=%.3f total_ms=%.3f value=%g\n",
+         n, gemms, ops, t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4, t6 - t5, t6 - t1, t6 - t0, v);
+  return 0;
+}
+
+// --h2d mb reps: the copy-in rate from pageable (malloc) vs pinned
+// (cudaMallocHost) memory, and the copy-out rate, interleaved; medians.
+// Measurement only (plan-s53 row 11): whether pinned memory is worth a rung.
+static int h2d_probe(int mb, int reps) {
+  CUDA(cudaFree(0));
+  size_t bytes = (size_t)mb << 20;
+  float *pageable = (float *)malloc(bytes), *pinned, *d;
+  memset(pageable, 1, bytes);
+  CUDA(cudaMallocHost(&pinned, bytes));
+  memset(pinned, 1, bytes);
+  CUDA(cudaMalloc(&d, bytes));
+  std::vector<double> ms[4];
+  for (int r = 0; r < reps + 1; ++r) {
+    float *src[2] = {pageable, pinned};
+    for (int k = 0; k < 2; ++k) {
+      double a = wall_ms();
+      CUDA(cudaMemcpy(d, src[k], bytes, cudaMemcpyHostToDevice));
+      double b = wall_ms();
+      CUDA(cudaMemcpy(src[k], d, bytes, cudaMemcpyDeviceToHost));
+      double c = wall_ms();
+      if (r) {  // first round is warmup
+        ms[k].push_back(b - a);
+        ms[2 + k].push_back(c - b);
+      }
+    }
+  }
+  const char *names[4] = {"h2d_pageable", "h2d_pinned", "d2h_pageable", "d2h_pinned"};
+  printf("copy_rate mb=%d reps=%d", mb, reps);
+  for (int k = 0; k < 4; ++k) {
+    std::sort(ms[k].begin(), ms[k].end());
+    double med = ms[k][ms[k].size() / 2];
+    printf(" %s_ms=%.3f %s_gbps=%.2f", names[k], med, names[k], bytes / med / 1e6);
+  }
+  printf("\n");
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  if (argc >= 5 && !strcmp(argv[1], "--program"))
+    return program_floor(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+  if (argc >= 4 && !strcmp(argv[1], "--h2d"))
+    return h2d_probe(atoi(argv[2]), atoi(argv[3]));
   if (argc < 11) {
     fprintf(stderr, "usage: %s M N K ptx kernel gx gy block smem reps [--contract]\n", argv[0]);
     return 2;

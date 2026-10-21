@@ -69,12 +69,35 @@ impl<'a> FnEmit<'a> {
             heap_used: false,
             gpu_arms: crate::GpuArms::default(),
             reduced: None,
+            resident: None,
+            dslots: SecondaryMap::new(),
+            dvalid: SecondaryMap::new(),
         }
     }
 
     pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms, reduced: Option<crate::Reduced>) {
         self.gpu_arms = arms;
         self.reduced = reduced;
+        let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
+        self.resident = (rungs.resident && self.profile.gpu().is_some())
+            .then(|| self.resident_plan(rungs.devgen))
+            .flatten();
+    }
+
+    /// The producers this function computes on the device (`devgen`): kernel
+    /// id, the body it calls, and the element type it stores.
+    pub(crate) fn gen_kernels(&self) -> Vec<(u64, FuncId, String)> {
+        let Some(plan) = &self.resident else {
+            return Vec::new();
+        };
+        plan.devgen
+            .iter()
+            .map(|(m, g)| {
+                let t = self.ir.morphism(m).expect("gen morphism").target;
+                let (llt, _) = array_parts(&self.obj_ty(t));
+                (g.id, g.body, llt)
+            })
+            .collect()
     }
 
     pub(crate) fn set_perf_timing(&mut self, perf_timing: bool) {
@@ -392,6 +415,32 @@ impl<'a> FnEmit<'a> {
                 Some((out_llt, v))
             }
         }
+    }
+
+    /// A by-value product copied as bytes (`memcpy`) rather than as an SSA
+    /// aggregate, because it is at least [`TargetProfile::heap_min_bytes`]
+    /// long — the size at which its storage already leaves the stack. An SSA
+    /// aggregate that size is one whole-array value to the code generator:
+    /// clang's SelectionDAG crashed on the 4 MB `{ [1048576 x float], i32 }`
+    /// loop state of `loop_mm_1024_8` (S53). Smaller products keep their
+    /// load/store, so every smaller program's text is unchanged.
+    ///
+    /// `Some(llt)` for a plain by-value product (not a forwarded pointer, not
+    /// the by-ref input) laid out as its type lowers. Decided from types
+    /// alone, so asking emits nothing.
+    pub(super) fn big_aggregate(&self, o: ObjectId) -> Option<String> {
+        let ty = self.obj_ty(o);
+        if self.ptr_resident.contains_key(o)
+            || self.byref.as_ref().is_some_and(|(input, _, _)| *input == o)
+            || !matches!(ty, Ty::Tuple(_) | Ty::Struct { .. })
+            || !self.slots.contains_key(o)
+        {
+            return None;
+        }
+        let llt = lower_ty(&ty)?;
+        (self.lower_slot_ty(o, &ty).as_deref() == Some(llt.as_str())
+            && llt_bytes(&llt) >= self.profile.heap_min_bytes)
+            .then_some(llt)
     }
 
     /// Store `(llt, val)` into object `o`'s slot, if it has one.

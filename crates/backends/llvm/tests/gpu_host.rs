@@ -56,8 +56,8 @@ fn main_first(ll: &str) -> &str {
 fn a_gpu_site_makes_init_mains_first_call() {
     let ll = host(SITE, "rtx-4090", GpuArms::default());
     assert!(
-        ll.contains("call void @mapal_gpu_tile("),
-        "the site offloads"
+        ll.contains("call void @mapal_gpu_launch("),
+        "the site offloads (`resident`'s split entries)"
     );
     // The shipped rung: eager-init ON.
     assert_eq!(main_first(&ll), "call void @mapal_gpu_init(i32 1)");
