@@ -633,7 +633,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         rung: "idx32",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: integrated-rtx-3090.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF)",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: arch-select-rtx-3090-table.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -651,7 +651,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     // S54 arch-select: the FMA tile takes `.minnctapersm` under register
     // staging on both faces (exact n=1024 1.032 / 1.094 / 1.090, the first
-    // against the shipped bench's null repeat; integrated-rtx-3090.txt exact
+    // against the shipped bench's null repeat; arch-select-rtx-3090-table.txt exact
     // n=1024 1.108, contract n=2048/8192 0.9933 / 68.68 ms vs old 1.0445 /
     // 70.80), the TF32 `mma` kernel does not — the third face key.
     RungOff {
@@ -676,7 +676,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // single flips each paid on the warp-fill tile (idx32 ON 1.070/1.050/1.071,
     // warp ON 1.055/1.036/1.056, unroll OFF 0.948/0.959/0.940, min-blocks ON
     // 1.033/1.014/1.041) but all of them with warp-fill OFF ran 6% slower than
-    // the S54 table (integrated-rtx-3090.txt _c n=1024 0.1659 vs old 0.1546 ms;
+    // the S54 table (arch-select-rtx-3090-table.txt _c n=1024 0.1659 vs old 0.1546 ms;
     // on that table idx32 ON 0.944, unroll OFF 0.931): warp-fill alone ships.
     RungOff {
         profile: "rtx-3090",
@@ -685,7 +685,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
                every session: _c n=1024 0.935/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
-               n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; integrated-rtx-3090.txt 0.0881 vs \
+               n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; arch-select-rtx-3090-table.txt 0.0881 vs \
                old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign)",
     },
     RungOff {
