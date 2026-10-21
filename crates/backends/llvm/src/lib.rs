@@ -90,9 +90,6 @@ pub struct GpuRungs {
     /// On `sm_90a`, the TF32 face takes Hopper's `wgmma` kernel (S53); off,
     /// the `mma.sync` kernel. Both are bounded by TF32, neither is bit-exact.
     pub wgmma: bool,
-    /// The `wgmma` geometry gives the register file to one resident block:
-    /// its in-flight MMA group computes through the panel barrier.
-    pub wgmma_cover: bool,
 }
 
 impl Default for GpuRungs {
@@ -108,7 +105,6 @@ impl Default for GpuRungs {
             wide: true,
             ldmatrix: true,
             wgmma: true,
-            wgmma_cover: true,
         }
     }
 }

@@ -54,8 +54,10 @@ fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
     assert_eq!(k.matches("cvt.rn.tf32.f32").count(), 8 * 4 + 4 * 4);
     // The rounded panel is fenced to the async proxy before the barrier.
     assert!(k.contains("fence.proxy.async.shared::cta"));
-    // Descriptor fields for bk = 32: LBO 128 B, SBO 1024 B, no swizzle.
-    assert!(k.contains(", 274878431232\n"));
+    // Descriptor: 128-byte swizzle, SBO one 1024-byte atom; the atoms need
+    // the dynamic shared memory 1024-aligned.
+    assert!(k.contains(&format!(", {}\n", 0x4000_0040_0001_0000u64)));
+    assert!(k.contains("@mapal_smem = external addrspace(3) global [0 x i8], align 1024"));
 }
 
 /// The OFF arm is the S52 `mma.sync` kernel, unchanged (still `cvt.rna`).

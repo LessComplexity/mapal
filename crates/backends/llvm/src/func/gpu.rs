@@ -26,7 +26,7 @@ use super::*;
 use crate::Reduced;
 use crate::profile::{
     GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M, MMA_N, WARPGROUP_WARPS,
-    WGMMA_K, WGMMA_M,
+    WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
 };
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
@@ -111,7 +111,7 @@ pub(crate) fn launch(
         && vector_a(site)
         && vector_b(site);
     let wgmma = (tensor && rungs.wgmma)
-        .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k, rungs.wgmma_cover))
+        .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
         .flatten();
     if let Some(w) = wgmma {
         let warp = profile.gpu().expect("gpu").warp;
@@ -279,6 +279,10 @@ pub(crate) fn device_module(
     }
     out.push('\n');
     out.push_str(&md);
+    // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
+    if out.contains("wgmma.mma_async") {
+        out = out.replacen("[0 x i8], align 16", "[0 x i8], align 1024", 1);
+    }
     Some(out)
 }
 
@@ -582,30 +586,33 @@ impl Kernel<'_> {
             self.line(format!("store float {seed}, ptr {p}, align 4"));
         }
 
-        // Copies, in words: `a` chunk (row m = 8·mg + r8, k chunk kc) at
-        // mg·SBO + kc·LBO + 16·r8 bytes — eight lanes fill one core matrix,
-        // a warp 512 contiguous bytes; `b` as the mma kernel stages it.
+        // Copies, in words: `a` row m, 16-byte chunk kc — atom column
+        // ka = kc / 8, chunk c = kc % 8 — lands at ka·bm·128 + m·128 +
+        // (c ⊕ m%8)·16 bytes (`Swizzle<3,4,3>`): eight lanes read one whole
+        // 128-byte line and write eight distinct bank groups. `b` as the mma
+        // kernel stages it.
         let kcs = bk * 4 / GPU_VEC_BYTES;
-        let (lbo_w, sbo_w) = (g.lbo() / 4, g.sbo() / 4);
+        let row_chunks = WGMMA_SWIZZLE_BYTES / GPU_VEC_BYTES;
+        let row_w = WGMMA_SWIZZLE_BYTES / 4;
         let mut copies: Vec<(bool, String, String)> = Vec::new();
         for p in 0..bm * kcs / threads {
             let li = self.op("add", &tid, p * threads);
-            let r8 = self.op("urem", &li, 8);
-            let q = self.op("udiv", &li, 8);
-            let kc = self.op("urem", &q, kcs);
-            let mg = self.op("udiv", &q, kcs);
-            let m = self.op("mul", &mg, 8);
-            let m = self.op("add", &m, &r8);
+            let kc = self.op("urem", &li, kcs);
+            let m = self.op("udiv", &li, kcs);
             let grow = self.op("add", &row0, &m);
             let gr = self.op("mul", &grow, s.a.ci);
             let gk = self.op("mul", &kc, 4);
             let g0 = self.op("add", &gr, &gk);
             let gsrc = self.op("add", &g0, s.a.base);
-            let sg = self.op("mul", &mg, sbo_w);
-            let sk = self.op("mul", &kc, lbo_w);
-            let sr = self.op("mul", &r8, 4);
-            let sdst = self.op("add", &sg, &sk);
-            let sdst = self.op("add", &sdst, &sr);
+            let ka = self.op("udiv", &kc, row_chunks);
+            let c = self.op("urem", &kc, row_chunks);
+            let r8 = self.op("urem", &m, WGMMA_ATOM_ROWS);
+            let sw = self.op("xor", &c, &r8);
+            let sa = self.op("mul", &ka, bm * row_w);
+            let sr = self.op("mul", &m, row_w);
+            let sc = self.op("mul", &sw, 4);
+            let sdst = self.op("add", &sa, &sr);
+            let sdst = self.op("add", &sdst, &sc);
             copies.push((true, gsrc, sdst));
         }
         let bc = bn / 4;
@@ -701,8 +708,9 @@ impl Kernel<'_> {
             frags.push(f);
         }
         self.asm("wgmma.fence.sync.aligned;");
-        // Descriptor of this stage's `a` panel; each k8 step moves the start
-        // by the two 16-byte `k` halves it consumed (2·LBO).
+        // Descriptor of this stage's `a` panel; k8 step `kk` starts in atom
+        // column `kk·32 / 128`, `kk·32 % 128` bytes into its swizzled rows (the
+        // hardware applies the XOR to the address it forms).
         let ap = self.gep(3, smem, &cbase);
         let a32 = self.tmp();
         self.line(format!("{a32} = ptrtoint ptr addrspace(3) {ap} to i32"));
@@ -711,7 +719,10 @@ impl Kernel<'_> {
         let enc = self.op("lshr", &a64, 4);
         let enc = self.op("and", &enc, 0x3fff);
         let desc0 = self.op("or", &enc, g.desc_fields());
-        let step = (WGMMA_K * 4 / GPU_VEC_BYTES * g.lbo()) >> 4;
+        let k_off = |kk: u64| {
+            let b = kk * WGMMA_K * 4;
+            (b / WGMMA_SWIZZLE_BYTES * bm * WGMMA_SWIZZLE_BYTES + b % WGMMA_SWIZZLE_BYTES) >> 4
+        };
         let sty = format!("{{ {} }}", vec!["float"; accs].join(", "));
         let mut text = format!("wgmma.mma_async.sync.aligned.m64n{n}k8.f32.tf32.tf32 {{");
         text.push_str(
@@ -733,7 +744,7 @@ impl Kernel<'_> {
         cons.extend((0..accs).map(|i| i.to_string()));
         let cons = cons.join(",");
         for (kk, f) in frags.iter().enumerate() {
-            let desc = self.op("add", &desc0, kk as u64 * step);
+            let desc = self.op("add", &desc0, k_off(kk as u64));
             let mut args = format!(
                 "i32 {}, i32 {}, i32 {}, i32 {}, i64 {desc}",
                 f[0], f[1], f[2], f[3]

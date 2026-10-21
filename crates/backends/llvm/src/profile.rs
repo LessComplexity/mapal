@@ -280,9 +280,15 @@ pub const WGMMA_ADDR_REGS: u64 = 72;
 /// Stages the `wgmma` panel pipeline needs at least: one landing, one read by
 /// the group being issued, one still read by the group in flight.
 pub const WGMMA_MIN_STAGES: u64 = 3;
-/// A no-swizzle core matrix: 8 rows of 16 bytes, contiguous (PTX ISA,
-/// "Shared Memory Matrix Layout").
-pub const CORE_MATRIX_BYTES: u64 = 8 * GPU_VEC_BYTES;
+/// The `a` panel's shared-memory row in the 128-byte swizzle mode
+/// (`Swizzle<3,4,3>`, descriptor mode 1): one wavefront, eight 16-byte
+/// chunks. A warp then copies whole 128-byte global lines (8 lanes per row)
+/// and the XOR of chunk and row spreads those 8 lanes over all 32 banks; the
+/// no-swizzle layout forced half-line copies to stay conflict-free, and that
+/// copy pipeline bound the first S53 build (box: 1.20 of 1.52 ms at 4096).
+pub const WGMMA_SWIZZLE_BYTES: u64 = 128;
+/// Rows of one swizzle atom; an atom (8 × 128 B) must start 1024-aligned.
+pub const WGMMA_ATOM_ROWS: u64 = 8;
 
 /// The Hopper TF32 tile (S53 `wgmma-hopper`): the site's product transposed,
 /// `cᵀ = bᵀ·aᵀ`, because `wgmma` takes TF32 shared-memory operands only
@@ -318,30 +324,29 @@ impl GpuWgmmaTile {
     pub fn ldb(&self) -> u64 {
         self.bn() + self.pad_b
     }
-    /// Words of the `a` panel in one stage — `bm × bk`, core-matrix layout.
+    /// Words of the `a` panel in one stage: `bk / 32` atom columns, each
+    /// `bm` swizzled 128-byte rows.
     pub fn a_words(&self) -> u64 {
         self.bm() * self.bk
     }
+    /// One stage, rounded up to whole 1024-byte atoms so every stage's `a`
+    /// panel starts where the swizzle pattern does (base offset 0).
     pub fn stage_words(&self) -> u64 {
-        self.a_words() + self.bk * self.ldb()
+        let atom_words = WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES / 4;
+        (self.a_words() + self.bk * self.ldb()).next_multiple_of(atom_words)
     }
     pub fn smem_bytes(&self) -> u64 {
         self.stages * self.stage_words() * 4
     }
-    /// Leading-dimension byte offset of the K-major no-swizzle layout: the
-    /// two 16-byte `k` halves of an 8-row core-matrix pair sit side by side.
-    pub fn lbo(&self) -> u64 {
-        CORE_MATRIX_BYTES
-    }
-    /// Stride-dimension byte offset: one 8-row group holds all `bk/4`
-    /// core matrices of the panel's depth.
+    /// Stride-dimension byte offset: between 8-row groups, one atom.
     pub fn sbo(&self) -> u64 {
-        self.bk * 4 / GPU_VEC_BYTES * CORE_MATRIX_BYTES
+        WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES
     }
     /// The matrix descriptor without its start address (PTX ISA "Matrix
-    /// Descriptor Format": bits 16–29 LBO>>4, 32–45 SBO>>4, swizzle 0).
+    /// Descriptor Format"): LBO field 1 (swizzled K-major layouts do not use
+    /// it, "assumed 1"), SBO>>4 at bit 32, swizzle mode 1 (128-byte) at bit 62.
     pub fn desc_fields(&self) -> u64 {
-        ((self.lbo() >> 4) << 16) | ((self.sbo() >> 4) << 32)
+        (1 << 16) | ((self.sbo() >> 4) << 32) | (1 << 62)
     }
 }
 
@@ -1023,24 +1028,26 @@ impl TargetProfile {
     ///    `n/2` accumulators, the panel's `4·bk/8` A fragments and
     ///    [`WGMMA_ADDR_REGS`] fit `regs_per_thread` (the whole-thread rule).
     /// 2. **Warpgroups per block** (a power of two) from `regs_per_sm` over
-    ///    that count, split across the resident blocks: [`GPU_RESIDENT_BLOCKS`],
-    ///    or one with `cover` (rung `wgmma-cover`: the policy keeps a second
-    ///    block to compute while one waits at the panel barrier, and here the
-    ///    group in flight already computes through it).
+    ///    that count, all in **one** resident block, not split across
+    ///    [`GPU_RESIDENT_BLOCKS`]: that policy keeps a second block computing
+    ///    while one waits at the panel barrier, and here the MMA group in
+    ///    flight computes through it. Measured (S53 run 1, H100 PCIe): the
+    ///    split geometry ran 0.61–0.64× of this one at 2048–8192, and with
+    ///    128-byte swizzle rows (`bk` ≥ 32) it has no three-stage tile at all.
     /// 3. **Fill** — while the grid has fewer blocks than SMs, halve the
     ///    warpgroups, then `n`.
     /// 4. **Smem** — `b` rows padded by [`conflict_free_pad`] for the A
     ///    fragment pattern; the panel must fit [`WGMMA_MIN_STAGES`] stages
-    ///    in a block's share and copy in whole 16-byte chunks per thread.
+    ///    in a block's share, copy in whole 16-byte chunks per thread, and
+    ///    fill whole [`WGMMA_SWIZZLE_BYTES`] rows.
     ///
     /// The deepest valid `bk` wins; then as many stages as the share holds.
-    pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64, cover: bool) -> Option<GpuWgmmaTile> {
+    pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
         if !g.has_wgmma() {
             return None;
         }
         let wg_threads = WARPGROUP_WARPS * g.warp;
-        let resident_blocks = if cover { 1 } else { GPU_RESIDENT_BLOCKS };
         // The largest legal `n` ≤ `cap` dividing `rows`.
         let fit_n = |cap: u64| {
             (1..=cap.min(WGMMA_N_MAX) / WGMMA_N_STEP)
@@ -1059,7 +1066,7 @@ impl TargetProfile {
                 }
                 let mut n = fit_n(2 * (g.regs_per_thread - frag_regs))?;
                 let resident = g.regs_per_sm / regs(n, bk);
-                let per_block = (resident / resident_blocks / wg_threads)
+                let per_block = (resident / wg_threads)
                     .min(g.max_threads_per_block / wg_threads)
                     .max(1);
                 let mut groups = 1 << per_block.ilog2();
@@ -1094,8 +1101,10 @@ impl TargetProfile {
                     pad_b,
                     blocks_per_sm,
                 };
-                let whole =
-                    (n * bk / 4).is_multiple_of(threads) && (bk * bn / 4).is_multiple_of(threads);
+                // Whole 16-byte chunks per thread, and whole swizzle rows.
+                let whole = (n * bk / 4).is_multiple_of(threads)
+                    && (bk * bn / 4).is_multiple_of(threads)
+                    && (bk * 4).is_multiple_of(WGMMA_SWIZZLE_BYTES);
                 (whole && geom.smem_bytes() <= share).then(|| {
                     let stages = (share / (geom.stage_words() * 4))
                         .min(k / bk)
@@ -2741,10 +2750,11 @@ mod tests {
     /// The Hopper `wgmma` geometry (S53), worked by hand from the device facts.
     #[test]
     fn gpu_wgmma_tile_is_derived_from_hopper_facts() {
-        let t = |n, cover| {
+        let t = |n| {
             let x = H100_PCIE
-                .gpu_wgmma_tile(n, n, n, cover)
+                .gpu_wgmma_tile(n, n, n)
                 .expect("sm_90a, divisible square site");
+            assert_eq!(x.stage_words() * 4 % 1024, 0, "stages start on atoms");
             (
                 x.bm(),
                 x.bn(),
@@ -2755,43 +2765,41 @@ mod tests {
                 x.blocks_per_sm,
             )
         };
-        // 4096, one resident block: n = 256 (128 acc + 16 fragments + 72 ≤ 255
-        // at bk 32); 65 536 / 216 = 303 threads ⇒ 2 warpgroups ⇒ 256 × 128;
+        // 4096: n = 256 (128 acc + 16 fragments + 72 ≤ 255 at bk 32);
+        // 65 536 / 216 = 303 threads ⇒ 2 warpgroups in one block ⇒ 256 × 128;
         // the 227 KB share holds 4 bk-32 stages of 49 KB, not 3 of bk 64.
-        assert_eq!(t(4096, true), (256, 128, 2, 32, 4, 8, 1));
-        // The policy split (`wgmma-cover` off): 303 / 2 ⇒ one warpgroup, two
-        // blocks of 113 KB ⇒ bk 16 (20.5 KB stages), 5 stages.
-        assert_eq!(t(4096, false), (256, 64, 1, 16, 5, 8, 2));
+        // 2048 and 8192 already fill 114 SMs with it.
+        for n in [2048, 4096, 8192] {
+            assert_eq!(t(n), (256, 128, 2, 32, 4, 8, 1), "{n}");
+        }
         // 1024: 4 × 8 blocks < 114 SMs ⇒ one warpgroup, then n 128 ⇒ 128
         // blocks; 3 resident ⇒ 75 KB ⇒ exactly three bk-32 stages.
-        assert_eq!(t(1024, true), (128, 64, 1, 32, 3, 8, 3));
+        assert_eq!(t(1024), (128, 64, 1, 32, 3, 8, 3));
         // `wgmma` is sm_90a only: not Ada, not consumer Blackwell, not a CPU.
         for p in [&RTX_4090, &RTX_5090, &CUDA_ADA, &GENERIC] {
-            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096, true), None, "{}", p.name);
+            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None, "{}", p.name);
         }
         assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
     }
 
     /// The matrix descriptor's constant fields for the S52 bench geometries:
-    /// K-major, no swizzle — LBO = one 128-byte core matrix between the two
-    /// `k` halves, SBO = an 8-row group's whole panel depth (`bk/4` core
-    /// matrices). Start address and base offset stay zero (filled per stage).
+    /// K-major, 128-byte swizzle — LBO field 1 (unused, "assumed 1"), SBO =
+    /// one 8 × 128 B atom between 8-row groups, mode 1. Start address and
+    /// base offset stay zero (the stage is filled in per panel, on an atom).
     #[test]
-    fn wgmma_descriptor_fields_follow_the_panel_depth() {
-        for (n, cover, bk) in [(4096, true, 32), (4096, false, 16), (1024, true, 32)] {
-            let x = H100_PCIE.gpu_wgmma_tile(n, n, n, cover).expect("geometry");
-            assert_eq!(x.bk, bk);
-            let d = x.desc_fields();
+    fn wgmma_descriptor_fields_are_the_128b_swizzle_k_major_ones() {
+        for n in [1024, 2048, 4096, 8192] {
+            let d = H100_PCIE
+                .gpu_wgmma_tile(n, n, n)
+                .expect("geometry")
+                .desc_fields();
             assert_eq!(d & 0x3fff, 0, "start address");
-            assert_eq!((d >> 16) & 0x3fff, 128 >> 4, "LBO");
-            assert_eq!((d >> 32) & 0x3fff, bk * 32 >> 4, "SBO");
+            assert_eq!((d >> 16) & 0x3fff, 1, "LBO");
+            assert_eq!((d >> 32) & 0x3fff, 1024 >> 4, "SBO");
             assert_eq!((d >> 49) & 0x7, 0, "base offset");
-            assert_eq!(d >> 62, 0, "no swizzle");
+            assert_eq!(d >> 62, 1, "128-byte swizzle");
+            assert_eq!(d, 0x4000_0040_0001_0000);
         }
-        let x = H100_PCIE
-            .gpu_wgmma_tile(4096, 4096, 4096, true)
-            .expect("geometry");
-        assert_eq!(x.desc_fields(), 0x40_0008_0000);
     }
 
     /// The placeholder honesty pin. `cuda-ada` inherits CPU-shaped constants it
