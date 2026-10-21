@@ -46,5 +46,17 @@ for n in 1024 4096; do
         done
     done
 done
+# The launch timeline of whole Mapal programs: API calls (launch overhead, JIT,
+# allocation), kernels, transfers, and the gaps between them — what a program
+# pays around its kernels, not just inside them.
+if command -v nsys >/dev/null; then
+    for b in e2e_1024_c e2e_4096_c; do
+        [ -x "prof/$b" ] || continue
+        MAPAL_PTX="$PROF/$b.ptx" nsys profile -o "prof/tl_$b" --force-overwrite true -t cuda,osrt \
+            "prof/$b" > "prof/tl_$b.out" 2>&1
+        nsys stats -q --format csv -r cuda_api_sum,cuda_gpu_kern_sum,cuda_gpu_mem_time_sum,cuda_gpu_trace \
+            "prof/tl_$b.nsys-rep" > "prof/tl_$b.csv" 2>&1
+    done
+fi
 tar czf "prof-$PROF.tgz" prof
 echo "profile done: $(ls prof | wc -l) files"
