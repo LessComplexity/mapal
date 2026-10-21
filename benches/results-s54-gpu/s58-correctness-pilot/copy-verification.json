@@ -1,0 +1,9 @@
+{
+  "pass": true,
+  "verified_files": 32,
+  "verified_bytes": 96650281,
+  "original_recovery_receipt_sha256": "8c4b422970d36088e03d5b27fe2d065705523751882051b3195488362f098660",
+  "additional_closed_ledger_sha256": "c23de3b1d71f8540b76bb594c7a96e8c2a792aec480082b762913b21ee9936e5",
+  "additional_closed_ledger_bytes": 496,
+  "raw_create_response_excluded": true
+}

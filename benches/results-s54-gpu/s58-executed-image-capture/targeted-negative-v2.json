@@ -1,0 +1,115 @@
+[
+  {
+    "case": "resource-wrong-context",
+    "rejected": "observer error: ['error', 'resource-context-mismatch']",
+    "events_sha256": "3ed6834bf5ca594a9b15739039cdfaa9275d5494dc46809c5c895e24199929ee",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "error\tresource-context-mismatch"
+    ]
+  },
+  {
+    "case": "exit-wrong-context",
+    "rejected": "observer error: ['error', 'load-exit-identity-mismatch']",
+    "events_sha256": "1e96f84ec41e3611d5b61f076bbb90aeed81d888a5c0e88f5b6849644d21527b",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "error\tload-exit-identity-mismatch"
+    ]
+  },
+  {
+    "case": "exit-wrong-uid",
+    "rejected": "observer error: ['error', 'load-exit-identity-mismatch']",
+    "events_sha256": "1e96f84ec41e3611d5b61f076bbb90aeed81d888a5c0e88f5b6849644d21527b",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "error\tload-exit-identity-mismatch"
+    ]
+  },
+  {
+    "case": "exit-wrong-correlation",
+    "rejected": "observer error: ['error', 'load-exit-identity-mismatch']",
+    "events_sha256": "1e96f84ec41e3611d5b61f076bbb90aeed81d888a5c0e88f5b6849644d21527b",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "error\tload-exit-identity-mismatch"
+    ]
+  },
+  {
+    "case": "exit-wrong-output",
+    "rejected": "observer error: ['error', 'load-exit-identity-mismatch']",
+    "events_sha256": "1e96f84ec41e3611d5b61f076bbb90aeed81d888a5c0e88f5b6849644d21527b",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "error\tload-exit-identity-mismatch"
+    ]
+  },
+  {
+    "case": "exit-wrong-image",
+    "rejected": "observer error: ['error', 'load-exit-identity-mismatch']",
+    "events_sha256": "1e96f84ec41e3611d5b61f076bbb90aeed81d888a5c0e88f5b6849644d21527b",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "error\tload-exit-identity-mismatch"
+    ]
+  },
+  {
+    "case": "wrong-grid",
+    "rejected": "launch contract mismatch",
+    "events_sha256": "e11612cd5ccabd0bd1362bdc3d6ec8c97035db5b2d6548984d753ae7c20bb0b1",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "load-exit\t3\t1\t0x33\t4\t9\t7",
+      "function\t4\t1\t4\t9\t0x22\tkernel",
+      "launch\t5\t1\t4\t9\t0x22\t7\t999,17,3\t1,1,1\t0"
+    ]
+  },
+  {
+    "case": "wrong-block",
+    "rejected": "launch contract mismatch",
+    "events_sha256": "ac3569aaee63ac7ea3b644a374fb190b1438c9492c23b172eafee2d735e954bd",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "load-exit\t3\t1\t0x33\t4\t9\t7",
+      "function\t4\t1\t4\t9\t0x22\tkernel",
+      "launch\t5\t1\t4\t9\t0x22\t7\t1,1,1\t1025,2,4\t0"
+    ]
+  },
+  {
+    "case": "wrong-shared",
+    "rejected": "launch contract mismatch",
+    "events_sha256": "f86cbc6867f1488cde8c388e0b538dfcf6195d9306a030c6e88fdf14ef83e753",
+    "events": [
+      "schema\tmapal-cupti-driver-v2",
+      "ready",
+      "load-enter\t1\t0x33\t4\t7",
+      "image\t2\t1\t0x33\t9\t288\tmodule-1.cubin",
+      "load-exit\t3\t1\t0x33\t4\t9\t7",
+      "function\t4\t1\t4\t9\t0x22\tkernel",
+      "launch\t5\t1\t4\t9\t0x22\t7\t1,1,1\t1,1,1\t999999"
+    ]
+  }
+]

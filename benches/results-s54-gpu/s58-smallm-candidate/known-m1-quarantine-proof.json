@@ -1,0 +1,42 @@
+{
+  "scope": "priorrawgatefailure motivates per-cell quarantine; not prediction of a different bounded gate or new host",
+  "prior_shape": {
+    "M": 1,
+    "N": 2048,
+    "K": 7168
+  },
+  "prior_printed_error_comparison": {
+    "mapal_contract_and_requested_tf32_maxrel": 0.001787,
+    "cublas_maxrel": 0.0001248,
+    "ratio_from_printed_values": 14.318910256410255,
+    "four_times_cublas_from_printed_values": 0.0004992,
+    "cutlass_contract_maxrel": 0.001787,
+    "cutlass_requested_tf32_maxrel": 0.2652
+  },
+  "prior_receipt_sha256": "1a4878572b05a5cdfce1a8719c35575b8e7f39b50a30662308b62a5f1d0c8cbe",
+  "raw": [
+    {
+      "arm": "base",
+      "exit": 1,
+      "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+      "bound_stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a"
+    },
+    {
+      "arm": "null",
+      "exit": 1,
+      "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+      "bound_stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a"
+    }
+  ],
+  "new_bounded_gate": {
+    "M": 1,
+    "N": 256,
+    "K": 7168
+  },
+  "new_actual_timing": {
+    "M": 1,
+    "N": 2048,
+    "K": 7168
+  },
+  "deduction": "N256 changes seeded B layout and cuBLAS shape; prior N2048 failure cannot establish N256 outcome. ActualN2048 also requires fresh acceptance on new host. Either failure previously aborted independent cells; now sampled admission and quarantine preserve them."
+}

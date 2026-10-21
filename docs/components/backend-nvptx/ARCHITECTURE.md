@@ -290,14 +290,42 @@ reuses bytes by topo position, which concurrent streams do not follow, so a func
 streams keeps per-object buffers; the L2 window is not carried by a `launchv` (a group or a chain
 launch). Static before/after on five parts: `benches/results-s54-gpu/arch-select-fusion-report.txt`.
 
-R7's grouped-member guarantee is a remaining implementation obligation: the
-[ordering evidence and isolated candidate](../../performance/s57-ordering-evidence.md)
-prove omitted explicit edges in shared emission and show a correction using the existing
-group ownership and runtime events. The candidate adds no Dat, Loc or Trm and leaves the
-arena guard intact. Its emission/runtime proof does not close ordinary GPU execution;
-FRAMEWORK §4.5 laws 1, 4 and 5 therefore remain open for this integration boundary.
+R7's grouped-member guarantee is realized by the
+[S58 ordering correction](../../performance/s58-parallel-development.md): stream selection
+resolves canonical aliases through the grouped physical writer, and the legacy-consumer
+veto uses that same relation. The correction adds no Dat, Loc or Trm and leaves the arena
+guard intact. Four old-code regression failures, unchanged device LLVM, runtime/API
+completion evidence and 200 ordinary GPU processes on each revision support this boundary
+(FRAMEWORK §4.5 laws 1, 4 and 5). Both revisions passed the GPU outputs; no observed race
+failure or performance improvement is claimed. Removing allocations remains a separate
+proof duty because an existing free can also supply completion.
 
 ## 8. What is not placed here
+
+The standalone executed-image observer is a measurement prototype, outside production
+placement. `Dat ObservationPacket` consists of exact PTX/cubin bytes, callback identities
+and a completed-harness receipt. `Trn callback` copies callback-owned code into an isolated
+directory before its lifetime ends (`Trm writefile`, benchmark-process Loc → filesystem
+Loc); `Trn validate` deduces module/function/launch joins and checks exact expected geometry.
+The implementation map names these symbols. This satisfies the local model's ownership
+and composition obligations (FRAMEWORK §4.5 laws 1, 2, 5); actual Linux/GPU callback behavior
+remains an open proof duty. A successful driver launch is submission evidence; completion
+and numerical correctness must come from the separately reviewed harness. Instrumented
+observations never supply ordinary timing.
+
+```mermaid
+flowchart LR
+    P[Benchmark process: callback]
+    D[Isolated directory: ObservationPacket]
+    V[Host validator: admitted observation or rejection]
+    P -->|writefile: exact code bytes and identities| D
+    D -->|validate: joins, hashes and expected launch| V
+```
+
+| Measurement morphism | Domain → codomain | Realization |
+| --- | --- | --- |
+| `writefile` (`Trm`) | callback-owned bytes/identities → isolated ObservationPacket | `capture.cpp:writefile`, called by `capture.cpp:callback` |
+| `validate` (`Trn`) | ObservationPacket + harness receipt → admission/rejection | `validate.py:validate`; no GPU numerical proof is inferred |
 
 - Joint CPU/GPU cost-based placement and concurrent CPU task execution remain open questions.
   `Host` and `Gmem` are existing `Loc`; `Emission` carries separate host/device modules.

@@ -1,7 +1,12 @@
 # Component: backend-nvptx
 
-Status: **built inside the LLVM backend; final S54 validation matrix passed; targeted ordering remains open.**
-Last updated: 2026-10-21 · S57 frozen validation complete; generic proof work continuing.
+Status: **built inside the LLVM backend; S54 validation passed; S58 ordering correction integrated and checked.**
+Last updated: 2026-10-21 · S58 parallel development; small-M GPU comparison in preparation.
+
+Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
+is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
+independently reproduced context/geometry rejections. Linux injection and actual executed
+cubin/SASS capture remain unvalidated; this does not close the S57 disassembly gap.
 
 The S41 packaging choice is realized as the GPU leg of `mapal-backend-llvm`, with the
 CUDA-driver runtime in `mapal-rt`. The component has no separate backend crate.
@@ -69,15 +74,15 @@ Generic ordering/allocation and composed-workload plans remain active.
 2. Both S54 reports and the §4.5 review are reconciled; drift passes and the validation
    change is archived. The uncovered composition duties below remain explicit.
 
-Separate proof duty discovered during validation: [stored-member ordering](../../performance/s57-ordering-evidence.md).
-Frozen emitted LLVM demonstrates missing explicit producer edges in host-readback and
-different-chain tile cases. GPU consequences are not yet tested. The §4.5 review leaves
-those composition/readiness duties open; the benchmark matrix must not be described as
-proof for all programs. No ordering fix is applied. The reviewed isolated candidate has
-four old-code regression failures, two passing controls, 50 passing focused checks and
-14 unchanged device LLVM units; runtime/API completion proof is recorded. Both approved
-ordinary GPU attempts failed at allocation before upload and are cleaned up. No further
-attempt is authorized. Allocation elimination remains deferred; the arena guard stays.
+The [stored-member ordering investigation](../../performance/s57-ordering-evidence.md)
+proved missing explicit producer edges in host-readback and different-chain tile cases.
+The [S58 correction](../../performance/s58-parallel-development.md) is now integrated:
+four old-code regression failures, two passing controls, 50 focused checks and 14 unchanged
+device LLVM units support the runtime/API completion proof. A renewed RTX 5090 attempt
+passed 200 ordinary processes on the frozen revision and 200 on the correction, with
+independent raw-output validation after retrieval. Both passed; there is no observed race
+failure or measured speedup. Required-clang workspace: **1,188 passed / 0 failed / 1 ignored**.
+Allocation elimination remains deferred; the arena guard stays.
 
 The [large/composed preparation](../../performance/s57-large-composed-evidence.md) adds
 96 successful temporary primitive emissions and small arithmetic certification.
@@ -86,8 +91,9 @@ are the same requested-TF32 fallback and remain rejected. All six 16K base/repea
 sampled value gates pass. This is separate from the frozen matrix.
 The recurrent checkpoint replay panic is now repaired through existing loop-driver facts.
 All eight previously failing GPU emissions complete and full interpreter checkpoints
-match; actual composed GPU correctness/timing remains open. Native large emission still
-reaches a bounded timeout. The required-clang workspace passes 1,181/0/1 ignored.
+match. S58 small-matrix correctness passes for Mapal, handwritten CUDA/cuBLAS and PyTorch
+eager; compiled PyTorch stopped at missing `Python.h`, before a numeric verdict. This is
+not a composed timing result. Native large emission still reaches a bounded timeout.
 
 ## Continuing performance work
 

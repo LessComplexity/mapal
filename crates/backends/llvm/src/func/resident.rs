@@ -167,6 +167,14 @@ impl Epi {
     }
 }
 
+/// The base launch that writes an epilogue member's physical bytes.
+fn grouped_writer(groups: &SecondaryMap<MorphismId, Epi>, o: ObjectId) -> Option<MorphismId> {
+    groups
+        .iter()
+        .find(|(_, g)| g.chain.iter().any(|mb| mb.out == o))
+        .map(|(m, _)| m)
+}
+
 /// A per-cell map placed on the device (S54 `devmap`, ARCHITECTURE R2): its
 /// own one-thread-per-cell kernel, `out[i] = body(caps…, x[i])` with the
 /// host's body text, launched on the device copies of its operands.
@@ -290,7 +298,16 @@ impl ResidentPlan {
     }
 
     /// The chain stream `o` is produced on (0: the legacy stream).
-    pub(crate) fn stream_of(&self, ir: &CategoryIr, o: ObjectId) -> u32 {
+    pub(crate) fn stream_of(
+        &self,
+        ir: &CategoryIr,
+        groups: &SecondaryMap<MorphismId, Epi>,
+        o: ObjectId,
+    ) -> u32 {
+        let o = self.alias(o);
+        if let Some(m) = grouped_writer(groups, o) {
+            return self.chain.get(m).copied().unwrap_or(0);
+        }
         ir.in_edges(o)
             .iter()
             .find_map(|&m| self.chain.get(m).copied())
@@ -1338,11 +1355,16 @@ impl<'a> FnEmit<'a> {
             .iter()
             .map(|&(_, m, _)| self.ir.morphism(m).expect("site").target)
             .collect();
+        let on_chain = |o: ObjectId| {
+            let o = plan.alias(o);
+            let writer = grouped_writer(&self.groups, o)
+                .map_or(o, |m| self.ir.morphism(m).expect("group site").target);
+            chained.contains(&writer)
+        };
         let reads_chained = |src: ObjectId, slots: &[u32]| {
-            slots.iter().any(|&k| {
-                self.pair_source(src, k)
-                    .is_some_and(|o| chained.contains(&o))
-            })
+            slots
+                .iter()
+                .any(|&k| self.pair_source(src, k).is_some_and(on_chain))
         };
         let unordered = sites.iter().any(|(m, s)| {
             !order.iter().any(|&(_, o, _)| o == m)
@@ -1350,7 +1372,7 @@ impl<'a> FnEmit<'a> {
         }) || plan
             .cells
             .values()
-            .any(|c| c.operands().iter().any(|&(o, _)| chained.contains(&o)));
+            .any(|c| c.operands().iter().any(|&(o, _)| on_chain(o)));
         if unordered {
             return;
         }
@@ -1466,12 +1488,6 @@ impl<'a> FnEmit<'a> {
         // own (later) map — else it could take the bytes of an operand that dies
         // at the site while the kernel still reads it (S54 integration:
         // px_bias_100's `d` took `a`'s offset and the checksum raced).
-        let site_of = |o: ObjectId| {
-            self.groups
-                .iter()
-                .find(|(_, g)| g.chain.iter().any(|mb| mb.out == o))
-                .map(|(s, _)| s)
-        };
         let live: Vec<(u32, u32, u64)> = members
             .iter()
             .map(|&o| {
@@ -1480,7 +1496,7 @@ impl<'a> FnEmit<'a> {
                     .in_edges(o)
                     .iter()
                     .copied()
-                    .chain(site_of(o))
+                    .chain(grouped_writer(&self.groups, o))
                     .filter_map(|p| self.lup.position(p))
                     .min();
                 let death = self.lup.death(o);
@@ -1982,7 +1998,7 @@ impl<'a> FnEmit<'a> {
             ops.push(d);
         }
         let plan = self.resident.clone().expect("resident site");
-        let s = plan.stream_of(self.ir, target);
+        let s = plan.stream_of(self.ir, &self.groups, target);
         if s != 0 && self.first_chained(&plan, target) {
             self.chain_prologue(&plan);
         }
@@ -2013,7 +2029,7 @@ impl<'a> FnEmit<'a> {
             }
             let mut waits: Vec<u32> = feeds
                 .iter()
-                .map(|&f| plan.stream_of(self.ir, f))
+                .map(|&f| plan.stream_of(self.ir, &self.groups, f))
                 .filter(|&p| p != 0 && p != s)
                 .collect();
             waits.sort_unstable();
@@ -2157,7 +2173,7 @@ impl<'a> FnEmit<'a> {
             .resident
             .as_ref()
             .expect("plan")
-            .stream_of(self.ir, arr);
+            .stream_of(self.ir, &self.groups, arr);
         let d = self.dload(arr);
         let off = self.tmp();
         self.line(format!("{off} = mul i64 {idx}, {eb}"));
@@ -2292,6 +2308,60 @@ fn array_elem(ty: &Ty) -> &Ty {
 #[cfg(test)]
 mod tests {
     use super::{ARENA_ALIGN, color};
+
+    #[test]
+    fn grouped_stream_lookup_uses_aliases_and_keeps_unknowns_legacy() {
+        use super::{Carry, Epi, Member, ResidentPlan};
+        use mapal_ir::{FuncKind, IrBuilder, SourceLoc, Ty, Value};
+        use slotmap::SecondaryMap;
+
+        let loc = SourceLoc::empty_at(0);
+        let mut b = IrBuilder::new();
+        let f = b
+            .declare(FuncKind::Named, "lookup", Ty::Unit, Ty::i32(), loc)
+            .unwrap();
+        let mut fb = b.build_fn(f).unwrap();
+        let host = fb.input();
+        let mut object = || fb.constant(Value::I32(1), loc).unwrap();
+        let (merge, view, exit, next, raw) = (object(), object(), object(), object(), object());
+        fb.output(raw, None, loc).unwrap();
+        fb.finish().unwrap();
+        let ir = b.seal(f).unwrap();
+        let output = ir.func(f).unwrap().output;
+        let site = ir.in_edges(output)[0];
+        let mut groups = SecondaryMap::new();
+        groups.insert(
+            site,
+            Epi {
+                store_out: false,
+                chain: vec![Member {
+                    m: site,
+                    body: f,
+                    out: merge,
+                    store: true,
+                    srcs: vec![],
+                }],
+            },
+        );
+        let mut plan = ResidentPlan::default();
+        plan.chain.insert(site, 2);
+        plan.carries.push(Carry {
+            merge,
+            k: 0,
+            next,
+            views: vec![view],
+            exit: Some(exit),
+        });
+        for o in [merge, view, exit, output] {
+            assert_eq!(plan.stream_of(&ir, &groups, o), 2);
+        }
+        // The next iteration owns a separate slot; host/unknown writers stay legacy.
+        for o in [next, host, raw] {
+            assert_eq!(plan.stream_of(&ir, &groups, o), 0);
+        }
+        plan.chain.clear();
+        assert_eq!(plan.stream_of(&ir, &groups, view), 0);
+    }
 
     /// Disjoint lives share bytes; overlapping ones (an inclusive end: the
     /// site that reads one object writes the next) never do.

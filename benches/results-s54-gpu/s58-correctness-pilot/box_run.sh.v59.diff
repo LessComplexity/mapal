@@ -1,0 +1,15 @@
+--- /private/tmp/mapal-s58-gpu/staging-v58/box_run.sh	2026-10-21 18:05:39
++++ /private/tmp/mapal-s58-gpu/staging-v59/box_run.sh	2026-10-21 18:08:43
+@@ -12,9 +12,12 @@
+ }
+ trap finish EXIT
+ printf '%s  %s\n' \
++  '5368c35b5328dea218158ccbfeb1aaf880c5982c6159cec2f9e3ee570fffb321' ordering-candidate.tgz \
++  'f4c7d2225f42ff477c754efd8836347dfa74aaa96219e08695a51c7339319ab2' verify_ordering.py \
+   '2892f59e49b11cfbc46f54ad355aa8b9bd010073787dfe1ace112ad734e900ce' ordering.tgz \
+   'c460670f667f43dc255085574934aae3b6ea7780d1a878309179c6709a5aa056' matrix-upload.tgz | sha256sum -c - > trace/archive-check.stdout 2> trace/archive-check.stderr
+ tar xzf ordering.tgz
++tar xzf ordering-candidate.tgz
+ tar xzf matrix-upload.tgz
+ command -v python3 > trace/python-path.txt
+ python3 run_checks.py

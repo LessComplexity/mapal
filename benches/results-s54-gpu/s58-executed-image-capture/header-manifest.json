@@ -1,0 +1,45 @@
+{
+  "packages": "NVIDIA PyPI CUDA12.8 pinned wheels; unmodified extracted headers",
+  "files": [
+    {
+      "path": "headers/nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "bytes": 954765,
+      "sha256": "adade8dcbd0edf427b7204d480d6066d33902cab2a4707dcfc48a2d0fd44ab90"
+    },
+    {
+      "path": "headers/nvidia_cuda_nvcc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "bytes": 40128098,
+      "sha256": "2d6dc36fb7cb5ac9c0b8825bc13d193c35487a315664007287d0126531238011"
+    },
+    {
+      "path": "headers/nvidia_cuda_cupti_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "bytes": 10248621,
+      "sha256": "ea0cb07ebda26bb9b29ba82cda34849e73c166c18162d3913575b0c9db9a6182"
+    },
+    {
+      "path": "headers/unpacked/nvidia/cuda_cupti/include/cupti.h",
+      "bytes": 4697,
+      "sha256": "2645720064c8318cf09bad9d7d5a9ab379cc7082e180ffd6773e9f878fcd103d"
+    },
+    {
+      "path": "headers/unpacked/nvidia/cuda_cupti/include/cupti_callbacks.h",
+      "bytes": 29689,
+      "sha256": "699f9213460c15f4fd47e521e4c1dba0f834ca91cc8de492009c37cdd3fb382b"
+    },
+    {
+      "path": "headers/unpacked/nvidia/cuda_cupti/include/cupti_driver_cbid.h",
+      "bytes": 77280,
+      "sha256": "9a404d3d890b7dc1318506450e8d2260795a1c95860f6bce31db73695fa51149"
+    },
+    {
+      "path": "headers/unpacked/nvidia/cuda_cupti/include/generated_cuda_meta.h",
+      "bytes": 98664,
+      "sha256": "0c37607d6f38195b6c19bafb75a3497219a66434bfc5fbc31ef1429b72353847"
+    },
+    {
+      "path": "headers/unpacked/nvidia/cuda_runtime/include/cuda.h",
+      "bytes": 1156988,
+      "sha256": "4568cc9e7a321e47707cd6403980f21ac2e2e55170500d0e0a3f54feb03a9acb"
+    }
+  ]
+}
