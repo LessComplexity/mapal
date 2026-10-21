@@ -301,6 +301,20 @@ def relu(e):
     return f"{e} -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r"
 
 
+def expo(e):
+    """exp(x) for x <= 0 as its limit form (1 + x/256)^256 — 8 squarings, the
+    base clamped at 0. `exp` is not in the Core op set; chain_bench.cu's `expo`
+    is the same function."""
+    sq = "".join(f" v{i} * v{i} -> v{i + 1};" for i in range(8))
+    return f"{e} -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0;{sq} v8"
+
+
+def row_fold(o, src, n, seed, step):
+    """`o[i] = fold_j (seed, step) src[i·n + j]`: one in-order fold per row."""
+    return (f"    krange -> map {{ i -> ({seed}, krange) -> fold {{ acc, j -> src_v; {step} }} }} -> {o};\n"
+            .replace("src_v", f"{src}[i * {n} + j] -> e"))
+
+
 def probes(n):
     """probe: (operands, vectors + computations, [(output, length)])."""
     S = lambda o, a, b: site(o, a, b, n)
@@ -331,6 +345,16 @@ def probes(n):
         'rowsum': ('ab', S('c', 'a', 'b')
                    + f"    krange -> map {{ i -> (0.0, krange) -> fold {{ acc, j -> acc + c[i * {n} + j] }} }} -> r;\n",
                    [('r', n)]),
+        # softmax over the rows of a tile site's output, temperature n: a row max
+        # (a fold over the site's output), exp(x − max) per cell, a row sum of
+        # that (a fold over a per-cell output), the quotient per cell
+        'softmax_rows': ('ab', S('c', 'a', 'b')
+                         + row_fold('mx', 'c', n, '-1000000000.0',
+                                    '(e > acc) -> { -true-> e; -false-> acc; }')
+                         + T('ex', expo(f'(c[t] - mx[t / {n}]) / {n}.0'))
+                         + row_fold('den', 'ex', n, '0.0', 'acc + e')
+                         + T('y', f'ex[t] / den[t / {n}]'),
+                         [('y', N)]),
         # two independent two-layer MLPs (bias + relu between), at once
         'mlp2': ('abefgp', bias('bias') + bias('bias2')
                  + S('c1', 'a', 'b') + T('h1', relu(f'c1[t] + bias[t % {n}]')) + S('d1', 'h1', 'e')

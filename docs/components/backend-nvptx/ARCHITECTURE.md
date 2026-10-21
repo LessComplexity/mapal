@@ -35,7 +35,8 @@ machine fact enters the IR).
 | array `x: [T; n]` | immutable, static `n` | `Ty::Array` |
 | tile site `S` | `out[i,j] = fold_k a·b` with affine reads, `k > 0` | `algo.rs:TileSite`, `TileRead{ci,clane,ck}` |
 | per-cell morphism `m` | a `Map` with no inner fold whose cell `t` reads a fixed set of cells | `algo.rs:ElemSrc::Apply` (law), **`cell_plan` (S54: the read footprint)** |
-| row fold `R` | a `Map` over rows whose body is one in-order `Fold` over an affine read | **`row_fold` (S54)** |
+| row fold `R` | a `Map` over rows whose body is one in-order `Fold` of one affine read `base + ci·i + ck·k`, step `acc ⊕ e` (`+ − ×`, or a compare-select: max/min) | **`algo.rs:row_fold` → `RowFoldSite{rows, k, a, op, seed}` (S54)** |
+| exact use count | every reader of `x`: the `Pair`s out of `x` and the morphisms their products feed | `out_edges` (`rowfold.rs:only_reader`) |
 | element read | a host `Index` at a proven constant | `BoundsProof::proven` |
 | carried state | a loop-state component and the rows one iteration writes | `LoopPlan`, `write_delta → Delta::Rows` |
 | death | the position after which no morphism reads `x` | `LastUsePlan::death`, `escapes` |
@@ -62,7 +63,7 @@ body, no `Call`/`Map`/`Fold`, no float `%`) plus every `Index` proven.
 | --- | --- | --- |
 | tile site | `(a, b) → out` | host nest (`tile.rs`); device `naive` / `tiled` / `mma` / `wgmma` (`gpu.rs`) |
 | per-cell morphism | `(x₁…xₙ) → out` | host loop (`bulk.rs:emit_map`); `devgen` kernel (captures 0, closed form); **S54: epilogue in a site's store; `cell` kernel** |
-| row fold | `x → r` | host nest; **S54: `rowfold` kernel, one thread per row** |
+| row fold | `x → r` | host nest; **S54: `rowfold` kernel (`gpu.rs:rowfold_kernel_text`), one thread per row, `k` in order, the host's step instruction** |
 | whole float fold | `x → scalar` | host only (ADR-0028 D4: one in-order chain; one device thread is slower than the copy-out) |
 | element read | `x → T` | host load; one-element `d2h` (`resident.rs:Use::Elem`) |
 | restricted site | the site over the rows `Δ` says changed | `retain.rs:Retained.row` |
@@ -89,7 +90,7 @@ to one block, in `Gmem` to every block **after a grid-wide wait**.
 | grid-wide wait | `Gmem → Gmem` | the fact that every block stored | implicit between launches on one stream; an event across streams |
 | `g2s` (stage) | `Gmem → Smem` | a panel | `cp.async` / vector loads; completed by `barrier0` |
 | `s2r` | `Smem → Reg` | a fragment | `ld.shared` / `ldmatrix` |
-| store | `Reg → Gmem` | an output tile | one vector store per `lanes` columns |
+| store | `Reg → Gmem` | an output tile | one vector store per `lanes` columns; **S54 `rowfold-layout`: per `lanes` rows of a column (column-major)** |
 
 Law 2: each of these crosses a boundary; a same-location flow (the host loop, the register
 step) is a `Trn`. Law 1: the host fold reads `d` at `Host`, so `d` is delivered by `d2h` or the
@@ -104,8 +105,13 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
 
 - **R0 (anchor).** A tile site with `k > 0` and plain affine reads is a device site
   (`gpu.rs:gpu_site`). Its output cell exists in the owning thread's `Reg` before the store.
-  A row fold is a device site (one thread per row, `k` in order). Every other `Trn` starts at
-  `Host`.
+  A row fold whose read array a device site produced is a device site (one thread per row, `k`
+  in order; `rowfold.rs:rowfold_sites`); a fold over a host array stays on the host — moving the
+  array in is the copy the rule removes. Every other `Trn` starts at `Host`.
+- **R0′ (store order, S54 `rowfold-layout`).** When a device row fold is the *only* reader of a
+  tile site's output (the exact use count) and reads it in row order, the site stores the output
+  column-major (`o[j·rows + i]`) and the fold reads `c[i + k·rows]`: the fold's threads are the
+  rows, so a warp's reads are consecutive words. No other reader exists to see the layout.
 - **R1 (fold into the store).** A per-cell morphism `m` runs **inside** device kernel `S`,
   between the accumulator and the store, when every operand of `m` is (i) `S`'s output at
   footprint `Same`, (ii) a member of `S`'s group already (a chain `x → y → z` composes by
@@ -154,7 +160,8 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 | mlp | site → per-cell → site | 2 / whole / whole | 2 / 8 B / 0 |
 | indep, diamond | sites ∥ → per-cell join | 2–3 serial / whole | 2–3, join in the last store; streams under one wave |
 | fanout | one output, three readers | 2 / 3 × whole | 2 / whole once (the host reads `c`) |
-| rowsum | site → per-row fold | 1 / whole | 2 / 4 B |
+| rowsum | site → per-row fold | 1 / whole | 2 / 8 B (the two printed cells), `c` column-major (S54, built) |
+| softmax_rows | site → row max, per-cell exp, row sum, per-cell quotient | 1 / whole | 2 / whole `c` + 16 KB `mx` (S54 `rowfold`: the max on the device; the sum folds a host array); R2 takes the rest |
 | loop | `x ← relu(x @ w)` × 8 | 8 / 8 × whole / 8 × whole | 8 / 0 / 0 |
 | decode | carried rows, invariant weights | 3 whole launches per step, 1 MB each way | row launches, 1 KB each way |
 

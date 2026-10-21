@@ -118,7 +118,7 @@ for spec in "$@"; do
             for face in "" _c; do
                 flags=(); [ "$face" = _c ] && flags=(--contract)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- \
-                    async resident devgen eager-init retain-delta
+                    async resident devgen eager-init retain-delta rowfold rowfold-layout
                 # retain-delta's measured OFF arm: every site a round trip.
                 case $b in decode_*)
                     emit_one "$f" "$d/$b$face.off-retain-delta+resident" "$prof" "$sm" \

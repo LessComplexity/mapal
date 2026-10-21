@@ -126,6 +126,8 @@ for o in "$PROF"/pt_*.host.o; do
                 tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null)
                 t2=$(date +%s%N)
                 say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr")"
+                # S54: each launch's kernel time under the trace, in launch order.
+                say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
                 [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
             done
         done
