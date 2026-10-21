@@ -75,6 +75,8 @@ impl<'a> FnEmit<'a> {
             retain: SecondaryMap::new(),
             retain_flags: SecondaryMap::new(),
             row_bounds: None,
+            groups: SecondaryMap::new(),
+            cell_slots: Vec::new(),
         }
     }
 
@@ -89,9 +91,11 @@ impl<'a> FnEmit<'a> {
         // the arm `retain-delta` was measured on; `resident` would hold the
         // retained output on the device while the restricted pass writes host
         // rows. Plan the two together when a program needs both.
-        self.resident = (rungs.resident && self.profile.gpu().is_some() && self.retain.is_empty())
-            .then(|| self.resident_plan(rungs.devgen))
-            .flatten();
+        let resident = rungs.resident && self.profile.gpu().is_some() && self.retain.is_empty();
+        if resident {
+            self.groups = self.epilogues();
+        }
+        self.resident = resident.then(|| self.resident_plan(rungs.devgen)).flatten();
     }
 
     /// The producers this function computes on the device (`devgen`): kernel

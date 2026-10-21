@@ -580,6 +580,12 @@ impl<'a> FnEmit<'a> {
             .expect("index array ptr");
         let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
         let i64idx = self.load_index(source, 1, &idx_ty);
+        // A body's device variant (S54): a one-cell buffer holds cell `t`.
+        let i64idx = if self.cell_read(source) {
+            "0".to_string()
+        } else {
+            i64idx
+        };
         // Guard elision (S20 `bounds_proof`; the vectorization unlock): the
         // plan proves the index statically inside `[0, size)` — the trap is
         // dead, so a proven `Index` emits just the GEP+load. Everything

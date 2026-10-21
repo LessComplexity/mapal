@@ -4,7 +4,7 @@ face, and count, per program, where the work lands — from the emitted host and
 device IR alone (no GPU needed):
 
   tile / gen kernels  `define ptx_kernel` in the device module (`mapal_tile_*`, `mapal_gen_*`)
-  launches, gens      host call sites of `mapal_gpu_launch` / `mapal_gpu_tile`, `mapal_gpu_gen`
+  launches, gens      host call sites of `mapal_gpu_launch[v]` / `mapal_gpu_tile`, `mapal_gpu_gen`
   h2d, d2h            host call sites and their constant byte counts (`mapal_gpu_tile`, the
                       S52 round trip, counts as two copies in and one out)
   host elem loops     host loops of at least n·n trips — per-cell work left on the host
@@ -14,10 +14,11 @@ device IR alone (no GPU needed):
 Counts are static: a call inside a host loop (a program `loop`) counts once and
 is flagged `L`.
 
-usage: fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
+usage: [FLAGS="<emit flags>"] fusion_report.py <profile> [exact|contract|tf32] [n] [stem-glob...]
        fusion_report.py --selftest
 """
 import fnmatch
+import os
 import re
 import subprocess
 import sys
@@ -92,7 +93,7 @@ def analyze(host, dev, n):
                 if not m:
                     continue
                 op, args = m[1], [a.split()[-1] for a in m[2].split(",") if a.strip()]
-                if op in ("launch", "tile"):
+                if op in ("launch", "launchv", "tile"):
                     r["launch"] += 1
                     r["launch_l"] += in_loop(i)
                 if op == "tile":
@@ -140,6 +141,7 @@ def report(profile, face, n, globs):
     if globs:
         stems = [s for s in sorted(p.stem for p in tiles.glob("*.mapal")) if any(fnmatch.fnmatch(s, g) for g in globs)]
     flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
+    flags += os.environ.get("FLAGS", "").split()  # e.g. FLAGS=--gpu-off=epilogue: a rung's OFF arm
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,
                           text=True).stdout.strip()
     print(f"S54 static fusion report — emit --rewrite --target={profile} {' '.join(flags)} (face {face}), HEAD {head}")
