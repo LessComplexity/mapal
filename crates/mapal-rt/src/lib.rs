@@ -569,7 +569,7 @@ pub extern "C" fn mapal_rt_alloc(bytes: i64, align: i64) -> *mut u8 {
 /// first — including a `() -> time` bracket, which then charges page-zeroing to
 /// the kernel it was meant to be timing. Measured at ~0.10 ms warm / 0.30 ms
 /// cold per 4 MB, which is what made conv2d look 1.55x slower than naive C++
-/// when its kernel is in fact faster (`docs/performance/conv2d-per-core-gap.md`).
+/// when its kernel is in fact faster (`docs/performance/cpu/kernels/conv2d-measurement-boundary.md`).
 ///
 /// This costs the program nothing overall: the same pages are faulted and zeroed
 /// either way. It only decides *when*, and so what a clock can see.

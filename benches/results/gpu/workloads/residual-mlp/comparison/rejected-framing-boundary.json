@@ -1,0 +1,11 @@
+{
+  "batch_summary_sha256": "a4072864a4f092fc70944e1099ba6c7aafd7fcabb9816fcc6037f27a74cb43e7",
+  "batch_files_rehashed": 72,
+  "composed_exit": 1,
+  "kernel_B_execution_present": false,
+  "capture_execution_present": false,
+  "capture_status": "not_run",
+  "B_results_path_exists": false,
+  "capture_results_path_exists": false,
+  "verdict": "No B timing or executed-image admission; only input check phases passed before required composed phase exit1."
+}

@@ -19,7 +19,7 @@ gate's claims become deducible from pinned inputs instead of the runner's silico
 ## Baseline (this session, before any change)
 
 - `cargo test --workspace --release`: green (matches review's 1047).
-- Emit sweep: `benches/results-s48/emit-baseline.hashes` — 174 cells, 171
+- Emit sweep: `benches/results/compiler/emission-equivalence/emit-baseline.hashes` — 174 cells, 171
   hashed + 3 known `examples/vector.mapal` EMIT-FAILED markers.
 - numpy A/B N=4096 (perflock): **mapal 39.506 ms median (3478.9 GF/s) vs numpy
   44.230 ms (3107.4 GF/s), ratio 1.120×, DISJOINT.**

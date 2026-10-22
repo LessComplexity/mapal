@@ -1,6 +1,6 @@
 # S54 research — the shapes the representation produces, and what each licenses on a GPU
 
-Date: 2026-10-21 · Branch `s53-gpu-opt` @ 6d105b0 · Builds on `docs/notes/s53-research-{creative,artifacts,link,kernel}.md`. Gap evidence: `benches/results-s54-gpu/fusion-probe-static.txt` — of six multi-computation probes only the closed-form prologue fuses; every per-cell map runs on the host behind a whole d2h, because `gpu.rs:gpu_site` admits only `TileSite`s with `k > 0` and `resident.rs:Use::Host` then copies the output out whole.
+Date: 2026-10-21 · Branch `s53-gpu-opt` @ 6d105b0 · Builds on `docs/notes/s53-research-{creative,artifacts,link,kernel}.md`. Gap evidence: `benches/results/gpu/fusion/static-probes/fusion-probe-static.txt` — of six multi-computation probes only the closed-form prologue fuses; every per-cell map runs on the host behind a whole d2h, because `gpu.rs:gpu_site` admits only `TileSite`s with `k > 0` and `resident.rs:Use::Host` then copies the output out whole.
 
 ## 0. What the IR knows that no library or framework knows
 

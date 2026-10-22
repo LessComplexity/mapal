@@ -55,4 +55,4 @@ Initial model-shape references are the official
 and [Qwen3.5-397B-A17B configuration](https://huggingface.co/Qwen/Qwen3.5-397B-A17B/raw/main/config.json).
 These establish dimensions and declared dtypes, not a claim that this benchmark
 implements either model. Exact retrieved configurations, revisions and hashes are
-preserved in `benches/results-s54-gpu/s57-model-configs/receipt.json`.
+preserved in `benches/results/gpu/workloads/model-shapes/receipt.json`.

@@ -54,5 +54,5 @@ RTX 5090 modules preserved for comparison. They establish legality and selected-
 facts, not generic profitability. Evaluate complete alternatives with numerical face
 and rung context known before introducing a profitability rejection into the shared
 helper. The sealed optional old/S58/B comparison remains unrun pending budget approval;
-see [S60 preparation](../../../docs/performance/s60-parallel-preparation.md). All existing
+see [S60 preparation](../../../docs/performance/gpu/workloads/composed-benchmark-preparation.md). All existing
 numerical, ordinary timing, null, large-control and integration duties remain open.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn benches/results-s49/S_* sample files into the plan-s49 tables.
+"""Turn benches/results/cpu/scheduling/dependency-cycles/S_* sample files into the plan-s49 tables.
 
 Reporting rule (S33): min for 1-thread legs (frequency ramp makes slow outliers),
 median for parallel legs (the clock-read race made fast ones). Both are printed
@@ -35,7 +35,7 @@ def pick(vals, leg):
 
 
 def main() -> None:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else "benches/results-s49")
+    root = Path(sys.argv[1] if len(sys.argv) > 1 else "benches/results/cpu/scheduling/dependency-cycles")
     data = load(root)
     if not data:
         raise SystemExit(f"no samples in {root}")

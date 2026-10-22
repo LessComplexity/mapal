@@ -47,3 +47,50 @@ Observe the exact existing driver-PTX path without CUDA calls, synchronization, 
 ## Migration Plan
 
 Root reviews the isolated prototype. Integrate only after component docs reconcile and independent review. Future explicitly budgeted Linux GPU smoke must verify callback layout, load chronology, completion, nonempty cubin, exact kernel section and real nvdisasm output. Ordinary timings remain separate uninstrumented runs. Rollback removes the observer invocation; production runtime has no changes.
+
+## S61 authorized extension: library execution and compiler mapping
+
+The user explicitly requests comparing actually executed cuBLAS/CUTLASS and Mapal code,
+then identifying which differences require IR facts, which already-derived facts are not
+consumed, and which are backend algorithm/placement choices. The original no-library-image
+scope above describes the initial prototype; this section adds a separately reviewed
+diagnostic capability after that prototype's live smoke succeeds. No compiler correction
+or speedup is inferred from a static library image.
+
+Extend existing `Dat ObservationPacket` with a benchmark-leg identity, observed module
+lifetimes, activity function records and dispatch records. `Trn library_admit?` is planned:
+`(completed harness leg, active context/module/function/launch evidence, copied cubin) →
+unique executed function or rejection`. Its domain excludes missing, ambiguous, dropped,
+unsupported or unloaded identities. It must not join by symbol name alone or invent a
+kernel function ID that the pinned activity record lacks. Exact SDK field evidence and
+planned joins are recorded in the S61 library-capture analysis attachment.
+
+The existing benchmark-process and evidence-directory `Loc`s and callback-owned-byte
+`Trm writefile` remain. Capture library/runtime registration and launch variants only
+with explicit support and bounded output; unsupported paths remain non-admission.
+The pinned CUPTI kernel activity record has context/name/correlation but no function ID,
+so a unique active context+symbol→module/function association needs additional proof.
+No credential/environment collection or production JIT/loading-mode alteration is allowed.
+Actual disassembly and separate runtime counters establish different facts; static
+instruction counts cannot establish dynamic traffic, stalls or achieved occupancy.
+
+FRAMEWORK §4.5 laws1/4/5 require callback-lifetime copies, complete identity mediation and
+composition with a completed, numerically checked harness leg. Instrumented results are
+excluded from ordinary timing. Every claimed compiler gap must map to existing IR or
+backend `file:symbol`, a planned implementation, or an explicit open question.
+
+The preferred additional realization is now the pinned NVIDIA Nsight Compute tool,
+not a custom library callback implementation. Planned `Trn profile_leg` runs one explicit,
+pre/post numerically gated library/Mapal call in a dedicated process with profiler control
+markers, then preserves all its internal kernels in a raw `.ncu-rep`. Planned `Trn
+read_report` maps that report plus exact harness/PTX/oracle/candidate identities to the
+tool's context/stream/kernel identities, SASS, resources and separately selected counters.
+Both operate on existing benchmark/evidence `Loc`s. A tool report gives runtime attribution,
+not an independently extracted cubin hash. No such hash will be invented.
+
+This independent tool realization has its own actual-version/options/sections and live
+permission/smoke obligations; it does not depend on the custom Mapal observer succeeding.
+Clock control stays disabled. All internal kernels are preserved rather than assuming one
+SGEMM call launches one kernel. Unsupported profiler access, missing SASS, failed numeric
+markers or ambiguous identities cause non-admission. The exact 2025.1 CLI is the reviewed
+baseline; options introduced by later versions are not silently assumed.

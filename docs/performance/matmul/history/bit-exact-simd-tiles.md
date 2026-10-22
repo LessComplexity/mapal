@@ -1,0 +1,168 @@
+# Matmul (2026-07-23): tile emission v1 — SIMD via bit-exact interleaving
+
+Historical provenance: S25.
+
+Square GEMM `c[i][j] = Σₖ a[i,k]·b[k,j]` + the S25 shape corpus (`benches/shapes/`).
+Times in **ms**, min of runs shown. Two machines this session: **local** (Apple
+M-series arm64, NEON 128-bit — development A/B evidence) and **box** (vast.ai EPYC,
+AVX — the standing matrix; section below). Compute times are the S25 `FLOW_PERF`
+llvm timer (pool-warm + `Instant` bracket around `flow_main`); wall noted where used.
+
+**What changed since S24:** (1) `tile_plan` (flow-ir) + the tile micro-kernel
+(backend-llvm, `TILE_J=16` lanes, default-on, `--no-tile` opt-out) — recognized
+map{fold} sites emit k-outer/lane-inner register tiles; per-cell op/operand/k-order
+preserved exactly, so output is byte-equal to the oracle at every thread count and
+opt level (the plan's bit-exactness theorem; gated by the 1280-run differential +
+tile-vs-untile A/B cases). (2) `FLOW_PAR` pool width is cgroup-quota-aware.
+(3) The llvm compute timer ends the wall-vs-compute estimate game. (4) Suggestion
+#9 found already-shipped (S20c); s24 reading 6's guard attribution corrected.
+
+## Local CPU compute (ms, min-of-runs; all legs same machine, same `-O2 -ffp-contract=fast` class)
+
+f32 (rust is f32; chapel not installable locally — box table below carries it):
+
+| N | flow tiled (par, 10c) | flow tiled 1t | flow untiled 1t | cpp 1t | rust 1t | numpy (Accelerate) |
+|---|---|---|---|---|---|---|
+| 256 | 0.62 | 3.99 | 13.84 | 9.32 | 11.19 | 0.026 |
+| 512 | 3.97 | 32.8 | 83.0 | 89.8 | 83.5 | 0.110 |
+| 1024 | 29.6 | 238.3 | 947.6 | 878.2 | 899.6 | 0.732 |
+
+f64:
+
+| N | flow tiled (par, 10c) | flow tiled 1t | flow untiled 1t | cpp 1t | numpy (Accelerate) |
+|---|---|---|---|---|---|
+| 256 | 0.94 | 6.53 | 14.50 | 9.50 | 0.080 |
+| 512 | 5.64 | 33.9 | 114.4 | 103.3 | 0.349 |
+| 1024 | 36.0 | 280.0 | 974.4 | 907.0 | 2.562 |
+
+## Local: who wins, by how much
+
+All rows compute-only, same machine. "1t" = single thread (`FLOW_PAR=1`);
+"par" = flow on all 10 local cores. Tile vs no-tile = the SAME program, the
+SAME binary recipe, only the emitter's tiling switched.
+
+| Matchup | Conditions | flow | them | Verdict |
+|---|---|---|---|---|
+| tile vs no-tile (self) | matmul f32 N=256, both 1t | 3.99 ms | 13.84 ms | **tile 3.5× faster** |
+| tile vs no-tile (self) | matmul f32 N=512, both 1t | 32.8 ms | 83.0 ms | **tile 2.5× faster** |
+| tile vs no-tile (self) | matmul f32 N=1024, both 1t | 238.3 ms | 947.6 ms | **tile 4.0× faster** |
+| tile vs no-tile (self) | matmul f64 N=1024, both 1t | 280.0 ms | 974.4 ms | **tile 3.5× faster** |
+| tile vs no-tile (self) | attn f32 N=256 (2 matmul sites), both 1t | 5.23 ms | 24.1 ms | **tile 4.6× faster** |
+| tile vs no-tile (self) | fir f32, 65536 out, K=64 taps, both 1t | 1.47 ms | 1.37 ms | even — clang already vectorizes small-K on its own (reading 2) |
+| tile vs no-tile (self) | fir f32, 8192 out, K=2048 taps, both 1t | 6.64 ms | 14.44 ms | **tile 2.2× faster** |
+| flow vs C++ naive | matmul f32 N=512, both 1t | 32.8 ms | 89.8 ms | **flow 2.7× faster** |
+| flow vs C++ naive | matmul f32 N=1024, both 1t | 238.3 ms | 878.2 ms | **flow 3.7× faster** |
+| flow vs rust naive | matmul f32 N=1024, both 1t | 238.3 ms | 899.6 ms | **flow 3.8× faster** |
+| flow vs numpy | matmul f32 N=1024, flow par vs Accelerate | 29.6 ms | 0.73 ms | numpy 40× faster (Apple AMX — see caveat) |
+| flow vs numpy | matmul f64 N=1024, flow par vs Accelerate | 36.0 ms | 2.56 ms | numpy 14× faster |
+
+numpy caveat (local only): Apple's Accelerate BLAS uses the AMX matrix
+coprocessor — a hardware unit nothing else here can touch. The box numbers
+(OpenBLAS on the same EPYC cores as everyone else) are the fair BLAS gap.
+Every row's stdout byte-equal tile-vs-untile and vs the interp oracle.
+
+Readings (local):
+
+1. **The SIMD claim is disasm-verified, not inferred:** the tiled kernel compiles
+   to 4-lane NEON with a broadcast operand (`fmul.4s v1, v1, v0[0]` + `fadd.4s`,
+   2×-unrolled = 8 lanes/iter); the untiled kernel is scalar (`fmadd s…`) — the
+   per-cell fold is a strict recurrence no compiler may vectorize without
+   reassociation, which oracle bit-parity forbids. Interleaving cells (the tile)
+   is the only bit-exact route to SIMD, and it delivered 2.5–4.6×.
+2. **Where tiling is neutral — and why that's fine:** fir at K=64 shows parity
+   because clang fully unrolls the small constant-trip fold after inlining and
+   SLP-vectorizes across cells on its own. At K=2048 unrolling dies and the tile
+   wins 2.2×. Boundary: small-constant-K 1-D shapes self-vectorize; the tile owns
+   the large-K / matmul class.
+3. **Shape coverage (Sapir directive):** matmul ✓ tiled · attention ✓ both chained
+   matmul sites tile (K stored column-major; row-major twin refuses the S site and
+   tiles the O site — `lane-stride ≠ 1`, needs packing, recorded ceiling) · fir ✓
+   1-D lane mode · conv2d ✗ refused (k-decomposition inside the fold ⇒ non-affine
+   in raw k; guards still elided via `bounds_proof` — kernel is guard-free scalar)
+   · scan — structurally a loop (cross-cell dependence), tiling N/A, log-step scan
+   is a future rewrite. Softmax for real attention needs `exp` — absent from the
+   Core op set (open to Sapir).
+4. **vs local naive C++ (self-timed 89.1 ms @512 f32):** flow tiled single-thread
+   32.8 ms — **2.7× faster than naive C++** on the same machine, from a `.flow`
+   source unchanged since S16.
+5. **fmla note:** clang/arm64 chose `fmul+fadd` over fused `fmla` in the tiled
+   loop; on the box, x86 `vfmadd` presence is a check item (2× FLOP density).
+
+## The BLAS ladder position (Sapir: "we should be deducing BLAS")
+
+`tile_plan` deduces the schedule from the graph (reuse structure → legal
+interleaving). BLAS's ~100× constant over naive = three rungs on that same
+deduction; v1 ships rung 1:
+
+| Rung | Mechanism | Status | Expected share |
+|---|---|---|---|
+| 1 | SIMD lanes (TJ tile) | **shipped S25** | 2.5–4.6× measured |
+| 2 | TI register blocking (b-vector reuse across rows) | ceiling, planned | ~2–4× |
+| 3 | Packing + k-panels (TLB/prefetch at big N) | ceiling | ~1.5–3× |
+
+Box section below carries the measured numpy gap decomposition.
+
+## Box — EPYC 7702P (zen2, 128 visible threads, **cgroup quota 61.4 cores — the S25
+## quota-aware pool spawned 62, the S24 384-thread oversubscription gone**), one box
+
+Raw: `benches/matmul/results-s25.csv` (131 rows; own file, one-box rule). Flow rows =
+`FLOW_PERF` compute (the S25 timer), min-of-3; chapel/numpy/cpp/rust self-time as
+always. Flow recipe: clang-18 (the sweep's apt clang-15 under-vectorized the tile
+nest — scalar; clang-18 vectorizes partially: `vmulps`+`vbroadcastss` xmm, f32
+1.5–3.1× over clang-15, f64 flat within the box's ~15% variance band; both raw row
+sets kept in the CSV, `-clang18` suffixed). Loop-form 128 leg skipped — this box's
+clang-15 hangs >56 min on the array-literal module (S13/S16 pathology; killed,
+skip-with-reason).
+
+### CPU compute (ms, min; flow = 62-core par, baselines as labeled)
+
+| N | flow f64 | flow f32 | chapel mc f64 | chapel mc f32 | numpy (f64 BLAS, threaded) | cpp 1t f32 | cpp 1t f64 | rust 1t f32 |
+|---|---|---|---|---|---|---|---|---|
+| 256 | 1.63 | 0.95 | 1.38 | 0.86 | 0.127 | 23.2 | 40.9 | 21.7 |
+| 512 | 5.61 | **3.84** | 16.57 | 12.64 | 0.564 | 278.6 | 923.0 | 223.2 |
+| 1024 | 33.9 | **15.7** | 140.99 | 135.26 | 2.456 | 7402 | 60804 | 6927 |
+
+flow f32@1024 single-thread (same binary, `FLOW_PAR=1`): 352.6 — vs cpp 1t 7402 =
+**21× ahead single-thread**.
+
+### Who wins, by how much (box, N=1024 unless stated)
+
+Both sides measure compute only. "multicore" = all cores the runtime takes
+(flow: 62; chapel: its qthreads default on the same box). Same matrix, same
+input values, outputs byte-identical across every pair below.
+
+| Matchup | Conditions | flow | them | Verdict |
+|---|---|---|---|---|
+| flow vs chapel | f32, both multicore | 15.7 ms | 135.3 ms | **flow 8.6× faster** |
+| flow vs chapel | f64, both multicore | 33.9 ms | 141.0 ms | **flow 4.2× faster** |
+| flow vs chapel | f32, N=512, both multicore | 3.84 ms | 12.64 ms | **flow 3.3× faster** |
+| flow vs chapel | f64, N=512, both multicore | 5.61 ms | 16.57 ms | **flow 3.0× faster** |
+| flow vs chapel | f32, N=256, both multicore | 0.95 ms | 0.86 ms | chapel 1.1× faster (startup-floor territory) |
+| flow vs C++ naive | f32, flow 62 cores vs cpp 1 thread | 15.7 ms | 7,402 ms | **flow 471× faster** |
+| flow vs C++ naive | f32, BOTH single-thread (`FLOW_PAR=1`) | 352.6 ms | 7,402 ms | **flow 21× faster** |
+| flow vs rust naive | f32, flow 62 cores vs rust 1 thread | 15.7 ms | 6,927 ms | **flow 440× faster** |
+| flow vs numpy | f64 vs f64 (OpenBLAS, both threaded) | 33.9 ms | 2.46 ms | numpy 13.8× faster |
+| flow vs numpy | f64 vs f64, N=512 | 5.61 ms | 0.564 ms | numpy 10× faster |
+
+The C++/rust rows are lopsided by design: they are the single-thread naive
+baseline every session measures, not a fair fight. The fair fights are chapel
+(same algorithm, both multicore — flow wins everywhere except the 256
+startup cell) and numpy (the BLAS target — gap now 10–14×, was 130× in S24).
+
+Readings (box):
+
+1. **The chapel story flips everywhere ≥512:** S23 had chapel 60× ahead; S24 closed
+   to parity at 1024; S25 tiled flow is **3–8.6× ahead of chapel-multicore** at
+   512/1024 both widths. Only the 256 startup-class cell still edges chapel.
+2. **The numpy gap, like-for-like f64: 130× (S24) → 13.8× @1024, 9.95× @512** —
+   inside the projected 10–30× band for rung 1. The remaining constant is rung 2
+   (TI register blocking) + rung 3 (packing/k-panels) + full-width SIMD (below).
+3. **x86 vectorization is toolchain-sensitive and partial:** clang-15 emits the
+   tile nest fully scalar (still 2–5× ahead of chapel on structure alone);
+   clang-18 vectorizes the lane loop at xmm width without `vfmadd`. The runtime
+   `tj` bound blocks full `ymm` vectorization — the fixed-TJ main body + scalar
+   remainder split is the named next emitter refinement (with local NEON evidence:
+   Apple clang vectorizes the same nest 4-lane + 2×-unrolled).
+4. cpp/rust naive rows collapsed on this zen2 box (7.4 s / 60.8 s @1024 —
+   scalar + this box's memory system); they are the "naive single-thread"
+   class marker, not a moving target.

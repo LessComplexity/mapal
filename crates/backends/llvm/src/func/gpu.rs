@@ -1699,7 +1699,7 @@ impl Kernel<'_> {
     ///   two); two MMA groups in flight (`wait_group 1`, doubled fragments,
     ///   which moves the derivation to 128 × 128 at bk 64) 0.98 ms, and it
     ///   failed the TF32 value gate at 1024 with four stages.
-    ///   `benches/results-s53-gpu/wgmma-hopper-h100-pcie-run{2,3}-*.txt`.
+    ///   `benches/results/gpu/kernels/optimization-ladder/wgmma-hopper-h100-pcie-run{2,3}-*.txt`.
     /// - `b` panels land row-major, rows padded; each thread loads its `bᵀ`
     ///   fragments (`a0..a3` = (g, t), (g+8, t), (g, t+4), (g+8, t+4) of the
     ///   warp's 16 rows, PTX ISA m64nNk8) and rounds them in the load.

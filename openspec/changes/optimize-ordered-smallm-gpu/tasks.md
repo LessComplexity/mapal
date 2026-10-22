@@ -22,4 +22,4 @@ four smaller M16 Exact/Contract cells regress 37–47%, beyond null/control vari
 Root independently verified 948 files and 10,080 raw samples. The blanket candidate
 is rejected for promotion; task 2.1 remains open, including executed images and large
 controls. No new selection threshold is accepted. See
-`docs/performance/s59-smallm-comparison.md`. Instance 57130775 is independently absent.
+`docs/performance/gpu/kernels/small-m-geometry-comparison.md`. Instance 57130775 is independently absent.

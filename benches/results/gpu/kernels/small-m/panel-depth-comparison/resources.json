@@ -1,0 +1,194 @@
+[
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+    "arm": "old",
+    "resources": {
+      "kernel": "mapal_tile_7956f3ceef223e86",
+      "grid": "128x1",
+      "block": "256",
+      "smem": "0",
+      "regs": "40",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.2621,
+      0.2621
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+    "arm": "s58",
+    "resources": {
+      "kernel": "mapal_tile_7956f3ceef223e86",
+      "grid": "64x1",
+      "block": "32",
+      "smem": "1536",
+      "regs": "77",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.3707,
+      0.3686
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+    "arm": "B",
+    "resources": {
+      "kernel": "mapal_tile_7956f3ceef223e86",
+      "grid": "32x2",
+      "block": "32",
+      "smem": "4608",
+      "regs": "106",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.3215,
+      0.3215
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "arm": "old",
+    "resources": {
+      "kernel": "mapal_tile_37c5043169cbcc55",
+      "grid": "128x1",
+      "block": "256",
+      "smem": "0",
+      "regs": "40",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.2703,
+      0.2683
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "arm": "s58",
+    "resources": {
+      "kernel": "mapal_tile_37c5043169cbcc55",
+      "grid": "64x1",
+      "block": "32",
+      "smem": "1664",
+      "regs": "79",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.3686,
+      0.3666
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "arm": "B",
+    "resources": {
+      "kernel": "mapal_tile_37c5043169cbcc55",
+      "grid": "32x2",
+      "block": "32",
+      "smem": "4864",
+      "regs": "103",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.215,
+      0.215
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+    "arm": "old",
+    "resources": {
+      "kernel": "mapal_tile_b5d1b1f720b415a4",
+      "grid": "64x1",
+      "block": "256",
+      "smem": "0",
+      "regs": "40",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.1556,
+      0.1556
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+    "arm": "s58",
+    "resources": {
+      "kernel": "mapal_tile_b5d1b1f720b415a4",
+      "grid": "32x1",
+      "block": "32",
+      "smem": "1536",
+      "regs": "80",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.2171,
+      0.2171
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+    "arm": "B",
+    "resources": {
+      "kernel": "mapal_tile_b5d1b1f720b415a4",
+      "grid": "16x2",
+      "block": "32",
+      "smem": "4608",
+      "regs": "106",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.1577,
+      0.1577
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+    "arm": "old",
+    "resources": {
+      "kernel": "mapal_tile_fee0e120457e2f5b",
+      "grid": "64x1",
+      "block": "256",
+      "smem": "0",
+      "regs": "40",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.1495,
+      0.1495
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+    "arm": "s58",
+    "resources": {
+      "kernel": "mapal_tile_fee0e120457e2f5b",
+      "grid": "32x1",
+      "block": "32",
+      "smem": "1664",
+      "regs": "79",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.2191,
+      0.2191
+    ]
+  },
+  {
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+    "arm": "B",
+    "resources": {
+      "kernel": "mapal_tile_fee0e120457e2f5b",
+      "grid": "16x2",
+      "block": "32",
+      "smem": "4864",
+      "regs": "105",
+      "local_bytes": "0"
+    },
+    "timing_medians_ms": [
+      0.129,
+      0.129
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""S54 baseline tables from the five base-<part>.txt (and -confirm.txt) results files.
-usage: BASELINE_HEAD="$(cat <headline.md>)" python3 benches/gpu/baseline.py benches/results-s54-gpu > benches/results-s54-gpu/baseline-tables.md
+"""Baseline tables from the five base-<part>.txt (and -confirm.txt) results files.
+usage: BASELINE_HEAD="$(cat <headline.md>)" python3 benches/gpu/baseline.py benches/results/gpu/validation/baseline > /tmp/baseline-tables.md
 (BASELINE_HEAD: the hand-written headline printed under the title)"""
 import os, re, subprocess, sys
 from collections import defaultdict
@@ -87,7 +87,7 @@ def header(path):
 
 have = [(p, label, os.path.join(D, f'base-{p}.txt')) for p, label in PARTS if os.path.exists(os.path.join(D, f'base-{p}.txt'))]
 K = {p: kernels(f) for p, _, f in have}
-print("# S54 baseline: five architectures, multi-computation probes, library chains\n")
+print("# GPU baseline: five architectures, multi-computation probes, library chains\n")
 print(os.environ.get("BASELINE_HEAD", "") + "\n")
 print("Sessions: `base-<part>.txt` = the base build (the S53 table; Ampere every rung ON), every arm, the probes "
       "and the library chains; `-confirm.txt` = the same build's kernels, decode and e2e on a different box; "
@@ -213,7 +213,7 @@ for p, label, f in have:
         print(f"| {rung} | {fill} | {face} | {sh} | {v} | {st} | {cells} |")
 
 for p, label, f in have:
-    table = os.path.join(D, '..', 'gpu', 'table.py')  # D = benches/results-s54-gpu
+    table = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py')
     out = subprocess.run([sys.executable, table, f], capture_output=True, text=True).stdout
     # the whole-program and decode tables only (the kernels and probes are above)
     keep, blocks = [], out.split('\n\n')

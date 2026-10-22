@@ -1,0 +1,5 @@
+{
+  "approved": true,
+  "script_sha256": "ad19de398de6663a3f77901326f0cd559fbd07dca48d6b903b071974a6b28201",
+  "scope": "CPU-only exact12.8.90-1package receipts and dpkg-L, realpath/header/library hashes, three symlinks under exclusive task output, unchanged observer build+ldd/readelf, seals before/after. No install, no GPU injection, no frozen payload edits. CUDA_HOME view consumed by existing allowed path mechanism; CUPTI_HOME environment guard unchanged."
+}

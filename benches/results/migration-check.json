@@ -1,0 +1,37 @@
+{
+  "moved_files": 2849,
+  "evidence_files": 2802,
+  "all_evidence_sha256_unchanged": true,
+  "live_reference_files_updated": 110,
+  "historical_session_logs_edited": false,
+  "links_checked": 372,
+  "broken_links": [],
+  "evidence_hashes_checked": 2802,
+  "evidence_hash_failures": [],
+  "baseline_generator": {
+    "original_exit": 0,
+    "relocated_exit": 0,
+    "output_equal_except_descriptive_title": true,
+    "stderr_before": 0,
+    "stderr_after": 0,
+    "output_bytes": 89460
+  },
+  "cpu_report_generators": [
+    {
+      "script": "benches/nn/nn_report.py",
+      "original_exit": 0,
+      "relocated_exit": 0,
+      "same_output": true,
+      "empty_stderr": true,
+      "output_bytes": 6476
+    },
+    {
+      "script": "benches/nn/pack_report.py",
+      "original_exit": 0,
+      "relocated_exit": 0,
+      "same_output": true,
+      "empty_stderr": true,
+      "output_bytes": 2825
+    }
+  ]
+}

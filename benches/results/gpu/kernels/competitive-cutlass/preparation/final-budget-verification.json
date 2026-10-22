@@ -1,0 +1,60 @@
+{
+  "pass": true,
+  "scope": "All6656 final v3 cells and serialized text exactly equal to the independently exact-LCG/Fraction-verified v2 cells; metadata regeneration bound separately",
+  "prior_exact_proof_sha256": "88617232776597b0c7fc7cb7e1ed30e435da0f887d087a79e043eff874569db3",
+  "script_sha256": "c08565eaf660a43c580833bc5b3e2d429f962d014787fb4295d9b53068fb9739",
+  "oracles": [
+    {
+      "json": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n1024-k4096-sampled.json",
+      "json_sha256": "64d72db1586fc8f819d040a767130a2aade0be2a8090031479519db69cd69ba1",
+      "text": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n1024-k4096-sampled.txt",
+      "text_sha256": "72948093f705b1cb59e3424f62fc9453c9c34a76a5eb172c19666db5b176a752",
+      "shape": {
+        "M": 16,
+        "N": 1024,
+        "K": 4096
+      },
+      "cells_verified": 256,
+      "all_cells_refs_exact_S_fraction_bounds_and_ceiling_bit_equal_to_independently_verified_v2": true
+    },
+    {
+      "json": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n128-k4096-full.json",
+      "json_sha256": "2cf5db0092158563f08d9dd488283bfd73e906713dd1c71c98991d04ba352d02",
+      "text": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n128-k4096-full.txt",
+      "text_sha256": "76f3614fa6cebc6aa15d31c976ce4a7dbeadcd4ba9473c0dfa5c62b5bd01b918",
+      "shape": {
+        "M": 16,
+        "N": 128,
+        "K": 4096
+      },
+      "cells_verified": 2048,
+      "all_cells_refs_exact_S_fraction_bounds_and_ceiling_bit_equal_to_independently_verified_v2": true
+    },
+    {
+      "json": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n2048-k7168-sampled.json",
+      "json_sha256": "ba7b4bba346852a4ce624877db13d8804a73fcb13c4c21fd43a56d69cdb89e3a",
+      "text": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n2048-k7168-sampled.txt",
+      "text_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+      "shape": {
+        "M": 16,
+        "N": 2048,
+        "K": 7168
+      },
+      "cells_verified": 256,
+      "all_cells_refs_exact_S_fraction_bounds_and_ceiling_bit_equal_to_independently_verified_v2": true
+    },
+    {
+      "json": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n256-k7168-full.json",
+      "json_sha256": "d22f3a01e46b22be8ab023bde202b6c75916fc0b972ff85a2626738bb9135607",
+      "text": "/private/tmp/mapal-s61-competitive-reference/prepared-oracles-v3/m16-n256-k7168-full.txt",
+      "text_sha256": "883306482fd9bec1083f60b943028d0aedbb0e0db08c3f958e3a8fe8845c0832",
+      "shape": {
+        "M": 16,
+        "N": 256,
+        "K": 7168
+      },
+      "cells_verified": 4096,
+      "all_cells_refs_exact_S_fraction_bounds_and_ceiling_bit_equal_to_independently_verified_v2": true
+    }
+  ]
+}

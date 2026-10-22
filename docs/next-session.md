@@ -1,469 +1,82 @@
-# Live S60 — parallel implementation and composed comparison
+# Continue the GPU performance comparison
 
-The user authorized proceeding with the three parallel workstreams after S59.
-Root owns integration, packet review, measurement admission and shared documentation.
-Workers own isolated `/private/tmp` directories; no worktree is added.
+Start with [current results](performance/gpu/current-results.md), the [performance index](performance/README.md), and [raw evidence](../benches/results/README.md). Use descriptive topic/experiment names for new reports and folders. Session numbers belong only in historical provenance and immutable handoffs. The [path map](../benches/results/path-map.json) resolves relocated artifacts without changing their contents.
 
-| Agent | Responsibility | Working directory |
+## Current state
+
+- Branch `s54-gpu-fusion`, last committed head `29ad618`; integration, verified results and evidence reorganization are uncommitted. Preserve unrelated `oainotes.md`. Local commits are authorized; no push.
+- The unused raw-output allocation correction is integrated. 640 ordinary GPU processes and 28 separate allocation-counter processes pass; 1,190 distinct local tests pass across the workspace and host-access backend rerun, with one ignored. No allocation latency gain is claimed.
+- The residual MLP comparison admits all ten rows. cuBLAS is 1.35–1.47× faster than Mapal at the two M128 shapes. Mapal beats the restricted eager/graph-disabled Inductor arms. Input reset/cache state differs; no causal retention claim.
+- The panel-depth alternative improves two small-M FMA cells and regresses Exact. It is not promoted. Four actual old/cooperative Mapal Contract cubin/SASS captures are admitted; library kernels remain to be captured.
+- Topic reorganization moved 2,849 files. All 2,802 raw evidence hashes are unchanged, 372 report links resolve, and the baseline generator is equivalent apart from its descriptive title. Strict OpenSpec passes 7/0; drift is 0 dead / 575 references. The code graph was refreshed; document graph extraction needs an unavailable LLM key. Cross-project indexing encountered a PGLite lock, so the immutable repository log remains the record.
+
+## Work in progress
+
+The next experiment puts CUTLASS on competitive terms: twelve explicit FP32 SIMT tiles, full bounded gates and representative sampled gates against both scalar FP32 references, nine tuning samples, then thirty held-out confirmation samples with the original default control. Every arm shares inputs, precision budget, preallocated buffers and clock/cache protocol. Ordered-bit guarantees remain separate from numerical-budget admission.
+
+The source review found that floating intermediate rounding made the proposed bound one ULP too small in some cells. This preparation was never run on GPU. The corrected exact-integer/rational computation independently verifies all 6,656 oracle cells and their minimal outward binary64 bounds. Do not use the rejected oracle preparation.
+
+After ordinary admission, the same selected binary is reused for Nsight Compute 2025.1.1. First profile the admitted 16×2048×7168 Contract case: all three legs with LaunchStats and actual SASS exports, then supported occupancy/memory/scheduler/instruction sections if the smoke passes. Preserve all internal library kernels. Instrumented data cannot enter ordinary timing. Runtime report attribution is not a physical cubin-byte identity claim.
+
+Then test supported cuBLASLt/CUTLASS fused epilogues on the same residual MLP, including unfused controls. Broader shapes, graph-enabled PyTorch, recurrence and causal retention/allocation comparisons remain open. Do not infer a fusion advantage or change compiler selection before evidence.
+
+| Owner | Work | Private working directory |
 | --- | --- | --- |
-| `/root/comparison_analysis` | Matched repeated-request composed timing, fixtures and references | `/private/tmp/mapal-s60-composed/` |
-| `/root/comparison_run` | Existing allocation gate, unified GPU batch and owned-rental cleanup | `/private/tmp/mapal-s60-gpu/` |
-| `/root/gap_actions` | Generic kernel alternatives and separate executed-image diagnostics | `/private/tmp/mapal-s60-kernel/` |
+| Root | Integration, artifact review, result admission and shared docs | `/private/tmp/mapal-s61-root/` |
+| `/root/composed_analysis_s61` | Competitive CUTLASS harness and composed reference extension | `/private/tmp/mapal-s61-competitive-reference/` |
+| `/root/gap_analysis_s61` | Independent numerical audit and NCU runner/parser | `/private/tmp/mapal-s61-gap-analysis/ncu-extension/` |
+| `/root/comparison_run` | Newly owned competitive comparison rental | `/private/tmp/mapal-s61-gpu/attempt-09/` |
 
-No rental or upload has started. The previous $1 planning budget has $0.0963400468
-remaining; a concrete reviewed batch and explicit budget extension are required before
-exceeding it. Read-only inventory found four unrelated instances: 57065574, 57100404,
-57126023 and 57133432. Never modify or destroy any of them. Provider diagnostics stay
-private; do not print raw API errors. Keep `oainotes.md` and frozen emitter untouched.
+The current task rental is **57256816**, created at **2026-10-22T18:49:03.684Z** on
+machine **56076 / host 391071**, with operational deadline **19:44:03.684Z**. The ownership
+guard checked the exact create-response ID, physical identity and fresh prelaunch exclusions
+at 18:49:04.710Z before SSH/upload. Launcher session: **43594**. It is waiting for provider
+startup; no new timing has been admitted. Root-reviewed packet SHA256:
+`9786978505e5a580f7c11f5cd650ced54ea9e308fcf1807e870cd6856d885e1e`.
 
-The composed v3 packet now has matched resident-input work clocks for two residual MLPs
-(M128/d256/h512 and M128/d1024/h2048), with separate checkpoint and final-only graphs.
-Root and the kernel worker independently reviewed synchronization/event ordering. Root
-verified six input generator sites before timing and three work launch sites inside each
-emitted host program. Arena allocation/free is outside those clocks; this comparison
-cannot establish allocation-elimination latency. The larger oracle certifies four full
-rows with full-width reductions; its 256 published cells per stage do not certify every
-M128 output. All GPU execution remains pending.
+The previous three providers failed during startup before SSH, upload or GPU work.
+Owned instances 57253902, 57254920 and 57256063 were independently
+absent at 2026-10-22T18:28:15.478Z, 18:33:16.146Z and 18:43:05.966Z respectively. The first
+reported an image-build lease error; the latter two returned unsuccessful creates with
+empty status. Their normalized launch requests match the successful earlier run. Root
+cause is unknown. Read-only diagnosis and an offline test of the installed CLI established
+that `--cancel-unavail` changes only the scheduling cancellation field and requests an
+explicit scheduling error instead of a stopped contract. That is the sole new create
+option; payload and ownership guards are unchanged. No account cause or causal fix is
+claimed. Never print raw API/create/wrapper logs.
 
-Reviewed input archives (no rental/upload yet):
+The corrected NCUv3 archive is
+`243dd5297c9a12e814b7a4e244372258cf756bbb34e239577e3287b11601c29b`.
+It removes `--values-only`, which the actual harness forbids with profiling. The failed
+hosts executed neither profiler version. Extracted real C++ guards now pass all9 valid
+variant/leg combinations and reject6 negative modes/environment cases. Fourteen independent
+NCU CPU tests also pass; live profiler behavior remains unproved.
 
-| Packet | SHA256 | Bytes |
-| --- | --- | ---: |
-| `/private/tmp/mapal-s60-composed/composed-matrix-v3.tgz` | `750a72f414573417fcf2dae3c2f39e1cfb738d63417995309920541c55af0119` | 8,178,381 |
-| `/private/tmp/mapal-s58-allocation-gate/allocation-gate-v2.tgz` | `a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd` | 12,568,328 |
-| `/private/tmp/mapal-s60-kernel/kernel-B-comparison.tgz` | `09f8318c3aea5a38a5190d05361bd5840c45bceaf6ca12d5d87b117e61f515a2` | 2,861,573 |
-| `/private/tmp/mapal-s60-kernel/kernel-diagnostics.tgz` | `95d68cec8de2d386700322bd91ffd7becbe8ec6c7d747246175b10d6b295b618` | 2,815,657 |
+The composed-reference worker is implementing supported cuBLASLt/CUTLASS fused and unfused
+controls under `/private/tmp/mapal-composed-fused-references/`. No CUDA compile or GPU
+admission exists yet. The [IR fact map](performance/gpu/disassembly/ir-facts-and-realization-gaps.md)
+shows program facts already available and concrete backend limitations without inferring
+a timing cause. Public destinations for new measurements remain
+`benches/results/gpu/kernels/competitive-cutlass/` and
+`benches/results/gpu/disassembly/library-kernels/`.
 
-The allocation packet remains S58 v2 (640 ordinary processes plus 28 separate counter
-processes), forced streams rather than default5090 mode. Root verified the final
-26,444,972-byte stage, packet SHA `b37f14727ac878394046d520e83ef60c1679f1efe758e9ad37cf4dac20a12432`.
-An asynchronous request for up to $1 additional/$2 cumulative budget is pending;
-no approval has arrived. Generic kernel alternatives A/B are isolated
-experiments until measured; S59 blanket promotion remains rejected. Input review receipts
-are under `/private/tmp/mapal-s60-root/`. Provider diagnostics remain private. Runner
-retrieval, nested cancellation and spawn-assignment cancellation now have real local
-filesystem/process tests; none are GPU evidence.
+## Machines and authorization
 
-# Current continuation — S59 comparison complete
+The user explicitly removed the monetary cap and authorized equivalent RTX 5090 uploads/runs of the reviewed benchmark content. Do not ask for an already-granted budget approval. Use operational deadlines and retrieve evidence before exact-owned-instance cleanup.
 
-## S59 measured decision (2026-10-21 local / 2026-10-22 UTC)
+**Protect every pre-existing instance.** Known unrelated IDs are 57065574, 57100404, 57126023 and 57133432; every ID in a fresh prelaunch inventory is also protected. Access/cleanup is permitted only for the exact new ID returned by this task's own create response, with the expected physical host. Inventory novelty alone is insufficient.
 
-**Do not promote the blanket small-M candidate.** The completed RTX 5090 comparison
-has three changed-cell improvements (wide M16 Exact/Contract/TF32: 4.82–5.18×) and
-four regressions (smaller M16 Exact/Contract: 37–47% slower). All exceed measured
-null/control variation. The shared source and frozen emitter remain untouched.
+All eight earlier task rentals are independently absent: 57242062, 57245029, 57247103, 57248819, 57249550, 57253902, 57254920 and 57256063. The last was confirmed absent at 2026-10-22T18:43:05.966Z. The current owned instance is listed above. Provider API/create/wrapper logs remain private; never print raw provider errors or credentials. An earlier credential rotation remains outstanding.
 
-[Results and next proof obligations](performance/s59-smallm-comparison.md) contain
-the absolute table; [all 30 cells](../benches/results-s54-gpu/s59-smallm-comparison/analysis/ABSOLUTE.md)
-include M1/M16/M128 and 4096 controls. Twenty-eight cells are admitted; two M1 TF32
-cells fail the bounded numerical gate in both revisions. All 234 records are present.
-Root independently rehashed 948 files and recomputed 10,080 raw event samples.
-The runner's `candidate_acceptance=true` means numerical/protocol scope, not approval
-of its four performance regressions. The next selection experiment must retain both
-scalar and cooperative routes and test profitability from generic geometry/resource
-facts. Actual executed-image evidence and large controls remain outstanding.
-
-**All task rentals and commands are closed.** Instance 57130775 was independently
-absent at 2026-10-22T00:12:24.048049Z, before its 00:20:25.867543Z deadline.
-The one-use S59 launcher is consumed and must not be rerun. Cumulative planning usage,
-including reserves, is $0.9036599532 with $0.0963400468 remaining under $1; this is not
-an invoice or authorization inferred for a new rental. The new quote includes 40 GB
-storage; earlier default-storage quote uncertainty is disclosed in the report.
-Never touch unrelated instances 57065574 or 57100404.
-
-Operational files: `/private/tmp/mapal-s59-gpu/`; frozen independent analysis:
-`/private/tmp/mapal-s59-analysis/RESULTS/`; root recheck:
-`/private/tmp/mapal-s59-root/verification.json`. Durable public evidence:
-`benches/results-s54-gpu/s59-smallm-comparison/`. Its `recovery.json` binds the ignored
-private archive and exact sealed payload. Private diagnostics may contain credentials;
-one preparation diagnostic exposed a Vast key in tool output. The user was notified;
-key rotation is outstanding. Public evidence excludes provider API/create/wrapper logs.
-
-The allocation candidate remains isolated and its ordinary GPU/counter gate remains
-unrun. No new allocation, retained-data, composed-PyTorch or 16K timing claim follows.
-Use the S59 immutable session for exact verification commands and remaining OpenSpec
-state. Preserve `oainotes.md`; local commits only, no push.
-
-# Previous continuation — S58 parallel development and validation
-
-## Closed S58 work (2026-10-21)
-
-The user authorized parallel GPT-6.1-sol coding/testing/disassembly agents and machines.
-Root reviews and integrates; workers used isolated git-archive snapshots, not worktrees.
-The shared ordering correction is committed as `3a0d435`; small-M and allocation
-candidates remain isolated. See the [current evidence table](performance/s58-parallel-development.md)
-and [immutable S58 handoff](sessions/2026-10-21-s58-parallel-proof-and-validation.md).
-
-| Work | Result and continuation |
-| --- | --- |
-| Ordering | Integrated; workspace 1,188/0/1 ignored, 200 frozen + 200 corrected ordinary GPU processes pass. No observed old-code race or speedup. |
-| Small-M | Candidate preserves all previous valid selections in 2,440 geometry cases; 164 newly legal. Combined isolated workspace 1,190/0/1 ignored; 114 combined/isolated PTX identities. GPU attempt stopped before the first primary process: `/usr/bin/time` absent. No new timings admitted. Install/check this prerequisite before a fresh bound attempt. |
-| Allocation | Three-line `store_out` skip prepared over `3a0d435`; 28 unchanged device LLVM units and independently checked surviving-host-body/slot equivalence. Candidate workspace 1,190/0/1 ignored. Its own ordinary GPU gate is required before integration. |
-| Matrix references | Mapal, handwritten naive CUDA/cuBLAS and PyTorch eager pass the small matrix gates. PyTorch compiled now passes after explicit headers installation; 1,024 checkpoint + 128 final values independently rechecked. No matched composed timing. |
-| Executed images | Repository CUPTI prototype passes local compilation/negative tests. Optional GPU proof skipped because ordinary small-M comparison was incomplete. Actual executed SASS remains unvalidated. |
-
-All task rentals are closed. Instance 57118557 was independently absent at 22:21:34 UTC;
-failed reservation 57121897 at 22:43:37; final instance 57122410 at 23:02:58, before
-its 23:18:04 deadline. Cumulative conservative planning cost is **$0.7667982573**,
-including failed-attempt and transfer reserves; **$0.2332017427 remains** under the
-original $1 cap. These are not invoices. A final same-host-only 600-second feasibility
-query found no eligible offer, so no further rental/upload occurred. Never rerun the
-consumed v59/v61/v62 launchers. Never touch unrelated instances `57065574` or `57100404`.
-
-Preserved continuation inputs:
-
-- `/private/tmp/mapal-s58-combined/source`, emitter `/private/tmp/mapal-s58-combined/bin/emit`
-  SHA `ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307`.
-- `/private/tmp/mapal-s58-smallm-bench-payload.tgz`: sealed unchanged benchmark packet;
-  exact final patch/evidence under `benches/results-s54-gpu/s58-smallm-candidate/`.
-- `/private/tmp/mapal-s58-gpu/time-prerequisite-preparation/`: tested dependency repair;
-  public diff/tests under `benches/results-s54-gpu/s58-combined-pilot/`.
-- `/private/tmp/mapal-s58-allocation-gate/README.md`: prepared 640 ordinary processes and
-  28 separate traced counter processes. Recovery archive and hashes under
-  `benches/results-s54-gpu/s58-allocation-gate/recovery.json`; no GPU execution yet.
-- Full raw private recovery under ignored `.claude/worktrees/_archive-s54-20261021/`;
-  public compiled and failed-performance evidence under `s58-combined-pilot/` and
-  `s58-smallm-failed-attempt-analysis/`. Private API/create records may contain credentials.
-
-First inspect the current handoff and `openspec list --json`. Continue by reviewing the
-allocation gate's independent findings and the timing-utility prerequisite, then bind
-any future hardware run to fresh cost/time/physical-host checks. Existing user machine
-authorization persists within its caps; closed one-use launchers are not reusable.
-The frozen `target/release/examples/emit` remains untouched. Preserve `oainotes.md`.
-
-## S57 completed baseline
-
-The only checkout is `s54-gpu-fusion`. Frozen GPU measurements bind source `b4152c5`;
-the completed validation records are locally committed as `0ca0507`. Preserve the ignored recovery archives
-under `.claude/worktrees/_archive-s54-20261021/` and untracked `oainotes.md`. Do not push.
-The shared source includes the proved loop-route replay repair, locally committed as `627a17c`.
-The historical S57 checkpoint is
-[S57 proof work closed](sessions/2026-10-21-s57-proof-work-closed.md).
-Earlier checkpoints remain historical; this mutable continuation tracks later work.
-
-## Completed frozen validation
-
-All five primaries (RTX 3090, A100 SXM4, RTX 4090, H100 PCIe, RTX 5090) and both
-independent RTX 4090/5090 confirmations pass complete numerical, timing/status, library,
-resource and profiling gates. Every corresponding rental is independently absent.
-The last 5090 confirmation was absent at 20:55:19 UTC. Independent checks cover
-54,121 numeric fields and 27,900 raw kernel samples with zero differences.
-
-- [Full measured tables](performance/s54-gpu-fusion.md): all 126 shipped kernel rows,
-  all arms/losses/control CSVs, composed/decode comparisons and timing-boundary limits.
-- [Selection decisions](performance/s54-per-arch-selection.md): 5090 streams OFF,
-  H100 retention/window OFF, restored derived 5090 raster gate. No precision-policy change.
-- [16K and rectangular extension](performance/s57-large-composed-evidence.md): 98/100
-  invocations pass; both failures are the requested-TF32 small-M fallback. All 16K gates
-  pass, but cuBLAS is faster. No application-wide BF16/FP8 or transformer claim.
-- [Disassembly evidence](performance/s57-ptx-sass-gap.md): small-M scalar fallback and
-  differing TF32 conversion/tie semantics are proved; a profitable replacement is not.
-- [CPU/GPU call effects](../benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md):
-  host LLVM vectorization is present; device completion is not LLVM stack lifetime.
-  Joint cost-based CPU/GPU placement and generic paged KV allocation are not implemented.
-
-Final 5090 confirmation has lower stream-OFF medians in all eight changed cells, but two
-ranges overlap. Its 4K TF32 Mapal/cuBLAS times are 4.4472/1.8883ms versus primary
-1.5460/1.3906ms. Saved PTX, launch geometry and runtime resources match; the cause remains
-unresolved. Decode allocations remain 8 versus 12,288, but ordinary wall is 5,046/14,480ms
-versus primary 450/1,292ms. Never mix traced kernel duration with ordinary wall.
-The primary 5090 Exact8192 identical-PTX null is unstable (34.64→48.37ms); preserve it.
-
-All frozen results are archived with hash verification. The earlier five-bundle/four-primary
-archive has 41,051 files/2,423,639,312 bytes. Separate immutable archives preserve H100,
-4090 confirmation and final 5090 confirmation. The latter contains 21 files/20,057,698 bytes;
-[receipt](../benches/results-s54-gpu/final-integrated-5090-confirmation-recovery.json).
-Frozen host tests were 1,176/0/1 ignored. After the replay repair, the required-clang
-workspace passes **1,181/0/1 ignored**; all release examples and formatting pass. The four
-frozen compiler/runtime inputs and three LLVM tools remain byte-identical. The current
-repaired emitter is `/private/tmp/mapal-replay-shared-host-target/release/examples/emit`,
-SHA `b8de9090d5f3ddcdc9a36543e5385f665440134f85a4a9985d5aecc3a58bd759`.
-The old `target/release/examples/emit` intentionally remains the frozen baseline.
-
-## Correctness pilot: two failed allocations, no GPU result
-
-The user approved one 13.4MB correctness-only attempt: ordinary ordering first (200 fresh
-processes), then small composed matrix verification against handwritten CUDA/cuBLAS and
-explicit PyTorch2.13.0/cu130. Limits: $1 total, <=$0.80/hour, <=55 minutes, existing
-$8/hour aggregate cap; equivalent hosts allowed before launch. No timing admission.
-The reviewed adapter additionally installs hash-pinned pip25.3 because Jammy pip22.0.2
-cannot produce the required `--report`; the two private archives are unchanged.
-Seven adapter and eight launcher stub tests pass. Official image/wheel metadata accounts
-for about7.89GB of single-copy transfers; actual installation remains untested.
-
-The v5 launch on offer56695170, machine54112/host146915, returned `success=false` with
-contract57110891. The wrapper exited after2.1s before SSH/upload/workload and destroyed
-that ID. Independent absence is21:02:29 UTC. No ordering/matrix execution occurred;
-provider image transfer and actual billing are not inferred from the logs. This consumed
-the approved single attempt; **do not retry without additional user authorization**.
-The failed attempt and approved preparation have a separate immutable 221-file,
-29,423,503-byte archive; [receipt](../benches/results-s54-gpu/s57-correctness-pilot-v5-failed-recovery.json).
-The user then approved one additional same-payload attempt under the original cumulative
-$1 cap. It also failed at allocation before upload: offer51669617, machine143204/host556515,
-contract57111469; exit1 after2.3s, independent absence21:07:38 UTC. Both attempts produced
-no GPU results. No further attempt is authorized. Read-only diagnosis found identical creation options
-to successful controls and no explicit account ineligibility; no detailed provider error
-or concrete startup cause was available. The [sanitized diagnosis](../benches/results-s54-gpu/s57-correctness-pilot-allocation-failures/allocation-diagnosis.md)
-and final closed-attempt recovery receipt preserve both failures.
-
-Operational base: `/private/tmp/mapal-s56-gpu`.
+## Inspect and resume
 
 ```sh
-python3 /private/tmp/mapal-s56-gpu/final_status.py
-cat /private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/verification.json
-cat /private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest-v5.json
+cd /Volumes/LessComplex/Personal/mapal
+git status --short
+openspec list --json
+cat docs/performance/gpu/current-results.md
+cat /private/tmp/mapal-s61-root/live-state.json
+cat /private/tmp/mapal-s61-gpu/attempt-09/packet.json
 ```
 
-At the S57 final handoff there were zero active task rentals or local task jobs; see S58 live state above. Never touch unrelated instances
-`57065574` or `57100404`. GPU agent owns rental/upload/cleanup. Preserve the frozen benchmark payloads/tools as evidence. Both bound launchers are now
-closed; apply a source repair only after its separate proof/review. Isolated diagnostic
-snapshots remain under the paths below. Do not run integrated timing acceptance on correctness-only output.
-Keep numerical success, arithmetic-route proof and timing admission distinct.
-
-## Next authorized work, in order
-
-1. Frozen-report reconciliation is complete: new confirmation presentation checked,
-   FRAMEWORK §4.5 review reconciled, drift zero-dead, strict validation passed and
-   `verify-s54-gpu-selection` archived as `2026-10-21-verify-s54-gpu-selection`.
-   Benchmark success does not close targeted ordering duties.
-2. Read-only diagnosis of both pre-upload allocation failures is complete without a proved
-   cause. Both S57 attempts are exhausted and their launchers remain closed. The user has
-   since renewed machine/run authorization; the completed bound S58 attempts are described above.
-   Payloads and exact validators remain under `ordering-runtime/`, `large-composed/`
-   and `correctness-pair/` in the operational base. Timeout aborts all later phases.
-3. **Replay repair complete:** `repair-loop-route-replay` is archived. Exact diagnostics
-   proved omitted acyclic exit payloads674/5907; the repair reconstructs existing canonical
-   decide/advance work through the ordinary replay classifier. Five new tests fail on old
-   code and pass with the fix; full rewrite86/0, required-clang workspace1181/0/1 ignored.
-   Eight previously failing GPU emissions now complete. Full interpreter checkpoints match
-   8,408 numeric values/8,838 lines. [Proof and independent review](../benches/results-s54-gpu/s57-loop-route-replay/README.md)
-   are recorded; no GPU execution is claimed. Three bounded original native-emission
-   timeouts remain an independent backend question. Full reproduction is archived locally.
-
-4. Continue `eliminate-unmaterialized-gpu-allocations` (9/15 tasks). The
-   [ordering evidence](performance/s57-ordering-evidence.md) establishes missing emitted
-   edges for stored-member host readback and another-chain tile consumption. Same-stream
-   and member-row-fold suspicions were refuted for inspected shapes. The planned touch map
-   uses existing group ownership, alias canonicalization and output-storage facts.
-   Runtime/API proof and a reviewed ordering-only candidate are now preserved in the
-   [candidate packet](../benches/results-s54-gpu/s57-ordering-candidate/candidate-receipt.json).
-   Four exact regression tests fail on old production, two controls pass; the candidate
-   passes 50 focused checks and preserves all 14 device LLVM units. S58 integrated this
-   correction after 200 ordinary GPU processes per revision and the full workspace passed.
-   Preserve the arena guard. A nonzero free currently synchronizes; omitting an allocation
-   can remove that incidental wait. The isolated `store_out` candidate and no-clock gate
-   are preserved above; no shared allocation removal or measured gain is claimed.
-5. Continue `benchmark-large-composed-gpu-workloads`: full recurrent checkpoints after
-   replay repair; matched numerical contracts and clocks across Mapal, naive/handwritten,
-   cuBLAS and PyTorch eager/compiled; then retention/allocation controls across families.
-   Matrix payload arithmetic is statically certified; no new GPU composition timing yet.
-
-Proof rule: infer from shapes and dataflow, record a candidate, then prove emitted code and
-runtime behavior before changing the compiler. Current `.rna` TF32 ties differ from the
-undecided ties-even proposal; do not change numerical policy as a performance fix. Logical
-last use differs from asynchronous completion. Static IR can build graph topology, while
-buffer binding/instantiation and replay still need runtime work.
-
----
-
-(S52's handoff, kept below for the CPU-side items it still carries. The S53 workflow header it replaced:
-workflow `mapal-s53-gpu-optimizations`, run `wf_40012e53-58d`; item branches `s53/<key>`.)
-
-# Next Session (S52)
-
-Written: 2026-08-10 · end of S51 · by: Claude (category-architect)
-Session log: `sessions/2026-08-10-s51-the-pack-is-o-n-squared.md` — **read it**
-Records that govern S52: `performance/s51-the-pack-is-o-n-squared.md` and
-`components/backend-llvm/plans/plan-s51-the-one-thread-kernel.md` **§9** (what the plan got
-wrong, so S52 does not repeat it).
-Previous handoff: S49–S50, `sessions/2026-08-10-s49-s50-the-scheduler-was-the-kernel.md`.
-
-## READ THIS FIRST
-
-**S51's work is UNCOMMITTED on `main` @ `c78c9af`**, which is in sync with origin. S49/S50 and
-S48 all landed together in `c78c9af` and were pushed, so that P0 is closed; the tree now holds
-only S51's diff plus the deliberate `oainotes.md`.
-
-**A published instrument was measuring code that is not in the binary, and it cost this session
-a wrong projection.** `benches/sme/packcost.c` says it *"replicates the EMITTED nest exactly"*
-and replicates the **pre-S42** A pack — S42 reordered that pack row-outer and the comment was
-never updated. Its 8.46 ms is a pre-S42 number; three documents cite it. It is marked STALE in
-place (its provenance is worth more than a fix) and `benches/sme/packconflict.c` measures what
-ships. **Measurement rule 28** was added for this.
-
-**`pack_pays` is scoped to the SME rung ON PURPOSE.** The crossover was measured on that kernel
-and no other, so an f64 or exact-face site on `apple-m4-sme` still packs unconditionally through
-the NEON rung. That scoping is not an oversight and a test enforces it
-(`sme_profile_differs_from_apple_m_only_in_dispatch_kind_where_the_rung_declines`, which caught
-the first, wider version).
-
-**`MAPAL_PAR` is still undecided.** Sapir's position at S51 open: *"I think it should be worker
-count, and also an `auto` version for optimal detection — I'm confused about this and need to
-think about it."* It ships today as **total executors including the host**. Nothing was changed.
-
-**The arch box `100.81.226.103` is INTERMITTENT.** Sapir enabled Tailscale at S51b; it came up,
-ran the whole NN ladder, then went unreachable again before the constants run (4 retries over
-60 s, all timeout). `raptorlake` now has **`flops_per_ns = 144` measured** and still owes
-`bytes_per_ns` and `dispatch_ns` — see `sessions/2026-08-10-s51b-the-i9-leg.md`.
-
-**A RENTED STAND-IN WAS TRIED FOR THE TWO OWED CONSTANTS AND REFUSED ITS OWN CONTROL.**
-S51c rented an i9-14900K on vast.ai (whole machine, 32/32 effective, $0.09 total, destroyed).
-`flops_per_ns` is the built-in control: the arch box reads **144.2 / 143.4** at d=1024/2048,
-agreeing to 0.6%; the rental read **149.2 / 157.7**, disagreeing with *itself* by 5.7%. Cause
-found, not guessed: the host runs the **`powersave` governor** (load 0.26, so not neighbours),
-the artifact S33/S36b already recorded for this CPU class. The target constant came out
-**13.0 µs from medians and 1.5 µs from minima — 9x apart** — because the signal
-(dispatch − inline ≈ 0.1 ms) sits under ±0.6 ms of jitter, and a 41-cycle re-run moved the
-medians 5x. **Nothing from that box was written into `raptorlake`.**
-
-> **29. A timing constant may only be taken on a stand-in machine if the stand-in reproduces
-> the target's own control.** `flops_per_ns` existed in this recipe as a cross-check and is what
-> caught it; without it, a `dispatch_ns` off by 9x would have been written into the profile that
-> compiles for the real box. And note what does NOT transfer even in principle: `bytes_per_ns`
-> is a DRAM-configuration property and `dispatch_ns` is a runtime-and-scheduler property —
-> neither is a property of "an i9-14900".
-
-**If `nn4_128` looks that noisy on the arch box too, the recipe needs a bigger program.** At
-0.18 ms it may be too small to carry a ~0.1 ms difference on a `powersave` machine; the fix is a
-larger d or more flipped dispatches, not more cycles.
-
-**THERE IS A MEASUREMENT SCRATCH PROFILE IN THE TREE THAT MUST NOT SHIP.**
-`profile.rs:RAPTORLAKE_INLINE` is `raptorlake` with `dispatch_ns = 1_000_000_000`, so the
-roofline answers "inline" for every site. It exists only because `dispatch_ns` can be measured
-only as a **difference** (dispatch-everything vs inline-everything, over the tasks that flip).
-It is reachable only by explicit `--target=raptorlake-inline` and shows up in the resolver's
-name list, which is the tripwire. **Delete it the moment the constants land** — it is the
-`kc_nest` mistake in miniature, and this repo already carries a P1 to delete that one.
-
-**Threaded headroom on this part is bounded and small.** d=2048 threaded already runs
-≈3374 GF/s against a measured ~4100 aggregate ceiling — **82% of the machine**. At most ≈1.22×
-remains threaded on the M4, ever. Size any future threaded claim against that.
-
-## S52 opens on — H3, the last term. H2 SHIPPED in S51
-
-### 0. H2 is DONE — `ac13439`
-
-Blocked the A pack once `ap = panel_rows·kc·sizeof` leaves L1D. **`nn4_2048` 1 thread
-74.0476 → 67.8328 ms, 1.092×, disjoint**; threaded 1.022×, overlap. Gate 1058/0, generic
-unmoved, `nn4_{128,512,1024}` byte-identical.
-
-**Its threaded prediction was WRONG and that is the lesson (rule 30).** The plan
-pre-registered "per-core cost ⇒ holds or grows threaded" on rule 24, and it shrank
-(1.09× → 1.02×). Rule 24 needs a second question: **is the work divisible?**
-`move_panel` grew threaded because every core swept all of A whatever rows it owned;
-each lane packs only its own panels, so this dilutes like any parallel term.
-
-### 1. What H2 was (kept for the record)
-
-Everything needed is taken. The emitted pack (`func/sme.rs`, row-outer / k-inner since S42)
-reads `a` contiguously and **stores `ap[pk·32 + pi]`, one 4 B store per 128 B line**. Whether
-that costs anything is one question: does `ap = 32·k·sizeof` fit L1D (128 KB)?
-
-| N | `ap` | blocked / ships | pre-S42 order / ships |
-| ---: | ---: | ---: | ---: |
-| 128–512 | ≤ 64 KB | 1.000–1.051× — **flat, nothing to win** | 0.50–0.61× |
-| 1024 | 128 KB = L1D | 1.612× — **cell VOID**, drift 1.507× | 1.046× |
-| 2048 | 256 KB | **2.752×** | **1.455× — the reorder REGRESSES here** |
-| 4096 | 512 KB | 1.771× | 1.140× |
-
-**Build:** a 32×32 tile over `(pi, pk)` in `emit_tiled_map_sme`, gated on
-`32·k·sizeof > l1d_bytes` so it is a byte-identical no-op below the boundary. Value-identical
-by construction (same stores, different order of the same loop nest). **Worth ~5–8% integrated
-at d≥1024 and nothing below** — the A pack is 12–17% of the wall, not the 60% the stale
-instrument implied.
-
-**Do not "fix" this by reverting S42.** The pre-S42 order is faster at N≥2048 and ~2× slower at
-N≤512; blocking beats both (1.89× over the pre-S42 order at N=2048).
-
-**Rule 24, pre-registered:** a per-core cost ⇒ the win should hold or grow threaded.
-
-### 2. P1 — the queue
-
-- **H3, the residency term** (the S51 handoff's original prescription). Pack A once globally —
-  the same one-shot parallel pack S43 §4d already built for B — then `jc` outside, which
-  removes the `c/nc` re-pack that made `nc` lose. Priced from the measured sweep at **≈1.45× at
-  one thread**; S43 measured residency at **≤5% threaded** and rule 24 says a shared bottleneck
-  shrinks. Costs a second full-size packed buffer (64 MB at N=4096). **Take it for the 1t number
-  and the i9, not as a threaded win.**
-- **`pack_pays` on the NEON rung is unmeasured.** Either measure that crossover or leave it
-  scoped; do not transplant the SME threshold on the strength of an argument.
-- **`path_plan_is_acyclic` is still load-bearing** — a cyclic plan is still silently demoted to
-  sequential emission, the failure mode that hid every chained matmul for nine sessions.
-- **Sequential emission has no clock fence** — a program that falls back self-times garbage.
-- Six `runtime/ARCHITECTURE.md` §4 composition rules have no automated pin.
-- Carried and still open: `examples/vector.mapal` does not parse (3 of 174 sweep cells) ·
-  `kc_nest` · executing SME value check in `cargo test` · 12 prunable worktrees.
-
-### 3. What S51 proved about how to open a session
-
-The P0 was handed over as one item and was **three**, and its own prescription fitted only the
-regime its number did not name. Two things caught that before any code was written: reading
-`FRAMEWORK.md` §4 and writing the placement out as `Trn`/`Loc`/`Trm` (which made the packs
-visible as **`Trm` prices that no record had taken**), and reading the refuted-candidates list
-in the prior records (which killed the streaming-mode hypothesis in one grep — `smcost.c`,
-7.6 ns/call, 0.6% of the wall).
-
-## FIRST commands
-
-```sh
-cargo test --workspace --release                  # 1056 passed / 0 failed
-cargo fmt --all --check
-git status --short                                # S51's diff, uncommitted
-ssh -o ConnectTimeout=8 100.81.226.103 nproc      # INTERMITTENT
-bash benches/nn/raptorlake_constants.sh 100.81.226.103 21   # the two owed constants
-
-# reproduce S51's two measurements
-CYCLES=15 bash benches/perflock.sh bash benches/nn/pack_ab.sh
-clang -O2 -march=armv8-a -o /tmp/pc benches/sme/packconflict.c && bash benches/perflock.sh /tmp/pc
-
-# the gate that must NOT move for unmeasured profiles
-bash benches/emit_sweep_ab.sh target/release/examples/emit /tmp/post.hashes --target=generic
-```
-
-## Live state at close
-
-| Type | Handle | State | Inspect | Cleanup |
-| --- | --- | --- | --- | --- |
-| branch | `main` @ `c78c9af` | in sync with origin; **S51 uncommitted** | `git status -sb` | Sapir's call |
-| machine | arch box `100.81.226.103` | **INTERMITTENT** — ran the S51b ladder, then dropped | `ssh -o ConnectTimeout=8 … nproc` | — |
-| **code debt** | `RAPTORLAKE_INLINE` in `profile.rs` | **scratch, must not ship** | the resolver's name list | delete after the constants |
-| artifact | `benches/results-s51-i9/i9/` | 90 files, the i9 ladder | `ls benches/results-s51-i9/i9` | keep |
-| artifact | `benches/results-s51/` | untracked, the H1 samples | `ls benches/results-s51` | keep |
-| artifact | `target/tmp/{emit_pre,packconflict}` | scratch | — | discardable |
-| worktree ×12 | `.claude/worktrees/agent-*` + 3 pre-rename | prunable, unchanged since S47 | `git worktree list` | `git worktree prune` |
-| results | `benches/results-s49/`, `-s50final/` | untracked; **`-s50final` is what the README quotes** | `ls benches/results-s50final` | keep both |
-| file | `oainotes.md` | untracked, deliberately | — | Sapir's call |
-
-**Nothing is running.** No background job, no server, no port. Measurement mutex free.
-
-## Open items
-
-| Priority | Item | Reference | Next action | Done when |
-| --- | --- | --- | --- | --- |
-| P1 | the reversed pack's 2.0–2.6× padding win is UNEXPLAINED; padded-reversed beats shipped blocking (3.154 vs 5.167 ms at N=4096) and **no traversal reaches it** — a 24-cell tile sweep got to 0.684× | `s51` §5f, §5g | the read-set SIZE is refuted (R=4 ≡ R=32); only the stride VALUE matters. Untested candidate: page/DRAM-bank aliasing — at N=4096 the stride is exactly the 16 KB page | mechanism identified, or dropped |
-| **P0** | `MAPAL_PAR` semantics | READ THIS FIRST | Sapir leans worker-count + `auto`; undecided | decided |
-| **P0** | H3 — pack A once, then `jc` — the last term | §2 | the `mc` rung | 1t ≈1.45× |
-| P1 | `pack_pays` unmeasured on the NEON rung | §2 | measure or leave scoped | either |
-| **P0** | delete `RAPTORLAKE_INLINE` scratch profile | S51b §2a | remove once the constants land | gone from `profile.rs` |
-| **P0** | `raptorlake` owes `bytes_per_ns` + `dispatch_ns` (`flops_per_ns` = 144 is taken) | S51b §2 | `bash benches/nn/raptorlake_constants.sh 100.81.226.103 21` | profile carries `Some` |
-| P1 | i9 scaling hole at d=1024 — 6.15× between 8.12× and 9.37×, overlap factor 0.730 | S51b §1d | diagnose | explained or recorded |
-| P1 | `path_plan_is_acyclic` load-bearing | §2 | enforce or make loud | fallback deletable |
-| P1 | sequential emission has no clock fence | §2 | fence, or refuse to self-time | honest bracket |
-| P2 | ARCHITECTURE §4 rules unpinned | `runtime/suggestions.md` #3 | one test per rule | 6 pins |
-| P2 | `vector.mapal` · `kc_nest` · SME value check · 12 worktrees · box scratch | S48/S43 | — | — |
-
-## Standing direction (Sapir — unchanged)
-
-- Compute-only legs; NumPy in every verdict table; scale everything up.
-- Parallel-first by construction — **threaded is the configuration that ships.**
-- Backend-genericity contract (ADR-0032): **mapal-ir never learns machine facts.** Held through
-  S51 — its whole diff is `backends/llvm` plus benches and docs.
-- **Keep stuff generic, not hardcoded** — and when a constant is swept rather than derived, say
-  so. S51 added **no constant**: the pack threshold is `working_set > l2_bytes`, an existing
-  recorded field.
-- Query, not rewrite: record that something *could* be skipped; never delete it.
-- Compile time decides the SIZES, runtime decides the ASSIGNMENT.
-- Nothing goes in the README that a default build does not deliver.
-- Proof over suggestion — a change arrives with the measurement of what it did.
-- **The README is results, not method.** Tables and a pointer; explanations live in `docs/`.
-- Speak simply, base claims on empirical results. **Give absolute ms, not only ratios.**
+Original completed traces remain under `/private/tmp/mapal-s61-gpu/attempt-{02,03,05}/retrieved/trace/`. Private recovery archives are in `.claude/worktrees/_archive-s54-20261021/s61-performance-analysis/`; use the relocated [recovery receipt](../benches/results/gpu/operations/performance-comparison/recovery.json). Historical session logs retain their original paths and names; the migration map provides their current equivalents.

@@ -1,0 +1,40 @@
+{
+  "input_files_rehashed": 924,
+  "output_files_rehashed": 9,
+  "ordinary_timing_admissible": false,
+  "all_four_captures_independently_joined": false,
+  "observations": [
+    {
+      "id": "dense-old",
+      "admitted": false,
+      "reason": "No completed capture receipt"
+    },
+    {
+      "id": "dense-candidate",
+      "admitted": false,
+      "reason": "No completed capture receipt"
+    },
+    {
+      "id": "qwen_expert-old",
+      "admitted": false,
+      "reason": "No completed capture receipt"
+    },
+    {
+      "id": "qwen_expert-candidate",
+      "admitted": false,
+      "reason": "No completed capture receipt"
+    }
+  ],
+  "provenance": {
+    "s59_manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+    "harness_source_sha256": "017b02b5f856e686a712eb4a4a22f23402b77da889737147ae59095aec1c71a5",
+    "ordinary_packet_required": true,
+    "cases": "Frozen S59 PTX, not an S60 refinement; representative measured win and loss; diagnostics never admit timing."
+  },
+  "limits": [
+    "Only exact Mapal driver-PTX images; no cuBLAS/CUTLASS executed-image claim.",
+    "SASS/PTX counts are static instructions in the captured function, not dynamic instruction count, DRAM traffic, achieved occupancy or timing cause.",
+    "Instrumented completion/value gates are diagnostic; ordinary timings must come from separate uninstrumented processes.",
+    "First missing/failed observer boundary is an explicit non-admission, not inferred success."
+  ]
+}

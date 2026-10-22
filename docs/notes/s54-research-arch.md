@@ -138,4 +138,4 @@ five → `streams`/`graph` → `pdl`/`bulk` on H100 + 5090 → `l2-window`/`rast
 - PDL SM90+: https://docs.modular.com/mojo/stdlib/gpu/grid_controls/PDL
 - Consumer Blackwell clusters (forum, unofficial): https://forums.developer.nvidia.com/t/thread-block-clustering-in-blackwell-gpus/320471/
 - RTX 3090 facts: https://www.techpowerup.com/gpu-specs/geforce-rtx-3090.c3622 ; A800 smem 167936: https://forums.developer.nvidia.com/t/question-about-max-shared-memory-in-block-and-multiprocessor/283345
-- Local: `tile_bench.cu:78`, `facts` lines in `benches/results-s53-gpu/integrated-*.txt`, `profile.rs`, `lib.rs:74`, `benches/results-s54-gpu/fusion-probe-static.txt`.
+- Local: `tile_bench.cu:78`, `facts` lines in `benches/results/gpu/kernels/optimization-ladder/integrated-*.txt`, `profile.rs`, `lib.rs:74`, `benches/results/gpu/fusion/static-probes/fusion-probe-static.txt`.

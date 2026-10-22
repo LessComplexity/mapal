@@ -1,6 +1,6 @@
 # S53 research: the kernel gap, per architecture
 
-Sources: `benches/results-s52-gpu/v4–v6` (`table.py`), bundle-7 `prof-*.tgz` (ptxas, SASS, nsys), the SASS
+Sources: `benches/results/gpu/kernels/initial-comparisons/v4–v6` (`table.py`), bundle-7 `prof-*.tgz` (ptxas, SASS, nsys), the SASS
 review, `gpu.rs`, `profile.rs`. Ratios are within-run, cuBLAS ms / Mapal ms (>1 = Mapal faster).
 
 ## 1. Measured gap (v6)
@@ -85,6 +85,6 @@ cuBLAS reaches its rate with 4-byte ones; revisit as the TMA prerequisite.
   ptxas disagree: 5090 async 0 vs 68 B spilled).
 - After R1 moves the shipped base, re-run every off arm on it.
 - `box_profile.sh`: nsys at 1024 and 8192 too (sets R3's target, decides R9).
-- Append rows to `benches/results-s52-gpu/` as they land; ship ON per arch only where positive.
+- Append rows to `benches/results/gpu/kernels/initial-comparisons/` as they land; ship ON per arch only where positive.
 
 **Order:** R1 (+ the 5090 fact) → R2 + R5 → R3 → R4 → R6 → R7 → R8; R9 after nsys.

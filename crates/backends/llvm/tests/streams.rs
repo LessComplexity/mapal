@@ -651,3 +651,93 @@ fn grouped_loop_carry_views_stay_on_the_legacy_stream() {
         );
     }
 }
+
+/// Allocated slots that neither supply a pointer load nor a used alloc result.
+/// These are real storage, even though the selected group passes raw pointer 0.
+fn unread_allocations(ll: &str) -> Vec<String> {
+    let main = mapal_main(ll);
+    main.lines()
+        .filter(|l| l.contains(" = call i64 @mapal_gpu_alloc(ptr "))
+        .filter_map(|l| {
+            let (result, args) = l.trim().split_once(" = call i64 @mapal_gpu_alloc(ptr ")?;
+            let slot = args.split(',').next().expect("slot");
+            let loaded = main.contains(&format!("load i64, ptr {slot}\n"));
+            let used = main.lines().any(|line| {
+                line != l
+                    && line
+                        .split(|c: char| !c.is_ascii_alphanumeric() && c != '%')
+                        .any(|token| token == result)
+            });
+            (!loaded && !used).then(|| l.trim().to_owned())
+        })
+        .collect()
+}
+
+#[test]
+fn grouped_chains_allocate_only_materialized_raw_outputs() {
+    let n = 64;
+    let diamond_join = program(
+        n,
+        &[("a", 7), ("b", 11), ("e", 5), ("g", 3)],
+        &(site("c", "a", "b", n)
+            + &site("d1", "c", "e", n)
+            + &site("d2", "c", "g", n)
+            + "    ta -> map { t -> d1[t] + d2[t] } -> h;\n"),
+        &["h"],
+    );
+    let fused_mlp2 = program(
+        n,
+        &[
+            ("a", 7),
+            ("b", 11),
+            ("e", 5),
+            ("f", 3),
+            ("g", 13),
+            ("p", 17),
+        ],
+        &(site("c1", "a", "b", n)
+            + "    c1 -> map { v -> v * 0.5 } -> h1;\n"
+            + &site("d1", "h1", "e", n)
+            + &site("c2", "f", "g", n)
+            + "    c2 -> map { v -> v * 0.5 } -> h2;\n"
+            + &site("d2", "h2", "p", n)),
+        &["d1", "d2"],
+    );
+    let mut unread = Vec::new();
+    for (name, src) in [
+        ("independent", indep(n)),
+        ("diamond", diamond_join),
+        ("mlp2", fused_mlp2),
+    ] {
+        for contract in [false, true] {
+            let e = grouped(&src, contract);
+            let t = calls(&e.text);
+            assert!(t.iter().any(|x| x == "launchv 1"), "{name}: {t:?}");
+            assert!(t.iter().any(|x| x == "launchv 2"), "{name}: {t:?}");
+            for allocation in unread_allocations(&e.text) {
+                unread.push(format!("{name} contract={contract}: {allocation}"));
+            }
+        }
+    }
+    assert!(unread.is_empty(), "{unread:#?}");
+}
+
+#[test]
+fn raw_storage_controls_keep_their_observable_pointers() {
+    for src in [
+        twin(64),
+        fanout(64),
+        GROUPED_MEMBER.to_owned(),
+        GROUPED_FORK.to_owned(),
+        relu_loop(64),
+    ] {
+        for contract in [false, true] {
+            let e = grouped(&src, contract);
+            assert!(
+                unread_allocations(&e.text).is_empty(),
+                "{:?}",
+                unread_allocations(&e.text)
+            );
+        }
+    }
+}

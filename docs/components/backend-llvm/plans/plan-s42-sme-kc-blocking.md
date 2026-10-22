@@ -11,7 +11,7 @@ The plan was executed. What it predicted and what happened:
 | acceptance: the 1t curve stops decaying | partly — 1t 4096 improved, threaded regressed |
 
 **It ships default-OFF behind `--kc`.** It captures ~6.1% of the **79%** that
-`docs/performance/s42-sme-roofline.md` §5e later showed is available, so the technique is not wrong —
+`docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5e later showed is available, so the technique is not wrong —
 this flat single-level realisation is. **S43's P0 replaces it with a hierarchical
 tile→cache cascade (registers → L1 → L2 → L3), which is Sapir's direction and the correct shape.**
 
@@ -21,7 +21,7 @@ depth derivation in it is superseded by `Sme::panel_l1d_ratio`.
 ---
 
 **Original status:** written pre-build, S42.
-Origin: S42's measurement campaign (`docs/performance/s42-sme-roofline.md`), which refuted the
+Origin: S42's measurement campaign (`docs/performance/cpu/matmul/sme-throughput-ceiling.md`), which refuted the
 stated P0 (k-loop software pipelining, +0.1–0.2% overlapping) and produced a measured replacement.
 Related: ADR-0032 D4 (backend config = performance tailors) · ADR-0034 (constants are searched, not
 written) · `plan-s31-target-profiles.md` (the machine-fact half) · `plan-s31-deduced-blocking.md`
@@ -230,7 +230,7 @@ unmoved for pre-existing profiles, and the threaded number is reported with its 
 
 ## Open questions
 
-- **Does the ceiling story hold?** `docs/performance/s42-sme-roofline.md` §1 withdraws the
+- **Does the ceiling story hold?** `docs/performance/cpu/matmul/sme-throughput-ceiling.md` §1 withdraws the
   cycle-level derivation (latency 4 / issue 1-per-cycle) as unproven — it is one equation with two
   unknowns and the measured ratio exceeds the model's own limit. Blocking's headroom above 55% of
   ceiling depends on which reading is true. Needs a clock measurement, which no probe here does.

@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$ROOT/target/tmp/nn_ab"
-OUT="${OUT:-$ROOT/benches/results-s49}"
+OUT="${OUT:-$ROOT/benches/results/cpu/scheduling/dependency-cycles}"
 CYCLES="${CYCLES:-15}"
 SIZES=("$@"); [ ${#SIZES[@]} -gt 0 ] || SIZES=(128 256 512 1024 2048)
 EMIT="$ROOT/target/release/examples/emit"

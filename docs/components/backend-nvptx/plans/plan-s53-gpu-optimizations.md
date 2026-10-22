@@ -1,7 +1,7 @@
 # plan-s53: GPU optimizations — the build list
 
 Written: 2026-10-20 · S53 · judge over the four research reports (`docs/notes/s53-research-{creative,artifacts,link,kernel}.md`)
-Branch: `s52-ptx-leg` @ fa77818 · Measured state: `benches/results-s52-gpu/v6-*.txt`, `host-trace-v5-v6.txt`
+Branch: `s52-ptx-leg` @ fa77818 · Measured state: `benches/results/gpu/kernels/initial-comparisons/v6-*.txt`, `host-trace-v5-v6.txt`
 Rules: plan-s41 S52 revision (10 amendments) · ADR-0032 (contracts vs backend config) · ADR-0028 D4 (float folds pinned) · ADR-0039 (candidate, not decided)
 
 ## 0. Scoring
@@ -78,7 +78,7 @@ Common to every item (hard rules 1–7):
 - Tests, in this order: `cargo test --workspace --release` green (unit tests named per item); box differential
   **N/N PASS on every listed part** (N = 12 + the item's programs), both faces; the on/off A/B interleaved
   with cuBLAS and CUTLASS in one vast session per listed part (`PROFILE=1`); host-link and graph items also
-  measure their e2e programs. Every number appended to `benches/results-s53-gpu/<key>-<part>.txt` the moment
+  measure their e2e programs. Every number appended to `benches/results/gpu/kernels/optimization-ladder/<key>-<part>.txt` the moment
   it lands; `vastai show instances` and `vastai destroy instance <id> -y` close every session.
 - Ship a rung ON only on the parts where its arm measured positive; record the decision in the profile's
   rung table (`arch-rungs` §2.2) with the results row cited.

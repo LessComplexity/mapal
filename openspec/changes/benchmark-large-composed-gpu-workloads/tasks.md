@@ -17,6 +17,7 @@
 - [ ] 3.3 Implement matched naive and explicitly incremental handwritten CUDA/library references; verify all small outputs/checkpoints and declare the large-case numeric gate before timing.
 - [ ] 3.4 Add PyTorch eager and compiled full-recompute/incremental references with pinned runtime precision and reported graph scope/mode; validate outputs and expose unsupported compilation or eager fallback explicitly.
 - [ ] 3.5 Verify matched cold/warm/device timing and reset boundaries, process statuses, allocation/transfer counts and allocated/reserved-memory reporting; preserve meaningful negative controls for incomplete output and asynchronous timing.
+- [ ] 3.6 Compare competitive shape-appropriate CUTLASS configurations and supported cuBLASLt fused epilogues on the same workload, storage precision and declared numerical budget; keep ordered-bit guarantees distinct, account for tuning/compilation separately, and compare whole-program fusion as well as individual kernels.
 
 S58 supplies partial matrix-only evidence for 3.1–3.4: Mapal, handwritten naive CUDA,
 cuBLAS and PyTorch eager pass the prepared small case. A later PyTorch 2.13.0/cu130
@@ -32,8 +33,25 @@ allocator scope and independent readers. All GPU executions remain pending budge
 approval. This matrix-only preparation does not close the recurrent/incremental,
 retention, allocation/transfer or graph-mode duties in 3.1–3.5.
 
+S61's first hardware attempt independently passes all five tiny gates and1,536 M128/d256
+Mapal checkpoint values, then fails the wrapper's stdout framing before any timing arm.
+Real pipe replay reproduces that failure; immutable v4 adds only a flush before the request
+and its manifest entry. All kernel/gate/clock files remain unchanged. No timing row is
+admitted from that attempt. The repaired two-size comparison separately admits all ten matrix-only rows.
+Mapal loses to cuBLAS at both sizes (1.35–1.47× time) and beats the restricted PyTorch
+arms; input-reset cache state differs, CUDA graphs are disabled, and source arena requests
+are distinct from allocator peaks. Four actual Mapal images are admitted separately.
+Recurrence/incremental, causal retention/allocation, graph-enabled and competitive fused
+library duties remain open; the ten rows do not close tasks3.1–3.5 or4.1.
+
 ## 4. Measure composition and reconcile
 
 - [ ] 4.1 Run matrix and recurrent compositions at the admitted sizes with all matched implementations; retain ordinary timings, separate profiling, intermediate value evidence and rental cleanup receipts.
 - [ ] 4.2 Independently check published ratios and mechanism claims against raw results and emitted/runtime artifacts; report losses, first-pass effects, precision limits and unmeasured behavior.
 - [ ] 4.3 Reconcile implementation/architecture/status and the FRAMEWORK §4.5 review, run strict validation and drift, preserve artifacts and archive only completed work with an immutable session handoff.
+
+The evidence-organization portion of4.3 now uses descriptive topic/experiment directories.
+All2,802 relocated raw files retain their hashes,372 report links resolve, and the real
+baseline generator is output-equivalent after resolving its helper relative to the script.
+Historical session logs remain immutable; benches/results/path-map.json resolves old paths.
+The remaining experiment/reconciliation duties keep4.3 open.

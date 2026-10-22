@@ -1,6 +1,6 @@
 # S53 research: the CPU↔GPU link
 
-Evidence: `benches/results-s52-gpu/host-trace-v5-v6.txt`; host .ll from `emit e2e_1024.mapal --rewrite --target=rtx-4090`.
+Evidence: `benches/results/gpu/kernels/initial-comparisons/host-trace-v5-v6.txt`; host .ll from `emit e2e_1024.mapal --rewrite --target=rtx-4090`.
 
 **One site, n=4096, contract face, v6 (ms, 3 processes):**
 

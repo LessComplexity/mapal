@@ -9,7 +9,7 @@ See proposal.md. The frozen baseline is `b4152c5`; all source, HEAD, compiler/ru
 binaries and final benchmark inputs stay unchanged until its five-profile and independent
 confirmation runs finish. Temporary investigation uses the already-built tools only.
 
-[The evidence report](../../../docs/performance/s57-ordering-evidence.md) records three
+[The evidence report](../../../docs/performance/gpu/memory/ordering-investigation.md) records three
 distinct findings: unused raw output allocations in saved stream-enabled LLVM; a current
 stored-member host readback with no emitted producer wait; and a stored member crossing
 into a second tile stream without an emitted event. Same-stream and member-row-fold

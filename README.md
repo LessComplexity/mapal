@@ -93,7 +93,7 @@ Method, machine specs, raw logs: [`docs/performance/`](docs/performance/).
 
 3,556 GFLOP/s vs 3,115 at 4096, disjoint. Naive threaded C++: 33,439 ms.
 Single-threaded NumPy is ~2× ahead
-([why](docs/performance/s43-residency-and-the-thermal-artifact.md)).
+([why](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
 
 ### Other shapes - M4 Pro, threaded
 
@@ -107,7 +107,7 @@ Single-threaded NumPy is ~2× ahead
 | gather `x[idx[i]]`, 1M |      0.139 ms | **0.137 ms** |         0.16 |     2.19 |
 
 Every row above moved this session, 1.00–1.31×, from scheduling alone — the kernels
-are unchanged ([what changed](docs/performance/s50e-the-roofline-threshold.md)).
+are unchanged ([what changed](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
 
 ### The same shapes on an i9-14900F, threaded
 
@@ -121,7 +121,7 @@ are unchanged ([what changed](docs/performance/s50e-the-roofline-threshold.md)).
 | gather `x[idx[i]]`, 1M |      0.236 ms | **0.203 ms** |         0.48 |     1.33 |
 
 Transpose single-threaded on this box: 2.42 → 1.09 ms, −55%, disjoint
-([what changed](docs/performance/s44-conflict-not-capacity.md)).
+([what changed](docs/performance/cpu/memory/l1-panel-conflicts.md)).
 
 ### matmul vs OpenBLAS on an i9-14900F, 1024² f32
 
@@ -132,7 +132,7 @@ Transpose single-threaded on this box: 2.42 → 1.09 ms, −55%, disjoint
 | threaded, whole box |  1.52 ms |  1.50 ms | **tie** |
 
 The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
-8 threads per row ([detail](docs/performance/matmul/s33.md)):
+8 threads per row ([detail](docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md)):
 
 | 8 threads on…       |   Mapal | NumPy |               |
 | ------------------- | ------: | ----: | ------------- |
@@ -145,7 +145,7 @@ The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
 Forward pass only, square (batch = width = `d`), every layer `d×d`. Values are
 bit-identical to NumPy's on every cell. NumPy is the better of its 1-thread and
 multi-thread legs. One run, 41 interleaved cycles
-([full table + noise spreads](docs/performance/s50e-the-roofline-threshold.md)).
+([full table + noise spreads](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
 
 | d | 4-layer net | NumPy | | 2 nets at once | NumPy | |
 | ---: | ---: | ---: | --- | ---: | ---: | --- |
@@ -157,7 +157,7 @@ multi-thread legs. One run, 41 interleaved cycles
 
 Two independent nets are the same total work as one 4-layer net. Nothing in the
 source says "run these in parallel"
-([why that is free](docs/performance/s49-two-nets-and-the-cyclic-plan.md)).
+([why that is free](docs/performance/cpu/scheduling/independent-networks-and-dependency-cycles.md)).
 
 | d | one 4-layer net | two 2-layer nets | gain from the graph alone |
 | ---: | ---: | ---: | ---: |
@@ -166,7 +166,7 @@ source says "run these in parallel"
 | 1024 | 2.930 ms | 2.771 ms | 1.06× |
 
 Small sizes are now a single-thread kernel gap, not a scheduling one
-([breakdown](docs/performance/s50d-dont-dispatch-what-cannot-be-shared.md)).
+([breakdown](docs/performance/cpu/scheduling/dispatch-threshold.md)).
 
 ### Three builds
 
@@ -292,7 +292,7 @@ so neither resolves names the way the compiler does (ADR-0008).
 ## What is next
 
 1. **Close the single-threaded gap**, where NumPy is still ~2× ahead. Threaded is solved; this is a
-   different bottleneck ([what we measured](docs/performance/s43-residency-and-the-thermal-artifact.md)).
+   different bottleneck ([what we measured](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
 2. **Pick the thread count from the program** instead of defaulting to every core
    ([plan](docs/components/backend-llvm/plans/plan-s32-deduced-scheduling.md)).
 3. **Intel AMX**, so matrix units are not an Apple-only story.

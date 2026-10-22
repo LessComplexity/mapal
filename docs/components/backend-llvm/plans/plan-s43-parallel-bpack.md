@@ -7,9 +7,9 @@ Governs: `crates/backends/llvm/src/func/drive.rs::FnEmit::emit_task` (the packed
 and `crates/backends/llvm/src/func/core.rs::emit_pack_copy` (two lines).
 Component: `backend-llvm`. **No `mapal-ir` change (ADR-0032). No `mapal-rt` change — the runtime
 already carries every semantic this plan needs. No profile field, no `EmitOpts` field, no flag.**
-Predecessor: `docs/performance/s43-residency-and-the-thermal-artifact.md` §4c — *"what actually
+Predecessor: `docs/performance/cpu/memory/operand-residency-and-thermal-effects.md` §4c — *"what actually
 binds threaded is a serial B pack, and it is Amdahl in a memory-bandwidth costume."*
-Results land in: `benches/results-s43/parallel-bpack.md` (stub exists, appended as they land).
+Results land in: `benches/results/cpu/memory/operand-residency/parallel-bpack.md` (stub exists, appended as they land).
 
 ## 0. What this plan builds, and the evidence that selects it
 
@@ -21,7 +21,7 @@ why. The evidence, measured not argued:
 | the emitted `@mapal_sme_panel`, lifted verbatim and driven without `mapal-rt`: N=4096 GEMM in 35.875 ms = 3831 GF/s, **93% of the ~4100 GF/s two-unit ceiling** | the kernel is done. Optimizing it further buys percent, not factors |
 | `@task7` emitted `kind=0` (Seq): **0 `fmopa`, 8 stores, 1 nested parallel call** — it packs all of B on ONE thread inside the timed region, then opens the nested matmul run | the serial term is in the emission, verified, not inferred |
 | one-term additive model: pack 16.349 ms (thread-count-independent) + matmul (154.396 / 35.875) closes to shipped (174.596 / 54.164) with **2.2% / 3.6% residual at both ends** | **30.2% of the threaded wall is one thread packing B** |
-| priced (`benches/sme/bpack.c`, `benches/results-s43/bpack.log`): the same pack parallel over `jt` is **16.402 → 1.721 ms, 9.53×, disjoint** | the fix exists at the thread count that ships. Projected 39.54 ms = 3476 GF/s ≈ **1.37×**, past Accelerate's threaded 3113 |
+| priced (`benches/sme/bpack.c`, `benches/results/cpu/memory/operand-residency/bpack.log`): the same pack parallel over `jt` is **16.402 → 1.721 ms, 9.53×, disjoint** | the fix exists at the thread count that ships. Projected 39.54 ms = 3476 GF/s ≈ **1.37×**, past Accelerate's threaded 3113 |
 | k-blocking the pack: 1.96× serially, **9.421× vs 9.531× on top of parallelism** — spread over 14 cores the transpose is DRAM-bound at 78 GB/s | **k-blocking is retired, not deferred. It is not designed in, anywhere below** |
 
 ⇒ **Emit the B pack as a range-parameterized task and dispatch it across the pool, inside the
@@ -248,8 +248,8 @@ Harness: `benches/sme/bpack_sweep.sh` (new, `nc_sweep.sh` structure verbatim: ro
 with per-cycle rotation, one discarded warm-up cycle, value identity first, absolute ms
 min/median/max with explicit overlap statements, **every run through `benches/perflock.sh`**).
 Flags `-O2 -march=armv8-a+sme2` — NEVER `armv9-a` (implies `+sve`; this part SIGILLs). Raw
-series to `benches/results-s43/bpack-*.log`; tables appended to
-`benches/results-s43/parallel-bpack.md`.
+series to `benches/results/cpu/memory/operand-residency/bpack-*.log`; tables appended to
+`benches/results/cpu/memory/operand-residency/parallel-bpack.md`.
 
 Arms, one emitted `.ll` each:
 - `off` — emitted by the base-commit `emit` binary (the before binary IS the off lever);
@@ -306,8 +306,8 @@ Secondary predictions, recorded before the run:
 
 ## 8. Reconciliation — what the code became, and what the machine said
 
-Status: **BUILT AND MEASURED.** Results and raw series: `benches/results-s43/parallel-bpack.md`
-and `benches/results-s43/bpack-*.log`. Nothing committed; left for review.
+Status: **BUILT AND MEASURED.** Results and raw series: `benches/results/cpu/memory/operand-residency/parallel-bpack.md`
+and `benches/results/cpu/memory/operand-residency/bpack-*.log`. Nothing committed; left for review.
 
 ### 8.1 The code became exactly what §4 named
 

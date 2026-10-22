@@ -5,7 +5,7 @@
 # `movepanel_ab.sh` and `transpose_vs_baselines.sh` all shell out to a LOCAL
 # `clang`, and `movepanel_ab.sh` hardcodes `-march=armv8-a+sme2`. The i9 box has
 # gcc but NO clang. So none of them can run there, and the numbers in
-# `benches/results-s44/i9-ladder.md` are not reproducible without this.
+# `benches/results/cpu/memory/l1-panel-conflicts/i9-ladder.md` are not reproducible without this.
 #
 # The split: EMIT and .ll -> .o happen HERE (needs clang + the Mapal emitter);
 # only the LINK and the RUN happen on the box (needs gcc + the machine). Data

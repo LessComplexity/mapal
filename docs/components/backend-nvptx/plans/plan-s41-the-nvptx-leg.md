@@ -429,7 +429,7 @@ construction; only the rounding count differs.
 
 Sapir: *"I want to see results against the tests we already ran in performance folder … if we can
 beat numpy on here this is a huge result."* So the bar is not invented — it is the existing M4 Pro
-matmul table, `docs/performance/matmul/s33.md:150-158`, f32, numpy → Accelerate → the coprocessor:
+matmul table, `docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md:150-158`, f32, numpy → Accelerate → the coprocessor:
 
 | N | flow-fma-1t (ms) | numpy-1t (ms) | 1t gap | flow-fma-par (ms) | numpy-thr (ms) | par gap |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

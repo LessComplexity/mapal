@@ -1809,7 +1809,7 @@ impl CategoryIr {
         // law; a fact check follows. Behavior today is identical — `Iota` is
         // still the only producer of `ElemSrc::Index` — and the cost of getting
         // this wrong is pinned in `tests/tile_sites_pin.rs` (4.0x on matmul
-        // 1024, docs/performance/matmul/s25.md:46-48).
+        // 1024, docs/performance/matmul/history/bit-exact-simd-tiles.md:46-48).
         matches!(self.elem_law_local(array), Some(ElemSrc::Index)).then_some(*size)
     }
 

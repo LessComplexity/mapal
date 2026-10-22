@@ -80,7 +80,7 @@ Compile-time regression success is only the first gate. Preserve ordinary untrac
 
 ## Inputs and boundary
 
-Plan reviewed: `openspec/changes/eliminate-unmaterialized-gpu-allocations/{design,tasks}.md`; evidence authority: `docs/performance/s57-ordering-evidence.md` and its preserved proof links. Their compiler-output findings were reused, not regenerated. All nine code/test files listed below match the frozen source receipt; source and immutable payloads remain untouched.
+Plan reviewed: `openspec/changes/eliminate-unmaterialized-gpu-allocations/{design,tasks}.md`; evidence authority: `docs/performance/gpu/memory/ordering-investigation.md` and its preserved proof links. Their compiler-output findings were reused, not regenerated. All nine code/test files listed below match the frozen source receipt; source and immutable payloads remain untouched.
 
 | File | SHA256 |
 |---|---|
@@ -95,4 +95,4 @@ Plan reviewed: `openspec/changes/eliminate-unmaterialized-gpu-allocations/{desig
 | `crates/backends/llvm/tests/rowfold.rs` | `ca937c6b4b0f9d57770e0618c44f88cc9cc699b8dbe4ca8cf6f87e6ba759cb50` |
 | `openspec/changes/eliminate-unmaterialized-gpu-allocations/design.md` | `564097d30372f2f1798b70a098f040a7617eaaccaf2c868421896d958ca61f3f` |
 | `openspec/changes/eliminate-unmaterialized-gpu-allocations/tasks.md` | `64026e97cfa7ff1e3ff4c8ded18954b050fd8007435a64dfccaf995dc02b7b45` |
-| `docs/performance/s57-ordering-evidence.md` | `1ec8ce5bab4187ce25e0ed383b032049cdc50517dbfc10ea73fc68712d1bcc40` |
+| `docs/performance/gpu/memory/ordering-investigation.md` | `1ec8ce5bab4187ce25e0ed383b032049cdc50517dbfc10ea73fc68712d1bcc40` |

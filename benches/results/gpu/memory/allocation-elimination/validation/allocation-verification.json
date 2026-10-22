@@ -1,0 +1,27 @@
+{
+  "pass": true,
+  "ordinary_processes": 640,
+  "counter_processes": 28,
+  "timing_admissible": false,
+  "ordinary": [
+    {
+      "pass": true,
+      "ordinary_processes": 320,
+      "case_face_cells": 16,
+      "manifest_sha256": "ea61d2d0a2113d23b24b1f7264694a79ccfa1ce3cb8faa9fb2643f59d9212cfc",
+      "summary_sha256": "64587fe8c15c9c3af41835ce7458afbf5edd5e9fc55508788db42d91b36f1a75",
+      "runs_sha256": "154e09d9249a08a687ac2381f8e6798a3c0564ac595ddc4325f2d9d9dcf2a9fd",
+      "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+    },
+    {
+      "pass": true,
+      "ordinary_processes": 320,
+      "case_face_cells": 16,
+      "manifest_sha256": "eec6b8ff33c20f8b7b74f9a347c22df6f4ec41c44e7f0c8fc7c95cab1f7c29bb",
+      "summary_sha256": "2d8d546067b852fd5d507bc41c9382b1ed7a0864dab70209727199cfae3f485d",
+      "runs_sha256": "92f98173723618b7aced24608e6e72863e4d9da607378fc8bf85099e2a333196",
+      "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+    }
+  ],
+  "scope": "Observed outputs and unchanged-runtime allocation counters; no universal race proof or speedup"
+}

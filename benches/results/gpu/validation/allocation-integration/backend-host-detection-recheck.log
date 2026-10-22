@@ -1,0 +1,67 @@
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 2.15s
+     Running unittests src/lib.rs (/private/tmp/mapal-s58-integration-target/release/deps/mapal_backend_llvm-5a567d755e090304)
+
+running 59 tests
+test func::gpu::tests::affine_decomposition_equals_udiv_urem_for_every_copy_and_thread ... ok
+test func::gpu::tests::cell_grid_covers_the_extent_one_thread_per_cell ... ok
+test func::gpu::tests::idx32_takes_i32_exactly_when_every_index_fits ... ok
+test func::gpu::tests::power_of_two_lane_maps_are_affine ... ok
+test func::gpu::tests::raster_block_is_a_bijection_on_the_grid ... ok
+test func::gpu::tests::raster_fires_where_one_blocks_panels_leave_the_l2 ... ok
+test func::gpu::tests::sync_a_store_is_conflict_free_under_pad ... ok
+test func::resident::tests::color_aligns_and_fills_holes ... ok
+test func::resident::tests::color_shares_bytes_exactly_across_disjoint_lives ... ok
+test func::resident::tests::grouped_stream_lookup_uses_aliases_and_keeps_unknowns_legacy ... ok
+test func::resident::tests::the_wave_rule_merges_exactly_the_last_waves_that_fit_one ... ok
+test profile::tests::ampere_profiles_carry_the_compute_capability_facts ... ok
+test profile::tests::apple_m4_sme_derives_the_measured_tile_side ... ok
+test profile::tests::apple_m4_sme_moves_only_declared_capability_fields ... ok
+test profile::tests::apple_m_gained_only_the_sharing_fact ... ok
+test profile::tests::apple_m_raises_the_kc_threshold_above_every_k_we_run ... ok
+test profile::tests::cuda_ada_cpu_shaped_fields_are_inherited_placeholders ... ok
+test profile::tests::every_pre_s41_profile_is_cpu ... ok
+test profile::tests::generic_reproduces_the_six_literals ... ok
+test profile::tests::gpu_facts_are_asked_for_never_defaulted ... ok
+test profile::tests::gpu_mma_tile_is_derived_from_device_facts ... ok
+test profile::tests::gpu_rungs_are_the_measured_table ... ok
+test profile::tests::gpu_tile_geometry_is_derived_from_device_facts ... ok
+test profile::tests::gpu_tile_sync_a_is_derived_from_the_bank_geometry ... ok
+test profile::tests::gpu_warp_fill_shrinks_the_tile_until_every_scheduler_has_two_warps ... ok
+test profile::tests::gpu_wgmma_tile_is_derived_from_hopper_facts ... ok
+test profile::tests::kc_apanel_scales_with_l2 ... ok
+test profile::tests::l1d_and_sme_agree_on_the_l1d ... ok
+test profile::tests::l1d_ways_reproduce_the_readable_truth ... ok
+test profile::tests::l2_bytes_is_the_device_query ... ok
+test profile::tests::l2_per_core_is_not_l2_bytes ... ok
+test profile::tests::move_block_reproduces_both_machines ... ok
+test profile::tests::named_profiles_override_detection ... ok
+test profile::tests::native_move_geometry_is_consistent ... ok
+test profile::tests::native_on_the_documented_m4_pro_reproduces_hand_written ... ok
+test profile::tests::native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts ... ok
+test profile::tests::native_reads_the_facts_it_claims_to ... ok
+test profile::tests::native_sme_profile_is_consistent ... ok
+test profile::tests::pack_block_fires_only_once_the_pack_buffer_leaves_l1d ... ok
+test profile::tests::pressure_counts_lines_not_powers_of_two ... ok
+test profile::tests::r5_rungs_are_the_measured_table ... ok
+test profile::tests::raster_is_the_wave_panel_minimum_behind_the_l2_gate ... ok
+test profile::tests::rowfold_rungs_are_the_measured_table ... ok
+test profile::tests::sme_block_is_the_square_most_split_of_the_tile_count ... ok
+test profile::tests::sme_block_spends_every_tile_and_stays_square_most ... ok
+test profile::tests::sme_is_absent_from_every_pre_sme_profile ... ok
+test profile::tests::sme_kc_reproduces_the_measured_optimum ... ok
+test profile::tests::sme_panel_and_packed_b_panel_coincide_on_this_part ... ok
+test profile::tests::the_sme_budget_is_not_the_neon_one ... ok
+test profile::tests::tile_i_is_the_register_budget_not_a_taste ... ok
+test profile::tests::unknown_name_is_not_silently_generic ... ok
+test profile::tests::warps_per_scheduler_reads_the_base_grid ... ok
+test profile::tests::wgmma_descriptor_fields_are_the_128b_swizzle_k_major_ones ... ok
+test profile::tests::zen3_moves_two_constants_at_once ... ok
+test reuse::tests::conv_b_slides_by_one_tap_row ... ok
+test reuse::tests::conv_reuse_is_two_at_ti_four_not_three ... ok
+test reuse::tests::matmul_b_is_invariant_and_a_shares_nothing ... ok
+test reuse::tests::one_dimensional_sites_report_vacuous_invariance ... ok
+test reuse::tests::unaligned_or_oversized_slide_shares_nothing ... ok
+
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

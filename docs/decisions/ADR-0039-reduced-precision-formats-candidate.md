@@ -11,7 +11,7 @@ S52 built the GPU tile kernel (PTX via the shared emitter) and measured it on Ad
 Blackwell. Two facts force this ADR:
 
 1. **The tensor cores are where model arithmetic runs, and Mapal cannot ask for them.** On an RTX 4090
-   the TF32 `mma.sync` kernel runs 77.9 TF/s against the FP32 FMA kernel's 52.8 (`benches/results-s52-gpu/
+   the TF32 `mma.sync` kernel runs 77.9 TF/s against the FP32 FMA kernel's 52.8 (`benches/results/gpu/kernels/initial-comparisons/
    v4-rtx-4090.txt`). It exists today only behind `emit --precision=tf32` — an **ambient flag that
    changes rounding**, which ADR-0032 D5 forbids except as an interim form (the `--contract`
    precedent).

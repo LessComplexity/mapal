@@ -1,0 +1,93 @@
+[
+  {
+    "case": "independent",
+    "before": {
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "frees": 7
+    },
+    "after": {
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "frees": 6
+    }
+  },
+  {
+    "case": "diamond",
+    "before": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    },
+    "after": {
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "frees": 7
+    }
+  },
+  {
+    "case": "mlp2",
+    "before": {
+      "allocations": 12,
+      "requested_bytes": 196608,
+      "frees": 12
+    },
+    "after": {
+      "allocations": 10,
+      "requested_bytes": 163840,
+      "frees": 10
+    }
+  },
+  {
+    "case": "omitted-raw",
+    "before": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    },
+    "after": {
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "frees": 6
+    }
+  },
+  {
+    "case": "single-chain",
+    "before": {
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "frees": 1
+    },
+    "after": {
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "frees": 1
+    }
+  },
+  {
+    "case": "materialized-raw",
+    "before": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    },
+    "after": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    }
+  },
+  {
+    "case": "forked-tile",
+    "before": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    },
+    "after": {
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "frees": 8
+    }
+  }
+]

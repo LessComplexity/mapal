@@ -204,7 +204,7 @@ built-in consistency check).
 ## 8. Reconciliation — what the code became, and what the machine said
 
 *Written after the build and the sweep. Results and raw series:
-`benches/results-s43/nc-blocking.md` + `nc-4096-*.log`.*
+`benches/results/cpu/memory/operand-residency/nc-blocking.md` + `nc-4096-*.log`.*
 
 ### 8.1 Where the design held
 
@@ -238,7 +238,7 @@ run.
 
 **`nc` = 512 is the cell that settles it.** 8 MB / 512 pages puts B per i-step *inside* the capacity
 knee (8–12 MB) **and** inside TLB reach (~2k–4k pages) — the exact configuration
-`docs/performance/s43-residency-and-the-thermal-artifact.md` §4b prescribes. Both walls cleared, and
+`docs/performance/cpu/memory/operand-residency-and-thermal-effects.md` §4b prescribes. Both walls cleared, and
 it still loses 7% disjointly. §3's cost model is therefore confirmed, not merely lucky: the `c/nc`
 re-pack costs more than the residency buys, because 14 threads sweeping `jc` in lockstep already
 share B in the 16 MB L2 and have little residency left to buy.

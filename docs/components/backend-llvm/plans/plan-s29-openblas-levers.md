@@ -62,7 +62,7 @@ irrelevant: the nest is 3× SLOWER at 1024 f32, and the cause is not traffic at 
 A `TILE_KC` sweep varies parking traffic 4× and moves the clock 1.3%; disassembly shows
 the `[64 x float]` accumulator alloca is register-promoted in the jt-outer leg and NOT in
 this one (92 `str q…,[sp]` vs 0). The traversal's own costs — parking, the A-pack, the
-extra loop levels — total ~3%. See `docs/performance/matmul/s29.md` §1 and suggestions
+extra loop levels — total ~3%. See `docs/performance/matmul/history/k-panel-measurements.md` §1 and suggestions
 #16; the follow-up is a codegen fix (promotable accumulators), not a re-tune.
 
 **Composition rules.**

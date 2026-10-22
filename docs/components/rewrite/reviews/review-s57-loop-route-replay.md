@@ -1,8 +1,8 @@
 # FRAMEWORK §4.5 — loop-route replay repair
 
 Reviewed final patch `32384fc81b26faff5006019b37d330daab9475bc2e1aa799afde2091282d8203`.
-The independent [code review](../../../../benches/results-s54-gpu/s57-loop-route-replay/review-gpu-owner.md)
-and [diagnostic proof](../../../../benches/results-s54-gpu/s57-loop-route-replay/PROOF.md)
+The independent [code review](../../../../benches/results/gpu/validation/loop-route-replay/review-gpu-owner.md)
+and [diagnostic proof](../../../../benches/results/gpu/validation/loop-route-replay/PROOF.md)
 bind the actual missing feeders, old-code failures and corrected outcomes. Root reviewed
 the same production diff and formatted tests before applying them. No blocker remains
 for this narrow repair; GPU ordering and large native emission latency are separate.
@@ -35,7 +35,7 @@ Shared required-clang validation passes **1,181/0/1 ignored**, formatting passes
 workspace release examples build. The first sandboxed run failed only three native
 hardware-detection tests, with direct `sysctl` permission-denial evidence; the unchanged
 source passes the complete suite with host access. See the
-[workspace receipt](../../../../benches/results-s54-gpu/s57-loop-route-replay/evidence/shared-workspace-verification.json).
+[workspace receipt](../../../../benches/results/gpu/validation/loop-route-replay/evidence/shared-workspace-verification.json).
 No numerical relaxation, observation removal or speculative performance fix was applied.
 
 The implementation map was reconciled first, then the existing authoritative DESIGN.md

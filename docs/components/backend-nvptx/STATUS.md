@@ -1,12 +1,13 @@
 # Component: backend-nvptx
 
-Status: **built inside the LLVM backend; S54 validation passed; S58 ordering correction integrated and checked.**
-Last updated: 2026-10-21 · S60 parallel preparation reviewed; GPU run awaits budget approval.
+Status: **built inside the LLVM backend; S54 validation passed; ordering and dead raw-storage corrections integrated and checked.**
+Last updated: 2026-10-22 · S61 allocation, kernel alternatives, ten composed rows and four executed Mapal images verified; competitive library extension in progress.
 
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
-independently reproduced context/geometry rejections. Linux injection and actual executed
-cubin/SASS capture remain unvalidated; this does not close the S57 disassembly gap.
+independently reproduced context/geometry rejections. S61 admits four actual Linux/GPU
+Contract captures, including exact callback cubins and SASS. Actual cuBLAS/CUTLASS images
+and the causes of their performance differences remain open.
 
 The S41 packaging choice is realized as the GPU leg of `mapal-backend-llvm`, with the
 CUDA-driver runtime in `mapal-rt`. The component has no separate backend crate.
@@ -38,7 +39,7 @@ A staged shared-memory panel is readable only after its barrier completes the tr
   [S56 validation baseline](../../sessions/2026-10-21-s56-validation-baseline.md).
 - Fresh RTX 5090 smoke: **66 value passes / 14 expected-trap passes / 0 failures**. Source,
   binary and bundle hashes plus rental cleanup are recorded in
-  [the smoke manifest](../../../benches/results-s54-gpu/s56-smoke-rtx-5090.json).
+  [the smoke manifest](../../../benches/results/gpu/validation/architecture-selection/smoke-rtx-5090.json).
 - Historical `integrated-*-prefix.txt` files are complete runs made **before** the arena repair,
   and contain failures. They do not certify the current integrated build.
 - Selection recovery is complete at source `b4152c5`: RTX 5090 streams OFF; H100 retention
@@ -46,7 +47,7 @@ A staged shared-memory panel is readable only after its barrier completes the tr
   favor streams OFF in all 32 changed-cell comparisons with disjoint iteration ranges.
   H100 and raster choices follow the declared conservative acceptance rule; the report
   preserves traced-kernel and TF32 counterevidence. See
-  [per-architecture selection](../../performance/s54-per-arch-selection.md).
+  [per-architecture selection](../../performance/gpu/validation/architecture-selection.md).
 - All three selection runs passed complete timing, value, resource and nsys inventories,
   and their rentals were independently confirmed absent. The H100 host repeats a previously
   measured physical host. Older selection runners omit some process-status fields, explicitly
@@ -74,24 +75,33 @@ Generic ordering/allocation and composed-workload plans remain active.
 2. Both S54 reports and the §4.5 review are reconciled; drift passes and the validation
    change is archived. The uncovered composition duties below remain explicit.
 
-The [stored-member ordering investigation](../../performance/s57-ordering-evidence.md)
+The [stored-member ordering investigation](../../performance/gpu/memory/ordering-investigation.md)
 proved missing explicit producer edges in host-readback and different-chain tile cases.
-The [S58 correction](../../performance/s58-parallel-development.md) is now integrated:
+The [S58 correction](../../performance/gpu/memory/ordering-and-allocation-development.md) is now integrated:
 four old-code regression failures, two passing controls, 50 focused checks and 14 unchanged
 device LLVM units support the runtime/API completion proof. A renewed RTX 5090 attempt
 passed 200 ordinary processes on the frozen revision and 200 on the correction, with
 independent raw-output validation after retrieval. Both passed; there is no observed race
 failure or measured speedup. Required-clang workspace: **1,188 passed / 0 failed / 1 ignored**.
-Allocation elimination remains unintegrated; the arena guard stays. S58's isolated
+S58 prepared the subsequently integrated allocation elimination; the arena guard stays. Its isolated
 `chain_prologue` candidate reuses selected-group `store_out` to omit only raw storage
 already unused by the launch. Its old-code regression fails, 51 focused and 59 backend
 library tests pass, and all 28 emitted device LLVM units match. The isolated full
 required-clang workspace passes 1,190 tests with zero failures and one ignored. Surviving host bodies
-preserve allocation positions and dependencies. Its own ordinary GPU gate remains
-required because an omitted allocation also removes an incidental wait in its free.
-See the [candidate evidence](../../performance/s58-parallel-development.md).
+preserve allocation positions and dependencies. Its own ordinary GPU gate was required
+because an omitted allocation also removes an incidental wait in its free.
+See the [candidate evidence](../../performance/gpu/memory/ordering-and-allocation-development.md).
 
-The [large/composed preparation](../../performance/s57-large-composed-evidence.md) adds
+[S61](../../performance/gpu/current-results.md) independently passes that gate:
+640 ordinary processes and 28 separate runtime counter processes. The unchanged reviewed
+patch is integrated. Four affected families remove one or two allocations (12.5–25% fewer
+requested bytes); live-storage and single-arena controls remain unchanged. Required-clang
+workspace testing passes1,187 tests with three restricted host-detection failures and one
+ignored; all59 backend library tests pass with host access, including those three, giving
+1,190 distinct passing tests across runs. Counter timing is not admitted; forced-stream
+latency and default-5090 performance benefits remain unmeasured.
+
+The [large/composed preparation](../../performance/gpu/workloads/large-matrices-and-mlp-validation.md) adds
 96 successful temporary primitive emissions and small arithmetic certification.
 The RTX 5090 16K/rectangular extension validates 98/100 invocations; both failed arms
 are the same requested-TF32 fallback and remain rejected. All six 16K base/repeat
@@ -104,7 +114,7 @@ development-header installation, a later run passes. Root rechecked its 1,024 ch
 and 128 final values against both frozen numerical budgets. This is small-matrix
 correctness, not a composed timing result. Native large emission still reaches a bounded timeout.
 
-The [S59 comparison](../../performance/s59-smallm-comparison.md) completes 234/234
+The [S59 comparison](../../performance/gpu/kernels/small-m-geometry-comparison.md) completes 234/234
 records and admits 28/30 timing cells. Wide M16 Exact/Contract/TF32 improve 4.82–5.18×;
 smaller M16 Exact/Contract regress 37–47%, beyond observed null/control variation.
 Two M1 TF32 gates fail in both revisions. The blanket candidate is not promoted.
@@ -112,7 +122,7 @@ Root rehashed 948 files and recomputed 10,080 raw CUDA-event samples. Runtime ge
 and resources are recorded; actual executed SASS/counters remain missing. Instance 57130775
 is independently absent. Shared source, allocation behavior and the arena guard are unchanged.
 
-[S60 parallel preparation](../../performance/s60-parallel-preparation.md) now has two
+[S60 parallel preparation](../../performance/gpu/workloads/composed-benchmark-preparation.md) now has two
 resident-input composed MLP packets with matched clock ordering, explicit numerical
 coverage and independent readers. Two isolated geometry alternatives each pass 918,000
 comparisons; the caller proof shows why changing geometry admission can alter the
@@ -121,14 +131,29 @@ optional kernel comparison and executed-image packets are sealed with real local
 cancellation/retrieval checks. No S60 rental/upload or GPU result exists; the explicit
 budget-extension request is pending. Recurrence/retention and broader controls remain open.
 
+The user subsequently removed the budget cap and protected every pre-existing machine.
+S61's independent old/S58/B comparison admits48 records and2,160 raw event samples.
+B improves both original FMA cells by1.253×/1.159× but regresses Exact by1.227×/1.013×;
+cuBLAS remains faster in all four. B is not promoted. Its equal total block count versus
+S58 refutes a more-blocks explanation; resource differences do not establish causation.
+The first composed attempt passes all five tiny gates and1,536 representative checkpoints,
+then rejects misplaced stdout sample labels before any timing. A real-pipe reproduction
+proves the wrapper-only flush repair; kernels, clocks and numeric gates stay unchanged.
+The first capture attempt stops at the legacy CUPTI include path before build. The separately
+retried v4 composed packet admits all ten rows: Mapal takes 0.082370/0.138100 ms versus
+cuBLAS 0.056230/0.102531 ms at the two M128 shapes, while beating the restricted eager and
+CUDA-graphs-disabled Inductor arms. The corrected-layout capture admits four old/S58
+Contract images. No library image, universal fusion advantage or allocation latency gain
+follows. Competitive CUTLASS and actual library-kernel diagnostics are being prepared.
+
 ## Continuing performance work
 
 The user authorized a generic compiler phase after frozen validation: use derived
 dependency, lifetime and placement facts across algorithms, starting with allocation
 under streams and evaluating explicit graph construction afterward. Plan it through
 OpenSpec and preserve guards, carries, aliases and host observations as proof boundaries.
-The [current comparison](../../performance/s54-current-library-comparison.md) and
-[integrated report](../../performance/s54-gpu-fusion.md) distinguish kernel, program,
+The [current comparison](../../performance/gpu/kernels/library-comparison.md) and
+[integrated report](../../performance/gpu/validation/integrated-placement.md) distinguish kernel, program,
 retention and allocation effects across families. Exact-face and Ampere/Hopper TF32
 library gaps remain separate from placement acceptance. ADR-0039's precision policy remains
 an explicit decision for the user; this validation does not change it. The older clock-fence
