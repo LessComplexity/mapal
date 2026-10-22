@@ -3,7 +3,10 @@
 
 usage: summarize.py <part> <results-session-1> <results-session-2>
 Reads probe/submit rows with benches/gpu/arm_ratio.py's parser. Ratios are medians within one
-session; a sign needs |r - 1| > max(EPS, that session's null/on floor) in both sessions.
+session. `sign` is the plan's rule: |r - 1| > max(EPS, floor) in both sessions, floor = the
+session's largest unchanged-code variation |null/on - 1| over the base probes' cells. `cell` is
+the same test against that cell's own |null/on - 1| (a pt_rq_/pt_rt_/pt_rg_ cell takes its base
+probe's). `*` = disjoint min-max ranges in every session.
 """
 import os
 import statistics
@@ -14,17 +17,37 @@ import arm_ratio as ar  # noqa: E402
 
 part, files = sys.argv[1], sys.argv[2:]
 ds = [ar.parse(f) for f in files]
-th = [max(ar.EPS, ar.floor(d)) for d in ds]
 med = ar.med
 
 
-def sign(rs):
+def floors(d):
+    f = {}
+    for (prog, face), a in d.items():
+        if a.get('null') and a.get('on') and a['null']['iter'] and a['on']['iter']:
+            f[(prog, face)] = abs(med(a['null']['iter']) / med(a['on']['iter']) - 1)
+    return f
+
+
+fl = [floors(d) for d in ds]
+th = [max(ar.EPS, max(f.values())) if f else ar.EPS for f in fl]
+
+
+def cell_th(i, key):
+    prog, face = key
+    for p in (prog, 'pt_' + prog[6:] if prog.startswith(('pt_rq_', 'pt_rt_', 'pt_rg_')) else prog):
+        if (p, face) in fl[i]:
+            return max(ar.EPS, fl[i][(p, face)])
+    return max(ar.EPS, statistics.median(fl[i].values())) if fl[i] else ar.EPS
+
+
+def sign(rs, key=None):
     """rs: per-session (ratio, disjoint) or None. '+' = B slower than A in every session."""
     if any(r is None for r in rs):
         return 'n/a'
-    if all(r[0] > 1 + t for r, t in zip(rs, th)):
+    t = [cell_th(i, key) if key else th[i] for i in range(len(rs))]
+    if all(r[0] > 1 + x for r, x in zip(rs, t)):
         return '+' + ('*' if all(r[1] for r in rs) else '')
-    if all(r[0] < 1 - t for r, t in zip(rs, th)):
+    if all(r[0] < 1 - x for r, x in zip(rs, t)):
         return '-' + ('*' if all(r[1] for r in rs) else '')
     return '0'
 
@@ -41,14 +64,14 @@ def tr(d, key, arm, k):
 keys = sorted(set().union(*[set(d) for d in ds]))
 bad = sum(len({o for a in d[k].values() for o in a['out']}) > 1 for d in ds for k in d)
 print(f"### {part}\n")
-print(f"Sessions: {', '.join(os.path.basename(f) for f in files)}. Noise floor |null/on - 1| (iter): "
-      f"{', '.join(f'{ar.floor(d):.4f}' for d in ds)}; sign threshold {', '.join(f'{t:.4f}' for t in th)}. "
+print(f"Sessions: {', '.join(os.path.basename(f) for f in files)}. Null variation |null/on - 1| on iter, "
+      f"median / max over base cells: {', '.join(f'{statistics.median(f.values()):.4f} / {max(f.values()):.4f}' if f else '-' for f in fl)}. "
       f"Value mismatches across arms: {bad}.\n")
 
 
 def pair_table(title, A, B, progs, cols=('iter', 'wall'), extra=None):
     print(f"#### {title} ({B}/{A}; >1 = {A} faster)\n")
-    hdr = "| prog | face | iter s1 / s2 | sign | wall s1 / s2 | sign |" + (extra[0] if extra else "")
+    hdr = "| prog | face | iter s1 / s2 | sign | cell floor s1 / s2 | cell | wall s1 / s2 | sign |" + (extra[0] if extra else "")
     print(hdr)
     print("|" + "---|" * (hdr.count('|') - 1))
     for key in keys:
@@ -58,7 +81,9 @@ def pair_table(title, A, B, progs, cols=('iter', 'wall'), extra=None):
         if all(r is None for r in it):
             continue
         wa = [ar.ratio(d, key, A, B, 'wall') for d in ds]
-        row = f"| {key[0]} | {key[1]} | {fmt(it)} | {sign(it)} | {fmt(wa)} | {sign(wa)} |"
+        fls = ' / '.join(f"{cell_th(i, key):.3f}" for i in range(len(ds)))
+        row = (f"| {key[0]} | {key[1]} | {fmt(it)} | {sign(it)} | {fls} | {sign(it, key)} | {fmt(wa)} "
+               f"| {sign(wa)} |")
         if extra:
             row += extra[1](key)
         print(row)
