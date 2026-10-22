@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""S62: per-cell arm ratios of one box_run session run with PASSES=2 (ABBA arm order).
+
+Each tile_bench row is normalized by its own cuBLAS leg (r = mapal_med / cublas_med; cancels the
+clock drift between benches, rungs.py's convention). For a cell, face and pass:
+  s(<arm>) = r(<arm>) / r(shipped)        > 1 = the shipped kernel is faster than that arm
+  null     = |r(null) / r(shipped) - 1|   the shipped text benched again: this box's noise floor
+A cell's arm absent from the bundle (identical PTX: bundle.sh drops it) prints `=`.
+
+usage: python3 benches/gpu/abba.py <results-<profile>.txt> [arm ...]
+       (default arms: off-asyncstage off-cell-fill+asyncstage)
+"""
+import re
+import sys
+from collections import defaultdict
+
+
+def rows(path):
+    """{(cell, face, arm, pass): {leg: med_ms}} plus the launch and value lines of each bench."""
+    out, cur = defaultdict(dict), None
+    for line in open(path):
+        m = re.match(r'# n=(\S+) face=(_exact|_c|_tf)(?:\.(\S+))? pass=(\d+)', line)
+        if m:
+            cur = (m[1], m[2], m[3] or 'shipped', int(m[4]))
+            continue
+        m = re.match(r'time leg=(\w+) .* med_ms=([\d.]+)', line)
+        if m and cur:
+            out[cur][m[1]] = float(m[2])
+        m = re.match(r'mapal kernel=\S+ grid=(\S+) block=(\d+) smem=(\d+) regs=(\d+) local_bytes=(\d+)', line)
+        if m and cur:
+            out[cur]['launch'] = f"{m[1]}/{m[2]}/{m[3]} regs={m[4]} local={m[5]}"
+        m = re.match(r'values leg=mapal .* bit_exact_vs_in_order_fold=(\w+)', line)
+        if m and cur:
+            out[cur]['exact'] = m[1]
+    return out
+
+
+def main(path, arms):
+    rs = rows(path)
+    r = lambda key: rs[key]['mapal'] / rs[key]['cublas'] if key in rs and 'cublas' in rs[key] else None
+    cells = sorted({(c, f) for c, f, _, _ in rs}, key=lambda x: ([int(v) for v in x[0].split('x')], x[1]))
+    passes = sorted({p for *_, p in rs})
+    nulls = []
+    print(f"| cell | face | pass | shipped ms | cuBLAS ms | CUTLASS ms | shipped/cuBLAS | "
+          + " | ".join(f"s({a})" for a in arms) + " | null |")
+    print("|---|---|---|---:|---:|---:|---:|" + "---:|" * (len(arms) + 1))
+    for c, f in cells:
+        for p in passes:
+            on = rs.get((c, f, 'shipped', p))
+            if not on or 'mapal' not in on:
+                continue
+            base = r((c, f, 'shipped', p))
+            ss = []
+            for a in arms:
+                x = r((c, f, a, p))
+                ss.append('=' if x is None else f"{x / base:.3f}")
+            n = r((c, f, 'null', p))
+            nl = '' if n is None else f"{abs(n / base - 1):.3f}"
+            if n is not None:
+                nulls.append(abs(n / base - 1))
+            print(f"| {c} | {f} | {p} | {on['mapal']:.4f} | {on['cublas']:.4f} | {on.get('cutlass', 0):.4f} | "
+                  f"{base:.3f} | " + " | ".join(ss) + f" | {nl} |")
+    if nulls:
+        print(f"\nnull: max {max(nulls):.3f}, median {sorted(nulls)[len(nulls) // 2]:.3f} over {len(nulls)} benches")
+    bad = [k for k, v in rs.items() if v.get('exact') not in (None, 'yes')]
+    print(f"value gate: {'every Mapal leg bit-exact' if not bad else 'NOT EXACT ' + str(bad)}")
+
+
+def selftest():
+    import os
+    import tempfile
+    bench = lambda key, p, ms, cub: (f"# n=16x2048x7168 face={key} pass={p}\n"
+                                     f"time leg=mapal M=16 n=30 min_ms={ms} med_ms={ms} max_ms={ms}\n"
+                                     f"time leg=cublas M=16 n=30 min_ms={cub} med_ms={cub} max_ms={cub}\n")
+    f = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+    f.write(bench('_c', 1, 1.0, 0.5) + bench('_c.off-asyncstage', 1, 3.0, 1.0) + bench('_c.null', 1, 1.02, 0.5))
+    f.close()
+    got = rows(f.name)
+    assert got[('16x2048x7168', '_c', 'off-asyncstage', 1)]['mapal'] == 3.0
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main(f.name, ['off-asyncstage'])
+    os.unlink(f.name)
+    assert '| 16x2048x7168 | _c | 1 | 1.0000 | 0.5000 | 0.0000 | 2.000 | 1.500 | 0.020 |' in buf.getvalue(), buf.getvalue()
+    print('selftest ok')
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--selftest']:
+        selftest()
+    else:
+        main(sys.argv[1], sys.argv[2:] or ['off-asyncstage', 'off-cell-fill+asyncstage'])

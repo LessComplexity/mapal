@@ -18,6 +18,9 @@ CASES = [
     ("bt_256", 256, 256, 128, "rm", "t", "f32"),      # b column-major: scalar b staging
     ("odd_100", 100, 100, 100, "rm", "rm", "f32"),    # indivisible: one thread per cell
     ("rm_128_f64", 128, 128, 128, "rm", "rm", "f64"),
+    # S62 `cell-fill` / `asyncstage`: 16 rows, no register tile divides it —
+    # one output per thread in a 16 x 16 block, 32 blocks (Under on every part).
+    ("cell_16x512x256", 16, 512, 256, "rm", "rm", "f32"),
 ]
 
 
@@ -73,20 +76,47 @@ for name, M, N, K, al, bl, elem in CASES:
 # 512 blocks of 128×128, more than its 340-block wave).
 (out / "wide_8192x1024x1024.mapal").write_text(program(8192, 1024, 1024, "rm", "rm", "f32"))
 print("wide_2048x2048x64\nfmod_64\ndeep_4096x1024x8192\nwide_8192x1024x1024")
+# S62: the M16 projections the timing cells launch, oracle-checked whole (CPU
+# build: 235M steps is too long for the interpreter).
+for M, N, K in ((16, 2048, 7168), (16, 1024, 4096)):
+    (out / f"deep_{M}x{N}x{K}.mapal").write_text(program(M, N, K, "rm", "rm", "f32"))
+# ... and the cell tile's epilogue store (a per-cell consumer) and its
+# column-major store (`rowfold-layout`: a row fold is the only reader).
+_cell = program(16, 512, 256, "rm", "rm", "f32")
+(out / "cellepi_16x512x256.mapal").write_text(
+    _cell.replace("} -> c;\n", "} -> c;\n    c -> map { v -> v * 0.5 + 1.0 } -> d;\n")
+    .replace("(0.0, c)", "(0.0, d)").replace("c[0]", "d[0]").replace("c[8191]", "d[8191]"))
+(out / "cellrow_16x512x256.mapal").write_text(
+    _cell.replace("} -> c;\n", "} -> c;\n    16 -> iota -> rr;\n    512 -> iota -> jr;\n"
+                  "    rr -> map { i -> (0.0, jr) -> fold { acc, j -> acc + c[i * 512 + j] } } -> r;\n")
+    .replace("(0.0, c)", "(0.0, r)").replace("c[0]", "r[0]").replace("c[8191]", "r[15]"))
+print("deep_16x2048x7168\ndeep_16x1024x4096\ncellepi_16x512x256\ncellrow_16x512x256")
 
 
-def bench(n):
-    """The square f32 site the timing harness launches: only its kernel is
-    used, so its data is the matmul benches' integer formula."""
-    return f"""fn main() {{
-    {n * n} -> iota -> ta;
+def bench(n, N=None, K=None):
+    """The f32 site the timing harness launches (`n × N × K`, square by
+    default): only its kernel is used, so its data is the matmul benches'
+    integer formula."""
+    M, N, K = n, N or n, K or n
+    if (M, N, K) == (n, n, n):
+        ops = f"""    {n * n} -> iota -> ta;
     ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
     ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
     {n} -> iota -> krange;
-    ta -> map {{ t ->
-        t / {n} -> i;
-        t % {n} -> j;
-        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }}
+    ta -> map {{ t ->"""
+    else:
+        ops = f"""    {M * K} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    {K * N} -> iota -> tb;
+    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {K} -> iota -> krange;
+    {M * N} -> iota -> tc;
+    tc -> map {{ t ->"""
+    return f"""fn main() {{
+{ops}
+        t / {N} -> i;
+        t % {N} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {K} + k] * b[k * {N} + j] }}
     }} -> c;
     c[0] -> println;
 }}
@@ -95,6 +125,14 @@ def bench(n):
 
 for n in (1024, 1536, 2048, 3072, 4096, 8192):
     (out / f"mm_{n}.mapal").write_text(bench(n))
+# S62: the projection cells (M1/M16/M128 of N2048/K7168, N1024/K4096, the
+# N18432 one) and the residual MLP's GEMM sites (M128, d256/h512 and
+# d1024/h2048: p = x·Wo, h = p·Wup, m = h·Wdown), `mm_<M>x<N>x<K>`.
+for M, N, K in ((16, 2048, 7168), (16, 1024, 4096), (16, 18432, 7168), (1, 2048, 7168),
+                (128, 2048, 7168), (128, 1024, 4096),
+                (128, 256, 256), (128, 512, 256), (128, 256, 512),
+                (128, 1024, 1024), (128, 2048, 1024), (128, 1024, 2048)):
+    (out / f"mm_{M}x{N}x{K}.mapal").write_text(bench(M, N, K))
 
 
 def e2e(n):
@@ -466,3 +504,39 @@ fan_body = twin(128)[1] + site('g', 'c', 'd', 128)
     probe_program(128, ('abef', fan_body, [('c', 128 * 128), ('d', 128 * 128), ('g', 128 * 128)]), True)
     .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
     .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))
+
+
+def rmlp(M, d, h, timed):
+    """S62: the residual MLP of the fused-library comparison
+    (benches/results/gpu/workloads/residual-mlp/fused-references/preparation/CONTRACT.md):
+    p = x·Wo; hraw = p·Wup; h = relu(hraw + b1); mraw = h·Wdown; m = mraw + b2;
+    y = (p + m) / 4 — three tile sites of M rows, two of them non-square."""
+    def site_(o, a, b, n, k, kr, cells):
+        return (f"    {cells} -> map {{ t ->\n        t / {n} -> i;\n        t % {n} -> j;\n"
+                f"        (0.0, {kr}) -> fold {{ acc, k -> acc + {a}[i * {k} + k] * {b}[k * {n} + j] }}\n"
+                f"    }} -> {o};\n")
+    w = lambda name, it, mul, add, mod, off, div: (
+        f"    {it} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; v / {div} }} -> {name};\n")
+    s = (f"fn main() {{\n    {M * d} -> iota -> tx;\n    {d * d} -> iota -> two;\n    {d * h} -> iota -> tup;\n"
+         f"    {h * d} -> iota -> tdn;\n    {M * h} -> iota -> th;\n    {d} -> iota -> dr;\n    {h} -> iota -> hr;\n"
+         + w("x", "tx", 7, 13, 101, 50, "7.0") + w("wo", "two", 11, 57, 103, 51, f"{d}.0")
+         + w("wup", "tup", 5, 3, 97, 48, f"{d}.0") + w("wdn", "tdn", 3, 1, 89, 44, f"{h}.0")
+         + "    hr -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> b1;\n"
+         + "    dr -> map { t -> t % 11 - 5 -> widen_f32 -> v; v / 4.0 } -> b2;\n")
+    body = (site_("p", "x", "wo", d, d, "dr", "tx") + site_("hraw", "p", "wup", h, d, "dr", "th")
+            + f"    th -> map {{ t -> {relu(f'hraw[t] + b1[t % {h}]')} }} -> hh;\n"
+            + site_("mraw", "hh", "wdn", d, h, "hr", "tx")
+            + f"    tx -> map {{ t -> mraw[t] + b2[t % {d}] -> m; (p[t] + m) / 4.0 }} -> y;\n")
+    tail = f"    y[0] -> println;\n    y[{M * d - 1}] -> println;\n"
+    if timed:
+        return s + "    () -> time -> t0;\n" + body + "    () -> time -> t1;\n" + tail + \
+            '    "iter ms=" -> print;\n    t1 - t0 -> println;\n}\n'
+    return s + body + "    0.0 -> zero: f32;\n    (zero, y) -> fold { acc, v -> acc + v } -> s_y;\n" \
+        "    s_y -> println;\n" + tail + "}\n"
+
+
+# Timed (`pt_`, the probe section: iter ms per arm) and oracle-checked (`deep_`,
+# the CPU build: 42M-176M steps is too long for the interpreter).
+for d, h in ((256, 512), (1024, 2048)):
+    (out / f"pt_rmlp{d}x{h}_128.mapal").write_text(rmlp(128, d, h, True))
+    (out / f"deep_rmlp{d}x{h}_128.mapal").write_text(rmlp(128, d, h, False))
