@@ -1,0 +1,11 @@
+# Executed library image capture review
+
+PASS for sealing the reviewed bounded pilot; no live library image/SASS admission exists yet. Production hashes are in `FINAL-REVIEW.json`. Sources were not edited by this reviewer.
+
+Independent exact-header callback/parser fixtures passed36 cases; request/SASS mutation fixtures passed10 cases. The final actual-source lifecycle suite passed5 real subprocess cases: timeout, exited leader, SIGTERM, SIGINT and SIGTERM during cleanup. That last regression reproduces and verifies the fix for the previously observed owned-descendant leak; final runner SHA94dc4cc2446c4bd91450f88f81e4523e01d872a294f6db137dc518352005fcda.
+
+Verified fixes cover loader generations; defined executable bounded ELF STT_FUNC ranges with independent symbol-table ordinal; complete context creation/lifetimes; context/PTSZ stream/activity joins; zero outstanding/dropped buffers; zero Ex attributes; opaque handle-kind labeling; complete sealed ordinary-request re-derivation; and all-selected-kernel correlation/completeness. Kernel9 has no invented function/module ID, and asynchronous FUNCTION arrival never establishes a lifetime by arrival order.
+
+The480s deadline bounds subprocess wait budgets plus bounded cleanup; Python verification/admission bookkeeping is additional. Per-process profiles are120s, observer compile60s, decoder20s and numeric checks15s.512MiB aggregate output is an admission check after commands, with128MiB per-file RLIMIT_FSIZE, rather than a strict instantaneous aggregate disk cap. Failure returns2 and records pass=false/error with prior completed legs preserved. Preflight failures before output creation are nonzero with no results summary; outer operator receipt must retain them. No diagnostic timing is admitted.
+
+Remaining stages are exact packet seal/root review, owned-host provisioning, at most480s bounded pilot, then retrieval/admission. No reliable wall ETA starts before a host is ready. Live-only obligations remain actual injection, complete initial module/activity delivery, FUNCTION/getter compatibility, exact selected internal-kernel inventories and decoder acceptance. Failure is a clean non-admission and does not invalidate ordinary timings. CPU tests exclude Linux prctl/PDEATHSIG and escaped-session behavior.

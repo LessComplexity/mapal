@@ -13,7 +13,9 @@ Updated 2026-10-22. Correctness, steady timing, allocation counts and profiling 
 | Do we have disassembly from the actual launch? | Four earlier Mapal Contract images are admitted. The new counter-free pilot ran Mapal and passed numerical checks, then rejected callback attribution before disassembly; library legs were skipped. Exact failed evidence is retained. | [Executed Mapal kernels](disassembly/executed-mapal-images.md) |
 | What about 16K and model-shaped matrices? | Earlier large-shape measurements and all failures remain available; they are distinct from the M128 composed test. | [Large matrices](workloads/large-matrices-and-mlp-validation.md) |
 
-Next: prove and repair the observer's live callback/schema mismatches locally, then capture the selected library images. The [experiment sequence](disassembly/optimization-experiments.md) separates geometry, submission, retention, allocation and fusion. The composed fused/unfused library comparison is complete at the two measured widths; it does not establish the cause of Mapal’s gap.
+The observer's four proved schema mismatches are repaired. Its53 source cases,12 identity mutations,10 integration checks and complete synthetic replay pass; independent review and the pinned live reader are ready. The fresh run is awaiting explicit revised-bundle approval after automatic review rejected its upload before execution. No new machine or upload occurred. [Repair evidence](../../../benches/results/gpu/disassembly/library-kernels/counter-free-capture/observation-schema-repair/README.md)
+
+Next: run the repaired observer and admit the selected library images. The [experiment sequence](disassembly/optimization-experiments.md) separates geometry, submission, retention, allocation and fusion. The composed fused/unfused library comparison is complete at the two measured widths; it does not establish the cause of Mapal’s gap.
 
 The allocation correction is integrated; the kernel alternatives remain isolated. Current test status, active experiments and rental ownership are recorded in [the live handoff](../../next-session.md).
 

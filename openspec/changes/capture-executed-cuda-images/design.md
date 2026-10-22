@@ -157,3 +157,12 @@ unchanged. The v1 packet and failed trace stay immutable. New source requires lo
 positive/negative regressions, independent review, a fresh seal and a live smoke before
 library admission. FRAMEWORK §4.5 laws 1/2/4/5 require the repaired identities to remain
 explicitly mediated rather than reconstructed by guesswork.
+
+The complete synthetic replay subsequently proves another domain-selection defect:
+six driver launches share their numeric correlation ID with the runtime parent, while
+only a matching runtime API activity record exists. Numeric equality cannot choose the
+activity domain. Admission must validate candidate domain, CBID, success and exact parent
+invocation, requiring one valid binding and rejecting contradictory or ambiguous matches.
+The original trace remains immutable and rejected. Replaying its fields through actual
+observer source with fresh CPU-owned invocation storage is compatibility evidence only;
+it does not recover the missing original invocation identity or establish GPU attribution.

@@ -1,0 +1,362 @@
+{
+  "original_admission_error": "Duplicate callback site",
+  "actual_admitted_legs": 0,
+  "no_gpu_rerun": true,
+  "actual_trace_path": "/private/tmp/mapal-s61-gpu/attempt-11/retrieved/trace/library-images/mapal-profile/capture",
+  "actual_events_sha256": "4223c03eb43aef70f7d3759b1f03c4ede20bc585ab3123f45f66c068c147c41f",
+  "duplicate_v1_callback_keys": 92,
+  "reused_correlation_groups": [
+    {
+      "domain": 1,
+      "correlation": 118,
+      "invocations": [
+        {
+          "event": 236,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 238,
+          "cbid": 303,
+          "name": "cuCtxSetCurrent"
+        },
+        {
+          "event": 240,
+          "cbid": 386,
+          "name": "cuDevicePrimaryCtxRetain"
+        },
+        {
+          "event": 243,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 245,
+          "cbid": 16,
+          "name": "cuCtxGetDevice"
+        },
+        {
+          "event": 247,
+          "cbid": 245,
+          "name": "cuMemFree_v2"
+        }
+      ]
+    },
+    {
+      "domain": 1,
+      "correlation": 119,
+      "invocations": [
+        {
+          "event": 251,
+          "cbid": 9,
+          "name": "cuDeviceGetAttribute"
+        },
+        {
+          "event": 253,
+          "cbid": 9,
+          "name": "cuDeviceGetAttribute"
+        },
+        {
+          "event": 255,
+          "cbid": 9,
+          "name": "cuDeviceGetAttribute"
+        },
+        {
+          "event": 257,
+          "cbid": 9,
+          "name": "cuDeviceGetAttribute"
+        },
+        {
+          "event": 259,
+          "cbid": 9,
+          "name": "cuDeviceGetAttribute"
+        }
+      ]
+    },
+    {
+      "domain": 1,
+      "correlation": 686,
+      "invocations": [
+        {
+          "event": 1445,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 1447,
+          "cbid": 386,
+          "name": "cuDevicePrimaryCtxRetain"
+        },
+        {
+          "event": 1449,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 1451,
+          "cbid": 16,
+          "name": "cuCtxGetDevice"
+        },
+        {
+          "event": 1453,
+          "cbid": 245,
+          "name": "cuMemFree_v2"
+        }
+      ]
+    },
+    {
+      "domain": 1,
+      "correlation": 1253,
+      "invocations": [
+        {
+          "event": 2641,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 2643,
+          "cbid": 386,
+          "name": "cuDevicePrimaryCtxRetain"
+        },
+        {
+          "event": 2645,
+          "cbid": 304,
+          "name": "cuCtxGetCurrent"
+        },
+        {
+          "event": 2647,
+          "cbid": 16,
+          "name": "cuCtxGetDevice"
+        },
+        {
+          "event": 2649,
+          "cbid": 678,
+          "name": "cuLibraryLoadData"
+        },
+        {
+          "event": 2651,
+          "cbid": 323,
+          "name": "cuCtxPushCurrent_v2"
+        },
+        {
+          "event": 2653,
+          "cbid": 682,
+          "name": "cuLibraryGetModule"
+        },
+        {
+          "event": 2656,
+          "cbid": 324,
+          "name": "cuCtxPopCurrent_v2"
+        },
+        {
+          "event": 2658,
+          "cbid": 241,
+          "name": "cuModuleGetGlobal_v2"
+        }
+      ]
+    },
+    {
+      "domain": 1,
+      "correlation": 1279,
+      "invocations": [
+        {
+          "event": 2754,
+          "cbid": 678,
+          "name": "cuLibraryLoadData"
+        },
+        {
+          "event": 2756,
+          "cbid": 323,
+          "name": "cuCtxPushCurrent_v2"
+        },
+        {
+          "event": 2758,
+          "cbid": 682,
+          "name": "cuLibraryGetModule"
+        },
+        {
+          "event": 2761,
+          "cbid": 324,
+          "name": "cuCtxPopCurrent_v2"
+        },
+        {
+          "event": 2763,
+          "cbid": 23,
+          "name": "cuModuleGetFunction"
+        },
+        {
+          "event": 2766,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2768,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2770,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2772,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2774,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2776,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2778,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2780,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2782,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2784,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2786,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2788,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2790,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2792,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2794,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        },
+        {
+          "event": 2796,
+          "cbid": 85,
+          "name": "cuFuncGetAttribute"
+        }
+      ]
+    },
+    {
+      "domain": 1,
+      "correlation": 1374,
+      "invocations": [
+        {
+          "event": 3007,
+          "cbid": 678,
+          "name": "cuLibraryLoadData"
+        },
+        {
+          "event": 3009,
+          "cbid": 323,
+          "name": "cuCtxPushCurrent_v2"
+        },
+        {
+          "event": 3011,
+          "cbid": 682,
+          "name": "cuLibraryGetModule"
+        },
+        {
+          "event": 3014,
+          "cbid": 324,
+          "name": "cuCtxPopCurrent_v2"
+        },
+        {
+          "event": 3016,
+          "cbid": 23,
+          "name": "cuModuleGetFunction"
+        },
+        {
+          "event": 3019,
+          "cbid": 307,
+          "name": "cuLaunchKernel"
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "file": "module-2654.cubin",
+      "sha256": "2e8c744ccc4a3456fce7ecc5a7a060761c33ab4e07156fefe5730a873c52403f",
+      "v1_error": null,
+      "v2_entry_count": 2,
+      "helpers": []
+    },
+    {
+      "file": "module-2759.cubin",
+      "sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+      "v1_error": "Unsupported CUDA function section convention",
+      "v2_entry_count": 4,
+      "helpers": [
+        {
+          "owner": "_Z8decode_qPfiif",
+          "symbol": "$__internal_0_$__cuda_sm3x_div_rn_noftz_f32_slowpath",
+          "sha256": "e48d63a0b7c43736797f03391ea357ad6b067bdfb25a96d2324e73a50c8bb5d7",
+          "elf_symbol_index": 19,
+          "section_index": 20,
+          "section_offset": 576,
+          "size": 1856
+        }
+      ]
+    },
+    {
+      "file": "module-2987.cubin",
+      "sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+      "v1_error": null,
+      "v2_entry_count": 32,
+      "helpers": []
+    },
+    {
+      "file": "module-3012.cubin",
+      "sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+      "v1_error": null,
+      "v2_entry_count": 314,
+      "helpers": []
+    },
+    {
+      "file": "module-358.cubin",
+      "sha256": "323df40eb237e41d0c2164e61cda6f8fef09ab8ff221f52dfa685f148101d209",
+      "v1_error": null,
+      "v2_entry_count": 3,
+      "helpers": []
+    }
+  ],
+  "production_hashes": {
+    "capture.cpp": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+    "admit.py": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8"
+  },
+  "immutable_v1_hashes": {
+    "capture.cpp": "e5c08e96a70834e5425efe7cc7547c4ecd8c6f01a96df5e1781485848488c4d0",
+    "admit.py": "75dabd7c152b65ceec1d90c052aca31e510ee736f8386afdadab9d58e8c78f0e"
+  },
+  "pinned_callback_header_sha256": "699f9213460c15f4fd47e521e4c1dba0f834ca91cc8de492009c37cdd3fb382b"
+}

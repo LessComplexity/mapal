@@ -1,0 +1,28 @@
+{
+  "schema": "independent-library-image-v2-reader-readiness-v1",
+  "ready": true,
+  "reader_sha256": "116d07c61ec1bf6ae60c8ead7d851aef24c42301d821b7c00ecc8be29b6ff820",
+  "preserved_v1_reader": {
+    "path": "/private/tmp/mapal-library-image-review/live-admission/read_live.py",
+    "sha256": "eb924187825bd0a5aa4821437db4efa27233adc0bf7dc477a4a3f4db8e95279e"
+  },
+  "capture_packet": {
+    "root": "/private/tmp/mapal-library-image-capture/packet-v2",
+    "manifest_sha256": "21d58721e96250dcf30d8dd23799cfe7e337604fbb4993c81ad5f15cbbc85eac",
+    "archive_sha256": "48f288f43a9d2133a50e3572de8aa5604209fc254e5697e0c8027f15d5aaacaf",
+    "payload_files": 198,
+    "parser_sha256": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+    "capture_sha256": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd"
+  },
+  "preparation_counts": {
+    "packet_seals": 198,
+    "primitive_seals": 983,
+    "ordinary_seals": 336
+  },
+  "reader_changes": "Only admitted packet manifest digest and default capture packetroot differ from preserved v1reader; independent originalinput/request/numeric checks remain identical",
+  "attribution_implementation": "Replay sealed reviewed parser plus compare saved rawfield report, explicitly not a second independent joinimplementation",
+  "independent_numerical_implementation": "Unchanged rawIEEE/Fraction checker; no frozen numericalchecker import",
+  "output": "admission.json; preserves partial/nonadmittedlegs and excludesall diagnostictimings",
+  "new_gpu_executed": false,
+  "new_image_admission": false
+}

@@ -22,7 +22,7 @@ The [architecture](../../../components/backend-nvptx/ARCHITECTURE.md#9-realized-
 | Backend library tests | 65 pass, including six new focused tests and all 13 GPU module tests |
 | Backend integration tests | 176 pass across 14 test binaries; one optional performance baseline remains ignored |
 | Eight successful scalar/default/forced tensor controls | Raw host LLVM, device LLVM and PTX are byte-identical before/after; optimized LLVM is identical after normalizing only source-path metadata |
-| Five affected cases, including a mixed scalar/tensor module | Device policy output changes; arithmetic instruction inventories and dependent-launch wait counts remain unchanged; mixed module retains two waits and matching host flags |
+| Five affected cases, including a mixed scalar/tensor module | Device policy output changes; raw device-LLVM arithmetic counts, PTX FMA counts and dependent-launch wait counts remain unchanged; mixed module retains two waits and matching host flags |
 | Independent review | Source and 104 emitted files rechecked; no blocking finding |
 
 The first sandboxed library run had three native hardware-detection failures. All 65 library tests pass with host-query access. The integration run had clang available and executed the compile/run targets; `MAPAL_REQUIRE_CLANG` was unset, as recorded rather than represented as a forced-guard run. LLVM 22.1.8 lowers all 26 before/after device modules through `opt -O3` and `llc -O3 -nvptx-fma-level=0`. Formatting and diff checks pass.
@@ -30,6 +30,15 @@ The first sandboxed library run had three native hardware-detection failures. Al
 The complete [verification receipt](../../../../benches/results/gpu/scheduling/fact-driven-selection/verification-receipt.json), [independent review](../../../../benches/results/gpu/scheduling/fact-driven-selection/independent-review/FINAL-REVIEW.md), logs, source audits and [emission archive](../../../../benches/results/gpu/scheduling/fact-driven-selection/emission-evidence.tar.gz) are retained. Baseline source is `d80d8f5`; corrected `gpu.rs` SHA256 is `e932fcb811d5a245d4dfcc03134928af85af19443210014089c5e66f97092205`.
 
 No new NVIDIA execution, ptxas/SASS resource validation or performance gain is established for this compiler correction. Static operation counts supplement source review and existing tests; they do not alone prove runtime numerical equality. The separate frozen library-capture run does not validate this new compiler source.
+
+The changed policy does affect optimized PTX. In the strided Contract example, the loop
+body has eight separate multiply/add steps instead of four, and its virtual 32-bit
+register declaration changes from22 to35. This is static loop unrolling and virtual
+register text, not a measurement of dynamic work or physical registers. The layout
+fallback adds `.minnctapersm 16`; that is a compiler occupancy hint, not achieved
+occupancy. These [exact PTX observations](../../../../benches/results/gpu/scheduling/fact-driven-selection/ptx-policy-effects.json)
+explain why unchanged raw LLVM arithmetic counts do not imply unchanged final instruction
+counts or performance. Their benefit remains unmeasured.
 
 ## What remains to optimize
 

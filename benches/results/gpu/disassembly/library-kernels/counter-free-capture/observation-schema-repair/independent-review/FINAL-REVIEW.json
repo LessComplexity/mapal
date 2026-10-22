@@ -1,0 +1,49 @@
+{
+  "schema": "independent-observer-repair-review-v1",
+  "pass": true,
+  "production_source_sha256": {
+    "capture.cpp": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+    "admit.py": "df8e9e399e3c8e43a2c4555886141e5f4834c82653e69a78d2e7c1218f8d5ae4"
+  },
+  "unchanged_enclosing_source_sha256": {
+    "run_capture.py": "94dc4cc2446c4bd91450f88f81e4523e01d872a294f6db137dc518352005fcda",
+    "build_request.py": "f7bfbaa70671b8d6c32ee1ac7fd1a056cba7f1acf640593726e5e68f54469e36",
+    "protocol.py": "57175a54e6540ec6ae3e67824cced9b6e603ca4c826b61d6a8ae0086c969c2ea"
+  },
+  "findings": [],
+  "owner_cpu_cases": {
+    "actual_callback_and_admission": 49,
+    "invocation_binding": 9
+  },
+  "independent_final_cases": {
+    "callback_context_adversarial": 9,
+    "elf_ranges": 8
+  },
+  "pinned_sdk_contract": "CUpti_CallbackData.correlationData stores64bit invocation-specific ENTER/EXIT state; activity correlation remains separate",
+  "reviewed_invariants": [
+    "Every observer invocationtoken positive/processunique; sharedstorage pairs exactENTER/EXIT domain/cbid/correlation; activealias/missing/corruptedstorage rejects",
+    "Load/launch/streammap/GetFunction payloads bind corresponding successful API token and event/context interval; no omitted supportedlaunch/load API payload",
+    "Activity correlation ambiguity/drops/kernel inventory still reject, no deduplication",
+    "Defined bounded executable helper functions must lie within unique authoritative ownsection entry; never exporthelper or decodeviahelper/CUPTIindex",
+    "Only observedUID0construction APIs may carry provisionalpointerbefore authoritativecreation; no arbitraryearlyUID0,missing/latecreation,positiveUID/module/launch uses waived",
+    "Runtimeparent now includes exactinvocationtoken; module/resource lifetime and exactPTX chain remain strict",
+    "Enclosing numerical protocol,request rebuild,binaryidentity,timers,caps andlifecycle unchanged"
+  ],
+  "actual_v1_image_sass_admissions": 0,
+  "v1_packet_or_trace_modified": false,
+  "new_gpu_executed": false,
+  "live_support_established": false,
+  "next_required": [
+    "seal reviewedv2packet preservingv1",
+    "root/operatorreview beforeanynewexecution",
+    "freshboundedlivecapture andindependentadmission"
+  ],
+  "receipts": {
+    "adversarial-final/results.json": "526371905096c92df19ae582d86ef5cf3fa81fe6e783764a7fb35c7e86fdad62",
+    "elf-ranges-final/results.json": "b742caaa452a3999cdca941982402d758bd808de448902c939bade13fbbb468a",
+    "cpu-admission-final.json": "69741585f55d9e1cdd93db3c571a3d160f5d75d09a45d89597bb917bc62b4401",
+    "cpu-binding-final.json": "d7d2fb4a294fe4d34b889459e688dd22041b94a2e4f527e63151789658e77c04",
+    "owner-source-diff.patch": "06b91df303318c0831e2a89e8f70977743a790308261154c59566d7a682bc6a4",
+    "owner-review-index.json": "f6cad17652c71756833cab242c76df634398975003dc11b6c9a3a100b879f34e"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "approved_for_operator_preparation": true,
+  "reviewed_utc": "2026-10-22T20:30:37.866731+00:00",
+  "archive_sha256": "48f288f43a9d2133a50e3572de8aa5604209fc254e5697e0c8027f15d5aaacaf",
+  "manifest_sha256": "21d58721e96250dcf30d8dd23799cfe7e337604fbb4993c81ad5f15cbbc85eac",
+  "payload_files": 198,
+  "archive_files": 199,
+  "archive_directories": 42,
+  "capture_sha256": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+  "parser_sha256": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+  "independent_domain_review_sha256": "f2517304605f3f0c7302df4094283c06fa6fffd74712c4ce419143fe7ae30ff2",
+  "scope": "Corrective revision of user-approved counter-free observer; same benchmark source/ordinary binaries/results, same leg/path/CLI/caps. No compiler correction upload. Full failed traces/cubins/generated replay outputs excluded. Test programs/proof receipts only added. Exact operator packet still requires root binding.",
+  "gpu_admission": false
+}

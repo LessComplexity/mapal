@@ -1,7 +1,7 @@
 # Component: backend-nvptx
 
 Status: **built inside the LLVM backend; S54 validation passed; ordering, dead raw-storage and actual-arithmetic selection corrections integrated and checked.**
-Last updated: 2026-10-22 · Fused-library comparison and measurement boundaries verified; arithmetic selection correction independently reviewed; library-image capture attribution under investigation.
+Last updated: 2026-10-22 · Fused-library comparison and measurement boundaries verified; arithmetic selection correction independently reviewed; repaired library observer awaits explicit revised-bundle upload approval.
 
 The [actual-arithmetic correction](../../performance/gpu/disassembly/fact-driven-scheduling.md)
 connects existing IR/layout/permission/device facts through `Launch::arithmetic` to policy
