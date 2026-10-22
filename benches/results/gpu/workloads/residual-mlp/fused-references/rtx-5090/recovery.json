@@ -1,0 +1,39 @@
+{
+  "persistent_private_root": ".benchmark-artifacts/gpu/residual-mlp/fused-references/rtx-5090/2026-10-22",
+  "archives": {
+    "full-trace.tgz": {
+      "sha256": "7c9fd12bee9f88fa82e70f5b788cbd46dd92e8cdc3fecff88ab0e215336b53df",
+      "bytes": 18792475
+    },
+    "operator-recovery.json": {
+      "sha256": "acaa86737c5ab61e543392fb6a3844d1dc2d5f6def0f79597ae6beb565f3c34c",
+      "bytes": 227992
+    },
+    "operator-packet.json": {
+      "sha256": "0d6c4db7758ea5e34510c9b8c7c5522d1e7cd653ec543dfda93775b9159b35f8",
+      "bytes": 3227
+    },
+    "ordinary.tar.gz": {
+      "sha256": "c7de0f4fefa922cd48bca4e43873b99a0655df3557058bc65708ef76f891f7b9",
+      "bytes": 18526619,
+      "members": 1384
+    }
+  },
+  "public_files": {
+    "summary.json": "3c9652d0b758a84f3ec37981935870a7378b7347f29eea8b91c8bf2a64be8f58",
+    "table.json": "8fcb1380ba561f3e7d128616541064ce58b75d825cb0797e46eb6f392c241f05",
+    "raw/ordinary.tar.gz": "c7de0f4fefa922cd48bca4e43873b99a0655df3557058bc65708ef76f891f7b9",
+    "checks/native-admission.json": "498dca890ba3acd49f6035712ba278651e8a465aa13fd0ddc4261831ff9aad9d",
+    "checks/audit_native.py": "854b5dc3c6a682dd89bd783d3c7a0b521fd0f91f4b932d5f9c32da93faf144e1",
+    "checks/matched-lt-configurations.json": "8c40f5c248f94214eeaff52bfef61d8983c3511cc027b12476a1b263266502e3",
+    "checks/controls-admission.json": "69a02867858cb1a3cd6d15982ae2b44028d0536b045774566bc7c783e8ed0ca1",
+    "checks/controls-report.md": "b3d4d7c5fe813b73f93b598d915cec649cfdd5e9ff0d36d2289add32ab87732c",
+    "checks/raw-value-clock-review.json": "a10a10a08dd4c979ef4641c9a2ffd6ed0d5838c95f2c8bac7e67827833a02768",
+    "checks/review_values_clocks.py": "3852ec116240cce288347401f7e70d1584e5e9aefb6c9196c846136d640c89f4",
+    "checks/operator-provenance.json": "a57f34f8eda1f807d8db5dd6d1d3633441a8f37b248cae2c7c6f8f4b2418136f",
+    "checks/audit_provenance.py": "b917d369156a18ac14443e96c345c6af91014385553cad3667a48824def246a1",
+    "checks/cleanup.json": "cfd8a0610ebb98542d6b99ecc4d7909769bf525085dbef7d8c8b98d3bf5ab945"
+  },
+  "source_archive": "../preparation/recovery.json",
+  "scope": "All ordinary native and original controls preserved, including failed/unsupported paths if any; actual run has no native rejections. Full operator/bootstrap trace private. No credentials in ordinary trees per independent provenance scan."
+}

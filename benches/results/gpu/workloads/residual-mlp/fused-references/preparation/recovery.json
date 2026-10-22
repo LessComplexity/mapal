@@ -1,0 +1,11 @@
+{
+  "archive": ".benchmark-artifacts/gpu/residual-mlp/fused-references/preparation/composed-fused-native-reference-v1.tar.gz",
+  "archive_sha256": "12fd10e54a2f9f56efda2d4cdc7f9939c2e2ea03f7ad54ba452beb31b52a6c4c",
+  "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+  "regular_members": 963,
+  "sealed_payload_files": 962,
+  "directory_members": 81,
+  "all_archive_bytes_match_prepared_tree": true,
+  "check_only_pass": true,
+  "gpu_execution_pending": true
+}

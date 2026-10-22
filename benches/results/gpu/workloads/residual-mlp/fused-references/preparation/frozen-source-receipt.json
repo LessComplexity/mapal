@@ -1,0 +1,9 @@
+{
+  "source_packet_manifest_sha256": "201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc",
+  "copied_unchanged": {
+    "handwritten/reference.cu": "917a8a1b1aa983d7b9c38603950349262aebe515e8f6d1faa5653287b17730b0",
+    "handwritten/inputs/fixture.hpp": "780ca3f33a785c58abd52b32d0eb26c2c7d36a9a225eb5719eae5f2f2cc330a3",
+    "pytorch/numerics.py": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a"
+  },
+  "gpu_executed": false
+}

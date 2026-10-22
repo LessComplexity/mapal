@@ -1,5 +1,7 @@
 # Residual MLP: Mapal, CUDA, cuBLAS and PyTorch
 
+A newer [same-device comparison with tuned fused/unfused cuBLASLt and CUTLASS](fused-library-comparison.md) is available. This report preserves the earlier five-arm run.
+
 All ten requested rows pass independent admission under the repaired v4 packet. Both case summaries pass; 85 frozen payload hashes, 75 outer receipt hashes and 235 raw artifact hashes per shape match. Full tiny intermediates/final values, six representative checkpoint inventories and all 35 timed final observations pass the unchanged numerical gates. The reader explicitly uses packet-v4 with manifest SHA256 `201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc`. Attempt02 remains a separate failed attempt with 0/10 timing admissions; its data are not merged into these samples.
 
 Actual hardware is an RTX 5090 with driver 610.43.02; native nvcc is 12.8.93, cuBLAS 120804 uses queried PEDANTIC math, and Torch 2.13.0+cu130 reports CUDA 13.0/IEEE global+matmul precision. Inductor is fullgraph/static with CUDA graphs off; the frozen source sets suppress_errors false and the actual stderr contains distinct checker and final-only AOT/Inductor generated-code records, supporting successful compilation without eager fallback. This benchmark is the frozen `3a0d435` LLVM/compiler baseline, Contract face, with no allocation-elimination candidate.

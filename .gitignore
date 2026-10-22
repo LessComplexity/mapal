@@ -1,5 +1,6 @@
 /target
 /graphify-out/
+/.benchmark-artifacts/
 __pycache__/
 .DS_Store
 

@@ -1,0 +1,470 @@
+{
+  "pass_": true,
+  "scope": "Independent raw ordinary event and selection review; numerical gates reviewed separately",
+  "statistics": "Upper median at n//2; p10/p90 use nearest-rank ceil(p*n)-1, verified against frozen sample_report and all raw arrays",
+  "summary_sha256": "ed0801268009cae22498bd84e50de3736111ff78bdb84995e77cc3d016a6752c",
+  "processes": 20,
+  "raw_events": 1044,
+  "confirmation_events": 720,
+  "tuning_events": 324,
+  "selection": {
+    "deepseek_expert": "m16-n64-k16",
+    "qwen_expert": "m16-n64-k16"
+  },
+  "rows": [
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2663",
+        "cublas": "0.0512",
+        "cutlass": "0.5120"
+      },
+      "stdout_sha256": "121530c33d4eaf17649e26f66dc90a4312888340b6d82992c6cdb061464fff0a",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m16-n32-k8",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2642",
+        "cublas": "0.0512",
+        "cutlass": "0.6980"
+      },
+      "stdout_sha256": "6fdac853f8b59c391dc5e0a584b4fb9021c67650ca06cb4c34ea7a89db6c47ce",
+      "binary_sha256": "906f07a9fb5698b0f65576e6194cbde4ffc767d8cadbdad2682154b7a5185131"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m16-n64-k8",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2659",
+        "cublas": "0.0512",
+        "cutlass": "0.3994"
+      },
+      "stdout_sha256": "7ae4a9acd0aea6650ddeec42fedb056a9ac087c21fe98223a890e76bf4926d7b",
+      "binary_sha256": "e182dae752d67b2387fc04befb01324b32b1736dc430cf079ce108af7151d529"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m16-n128-k8",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2642",
+        "cublas": "0.0512",
+        "cutlass": "0.4301"
+      },
+      "stdout_sha256": "2502f2f046d29bd089925b3d9c0655b157fb60d4cec8ce7a334e1fdbc9bbf027",
+      "binary_sha256": "98013681d125b268d04f2a2c455aa9ef433cdceedcf3946704f8cbc7e8de2cd7"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2679",
+        "cublas": "0.0512",
+        "cutlass": "0.2212"
+      },
+      "stdout_sha256": "83b5e7834c3a60f4b50f0a167cc95c18db3db0cbbdf50377ffd9c848a0b7534e",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m8-n32-k8",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2642",
+        "cublas": "0.0512",
+        "cutlass": "0.3625"
+      },
+      "stdout_sha256": "f1c35d043133e86f297b6c6830e9349e34c50d13fca8037feb6489434db245d5",
+      "binary_sha256": "1f0bcedf41658a654e795d670092cb5682a05c112f84e53bcdb68ab57bced64c"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1469",
+        "cublas": "0.0184",
+        "cutlass": "0.3011"
+      },
+      "stdout_sha256": "6aba09162b79a824de35b7ecff988c03c9704e7530f1cb95e98e5e33da3fd03e",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m16-n32-k8",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1454",
+        "cublas": "0.0184",
+        "cutlass": "0.4055"
+      },
+      "stdout_sha256": "4c4a26ff023768ccde1b6d00512363eb174d4112a73c188bf024390a5db5c93f",
+      "binary_sha256": "906f07a9fb5698b0f65576e6194cbde4ffc767d8cadbdad2682154b7a5185131"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m16-n64-k8",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1471",
+        "cublas": "0.0184",
+        "cutlass": "0.2294"
+      },
+      "stdout_sha256": "0d6f2b400313edd51828b61bec5bef361b73e8e95e4976e5a96734fb35448f3a",
+      "binary_sha256": "e182dae752d67b2387fc04befb01324b32b1736dc430cf079ce108af7151d529"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m16-n128-k8",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1454",
+        "cublas": "0.0184",
+        "cutlass": "0.2536"
+      },
+      "stdout_sha256": "eb91558225993c1e353375c3681ce30ac8d46a4cc8703da83dc5007d54bbefa6",
+      "binary_sha256": "98013681d125b268d04f2a2c455aa9ef433cdceedcf3946704f8cbc7e8de2cd7"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1454",
+        "cublas": "0.0184",
+        "cutlass": "0.1287"
+      },
+      "stdout_sha256": "dca2652897a9b5d362769a4ad6579d6edce770326e1377f43763323381743fbb",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    },
+    {
+      "stage": "tuning",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m8-n32-k8",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1471",
+        "cublas": "0.0184",
+        "cutlass": "0.2109"
+      },
+      "stdout_sha256": "c78ef753ee71faadf751600ddb9962a9a96bebb2ec94cd0bceaf8e2725a89d6e",
+      "binary_sha256": "1f0bcedf41658a654e795d670092cb5682a05c112f84e53bcdb68ab57bced64c"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+      "family": "deepseek_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "exact",
+      "medians_ms": {
+        "mapal": "0.2580",
+        "cublas": "0.0512",
+        "cutlass": "0.5140"
+      },
+      "stdout_sha256": "3075ef081932d1381add641518de7c04ebc822f30c060d168ee4121d3d7b32f0",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+      "family": "deepseek_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "exact",
+      "medians_ms": {
+        "mapal": "0.2580",
+        "cublas": "0.0512",
+        "cutlass": "0.2212"
+      },
+      "stdout_sha256": "62b15348ce17e644b8a51d5d5a5914a27b46bf2ebf55de72c5d9257dc7755cbd",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2662",
+        "cublas": "0.0512",
+        "cutlass": "0.5140"
+      },
+      "stdout_sha256": "0dc826adabd30510587316500a9fcca3425e50638c99a057ae509fea141bfe68",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.2621",
+        "cublas": "0.0512",
+        "cutlass": "0.2209"
+      },
+      "stdout_sha256": "879450e66c6f47280ab49e0f49ed092af231f0f2dbcf4347f28987df5b213b6a",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+      "family": "qwen_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "exact",
+      "medians_ms": {
+        "mapal": "0.1516",
+        "cublas": "0.0184",
+        "cutlass": "0.3011"
+      },
+      "stdout_sha256": "5b4030d15628a61a01d7f4d493b693c36184355fefef9cec851d3a39a2863628",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+      "family": "qwen_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "exact",
+      "medians_ms": {
+        "mapal": "0.1516",
+        "cublas": "0.0184",
+        "cutlass": "0.1290"
+      },
+      "stdout_sha256": "d67fb8b52403ed8b6c9a4587487c4fa367d228a1f77ea42187f4c541c6b2a61d",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "default-control",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1454",
+        "cublas": "0.0184",
+        "cutlass": "0.3011"
+      },
+      "stdout_sha256": "30a32c8d90fe26e86d5129298982df34dea7adbf6b01b0d39dc497febd30c1e5",
+      "binary_sha256": "2e75d8d7fe3a0abe3e32c7daed3543cf9daa5ad570941dd73f45d868ba044361"
+    },
+    {
+      "stage": "confirmations",
+      "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "candidate": "m16-n64-k16",
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "medians_ms": {
+        "mapal": "0.1454",
+        "cublas": "0.0184",
+        "cutlass": "0.1287"
+      },
+      "stdout_sha256": "952ada0d812effe5622588b611aedb2321e4392a7456acc905e5bb621ae979ed",
+      "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf"
+    }
+  ],
+  "table": [
+    {
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "contract",
+      "mapal_ms": "0.1454",
+      "cublas_ms": "0.0184",
+      "cutlass_default_ms": "0.3011",
+      "cutlass_tuned_ms": "0.1287",
+      "default_over_tuned": 2.3395493395493396,
+      "mapal_over_cublas": 7.9021739130434785,
+      "mapal_over_tuned": 1.1297591297591298,
+      "tuned_over_cublas": 6.994565217391305,
+      "unchanged_mapal_control_ratio": 1.0,
+      "unchanged_cublas_control_ratio": 1.0
+    },
+    {
+      "shape": [
+        16,
+        1024,
+        4096
+      ],
+      "face": "exact",
+      "mapal_ms": "0.1516",
+      "cublas_ms": "0.0184",
+      "cutlass_default_ms": "0.3011",
+      "cutlass_tuned_ms": "0.1290",
+      "default_over_tuned": 2.3341085271317827,
+      "mapal_over_cublas": 8.23913043478261,
+      "mapal_over_tuned": 1.1751937984496124,
+      "tuned_over_cublas": 7.010869565217392,
+      "unchanged_mapal_control_ratio": 1.0,
+      "unchanged_cublas_control_ratio": 1.0
+    },
+    {
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "contract",
+      "mapal_ms": "0.2621",
+      "cublas_ms": "0.0512",
+      "cutlass_default_ms": "0.5140",
+      "cutlass_tuned_ms": "0.2209",
+      "default_over_tuned": 2.3268447261204166,
+      "mapal_over_cublas": 5.119140625,
+      "mapal_over_tuned": 1.1865097329108194,
+      "tuned_over_cublas": 4.314453125,
+      "unchanged_mapal_control_ratio": 1.015642884395269,
+      "unchanged_cublas_control_ratio": 1.0
+    },
+    {
+      "shape": [
+        16,
+        2048,
+        7168
+      ],
+      "face": "exact",
+      "mapal_ms": "0.2580",
+      "cublas_ms": "0.0512",
+      "cutlass_default_ms": "0.5140",
+      "cutlass_tuned_ms": "0.2212",
+      "default_over_tuned": 2.3236889692585896,
+      "mapal_over_cublas": 5.0390625,
+      "mapal_over_tuned": 1.166365280289331,
+      "tuned_over_cublas": 4.3203125,
+      "unchanged_mapal_control_ratio": 1.0,
+      "unchanged_cublas_control_ratio": 1.0
+    }
+  ]
+}

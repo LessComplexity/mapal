@@ -1,0 +1,24 @@
+{
+  "matrix": {
+    "mapal": 0.07308999999999344,
+    "naive": 0.054452,
+    "cublas": 0.039069,
+    "torch_eager": 0.115423929,
+    "torch_compiled": 0.178658869,
+    "cublaslt_unfused": 0.036255,
+    "cublaslt_fused": 0.032659,
+    "cutlass_unfused": 0.047192,
+    "cutlass_fused": 0.046711
+  },
+  "matrix-large": {
+    "mapal": 0.12893499999999847,
+    "naive": 0.333153,
+    "cublas": 0.09289,
+    "torch_eager": 0.140601769,
+    "torch_compiled": 0.208714977,
+    "cublaslt_unfused": 0.063416,
+    "cublaslt_fused": 0.05962,
+    "cutlass_unfused": 0.127954,
+    "cutlass_fused": 0.123867
+  }
+}

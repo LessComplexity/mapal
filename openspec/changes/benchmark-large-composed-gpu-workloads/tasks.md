@@ -17,7 +17,7 @@
 - [ ] 3.3 Implement matched naive and explicitly incremental handwritten CUDA/library references; verify all small outputs/checkpoints and declare the large-case numeric gate before timing.
 - [ ] 3.4 Add PyTorch eager and compiled full-recompute/incremental references with pinned runtime precision and reported graph scope/mode; validate outputs and expose unsupported compilation or eager fallback explicitly.
 - [ ] 3.5 Verify matched cold/warm/device timing and reset boundaries, process statuses, allocation/transfer counts and allocated/reserved-memory reporting; preserve meaningful negative controls for incomplete output and asynchronous timing.
-- [ ] 3.6 Compare competitive shape-appropriate CUTLASS configurations and supported cuBLASLt fused epilogues on the same workload, storage precision and declared numerical budget; keep ordered-bit guarantees distinct, account for tuning/compilation separately, and compare whole-program fusion as well as individual kernels.
+- [x] 3.6 Compare competitive shape-appropriate CUTLASS configurations and supported cuBLASLt fused epilogues on the same workload, storage precision and declared numerical budget; keep ordered-bit guarantees distinct, account for tuning/compilation separately, and compare whole-program fusion as well as individual kernels.
 
 S58 supplies partial matrix-only evidence for 3.1–3.4: Mapal, handwritten naive CUDA,
 cuBLAS and PyTorch eager pass the prepared small case. A later PyTorch 2.13.0/cu130
@@ -55,3 +55,15 @@ All2,802 relocated raw files retain their hashes,372 report links resolve, and t
 baseline generator is output-equivalent after resolving its helper relative to the script.
 Historical session logs remain immutable; benches/results/path-map.json resolves old paths.
 The remaining experiment/reconciliation duties keep4.3 open.
+
+The competitive primitive portion of3.6 now admits eight held-out processes /24arm rows
+on RTX5090. Twelve CUTLASS configurations were attempted; six compiled and passed all
+gates. Selected16×64×16 improves the default2.32–2.34× and beats the frozen Mapal baseline;
+cuBLAS remains ahead. Independent readers verify983payload/336ordinary/63outer artifacts,
+254,976raw value words and1,044ordinary event samples. No selector or fused-program claim
+is inferred. The supported fused/unfused matrix references now complete3.6 for the declared two-width
+contract: all20 native confirmations plus10 same-device original controls pass. All148
+native processes,770,816raw words,8selections and exact selected Lt configurations are
+independently checked; fused Lt leads Mapal2.24×/2.16×. The finite tuning, arithmetic,
+cache/reset, allocation and graph-mode limits are in the fused-library report. Broader
+recurrence, causal retention, graph-enabled and cross-host duties remain in the other tasks.

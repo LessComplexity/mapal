@@ -1,0 +1,20 @@
+{
+  "raw_archive": "raw/ordinary.tar.gz",
+  "raw_archive_sha256": "f4feada4512c417292663d22246d6c39718a926be080e449786912548ba6eba1",
+  "raw_files": 337,
+  "all_archived_file_bytes_rechecked": true,
+  "private_full_trace": ".benchmark-artifacts/gpu/competitive-cutlass/rtx-5090/2026-10-22/full-trace.tgz",
+  "private_full_trace_sha256": "2fa72b37603a4fe019c06d0c3111b53b7c36c99bab1c13081955fbc351aee21d",
+  "source_archive": ".benchmark-artifacts/gpu/competitive-cutlass/rtx-5090/2026-10-22/source-bundle.tar.gz",
+  "source_archive_sha256": "713433bf62bc7dc744bc1f2e3a917f73a83e3a1553726202094e569698475064",
+  "public_checks": {
+    "audit_protocol.py": "a9f3cf1d021922b8407cbbcf0f12ecf682067cac6f674033dafb2430d9c7ddc0",
+    "cleanup.json": "53ce2fc7fc0a9b02cd7b46da6fffbc471cccaa085c9e36685057599fec55be2a",
+    "independent-admission.json": "3e033ad9aed0255d90f0d2e8372c83828e3dd1fdcb53135fbf5f1ab8d1ae796a",
+    "raw-event-review.json": "90b128a30677b1b0af14fb3a95868190baa129678097fc0164de2ec7cdebdaec",
+    "raw-value-review.json": "90e27ab0be039cf967c47b9efc644dbf43353c9d6556f09ce7f0a2e855a252ee",
+    "review_events.py": "b7cff0e253f3f19f799fd136457c76f948f796829fef9ec1ef0dbcb4f4569f34",
+    "review_values.py": "39b3d45acd4ecfafa5340808263478deb680e62de4ddf7fb17c22cdde5b7587a"
+  },
+  "source_manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f"
+}
