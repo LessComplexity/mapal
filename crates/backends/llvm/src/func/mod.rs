@@ -388,6 +388,9 @@ pub(crate) struct FnEmit<'a> {
     /// S54 `streams`: the function's path plan (the entry's, from `lib.rs`),
     /// which says which device sites are independent.
     path_plan: Option<&'a PathPlan>,
+    /// S62 `splitk`: each split site's workspace slot (`alloca i64`), made on
+    /// its first launch and freed at function exit (a loop reuses it).
+    split_slots: Vec<String>,
 }
 
 /// Should this site's `b` be packed — shape AND size.

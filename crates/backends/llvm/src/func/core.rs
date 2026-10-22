@@ -79,6 +79,7 @@ impl<'a> FnEmit<'a> {
             cell_slots: Vec::new(),
             cell_vals: Vec::new(),
             path_plan: None,
+            split_slots: Vec::new(),
         }
     }
 

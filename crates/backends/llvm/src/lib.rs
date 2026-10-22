@@ -249,6 +249,12 @@ pub struct GpuRungs {
     /// sm_90+: a site launched right behind another kernel on its stream is a
     /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
     pub pdl: bool,
+    /// S62, under the reassociation face only ([`Reduced::Reassoc`], ADR-0040):
+    /// a resident site whose output domain cannot fill the part folds its `k`
+    /// axis as [`TargetProfile::gpu_splitk`] contiguous partial folds into a
+    /// workspace, then one deterministic reduce launch adds them in partition
+    /// order. Off: the ordered kernel. Never fires on Exact/Contract/TF32.
+    pub splitk: bool,
 }
 
 impl GpuRungs {
@@ -290,11 +296,12 @@ impl GpuRungs {
         stream_gate: true,
         pinned: true,
         pdl: true,
+        splitk: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 36] = [
+    pub const NAMES: [&'static str; 37] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -331,6 +338,7 @@ impl GpuRungs {
         "stream-gate",
         "pinned",
         "pdl",
+        "splitk",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -372,6 +380,7 @@ impl GpuRungs {
             "stream-gate" => &mut self.stream_gate,
             "pinned" => &mut self.pinned,
             "pdl" => &mut self.pdl,
+            "splitk" => &mut self.splitk,
             _ => return None,
         })
     }
@@ -396,6 +405,10 @@ impl GpuRungs {
 pub struct GpuArms {
     pub on: GpuRungs,
     pub off: GpuRungs,
+    /// S62 measurement override (`emit --splitk=<S>`, the `MovePanel::Force`
+    /// precedent): where `splitk` fires, partition into `S` instead of the
+    /// derived count, when `S` cuts `k` into whole units. 0 = derive.
+    pub splitk: u64,
 }
 
 /// A reduced-precision face — ADR-0032 D1's lattice below `contract`. Unlike
@@ -408,6 +421,11 @@ pub enum Reduced {
     /// f32 storage, operands rounded to TF32 (10-bit mantissa, `cvt.rna`),
     /// f32 accumulation — `mma.sync.m16n8k8.tf32` on sm_80+.
     Tf32,
+    /// Not a format: permission to evaluate a tile site's `k` fold as ordered
+    /// partial folds over contiguous `k` ranges, added in partition order
+    /// (ADR-0040). Steps round as on the Exact/Contract face it rides on; the
+    /// bound is ADR-0040's a-priori `γ_{K/S+S}`. Opt-in only.
+    Reassoc,
 }
 
 /// Emission options. [`emit`] delegates to these product defaults.
