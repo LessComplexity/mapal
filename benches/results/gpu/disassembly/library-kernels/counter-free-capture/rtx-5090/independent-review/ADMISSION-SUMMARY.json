@@ -1,0 +1,44 @@
+{
+  "schema": "independent-counter-free-live-admission-summary-v2",
+  "pass": true,
+  "admitted_legs": [
+    "mapal",
+    "cublas",
+    "cutlass"
+  ],
+  "selected_kernel_invocations": {
+    "mapal": 1,
+    "cublas": 2,
+    "cutlass": 1
+  },
+  "selected_sass_functions": {
+    "mapal": 1,
+    "cublas": 2,
+    "cutlass": 1
+  },
+  "independent_numeric_words": 4608,
+  "image_attribution_method": "Sealed reviewedparserreplay, notsecondindependentjoinimplementation",
+  "independent_numeric_method": "RawIEEE/Fractionboundcheck withoutfrozencheckerimport",
+  "seals": {
+    "packet_seals": 198,
+    "primitive_seals": 983,
+    "ordinary_seals": 336,
+    "result_seals": 82,
+    "outer_seals": 81
+  },
+  "recovery_files": 504,
+  "device_identity": "NVIDIA GeForce RTX 5090, GPU-6f5a16b4-bef2-c3b0-6c58-c80edb2eed53, 610.43.02",
+  "all4_decoder_outputs_have_unresolved_annotations": true,
+  "timing_admissible": false,
+  "counters": false,
+  "new_timed_host_identity_claim": false,
+  "v1_admissions_unchanged": 0,
+  "reviewer_production_edits": false,
+  "evidence_sha256": {
+    "metadata-review.json": "76ef1cdfdcad049a39b258b4ca0804182d228c534862f4e9898060ae7b3b8c01",
+    "recovery-verification.json": "d14505f4921670697ced74d198e9ccc509da5bcd27f812d8bff92e7baceccc5f",
+    "decoder-limitations.json": "7ca330fb3f9d507f9997ed78b408d49497ec96d50460cb90fea520ca42ee33b0",
+    "REPORT.md": "81a07f872f90e01cd51011b381e16b72cdefb66a14cb297eb1f75ae47d39e725",
+    "admission.json": "79ff56dbb5c6cc015351c3fba3f7808c381367caa74f61ce25e5be63af87d9a4"
+  }
+}

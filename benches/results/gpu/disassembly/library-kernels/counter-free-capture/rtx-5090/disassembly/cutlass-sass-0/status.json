@@ -1,0 +1,17 @@
+{
+  "name": "cutlass-sass-0",
+  "argv": [
+    "/usr/local/cuda-12.8/bin/nvdisasm",
+    "--print-code",
+    "--cuda-function-index",
+    "1",
+    "/w/trace/library-images/cutlass-profile/capture/module-2759.cubin"
+  ],
+  "limit_seconds": 20,
+  "pass": true,
+  "exit": 0,
+  "files": {
+    "stdout": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+    "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

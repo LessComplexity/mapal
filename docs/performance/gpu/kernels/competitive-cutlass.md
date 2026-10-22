@@ -31,7 +31,7 @@ The 8×8×8, 8×16×8, 16×16×8, 4×16×8, 8×16×16 and 4×16×32 configuratio
 ## Numerical and measurement limits
 
 - Mapal uses the frozen independent-output implementation, labelled `old` in captured artifacts. The cooperative/deeper alternatives are not included, and measurements from another host cannot be substituted for a same-run comparison.
-- Mapal preserves the selected ordered scalar face. Libraries pass a fixed componentwise bound against both scalar references; this does not grant an ordered-bit guarantee to cuBLAS or CUTLASS. CUTLASS is FP32 SIMT; cuBLAS reports `DEFAULT_MATH` 0 and the process forces `NVIDIA_TF32_OVERRIDE=0`. Actual library instruction selection has not yet been captured.
+- Mapal preserves the selected ordered scalar face. Libraries pass a fixed componentwise bound against both scalar references; this does not grant an ordered-bit guarantee to cuBLAS or CUTLASS. CUTLASS is FP32 SIMT; cuBLAS reports `DEFAULT_MATH` 0 and the process forces `NVIDIA_TF32_OVERRIDE=0`. A later [fresh-host capture](../disassembly/executed-library-images.md) admits actual library entries for the retained larger Contract binary; it does not retroactively identify this timed host's instructions.
 - Bounded cases check every output at M16/N256/K7168 and M16/N128/K4096. Representative N2048/N1024 cases check 256 outputs per arm. Exported ordinary values are from the pre-timing gate, not every timed output.
 - Input hashes name the frozen deterministic generator and oracle inputs. A separate full GPU A/B byte dump was not captured. This is a primitive kernel test, not a retention, allocation-latency, fused-program or production-model measurement.
 
@@ -39,6 +39,6 @@ Independent admission verifies 983 frozen payload files, 336 ordinary artifacts 
 
 The later Nsight Compute phase failed with `ERR_NVGPUCTRPERM` before producing a report. Its instrumentation is separate from ordinary timing. No library SASS, occupancy, traffic or stall conclusion is admitted from that failure. The [diagnostic evidence](../../../../benches/results/gpu/disassembly/library-kernels/rtx-5090-permission-denial/README.md) records the exact limit.
 
-Next work: capture the actual library kernel images through the already-proved callback approach, compare supported cuBLASLt/CUTLASS fused epilogues on the same residual MLP, and only then choose a compiler realization to change. The [IR fact map](../disassembly/ir-facts-and-realization-gaps.md) distinguishes existing facts from unsupported lowering; this timing table alone cannot identify a missing fact.
+Subsequent work completes the [fresh primitive capture](../disassembly/executed-library-images.md) and the [same-device fused-epilogue comparison](../workloads/fused-library-comparison.md). Their own provenance and limits remain separate. Next are controlled realization experiments. The [IR fact map](../disassembly/ir-facts-and-realization-gaps.md) distinguishes existing facts from unsupported lowering; this timing table alone cannot identify a missing fact.
 
 [Raw results and independent checks](../../../../benches/results/gpu/kernels/competitive-cutlass/rtx-5090/README.md) · [Current results](../current-results.md)

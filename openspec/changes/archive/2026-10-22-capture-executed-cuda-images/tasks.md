@@ -29,9 +29,9 @@ exact-entry SASS join, and instrumented timing remains inadmissible. Full 924-in
 
 ## 4. User-authorized library comparison extension
 
-- [ ] 4.1 After live Mapal observer admission, prepare exact library module/function/dispatch joins for cuBLAS and CUTLASS with leg markers; reject ambiguity, unsupported variants, dropped records and missing completion.
-- [ ] 4.2 Independently verify captured functions and disassemble the actual executed entries; keep static embedded library images and runtime-selected images distinct.
-- [ ] 4.3 Compare instructions/resources and separate diagnostic counters, then map each evidenced difference to existing IR facts, their consumers, backend realization choices or an explicit unknown; test proposed causal explanations before changing compiler policy.
+- [x] 4.1 After live Mapal observer admission, prepare exact library module/function/dispatch joins for cuBLAS and CUTLASS with leg markers; reject ambiguity, unsupported variants, dropped records and missing completion.
+- [x] 4.2 Independently verify captured functions and disassemble the actual executed entries; keep static embedded library images and runtime-selected images distinct.
+- [x] 4.3 Compare instructions/resources and separate diagnostic counters, then map each evidenced difference to existing IR facts, their consumers, backend realization choices or an explicit unknown; test proposed causal explanations before changing compiler policy.
 
 The first approved counter-free extension pilot is preserved with zero image/SASS
 admissions. Its Mapal process and1536 exported pre/post numeric words pass; library legs
@@ -44,7 +44,17 @@ absent at2026-10-22T20:05:14.535Z.
 
 The four proved observation defects are repaired in a sealed standalone v2, with53 source
 cases,12 identity mutations,10 integration checks and full actual-source synthetic replay
-passing. Independent review passes; the original trace remains rejected. Attempt12 packet
-is ready but automatic upload review rejects it before execution because the earlier
-explicit approval named v1. Revised-bundle/equivalent-host approval is pending. No new
-instance or upload exists;4.1/4.2 remain incomplete until a fresh live capture is admitted.
+passing. Independent review passes; the original trace remains rejected. The user then
+explicitly approved the repaired bundle and equivalent hosts; normal upload approval
+passed. Attempt12 encountered an unavailable offer before creation. Fresh capture and
+independent admission then succeed on attempt13. All three legs and four selected entries
+are admitted;4,608 numerical words and504 recovered files are independently checked.
+The decoded cuBLAS GEMM plus reduction, ordered independent-output Mapal and shared-memory
+CUTLASS entries are compared with instruction anchors and queried resource limits.
+Unknown decoder annotations and unavailable cuBLAS register attributes remain explicit.
+No counters, new ordinary timings or causal policy changes are claimed. The report maps
+each observed difference to existing facts and a controlled follow-up experiment; those
+experiments remain future performance work, not prerequisites for accepting the capture.
+Exact-owned57271085 is independently absent20:48:03.025Z. All12 actual rentals are closed;
+attempt12 created no instance. Evidence: `docs/performance/gpu/disassembly/executed-library-images.md`
+and its linked raw admission, analysis and independent review.
