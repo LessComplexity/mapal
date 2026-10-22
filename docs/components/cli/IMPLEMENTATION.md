@@ -1,18 +1,34 @@
 # cli — implementation map
 
-> The functor DESIGN.md ("Categorical model") → code. Model-first (FRAMEWORK §6.1 /
-> HANDOFF §7.2 step 2): this component has **no categorical model yet**, so this map
-> holds only the crate root. Rows are added WITH the model and the code, in the same
-> change (FRAMEWORK §6.3).
+> The functor DESIGN.md ("Categorical model") → code.
 
 ## Objects (Dat) → code
 | Object | Form / shape | Realized at | State |
 | --- | --- | --- | --- |
-| crate root | stub | `crates/mapal-cli/src/main.rs` | planned |
+| `Source` | file text | `crates/mapal-cli/src/main.rs:frontend` | built |
+| `Program` | `mapal_syntax::Program` | `crates/mapal-cli/src/main.rs:frontend` | built |
+| `CategoryIr(lowered)` | `mapal_ir::CategoryIr` | `crates/mapal-cli/src/main.rs:frontend` | built |
+| `CategoryIr(rewritten)` | `mapal_ir::CategoryIr` | `crates/mapal-cli/src/main.rs:rewritten` | built |
+| `Emission` | `mapal_backend_llvm::Emission` → `<exe>.ll`, `<exe>.dev.ll` | `crates/mapal-cli/src/main.rs:build` | built |
+| `Ptx` | `<exe>.ptx` | `crates/mapal-cli/src/main.rs:build` | built |
+| `Executable` | `<exe>` (temp dir for `run`/`test`) | `crates/mapal-cli/src/main.rs:build` · `in_temp` | built |
+| `Observable` | `(Option<String>, i32)` | `crates/mapal-interp/src/lib.rs:native_observable` · `crates/mapal-cli/src/main.rs:wait_boxed` | built |
 
 ## Morphisms (Trn / relations) → code
-_None mapped — awaits DESIGN.md's `## Categorical model (Dat + Trn)` section (ADR-0014);
-writing that model is the first step of this component's increment._
+| Morphism | Signature | Realizing code | State |
+| --- | --- | --- | --- |
+| `parse` / `lower` / `check` | `Source → CategoryIr ⊕ Diagnostic*` | `crates/mapal-cli/src/main.rs:frontend` | built |
+| `rewrite` | `CategoryIr → CategoryIr` | `crates/mapal-cli/src/main.rs:rewritten` | built |
+| `emit` | `CategoryIr × EmitOpts → Emission` | `crates/mapal-cli/src/main.rs:emit` (flags: `crates/backends/llvm/src/flags.rs:apply`) | built |
+| `opt∘llc` | `device → Ptx` | `crates/mapal-cli/src/main.rs:build` | built |
+| `link` | `host (× Ptx) → Executable` | `crates/mapal-cli/src/main.rs:build` | built |
+| `exec` | `Executable → Observable` | `crates/mapal-cli/src/main.rs:run_cmd` · `test_cmd` | built |
+| `interp` | `CategoryIr × Budget → Observable ⊕ Diverged` | `crates/mapal-cli/src/main.rs:run_cmd` (`--interp`) | built |
+| `render` | `Diagnostic → 𝕊` | `crates/mapal-cli/src/main.rs:frontend` (`report`) | built |
+| equalizer `test` | `exec∘link∘emit∘rewrite ≡ interp` | `crates/mapal-cli/src/main.rs:test_cmd` | built |
 
 ## Notes / divergences
-None — no code beyond the stub.
+- `libmapal_rt.a` is found via `MAPAL_RT` or next to the binary. cargo uplifts a
+  staticlib only when it is built as a root (checked S62: as a dependency of
+  mapal-cli it stays in `deps/` under a hash), so the build is
+  `cargo build -p mapal-cli -p mapal-rt`.

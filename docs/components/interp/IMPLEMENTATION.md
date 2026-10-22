@@ -37,6 +37,7 @@ one `eval` pass. Mapal programs are *not* modeled as categories here.
 | `trapped?` | `Outcome → TrapKind` | `crates/mapal-interp/src/value.rs:Abort` (into_outcome; `Outcome::Trapped`) | built |
 | `eval` | `(CategoryIr × FuncId × RValue × Budget) → Outcome` — **the one `Trn`** | `crates/mapal-interp/src/eval.rs:eval_fn` | built |
 | `render` | `mapal_ir::Value → 𝕊` | `crates/mapal-interp/src/value.rs:render` | built |
+| `native_observable` | `CategoryIr × RunResult → (stdout?, exit)?` — the BL8 `@main` observable a compiled run must equal (public contract: backend differential + `mapal test`) | `crates/mapal-interp/src/lib.rs:native_observable` | built |
 | `eval_morphism` (§3 per-op dispatch) | `Morphism → env′` | `crates/mapal-interp/src/eval.rs:eval_morphism` | built |
 | `Add/Sub/Mul/Div/Mod` (§3) | `(N,N) → N` | `crates/mapal-interp/src/eval.rs:arith` | built |
 | `Eq/Neq/Lt/Gt/Le/Ge` (§3) | `(A,A) → Bool` | `crates/mapal-interp/src/eval.rs:compare` (`num_lt`/`num_le`) | built |

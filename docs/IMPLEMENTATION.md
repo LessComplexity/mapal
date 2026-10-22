@@ -20,7 +20,7 @@
 | backend-cuda | `crates/backends/cuda/` — entry `mapal_backend_cuda::emit(&CategoryIr) -> Result<String, EmitError>` (ADR-0020; `src/{ty,module,func,kernel,loops,arena}.rs`) + `emit_with_opts(&CategoryIr, &EmitOpts)` (S20: `perf_timing` — CUDA-event `MAPAL_PERF` instrumentation; `emit` = defaults, byte-identical) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPLEMENTATION](components/backend-cuda/IMPLEMENTATION.md) | built/tested (M3, S15; arenas + emitter-quality S20) |
 | backend-nvptx | GPU leg in `crates/backends/llvm/src/func/` and `crates/backends/llvm/src/profile.rs`; CUDA-driver transmissions in `crates/mapal-rt/gpu/mapal_gpu.c` | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPLEMENTATION](components/backend-nvptx/IMPLEMENTATION.md) | built; frozen S54 matrix passed; targeted ordering open |
 | backend-verilog | `crates/backends/verilog/` | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPLEMENTATION](components/backend-verilog/IMPLEMENTATION.md) | stub |
-| cli | `crates/mapal-cli/` | [DESIGN](components/cli/DESIGN.md) | [IMPLEMENTATION](components/cli/IMPLEMENTATION.md) | stub |
+| cli | `crates/mapal-cli/` | [DESIGN](components/cli/DESIGN.md) | [IMPLEMENTATION](components/cli/IMPLEMENTATION.md) | implemented |
 
 ## Shared objects (one `Dat`, materialised in ≥2 components)
 
@@ -59,7 +59,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 
 | Entry | Trn triggered | Code | State |
 | --- | --- | --- | --- |
-| `mapal` CLI | build/run/dump-ir/test | `crates/mapal-cli/src/main.rs:main` | stub (exits 1) |
+| `mapal` CLI | build/run/dump-ir/test | `crates/mapal-cli/src/main.rs:main` | implemented (S62) |
 | `dump_ir` example | file → lex→parse→lower → Mermaid | `crates/mapal-lower/examples/dump_ir.rs` | built |
 | LLVM `emit` example | file → lex→parse→lower → `.ll` text (dev tool — the `mapal build` embryo) | `crates/backends/llvm/examples/emit.rs` | built (S16) |
 | CUDA `emit_cuda` example | file → lex→parse→lower → `.cu` text (dev tool — distinct Cargo target prevents the LLVM output collision) | `crates/backends/cuda/examples/emit_cuda.rs` | built (S16; target renamed S55) |
