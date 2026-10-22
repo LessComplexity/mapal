@@ -45,7 +45,9 @@
  * `mapal_gpu_trace_total` line at exit summing every phase, the bytes each way
  * and the operation counts, so two arms of one program compare by one line.
  * Under the trace a launch is followed by a synchronize, so its time is the
- * kernel's; off, launches stay asynchronous. `load_ms` is what the program
+ * kernel's; off, launches stay asynchronous. MAPAL_GPU_TRACE=2 (S62): the same
+ * lines without that synchronize, so a launch's time is its enqueue (CPU
+ * submission cost, `now_ms` bookkeeping included). `load_ms` is what the program
  * waited for the context and module (`wait`): all of `init + ctx + module` on
  * the lazy path, that minus `lead` (host work from `mapal_gpu_init` to the
  * first site) under `eager-init`. */
@@ -195,7 +197,8 @@ static void load_module(void) {
   if (init_state == 2)
     return;
   if (trace < 0) {
-    trace = getenv("MAPAL_GPU_TRACE") != 0;
+    const char *t = getenv("MAPAL_GPU_TRACE");
+    trace = t ? atoi(t) : 0;
     if (trace)
       atexit(total_line);
   }
@@ -349,7 +352,7 @@ static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
     legacy_ops++;
   else
     chains_busy = 1;
-  if (trace)
+  if (trace == 1)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
   tot.kernel += ms;
@@ -510,7 +513,7 @@ void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
     mapal_gpu_launch(id, a, b, out, gx, gy, block, smem);
     return;
   }
-  if (trace)
+  if (trace == 1)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
   tot.kernel += ms;
@@ -538,7 +541,7 @@ void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
   CK(cuLaunchKernel(fn, grid, 1, 1, MAPAL_GEN_THREADS, 1, 1, 0, 0, args, 0));
   legacy_ops++;
   last_kernel[0] = 1;
-  if (trace)
+  if (trace == 1)
     CK(cuCtxSynchronize());
   double ms = now_ms() - t0;
   tot.gen += ms;
