@@ -2260,7 +2260,7 @@ impl<'a> FnEmit<'a> {
             .map(|(_, s)| s.clone())
             .collect();
         let mut seen = std::collections::BTreeSet::new();
-        for s in slots {
+        for s in slots.into_iter().chain(self.split_slots.clone()) {
             if seen.insert(s.clone()) {
                 self.line(format!("call void @mapal_gpu_free(ptr {s})"));
             }

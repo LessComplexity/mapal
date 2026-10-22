@@ -295,7 +295,245 @@ static int decode_main(int T, int d, int reps) {
   return 0;
 }
 
+// --- S62 `--splitk M N K reps dir stem...` (ADR-0040): every Mapal arm of one
+// cell (`<dir>/<stem>.ptx` + `.launch`: `kernel gx gy block smem [S rkernel
+// rgx rgy rblock rsmem]`), cuBLAS and stock CUTLASS in ONE process, timed
+// round-robin, the order reversed on odd reps (ABBA). The face is the stem's
+// suffix before any `.`: `_rc` reassoc+contract, `_r` reassoc, `_c` contract,
+// else exact. A split arm's two launches (partials into a preallocated
+// workspace, then the reduce) are one timed leg.
+// Gates, before any timing, per Mapal arm: bit-exact on 256 sampled cells
+// against the CPU fold in the arm's order (ADR-0040 §2: S contiguous partial
+// folds, added in partition order; S = 1 is the ordered fold); on a reassoc
+// arm also |got - ordered| <= (g_K + g_{K/S+S}) * sum|a_k b_k| (ADR-0040 §3,
+// f64). After timing: the whole output re-run and compared byte for byte, and
+// its FNV-1a printed (box_run.sh runs two processes: the hashes must match).
+// A failed gate drops that arm from timing and exits 1 at the end.
+struct Arm {
+  std::string stem;
+  bool contract = false, reassoc = false;
+  CUfunction fn = 0, red = 0;
+  unsigned gx = 0, gy = 0, block = 0, smem = 0, s = 1, rgx = 0, rgy = 0, rblock = 0, rsmem = 0;
+  float *out = 0, *ws = 0;
+  bool ok = true;
+};
+
+static uint64_t fnv(const std::vector<float> &v) {
+  uint64_t h = 0xcbf29ce484222325ull;
+  const unsigned char *p = (const unsigned char *)v.data();
+  for (size_t i = 0; i < v.size() * 4; ++i) h = (h ^ p[i]) * 0x100000001b3ull;
+  return h;
+}
+
+static int splitk_main(int argc, char **argv) {
+  const int M = atoi(argv[2]), N = atoi(argv[3]), K = atoi(argv[4]), reps = atoi(argv[5]);
+  const std::string dir = argv[6];
+  CUDA(cudaFree(0));
+  device_facts();
+  std::vector<float> A((size_t)M * K), B((size_t)K * N);
+  uint64_t seed = 0x5eed;
+  for (auto &x : A) x = frand(seed);
+  for (auto &x : B) x = frand(seed);
+  float *dA, *dB, *dLib[2];
+  CUDA(cudaMalloc(&dA, A.size() * 4));
+  CUDA(cudaMalloc(&dB, B.size() * 4));
+  for (auto &c : dLib) CUDA(cudaMalloc(&c, (size_t)M * N * 4));
+  CUDA(cudaMemcpy(dA, A.data(), A.size() * 4, cudaMemcpyHostToDevice));
+  CUDA(cudaMemcpy(dB, B.data(), B.size() * 4, cudaMemcpyHostToDevice));
+  const size_t flush_bytes = 256u << 20;
+  void *flush;
+  CUDA(cudaMalloc(&flush, flush_bytes));
+
+  std::vector<Arm> arms;
+  for (int i = 7; i < argc; ++i) {
+    Arm a;
+    a.stem = argv[i];
+    std::string face = a.stem.substr(0, a.stem.find('.'));
+    auto ends = [&](const char *x) {
+      size_t n = strlen(x);
+      return face.size() >= n && face.compare(face.size() - n, n, x) == 0;
+    };
+    a.reassoc = ends("_r") || ends("_rc");
+    a.contract = ends("_c") || ends("_rc");
+    std::string path = dir + "/" + a.stem;
+    FILE *f = fopen((path + ".ptx").c_str(), "rb");
+    FILE *l = fopen((path + ".launch").c_str(), "r");
+    if (!f || !l) { fprintf(stderr, "missing %s.ptx/.launch\n", path.c_str()); return 102; }
+    std::string ptx;
+    char buf[1 << 16];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) ptx.append(buf, n);
+    fclose(f);
+    char kname[64] = {0}, rname[64] = {0};
+    int got = fscanf(l, "%63s %u %u %u %u %u %63s %u %u %u %u", kname, &a.gx, &a.gy, &a.block,
+                     &a.smem, &a.s, rname, &a.rgx, &a.rgy, &a.rblock, &a.rsmem);
+    fclose(l);
+    if (got < 5) { fprintf(stderr, "bad launch line %s\n", path.c_str()); return 102; }
+    if (got < 11) a.s = 1;
+    CUmodule mod;
+    CU(cuModuleLoadData(&mod, ptx.c_str()));
+    CU(cuModuleGetFunction(&a.fn, mod, kname));
+    if (a.smem > 48 * 1024)
+      CU(cuFuncSetAttribute(a.fn, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, a.smem));
+    int regs = 0, spill = 0, rregs = 0;
+    cuFuncGetAttribute(&regs, CU_FUNC_ATTRIBUTE_NUM_REGS, a.fn);
+    cuFuncGetAttribute(&spill, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, a.fn);
+    if (a.s > 1) {
+      CU(cuModuleGetFunction(&a.red, mod, rname));
+      cuFuncGetAttribute(&rregs, CU_FUNC_ATTRIBUTE_NUM_REGS, a.red);
+      CUDA(cudaMalloc(&a.ws, (size_t)a.s * M * N * 4));
+    }
+    CUDA(cudaMalloc(&a.out, (size_t)M * N * 4));
+    printf("arm stem=%s face=%s%s kernel=%s grid=%ux%u block=%u smem=%u regs=%d local_bytes=%d S=%u", a.stem.c_str(),
+           a.reassoc ? "reassoc+" : "", a.contract ? "contract" : "exact", kname, a.gx, a.gy, a.block, a.smem,
+           regs, spill, a.s);
+    if (a.s > 1) printf(" reduce=%s rgrid=%ux%u rblock=%u rregs=%d", rname, a.rgx, a.rgy, a.rblock, rregs);
+    printf("\n");
+    arms.push_back(a);
+  }
+
+  cublasHandle_t h;
+  cublasCreate(&h);
+  cublasSetMathMode(h, CUBLAS_DEFAULT_MATH);
+  CutlassGemm cutlass_gemm;
+  CutlassGemm::Arguments cargs({M, N, K}, {dA, K}, {dB, N}, {dLib[1], N}, {dLib[1], N}, {1.0f, 0.0f});
+  if (cutlass_gemm.can_implement(cargs) != cutlass::Status::kSuccess ||
+      cutlass_gemm.initialize(cargs) != cutlass::Status::kSuccess) {
+    fprintf(stderr, "cutlass cannot run %dx%dx%d\n", M, N, K);
+    return 102;
+  }
+  const float one = 1.0f, zero = 0.0f;
+  const size_t na = arms.size();
+  auto run = [&](size_t leg) {
+    if (leg < na) {
+      Arm &a = arms[leg];
+      float *o = a.s > 1 ? a.ws : a.out;
+      void *args[] = {&dA, &dB, &o};
+      CU(cuLaunchKernel(a.fn, a.gx, a.gy, 1, a.block, 1, 1, a.smem, 0, args, 0));
+      if (a.s > 1) {
+        CUdeviceptr none = 0;
+        void *rargs[] = {&a.ws, &none, &a.out};
+        CU(cuLaunchKernel(a.red, a.rgx, a.rgy, 1, a.rblock, 1, 1, a.rsmem, 0, rargs, 0));
+      }
+    } else if (leg == na) {
+      cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, dB, N, dA, K, &zero, dLib[0], N);
+    } else {
+      cutlass_gemm();
+    }
+  };
+  auto name = [&](size_t leg) { return leg < na ? arms[leg].stem : std::string(leg == na ? "cublas" : "cutlass"); };
+  for (size_t leg = 0; leg < na + 2; ++leg)
+    for (int w = 0; w < 3; ++w) run(leg);
+  CUDA(cudaDeviceSynchronize());
+
+  // --- value gates (sampled cells; the 256 of the single-arm harness)
+  std::vector<std::pair<int, int>> cells = {{0, 0}, {M - 1, N - 1}, {0, N - 1}, {M - 1, 0}};
+  uint64_t cs = 0xce11;
+  for (int i = 0; i < 252; ++i) {
+    cs = cs * 6364136223846793005ull + 1;
+    cells.push_back({(int)((cs >> 33) % M), (int)((cs >> 13) % N)});
+  }
+  const double u = std::ldexp(1.0, -24);
+  auto gamma = [&](double n) { return n * u / (1 - n * u); };
+  // The CPU fold of one cell over k in [k0, k1) from `acc`, with the face's step.
+  auto fold = [&](int i, int j, int k0, int k1, float acc, bool contract) {
+    for (int k = k0; k < k1; ++k) {
+      float a = A[(size_t)i * K + k], b = B[(size_t)k * N + j];
+      acc = contract ? fmaf(a, b, acc) : acc + a * b;
+    }
+    return acc;
+  };
+  std::vector<std::vector<float>> before(na);
+  bool all_ok = true;
+  std::vector<float> C((size_t)M * N);
+  for (size_t leg = 0; leg < na + 2; ++leg) {
+    float *src = leg < na ? arms[leg].out : dLib[leg - na];
+    CUDA(cudaMemcpy(C.data(), src, C.size() * 4, cudaMemcpyDeviceToHost));
+    double maxrel = 0, maxabs_ord = 0;
+    int mism = 0, over = 0;
+    for (auto [i, j] : cells) {
+      double ref = 0, mag = 0;
+      for (int k = 0; k < K; ++k) {
+        double p = (double)A[(size_t)i * K + k] * B[(size_t)k * N + j];
+        ref += p;
+        mag += std::fabs(p);
+      }
+      float got = C[(size_t)i * N + j];
+      maxrel = std::max(maxrel, std::fabs(got - ref) / std::max(std::fabs(ref), 1e-3));
+      if (leg >= na) continue;
+      const Arm &a = arms[leg];
+      float ordered = fold(i, j, 0, K, 0.0f, a.contract);
+      float want = ordered;
+      if (a.s > 1) {  // ADR-0040 §2: partitions from 0 (partition 0 from the seed, 0 here), added in order
+        int kc = K / a.s;
+        want = fold(i, j, 0, kc, 0.0f, a.contract);
+        for (unsigned z = 1; z < a.s; ++z) want = want + fold(i, j, z * kc, (z + 1) * kc, 0.0f, a.contract);
+      }
+      if (memcmp(&got, &want, 4) != 0) ++mism;
+      double d = std::fabs((double)got - ordered);
+      maxabs_ord = std::max(maxabs_ord, d);
+      if (a.reassoc && d > (gamma(K) + gamma(K / a.s + a.s)) * mag) ++over;
+    }
+    printf("values leg=%s cells=%zu maxrel_vs_f64=%.3e", name(leg).c_str(), cells.size(), maxrel);
+    if (leg < na) {
+      Arm &a = arms[leg];
+      a.ok = !mism && !over;
+      all_ok &= a.ok;
+      before[leg] = C;
+      printf(" S=%u bit_exact_vs_reference=%s maxabs_vs_ordered=%.3e", a.s, mism ? "NO" : "yes", maxabs_ord);
+      if (a.reassoc) printf(" within_adr0040_bound=%s", over ? "NO" : "yes");
+      printf(" fnv=%016llx%s", (unsigned long long)fnv(C), a.ok ? "" : " GATE-FAILED");
+    }
+    printf("\n");
+  }
+
+  // --- timing: legs round-robin, reversed on odd reps (ABBA)
+  cudaEvent_t t0, t1;
+  CUDA(cudaEventCreate(&t0));
+  CUDA(cudaEventCreate(&t1));
+  std::vector<std::vector<float>> ms(na + 2);
+  for (int r = 0; r < reps; ++r)
+    for (size_t x = 0; x < na + 2; ++x) {
+      size_t leg = r & 1 ? na + 1 - x : x;
+      if (leg < na && !arms[leg].ok) continue;
+      CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
+      CUDA(cudaEventRecord(t0));
+      run(leg);
+      CUDA(cudaEventRecord(t1));
+      CUDA(cudaEventSynchronize(t1));
+      float e;
+      CUDA(cudaEventElapsedTime(&e, t0, t1));
+      ms[leg].push_back(e);
+    }
+  for (size_t leg = 0; leg < na + 2; ++leg) {
+    if (ms[leg].empty()) continue;
+    auto v = ms[leg];
+    std::sort(v.begin(), v.end());
+    printf("time leg=%s M=%d N=%d K=%d n=%zu min_ms=%.4f med_ms=%.4f max_ms=%.4f\n", name(leg).c_str(), M, N, K,
+           v.size(), v.front(), v[v.size() / 2], v.back());
+  }
+  // --- determinism within the process: the whole output again, byte for byte
+  for (size_t leg = 0; leg < na; ++leg) {
+    if (!arms[leg].ok) continue;
+    CUDA(cudaMemset(arms[leg].out, 0xA5, (size_t)M * N * 4));
+    run(leg);
+    CUDA(cudaDeviceSynchronize());
+    CUDA(cudaMemcpy(C.data(), arms[leg].out, C.size() * 4, cudaMemcpyDeviceToHost));
+    bool same = !memcmp(C.data(), before[leg].data(), C.size() * 4);
+    all_ok &= same;
+    printf("determinism leg=%s same_output=%s fnv=%016llx\n", arms[leg].stem.c_str(), same ? "yes" : "NO",
+           (unsigned long long)fnv(C));
+  }
+  for (size_t leg = 0; leg < na + 2; ++leg) {
+    printf("samples leg=%s ", name(leg).c_str());
+    for (size_t i = 0; i < ms[leg].size(); ++i) printf("%s%.4f", i ? "," : "", ms[leg][i]);
+    printf("\n");
+  }
+  return all_ok ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
+  if (argc >= 8 && !strcmp(argv[1], "--splitk")) return splitk_main(argc, argv);
   if (argc >= 5 && !strcmp(argv[1], "--program"))
     return program_floor(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
   if (argc >= 4 && !strcmp(argv[1], "--h2d"))

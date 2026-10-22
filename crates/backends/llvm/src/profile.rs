@@ -330,6 +330,9 @@ impl Face {
     pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
         match (reduced, contract) {
             (Some(crate::Reduced::Tf32), _) => Face::Tf32,
+            // ADR-0040: reassociation runs the scalar kernels, so the
+            // Exact/Contract rows cover it; `splitk` is its only own decision.
+            (Some(crate::Reduced::Reassoc), c) => Face::of(c, None),
             (None, true) => Face::Contract,
             (None, false) => Face::Exact,
         }
@@ -1068,6 +1071,18 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "streams-rtx-5090.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.031/1.069 vs off \
                1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
                6.119/5.545 vs 6.122/5.549 ms)",
+    },
+    // S62 `splitk` (ADR-0040): ON beats its ordered OFF arm beyond the box's null
+    // in every other split cell on all four parts, both step faces
+    // (`benches/results/gpu/s62/splitk-reassoc/<part>/results-<part>.txt`).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "s62/splitk-reassoc/rtx-3090/results-rtx-3090.txt mm_16x2048x7168_r (S=4, the class's only split \
+               cell): ON 0.5458/0.5396 vs off-splitk 0.4813/0.4792 ms, ON/OFF 1.134/1.126 against a null of \
+               0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789)",
     },
 ];
 
@@ -2250,6 +2265,44 @@ impl TargetProfile {
         })
     }
 
+    /// **S62 `splitk`: how many contiguous `k` partitions a tile site's fold
+    /// is cut into under the reassociation face (ADR-0040)**; 1 = the ordered
+    /// kernel. `blocks` is the site's grid, `wave` the blocks the part holds at
+    /// that geometry at once (`Launch::wave`: SMs × the blocks one SM keeps
+    /// resident), `unit` the `k` steps one panel covers (`GpuTile::bk`; 1 for
+    /// one thread per cell), `cells` the output extent, `elem` its bytes.
+    ///
+    /// Every output cell is independent (`TilePlan`), so the grid already is
+    /// every block the output domain gives; when it leaves resident slots
+    /// empty, the fold is the only parallel axis left. Double the partitions
+    /// while the grid still leaves a slot empty, every partition stays whole
+    /// panels (`k % (2·S·unit) = 0`: each partition's affine reads stay inside
+    /// the bounds the site proved, no remainder path), and the partials the
+    /// reduce launch reads back stay in L2 (`2·S·cells·elem ≤ l2_bytes`). Only
+    /// device facts and site extents enter.
+    pub fn gpu_splitk(
+        &self,
+        blocks: u64,
+        wave: u64,
+        k: u64,
+        unit: u64,
+        cells: u64,
+        elem: u64,
+    ) -> u64 {
+        let Some(g) = self.gpu() else {
+            return 1;
+        };
+        let unit = unit.max(1);
+        let mut s = 1;
+        while blocks * s < wave
+            && k.is_multiple_of(2 * s * unit)
+            && 2 * s * cells * elem <= g.l2_bytes
+        {
+            s *= 2;
+        }
+        s
+    }
+
     /// The streaming matrix unit's facts, when this part has one. Same seam
     /// discipline as [`TargetProfile::gpu`]: a profile without SME reaching an
     /// SME-only path is a `None`, never a wrong constant.
@@ -2818,6 +2871,14 @@ pub fn resolve(name: &str) -> Option<&'static TargetProfile> {
         // rung that needs it declines: the compiler goes conservative instead of
         // guessing, which is the same contract as before this became default.
         .or_else(|| (name == "native").then_some(&GENERIC))
+}
+
+impl TargetProfile {
+    /// [`resolve`] from outside the crate: a test's oracle reads the same
+    /// facts the emitter derived from (S62 `splitk`).
+    pub fn named(name: &str) -> Option<&'static TargetProfile> {
+        resolve(name)
+    }
 }
 
 /// The known profile names, for the error message on an unknown one.

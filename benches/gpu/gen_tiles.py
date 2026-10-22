@@ -95,6 +95,13 @@ def bench(n):
 
 for n in (1024, 1536, 2048, 3072, 4096, 8192):
     (out / f"mm_{n}.mapal").write_text(bench(n))
+# S62 `splitk`: the projection cells (M1/M16/M128 of N×K = 2048×7168, 1024×4096;
+# M16 of 18432×7168) and the 4096³ control, as `program`'s fractional site so
+# the whole program is also a differential. Only the kernel is timed (tile_bench
+# --splitk); `bundle.sh` builds the reassociation faces for these stems.
+for M, N, K in ((16, 2048, 7168), (16, 1024, 4096), (16, 18432, 7168), (1, 2048, 7168), (1, 1024, 4096),
+                (128, 2048, 7168), (128, 1024, 4096), (4096, 4096, 4096)):
+    (out / f"mm_{M}x{N}x{K}.mapal").write_text(program(M, N, K, "rm", "rm", "f32"))
 
 
 def e2e(n):
