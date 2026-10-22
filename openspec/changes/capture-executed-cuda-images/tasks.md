@@ -41,3 +41,10 @@ helper ranges and provisional context metadata), test actual source against posi
 negative fixtures, independently review and reseal. Do not patch or deduplicate the failed
 trace. All11 task rentals are closed; the latest exact-owned57265999 is independently
 absent at2026-10-22T20:05:14.535Z.
+
+The four proved observation defects are repaired in a sealed standalone v2, with53 source
+cases,12 identity mutations,10 integration checks and full actual-source synthetic replay
+passing. Independent review passes; the original trace remains rejected. Attempt12 packet
+is ready but automatic upload review rejects it before execution because the earlier
+explicit approval named v1. Revised-bundle/equivalent-host approval is pending. No new
+instance or upload exists;4.1/4.2 remain incomplete until a fresh live capture is admitted.

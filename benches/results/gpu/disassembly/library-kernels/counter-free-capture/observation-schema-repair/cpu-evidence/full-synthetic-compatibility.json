@@ -1,0 +1,56 @@
+{
+  "pass": true,
+  "actual_gpu_admitted": false,
+  "scope": "Exact synthetic replay; original v1 remains 0/3 legs; no SASS",
+  "source_events_sha256": "4223c03eb43aef70f7d3759b1f03c4ede20bc585ab3123f45f66c068c147c41f",
+  "synthetic_events_sha256": "47dc440545843e7b7e89662742f466abf730666f8a4fba04c2f8c1d674583bbc",
+  "source_event_fields_unchanged_after_stripping_new_tokens": true,
+  "all_image_and_PTX_bytes_equal": true,
+  "premises": {
+    "all_api_activity_process_thread_pairs": [
+      [
+        "749",
+        "2690150400"
+      ]
+    ],
+    "serialized_callback_stack_exactly_balanced": true,
+    "activity_block_contiguous": true,
+    "buffers": 1,
+    "invocation_storage": "Fresh CPU-owned per-invocation64-bit cells; not observed in v1"
+  },
+  "counts": {
+    "schema": 1,
+    "enable": 6,
+    "ready": 1,
+    "api": 3156,
+    "context": 1,
+    "load": 2,
+    "image": 5,
+    "function-direct": 3,
+    "launch": 26,
+    "stream-map": 13,
+    "region-start": 1,
+    "region-stop": 1,
+    "api-activity": 1430,
+    "context-activity": 1,
+    "function-activity": 355,
+    "kernel": 13,
+    "buffer": 1,
+    "final-drop": 1,
+    "finish": 1
+  },
+  "selected_synthetic_launches": 1,
+  "all_kernel_records": 13,
+  "sources": {
+    "capture.cpp": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+    "admit.py": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+    "test_full_trace.cpp": "2765279a49ba3ca3049c6d73de72754dc2aaf27666bbc4322b916ec290a2f57f",
+    "test_full_trace.py": "7b0f1dda16db948b178e51b9c254735a098c6de91b2db740e5ec06a84d2f3f71"
+  },
+  "command": [
+    "/private/tmp/mapal-library-image-capture/callback-identity-repair/test_full_trace",
+    "/private/tmp/mapal-library-image-capture/callback-identity-repair/full-synthetic-replay-reviewed",
+    "/private/tmp/mapal-s61-gpu/attempt-11/retrieved/trace/library-images/mapal-profile/capture"
+  ],
+  "process_exit": 0
+}

@@ -1,6 +1,6 @@
 # Mapal — Global Status
 
-Current continuation: **2026-10-22, arithmetic-aware GPU policy correction implemented and independently checked; comparison clocks audited; exact library-image attribution under investigation.**
+Current continuation: **2026-10-22, arithmetic-aware GPU policy correction committed at50a57e5; comparison clocks audited; repaired library observer reviewed and awaiting explicit revised-bundle approval.**
 The [backend correction](performance/gpu/disassembly/fact-driven-scheduling.md) connects
 existing facts through one actual-arithmetic selection: 65 library and 176 integration
 tests pass, one optional test ignored; eight successful LLVM/PTX controls stay unchanged.
@@ -11,7 +11,7 @@ The only checkout is `s54-gpu-fusion`; historical worktrees remain safely archiv
 LLVM/CUDA example targets no longer collide, both profile tests register once, and constant folding now preserves guard-owned dependencies, including loop payloads.
 After the proved loop-route replay and grouped-writer ordering repairs, the required-clang
 host workspace now covers **1,190 passing tests / 1 ignored across the workspace and host-access backend recheck**; the three initial native-detection failures are preserved in the S61 report. Frozen validation remains bound to b4152c5.
-Latest drift: **0 dead / 575 references**.
+Latest drift: **0 dead / 581 references**.
 The disputed GPU selections are resolved at `b4152c5`: 5090 streams OFF, H100 retention/window OFF,
 and the 5090 derived raster gate restored. Independent selection runs and the final host suite pass;
 all five primaries now pass every validation/cleanup gate, including H100 PCIe.

@@ -1,0 +1,278 @@
+{
+  "pass": true,
+  "gpu_executed": false,
+  "scope": "actual callback code with pinned CUPTI structures and stubbed CUPTI functions; independent attribution parser",
+  "sources": {
+    "capture.cpp": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+    "admit.py": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+    "test_callback.cpp": "6c845b1f13e4ec778c11890152b72c58a99c5f1fbf60dff4aa37095e4787cf5d",
+    "test_admission.py": "24fcbf5488c2e4057a73cba385097b3d533a7b810b5e99c12098760df119fea3"
+  },
+  "cases": {
+    "happy": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "direct": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "runtime-correlation": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "ex": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "ex-ptsz": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "ptsz": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "inactive-duplicate": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "two-internal": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "opaque-handle": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "reused-correlation": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "construction": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "nested-reused-correlation": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "contained-helper": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "loader-reused-correlation": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "runtime-same-correlation": {
+      "pass": true,
+      "accepted": true,
+      "error": null
+    },
+    "duplicate-export": {
+      "pass": true,
+      "accepted": false,
+      "error": "Ambiguous symbol across all active images"
+    },
+    "reused-module": {
+      "pass": true,
+      "accepted": false,
+      "error": "Reused moduleId cannot resolve FUNCTION lifetime"
+    },
+    "wrong-context": {
+      "pass": true,
+      "accepted": false,
+      "error": "Reused/ambiguous context pointer"
+    },
+    "missing-function": {
+      "pass": true,
+      "accepted": false,
+      "error": "Missing/ambiguous authoritative FUNCTION metadata"
+    },
+    "wrong-geometry": {
+      "pass": true,
+      "accepted": false,
+      "error": "Kernel geometry/type differs"
+    },
+    "graph": {
+      "pass": true,
+      "accepted": false,
+      "error": "Kernel geometry/type differs"
+    },
+    "cooperative": {
+      "pass": true,
+      "accepted": false,
+      "error": "Kernel geometry/type differs"
+    },
+    "commandlist": {
+      "pass": true,
+      "accepted": false,
+      "error": "Kernel geometry/type differs"
+    },
+    "unknown-dispatch": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['unsupported-selected-launch-API']"
+    },
+    "missing-sync": {
+      "pass": true,
+      "accepted": false,
+      "error": "No successful selected device synchronization before region stop"
+    },
+    "failed-api": {
+      "pass": true,
+      "accepted": false,
+      "error": "Correlated API status differs/failed"
+    },
+    "unexplained-kernel": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unexplained kernel activity"
+    },
+    "dropped": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['activity-parse-or-drop']"
+    },
+    "oversize": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['image-cap-or-payload']"
+    },
+    "cdp": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['unexpected-activity-kind']"
+    },
+    "stale-loader": {
+      "pass": true,
+      "accepted": false,
+      "error": "Missing/ambiguous authoritative FUNCTION metadata"
+    },
+    "wrong-stream": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unproved stream/context mapping"
+    },
+    "wrong-query-context": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unproved stream/context mapping"
+    },
+    "nonexec": {
+      "pass": true,
+      "accepted": false,
+      "error": "ELF function is not bounded executable text"
+    },
+    "symbol-mismatch": {
+      "pass": true,
+      "accepted": false,
+      "error": "Ambiguous symbol across all active images"
+    },
+    "not-function": {
+      "pass": true,
+      "accepted": false,
+      "error": "Ambiguous symbol across all active images"
+    },
+    "late-context": {
+      "pass": true,
+      "accepted": false,
+      "error": "Context creation/full initial inventory unproved"
+    },
+    "ex-attrs": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['unsupported-launch-attributes']"
+    },
+    "pending-buffer": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['incomplete-final-flush-or-region']"
+    },
+    "uid0-module-use": {
+      "pass": true,
+      "accepted": false,
+      "error": "Context creation/full initial inventory unproved"
+    },
+    "missing-storage": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['missing-invocation-storage']"
+    },
+    "storage-collision": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['active-invocation-storage-collision']"
+    },
+    "zero-exit-token": {
+      "pass": true,
+      "accepted": false,
+      "error": "Observer error ['unpaired-invocation-exit']"
+    },
+    "duplicate-launch-correlation": {
+      "pass": true,
+      "accepted": false,
+      "error": "Duplicate API activity"
+    },
+    "helper-outside-owner": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unsupported helper/entry section range"
+    },
+    "helper-outside-section": {
+      "pass": true,
+      "accepted": false,
+      "error": "ELF function is not bounded executable text"
+    },
+    "helper-launched": {
+      "pass": true,
+      "accepted": false,
+      "error": "Ambiguous symbol across all active images"
+    },
+    "both-api-domains": {
+      "pass": true,
+      "accepted": false,
+      "error": "Missing/ambiguous correlated API activity domain"
+    },
+    "duplicate-runtime-parent": {
+      "pass": true,
+      "accepted": false,
+      "error": "Ambiguous correlated API invocation"
+    },
+    "conflicting-driver-status": {
+      "pass": true,
+      "accepted": false,
+      "error": "Correlated API status differs/failed"
+    },
+    "missing-kernel": {
+      "pass": true,
+      "accepted": false,
+      "error": "Empty observation"
+    },
+    "missing-final-drop": {
+      "pass": true,
+      "accepted": false,
+      "error": "Missing final dropped-record query"
+    },
+    "hidden-selected-flag": {
+      "pass": true,
+      "accepted": false,
+      "error": "Selected region chronology/flag differs"
+    }
+  }
+}

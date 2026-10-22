@@ -1,0 +1,57 @@
+{
+  "pass": true,
+  "gpu_executed": false,
+  "actual_source_functions": [
+    "main.stop",
+    "main.cancel",
+    "main.run"
+  ],
+  "production_source_sha256": "94dc4cc2446c4bd91450f88f81e4523e01d872a294f6db137dc518352005fcda",
+  "generated_source_sha256": "d88687405d036fecbfdc446264eee0d6b64dd1c2cf343ec25ba894b6f2fc208f",
+  "test_source_sha256": "2764f2b9bb855c5faeccfcb08d1c2eae4a9f789cf405f271355ec3a44ea8a133",
+  "limitations": [
+    "CPU only; limits=None excludes Linux prctl/PDEATHSIG from this test",
+    "Owned process-group descendants only; no deliberately escaped sessions",
+    "No CUDA/toolkit/injection behavior established"
+  ],
+  "cases": {
+    "timeout": {
+      "pass": true,
+      "controller": {
+        "error": "TimeoutExpired"
+      },
+      "owned_descendant_delayed_write_prevented": true
+    },
+    "exited-leader": {
+      "pass": true,
+      "controller": {
+        "returned": true
+      },
+      "owned_descendant_delayed_write_prevented": true
+    },
+    "SIGTERM": {
+      "pass": true,
+      "controller": {
+        "error": "InterruptedError",
+        "future_launch_blocked": true
+      },
+      "owned_descendant_delayed_write_prevented": true
+    },
+    "SIGINT": {
+      "pass": true,
+      "controller": {
+        "error": "InterruptedError",
+        "future_launch_blocked": true
+      },
+      "owned_descendant_delayed_write_prevented": true
+    },
+    "cleanup-SIGTERM": {
+      "pass": true,
+      "controller": {
+        "error": "InterruptedError",
+        "future_launch_blocked": true
+      },
+      "owned_descendant_delayed_write_prevented": true
+    }
+  }
+}

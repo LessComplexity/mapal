@@ -1,0 +1,27 @@
+{
+  "pass": true,
+  "gpu_executed": false,
+  "scope": "Exact official Linux header field/type existence and absent guessed join fields; macOS arm64 syntax check only, not Linux ABI/runtime/provenance proof",
+  "argv": [
+    "c++",
+    "-std=c++17",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-fsyntax-only",
+    "-I",
+    "/private/tmp/mapal-library-image-capture/header-proof/crt/usr/local/cuda-12.8/targets/x86_64-linux/include",
+    "-I",
+    "/private/tmp/mapal-library-image-capture/header-proof/cudart/usr/local/cuda-12.8/targets/x86_64-linux/include",
+    "-I",
+    "/private/tmp/mapal-library-image-capture/header-proof/cupti/usr/local/cuda-12.8/targets/x86_64-linux/include",
+    "/private/tmp/mapal-library-image-review/schema.cpp"
+  ],
+  "exit": 0,
+  "source_sha256": "5cdbe5f7068183a43b6e8847265ef27b79321d7a0896ac5ab7c7c0e2450e37b5",
+  "header_receipt_sha256": "0cc972d1c49192c42c33ac4089b6f955fd7b4535fb1650705ebe15dcb11f7c6c",
+  "all_headers_verified": 134,
+  "contract_sha256": "85d059b8146d9b066bffec5955c4646df459e2248dec2fc02201071f6651a88e",
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

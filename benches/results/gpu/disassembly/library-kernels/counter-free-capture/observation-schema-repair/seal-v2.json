@@ -1,0 +1,13 @@
+{
+  "archive": "/private/tmp/mapal-library-image-capture/library-image-capture-v2.tar.gz",
+  "archive_sha256": "48f288f43a9d2133a50e3572de8aa5604209fc254e5697e0c8027f15d5aaacaf",
+  "archive_bytes": 932273,
+  "root": "/private/tmp/mapal-library-image-capture/packet-v2",
+  "archive_root": "library-image-capture",
+  "manifest_sha256": "21d58721e96250dcf30d8dd23799cfe7e337604fbb4993c81ad5f15cbbc85eac",
+  "files": 198,
+  "gpu_admitted": false,
+  "callback_schema": "library-image-callback-v2",
+  "unchanged_cli_prerequisites_caps": true,
+  "review_sha256": "f2517304605f3f0c7302df4094283c06fa6fffd74712c4ce419143fe7ae30ff2"
+}

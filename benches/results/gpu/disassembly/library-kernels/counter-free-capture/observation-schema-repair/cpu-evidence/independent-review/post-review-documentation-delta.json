@@ -1,0 +1,7 @@
+{
+  "CONTRACT.md": {
+    "before_sha256": "6561508ce4ae2e50c7e2c3375ccbed2009ed1b40f58afd44577a2ae21c249997",
+    "after_sha256": "3354931b708531fe75d31a750317f9a0ff496176e2eda911c8f90e2ac44bd1bd",
+    "scope": "Documentation-only correction explicitly requested by final independent review: prototype status and accurate post-command output admission / per-file / deadline bounds"
+  }
+}

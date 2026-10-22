@@ -1,0 +1,8 @@
+{
+  "archive": ".benchmark-artifacts/gpu/library-images/preparation/library-image-capture-v2.tar.gz",
+  "sha256": "48f288f43a9d2133a50e3572de8aa5604209fc254e5697e0c8027f15d5aaacaf",
+  "bytes": 932273,
+  "payload_files": 198,
+  "archive_files": 199,
+  "scope": "Reviewed repaired source and local tests; no new live image admission. Full synthetic replay generated traces/images excluded from the source payload."
+}
