@@ -55,13 +55,14 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}'"
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' E2E='${E2E:-1}' PASS2='${PASS2:-1}'"
 run_rc=0
 "${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_run exit $run_rc"; }
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || {
     log "results retrieval failed"
     [ "$run_rc" -ne 0 ] || run_rc=1
 }
+"${SSH[@]}" "cat /w/results-$PROF-pass2.txt" > "$RES/results-$PROF-pass2.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
 if [ "$run_rc" -eq 0 ] && [ "${PROFILE:-0}" = 1 ] && [ "${DIFFERENTIAL_ONLY:-0}" != 1 ]; then
