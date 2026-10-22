@@ -25,8 +25,8 @@ th = [max(0.01, x) for x in fl]
 med = lambda vs, key: statistics.median(float(v[key]) for v in vs)
 print(f"### {part}: submission stage 2\n")
 print(f"Floor |direct/direct - 1| per session: {', '.join(f'{x:.4f}' for x in fl)}.\n")
-print("| kernel | entry | ptrs | generated us s1 / s2 | direct us s1 / s2 | generated/direct s1 / s2 | sign |")
-print("|---|---|---|---|---|---|---|")
+print("| kernel | entry | ptrs | generated us s1 / s2 | direct us s1 / s2 | generated/direct s1 / s2 | direct/direct null s1 / s2 | sign |")
+print("|---|---|---|---|---|---|---|---|")
 keys = sorted(set().union(*[set(s) for s in ses]))
 signs = []
 for key in keys:
@@ -38,5 +38,6 @@ for key in keys:
     sg = '+' if all(x > 1 + t for x, t in zip(r, th)) else '-' if all(x < 1 - t for x, t in zip(r, th)) else '0'
     signs.append(sg)
     j = lambda xs, p=3: ' / '.join(f'{x:.{p}f}' for x in xs)
-    print(f"| {key[0][11:]} | {key[1]} | {key[2]} | {j(g)} | {j(d)} | {j(r)} | {sg} |")
+    nl = [med(s[key], 'null_direct_ratio') for s in ses]
+    print(f"| {key[0][11:]} | {key[1]} | {key[2]} | {j(g)} | {j(d)} | {j(r)} | {j(nl)} | {sg} |")
 print(f"\n{part}: {signs.count('+')} of {len(signs)} kernels generated > direct beyond the floor in both sessions.\n")
