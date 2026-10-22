@@ -6,6 +6,8 @@ The mechanisms below are built; disputed per-architecture selections are resolve
 the frozen S54 validation matrix and both confirmations pass. This map records code locations, not performance verdicts.
 STATUS distinguishes finite benchmark acceptance from the S58 ordering correction and
 remaining allocation/performance work.
+The isolated [S59 small-M candidate](../../performance/s59-smallm-comparison.md) is
+not promoted because measured regressions accompany its wins; it adds no built row here.
 
 ## Dat — facts and placement records
 

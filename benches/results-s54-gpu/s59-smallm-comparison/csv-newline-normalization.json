@@ -1,0 +1,23 @@
+[
+  {
+    "path": "analysis/absolute-cells.csv",
+    "original_sha256": "3320cb75223452b664f9f8d89593205b0e86470f38fa6509ce2348ae60c82423",
+    "public_lf_sha256": "c217740e6f568e3fdf6bcb2d9d7e8cd9878ca3096fec544aa7eac7ad0a0f2319",
+    "rows_including_header": 31,
+    "parsed_cells_unchanged": true
+  },
+  {
+    "path": "analysis/all-cells.csv",
+    "original_sha256": "b83077e6a679c031740d5bc4c898aaa4a29c75d50dcfac40f48526e974390db2",
+    "public_lf_sha256": "9314cfd5b600dbd10372d1ca4618486ffeafce0e2ea65575219952f574a76267",
+    "rows_including_header": 31,
+    "parsed_cells_unchanged": true
+  },
+  {
+    "path": "analysis/processes.csv",
+    "original_sha256": "b673698b1fde6e5bcb8d2346196278b163f8c996dcf3ac39dd932abc24d94b7c",
+    "public_lf_sha256": "27a79c881de313ab4c03bf1a2b72f6d6c58999d7e57c32ee5b8360b1c8259df0",
+    "rows_including_header": 235,
+    "parsed_cells_unchanged": true
+  }
+]

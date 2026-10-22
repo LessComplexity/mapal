@@ -1,0 +1,20 @@
+{
+  "instance": 57130775,
+  "confirmed_absent": true,
+  "create_started_epoch": 1792627755.867543,
+  "confirmed_absent_utc": "2026-10-22T00:12:24.048049+00:00",
+  "absolute_cleanup_deadline_epoch": 1792628425.867543,
+  "reservation_to_independent_absence_seconds": 188.18050599098206,
+  "listed_rate_usd_per_hour": 0.7051851851851851,
+  "disk_gib": 40,
+  "rate_includes_disk": true,
+  "elapsed_listed_cost_estimate_usd": 0.03686169582374792,
+  "prior_cumulative_planning_usage_usd": 0.7667982573469985,
+  "this_transfer_reserve_usd": 0.1,
+  "cumulative_planning_usage_usd": 0.9036599531707463,
+  "remaining_original_one_dollar_planning_usd": 0.09634004682925368,
+  "invoice_observed": false,
+  "no_new_rental_authorized_by_calculation": true,
+  "verified_trace_files": 948,
+  "trace_hash_failures": []
+}

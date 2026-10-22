@@ -1,0 +1,46 @@
+{
+  "pass": true,
+  "tests": [
+    {
+      "mode": "success",
+      "pass": true
+    },
+    {
+      "mode": "numeric-failed",
+      "pass": true
+    },
+    {
+      "mode": "smallm-timeout",
+      "pass": true
+    },
+    {
+      "mode": "time-install-failed",
+      "pass": true
+    },
+    {
+      "mode": "time-version-failed",
+      "pass": true
+    },
+    {
+      "mode": "nvcc-failed",
+      "pass": true
+    },
+    {
+      "mode": "busy-before",
+      "pass": true
+    },
+    {
+      "mode": "busy-after",
+      "pass": true
+    },
+    {
+      "mode": "insufficient-time",
+      "pass": true
+    },
+    {
+      "mode": "payload-changed",
+      "pass": true
+    }
+  ],
+  "no_gpu_network_rental": true
+}
