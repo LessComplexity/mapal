@@ -84,7 +84,7 @@ bb12:
   %t27 = load i64, ptr %d19
   %t28 = load i64, ptr %d21
   %t30 = call i64 @mapal_gpu_alloc(ptr %d29, i64 16384)
-  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t27, i64 %t28, i64 %t30, i32 4, i32 2, i32 32, i32 1664)
+  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t27, i64 %t28, i64 %t30, i32 4, i32 2, i32 32, i32 14336)
   call void @mapal_gpu_free(ptr %d19)
   call void @mapal_gpu_free(ptr %d21)
   %t31 = getelementptr { ptr, i32 }, ptr %o8, i32 0, i32 0

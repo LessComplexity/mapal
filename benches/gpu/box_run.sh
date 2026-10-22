@@ -214,26 +214,42 @@ if [ -x prog_decode_1024_256 ]; then
     [ -x chain_bench ] && ./chain_bench decode_1024 256 "$REPS" $vals 2>&1 | tee -a "$LOG"
 fi
 
-say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
-bench() { # <n> <stem> <label> [--contract|--tf32]
+say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS, passes=${PASSES:-1})"
+# A cell is `n` (square) or `MxNxK` (S62: the `mm_<M>x<N>x<K>` programs).
+dims() { case $1 in *x*x*) echo "${1//x/ }" ;; *) echo "$1 $1 $1" ;; esac; }
+bench() { # <cell> <stem> <label> [--contract|--tf32]
     local n=$1 stem=$2 label=$3; shift 3
     read -r k gx gy blk sm < "$stem.launch"
-    say "# n=$n face=$label"
-    ./tile_bench "$n" "$n" "$n" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
+    say "# n=$n face=$label pass=$pass"
+    # shellcheck disable=SC2046  # M N K are three arguments
+    ./tile_bench $(dims "$n") "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
 }
 # S54 arch-select: the session's first bench ran 3.6% off its own repeat (the `null` arm,
 # arch-select-rtx-3090.txt _exact 1024): one discarded bench first.
 [ -f "$PROF/mm_1024.launch" ] && { read -r k gx gy blk sm < "$PROF/mm_1024.launch"
     ./tile_bench 1024 1024 1024 "$PROF/mm_1024.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" > /dev/null 2>&1; }
-for n in 1024 1536 2048 3072 4096 8192; do
-    for face in _exact _c _tf; do
-        case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
-        [ -f "$PROF/$s.launch" ] || continue
-        bench "$n" "$PROF/$s" "$face" "${flag[@]}"
-        for v in "$PROF/$s".*.launch; do
-            [ -f "$v" ] || continue
-            var=${v%.launch}; var=${var#"$PROF/$s".}
-            bench "$n" "${v%.launch}" "$face.$var" "${flag[@]}"
+cells="1024 1536 2048 3072 4096 8192 $(for f in "$PROF"/mm_*x*x*.launch; do [ -f "$f" ] && basename "$f" .launch; done |
+    sed -n 's/^mm_\([0-9]*x[0-9]*x[0-9]*\)$/\1/p' | sort -t x -n -k1,1 -k2,2 -k3,3)"
+# PASSES=2 (S62): every cell again with its arm order reversed (ABBA), so an arm's
+# place in the bench order is not read as its effect. FACES narrows the faces.
+for pass in $(seq "${PASSES:-1}"); do
+    for n in $cells; do
+        for face in ${FACES:-_exact _c _tf}; do
+            case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
+            [ -f "$PROF/$s.launch" ] || continue
+            legs=(shipped)
+            for v in "$PROF/$s".*.launch; do
+                [ -f "$v" ] || continue
+                var=${v%.launch}; legs+=("${var#"$PROF/$s".}")
+            done
+            order=("${legs[@]}")
+            if [ $((pass % 2)) = 0 ]; then
+                order=(); for ((i = ${#legs[@]} - 1; i >= 0; i--)); do order+=("${legs[i]}"); done
+            fi
+            for var in "${order[@]}"; do
+                if [ "$var" = shipped ]; then bench "$n" "$PROF/$s" "$face" "${flag[@]}"
+                else bench "$n" "$PROF/$s.$var" "$face.$var" "${flag[@]}"; fi
+            done
         done
     done
 done

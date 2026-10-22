@@ -249,6 +249,15 @@ pub struct GpuRungs {
     /// sm_90+: a site launched right behind another kernel on its stream is a
     /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
     pub pdl: bool,
+    /// S62: a shaped site no register tile divides runs one output per thread
+    /// as a staged tile (square-most `bm × bn` block of cells,
+    /// [`profile::TargetProfile::gpu_cell_tile`]). Off: one thread per cell,
+    /// unstaged (`naive`).
+    pub cell_fill: bool,
+    /// S62: when the grid leaves an SM fewer blocks than the tile's smem was
+    /// budgeted for, stream its panels with `cp.async` through as many stages
+    /// as the share left holds ([`profile::TargetProfile::gpu_tile_stages`]).
+    pub async_stage: bool,
 }
 
 impl GpuRungs {
@@ -290,11 +299,13 @@ impl GpuRungs {
         stream_gate: true,
         pinned: true,
         pdl: true,
+        cell_fill: true,
+        async_stage: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 36] = [
+    pub const NAMES: [&'static str; 38] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -331,6 +342,8 @@ impl GpuRungs {
         "stream-gate",
         "pinned",
         "pdl",
+        "cell-fill",
+        "asyncstage",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -372,6 +385,8 @@ impl GpuRungs {
             "stream-gate" => &mut self.stream_gate,
             "pinned" => &mut self.pinned,
             "pdl" => &mut self.pdl,
+            "cell-fill" => &mut self.cell_fill,
+            "asyncstage" => &mut self.async_stage,
             _ => return None,
         })
     }
