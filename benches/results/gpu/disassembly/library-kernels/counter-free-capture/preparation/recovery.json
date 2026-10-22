@@ -1,0 +1,8 @@
+{
+  "archive": ".benchmark-artifacts/gpu/library-images/preparation/library-image-capture-v1.tar.gz",
+  "sha256": "1559a8a59dcf59e6aed292ac905542c795a14191b0ca4e110b4aa9faf806870e",
+  "bytes": 904587,
+  "gpu_admitted": false,
+  "production_source_match_independent_review": true,
+  "scope": "Sealed reviewed diagnostic preparation only; pilot pending"
+}

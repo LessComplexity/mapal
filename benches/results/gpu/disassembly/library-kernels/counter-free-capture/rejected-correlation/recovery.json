@@ -1,0 +1,6 @@
+{
+  "private_trace_archive": ".benchmark-artifacts/gpu/library-images/counter-free/rtx-5090/2026-10-22/rejected-correlation/trace-rtx-5090.tgz",
+  "archive_sha256": "26453f6d0cfbdba31c111f4eee9824204f123e0d919d0e2b8304f7f723b82a80",
+  "archive_bytes": 7003841,
+  "scope": "Rejected observation; no library or SASS admission. Original453 files preserved. Operator and independent admission receipts supply per-file seals."
+}

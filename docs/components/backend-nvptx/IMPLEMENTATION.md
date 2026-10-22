@@ -25,6 +25,7 @@ The isolated A/B experiments add no built mechanism to this map.
 | Rung switches and forced measurement arms (§7) | `crates/backends/llvm/src/lib.rs:GpuRungs`, `crates/backends/llvm/src/lib.rs:GpuArms`; table `crates/backends/llvm/src/profile.rs:GPU_RUNGS_OFF` |
 | Per-function placement, groups, cells and carries (R1/R2/R5/R6) | `crates/backends/llvm/src/func/resident.rs:ResidentPlan`, `crates/backends/llvm/src/func/resident.rs:Epi`, `crates/backends/llvm/src/func/resident.rs:Cell`, `crates/backends/llvm/src/func/resident.rs:Carry`; `crates/backends/llvm/src/func/retain.rs:Retained` |
 | Device arena and selected launch (R6, §7) | `crates/backends/llvm/src/func/resident.rs:Arena`; `crates/backends/llvm/src/func/gpu.rs:Launch` |
+| Actual arithmetic on the selected launch (§9) | `crates/backends/llvm/src/func/gpu.rs:Arithmetic`; existing `Launch::arithmetic` carries the selected separate, ordered-FMA, TF32-MMA or TF32-WGMMA realization |
 
 These are derived records over the existing IR and profile. Machine facts stay in the
 backend; the geometry queries stay in `mapal-ir` (ARCHITECTURE §2; FRAMEWORK §4.5 law 5).
@@ -46,6 +47,8 @@ backend; the geometry queries stay in `mapal-ir` (ARCHITECTURE §2; FRAMEWORK §
 | R6/R7: omit raw chain storage when the selected group does not store it | `crates/backends/llvm/src/func/resident.rs:FnEmit::chain_prologue`; existing `Epi::store_out`; regression and live-storage controls in `crates/backends/llvm/tests/streams.rs:grouped_chains_allocate_only_materialized_raw_outputs`, `crates/backends/llvm/tests/streams.rs:raw_storage_controls_keep_their_observable_pointers` |
 | Grid raster and L2-window policy (§7) | `crates/backends/llvm/src/profile.rs:Gpu::raster`; `crates/backends/llvm/src/func/resident.rs:FnEmit::l2_window` |
 | Site/host rung selection and device translation unit (§3, §7) | `crates/backends/llvm/src/func/gpu.rs:rungs_at`, `crates/backends/llvm/src/func/gpu.rs:host_rungs`, `crates/backends/llvm/src/func/gpu.rs:device_module`; `crates/backends/llvm/src/profile.rs:TargetProfile::gpu_rungs_on` |
+| Resolve actual arithmetic before selecting per-site policy (§9) | `crates/backends/llvm/src/func/gpu.rs:Arithmetic::scalar`, `crates/backends/llvm/src/func/gpu.rs:Arithmetic::face`, `crates/backends/llvm/src/func/gpu.rs:launch` |
+| Consume selected arithmetic during scalar emission (§9) | `crates/backends/llvm/src/func/gpu.rs:kernel_text`, `crates/backends/llvm/src/func/gpu.rs:Kernel::step`; tensor emission is selected from the same `Launch` |
 
 The existing composition limits remain explicit: `set_gpu_arms` forms groups before calling
 `resident_plan`, which selects cells and creates an arena only when the stream-chain map is empty. `retained_sites` refuses guarded

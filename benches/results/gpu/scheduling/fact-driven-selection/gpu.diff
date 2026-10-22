@@ -1,0 +1,491 @@
+diff --git a/crates/backends/llvm/src/func/gpu.rs b/crates/backends/llvm/src/func/gpu.rs
+index a961b7f..ec58de6 100644
+--- a/crates/backends/llvm/src/func/gpu.rs
++++ b/crates/backends/llvm/src/func/gpu.rs
+@@ -215,9 +215,40 @@ pub(crate) fn tile_plan(
+     plan
+ }
+ 
++/// The arithmetic the selected kernel actually emits, distinct from the
++/// module's permission to contract or use TF32.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum Arithmetic {
++    SeparateMulAdd,
++    OrderedFma,
++    Tf32Mma,
++    Tf32Wgmma,
++}
++
++impl Arithmetic {
++    fn scalar(site: &TileSite, contract: bool) -> Self {
++        // Strided-lane sites are host maps whose step stays separate even
++        // under Contract. Device placement must preserve that arithmetic.
++        if contract && site.b.clane == 1 {
++            Self::OrderedFma
++        } else {
++            Self::SeparateMulAdd
++        }
++    }
++
++    fn face(self) -> Face {
++        match self {
++            Self::SeparateMulAdd => Face::Exact,
++            Self::OrderedFma => Face::Contract,
++            Self::Tf32Mma | Self::Tf32Wgmma => Face::Tf32,
++        }
++    }
++}
++
+ /// Which kernel a GPU site gets, and how it is launched.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(crate) struct Launch {
++    pub arithmetic: Arithmetic,
+     pub tiled: Option<GpuTile>,
+     /// The tensor-core kernel, on a reduced face where the part has one.
+     pub mma: Option<GpuMmaTile>,
+@@ -281,24 +312,8 @@ pub(crate) fn launch(
+         Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
+         None => ((site.rows * site.c).div_ceil(NAIVE_THREADS), NAIVE_THREADS),
+     };
+-    let rungs = rungs_at(
+-        profile,
+-        gpu.warps_per_scheduler(blocks, threads),
+-        Face::of(contract, reduced),
+-        arms,
+-    );
+-    // Tensor cores: only on a face that admits them (TF32), f32 operands both
+-    // streamed with 16-byte copies, on a part with `mma.sync`.
+-    let tensor = rungs.mma
+-        && reduced == Some(Reduced::Tf32)
+-        && site.elem == Ty::f32()
+-        && shaped
+-        && vector_a(site)
+-        && vector_b(site);
+-    let wgmma = (tensor && rungs.wgmma)
+-        .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
+-        .flatten();
+-    let raster = |bm: u64, bn: u64, per_sm: u64| match rungs.raster {
++    let wps = gpu.warps_per_scheduler(blocks, threads);
++    let raster = |rungs: crate::GpuRungs, bm: u64, bn: u64, per_sm: u64| match rungs.raster {
+         true => gpu.raster(
+             bm,
+             bn,
+@@ -311,35 +326,53 @@ pub(crate) fn launch(
+         ),
+         false => 1,
+     };
+-    if let Some(w) = wgmma {
+-        return Launch {
+-            tiled: None,
+-            mma: None,
+-            wgmma: Some(w),
+-            gx: site.c / w.bn(),
+-            gy: site.rows / w.bm(),
+-            block: w.threads(gpu.warp),
+-            smem: w.smem_bytes(),
+-            raster: raster(w.bm(), w.bn(), w.blocks_per_sm),
+-            rungs,
+-        };
+-    }
+-    let mma = tensor
+-        .then(|| profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill))
+-        .flatten();
+-    if let Some(m) = mma {
+-        return Launch {
+-            tiled: None,
+-            mma: Some(m),
+-            wgmma: None,
+-            gx: site.c / m.bn(),
+-            gy: site.rows / m.bm(),
+-            block: m.threads(gpu.warp),
+-            smem: m.smem_bytes(),
+-            raster: raster(m.bm(), m.bn(), m.blocks_per_sm),
+-            rungs,
+-        };
++    // Attempt tensor geometry under its own policy. Permission alone is not
++    // an emitted face: rejection must fall through to the scalar policy.
++    if reduced == Some(Reduced::Tf32)
++        && site.elem == Ty::f32()
++        && shaped
++        && vector_a(site)
++        && vector_b(site)
++    {
++        let rungs = rungs_at(profile, wps, Face::Tf32, arms);
++        if rungs.mma {
++            let wgmma = rungs
++                .wgmma
++                .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
++                .flatten();
++            if let Some(w) = wgmma {
++                return Launch {
++                    arithmetic: Arithmetic::Tf32Wgmma,
++                    tiled: None,
++                    mma: None,
++                    wgmma: Some(w),
++                    gx: site.c / w.bn(),
++                    gy: site.rows / w.bm(),
++                    block: w.threads(gpu.warp),
++                    smem: w.smem_bytes(),
++                    raster: raster(rungs, w.bm(), w.bn(), w.blocks_per_sm),
++                    rungs,
++                };
++            }
++            let mma = profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill);
++            if let Some(m) = mma {
++                return Launch {
++                    arithmetic: Arithmetic::Tf32Mma,
++                    tiled: None,
++                    mma: Some(m),
++                    wgmma: None,
++                    gx: site.c / m.bn(),
++                    gy: site.rows / m.bm(),
++                    block: m.threads(gpu.warp),
++                    smem: m.smem_bytes(),
++                    raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
++                    rungs,
++                };
++            }
++        }
+     }
++    let arithmetic = Arithmetic::scalar(site, contract);
++    let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
+     let tiled = shaped
+         .then(|| {
+             profile.gpu_tile(
+@@ -378,6 +411,7 @@ pub(crate) fn launch(
+         });
+     match tiled {
+         Some(g) => Launch {
++            arithmetic,
+             tiled: Some(g),
+             mma: None,
+             wgmma: None,
+@@ -385,10 +419,11 @@ pub(crate) fn launch(
+             gy: site.rows / g.bm(),
+             block: g.threads(),
+             smem: g.smem_bytes(e),
+-            raster: raster(g.bm(), g.bn(), g.blocks_per_sm),
++            raster: raster(rungs, g.bm(), g.bn(), g.blocks_per_sm),
+             rungs,
+         },
+         None => Launch {
++            arithmetic,
+             tiled: None,
+             mma: None,
+             wgmma: None,
+@@ -987,11 +1022,7 @@ fn kernel_text(
+         idx,
+         t: lower_ty(&site.elem).expect("float elem lowers"),
+         site,
+-        // The contract face fuses the step of the sites the CPU tiles too
+-        // (every one has `b.clane == 1`); a strided-lane site (`lane-stride`)
+-        // is a host map there, whose step stays `fmul` + `fadd`, so it stays
+-        // that on the device: placement never changes a value.
+-        contract: contract && site.b.clane == 1,
++        arithmetic: l.arithmetic,
+         rungs: l.rungs,
+         profile_gpu: *profile.gpu().expect("a GPU site has a GPU profile"),
+         pdl: pdl(profile, contract, arms),
+@@ -1206,7 +1237,7 @@ struct Kernel<'s> {
+     /// `float` or `double`.
+     t: String,
+     site: &'s TileSite,
+-    contract: bool,
++    arithmetic: Arithmetic,
+     rungs: crate::GpuRungs,
+     profile_gpu: Gpu,
+     /// S54 `pdl`: open with `griddepcontrol.wait` (and let a dependent launch).
+@@ -1516,7 +1547,11 @@ impl Kernel<'_> {
+     fn step(&mut self, acc: &str, a: &str, b: &str) -> String {
+         let t = self.t.clone();
+         let r = self.tmp();
+-        if self.contract {
++        debug_assert!(matches!(
++            self.arithmetic,
++            Arithmetic::SeparateMulAdd | Arithmetic::OrderedFma
++        ));
++        if self.arithmetic == Arithmetic::OrderedFma {
+             let bits = if t == "float" { 32 } else { 64 };
+             self.line(format!(
+                 "{r} = call {t} @llvm.fma.f{bits}({t} {a}, {t} {b}, {t} {acc})"
+@@ -3063,6 +3098,280 @@ mod tests {
+ 
+     const PARTS: [&TargetProfile; 4] = [&RTX_4090, &H100_PCIE, &H100, &RTX_5090];
+ 
++    #[test]
++    fn actual_arithmetic_strided_contract_selects_exact_policy() {
++        let s = site(1, 256, 128, true, false, Ty::f32());
++        let arms = crate::GpuArms::default();
++        let text = kernel_text("strided", &s, &H100_PCIE, true, arms, None, false, None);
++        assert!(text.contains(" = fmul float ") && text.contains(" = fadd float "));
++        assert!(!text.contains("call float @llvm.fma"));
++        let exact = launch(&s, &H100_PCIE, false, arms, None);
++        let requested = launch(&s, &H100_PCIE, true, arms, None);
++        assert_eq!(
++            requested.rungs, exact.rungs,
++            "separate arithmetic needs Exact policy"
++        );
++    }
++
++    #[test]
++    fn actual_arithmetic_rejected_tf32_selects_scalar_policy() {
++        use crate::profile::RTX_3090;
++        let s = site(256, 256, 128, false, true, Ty::f32());
++        let arms = crate::GpuArms::default();
++        let text = kernel_text(
++            "fallback",
++            &s,
++            &RTX_3090,
++            true,
++            arms,
++            Some(Reduced::Tf32),
++            false,
++            None,
++        );
++        assert!(text.contains("call float @llvm.fma"));
++        assert!(!text.contains("mma.sync") && !text.contains("wgmma.mma_async"));
++        let scalar = launch(&s, &RTX_3090, true, arms, None);
++        let requested = launch(&s, &RTX_3090, true, arms, Some(Reduced::Tf32));
++        assert_eq!(
++            requested.rungs, scalar.rungs,
++            "rejected TF32 needs scalar policy"
++        );
++    }
++
++    #[test]
++    fn actual_arithmetic_scalar_modes_preserve_order_and_geometry() {
++        for p in PARTS {
++            for n in [7, 256] {
++                // naive and cooperative scalar realizations
++                for elem in [Ty::f32(), Ty::f64()] {
++                    let mut s = site(n, n, 128, true, true, elem);
++                    s.mul_a_first = false;
++                    s.add_acc_first = false;
++                    s.seed = if s.elem == Ty::f32() {
++                        Value::F32(2.0)
++                    } else {
++                        Value::F64(2.0)
++                    };
++                    for contract in [false, true] {
++                        let arms = crate::GpuArms::default();
++                        let l = launch(&s, p, contract, arms, None);
++                        let expected = if contract {
++                            Arithmetic::OrderedFma
++                        } else {
++                            Arithmetic::SeparateMulAdd
++                        };
++                        assert_eq!(l.arithmetic, expected);
++                        assert_eq!(l.tiled.is_some(), n == 256, "{} {s:?}", p.name);
++                        let text = kernel_text("scalar", &s, p, contract, arms, None, false, None);
++                        assert_eq!(text.contains("@llvm.fma"), contract);
++                        assert_eq!(text.contains(" = fmul "), !contract);
++                        assert_eq!(text.contains(" = fadd "), !contract);
++                        // Exercise the same step builder with named values so
++                        // the source order is checked independently of SSA ids.
++                        let mut k = Kernel {
++                            out: String::new(),
++                            next: 0,
++                            idx: "i64",
++                            t: lower_ty(&s.elem).unwrap(),
++                            site: &s,
++                            arithmetic: l.arithmetic,
++                            rungs: l.rungs,
++                            profile_gpu: *p.gpu().unwrap(),
++                            pdl: false,
++                            async_tail: None,
++                            sync_tail: None,
++                            raster: (l.gx, l.raster),
++                            col: false,
++                            epi: None,
++                        };
++                        let result = k.step("%acc", "%a", "%b");
++                        let t = &k.t;
++                        if contract {
++                            assert!(k.out.contains(&format!("({t} %a, {t} %b, {t} %acc)")));
++                        } else {
++                            assert!(k.out.contains(&format!("fmul {t} %b, %a")));
++                            assert!(
++                                k.out.contains(&format!("{result} = fadd {t} %v2, %acc")),
++                                "{}",
++                                k.out
++                            );
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn actual_arithmetic_tensor_rejections_use_complete_scalar_plan() {
++        use crate::profile::{Machine, RTX_3090};
++        let old = TargetProfile {
++            machine: Machine::Gpu(Gpu {
++                arch: "sm_70",
++                ..*RTX_4090.gpu().unwrap()
++            }),
++            ..RTX_4090
++        };
++        let ordinary = site(256, 256, 128, true, true, Ty::f32());
++        let mut cases = vec![
++            ("type", site(256, 256, 128, true, true, Ty::f64())),
++            ("a-layout", site(256, 256, 128, false, true, Ty::f32())),
++            ("b-layout", site(256, 256, 128, true, false, Ty::f32())),
++            ("rows", site(1, 256, 128, true, true, Ty::f32())),
++            ("columns", site(256, 7, 128, true, true, Ty::f32())),
++            ("reduction", site(256, 256, 7, true, true, Ty::f32())),
++        ];
++        for (name, field) in [
++            ("a-base", 0),
++            ("b-base", 1),
++            ("a-row", 2),
++            ("b-row", 3),
++            ("a-lane", 4),
++            ("b-row-dependence", 5),
++        ] {
++            let mut s = ordinary.clone();
++            match field {
++                0 => s.a.base = 1,
++                1 => s.b.base = 1,
++                2 => s.a.ci += 1,
++                3 => s.b.ck += 1,
++                4 => s.a.clane = 1,
++                _ => s.b.ci = 1,
++            }
++            cases.push((name, s));
++        }
++        let off = force(GpuRungs {
++            mma: false,
++            ..GpuRungs::ALL
++        });
++        for p in [&RTX_3090, &RTX_4090, &H100_PCIE, &H100, &RTX_5090, &old] {
++            for (why, s) in &cases {
++                for contract in [false, true] {
++                    for arms in [crate::GpuArms::default(), force(GpuRungs::ALL), off] {
++                        let scalar = launch(s, p, contract, arms, None);
++                        let l = launch(s, p, contract, arms, Some(Reduced::Tf32));
++                        assert_eq!(l, scalar, "{} {why} contract={contract}", p.name);
++                        let text = kernel_text(
++                            "rejected",
++                            s,
++                            p,
++                            contract,
++                            arms,
++                            Some(Reduced::Tf32),
++                            false,
++                            None,
++                        );
++                        assert!(
++                            !text.contains("tf32")
++                                && !text.contains("mma.sync")
++                                && !text.contains("wgmma.mma_async")
++                        );
++                        assert_eq!(
++                            text.contains("@llvm.fma"),
++                            l.arithmetic == Arithmetic::OrderedFma
++                        );
++                    }
++                }
++            }
++            // Valid operands with MMA forced off, and an unsupported device
++            // with every optimization forced on, must still use scalar policy.
++            for arms in if p.gpu().unwrap().sm() < 80 {
++                vec![off, force(GpuRungs::ALL)]
++            } else {
++                vec![off]
++            } {
++                for contract in [false, true] {
++                    assert_eq!(
++                        launch(&ordinary, p, contract, arms, Some(Reduced::Tf32)),
++                        launch(&ordinary, p, contract, arms, None),
++                    );
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn actual_arithmetic_supported_tensor_controls_keep_tf32_policy() {
++        let s = site(1024, 1024, 1024, true, true, Ty::f32());
++        let mma = force(GpuRungs {
++            wgmma: false,
++            ..GpuRungs::ALL
++        });
++        for (p, arms, expected, instruction) in [
++            (
++                &RTX_4090,
++                force(GpuRungs::ALL),
++                Arithmetic::Tf32Mma,
++                "mma.sync.aligned",
++            ),
++            (&H100_PCIE, mma, Arithmetic::Tf32Mma, "mma.sync.aligned"),
++            (
++                &H100_PCIE,
++                force(GpuRungs::ALL),
++                Arithmetic::Tf32Wgmma,
++                "wgmma.mma_async",
++            ),
++        ] {
++            for contract in [false, true] {
++                let l = launch(&s, p, contract, arms, Some(Reduced::Tf32));
++                assert_eq!(l.arithmetic, expected);
++                assert_eq!(l.arithmetic.face(), Face::Tf32);
++                assert_eq!(l.rungs, GpuRungs::ALL.with(arms));
++                assert!(l.block <= p.gpu().unwrap().max_threads_per_block);
++                assert!(l.smem <= p.gpu().unwrap().smem_per_block);
++                let text = kernel_text(
++                    "tensor",
++                    &s,
++                    p,
++                    contract,
++                    arms,
++                    Some(Reduced::Tf32),
++                    false,
++                    None,
++                );
++                assert!(text.contains(instruction));
++                assert!(!text.contains("@llvm.fma") && !text.contains(" = fmul "));
++            }
++        }
++    }
++
++    #[test]
++    fn actual_arithmetic_mixed_sites_keep_module_pdl_agreement() {
++        let sites = [
++            site(1, 256, 128, true, false, Ty::f32()),
++            site(256, 256, 128, true, true, Ty::f32()),
++        ];
++        for p in [&H100_PCIE, &RTX_4090] {
++            for enabled in [false, true] {
++                let arms = force(GpuRungs {
++                    pdl: enabled,
++                    ..GpuRungs::ALL
++                });
++                let wait = pdl(p, true, arms);
++                assert_eq!(wait, enabled && p.gpu().unwrap().sm() >= 90);
++                let host = init_call(host_rungs(p, true, arms), false, wait);
++                let flags: u32 = host
++                    .split("i32 ")
++                    .nth(1)
++                    .unwrap()
++                    .split(')')
++                    .next()
++                    .unwrap()
++                    .parse()
++                    .unwrap();
++                assert_eq!(flags & GPU_INIT_PDL != 0, wait);
++                for (s, expected) in sites
++                    .iter()
++                    .zip([Arithmetic::SeparateMulAdd, Arithmetic::OrderedFma])
++                {
++                    assert_eq!(launch(s, p, true, arms, None).arithmetic, expected);
++                    let text = kernel_text("mixed", s, p, true, arms, None, false, None);
++                    assert_eq!(text.contains("griddepcontrol.wait"), wait);
++                }
++            }
++        }
++    }
++
+     /// The rung settings whose geometry differs: shipped, register staging,
+     /// and each with the whole-file tile off.
+     fn arms() -> Vec<GpuRungs> {

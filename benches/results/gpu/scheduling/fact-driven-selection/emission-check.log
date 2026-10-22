@@ -1,0 +1,13 @@
+scalar-exact {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+scalar-contract {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+mma-default {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+wgmma-default {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+mma-hopper-wgmma-off {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+mma-forced {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+wgmma-forced {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+scalar-naive {'host.ll': True, 'device.ll': True, 'opt.ll': True, 'ptx': True}
+mixed-pdl {'host.ll': True, 'device.ll': False, 'opt.ll': False, 'ptx': False}
+strided-contract {'host.ll': True, 'device.ll': False, 'opt.ll': False, 'ptx': False}
+layout-fallback {'host.ll': True, 'device.ll': False, 'opt.ll': False, 'ptx': False}
+type-fallback {'host.ll': True, 'device.ll': False, 'opt.ll': False, 'ptx': False}
+mma-off-fallback {'host.ll': True, 'device.ll': False, 'opt.ll': False, 'ptx': False}

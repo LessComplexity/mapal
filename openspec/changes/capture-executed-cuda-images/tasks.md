@@ -32,3 +32,12 @@ exact-entry SASS join, and instrumented timing remains inadmissible. Full 924-in
 - [ ] 4.1 After live Mapal observer admission, prepare exact library module/function/dispatch joins for cuBLAS and CUTLASS with leg markers; reject ambiguity, unsupported variants, dropped records and missing completion.
 - [ ] 4.2 Independently verify captured functions and disassemble the actual executed entries; keep static embedded library images and runtime-selected images distinct.
 - [ ] 4.3 Compare instructions/resources and separate diagnostic counters, then map each evidenced difference to existing IR facts, their consumers, backend realization choices or an explicit unknown; test proposed causal explanations before changing compiler policy.
+
+The first approved counter-free extension pilot is preserved with zero image/SASS
+admissions. Its Mapal process and1536 exported pre/post numeric words pass; library legs
+are skipped after callback identity rejection. Before completing4.1, repair the three
+source-proved observation boundaries in `design.md` (invocation identity, executable
+helper ranges and provisional context metadata), test actual source against positive and
+negative fixtures, independently review and reseal. Do not patch or deduplicate the failed
+trace. All11 task rentals are closed; the latest exact-owned57265999 is independently
+absent at2026-10-22T20:05:14.535Z.

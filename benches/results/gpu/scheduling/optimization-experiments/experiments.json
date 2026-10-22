@@ -1,0 +1,85 @@
+{
+  "no_code_changes": true,
+  "no_automatic_promotion": true,
+  "matrix_sha256": "365734783d35c309f5446b761afac309235bbafec10a8d539abcc052e3a69add",
+  "experiments": [
+    {
+      "id": "image-inventory",
+      "priority": "P0",
+      "arithmetic_track": "diagnostic-only",
+      "evidence": "No library executed-image admission",
+      "smallest_test": "Counter-free exact joins, then separately extend to composed selected calls"
+    },
+    {
+      "id": "measurement-boundary",
+      "priority": "P0",
+      "arithmetic_track": "ordered-and-existing-reference",
+      "evidence": "Steady region excludes arena creation/inputgen/free",
+      "smallest_test": "Matched preparation/sync plus separately labelled inclusive clocks"
+    },
+    {
+      "id": "ordered-geometry",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Geometry and panel effects coupled in previous measurements",
+      "smallest_test": "Fixed-aspect K8/K16 pairs plus documented aspect/threadmapping factor"
+    },
+    {
+      "id": "ordered-coarsening",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Finite legal geometry sensitivity proven, no generic winner",
+      "smallest_test": "Frozen finite tuning then fresh confirmations and nulls"
+    },
+    {
+      "id": "CPU-dispatch",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Submission gaps included but CPU share unknown",
+      "smallest_test": "Same-kernel/buffer minimal replay versus generated submission"
+    },
+    {
+      "id": "retained-input-flow",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Input preparation differs across existing arms",
+      "smallest_test": "Same-compiler retain versus regenerate with steady/inclusive clocks"
+    },
+    {
+      "id": "allocation-latency",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Request/byte reduction proven, latency unmeasured",
+      "smallest_test": "Allocation-only before/after including setup/free clock"
+    },
+    {
+      "id": "fusion-admission",
+      "priority": "P1",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Existing same-cell facts; actual grouping must be known",
+      "smallest_test": "Group/rejection census then one actually unconsumed legal fusion"
+    },
+    {
+      "id": "layout-coverage",
+      "priority": "P2",
+      "arithmetic_track": "ordered-FMA/Exact",
+      "evidence": "Affine facts exist, separability/vector/ksplit realization guards",
+      "smallest_test": "Case census then one logical layout/packing alternative including its cost"
+    },
+    {
+      "id": "reassociated-reduction",
+      "priority": "P2",
+      "arithmetic_track": "separate explicit error permission",
+      "evidence": "Selected Lt splitK attrs observed; no actual reduction dispatch/SASS",
+      "smallest_test": "Legal matched Lt attribute intervention; independently specified Mapal partial/tree contract only later"
+    }
+  ],
+  "prohibited_inferences": [
+    "TileKSplit address decomposition is parallel reduction",
+    "FMA means tensor-core use",
+    "register/static instruction counts prove achieved occupancy or traffic",
+    "wall minus event medians isolates CPU cost",
+    "allocation counts explain a steady clock excluding allocation",
+    "queried Lt splitK attributes prove actual SASS or causal speedup"
+  ]
+}

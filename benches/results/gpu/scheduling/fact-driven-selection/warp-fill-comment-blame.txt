@@ -1,0 +1,21 @@
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2098)     /// Steps, each a fact or a stated policy:
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2099)     /// 1. **Register tile.** The largest square power-of-two `t`, at least one
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2100)     ///    vector wide, with `t² · regs(elem) ≤ regs_per_thread / 2` (the CPU's
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2101)     ///    half-the-file headroom). f32 on 255 registers: `8 × 8`.
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2102)     /// 2. **Threads per block.** Registers per thread are estimated at twice
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2103)     ///    the accumulators; `regs_per_sm` over that is the resident-thread
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2104)     ///    budget, split across [`GPU_RESIDENT_BLOCKS`] blocks so one computes
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2105)     ///    while another waits at the barrier. 65 536 / 128 / 2 = 256 = 16 × 16.
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2106)     /// 3. **Fill the schedulers** (`fill`, S53 rung `warp-fill`). While the
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2107)     ///    grid has fewer warps than [`Gpu::fill_warps`], halve the register
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2108)     ///    tile's longer side (`tn` on a tie), down to one vector. Grid warps
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2109)     ///    are `rows·c / (tm·tn·warp)`, which no thread-grid split changes;
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2110)     ///    threads per block stay those of the unshrunk tile (step 2).
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2111)     /// 4. **Fill the machine.** While the grid has fewer blocks than SMs, halve
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2112)     ///    the thread grid (x then y), down to one warp — a block left idle is a
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2113)     ///    whole SM idle, which no tile shape wins back.
+8aa99445 (Sapir Shemer 2026-10-20 20:26:21 -0400 2114)     /// 5. **Panel depth.** Blocks per SM = the tightest of registers, threads
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2115)     ///    and the block-slot limit; `bk` is the largest power of two whose two
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2116)     ///    panels fit one block's share of shared memory, dividing `k`, at least
+66a70334 (Sapir Shemer 2026-10-20 19:05:30 -0400 2117)     ///    one vector deep, and loadable in whole vectors by every thread.
+2cfcc522 (Sapir Shemer 2026-10-20 22:40:00 -0400 2118)     ///

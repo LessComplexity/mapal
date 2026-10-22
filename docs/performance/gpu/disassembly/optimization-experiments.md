@@ -1,0 +1,20 @@
+# GPU optimization questions and decisive tests
+
+The measured gap to cuBLAS is established for the published cases. Its causes still need controlled tests. Existing IR already supplies shapes, affine addresses, output independence, ordered reductions, lifetimes and consumer dependencies; the backend already combines these with device resource limits. See the [fact map](ir-facts-and-realization-gaps.md).
+
+The source audit found one concrete mismatch: scheduling policy could follow requested contraction/TF32 even when the kernel emitted different arithmetic. The correction is tracked in `derive-gpu-schedules-from-facts`. Separately, the conservative register budget during warp-fill adjustment is intentional, documented policy; it is not a proved stale estimate to repair. Both [source audits](../../../../benches/results/gpu/scheduling/fact-driven-selection/) are preserved.
+
+| Priority | Question | Experiment and acceptance evidence |
+| --- | --- | --- |
+| First | Which instructions and internal kernels do the libraries actually run? | Capture the exact selected binary's complete launch/image inventory. Require unambiguous context/module/function joins and decoder provenance. The approved primitive pilot is separate from future composed cuBLASLt capture. |
+| First | Does the measured boundary favor an implementation? | Preserve published clocks; add matched input preparation and synchronization, an empty synchronized region, and an inclusive request clock. Rotate arm order. The [clock audit](../workloads/measurement-boundaries.md) found completion present, but these controls are absent. |
+| Next | Which ordered tile geometry pays? | Separate tile aspect from panel depth with paired legal configurations. Freeze tuning choices before confirmation, retain unchanged controls, and validate ordered output bits, launch geometry and resource limits. Earlier blanket small-M fitting regressed other cases and remains rejected. |
+| Next | How much is CPU submission costing? | Run identical kernels/buffers through generated submission and a minimal direct submission path. Keep dependency order and clocks identical. Collect API traces separately; wall minus event medians do not isolate CPU cost. |
+| Next | Does retention improve requests? | Compare retained immutable inputs against regeneration/copy of identical bits with the same compiler and kernels. Report steady compute and inclusive request timing, verified lifetimes and separate transfer counts. |
+| Next | Do the removed allocations improve latency? | Compare the integrated allocation-only correction against its baseline, including creation/free in a separate request clock. Device code and values must match. Fewer requests alone do not prove a latency gain. |
+| Next | Is eligible fusion actually missing? | Enumerate emitted groups, footprints and refusal reasons; match them to launches. Change only a proved legal remaining boundary, retaining observable outputs and complete producer dependencies. |
+| Later | Are supported address layouts limiting real workloads? | Identify cases that actually hit a guard, then test a layout/staging realization with exact output checks and packing included in the request clock. |
+
+Split-K/tree reduction is a separate numerical track. The selected composed cuBLASLt configurations report split-K attributes, but that is not proof of executed reduction organization or its speed contribution. A parallel partial reduction in Mapal needs an explicit arithmetic permission or an equivalence proof. Existing Contract permits ordered FMA; it does not permit reassociation. Shape and device facts establish scheduling legality under that contract, not a universal optimum.
+
+The [full experiment matrix](../../../../benches/results/gpu/scheduling/optimization-experiments/matrix.md) gives falsification criteria, required controls and evidence provenance for every row. New geometry, fusion, retention and dispatch changes require their own measured confirmation before selection. The frozen comparisons remain unchanged by this analysis.

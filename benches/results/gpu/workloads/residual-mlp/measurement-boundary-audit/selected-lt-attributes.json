@@ -1,0 +1,242 @@
+[
+  {
+    "case": "matrix",
+    "fusion": "unfused",
+    "site": "p",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 4
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 524288,
+    "checked_workspace_bytes": 524288,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "fusion": "unfused",
+    "site": "hraw",
+    "heuristic_index": 1,
+    "eligible_index": 1,
+    "split_k": {
+      "status": 0,
+      "value": 4
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 1048576,
+    "checked_workspace_bytes": 1048576,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "fusion": "unfused",
+    "site": "mraw",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 8
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 1048576,
+    "checked_workspace_bytes": 1048576,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "fusion": "fused",
+    "site": "p",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 4
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 524288,
+    "checked_workspace_bytes": 524288,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "fusion": "fused",
+    "site": "h-bias-relu",
+    "heuristic_index": 1,
+    "eligible_index": 1,
+    "split_k": {
+      "status": 0,
+      "value": 4
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 1048576,
+    "checked_workspace_bytes": 1048576,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "fusion": "fused",
+    "site": "m-bias",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 8
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 1048576,
+    "checked_workspace_bytes": 1048576,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "unfused",
+    "site": "p",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 10
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 4194304,
+    "checked_workspace_bytes": 4194304,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "unfused",
+    "site": "hraw",
+    "heuristic_index": 3,
+    "eligible_index": 3,
+    "split_k": {
+      "status": 0,
+      "value": 5
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 5242880,
+    "checked_workspace_bytes": 5242880,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "unfused",
+    "site": "mraw",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 10
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 5242880,
+    "checked_workspace_bytes": 5242880,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "fused",
+    "site": "p",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 10
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 4194304,
+    "checked_workspace_bytes": 4194304,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "fused",
+    "site": "h-bias-relu",
+    "heuristic_index": 3,
+    "eligible_index": 3,
+    "split_k": {
+      "status": 0,
+      "value": 5
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 5242880,
+    "checked_workspace_bytes": 5242880,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "fusion": "fused",
+    "site": "m-bias",
+    "heuristic_index": 0,
+    "eligible_index": 0,
+    "split_k": {
+      "status": 0,
+      "value": 10
+    },
+    "reduction": {
+      "status": 0,
+      "value": 2
+    },
+    "workspace_bytes": 5242880,
+    "checked_workspace_bytes": 5242880,
+    "workspace_cap_bytes": 33554432,
+    "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+    "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+  }
+]

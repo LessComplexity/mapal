@@ -1,0 +1,14 @@
+{
+  "pass": true,
+  "archive_sha256": "1559a8a59dcf59e6aed292ac905542c795a14191b0ca4e110b4aa9faf806870e",
+  "manifest_sha256": "d8fdf0c1f611f920a6eb8705590481fc1d49609ccfa8f87a7dc669a108358ec4",
+  "sealed_payload_files": 185,
+  "archive_regular_files": 186,
+  "independent_review_sha256": "851def586a3650d69956aca257a36cf20712f561d340202f67420520710059d5",
+  "production_and_tests_match_independent_review": true,
+  "post_review_difference": "CONTRACT status/cap documentation only; explicitly reviewed",
+  "check_packet_pass": true,
+  "scope": "Root approves bounded480s threeleg actual-image pilot with unchanged selected ordinary binary/argv, no counters/admincontrol/timingclaim. Operator packet, ownership guard, staged payload and watchdog require separate binding before create.",
+  "cap_precision": "512MiB aggregate checked after commands;128MiB perfile hard RLIMIT;480s wait budgets plus cleanup/bookkeeping.",
+  "gpu_admitted": false
+}

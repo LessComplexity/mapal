@@ -123,3 +123,37 @@ Static SASS resources/opcodes cannot establish dynamic traffic, occupancy or sta
 Root reviews the exact extension before a live smoke. No loading-mode, compiler-option,
 numerical-budget or ordinary-clock changes are implied. FRAMEWORK §4.5 laws 1/4/5 retain
 their callback-lifetime, complete identity mediation and completed-leg obligations.
+
+## Live pilot: repair observation identity before another capture
+
+The first sealed library-observer pilot completes its injected Mapal process and numeric
+checks but rejects attribution. The immutable trace proves that distinct callbacks can
+share a CUPTI correlation ID, including repeated CBIDs; one device helper occupies a
+bounded subrange in another function's executable section; and UID0 context-pointer
+callbacks can precede the corresponding CONTEXT_CREATED notification. These observations
+do not admit an image or justify discarding records.
+
+Planned `Dat CallbackInvocation` adds an observer-owned invocation identity, using the
+pinned SDK's documented per-invocation `correlationData` storage after that contract is
+verified. It remains distinct from the activity correlation ID. Planned `Trn observe`
+records and pairs each invocation; `Trn admit_library?` requires unique supported activity
+and launch associations and rejects duplicate tokens or ambiguous launch candidates.
+Adding CBID to the old key or deduplicating records is insufficient.
+
+Planned `Dat ExecutableSymbolRange` distinguishes an eligible kernel entry from bounded
+device helper symbols in an executable section. The ELF reader must validate section
+ownership and bounds without treating every helper as a launch entry or pretending its
+index is the kernel's decoder identity. Exact selected-entry attribution stays mandatory.
+
+Planned context-lifecycle admission distinguishes provisional UID0 callback metadata from
+authoritative creation and device-work identity. It must still reject late initialization,
+missing creation for submitted work, context reuse and ambiguous module lifetimes. The
+precise admitted domain requires pinned-header/source evidence and actual-source boundary
+tests before implementation is accepted; it is not a blanket exception for early pointers.
+
+The existing benchmark-process and evidence-directory Loc/Trm remain. All changes are to
+standalone observation tooling; production kernels, runtime, precision and clocks are
+unchanged. The v1 packet and failed trace stay immutable. New source requires local
+positive/negative regressions, independent review, a fresh seal and a live smoke before
+library admission. FRAMEWORK §4.5 laws 1/2/4/5 require the repaired identities to remain
+explicitly mediated rather than reconstructed by guesswork.

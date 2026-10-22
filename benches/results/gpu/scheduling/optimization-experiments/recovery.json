@@ -1,0 +1,22 @@
+{
+  "files": [
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/MATRIX.md",
+      "path": "matrix.md",
+      "sha256": "365734783d35c309f5446b761afac309235bbafec10a8d539abcc052e3a69add"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/experiments.json",
+      "path": "experiments.json",
+      "sha256": "d115b5baa4fc19785b8808e31e0d0a43d484af8738120dfa87b25ac90a2ef5f7"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/evidence-index.json",
+      "path": "evidence-index.json",
+      "sha256": "41fc355876023911cba7a9c86c5f6fe34eb06b56d7e443670b3f5af5965b69e5"
+    }
+  ],
+  "scope": "Evidence-ranked proposals, no new measurement or implementation; original source references retained.",
+  "publication_note": "Only the matrix sibling hardware-audit link was relocated; original source digest retained in files.",
+  "published_matrix_sha256": "70f54fc99ffc4b565203d1ce8e876c7760f749c312e16520a12a97174b3afb98"
+}
