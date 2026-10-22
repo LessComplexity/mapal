@@ -15,3 +15,11 @@ sealed payload and 180 result files: 1/234 records scheduled, zero primary proce
 started, zero of 30 timing cells admitted. This is not a numerical quarantine or
 performance result. The prerequisite correction is prepared/tested; the candidate stays
 isolated. Both the failed run and closed rental are preserved in the S58 evidence table.
+
+S59 completed the unchanged packet after explicitly installing/checking GNU `time`:
+234/234 records, 28/30 admitted timing cells. Three wide M16 cells improve 4.82–5.18×;
+four smaller M16 Exact/Contract cells regress 37–47%, beyond null/control variation.
+Root independently verified 948 files and 10,080 raw samples. The blanket candidate
+is rejected for promotion; task 2.1 remains open, including executed images and large
+controls. No new selection threshold is accepted. See
+`docs/performance/s59-smallm-comparison.md`. Instance 57130775 is independently absent.

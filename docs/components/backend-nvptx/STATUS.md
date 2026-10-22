@@ -1,7 +1,7 @@
 # Component: backend-nvptx
 
 Status: **built inside the LLVM backend; S54 validation passed; S58 ordering correction integrated and checked.**
-Last updated: 2026-10-21 · S58 parallel development; small-M GPU comparison in preparation.
+Last updated: 2026-10-21 · S59 small-M comparison complete; candidate remains isolated.
 
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
@@ -103,6 +103,14 @@ eager. The first compiled PyTorch attempt stopped at missing `Python.h`; after a
 development-header installation, a later run passes. Root rechecked its 1,024 checkpoint
 and 128 final values against both frozen numerical budgets. This is small-matrix
 correctness, not a composed timing result. Native large emission still reaches a bounded timeout.
+
+The [S59 comparison](../../performance/s59-smallm-comparison.md) completes 234/234
+records and admits 28/30 timing cells. Wide M16 Exact/Contract/TF32 improve 4.82–5.18×;
+smaller M16 Exact/Contract regress 37–47%, beyond observed null/control variation.
+Two M1 TF32 gates fail in both revisions. The blanket candidate is not promoted.
+Root rehashed 948 files and recomputed 10,080 raw CUDA-event samples. Runtime geometry
+and resources are recorded; actual executed SASS/counters remain missing. Instance 57130775
+is independently absent. Shared source, allocation behavior and the arena guard are unchanged.
 
 ## Continuing performance work
 

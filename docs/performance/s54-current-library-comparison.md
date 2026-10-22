@@ -4,7 +4,10 @@ Independent report check: 161 CSV rows, 282 ratio calculations and 244 medians c
 directly against saved raw records; source, proof and launched-PTX hashes matched.
 See the [check receipt](../../benches/results-s54-gpu/s56-current-library-independent-check.json).
 
-Accepted current selection runs only (2026-10-21). The final five-profile/six-size integrated results remain pending in [S54 GPU fusion](s54-gpu-fusion.md).
+The tables below are historical selection runs (2026-10-21). The completed final
+five-profile matrix and confirmations are in [S54 GPU fusion](s54-gpu-fusion.md).
+The latest isolated candidate comparison is [S59 small-M](s59-smallm-comparison.md):
+three improvements, four regressions, and no production promotion.
 
 ## Mapal face and observed hardware path
 

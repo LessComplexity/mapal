@@ -1,4 +1,44 @@
-# Current continuation — S58 parallel development and validation
+# Current continuation — S59 comparison complete
+
+## S59 measured decision (2026-10-21 local / 2026-10-22 UTC)
+
+**Do not promote the blanket small-M candidate.** The completed RTX 5090 comparison
+has three changed-cell improvements (wide M16 Exact/Contract/TF32: 4.82–5.18×) and
+four regressions (smaller M16 Exact/Contract: 37–47% slower). All exceed measured
+null/control variation. The shared source and frozen emitter remain untouched.
+
+[Results and next proof obligations](performance/s59-smallm-comparison.md) contain
+the absolute table; [all 30 cells](../benches/results-s54-gpu/s59-smallm-comparison/analysis/ABSOLUTE.md)
+include M1/M16/M128 and 4096 controls. Twenty-eight cells are admitted; two M1 TF32
+cells fail the bounded numerical gate in both revisions. All 234 records are present.
+Root independently rehashed 948 files and recomputed 10,080 raw event samples.
+The runner's `candidate_acceptance=true` means numerical/protocol scope, not approval
+of its four performance regressions. The next selection experiment must retain both
+scalar and cooperative routes and test profitability from generic geometry/resource
+facts. Actual executed-image evidence and large controls remain outstanding.
+
+**All task rentals and commands are closed.** Instance 57130775 was independently
+absent at 2026-10-22T00:12:24.048049Z, before its 00:20:25.867543Z deadline.
+The one-use S59 launcher is consumed and must not be rerun. Cumulative planning usage,
+including reserves, is $0.9036599532 with $0.0963400468 remaining under $1; this is not
+an invoice or authorization inferred for a new rental. The new quote includes 40 GB
+storage; earlier default-storage quote uncertainty is disclosed in the report.
+Never touch unrelated instances 57065574 or 57100404.
+
+Operational files: `/private/tmp/mapal-s59-gpu/`; frozen independent analysis:
+`/private/tmp/mapal-s59-analysis/RESULTS/`; root recheck:
+`/private/tmp/mapal-s59-root/verification.json`. Durable public evidence:
+`benches/results-s54-gpu/s59-smallm-comparison/`. Its `recovery.json` binds the ignored
+private archive and exact sealed payload. Private diagnostics may contain credentials;
+one preparation diagnostic exposed a Vast key in tool output. The user was notified;
+key rotation is outstanding. Public evidence excludes provider API/create/wrapper logs.
+
+The allocation candidate remains isolated and its ordinary GPU/counter gate remains
+unrun. No new allocation, retained-data, composed-PyTorch or 16K timing claim follows.
+Use the S59 immutable session for exact verification commands and remaining OpenSpec
+state. Preserve `oainotes.md`; local commits only, no push.
+
+# Previous continuation — S58 parallel development and validation
 
 ## Closed S58 work (2026-10-21)
 

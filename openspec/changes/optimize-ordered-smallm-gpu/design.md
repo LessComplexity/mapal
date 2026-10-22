@@ -24,3 +24,16 @@ Preserving thread count by doubling `tx` when halving `ty` was tested first and 
 
 ## Rejected second candidate and narrower correction
 Pre-fill halving of `ty` without increasing `tx` passed the target M16 tests but failed a broader 2,440-case geometry inventory: 135 previously successful geometries changed and 75 became unavailable. This candidate is rejected. The final candidate keeps the original occupancy derivation first, then redistributes only an oversized positive-row grid while preserving its final thread count. A diagnostic baseline/candidate inventory covers boundary rows 4/8/16/32/48/64/96/128, all three N/K families and transposed dimensions, f32/f64, wide/fill, tiny/zero/ragged controls and five profiles. The zero-row guard preserves the original behavior without claiming the caller supports empty GPU work.
+
+## S59 hardware rejection of blanket promotion
+
+The reviewed combined snapshot was measured while isolated. Its wide M16 cases improve
+4.82–5.18×, but the two smaller M16 Exact/Contract families regress 37–47%. Legal
+geometry is therefore insufficient for profitable selection. Keep this candidate as
+evidence; do not apply it to production. Recorded cooperative grids have 576, 64 and
+32 blocks against 170 reported SMs. The smaller grids bound simultaneous occupied SMs,
+but the entire timing regression is not causally attributed without dynamic evidence.
+A subsequent proposal within this change must evaluate generic grid/resource costs,
+preserve scalar alternatives and test neighboring/boundary shapes. No model-specific
+gate or three-point fitted threshold is accepted. Numerical gates, executed images,
+large controls and before/after distributions remain acceptance duties.

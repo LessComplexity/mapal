@@ -1,0 +1,14 @@
+{
+  "pass": true,
+  "outer_files_rehashed": 948,
+  "scheduled_records": 234,
+  "passing_records": 218,
+  "numeric_failures": 4,
+  "quarantined_skips": 12,
+  "timing_processes_reparsed": 112,
+  "raw_cuda_event_samples_reparsed": 10080,
+  "admitted_timing_cells": 28,
+  "analysis_sha256": "e6483dd687080a1a60d5ab509ba6a659a88f4d8a98d4e1ab9071bbae4027c7f2",
+  "outer_summary_sha256": "5cbf23522bd5115451cb47f611405b5c9baee6de69be5c4a7269151faf0ba533",
+  "method": "Independent root implementation: hashes, statuses, numerical pass markers, 30-event upper medians and same-process library ratios; no imported runner or analyst parser."
+}
