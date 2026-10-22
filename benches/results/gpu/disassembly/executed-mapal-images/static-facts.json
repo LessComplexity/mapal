@@ -1,0 +1,1568 @@
+{
+  "scope": "frozen packet seal/PTX/null/geometry audit; no compilation, execution, or new performance result",
+  "packets": {
+    "bcomparison": {
+      "sealed_files_verified": 963,
+      "seal_sha256": "90dbd145e748ed0bfca7f4d8acfd6b338aaafd2b0912d0da26ec85c5f22bed50",
+      "cases_sha256": "3914557b748469f20a6a8b09cfca329e1d5ad2717a614799d90ca7ce75fde07a",
+      "rows": [
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "exact",
+          "arm": "old",
+          "entry": "mapal_tile_a9d7250799a9dcbc",
+          "ptx_sha256": "eeca71548d48e28f2aae5ccdaee3a610fd2a6104248daa006ed195160c95e636",
+          "grid": [
+            16,
+            1
+          ],
+          "total_blocks": 16,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mad.lo.s64": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "mul.rn.f32": 8,
+            "add.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            4096,
+            32,
+            8192
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "exact",
+          "arm": "s58",
+          "entry": "mapal_tile_a9d7250799a9dcbc",
+          "ptx_sha256": "2b57072947eaa088d78bcd0280a5d7d86d17829ad2ddb544b2aebdb0b2de3139",
+          "grid": [
+            8,
+            1
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 32,
+          "shared_bytes": 1536,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 4,
+            "shl.b64": 13,
+            "mad.lo.s64": 1,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "mul.rn.f32": 128,
+            "add.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "exact",
+          "arm": "B",
+          "entry": "mapal_tile_a9d7250799a9dcbc",
+          "ptx_sha256": "a7e5113939b070c7c7c077fe70a05d128646a5fd5536fd84cc5e3981677c36ed",
+          "grid": [
+            4,
+            2
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 32,
+          "shared_bytes": 4608,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "or.b64": 4,
+            "shl.b64": 11,
+            "mad.lo.s64": 1,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "mul.rn.f32": 256,
+            "add.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_e05f279880596513",
+          "ptx_sha256": "de804d0a1d55974fc52b8f1b49ca441389d652e4532b769c300673f1f7aef5eb",
+          "grid": [
+            16,
+            1
+          ],
+          "total_blocks": 16,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mad.lo.s64": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "fma.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            4096,
+            32,
+            8192
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "contract",
+          "arm": "s58",
+          "entry": "mapal_tile_e05f279880596513",
+          "ptx_sha256": "98e7382cee9a8f6a4c49b4b67cfd7ca2a4d5a994146f4e5d08510c5b81eb7c83",
+          "grid": [
+            8,
+            1
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 12,
+            "mad.lo.s64": 2,
+            "add.s64": 13,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract",
+          "shape": [
+            16,
+            256,
+            7168
+          ],
+          "face": "contract",
+          "arm": "B",
+          "entry": "mapal_tile_e05f279880596513",
+          "ptx_sha256": "1316e82505ced1ad859ec456fc9a4030ef81832e6004484f14a26d947528ee02",
+          "grid": [
+            4,
+            2
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 32,
+          "shared_bytes": 4864,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "bfe.u64": 1,
+            "or.b64": 4,
+            "shl.b64": 11,
+            "mad.lo.s64": 2,
+            "add.s64": 13,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "fma.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__exact",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "exact",
+          "arm": "old",
+          "entry": "mapal_tile_4b03515b81f9057c",
+          "ptx_sha256": "aee5a3313cff0658217fcac1ab9292f272319029cb029706d00892ec309be859",
+          "grid": [
+            8,
+            1
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 1,
+            "mul.wide.u32": 2,
+            "or.b64": 1,
+            "and.b64": 1,
+            "cvt.u32.u64": 1,
+            "bfe.u32": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "mul.rn.f32": 8,
+            "add.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            2048,
+            32,
+            4096
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__exact",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "exact",
+          "arm": "s58",
+          "entry": "mapal_tile_4b03515b81f9057c",
+          "ptx_sha256": "b94e62f634f627aca5d864881990637dcf795eda940ffb0ca88672e172517cfa",
+          "grid": [
+            4,
+            1
+          ],
+          "total_blocks": 4,
+          "threads_per_block": 32,
+          "shared_bytes": 1536,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 4,
+            "shl.b64": 14,
+            "add.s64": 15,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "mul.rn.f32": 128,
+            "add.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__exact",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "exact",
+          "arm": "B",
+          "entry": "mapal_tile_4b03515b81f9057c",
+          "ptx_sha256": "a81cf836661e06394b3fc247a9320ee9bdcc599258f8d6c1a50dabd543eb3a07",
+          "grid": [
+            2,
+            2
+          ],
+          "total_blocks": 4,
+          "threads_per_block": 32,
+          "shared_bytes": 4608,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "or.b64": 4,
+            "shl.b64": 12,
+            "add.s64": 15,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "mul.rn.f32": 256,
+            "add.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__contract",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_af39855b70e285d3",
+          "ptx_sha256": "af555b4a5933c6ccaec5f5b99c2260e3095094d2863937dc69b54570521e0b07",
+          "grid": [
+            8,
+            1
+          ],
+          "total_blocks": 8,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 1,
+            "mul.wide.u32": 2,
+            "or.b64": 1,
+            "and.b64": 1,
+            "cvt.u32.u64": 1,
+            "bfe.u32": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "fma.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            2048,
+            32,
+            4096
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__contract",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "contract",
+          "arm": "s58",
+          "entry": "mapal_tile_af39855b70e285d3",
+          "ptx_sha256": "262200308d3cdc491cfd70c476490dc2396c3b81404c901bffbabf236640f5d7",
+          "grid": [
+            4,
+            1
+          ],
+          "total_blocks": 4,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 13,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mad.lo.s64": 1,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__gate__qwen_expert_m16_n128_k4096__contract",
+          "shape": [
+            16,
+            128,
+            4096
+          ],
+          "face": "contract",
+          "arm": "B",
+          "entry": "mapal_tile_af39855b70e285d3",
+          "ptx_sha256": "c9e39fd060014f0481791bf1280216946623f96b8561c8db3c621498fda8a5b3",
+          "grid": [
+            2,
+            2
+          ],
+          "total_blocks": 4,
+          "threads_per_block": 32,
+          "shared_bytes": 4864,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "bfe.u64": 1,
+            "or.b64": 4,
+            "shl.b64": 12,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mad.lo.s64": 1,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "fma.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "exact",
+          "arm": "old",
+          "entry": "mapal_tile_7956f3ceef223e86",
+          "ptx_sha256": "bda12513d1e4acfba0607499d1c3c5f8a86561331eb1da199fcbc5687764643f",
+          "grid": [
+            128,
+            1
+          ],
+          "total_blocks": 128,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mul.wide.u32": 1,
+            "or.b64": 1,
+            "shr.u64": 1,
+            "and.b64": 1,
+            "mad.lo.s64": 1,
+            "add.s64": 7,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "mul.rn.f32": 8,
+            "add.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            32768,
+            32,
+            65536
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "exact",
+          "arm": "s58",
+          "entry": "mapal_tile_7956f3ceef223e86",
+          "ptx_sha256": "e84a656dcc20f884b498ab331ea9d19b48bc8a54fee7ab1a74ad6cb97ac864bc",
+          "grid": [
+            64,
+            1
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 32,
+          "shared_bytes": 1536,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 4,
+            "shl.b64": 13,
+            "mad.lo.s64": 1,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "mul.rn.f32": 128,
+            "add.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "exact",
+          "arm": "B",
+          "entry": "mapal_tile_7956f3ceef223e86",
+          "ptx_sha256": "1a9b37824a698f0e6d78528c6e7f166d80bd2be98ce28e6b75d70d2e84b71ab8",
+          "grid": [
+            32,
+            2
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 32,
+          "shared_bytes": 4608,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "or.b64": 4,
+            "shl.b64": 11,
+            "mad.lo.s64": 1,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "mul.rn.f32": 256,
+            "add.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_37c5043169cbcc55",
+          "ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+          "grid": [
+            128,
+            1
+          ],
+          "total_blocks": 128,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mul.wide.u32": 1,
+            "or.b64": 1,
+            "shr.u64": 1,
+            "and.b64": 1,
+            "mad.lo.s64": 1,
+            "add.s64": 7,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "fma.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            32768,
+            32,
+            65536
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "contract",
+          "arm": "s58",
+          "entry": "mapal_tile_37c5043169cbcc55",
+          "ptx_sha256": "4a8528e28cac3abbb849a76cca5c8971812a5c59d338eb752ea42de0da0ecd01",
+          "grid": [
+            64,
+            1
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 12,
+            "mad.lo.s64": 2,
+            "add.s64": 13,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+          "shape": [
+            16,
+            2048,
+            7168
+          ],
+          "face": "contract",
+          "arm": "B",
+          "entry": "mapal_tile_37c5043169cbcc55",
+          "ptx_sha256": "f672b74628ede8d8d0a8c539446cea49b4734fc5be82461ffbe6abf872a0fe3b",
+          "grid": [
+            32,
+            2
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 32,
+          "shared_bytes": 4864,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "bfe.u64": 1,
+            "or.b64": 4,
+            "shl.b64": 11,
+            "mad.lo.s64": 2,
+            "add.s64": 13,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "fma.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "exact",
+          "arm": "old",
+          "entry": "mapal_tile_b5d1b1f720b415a4",
+          "ptx_sha256": "481d85bc1dce45586bd17c624936d83a8acbb1675b01d10d683f40c6a48ed367",
+          "grid": [
+            64,
+            1
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mul.wide.u32": 2,
+            "or.b64": 1,
+            "and.b64": 1,
+            "cvt.u32.u64": 1,
+            "bfe.u32": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "mul.rn.f32": 8,
+            "add.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            16384,
+            32,
+            32768
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "exact",
+          "arm": "s58",
+          "entry": "mapal_tile_b5d1b1f720b415a4",
+          "ptx_sha256": "e48f2aa10013ea9dcf9c4b6bee14a7437ef49dbda6f2bcd8838b5cb21e4ef0e2",
+          "grid": [
+            32,
+            1
+          ],
+          "total_blocks": 32,
+          "threads_per_block": 32,
+          "shared_bytes": 1536,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 4,
+            "shl.b64": 14,
+            "add.s64": 15,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "mul.rn.f32": 128,
+            "add.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "exact",
+          "arm": "B",
+          "entry": "mapal_tile_b5d1b1f720b415a4",
+          "ptx_sha256": "1f6a73530213706773eb9aa9c799066152e93168d55b54fb6e94bc0e5dacca1d",
+          "grid": [
+            16,
+            2
+          ],
+          "total_blocks": 32,
+          "threads_per_block": 32,
+          "shared_bytes": 4608,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "or.b64": 4,
+            "shl.b64": 12,
+            "add.s64": 15,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "mul.rn.f32": 256,
+            "add.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_fee0e120457e2f5b",
+          "ptx_sha256": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c",
+          "grid": [
+            64,
+            1
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mul.wide.u32": 2,
+            "or.b64": 1,
+            "and.b64": 1,
+            "cvt.u32.u64": 1,
+            "bfe.u32": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "fma.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16,
+            16384,
+            32,
+            32768
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "contract",
+          "arm": "s58",
+          "entry": "mapal_tile_fee0e120457e2f5b",
+          "ptx_sha256": "d80594ae32c898c9b63f6c92e870858b21b0b358fb9f8732a8ffac169176c41b",
+          "grid": [
+            32,
+            1
+          ],
+          "total_blocks": 32,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 13,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mad.lo.s64": 1,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "contract",
+          "arm": "B",
+          "entry": "mapal_tile_fee0e120457e2f5b",
+          "ptx_sha256": "95e5408ec07b2852aebec020636c77a61d98918ef9407cd0dd5844df97dcd23b",
+          "grid": [
+            16,
+            2
+          ],
+          "total_blocks": 32,
+          "threads_per_block": 32,
+          "shared_bytes": 4864,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 4,
+            "bfe.u64": 1,
+            "or.b64": 4,
+            "shl.b64": 12,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 18,
+            "mov.b64": 5,
+            "mad.lo.s64": 1,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 8,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 32,
+            "fma.rn.f32": 256,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": true,
+          "literal_add_s64_immediates": [
+            16
+          ]
+        }
+      ]
+    },
+    "diagnostics": {
+      "sealed_files_verified": 924,
+      "seal_sha256": "0b4b0304b335272bdae10a137c5559f365bb63f379caa0b49be26bb2c5d1770a",
+      "cases_sha256": "95f2cbd85677d8d5146929db6169b0d52fa5463e81f46aecb2af556ba36d43ef",
+      "rows": [
+        {
+          "case": "dense-old",
+          "shape": [
+            16,
+            18432,
+            7168
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_698a8374c90a15e7",
+          "ptx_sha256": "1fe7eca6ec91ffa5c21c6fd3b0725f0076725d398074d274dc9f2e00774fc3fa",
+          "grid": [
+            1152,
+            1
+          ],
+          "total_blocks": 1152,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "shl.b32": 1,
+            "or.b32": 1,
+            "mul.hi.u32": 2,
+            "shr.u32": 1,
+            "mul.lo.s32": 1,
+            "sub.s32": 1,
+            "mul.wide.u32": 6,
+            "add.s64": 8,
+            "mov.b32": 2,
+            "ld.global.nc.b32": 8,
+            "add.s32": 5,
+            "fma.rn.f32": 4,
+            "setp.ne.b32": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": false,
+          "literal_add_s64_immediates": [
+            8,
+            16
+          ]
+        },
+        {
+          "case": "dense-candidate",
+          "shape": [
+            16,
+            18432,
+            7168
+          ],
+          "face": "contract",
+          "arm": "candidate",
+          "entry": "mapal_tile_698a8374c90a15e7",
+          "ptx_sha256": "d5dd8ad5b1b0bc14f20c1364cb790a7c42f8192c017cc242bb89396b388ae004",
+          "grid": [
+            576,
+            1
+          ],
+          "total_blocks": 576,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 9,
+            "mad.lo.s64": 5,
+            "add.s64": 10,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": false,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        },
+        {
+          "case": "qwen_expert-old",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "contract",
+          "arm": "old",
+          "entry": "mapal_tile_fee0e120457e2f5b",
+          "ptx_sha256": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c",
+          "grid": [
+            64,
+            1
+          ],
+          "total_blocks": 64,
+          "threads_per_block": 256,
+          "shared_bytes": 0,
+          "ptx_kernel_static_mnemonics": {
+            "mov.u32": 2,
+            "setp.gt.u32": 1,
+            "bra": 2,
+            "ld.param.b64": 3,
+            "cvt.u64.u32": 2,
+            "mul.wide.u32": 2,
+            "or.b64": 1,
+            "and.b64": 1,
+            "cvt.u32.u64": 1,
+            "bfe.u32": 1,
+            "add.s64": 8,
+            "shl.b64": 2,
+            "mov.b32": 1,
+            "mov.b64": 1,
+            "ld.global.nc.b32": 16,
+            "fma.rn.f32": 8,
+            "setp.ne.b64": 1,
+            "st.global.b32": 1
+          },
+          "null_verified": false,
+          "literal_add_s64_immediates": [
+            16,
+            16384,
+            32,
+            32768
+          ]
+        },
+        {
+          "case": "qwen_expert-candidate",
+          "shape": [
+            16,
+            1024,
+            4096
+          ],
+          "face": "contract",
+          "arm": "candidate",
+          "entry": "mapal_tile_fee0e120457e2f5b",
+          "ptx_sha256": "d80594ae32c898c9b63f6c92e870858b21b0b358fb9f8732a8ffac169176c41b",
+          "grid": [
+            32,
+            1
+          ],
+          "total_blocks": 32,
+          "threads_per_block": 32,
+          "shared_bytes": 1664,
+          "ptx_kernel_static_mnemonics": {
+            "ld.param.b64": 3,
+            "mov.u32": 3,
+            "cvt.u64.u32": 1,
+            "shr.u64": 2,
+            "mul.wide.u32": 3,
+            "and.b64": 2,
+            "or.b64": 3,
+            "shl.b64": 13,
+            "add.s64": 14,
+            "ld.global.nc.v2.b64": 6,
+            "mov.b64": 5,
+            "mad.lo.s64": 1,
+            "mov.b32": 16,
+            "st.shared.b32": 4,
+            "st.shared.v2.b64": 2,
+            "bar.sync": 2,
+            "setp.lt.u64": 1,
+            "selp.b64": 1,
+            "ld.shared.v4.b32": 16,
+            "fma.rn.f32": 128,
+            "setp.ne.b64": 1,
+            "bra": 1,
+            "st.global.v4.b32": 4
+          },
+          "null_verified": false,
+          "literal_add_s64_immediates": [
+            8
+          ]
+        }
+      ]
+    }
+  },
+  "additional_evidence_hashes": {
+    "profile-B.rs": "6a01e1082ffd5d7665d96b2a898df1e7c65b0764cf1868b600b69d6fef88925d",
+    "evidence/launch-context-summary.json": "ae6aa09bec822146dbe651cedc8b059fb94ab865ae27c9b23a8155d6d7ec13c4",
+    "evidence/B-launch-context.log": "eb3fe7fe8f475475d28a4fd07a726fe5f41425d3aa7d6d588607ddee9331dfb1"
+  },
+  "wide_route_contexts": [
+    {
+      "arm": "old",
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": true,
+        "cp_async": true,
+        "pad": false,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    },
+    {
+      "arm": "old",
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": false,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    },
+    {
+      "arm": "old",
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": false,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    },
+    {
+      "arm": "S58",
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+      "base_blocks": 144,
+      "base_threads": 32,
+      "base_warps_per_scheduler": 0,
+      "selected_grid_block_smem": [
+        576,
+        1,
+        32,
+        1536
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": true,
+        "cp_async": false,
+        "pad": false,
+        "wide_fma": false
+      },
+      "route": "cooperative"
+    },
+    {
+      "arm": "S58",
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+      "base_blocks": 144,
+      "base_threads": 32,
+      "base_warps_per_scheduler": 0,
+      "selected_grid_block_smem": [
+        576,
+        1,
+        32,
+        1664
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": true,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "cooperative"
+    },
+    {
+      "arm": "S58",
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+      "base_blocks": 144,
+      "base_threads": 32,
+      "base_warps_per_scheduler": 0,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        64,
+        10752
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": true,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "mma"
+    },
+    {
+      "arm": "B",
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": true,
+        "cp_async": true,
+        "pad": false,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    },
+    {
+      "arm": "B",
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": false,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    },
+    {
+      "arm": "B",
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "base": "None",
+      "base_blocks": 1152,
+      "base_threads": 256,
+      "base_warps_per_scheduler": 13,
+      "selected_grid_block_smem": [
+        1152,
+        1,
+        256,
+        0
+      ],
+      "selected_rungs": {
+        "mma": true,
+        "fill": false,
+        "cp_async": false,
+        "pad": true,
+        "wide_fma": false
+      },
+      "route": "scalar"
+    }
+  ]
+}

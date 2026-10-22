@@ -41,7 +41,7 @@ carries `window`, `jump` and `carry` says all of it in the signature.
 
 ## 1. Where we are (the measurement that raised this)
 
-`benches/results-s36/LANGUAGES.md`, pinned i9, reduce 2²⁰ f32:
+`benches/results/cpu/kernels/language-and-shape-comparison/LANGUAGES.md`, pinned i9, reduce 2²⁰ f32:
 
 | leg | ms | what it computes |
 | --- | ---: | --- |

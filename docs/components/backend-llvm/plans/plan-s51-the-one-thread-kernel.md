@@ -295,7 +295,7 @@ simplest experiment available is run **first**, not last) and rule 25 (price it 
 ## 9. Reconciliation — what the code became, and what the machine said
 
 *Written after the build. Numbers and gates: `performance/s51-the-pack-is-o-n-squared.md`;
-samples in `benches/results-s51/`.*
+samples in `benches/results/cpu/memory/packing-crossover/`.*
 
 ### 9.1 Where the plan held
 

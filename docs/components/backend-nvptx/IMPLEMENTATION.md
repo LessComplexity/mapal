@@ -6,9 +6,9 @@ The mechanisms below are built; disputed per-architecture selections are resolve
 the frozen S54 validation matrix and both confirmations pass. This map records code locations, not performance verdicts.
 STATUS distinguishes finite benchmark acceptance from the S58 ordering correction and
 remaining allocation/performance work.
-The isolated [S59 small-M candidate](../../performance/s59-smallm-comparison.md) is
+The isolated [S59 small-M candidate](../../performance/gpu/kernels/small-m-geometry-comparison.md) is
 not promoted because measured regressions accompany its wins; it adds no built row here.
-The [S60 caller audit](../../performance/s60-parallel-preparation.md) establishes an
+The [S60 caller audit](../../performance/gpu/workloads/composed-benchmark-preparation.md) establishes an
 existing dependency: `func/gpu.rs:launch` queries `TargetProfile::gpu_tile` before
 `rungs_at` to derive `Fill`, then queries geometry again with selected wide/fill rungs.
 Helper admission can therefore change rung selection as well as final dimensions.
@@ -43,6 +43,7 @@ backend; the geometry queries stay in `mapal-ir` (ARCHITECTURE §2; FRAMEWORK §
 | R5: prove row-local retention, launch into the resident row and upload changed rows | `crates/backends/llvm/src/func/retain.rs:retained_sites`; `crates/backends/llvm/src/func/resident.rs:FnEmit::emit_row_resident`, `crates/backends/llvm/src/func/resident.rs:FnEmit::emit_delta_h2d` |
 | R6: classify device uses, keep/upload/element reads, death and arena offsets | `crates/backends/llvm/src/func/resident.rs:FnEmit::resident_plan`, `crates/backends/llvm/src/func/resident.rs:FnEmit::resident_after`, `crates/backends/llvm/src/func/resident.rs:FnEmit::arena`, `crates/backends/llvm/src/func/resident.rs:color`, `crates/backends/llvm/src/func/resident.rs:FnEmit::host_free` |
 | R7: resolve grouped physical writers and order independent chains, feeder events and element readback | `crates/backends/llvm/src/func/resident.rs:grouped_writer`, `crates/backends/llvm/src/func/resident.rs:ResidentPlan::stream_of`, `crates/backends/llvm/src/func/resident.rs:FnEmit::chains`; `crates/backends/llvm/src/func/gpu.rs:pdl` |
+| R6/R7: omit raw chain storage when the selected group does not store it | `crates/backends/llvm/src/func/resident.rs:FnEmit::chain_prologue`; existing `Epi::store_out`; regression and live-storage controls in `crates/backends/llvm/tests/streams.rs:grouped_chains_allocate_only_materialized_raw_outputs`, `crates/backends/llvm/tests/streams.rs:raw_storage_controls_keep_their_observable_pointers` |
 | Grid raster and L2-window policy (§7) | `crates/backends/llvm/src/profile.rs:Gpu::raster`; `crates/backends/llvm/src/func/resident.rs:FnEmit::l2_window` |
 | Site/host rung selection and device translation unit (§3, §7) | `crates/backends/llvm/src/func/gpu.rs:rungs_at`, `crates/backends/llvm/src/func/gpu.rs:host_rungs`, `crates/backends/llvm/src/func/gpu.rs:device_module`; `crates/backends/llvm/src/profile.rs:TargetProfile::gpu_rungs_on` |
 
@@ -51,13 +52,21 @@ The existing composition limits remain explicit: `set_gpu_arms` forms groups bef
 sites and unproven row-local shapes. These are ARCHITECTURE §5/§7's placement constraints,
 not exceptions introduced by this map (FRAMEWORK §4.5 laws 1 and 5).
 
-The [S58 ordering correction](../../performance/s58-parallel-development.md) reuses
+The [S58 ordering correction](../../performance/gpu/memory/ordering-and-allocation-development.md) reuses
 grouped ownership for `ResidentPlan::stream_of` and the legacy-consumer veto.
 Its private `grouped_writer` helper factors the existing `FnEmit::arena` query.
 Canonical aliases resolve to the physical writer before selecting a stream; unknown
 ownership remains on the legacy path. Runtime calls and allocation/free policy are unchanged.
 
-The [saved host LLVM audit](../../../benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md)
+The [S61 allocation correction](../../performance/gpu/current-results.md) subsequently
+changes only raw storage admission in `chain_prologue`: an existing selected group with
+`store_out=false` needs no raw buffer. Stored members, allocation positions, stream
+dependencies, arena eligibility and the runtime ABI stay as before. The zero-initialized
+unused slot reaches `mapal_gpu_free`'s existing zero-slot return. Its own ordinary GPU
+gate and separate allocation counters pass; that result establishes neither a universal
+race proof nor a latency gain.
+
+The [saved host LLVM audit](../../../benches/results/gpu/host-dispatch/optimization-audit/host-gpu-call-effects-audit.md)
 distinguishes these existing host hints from device attributes and explicit runtime
 dependencies. In the inspected recurrence, GPU declarations expose neither device memory
 effects nor completion tokens to LLVM; ordinary host vectorization still occurs. LLVM's
@@ -91,7 +100,7 @@ kernel durations do not measure untraced stream overlap (`crates/mapal-rt/gpu/ma
 | Remote failure propagation and rental cleanup | `benches/gpu/vast_run.sh:run_rc`, `benches/gpu/vast_run.sh:cleanup` |
 | Static launch/copy/arena placement counts | `benches/gpu/fusion_report.py:analyze`; static call counts do not establish runtime correctness |
 | Kernel A/B, null controls and program measurements | `benches/gpu/rungs.py:kernel_arms`, `benches/gpu/rungs.py:null_ab`, `benches/gpu/rungs.py:program_arms`; summaries `benches/gpu/table.py:probe_table`, `benches/gpu/table.py:decode_table` |
-| Executed-image observation prototype: exact PTX, pending load/context and callback-lifetime cubin copy (GPU behavior unvalidated) | `benches/gpu/capture_images/capture.cpp:Pending`, `benches/gpu/capture_images/capture.cpp:callback`, `benches/gpu/capture_images/capture.cpp:writefile`, `benches/gpu/capture_images/capture.cpp:InitializeInjection` |
+| Executed-image observation tooling: exact PTX, pending load/context and callback-lifetime cubin copy (four S61 Linux/GPU Contract captures admitted) | `benches/gpu/capture_images/capture.cpp:Pending`, `benches/gpu/capture_images/capture.cpp:callback`, `benches/gpu/capture_images/capture.cpp:writefile`, `benches/gpu/capture_images/capture.cpp:InitializeInjection` |
 | Observation admission: completed-process hashes, ELF/function, module/context joins and exact launch contract; always excludes ordinary timing | `benches/gpu/capture_images/validate.py:validate`, `benches/gpu/capture_images/validate.py:elf_kernel`; bounded launcher `benches/gpu/capture_images/run_capture.py` (script entry) |
 
 The selection table's presence is not final validation. Acceptance still requires complete

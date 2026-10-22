@@ -2,8 +2,8 @@
 
 Date: 2026-10-21 · Base: `s54-base` @ e8c1967 (local) · Model: `../ARCHITECTURE.md` (R0–R7)
 · Inputs: `docs/notes/s54-research-{shapes,fusion,arch,prior}.md`, the S53 notes,
-`benches/results-s54-gpu/baseline-tables.md` (five parts, 12 probes, library legs),
-`benches/results-s54-gpu/fusion-report-base.txt` (static counts).
+`benches/results/gpu/validation/baseline/baseline-tables.md` (five parts, 12 probes, library legs),
+`benches/results/gpu/fusion/static-probes/fusion-report-base.txt` (static counts).
 
 Sapir's directives for the session are binding: fusion is a consequence of placement, every
 optimization is derived from the dataflow shapes, multiple computations are tested together,
@@ -83,7 +83,7 @@ items past the three required ones.
   N/N on every part. Trap-before-site 10/10.
 - **Static.** `python3 benches/gpu/fusion_report.py <profile> <face> <n>` before any box: the
   launch / gen / d2h / h2d / host-loop counts per probe, committed under
-  `benches/results-s54-gpu/fusion-report-<item>.txt`. The expected rows are in ARCHITECTURE §5.
+  `benches/results/gpu/fusion/static-probes/fusion-report-<item>.txt`. The expected rows are in ARCHITECTURE §5.
 - **Box.** `PROBE_ARMS="on off-<rung>"` through `box_run.sh`: each probe at 2048 and 4096, both
   faces, ON and OFF interleaved, five reps, one untraced process (wall, `iter ms`) and one trace;
   then `chain_bench` on the same values. Streams add `pt_*_1024` and `pt_*_512` (under one wave on
@@ -94,7 +94,7 @@ items past the three required ones.
   / Mapal kernel, every probe, every part, every loss.
 - **Five parts, one session each per item** (`vast_part.sh`): rtx-3090:sm_86, a100:sm_80,
   rtx-4090:sm_89, h100-pcie:sm_90a, rtx-5090:sm_120; a confirm box for any row that rests on
-  < 10%. Every number appended to `benches/results-s54-gpu/<item>-<part>.txt` as it lands.
+  < 10%. Every number appended to `the appropriate topic directory under benches/results/gpu/` as it lands.
 - **Probe additions** (item 8 owns them; items may add their own): `pt_ew_*` already reads the
   corners, so R2 places it on the device; `px_*` keep the checksum fold (the whole-d2h path stays
   tested); `rowsum` gains `softmax_rows` (max, exp, per-row sum); streams gain `indep` and
@@ -182,7 +182,7 @@ not built, so v0 vs v1 is unmeasured.
   (`epilogue-ptxas.txt`). Elsewhere OFF/ON kernel time is 0.96–1.16 (3090, 4090, 5090; the worst
   is the 4090's contract `bias`/`residual` at +3–4%) and 0.91–1.20 on the A100, whose clock drifts
   both ways.
-- Tables: `benches/results-s54-gpu/epilogue-tables.md`.
+- Tables: `benches/results/gpu/fusion/epilogues/epilogue-tables.md`.
 
 ### 4.2 `devmap` — per-cell maps and chains as device sites by `Trm` crossings (R2)
 
@@ -261,7 +261,7 @@ loop's initial upload, `px` checksum paths) at ~2× the pageable rate (S52 trace
 64 MB pageable). `pdl`: µs per dependent launch, likely within noise; measured because sm_90+
 is where the arch report put it.
 
-**Built and measured** (branch `s54/streams`, `benches/results-s54-gpu/streams-tables.md`). Three things
+**Built and measured** (branch `s54/streams`, `benches/results/gpu/scheduling/streams/streams-tables.md`). Three things
 changed from the design above, each because a measurement said so:
 - Streams open only over device-only sites. Moving a chained copy-out to its host reader put the host
   between the chains, and the host-joined probes ran 0.60–0.96× on streams on every part. Those
@@ -308,7 +308,7 @@ bit-identical anywhere). Static: rowsum 2 / 4 B / 0. Box: vs `gemv` (sgemm + sge
 coalesces it; 3–10× slower strided). Per part the layout arm is the measurement: the 6 MB-L2 3090
 should show the largest layout effect.
 
-**Outcome (built on `s54/rowfold`; `benches/results-s54-gpu/rowfold-*.txt`).** `row_fold` (mapal-ir)
+**Outcome (built on `s54/rowfold`; `benches/results/gpu/fusion/row-folds/rowfold-*.txt`).** `row_fold` (mapal-ir)
 takes `acc ⊕ e` with ⊕ ∈ {+, −, ×} and the compare-select max/min, so `softmax_rows`' row max is a
 site too; the device places a fold only over a device site's output (`rowfold.rs`: a fold over a
 host array stays — moving it in is the copy removed). Differential 26/26 on every part and session
@@ -439,7 +439,7 @@ wave, the arm that tests the gate on every part. `l2-window` takes the chain int
 next reader is the next launch, else the operand read by the most blocks (`a`: `gx`, `b`: `gy`),
 when its bytes fit `l2_bytes`; `hitRatio` = set-aside / window, both device attributes.
 
-**Measured** (`benches/results-s54-gpu/l2-raster-tables.md`, 21 sessions on five parts). The gate
+**Measured** (`benches/results/gpu/memory/l2-raster/l2-raster-tables.md`, 21 sessions on five parts). The gate
 mispredicted both ways:
 - On the 3090 at 8192 grouping measured no stable sign: exact 0.986 / 1.029, FMA 0.992 / 1.017,
   TF32 0.991 / 0.956. **Raster ships OFF there.**
@@ -498,7 +498,7 @@ and min-blocks ON under-filled FMA, min-blocks OFF on TF32, min-blocks ON exact)
 filled contract, ldmatrix OFF under-filled TF32; wide-fma stays OFF — it costs beside idx32),
 H100 (warp-fill OFF under-filled contract); 4090 and 5090 unchanged. Items 1–7 merged into this
 branch (the integration fixes are in ARCHITECTURE §7 "The rules together"; the arena now dates an
-epilogue member at its site). Results: `benches/results-s54-gpu/arch-select-*.txt`,
+epilogue member at its site). Results: `benches/results/gpu/validation/architecture-selection/arch-select-*.txt`,
 `integrated-*.txt`, `baseline-tables.md` §S54 integrated.
 
 ## 5. Rejected, one line each

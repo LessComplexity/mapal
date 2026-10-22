@@ -1,0 +1,1467 @@
+{
+  "pass": true,
+  "ordinary_correctness_admissible": false,
+  "timing_admissible": false,
+  "scope": "Existing runtime traced allocations only; trace synchronizes launches",
+  "records": [
+    {
+      "variant": "before",
+      "case": "independent",
+      "face": "exact",
+      "binary_sha256": "7a1e501e56b4f5bcc6433a0c0c8440a6185201576efdcadea19e7539c55efea3",
+      "ptx_sha256": "f4ebee494675a3ed99884f3de48e3266a50e87a9541672e7284570d5ece70cc2",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/independent-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.3653062339872122,
+      "stdout_sha256": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+      "stderr_sha256": "dc1eb864898ec2549d545a0d67766abd52f9e27c22c3b1c5ecea06e854f22b7e",
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "live_frees": 7,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "independent",
+      "face": "contract",
+      "binary_sha256": "8b4b7a753ce57af4d81bc9a2a8340c9062fac17329bcf0cb625914af4e5bf29e",
+      "ptx_sha256": "8e6dd3ada87aa8abfbdc15d1cc99d2ec89710ba5e14cf006cfec93511fdc4aa0",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/independent-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2651354158297181,
+      "stdout_sha256": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+      "stderr_sha256": "0ab3442497c11046728c7c64171fb4e8885966c11e93c296b7526861af8b5f89",
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "live_frees": 7,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "diamond",
+      "face": "exact",
+      "binary_sha256": "a2462fd2761459ffa6bf9c788634045be5f2a42c508124805b978909d3d66857",
+      "ptx_sha256": "6011f68a981bd5f6bd3a9e3e9d4624d53664d35277b07f6cbe467436cd447613",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/diamond-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26690632477402687,
+      "stdout_sha256": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+      "stderr_sha256": "c5067ddf20d63aa9053c0ec2208d2471b5875130ce3e4dc1a91d000715519271",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "diamond",
+      "face": "contract",
+      "binary_sha256": "35fdfd6b204541f1c8d10fe39e338041f600c31db84b6714d3c565c2e00f4bc7",
+      "ptx_sha256": "89dacccbf5086a2f4a4e6cc86b1061a97f474cfe73c05f58ba47bd462b17083c",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/diamond-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26522138621658087,
+      "stdout_sha256": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+      "stderr_sha256": "7011eccd504db8211213850fe9efd3b1dc535b6ae1db9767083d93e1b7860f86",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "mlp2",
+      "face": "exact",
+      "binary_sha256": "37427706a33ea3057818fcc86416be0dc2857edd047a5a8d1f7073bdae7596c8",
+      "ptx_sha256": "acf6c82c4f3ba168c0b17d8109c0980a1a1ec7393023fcae34c595ad23c53048",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/mlp2-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2651150762103498,
+      "stdout_sha256": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+      "stderr_sha256": "8cad8ffd26106c0be83b2d37f8282a7cd320c35fef4581feba07ffe3100e431b",
+      "allocations": 12,
+      "requested_bytes": 196608,
+      "live_frees": 12,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "mlp2",
+      "face": "contract",
+      "binary_sha256": "9d581fe45562b337ec83f2160d36ea8afb7e6c52d3a69e96426f2b7182d249dc",
+      "ptx_sha256": "3c3b29d847251dafec61dd8eb8c3b355097345daacf15d1a63ed33434c71e420",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/mlp2-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26520337723195553,
+      "stdout_sha256": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+      "stderr_sha256": "d51dda0bf76b1c1682c9eca1d2f75cd5c1ba44802b68280f7d0988f12cacc640",
+      "allocations": 12,
+      "requested_bytes": 196608,
+      "live_frees": 12,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "single-chain",
+      "face": "exact",
+      "binary_sha256": "b7579517c40d2a39af457424cde0f3cd74b6d1684125a86201b18c891cc72a27",
+      "ptx_sha256": "b8e5e0bc2740ca64392cbe24a170076a659a62bcde06d6b32cc9d8b3758931af",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/single-chain-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2651949869468808,
+      "stdout_sha256": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+      "stderr_sha256": "9251abfcc0f9d850797e6ebea769ff0f874faf166a3316b74cd9afc28271108e",
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "live_frees": 1,
+      "requests": [
+        [
+          "arena",
+          81920
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "single-chain",
+      "face": "contract",
+      "binary_sha256": "0cbe1aa7166754476c46efb9d7fd558fd29fda26a71d9414251d4b6cbd32135a",
+      "ptx_sha256": "dac52b7cdd9638b70486ed4f62749e2b8ecb2946aa16ed9267327aadeed297e9",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/single-chain-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26504882564768195,
+      "stdout_sha256": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+      "stderr_sha256": "021076b5a04bcfd871213b75cf2b08969b085420b0024c708905e593b3368f37",
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "live_frees": 1,
+      "requests": [
+        [
+          "arena",
+          81920
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "materialized-raw",
+      "face": "exact",
+      "binary_sha256": "9af701c04e475793afd1d31fabd4e2ae0c60832d347a89c226eb0237460f828c",
+      "ptx_sha256": "c75d6a5df38aa810ea78cf8dac1c85d776201294682c8819c862dda861891119",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/materialized-raw-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26511330623179674,
+      "stdout_sha256": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+      "stderr_sha256": "9c85960955e07f7f00bd7d9851f7c8a44c9104cfe70859810fd2637ce4f6599d",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "materialized-raw",
+      "face": "contract",
+      "binary_sha256": "9f2aa283222de4355e708a5601acbc56e43010eac1300f390e4dcf60d55aa195",
+      "ptx_sha256": "039eb5b0928dd6cd6e31254071e58a0884ed0eefd5cb0ea31f0b3cf8a5d1cce6",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/materialized-raw-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26530620688572526,
+      "stdout_sha256": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+      "stderr_sha256": "38dce545236851718cd8b0ed933a9a0a2ddac72a2f8fdb51c8e99de40dd18a80",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "omitted-raw",
+      "face": "exact",
+      "binary_sha256": "12f5e03248a5408407cd845e124bcfc7bf7b043a144705e34a08aec6188300a8",
+      "ptx_sha256": "baff846853894956062aed99338bf95ca91cad9d808d84db9422d3cd7a97605e",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/omitted-raw-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.265356058254838,
+      "stdout_sha256": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+      "stderr_sha256": "5dbe536780c12553396f2d0293e3ef56b4abd8083e4fc4deda8a8e64806d50b2",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "omitted-raw",
+      "face": "contract",
+      "binary_sha256": "462ccbb4a6e391ba9ae4a71180894b443cd133dcbbb8d2486ca72337892d928a",
+      "ptx_sha256": "0e2d84371024b74df8fefb7fc698b111c5286912fb9b79bfddbf4c4765544715",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/omitted-raw-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2651715772226453,
+      "stdout_sha256": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+      "stderr_sha256": "c39a54d2aa674b4d1a7d2338795480a987afa5bacc03c4dc5058a1be194b01e6",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "forked-tile",
+      "face": "exact",
+      "binary_sha256": "a3a63e67f3f2a02cf6d420b0fd0cb879e62d6dcc3ad5df840dd848605741f70e",
+      "ptx_sha256": "26a058b2945ddd0cefc0e2e5d11df36feef84b75ae133631288bdb42cb4bce11",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/forked-tile-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26516757626086473,
+      "stdout_sha256": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+      "stderr_sha256": "683e7d57dd9311dd4a08b631b6af1146bb54a492570606688e921a60fb6f2952",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "before",
+      "case": "forked-tile",
+      "face": "contract",
+      "binary_sha256": "04400ef8b2b1669f20f7813713fb31e995ee82e9e8709472757d10e02f48250a",
+      "ptx_sha256": "ee8d4359fc83bf82aedeef9a4b2fa2abe0a6aaedefcd029d4164945c58a33581",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/before/executables/forked-tile-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2650415259413421,
+      "stdout_sha256": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+      "stderr_sha256": "0910620f2b823778be2831fc2c0ab96f8ae66cc359dd24448f231a4af1d235fa",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "independent",
+      "face": "exact",
+      "binary_sha256": "6f3b4c55df82a4a2e17403241f030e1bb03fc143995940408d38170a74706790",
+      "ptx_sha256": "f4ebee494675a3ed99884f3de48e3266a50e87a9541672e7284570d5ece70cc2",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/independent-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26524191722273827,
+      "stdout_sha256": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+      "stderr_sha256": "65e4fe0db3714ecefc1e78ef61b7306956026bb60baed48af31b35b100a099fa",
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "live_frees": 6,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "independent",
+      "face": "contract",
+      "binary_sha256": "f2700e65907cc57e2caee76519c6d603db94c2c853a90ca58fece5c6efe9a786",
+      "ptx_sha256": "8e6dd3ada87aa8abfbdc15d1cc99d2ec89710ba5e14cf006cfec93511fdc4aa0",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/independent-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26518331561237574,
+      "stdout_sha256": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+      "stderr_sha256": "19c82d85dfff5cffb2c3a0cef91a578186b5bf6993038b55d55d65ab23529d48",
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "live_frees": 6,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "diamond",
+      "face": "exact",
+      "binary_sha256": "ae4c6aedf0b70626e7551a0b0bfb8d72912030d668b4f5a6a0a8a72695535cce",
+      "ptx_sha256": "6011f68a981bd5f6bd3a9e3e9d4624d53664d35277b07f6cbe467436cd447613",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/diamond-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26526869600638747,
+      "stdout_sha256": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+      "stderr_sha256": "8e52efab249322b71434f8906fa00a533076d41b1a02b31394594501cfb836ed",
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "live_frees": 7,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "diamond",
+      "face": "contract",
+      "binary_sha256": "92d41f7d6b8ca4d5bfa14f88d7e43f17fd03ccdd0e66f26327f8bfa0d28424d3",
+      "ptx_sha256": "89dacccbf5086a2f4a4e6cc86b1061a97f474cfe73c05f58ba47bd462b17083c",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/diamond-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26517090713605285,
+      "stdout_sha256": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+      "stderr_sha256": "311b2f01f86e1c26ee3590150ce14de1b769bb512d1a75ab94f71f8bf032ddc3",
+      "allocations": 7,
+      "requested_bytes": 114688,
+      "live_frees": 7,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "mlp2",
+      "face": "exact",
+      "binary_sha256": "e4f6b726268765a4705a4d1e4846b4207410180ac2f74e34f3f347782e154f5f",
+      "ptx_sha256": "acf6c82c4f3ba168c0b17d8109c0980a1a1ec7393023fcae34c595ad23c53048",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/mlp2-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.265206107404083,
+      "stdout_sha256": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+      "stderr_sha256": "d963e2f68eee6fbd7f28b9cc4a1fd48cdcd77999672ca26e2159b41f67fab183",
+      "allocations": 10,
+      "requested_bytes": 163840,
+      "live_frees": 10,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "mlp2",
+      "face": "contract",
+      "binary_sha256": "de40dd8930ca264e9a9a98f1118023d2e940383873d030e1298252d8f7bbb372",
+      "ptx_sha256": "3c3b29d847251dafec61dd8eb8c3b355097345daacf15d1a63ed33434c71e420",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/mlp2-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26604583114385605,
+      "stdout_sha256": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+      "stderr_sha256": "2c38f27952ec78352dec38d961f67f0764d0334fb836430e9f6522f307b5ce38",
+      "allocations": 10,
+      "requested_bytes": 163840,
+      "live_frees": 10,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "single-chain",
+      "face": "exact",
+      "binary_sha256": "b7579517c40d2a39af457424cde0f3cd74b6d1684125a86201b18c891cc72a27",
+      "ptx_sha256": "b8e5e0bc2740ca64392cbe24a170076a659a62bcde06d6b32cc9d8b3758931af",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/single-chain-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2661232021637261,
+      "stdout_sha256": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+      "stderr_sha256": "0fc77b96dd3a98225505fc7aef5a3cda9ac44b724b22d7d4bd6204e0b81ceb32",
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "live_frees": 1,
+      "requests": [
+        [
+          "arena",
+          81920
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "single-chain",
+      "face": "contract",
+      "binary_sha256": "0cbe1aa7166754476c46efb9d7fd558fd29fda26a71d9414251d4b6cbd32135a",
+      "ptx_sha256": "dac52b7cdd9638b70486ed4f62749e2b8ecb2946aa16ed9267327aadeed297e9",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/single-chain-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2652329271659255,
+      "stdout_sha256": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+      "stderr_sha256": "a3e61219e5560f0c9b85058c8670093fe9fdd17c45b5b4ef8ca5e4e2ffedae93",
+      "allocations": 1,
+      "requested_bytes": 81920,
+      "live_frees": 1,
+      "requests": [
+        [
+          "arena",
+          81920
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "materialized-raw",
+      "face": "exact",
+      "binary_sha256": "9af701c04e475793afd1d31fabd4e2ae0c60832d347a89c226eb0237460f828c",
+      "ptx_sha256": "c75d6a5df38aa810ea78cf8dac1c85d776201294682c8819c862dda861891119",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/materialized-raw-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2653195969760418,
+      "stdout_sha256": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+      "stderr_sha256": "119df995f97fef4e1542d1ff8988725117f2d1a8e343359ae87d65e6d6229472",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "materialized-raw",
+      "face": "contract",
+      "binary_sha256": "9f2aa283222de4355e708a5601acbc56e43010eac1300f390e4dcf60d55aa195",
+      "ptx_sha256": "039eb5b0928dd6cd6e31254071e58a0884ed0eefd5cb0ea31f0b3cf8a5d1cce6",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/materialized-raw-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.266233601141721,
+      "stdout_sha256": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+      "stderr_sha256": "d0c535968419ff8562e064f7c51fb1c24a8a3294262371238d15b44918148766",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "omitted-raw",
+      "face": "exact",
+      "binary_sha256": "2554fd265c2bdb513cf57e821e4eeef6d335de1a05687c2ca40541bb880fa26a",
+      "ptx_sha256": "baff846853894956062aed99338bf95ca91cad9d808d84db9422d3cd7a97605e",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/omitted-raw-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.26537711825221777,
+      "stdout_sha256": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+      "stderr_sha256": "104251b7c9cd6429cf69fffad2e1343dde034d53856d750863dddf6aaaab00d9",
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "live_frees": 6,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "omitted-raw",
+      "face": "contract",
+      "binary_sha256": "a1daa8254a08d5f3501c0360e42e82f9fa3c8b6de1f6e5e5987e9f0ee19d0fda",
+      "ptx_sha256": "0e2d84371024b74df8fefb7fc698b111c5286912fb9b79bfddbf4c4765544715",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/omitted-raw-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2652479661628604,
+      "stdout_sha256": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+      "stderr_sha256": "76de3f2e7d0ed397115c4d1e74cea87fc0488a89f487a4f091a6be07b6d47d26",
+      "allocations": 6,
+      "requested_bytes": 98304,
+      "live_frees": 6,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "forked-tile",
+      "face": "exact",
+      "binary_sha256": "a3a63e67f3f2a02cf6d420b0fd0cb879e62d6dcc3ad5df840dd848605741f70e",
+      "ptx_sha256": "26a058b2945ddd0cefc0e2e5d11df36feef84b75ae133631288bdb42cb4bce11",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/forked-tile-exact"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2652040161192417,
+      "stdout_sha256": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+      "stderr_sha256": "f10aef1930a40faad16cf33d260091d713b4279611094c48566f10a36576840d",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    },
+    {
+      "variant": "after",
+      "case": "forked-tile",
+      "face": "contract",
+      "binary_sha256": "04400ef8b2b1669f20f7813713fb31e995ee82e9e8709472757d10e02f48250a",
+      "ptx_sha256": "ee8d4359fc83bf82aedeef9a4b2fa2abe0a6aaedefcd029d4164945c58a33581",
+      "command": [
+        "/w/trace/allocation-gate-v2-results/after/executables/forked-tile-contract"
+      ],
+      "timeout_seconds": 60,
+      "timed_out": false,
+      "exit": 0,
+      "seconds": 0.2652884069830179,
+      "stdout_sha256": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+      "stderr_sha256": "36dc438c4f685e2ed58a9d266a1a188fa5b45ad5f4db57903e115c24af0b75d6",
+      "allocations": 8,
+      "requested_bytes": 131072,
+      "live_frees": 8,
+      "requests": [
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ],
+        [
+          "alloc",
+          16384
+        ]
+      ],
+      "timing_admissible": false
+    }
+  ],
+  "files": {
+    "records.json": "26b00125ee3142870da28373e8fa3247cb81915f62ee6c18b3e3322b05903390",
+    "before-independent-contract/stdout": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+    "before-independent-contract/stderr": "0ab3442497c11046728c7c64171fb4e8885966c11e93c296b7526861af8b5f89",
+    "before-independent-exact/stdout": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+    "before-independent-exact/stderr": "dc1eb864898ec2549d545a0d67766abd52f9e27c22c3b1c5ecea06e854f22b7e",
+    "after-forked-tile-exact/stdout": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+    "after-forked-tile-exact/stderr": "f10aef1930a40faad16cf33d260091d713b4279611094c48566f10a36576840d",
+    "after-diamond-exact/stdout": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+    "after-diamond-exact/stderr": "8e52efab249322b71434f8906fa00a533076d41b1a02b31394594501cfb836ed",
+    "before-forked-tile-contract/stdout": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+    "before-forked-tile-contract/stderr": "0910620f2b823778be2831fc2c0ab96f8ae66cc359dd24448f231a4af1d235fa",
+    "before-forked-tile-exact/stdout": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+    "before-forked-tile-exact/stderr": "683e7d57dd9311dd4a08b631b6af1146bb54a492570606688e921a60fb6f2952",
+    "before-mlp2-exact/stdout": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+    "before-mlp2-exact/stderr": "8cad8ffd26106c0be83b2d37f8282a7cd320c35fef4581feba07ffe3100e431b",
+    "before-diamond-exact/stdout": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+    "before-diamond-exact/stderr": "c5067ddf20d63aa9053c0ec2208d2471b5875130ce3e4dc1a91d000715519271",
+    "after-independent-contract/stdout": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+    "after-independent-contract/stderr": "19c82d85dfff5cffb2c3a0cef91a578186b5bf6993038b55d55d65ab23529d48",
+    "before-single-chain-contract/stdout": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+    "before-single-chain-contract/stderr": "021076b5a04bcfd871213b75cf2b08969b085420b0024c708905e593b3368f37",
+    "before-materialized-raw-contract/stdout": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+    "before-materialized-raw-contract/stderr": "38dce545236851718cd8b0ed933a9a0a2ddac72a2f8fdb51c8e99de40dd18a80",
+    "after-single-chain-contract/stdout": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+    "after-single-chain-contract/stderr": "a3e61219e5560f0c9b85058c8670093fe9fdd17c45b5b4ef8ca5e4e2ffedae93",
+    "after-omitted-raw-contract/stdout": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+    "after-omitted-raw-contract/stderr": "76de3f2e7d0ed397115c4d1e74cea87fc0488a89f487a4f091a6be07b6d47d26",
+    "after-forked-tile-contract/stdout": "81ff7f70963468530abafdbc08985988bab1ed656d7698fa61892b24ae0c51a9",
+    "after-forked-tile-contract/stderr": "36dc438c4f685e2ed58a9d266a1a188fa5b45ad5f4db57903e115c24af0b75d6",
+    "after-mlp2-exact/stdout": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+    "after-mlp2-exact/stderr": "d963e2f68eee6fbd7f28b9cc4a1fd48cdcd77999672ca26e2159b41f67fab183",
+    "before-mlp2-contract/stdout": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+    "before-mlp2-contract/stderr": "d51dda0bf76b1c1682c9eca1d2f75cd5c1ba44802b68280f7d0988f12cacc640",
+    "after-single-chain-exact/stdout": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+    "after-single-chain-exact/stderr": "0fc77b96dd3a98225505fc7aef5a3cda9ac44b724b22d7d4bd6204e0b81ceb32",
+    "after-materialized-raw-contract/stdout": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+    "after-materialized-raw-contract/stderr": "d0c535968419ff8562e064f7c51fb1c24a8a3294262371238d15b44918148766",
+    "after-diamond-contract/stdout": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+    "after-diamond-contract/stderr": "311b2f01f86e1c26ee3590150ce14de1b769bb512d1a75ab94f71f8bf032ddc3",
+    "before-single-chain-exact/stdout": "7c94804942a2490ad83591313bac7acde4e380b00b0f04d85594745969c6c08e",
+    "before-single-chain-exact/stderr": "9251abfcc0f9d850797e6ebea769ff0f874faf166a3316b74cd9afc28271108e",
+    "after-mlp2-contract/stdout": "0e6c83087a90ab14d977ad124f0c848799a4b32a1dc69f66c5140a55c3134136",
+    "after-mlp2-contract/stderr": "2c38f27952ec78352dec38d961f67f0764d0334fb836430e9f6522f307b5ce38",
+    "before-diamond-contract/stdout": "578411bda130df9fc3089cb124eeebed6d490625d5640bce080dc542a9e17c9e",
+    "before-diamond-contract/stderr": "7011eccd504db8211213850fe9efd3b1dc535b6ae1db9767083d93e1b7860f86",
+    "after-omitted-raw-exact/stdout": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+    "after-omitted-raw-exact/stderr": "104251b7c9cd6429cf69fffad2e1343dde034d53856d750863dddf6aaaab00d9",
+    "after-materialized-raw-exact/stdout": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+    "after-materialized-raw-exact/stderr": "119df995f97fef4e1542d1ff8988725117f2d1a8e343359ae87d65e6d6229472",
+    "after-independent-exact/stdout": "e537f80a8b9f91faff5924416e6b05f8b0303544ff29659278fc367a3ae42642",
+    "after-independent-exact/stderr": "65e4fe0db3714ecefc1e78ef61b7306956026bb60baed48af31b35b100a099fa",
+    "before-omitted-raw-contract/stdout": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+    "before-omitted-raw-contract/stderr": "c39a54d2aa674b4d1a7d2338795480a987afa5bacc03c4dc5058a1be194b01e6",
+    "before-materialized-raw-exact/stdout": "e73ad360dbd754947668c560d7723a64e9be206155353bcd971ccec191170383",
+    "before-materialized-raw-exact/stderr": "9c85960955e07f7f00bd7d9851f7c8a44c9104cfe70859810fd2637ce4f6599d",
+    "before-omitted-raw-exact/stdout": "b426b32b1137d372d798935574283e66a5f07ec76a0182638c264ef96e29147c",
+    "before-omitted-raw-exact/stderr": "5dbe536780c12553396f2d0293e3ef56b4abd8083e4fc4deda8a8e64806d50b2"
+  }
+}

@@ -8,7 +8,7 @@ as a span, §4.5 laws).
 
 Created S54 (2026-10-21). Before this file the component had a plan and a STATUS but no model of
 what a *multi-computation* program looks like at the device: five parts measured
-(`benches/results-s54-gpu/baseline-tables.md`) and nothing fused except the closed-form prologue.
+(`benches/results/gpu/validation/baseline/baseline-tables.md`) and nothing fused except the closed-form prologue.
 Every per-cell consumer of a tile site ran on the host behind a whole copy-out; chains paid a
 copy-out and a copy-in; independent sites ran one after another.
 
@@ -195,7 +195,7 @@ reads the facts of §2 and the device facts of `profile.rs` (`sms`, `max_blocks_
   the runtime records only when legacy work was enqueued since. After R1/R2 fold the joins onto
   the device, indep/diamond/mlp2 take the device-only shape (`twin`). The current table enables
   streams only on A100. S56's two integrated RTX 5090 hosts favor OFF in every changed cell;
-  [the selection report](../../performance/s54-per-arch-selection.md) records this decision and
+  [the selection report](../../performance/gpu/validation/architecture-selection.md) records this decision and
   its evidence. `pinned`: a host array
   copied inside a loop is page-locked once before its first copy (a copy that runs once never
   repays the registration). `pdl`: every tile kernel opens with
@@ -263,7 +263,7 @@ before `rungs_at`; it queries geometry again after selecting those rungs. Thus c
 geometry admission may also change the selected realization of the same tile `Trn` over
 `Gmem`, `Smem` and `Reg`. This is an existing selection dependency, not a new semantic
 object. Other contexts use the host kernel for an epilogue, its own grid for a cell
-kernel, or the union for streams. The [S60 audit](../../performance/s60-parallel-preparation.md)
+kernel, or the union for streams. The [S60 audit](../../performance/gpu/workloads/composed-benchmark-preparation.md)
 records the caller proof and isolated counterexamples to a simple profitability filter.
 
 The table is a rung too (`arch-rungs`; `emit --gpu-off=arch-select`): OFF bypasses the table and
@@ -283,7 +283,7 @@ host and their reads are device uses, so `keep`, `devgen` and the loop carry fol
 `gpu.rs:store_cells` evaluates the chain at each of the four store sites (`naive`, `tiled`,
 `mma`, `wgmma`) with the host body, or its `_cell` variant (a captured `Same` read from a
 one-cell buffer, which SROA turns into a register); `mapal_gpu_launchv` passes the extra
-pointers. Static counts: `benches/results-s54-gpu/epilogue-fusion-report.txt`.
+pointers. Static counts: `benches/results/gpu/fusion/epilogues/epilogue-fusion-report.txt`.
 
 **The rules together** (S54 integration, `s54/arch-select`). R1 runs before R2: a per-cell
 morphism an epilogue group takes is never also a cell kernel. One `ResidentPlan` holds every
@@ -294,10 +294,10 @@ waits for every operand on another chain's stream, an epilogue's complete operan
 unchained site, a cell kernel, all on the legacy stream) reads a chained output. The arena
 reuses bytes by topo position, which concurrent streams do not follow, so a function that opens
 streams keeps per-object buffers; the L2 window is not carried by a `launchv` (a group or a chain
-launch). Static before/after on five parts: `benches/results-s54-gpu/arch-select-fusion-report.txt`.
+launch). Static before/after on five parts: `benches/results/gpu/validation/architecture-selection/arch-select-fusion-report.txt`.
 
 R7's grouped-member guarantee is realized by the
-[S58 ordering correction](../../performance/s58-parallel-development.md): stream selection
+[S58 ordering correction](../../performance/gpu/memory/ordering-and-allocation-development.md): stream selection
 resolves canonical aliases through the grouped physical writer, and the legacy-consumer
 veto uses that same relation. The correction adds no Dat, Loc or Trm and leaves the arena
 guard intact. Four old-code regression failures, unchanged device LLVM, runtime/API
@@ -305,6 +305,16 @@ completion evidence and 200 ordinary GPU processes on each revision support this
 (FRAMEWORK §4.5 laws 1, 4 and 5). Both revisions passed the GPU outputs; no observed race
 failure or performance improvement is claimed. Removing allocations remains a separate
 proof duty because an existing free can also supply completion.
+
+S61 closes the tested dead-storage boundary independently: `Trn chain_prologue` consumes
+the existing selected `Dat Epi.store_out` and allocates raw `Gmem` only for an ungrouped
+site or a group that stores it. No new Dat, Loc, Trm or machine fact enters the IR.
+The physical-writer completion edges above remain; zero-slot release performs no work.
+Twenty-eight unchanged device LLVM units, surviving host-body/slot equivalence, 640
+ordinary GPU processes and 28 separate runtime counter processes support this change
+(FRAMEWORK §4.5 laws 1, 4 and 5). Live member allocations and the stream/arena guard are
+preserved. [S61 evidence](../../performance/gpu/current-results.md) records reduced
+requested storage; latency, general race freedom and default-5090 speedup are not inferred.
 
 ## 8. What is not placed here
 
@@ -314,8 +324,10 @@ and a completed-harness receipt. `Trn callback` copies callback-owned code into 
 directory before its lifetime ends (`Trm writefile`, benchmark-process Loc → filesystem
 Loc); `Trn validate` deduces module/function/launch joins and checks exact expected geometry.
 The implementation map names these symbols. This satisfies the local model's ownership
-and composition obligations (FRAMEWORK §4.5 laws 1, 2, 5); actual Linux/GPU callback behavior
-remains an open proof duty. A successful driver launch is submission evidence; completion
+and composition obligations (FRAMEWORK §4.5 laws 1, 2, 5). S61 independently joins four
+actual Linux/GPU Contract captures from exact PTX through context/module/function/launch
+to callback-owned ELF bytes and exact-entry SASS; 924 inputs and 69 outputs are rehashed.
+The library-dispatch extension remains a planned realization, not an admitted observation. A successful driver launch is submission evidence; completion
 and numerical correctness must come from the separately reviewed harness. Instrumented
 observations never supply ordinary timing.
 

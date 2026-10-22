@@ -2,7 +2,7 @@
 
 Status: **DRAFT — awaiting Sapir's go**
 Written: 2026-07-31 · S43 open · designed by Fable, to be built by Opus
-Governs: `docs/performance/s42-sme-roofline.md` §5e · `docs/next-session.md` §1
+Governs: `docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5e · `docs/next-session.md` §1
 Component: `backend-llvm` (SME rung). **No `mapal-ir` change. No `Dat`/`Trn` change.**
 
 ## 0. What this plan is, and what it deliberately is not

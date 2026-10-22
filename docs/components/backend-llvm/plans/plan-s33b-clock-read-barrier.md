@@ -27,7 +27,7 @@ Measured: **3–4% of threaded runs**, `MAPAL_PAR=1` 0/100 (no workers, so nothi
 One live case self-timed a 1024² matmul at **0.0001 ms**. Pre-existing — PRE 3/100, POST 3/100
 against a `HEAD~1` runtime, so unrelated to plan-s33's `reside`.
 
-Consequence recorded in `docs/performance/matmul/s33.md` §5: **min is the wrong statistic for any
+Consequence recorded in `docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md` §5: **min is the wrong statistic for any
 threaded cell** (this race makes *fast* outliers, so min is maximally vulnerable and worsens with
 N), and every `par` minimum in S28–S32 is suspect.
 
@@ -138,7 +138,7 @@ that topo position and a second wait list would state the same ordering twice (�
 
 ## 8. Cross-machine validation (S36b) — the acceptance re-checked on a second machine
 
-`benches/results-s36/` — seven shapes, each emitted by the compiler at `35fb681` (pre) and
+`benches/results/cpu/kernels/language-and-shape-comparison/` — seven shapes, each emitted by the compiler at `35fb681` (pre) and
 `896fb3c` (post) from a worktree so both binaries exist at once; n = 100 per cell; three machine
 configurations. **8,400 timed runs.**
 

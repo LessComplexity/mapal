@@ -35,7 +35,7 @@ Consulted2026-10-21:
 - https://docs.nvidia.com/cupti/12.8/api/structCUpti__ModuleResourceData.html (`moduleId`, `cubinSize`, `pCubin`, callback lifetime).
 - https://docs.nvidia.com/cupti/12.8/api/structCUpti__ResourceData.html (`context`, `resourceDescriptor`).
 - https://docs.nvidia.com/cupti/12.8/api/group__CUPTI__CALLBACK__API.html (ResourceData wrapper, module-loaded ID, subscription conflicts).
-- Pinned PyPI NVIDIA wheels: `nvidia-cuda-cupti-cu12==12.8.90`, `nvidia-cuda-runtime-cu12==12.8.90`, `nvidia-cuda-nvcc-cu12==12.8.93`; package and relevant header SHA256s are recorded in ../../results-s54-gpu/s58-executed-image-capture/header-manifest.json. Official wrapper docs and ModuleResourceData prose are inconsistent about raw cbdata; actual GPU callback-layout verification remains mandatory, and the prototype is not admitted production observation evidence.
+- Pinned PyPI NVIDIA wheels: `nvidia-cuda-cupti-cu12==12.8.90`, `nvidia-cuda-runtime-cu12==12.8.90`, `nvidia-cuda-nvcc-cu12==12.8.93`; package and relevant header SHA256s are recorded in ../../results/gpu/disassembly/capture-tooling/header-manifest.json. Official wrapper docs and ModuleResourceData prose are inconsistent about raw cbdata; actual GPU callback-layout verification remains mandatory, and the prototype is not admitted production observation evidence.
 
 Additional source: https://docs.nvidia.com/cupti/12.8/main/main.html#sass-source-correlation explicitly identifies module callbacks as CUDA-binary capture points. GPU/driver/toolchain identity must be supplied by the broader future proof packet; this narrow tool does not inventory the system.
 

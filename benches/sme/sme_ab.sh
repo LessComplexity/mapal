@@ -95,7 +95,7 @@ PY
   echo
 done
 
-echo "Compare against docs/performance/matmul/s33.md:150-158 (M4 Pro f32):"
+echo "Compare against docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md:150-158 (M4 Pro f32):"
 echo "  1024: flow-fma-1t 17.5449 ms | numpy-1t 1.2977 ms | numpy-thr 0.6757 ms"
 echo "  512 : flow-fma-1t  2.1766 ms | numpy-1t 0.1600 ms | numpy-thr 0.1075 ms"
 echo "NOTE: the numpy legs above are threaded/Accelerate; the Mapal legs here are 1t."

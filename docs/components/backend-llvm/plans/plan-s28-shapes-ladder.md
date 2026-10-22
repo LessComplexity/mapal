@@ -9,7 +9,7 @@ fir & conv2d from the naive implementations to be better than other languages."*
 
 ## Why (evidence)
 
-S27c local matrix (M4 Pro, fair compute basis, `docs/performance/matmul/s27.md`):
+S27c local matrix (M4 Pro, fair compute basis, `docs/performance/matmul/history/fma-packing-and-loop-lifting.md`):
 
 - **conv2d_512: flow 7.9× BEHIND single-thread cpp at 14 threads** — the priced
   refusal. `tile_affine` (`crates/mapal-ir/src/algo.rs:770-830`) walks Add +
@@ -129,7 +129,7 @@ Head/tail: TI=1 constant-TJ main + runtime-`tj` remainder (the
 - Box: the S27-baseline shapes legs are in the box run launched this session
   (instance 45692618); re-run `shapes_ab.sh` on-box after landing for the S28
   column (same box — one-box CSV rule).
-- `docs/performance/matmul/s27.md` shapes table gets the S28 rows (or a new
+- `docs/performance/matmul/history/fma-packing-and-loop-lifting.md` shapes table gets the S28 rows (or a new
   s28 report if the table shape changes).
 
 ## Ceilings (recorded, not built)

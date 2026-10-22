@@ -232,4 +232,4 @@ consumer. That is a doc change in the same commit (§6.3), plus `ir`/`rewrite`/`
   compose additively (§2).
 - **A published-number claim.** Everything in §2's right-hand column is a prediction. Per
   `CONTRIBUTING.md`, this change arrives with the measurement of what it did and names the cells it
-  moves — `docs/performance/shape-ladder-v2.md` and the README's shape rows.
+  moves — `docs/performance/methodology/algorithm-shape-ladder.md` and the README's shape rows.

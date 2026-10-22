@@ -171,7 +171,7 @@ fir and conv2d do not move: tiled kernels read through capture slots, not frame 
 *Done when:* the numbers exist with the boundary caveats stated, and every prediction above is
 marked confirmed or refuted.
 
-**Step 3 — reconcile.** `docs/performance/shape-ladder-v2.md` and the README's shape rows if any
+**Step 3 — reconcile.** `docs/performance/methodology/algorithm-shape-ladder.md` and the README's shape rows if any
 published cell moves; record the result in `backend-llvm/STATUS.md` either way.
 
 ## 7. Risks

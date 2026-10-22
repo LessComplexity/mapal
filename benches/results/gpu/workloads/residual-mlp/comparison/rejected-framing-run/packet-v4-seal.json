@@ -1,0 +1,34 @@
+{
+  "packet": "/private/tmp/mapal-s61-composed-analysis/packet-v4",
+  "archive": "/private/tmp/mapal-s61-composed-analysis/composed-v4.tar.gz",
+  "archive_root": "composed-matrix/",
+  "archive_bytes": 8179649,
+  "archive_sha256": "c6435b82ea682b8f392e9f2302e7d56a28eab61d5ac50c5a852e33fe52e7ff29",
+  "original_manifest_sha256": "3200ec9251a85ee2aa2ec87a6511e817f9e5556e9cb829731aab33157ed8b464",
+  "manifest_sha256": "201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc",
+  "file_inventory_equal": true,
+  "files_total": 86,
+  "sealed_payload_files_verified": 85,
+  "unchanged_files": 84,
+  "changed_files": {
+    "manifest.json": {
+      "before": "3200ec9251a85ee2aa2ec87a6511e817f9e5556e9cb829731aab33157ed8b464",
+      "after": "201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc"
+    },
+    "mapal_wrapper.c": {
+      "before": "4d3f102ce0957d9ce2e0f2dc44cfb0cfe71f63030bab7f50cdb793b507404b1f",
+      "after": "4cec182e45f16c9bec5433cee28c91c0969b0a3a5677596ef992afeb570d52b8"
+    }
+  },
+  "all_llvm_ptx_bytes_unchanged": true,
+  "all_numerical_gate_files_unchanged": true,
+  "manifest_only_wrapper_entry_changed": true,
+  "reader": "/private/tmp/mapal-s61-composed-analysis/analysis-v4/read_results.py",
+  "original_reader_sha256": "9b5eeed49e6d75d5f48418e8551c2d09690b2ba065c0de7ee550e1d8b76a389f",
+  "reader_sha256": "6eaad83afb5fba76c74809759a38c9eed9877428ae256c2d835c3c1942ceee37",
+  "reader_only_manifest_digest_changed": true,
+  "timing_function_text_unchanged": true,
+  "gpu_executed": false,
+  "inventory_scope": "85 sealed payload files plus manifest; unsealed local Python bytecode caches excluded",
+  "unsealed_files_in_v4": 0
+}

@@ -1,7 +1,7 @@
 # plan-s33 — the timed window must not contain a materialisation
 
 Status: **SHIPPED** (S33) — see §7 as-built. Component: `mapal-rt` (backend-llvm's runtime seam).
-Driven by: `docs/performance/conv2d-per-core-gap.md` §7 — the diagnosis that closed the
+Driven by: `docs/performance/cpu/kernels/conv2d-measurement-boundary.md` §7 — the diagnosis that closed the
 S31/S32 conv2d gap as a measurement boundary, and Sapir's call to standardise on a
 compute-only window by pre-faulting Mapal's output.
 

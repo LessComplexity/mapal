@@ -2143,7 +2143,7 @@ impl<'a> FnEmit<'a> {
         first.is_some_and(|m| self.ir.morphism(m).expect("site").target == target)
     }
 
-    /// Before the first chained launch: every chained output's buffer, so no
+    /// Before the first chained launch: every stored chained output's buffer, so no
     /// `cuMemAlloc` (which may wait for the device) lands between two chains'
     /// launches.
     fn chain_prologue(&mut self, plan: &ResidentPlan) {
@@ -2151,6 +2151,9 @@ impl<'a> FnEmit<'a> {
         let mut sites: Vec<MorphismId> = plan.chain.keys().collect();
         sites.sort_by_key(|&m| pos(m));
         for m in sites {
+            if self.groups.get(m).is_some_and(|g| !g.store_out) {
+                continue;
+            }
             let c = self.ir.morphism(m).expect("site").target;
             let bytes = self.array_bytes(&self.obj_ty(c));
             self.dalloc(c, bytes);

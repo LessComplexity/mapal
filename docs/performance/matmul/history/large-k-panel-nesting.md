@@ -1,0 +1,334 @@
+# the KC nest at K > kc: measured in the regime the derivation reopens
+
+Historical provenance: S31.
+
+Local only (M4 Pro, 10 P + 4 E, 16 MB shared L2), clang 22.1.8, `-O2 -march=native
+-ffp-contract=fast`, product face (`--contract`), compute-only via the `time` builtin
+(`iter ms=`), **min-of-5**. Raw harness: `scratchpad/kcab/run.sh` (ad-hoc — this shape is not
+in `benches/`, see "Why a new shape").
+
+## What this session changed, and what therefore could not move
+
+S31 replaced six hardcoded emitter constants with `TargetProfile` derivations. **Under the
+default `generic` profile the derivations reproduce every literal exactly, so emission is
+byte-identical** — verified as 66 A/B emissions against the previous commit (11 sources × 6
+flag combinations) plus 29 unmoved goldens. The shipping path is the same instruction stream
+it was, so **every competitor number in `s29.md` stands unchanged by construction**; nothing
+in the cross-language matrix was re-measured because a byte-identical binary cannot have
+moved. What *is* new is a regime that did not exist before: a profile-derived `tile_kc`.
+
+## Why a new shape
+
+The KC gate is `site.k > tile_kc`. Under `apple-m` the derived panel is
+
+```
+tile_kc(f32) = (l2_bytes/2) / (nc × sizeof) = (16 MB / 2) / (512 × 4) = 4096
+```
+
+so **every benchmark shape we run (K ≤ 4096) leaves the gate closed** — that is the property
+S31 shipped, and `profile_closes_the_kc_gate_by_derivation` pins it. But it is a threshold,
+not an off-switch: past K = 4096 the nest turns back on. Nothing in `benches/` reaches there,
+so the regime was unmeasured. This shape exists to measure it.
+
+**M = N = 1024, K = 8192, f32** — 17.18 GFLOP; A = 33.6 MB, B = 33.6 MB, C = 4.2 MB. A alone
+is 2× the 16 MB L2, which is exactly the traffic condition the (jc, kc, ic) order exists to
+relieve, so this is a fair test of the rung rather than a straw man.
+
+## The three legs
+
+| leg | profile | `tile_kc` | panels over K | a-panel |
+| --- | --- | ---: | ---: | --- |
+| `off` | — (nest not requested) | — | — | none |
+| `kc128` | `generic` | 128 | 64 | `[512 x float]` = 2 KB |
+| `kc4096` | `apple-m` | 4096 | 2 | `[16384 x float]` = 64 KB |
+
+`off` is the shipping path and is byte-identical to pre-S31 emission.
+
+## Result — the nest still loses, but the derived depth loses far less
+
+| leg | par (ms) | GFLOP/s | vs off | 1t (ms) | GFLOP/s | vs off |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **off** | **25.73** | 667.7 | — | **155.32** | 110.6 | — |
+| kc128 (literal) | 27.96 | 614.5 | **+8.7%** | 177.01 | 97.1 | **+14.0%** |
+| kc4096 (derived) | 27.41 | 626.8 | **+6.5%** | 162.26 | 105.9 | **+4.5%** |
+
+All three legs printed byte-equal output (`112400` / `89859`) — the R1 bit-exactness the
+differential suite asserts, reproduced at scale on a shape the suite does not cover.
+
+**The reading.** Two separate facts, and conflating them is the trap:
+
+1. **The derivation works as a derivation.** At one thread the derived depth cuts the nest's
+   penalty from **+14.0% to +4.5%** — a 3× reduction — purely by choosing 4096 instead of
+   128 for this machine's L2. That is the profile doing exactly its job: 64 park/reload
+   round-trips through `out` become 2.
+2. **The rung still does not pay here.** Even at its best derived depth, even at K = 8192
+   with A at 2× L2, KC-on is slower than KC-off at both widths. So `tile_kc` is trustworthy
+   as *"how deep a panel fits in L2"* and **not** as *"when the nest pays"*. The profile made
+   a wrong rung less wrong; it did not make it right.
+
+This is the continuation of the S29/S30 trend rather than a break from it: the nest lost at
+every measured size, with the deficit growing in N (+5% @1024 → +14% @4096 in S30, both at
+kc=128). At K = 8192 the literal leg lands at +14.0%, on trend; the derived leg is the first
+thing to bend the curve, and it still does not cross zero.
+
+**Consequence: `kc_nest` stays default-OFF, now for a second measured reason.** S30's reason
+was "it loses at every size we run". S31 adds "and it still loses in the regime where its own
+derived constant says it should apply."
+
+## It landed in the assembly
+
+Disassembly of `task8_slice` (the tiled slice function), `llvm-objdump`:
+
+| leg | stack reservation | meaning |
+| --- | --- | --- |
+| `off` | `sub sp, sp, #0x1e0` | 480 B — no a-panel |
+| `kc128` | `sub x9, sp, #0xb20` | 2,848 B — the 2 KB panel + slack |
+| `kc4096` | `sub x9, sp, #0x10, lsl #12` then `sub x9, x9, #0x2e0`, `and sp, x9, #…ffc0` | **65,536 B** + slack, 64-byte aligned |
+
+65,536 = `tile_i 4 × tile_kc 4096 × 4 B`. **The derived constant, not the literal, is what
+codegen reserved** — the profile reaches the machine code, not just the IR.
+
+Instruction mix over the same function:
+
+| leg | `fmla` | `ldr q` | `str q` | **`str q …, [sp]`** |
+| --- | ---: | ---: | ---: | ---: |
+| off | 42 | 4 | 14 | **0** |
+| kc128 | 100 | 20 | 28 | **0** |
+| kc4096 | 84 | 20 | 28 | **0** |
+
+**Zero accumulator spills in every leg** — S30's phi-carried `<TJ x elem>` accumulators
+survive the profile change intact, which is the property S29 lost and S30 bought back. The
+KC legs carry more instructions because the panel-copy and park/reload paths are additional
+code, not because the kernel regressed.
+
+## Bounds on this result
+
+- **Local only.** M4 Pro, 16 MB shared L2. The nest was designed for a machine with a small
+  *per-core* L2 (zen3, 512 KB) where A re-reads are not absorbed — that leg is still unrun
+  (suggestions #16), and it remains the only place the rung has a plausible case. `zen3`
+  now exists as a profile but is **untested on hardware**, and it moves two constants at
+  once (TJ 16→32, TI 4→2).
+- **One shape.** M = N = 1024, K = 8192, f32. No K sweep above the threshold, no f64 leg.
+- **The a-panel is now profile-sized.** `tile_i × tile_kc × sizeof` = `2 · l2_bytes/nc_tiles`
+  — 2 KB under `generic`, 64 KB under `apple-m`, on the stack either way (`scratch()` bypasses
+  the heap threshold). A profile past ~64 MB of L2 would push it over `heap_min_bytes`; no
+  shipped profile is close, but the old "largest tile scratch is 2 KB" note was wrong and is
+  corrected.
+
+---
+
+# S31b — the conv vector accumulator, measured against competitors
+
+Same basis (M4 Pro, clang 22.1.8, compute-only, `benches/shapes/shapes_ab.sh` min-of-5 for the
+competitor tables; min-of-9/15 for the A/B legs). **Compare within this file only** — the cpp
+baseline measured 0.2553 ms at 1t here against S30's recorded 0.353, so cross-session ratios
+are not valid.
+
+## The change
+
+`emit_tile_conv_tile_vec` — the conv rung's constant-TJ main tile on `<TJ x elem>` SSA values
+(plan-s31-deduced-blocking item 2). Conv has no runtime k loop, so the accumulator is a
+straight SSA chain, not even a phi.
+
+| conv2d A/B (min/median of 15) | old | new | Δ |
+| --- | --- | --- | ---: |
+| conv2d_512 1t | 0.1223 / 0.1377 | 0.1086 / 0.1227 | **−11%** |
+| conv2d_1024 1t | 0.5343 / 0.5692 | 0.4810 / 0.5222 | **−10% / −8%** |
+| conv2d_1024 par | 0.4286 / 0.5075 | 0.4195 / 0.4921 | −2% |
+
+Output byte-equal on every leg. **The plan predicted ~2.9× and it delivered ~10%** — see the
+plan's As-built section: the prediction counted emitted-IR memory operations that LLVM was
+already deleting (S29 had recorded the conv accumulator as register-resident). Whole-function
+disassembly moves 81 fmla / 106 `ldr q` / 31 `str q` / 804 instrs → 81 / 101 / 29 / 776.
+
+## Against competitors (min-of-5)
+
+**1 thread** (`FLOW_PAR=1`):
+
+| shape | flow-fma-1t | cpp-1t | rust-1t | numpy-1t | verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| fir 1M | **1.659** | 11.257 | 12.127 | 6.304 | flow **6.8× / 7.3× / 3.8× ahead** |
+| conv2d 1024 | 0.485 | **0.255** | 1.802 | 1.659 | **cpp 1.90× ahead**; flow 3.7×/3.4× ahead of rust/numpy |
+
+**Parallel** (default width):
+
+| shape | flow best | cpp-mt | rust-mt | numpy-1t | verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| fir 1M | **0.398** (conf) | 1.399 | 1.658 | 6.327 | flow **3.2× / 3.8× / 14.3× ahead** |
+| conv2d 1024 | 0.436 (conf) | **0.130** | 0.309 | 1.653 | **cpp-mt 3.3× ahead** |
+
+fir is the control — untouched by this change and still winning both tables, which is the
+evidence that nothing else moved.
+
+## The conv2d par deficit is mostly the thread count, not the kernel
+
+conv2d's parallel number is barely better than its single-thread number, so the deficit was
+decomposed. Thread sweep, new build, min-of-9 (ms):
+
+| FLOW_PAR | 1 | 2 | **4** | 6 | 8 | 14 (default) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| conv2d 1024 | 0.483 | 0.271 | **0.238** | 0.262 | 0.302 | 0.347 |
+
+Against cpp-mt's 0.130:
+
+- at the **optimal** width (4 threads): **1.83× behind** — the same ratio as the 1t gap
+  (1.90×), i.e. this is the per-core kernel and nothing else;
+- at the **default** width (every core): **2.67× behind**.
+
+**The wrong thread count costs 1.46×, nearly as much as the entire remaining kernel gap.**
+This is the S30 finding reproduced on a changed kernel, and it re-prices the S31 queue: for
+conv2d, the deduced thread count (P0) is worth about as much as row blocking (P0) and is not
+downstream of it. Row blocking's own value is now an open measurement rather than a
+projection — see the plan's As-built section on why its 1.2× estimate inherits the same
+defect as the 2.9× that this session refuted.
+
+## Observation, unexplained
+
+For conv2d the **conformance face is faster than the product face** — 0.436 vs 0.494 par,
+0.4947 vs 0.4854 at 1t (within noise at 1t, outside it in par). Contraction is supposed to be
+free-or-better. Not investigated; recorded so it is not lost.
+
+---
+
+# S31c — deduced row blocking: the reuse predicate, and what it bought
+
+Same basis. `item2` = the vector accumulator alone (S31b); `item4` = plus row blocking driven
+by `reuse::i_reuse`.
+
+| shape | item2 | item4 | Δ |
+| --- | --- | --- | ---: |
+| conv2d_512 1t | 0.1113 / 0.1303 | **0.0910 / 0.1018** | **−18% / −22%** |
+| conv2d_1024 1t | 0.4740 / 0.5070 | **0.3992 / 0.4125** | **−16% / −19%** |
+| conv2d_1024 par | 0.4082 / 0.4785 | 0.4075 / 0.4720 | flat |
+
+Output byte-equal on every leg (`1752/103`, `576/-96`).
+
+**Row blocking is worth more than the accumulator was** (~17% vs ~10%) — the opposite of what
+the plan's IR op-count table predicted in both terms. Blocking is applied because the
+*record* says the read slides (`i_reuse(b) == Sliding{1}`, the same predicate matmul uses at
+`q = 0`), not because the site is conv2d.
+
+**It reached the machine.** Hot-function disassembly:
+
+| | fmla | `ldr q` | FMA:load |
+| --- | ---: | ---: | ---: |
+| item2 | 81 | 101 | 0.80 |
+| item4 | 306 | 255 | **1.20** |
+
++50% arithmetic intensity — the deduced 2.0× reuse showing up as fetched vectors, diluted by
+the TI=1 head/tail regions and the remainder paths.
+
+## conv2d across the whole session
+
+| | 1t min | vs cpp-1t 0.2553 |
+| --- | ---: | ---: |
+| session start | 0.5343 | 2.09× behind |
+| + vector accumulator | 0.4810 | 1.88× |
+| + deduced row blocking | **0.3992** | **1.56×** |
+
+**−25% at one thread, no machine constant hand-set.** The per-core gap S30 called the
+highest-value item in the queue is down by a quarter.
+
+Parallel did not move, and the width sweep says why — the optimum is still 4 threads
+(0.235 ms) against 0.411 at the default 14. **conv2d's remaining deficit is now majority
+scheduling, not kernel.**
+
+---
+
+# S32a — slice size is the dominant knob, and `i_reuse` predicts its direction
+
+Same basis (M4 Pro, compute-only, product face, min-of-7). Step 1 of
+plan-s32-deduced-scheduling separated the two knobs the pool had collapsed; `FLOW_SLICE`
+(the experiment lever) then sweeps slice size independently of lane count.
+
+**At a fixed 14 lanes**, sweeping elements per slice:
+
+| kernel | `i_reuse(b)` | default | 262144 | 131072 | 65536 | 32768 | 16384 | 8192 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| conv2d 1024 | `Sliding{1}` | 0.460 | **0.273** | 0.340 | 0.476 | 0.470 | 0.497 | 0.523 |
+| matmul512 | `Invariant` | 0.750 | 2.366 | 1.305 | 0.814 | 0.537 | 0.532 | **0.422** |
+| matmul1024 | `Invariant` | 3.627 | 5.342 | 3.230 | 3.241 | 2.540 | 2.513 | **2.485** |
+
+## The reading
+
+**1. The gradients run in opposite directions, and one recorded fact predicts which.**
+conv2d's sliding read pays a halo at every slice boundary, so it degrades monotonically as
+slices get finer — its optimum is the *coarsest* setting swept. Both matmuls read `b` with
+`ci == 0`, so a boundary costs them nothing, and they improve monotonically toward the finest
+setting. This is §2.6's falsifiable prediction, now on a sweep rather than two points:
+**`i_reuse` classifies which way to move.**
+
+**2. Slice size beats width tuning, and largely subsumes it.**
+
+| kernel | best over all widths (before) | best over slice size at 14 lanes |
+| --- | ---: | ---: |
+| matmul512 | 0.463 (8× oversub @ 14t) | **0.422** |
+| matmul1024 | 2.992 (8× oversub @ 8t) | **2.485** |
+| conv2d 1024 | 0.236 (@ 4t) | 0.273 |
+
+Two of three now beat everything previously measured, at full width. The reason conv2d does
+not is instructive rather than contrary: its optimum is 4 slices, and 4 slices occupy about 4
+lanes no matter how many exist — **"conv2d wants 4 threads" was always "conv2d wants 4
+slices"**, the two being one knob until step 1 split them. Width is substantially *emergent*
+from grain; that is why grain is the knob to deduce first.
+
+**3. The defaults are wrong for every kernel measured** — 1.46× to 1.78× left on the floor by
+`ceil(n/GRAIN).min(threads)`, on three kernels that are not edge cases.
+
+## Bounds
+
+Local only; one width (14) for the sweep; three kernels; `FLOW_SLICE` forces one size for
+every dispatch in the program, so a mixed-width program cannot yet be measured — that needs
+step 2 (per-region sizes), which is the point.
+
+---
+
+# S32b — the deduction wired, and the rule it refuted
+
+Step 2 of plan-s32 wires the compiler-side sizing: `FnEmit::slice_sizing` computes a floor and
+an over-decomposition factor per region and emits both on `flow_par_task`; the runtime applies
+the floor and multiplies the factor by its own lane count.
+
+## What shipped: the floor, and it is a coherence constraint
+
+Extending the S32a sweep past its edges found interior optima **and a cliff**:
+
+| matmul512 slices | 32 | 64 | 128 | **256** | 512 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ms | **0.429** | 0.437 | 0.436 | **2.410** | 2.385 |
+
+| matmul1024 slices | 128 | 256 | **512** | 1024 |
+| --- | ---: | ---: | ---: | ---: |
+| ms | **2.452** | 2.474 | **17.972** | 17.856 |
+
+256 slices over 512 rows is **2 rows per slice**; matmul1024 cliffs at 512 slices, also 2 rows.
+Both are below `TI = 4`, so every slice falls off the register-blocked path onto the TI=1
+fallback — **7× on matmul1024**. The floor `TI × c` is therefore not a preference but the
+granularity nest being coupled (plan §2.5): a slice must contain at least the block the tile
+rung is built from. That ships, costs nothing on any measured shape, and makes the cliff
+unreachable.
+
+## What did NOT ship, and why it is recorded rather than hidden
+
+Over-decomposition of `Invariant` sites is worth **1.46–1.78×** when slice size is forced
+directly (S32a). Routing the *same slice counts* through the deduction instead:
+
+| kernel | step 1 @14 lanes | deduced, oversub=4 |
+| --- | ---: | ---: |
+| matmul512 | 0.815 | 0.734 (−10%) |
+| matmul1024 | 3.579 | **4.801 (+34%)** |
+
+**The count is not the variable** — the lever produced ~2.45 ms for matmul1024 at comparable
+slice counts. What differs is the path: a **packed** site's outer task is a wrapper that packs
+and then opens its *own nested run*, and the slicing happens inside that nested dispatch, not
+the one the lever exercised. Something about the nested run's scheduling scales with slice
+count differently.
+
+Unexplained ⟹ not shipped: `oversub` is emitted as `1`, which reproduces today's slicing
+exactly. The 1.46–1.78× remains real and remains unclaimed until it can be delivered through
+the compiler rather than an env var.
+
+**This is the same failure mode as S31b's 2.9× prediction**, one level up: a mechanism that
+looks equivalent on paper behaves differently in the machine, and only measurement caught it.
+Two for two this session — the rule is now explicit in the plan: no scheduling claim without a
+measurement of the shipped path, never of an analogue.

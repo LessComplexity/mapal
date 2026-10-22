@@ -357,7 +357,7 @@ pub struct RungOff {
 /// that says so** (S53; the [`DispatchCost`] precedent — a measured number
 /// lives only on the profile it was measured on). A profile is *measured* when
 /// it is in [`GPU_MEASURED`]; every rung not listed for it is ON. Rows cite
-/// `benches/results-s53-gpu/<file>` or (`base-*`, S54) `benches/results-s54-gpu/<file>`
+/// `benches/results/gpu/kernels/optimization-ladder/<file>` or (`base-*`, S54) `benches/results/gpu/validation/baseline/<file>`
 /// (`-confirm` / `-run1` = another session, on a different box): the ON vs OFF
 /// arm medians, ms, or (S54) OFF/ON divided by each bench's own cuBLAS leg, which
 /// cancels the clock drift of a power-capped box. Box-to-box noise is ±5% at
@@ -861,13 +861,13 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
                files' trace totals)",
     },
-    // S54 `l2-raster` (benches/results-s54-gpu/l2-raster-tables.md). `raster`'s derivation groups
+    // S54 `l2-raster` (benches/results/gpu/memory/l2-raster/l2-raster-tables.md). `raster`'s derivation groups
     // only where one block's panels leave the L2 (the 3090 at 8192); there it measured no stable
     // sign. S56 removes the disputed 5090 `l2-gate` OFF override: integrated a2/b Contract FMA
     // lacks a repeatable >1% kernel gain. TF32/8192 retains ~1.5% null-corrected median gains,
     // but all raster/gate distributions overlap, below the declared conservative acceptance bar.
     // The derived gate and forced measurement arms remain; no whole-program gain is claimed.
-    // s56-selection-rtx-5090-{a2,b}.txt and docs/performance/s54-per-arch-selection.md preserve
+    // s56-selection-rtx-5090-{a2,b}.txt and docs/performance/gpu/validation/architecture-selection.md preserve
     // that counterevidence. L2-window is OFF on all measured profiles after the S56 iteration check.
     RungOff {
         profile: "rtx-3090",
@@ -1312,7 +1312,7 @@ pub struct Sme {
     /// (`apple_m_raises_the_kc_threshold_above_every_k_we_run`). Measured, the
     /// SME optimum is a **128 KB two-panel window** — L1D, not L2 — and the
     /// unblocked case loses **1.448×** at K=4096
-    /// (`docs/performance/s42-sme-roofline.md` §5, `benches/sme/kc.c`). One
+    /// (`docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5, `benches/sme/kc.c`). One
     /// deduced depth serving two placements with different budgets is the defect;
     /// two `TrnLoc`s over one question is the fix.
     pub l1d_bytes: u64,
@@ -1532,7 +1532,7 @@ impl TargetProfile {
     /// standalone probe claimed **2.09×** there, and the emitted pipeline
     /// measured **every arm overlapping OFF, min-to-min 1.02×** — the term's
     /// prediction, on the machine where it was most at risk
-    /// (`benches/results-s45/deduced-move-panel.md` §3).
+    /// (`benches/results/cpu/memory/deduced-panel-movement/deduced-move-panel.md` §3).
     ///
     /// | case | pressure | read vs L2/core | verdict | measured |
     /// | --- | ---: | --- | --- | --- |
@@ -1572,7 +1572,7 @@ impl TargetProfile {
     ///
     /// **What it does NOT reproduce, and why no version of it could.** The i9's
     /// measured optimum is **128**, and this returns 8. That gap was priced with
-    /// counters rather than argued (`benches/results-s45`, side 1024, P-core):
+    /// counters rather than argued (`benches/results/cpu/memory/deduced-panel-movement`, side 1024, P-core):
     ///
     /// | arm | ms | cycles | L1-dcache-load-misses | dTLB misses | LLC misses |
     /// | --- | ---: | ---: | ---: | ---: | ---: |
@@ -1630,7 +1630,7 @@ impl TargetProfile {
     /// the M4 and 4–8 on the i9, i.e. carry the whole answer and derive nothing,
     /// which is the hand-typed flag with extra steps.
     ///
-    /// **Open defect S47 found and did not fix (`benches/results-s47`).** At side
+    /// **Open defect S47 found and did not fix (`benches/results/cpu/matmul/block-size`).** At side
     /// **1536 on the M4 this rung fires with B=32 and LOSES 1.75x (1t) / 1.41x
     /// (threaded)** — larger than any i9 shortfall above. It is a fire/decline
     /// defect, not a block one: no block wins there. Both terms vote to fire and
@@ -1695,7 +1695,7 @@ impl TargetProfile {
         // **1.060x (1t) / 1.044x (threaded)**. Forgoing 6% beats shipping 1.75x.
         // Revisit only if the benefit ever becomes predictable — the plateau
         // there is B = 16..256 and reaching it needs a fact §4 of
-        // `benches/results-s47/block-size.md` shows is not readable.
+        // `benches/results/cpu/matmul/block-size/block-size.md` shows is not readable.
         if !site.width.is_power_of_two() {
             return None;
         }
@@ -3180,7 +3180,7 @@ mod tests {
             sme < neon,
             "the matrix unit's window is smaller than the NEON k-panel's; \
              a shared derivation would size SME's panel 8x too deep and lose \
-             1.448x at K=4096 (docs/performance/s42-sme-roofline.md §5)"
+             1.448x at K=4096 (docs/performance/cpu/matmul/sme-throughput-ceiling.md §5)"
         );
         // And the gate this feeds: at K=4096 the SME nest must OPEN...
         assert!(4096 > sme, "KC nest must fire at K=4096");
@@ -3366,7 +3366,7 @@ mod tests {
         // The i9's 12 reachable slots put the ceiling at 6 against a floor of
         // 16, so the mean is 9 and the block is 8. Its measured optimum is 128,
         // which no L1-derived rule can reach — see `move_block`'s note and the
-        // counter evidence in benches/results-s45.
+        // counter evidence in benches/results/cpu/memory/deduced-panel-movement.
         assert_eq!(RAPTORLAKE.move_block(&transpose(1024)), Some(8));
         assert_eq!(RAPTORLAKE.move_block(&transpose(2048)), Some(8));
         assert_eq!(
@@ -3977,7 +3977,7 @@ mod tests {
     }
 
     /// S54: `Gpu::l2_bytes` is the box's `facts l2_bytes=` on every measured
-    /// part (`benches/results-s54-gpu/base-<part>.txt`), and the whitepaper
+    /// part (`benches/results/gpu/validation/baseline/base-<part>.txt`), and the whitepaper
     /// figure on the two parts no box has reported (the 4070 Ti, H100 SXM).
     #[test]
     fn l2_bytes_is_the_device_query() {

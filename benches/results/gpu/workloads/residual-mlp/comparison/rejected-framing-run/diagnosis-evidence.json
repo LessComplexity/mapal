@@ -1,0 +1,27 @@
+{
+  "case_files_verified": 119,
+  "mapal_tiny": true,
+  "tiny_naive": true,
+  "tiny_cublas": true,
+  "tiny_torch_eager": true,
+  "tiny_torch_compiled": true,
+  "representative_checkpoint_values_pass": true,
+  "representative_values": 1536,
+  "original_protocol_rejected": true,
+  "expected_prefix": [
+    "sample",
+    "0"
+  ],
+  "actual_prefix": [
+    "0.131521",
+    "p"
+  ],
+  "actual_suffix": [
+    "sample",
+    "0",
+    "0"
+  ],
+  "raw_process_exit": 0,
+  "timing_rows_admitted": 0,
+  "large_case_executed": false
+}

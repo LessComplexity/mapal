@@ -1,0 +1,107 @@
+# Matmul (2026-07-22, RTX 4090)
+
+Historical provenance: S23.
+
+Square GEMM `c[i][j] = Σₖ a[i,k]·b[k,j]`. Times in **ms**. Raw: `benches/matmul/results.csv` (99 rows; the N≥1024 scale legs ran on a second 4090 same-day — GPU-model-identical; the one cross-box CPU cell is marked †).
+
+## GPU compute (the GEMM kernel only — like-for-like vs the baselines' timed mul)
+
+Every baseline times ONLY its multiply (init untimed). The flow number here is the same thing: the GEMM kernel (`k0_4`) alone, from the binary's own CUDA-event instrumentation (`FLOW_PERF` lines; nothing hand-recorded). Flow's init/readback kernels + module load are in the decomposition below, deliberately excluded here.
+
+| N | flow GEMM kernel f64 | flow GEMM kernel f32 | naive-CUDA (f32) | hip-naive (f32) | chapel-gpu f64 | chapel-gpu f32 | cuBLAS |
+|---|---|---|---|---|---|---|---|
+| 16 | 0.0195 | 0.0113 | — | — | — | — | — |
+| 64 | 0.0184 | 0.0113 | 0.0031 | 0.0031 | 0.318 | 0.316 | 0.0069 |
+| 128 | 0.0338 | 0.0164 | 0.0047 | 0.0048 | 0.253 | 0.315 | 0.0043 |
+| 256 | 0.0727 | 0.0235 | 0.0120 | 0.0115 | 0.249 | 0.243 | 0.0063 |
+| 512 | 0.522 | 0.125 | 0.0782 | 0.0833 | 0.628 | 0.448 | 0.0118 |
+| 1024 | 4.00 | **0.788** | 0.785 | 0.837 | 2.19 | 1.044 | 0.0431 |
+| 2048 | 31.9 | **7.11** | 6.72 | 7.12 | 14.8 | 7.10 | 0.302 |
+| 4096 | 232.4 | 57.2 | 53.6 | 53.8 | 114.2 | **53.6** | 2.33 |
+
+chapel-gpu = the same naive per-cell `forall` on `here.gpus[0]`, chpl 2.9.0 source-built `CHPL_LOCALE_MODEL=gpu` (the .deb is CPU-only), timed around the kernel like every baseline.
+hip-naive = naive_cuda.cu ported 1:1 to the HIP API, compiled `__HIP_PLATFORM_NVIDIA__` via nvcc over the rocm-6.2 HIP headers — **the portability tax measured: ≡ naive-CUDA at every N (within noise)**; HIP calls macro-expand to CUDA on this platform, and the numbers prove nothing leaks.
+
+## GPU ratios vs flow (ratio = flow ms ÷ other ms; >1 = flow slower)
+
+| vs | N | other ms | flow f32 | flow f64 |
+|---|---|---|---|---|
+| naive-CUDA | 1024 | 0.785 | **1.00× — parity** (0.788) | — (naive is f32-only) |
+| naive-CUDA | 2048 | 6.72 | **1.06×** (7.11) | — |
+| naive-CUDA | 4096 | 53.6 | **1.07×** (57.2) | — |
+| hip-naive | 4096 | 53.8 | 1.06× | — (≡ naive-CUDA; zero portability tax) |
+| chapel-gpu | 1024 | 1.044 / 2.19 | 0.75× (flow 1.3× faster) | 1.8× |
+| chapel-gpu | 2048 | 7.10 / 14.8 | **1.00× — parity** | 2.2× |
+| chapel-gpu | 4096 | 53.6 / 114.2 | 1.07× | **2.0×** |
+| cuBLAS | 4096 | 2.33 | 24.6× (57.2) | 100× (232.4) |
+
+Readings: (1) at saturation, flow f32 = naive-CUDA = chapel-gpu — three independent realizations of the same naive algorithm converge; the ≤512 gaps are launch-scale overhead (flow's smaller than chapel's ~0.25–0.45 ms floor — flow WINS below 1024). (2) **The f64 2× vs chapel-gpu is the `-fmad=false` price measured**: flow pins FMA off for oracle parity, chapel/nvcc default it on; f32 is memory/latency-bound and doesn't care, f64 is compute-bound and FMA halves the issue rate — Sapir's standing fmad call now has its number. (3) cuBLAS distance is algorithm class (tiling/tensor cores), not codegen.
+
+## CPU compute (per-iteration; startup excluded)
+
+flow-llvm = process wall (binary floor ~1.5 ms ⇒ ≈compute at N≥128, inflated below). **flow-llvm is single-thread today** — the parallel orchestrator is an S24 design item (Sapir: parallel-first). Fair single-thread peers: cpp, rust. Multithread peers (unfair to single-thread flow, listed for context): chapel 48-core `forall`, numpy (threaded BLAS).
+
+| N | flow-llvm f64 | flow-llvm f32 | cpp f64 | cpp f32 | rust | chapel f64 (48c) | chapel f32 (48c) | numpy (CPU BLAS, threaded) |
+|---|---|---|---|---|---|---|---|---|
+| 16 | 1.77 | 2.23 | — | — | — | — | — | — |
+| 64 | 2.69 | 1.49 | 0.342 | 0.317 | 0.165 | 0.074 | 0.069 | 0.0057 |
+| 128 | 8.08 | 3.03 | 2.00 | 1.44 | 1.58 | 0.188 | 0.173 | 0.030 |
+| 256 | 69.9 | 40.5 | 38.4 | 14.7 | 13.9 | 1.05 | 0.527 | 0.090 |
+| 512 | 436.8 | 311.6 | 377.5 | 309.3 | 183.7 | 6.44 | 5.17 | 0.199 |
+| 1024 | 5,910 † | 5,881 † | 3,249 | 3,369 | 3,275 | 206.5 | 201.4 | 1.04 |
+
+† second box (different CPU) — vs-cpp at 1024 (~1.8×) is indicative only.
+
+## CPU ratios vs flow-llvm (N=512; ratio = flow ms ÷ other ms; >1 = flow slower)
+
+| vs | other ms | f32 (311.6) | f64 (436.8) |
+|---|---|---|---|
+| cpp single-thread | 309.3 / 377.5 | 1.01× (parity) | 1.16× |
+| rust single-thread | 183.7 | 1.70× | 2.38× |
+| chapel 48-core | 5.17 / 6.44 | 60× | 68× — the multithread gap the parallel orchestrator closes |
+
+## Throughput (GFLOP/s)
+
+| Leg | Peak | At N |
+|---|---|---|
+| cuBLAS | 59,083 | 4096 |
+| numpy | 3,869 | 2048 |
+| naive CUDA | 3,433 | 512 |
+| **flow-cuda GEMM kernel f32** | **2,545** | **2048** |
+| chapel-gpu f32 | 2,567 | 4096 |
+| chapel-gpu f64 | 1,204 | 4096 |
+| **flow-cuda GEMM kernel f64** | **590** | **4096** |
+| chapel f32 (48c CPU) | 64 | 256 |
+| rust | 3.2 | 64 |
+| flow-llvm f32 | 1.4 | 128 |
+
+## Wall (whole process, startup included — separate on purpose)
+
+CUDA context startup ≈ 270 ms this box: every cuda wall number below N≈512 is startup, not compute.
+
+| N | flow-cuda loop | flow-cuda cap | flow-llvm loop |
+|---|---|---|---|
+| 4 | 279.8 | — | 2.37 |
+| 16 | 418.1 | 274.8 | 2.39 |
+| 32 | 1,274 | — | 2.57 |
+| 64 | 8,516 | 278.4 | 6.58 |
+| 128 | 68,937 | 266.2 | — (skip: znver3 clang stall) |
+| 256 | — | 271.8 | — |
+| 512 | — | 272.3 | — |
+| 1024 | — | 373.2 | — |
+| 2048 | — | 384.5 | — |
+| 4096 | — | 439.7 | — |
+
+Loop form = Θ(N³) launches (per-op mapping; region emission v2 is the fix). Cap form = 4 launches, flat at startup.
+
+## Kernel decomposition (FLOW_PERF, N=512 f32) — where the whole program's GPU time goes
+
+All-kernels Σ 0.318 = 0.155 module load (first launch, one-time) + **0.125 the GEMM kernel** + 0.038 init (iota/fill) + readback kernels; at N=4096 f32 the Σ is 57.7 with GEMM 57.2 — the GEMM kernel dominates completely at scale. Measurement note: the baselines never time their init — flow's Σ does, which is why the table above compares GEMM-kernel-only; the Σ is flow's whole-program GPU cost, not the like-for-like number. The sub-1024 gap to naive-CUDA (1.6× at 512) is small-N overhead where `-fmad=false` (oracle-pinned, Sapir's open call) + geometry (256/block) show; from N=1024 they wash out — parity.
+
+## Verification
+
+`c[0]`/`c[N²−1]` agree across flow-cuda, flow-llvm, naive-CUDA, cuBLAS, rust, cpp, chapel, numpy at every shared N (1047/2107 @64 · −7312/−933 @128 · −3694/10946 @256 · −22592/−38634 @512 · 11107/91690 @1024 · −1045/51275 @2048 · 74348/−302529 @4096). flow oracle-pinned at N=4/16/32. Remote cuda differential **15/15 green** on this box over the S22+WP-D emitters (first attempt's 3 "divergences" = 15 s timeouts under 48-way fan-out; 16-core pinning fixed — zero real).
+
+## Method
+
+RTX 4090, 48 vCPU znver3 · nvcc 12.4.131 (`-fmad=false -arch=sm_89`) · clang 15 (`-O2 -march=native`) · Chapel 2.9.0 — CPU locale via .deb; GPU locale source-built (`CHPL_LOCALE_MODEL=gpu CHPL_GPU=nvidia`, bundled LLVM) · rust 1.97.1 · numpy pip. One box for all legs. CPU legs move with the box's CPU — compare within one session file only (S21's llvm-beats-cpp reversed here on znver3).

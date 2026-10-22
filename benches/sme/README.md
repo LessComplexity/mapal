@@ -1,7 +1,7 @@
 # SME probes (S41 + S42)
 
 **S42's finding is `loadcost.c`: the gap is operand cache residency, worth ~1.79×.** Jump to
-"THE FINDING" below, or read `docs/performance/s42-sme-roofline.md` §5e. Everything else in this
+"THE FINDING" below, or read `docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5e. Everything else in this
 file is the road to it, including several dead ends kept so they are not re-walked.
 
 Four probes (S41) that priced the ARM SME leg before any emitter work, following the S38 method note:
@@ -50,7 +50,7 @@ clang -O3 -march=armv8-a+sme2 -o mmN    mmN.c    && ./mmN 1024 7
 ## The ceiling probe (`mmN.c`)
 
 Hand-written SME GEMM, f32, **one thread**, min-of-7, A packed per i-panel inside the timed
-region. Against the recorded M4 Pro baselines in `docs/performance/matmul/s33.md:150-158`:
+region. Against the recorded M4 Pro baselines in `docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md:150-158`:
 
 | N | Mapal `flow-fma-1t` (NEON) | **SME hand-written** | numpy-1t (Accelerate) |
 | ---: | ---: | ---: | ---: |
@@ -195,7 +195,7 @@ So the two headroom items are independent and both measured: accumulator occupan
 
 # S42 probes — the ceiling, two non-payments, and KC sized
 
-Full write-up: **`docs/performance/s42-sme-roofline.md`**. Six files, all f32, 1 thread, M4 Pro.
+Full write-up: **`docs/performance/cpu/matmul/sme-throughput-ceiling.md`**. Six files, all f32, 1 thread, M4 Pro.
 
 ## READ THIS FIRST — what a standalone probe can and cannot settle
 
@@ -242,7 +242,7 @@ only the operand source varies:
 
 **~1.79× is available and it would pass Accelerate.** The gap is *operand cache residency* — not
 instruction count, not scheduling, not the ZA-tile ratio, not silicon. See
-`docs/performance/s42-sme-roofline.md` §5e.
+`docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5e.
 
 ```sh
 clang -O3 -march=armv8-a+sme2 -o roofline roofline.c && ./roofline 1024 9

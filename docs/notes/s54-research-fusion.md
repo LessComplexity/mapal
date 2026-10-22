@@ -1,6 +1,6 @@
 # S54 research: fusion as placement — the rule, against today's code
 
-Date: 2026-10-21 · HEAD `s53-gpu-opt` @ 6d105b0 · Probe record `benches/results-s54-gpu/fusion-probe-static.txt`
+Date: 2026-10-21 · HEAD `s53-gpu-opt` @ 6d105b0 · Probe record `benches/results/gpu/fusion/static-probes/fusion-probe-static.txt`
 (programs `scratchpad/s54/fuse/*.mapal`, n=512, rtx-4090, both faces identical).
 
 ## 1. What today's code does, and why nothing fuses
@@ -187,4 +187,4 @@ in `tile_bench`).
 S52's trace at 4096: a fused epilogue removes 3.2–7.3 ms d2h, a host pass and (mlp) 5.5–15 ms h2d against a
 2.3–4.2 ms kernel — chain programs go from ~3× the kernel to ~1×. The kernel gains nothing; the exact-face
 0.5–0.66× gap stays. Streams ~0 at ≥2048, unknown below; prologue and `pdl` µs-scale. Every number lands in
-`benches/results-s54-gpu/` as it arrives.
+`benches/results/gpu/` as it arrives.

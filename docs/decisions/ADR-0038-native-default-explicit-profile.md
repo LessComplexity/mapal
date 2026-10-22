@@ -28,7 +28,7 @@ explicit, named, artifact-bearing input.
 
 **D1 — S46 stands.** The default target stays `native`; detection still falls
 back to `generic` when a fact cannot be read. The shipped performance path is
-the default build, and the benchmark record (`benches/results-s33…`) is
+the default build, and the benchmark record (`benches/results/cpu/matmul/timing-boundary…`) is
 native-emitted — restoring `generic` would silently de-perf every default build
 and invalidate the record's comparability. Keeping S46 ratifies the status quo;
 it is the *reversal* that would need a new decision.

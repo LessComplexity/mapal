@@ -1,0 +1,110 @@
+[
+  {
+    "case": "matrix",
+    "pass": true,
+    "mode": "eager",
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "precision": {
+      "api": "fp32_precision",
+      "global": "ieee",
+      "cuda_matmul": "ieee"
+    },
+    "compile_scope": "one request; fullgraph; no CUDA graphs",
+    "cold_calls_ms": [
+      210.9702480083797
+    ],
+    "cold_final_only_call_ms": 0.538962020073086,
+    "memory_before_timing": {
+      "allocated": 34999296,
+      "reserved": 37748736
+    },
+    "memory_after_timing": {
+      "allocated": 34999296,
+      "reserved": 37748736,
+      "peak_allocated": 36178944,
+      "peak_reserved": 37748736
+    }
+  },
+  {
+    "case": "matrix",
+    "pass": true,
+    "mode": "compiled",
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "precision": {
+      "api": "fp32_precision",
+      "global": "ieee",
+      "cuda_matmul": "ieee"
+    },
+    "compile_scope": "one request; fullgraph; no CUDA graphs",
+    "cold_calls_ms": [
+      2769.093710987363
+    ],
+    "cold_final_only_call_ms": 671.51747198659,
+    "memory_before_timing": {
+      "allocated": 34999296,
+      "reserved": 138412032
+    },
+    "memory_after_timing": {
+      "allocated": 34999296,
+      "reserved": 138412032,
+      "peak_allocated": 35523584,
+      "peak_reserved": 138412032
+    }
+  },
+  {
+    "case": "matrix-large",
+    "pass": true,
+    "mode": "eager",
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "precision": {
+      "api": "fp32_precision",
+      "global": "ieee",
+      "cuda_matmul": "ieee"
+    },
+    "compile_scope": "one request; fullgraph; no CUDA graphs",
+    "cold_calls_ms": [
+      173.62577799940482
+    ],
+    "cold_final_only_call_ms": 1.0111349984072149,
+    "memory_before_timing": {
+      "allocated": 55062528,
+      "reserved": 65011712
+    },
+    "memory_after_timing": {
+      "allocated": 55062528,
+      "reserved": 65011712,
+      "peak_allocated": 59781120,
+      "peak_reserved": 65011712
+    }
+  },
+  {
+    "case": "matrix-large",
+    "pass": true,
+    "mode": "compiled",
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "precision": {
+      "api": "fp32_precision",
+      "global": "ieee",
+      "cuda_matmul": "ieee"
+    },
+    "compile_scope": "one request; fullgraph; no CUDA graphs",
+    "cold_calls_ms": [
+      2975.4433699999936
+    ],
+    "cold_final_only_call_ms": 738.7777020048816,
+    "memory_before_timing": {
+      "allocated": 55062528,
+      "reserved": 163577856
+    },
+    "memory_after_timing": {
+      "allocated": 55062528,
+      "reserved": 163577856,
+      "peak_allocated": 57159680,
+      "peak_reserved": 163577856
+    }
+  }
+]

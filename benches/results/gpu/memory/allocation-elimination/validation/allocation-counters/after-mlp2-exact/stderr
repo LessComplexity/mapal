@@ -1,0 +1,38 @@
+mapal_gpu_trace op=load flags=3 wait_ms=164.904 lead_ms=0.095 init_ms=59.357 ctx_ms=104.709 module_ms=0.700
+mapal_gpu_trace op=alloc ms=0.320 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_1f19f0178349a042 ms=0.107 n=4096
+mapal_gpu_trace op=alloc ms=0.014 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_8c8c3bdb9c78e77f ms=0.014 n=4096
+mapal_gpu_trace op=alloc ms=0.005 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_2f0666f212630a9c ms=0.011 n=4096
+mapal_gpu_trace op=alloc ms=0.004 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_967dd4abc0e6e301 ms=0.011 n=4096
+mapal_gpu_trace op=alloc ms=0.031 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_2c4310112e11e516 ms=0.012 n=4096
+mapal_gpu_trace op=alloc ms=0.005 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_811d0b0e116304d3 ms=0.011 n=4096
+mapal_gpu_trace op=alloc ms=0.004 bytes=16384
+mapal_gpu_trace op=alloc ms=0.003 bytes=16384
+mapal_gpu_trace op=alloc ms=0.004 bytes=16384
+mapal_gpu_trace op=event record=0 wait=1 auto=1 ms=0.010
+mapal_gpu_trace op=launch kernel=mapal_tile_3e63958f6cec76c7 ms=0.019 stream=1 pdl=0
+mapal_gpu_trace op=launch kernel=mapal_tile_0f72a96f2dacde57 ms=0.013 stream=1 pdl=0
+mapal_gpu_trace op=alloc ms=0.005 bytes=16384
+mapal_gpu_trace op=event record=0 wait=2 auto=1 ms=0.003
+mapal_gpu_trace op=launch kernel=mapal_tile_bd9963cb28af68b9 ms=0.018 stream=2 pdl=0
+mapal_gpu_trace op=launch kernel=mapal_tile_0f72a96f2dacde57 ms=0.012 stream=2 pdl=0
+mapal_gpu_trace op=free ms=0.008
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.004
+mapal_gpu_trace op=d2h ms=0.060 bytes=4 stream=1
+mapal_gpu_trace op=d2h ms=0.013 bytes=4 stream=1
+mapal_gpu_trace op=free ms=0.006
+mapal_gpu_trace op=d2h ms=0.021 bytes=4 stream=2
+mapal_gpu_trace op=d2h ms=0.010 bytes=4 stream=2
+mapal_gpu_trace op=free ms=0.162
+mapal_gpu_trace_total flags=3 load_ms=164.904 lead_ms=0.095 init_ms=59.357 ctx_ms=104.709 module_ms=0.700 alloc_ms=0.396 h2d_ms=0.000 kernel_ms=0.061 gen_ms=0.166 d2h_ms=0.104 free_ms=0.199 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=4 gens=6 allocs=10 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=2 pdl=0

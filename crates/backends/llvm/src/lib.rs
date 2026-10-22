@@ -135,7 +135,7 @@ pub struct GpuRungs {
     /// device-only object gets no host slot. Off: one `cuMemAlloc` /
     /// `cuMemFree` per object and a host slot for every array (S53).
     /// Ships ON on all five measured parts (no `GPU_RUNGS_OFF` row):
-    /// `benches/results-s54-gpu/arena-<part>.txt` + `-confirm.txt`, iter ms
+    /// `benches/results/gpu/memory/arenas/arena-<part>.txt` + `-confirm.txt`, iter ms
     /// stable+ on 38–44 of 50 rows per part and stable- on none; e2e_chain_4096
     /// wall OFF/ON 1.17/1.09 (3090), 1.03/1.06 (A100), 1.16/1.23 (4090),
     /// 1.04/1.06 (H100 PCIe), 1.06/1.30 (5090), exact face, ms in the files.
@@ -206,7 +206,7 @@ pub struct GpuRungs {
     /// the H100 PCIe 1.44–3.84× and 1.10–20.44× on two boxes. One H100 row
     /// read 0.26 because of host stalls in three of its five ON reps; its
     /// minima give 2.38. Every ratio of minima is at least 1.29, and the
-    /// printed values are identical (`benches/results-s54-gpu/epilogue-*.txt`,
+    /// printed values are identical (`benches/results/gpu/fusion/epilogues/epilogue-*.txt`,
     /// `epilogue-tables.md`). Only the filled class (n ≥ 2048) was measured.
     pub epilogue: bool,
     /// S54 `devmap` (ARCHITECTURE R2): a per-cell map whose operands are
@@ -217,7 +217,7 @@ pub struct GpuRungs {
     /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): arm
     /// `off-devmap` iter / ON iter, medians of 5, every multi-computation probe
     /// (bias, diamond, epi, fanout, indep, loop, mlp, residual) at 2048 and 4096
-    /// on both faces, `benches/results-s54-gpu/devmap-<part>.txt`: RTX 3090
+    /// on both faces, `benches/results/gpu/fusion/device-maps/devmap-<part>.txt`: RTX 3090
     /// 1.76–3.51, A100 1.30–2.53, RTX 4090 1.89–4.03, H100 PCIe 1.32–15.5, RTX
     /// 5090 1.76–4.76; `ew` 7–121 (the host loops it replaces).
     pub devmap: bool,
