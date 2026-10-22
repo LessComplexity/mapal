@@ -1,0 +1,7 @@
+[18:59:43] try RTX_3090 offer=55676182 dph=0.193 pcie=12.2 cpu_ghz=2.6 host=443829 machine=84216 geo=California, US
+[19:25:58] no complete results from offer=55676182
+[19:25:58] try RTX_3090 offer=55885658 dph=0.201 pcie=11.3 cpu_ghz=4.0 host=96250 machine=53608 geo=Spain, ES
+[19:26:13] no complete results from offer=55885658
+[19:26:13] try RTX_3090 offer=55321891 dph=0.281 pcie=24.4 cpu_ghz=5.0848931 host=626775 machine=151065 geo=Missouri, US
+[19:26:24] no complete results from offer=55321891
+[19:26:24] STOP: no further offers
