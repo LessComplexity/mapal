@@ -8,6 +8,11 @@ STATUS distinguishes finite benchmark acceptance from the S58 ordering correctio
 remaining allocation/performance work.
 The isolated [S59 small-M candidate](../../performance/s59-smallm-comparison.md) is
 not promoted because measured regressions accompany its wins; it adds no built row here.
+The [S60 caller audit](../../performance/s60-parallel-preparation.md) establishes an
+existing dependency: `func/gpu.rs:launch` queries `TargetProfile::gpu_tile` before
+`rungs_at` to derive `Fill`, then queries geometry again with selected wide/fill rungs.
+Helper admission can therefore change rung selection as well as final dimensions.
+The isolated A/B experiments add no built mechanism to this map.
 
 ## Dat — facts and placement records
 

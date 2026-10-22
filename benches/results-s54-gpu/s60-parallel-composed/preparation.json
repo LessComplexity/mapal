@@ -1,0 +1,34 @@
+{
+  "state": "prepared-awaiting-explicit-budget-approval",
+  "gpu_execution": false,
+  "production_source_changed": false,
+  "baseline_head": "bc7af76",
+  "compiler_source_equivalent_to": "3a0d435",
+  "payload_bytes": 26444972,
+  "packet_sha256": "b37f14727ac878394046d520e83ef60c1679f1efe758e9ad37cf4dac20a12432",
+  "components": {
+    "allocation-gate-v2.tgz": {
+      "sha256": "a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd",
+      "bytes": 12568328
+    },
+    "composed-matrix-v3.tgz": {
+      "sha256": "750a72f414573417fcf2dae3c2f39e1cfb738d63417995309920541c55af0119",
+      "bytes": 8178381
+    },
+    "kernel-B-comparison.tgz": {
+      "sha256": "09f8318c3aea5a38a5190d05361bd5840c45bceaf6ca12d5d87b117e61f515a2",
+      "bytes": 2861573
+    },
+    "kernel-diagnostics.tgz": {
+      "sha256": "95d68cec8de2d386700322bd91ffd7becbe8ec6c7d747246175b10d6b295b618",
+      "bytes": 2815657
+    }
+  },
+  "clock_scope": "Repeated identical resident-input work; synchronized-region host/event wall; no allocation-elimination timing claim.",
+  "pending": [
+    "Explicit incremental budget approval",
+    "Fresh offer and root-bound launch review",
+    "GPU execution and independent result verification",
+    "Broader recurrent/retention/independent-branch and control coverage"
+  ]
+}

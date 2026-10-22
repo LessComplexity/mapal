@@ -1,7 +1,7 @@
 # Component: backend-nvptx
 
 Status: **built inside the LLVM backend; S54 validation passed; S58 ordering correction integrated and checked.**
-Last updated: 2026-10-21 · S59 small-M comparison complete; candidate remains isolated.
+Last updated: 2026-10-21 · S60 parallel preparation reviewed; GPU run awaits budget approval.
 
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
@@ -111,6 +111,15 @@ Two M1 TF32 gates fail in both revisions. The blanket candidate is not promoted.
 Root rehashed 948 files and recomputed 10,080 raw CUDA-event samples. Runtime geometry
 and resources are recorded; actual executed SASS/counters remain missing. Instance 57130775
 is independently absent. Shared source, allocation behavior and the arena guard are unchanged.
+
+[S60 parallel preparation](../../performance/s60-parallel-preparation.md) now has two
+resident-input composed MLP packets with matched clock ordering, explicit numerical
+coverage and independent readers. Two isolated geometry alternatives each pass 918,000
+comparisons; the caller proof shows why changing geometry admission can alter the
+preliminary fill key and selected arithmetic route. Neither is promoted. Allocation,
+optional kernel comparison and executed-image packets are sealed with real local
+cancellation/retrieval checks. No S60 rental/upload or GPU result exists; the explicit
+budget-extension request is pending. Recurrence/retention and broader controls remain open.
 
 ## Continuing performance work
 

@@ -1,0 +1,9 @@
+{
+  "archive": "/private/tmp/mapal-s60-composed/composed-matrix-v3.tgz",
+  "bytes": 8178381,
+  "sha256": "750a72f414573417fcf2dae3c2f39e1cfb738d63417995309920541c55af0119",
+  "manifest_sha256": "3200ec9251a85ee2aa2ec87a6511e817f9e5556e9cb829731aab33157ed8b464",
+  "payload_files": 85,
+  "code_diff": "one assignment of the existing checker observe() return block to report.checkpoint_values",
+  "export_test": "AST proves graph/final_graph/observe unchanged; simulated assignment calls observe once and preserves raw block through JSON"
+}

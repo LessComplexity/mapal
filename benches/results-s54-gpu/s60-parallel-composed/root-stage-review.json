@@ -1,0 +1,11 @@
+{
+  "pass": true,
+  "packet_sha256": "b37f14727ac878394046d520e83ef60c1679f1efe758e9ad37cf4dac20a12432",
+  "payload_bytes": 26444972,
+  "launcher_sha256": "90c514ad3b97b3c7f30909383703107f465ff3ccd3788b4366baa72e33bdc211",
+  "wrapper_sha256": "ceedc88b50263e4c76b765ae784216aa7f374df65790e032e85dbc22f09b948e",
+  "four_archives_safe_inventory": true,
+  "new_reservation_usd": 0.6601851851851851,
+  "no_budget_approval_yet": true,
+  "no_rental_or_upload": true
+}
