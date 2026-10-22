@@ -363,13 +363,16 @@ flowchart LR
   derivable, but it would hollow the timed probes (their outputs are read at the corners) into
   two-row GEMMs. It waits for a program that needs it and a harness that keeps a whole reader.
 
-The library-observer extension in §8 remains planned after its first live pilot rejects
-attribution. Its next observation-only model adds `Dat CallbackInvocation` separate from
+The standalone library-observer extension now admits three fresh legs and four selected
+kernel entries. Its observation-only model adds `Dat CallbackInvocation` separate from
 activity correlation, bounded `Dat ExecutableSymbolRange` separate from a launch entry,
-and provisional versus authoritative context metadata. Planned observation/admission
-transformations remain in the standalone prototype; their exact contracts and failure
-boundaries are specified in OpenSpec `capture-executed-cuda-images`. The failed trace and
-sealed v1 are immutable; no current library-image admission follows from these plans.
+provisional versus authoritative context metadata, and explicit API activity-domain
+binding. The sealed observer callback and `admit` transformation realize these joins in
+the existing benchmark/evidence `Loc`s, using callback-lifetime `Trm writefile`. Their
+exact source/seal and live evidence are mapped in IMPLEMENTATION.md. FRAMEWORK §4.5
+laws1/4/5 still reject missing or ambiguous identities; admission does not prove complete
+decoder interpretation or a performance cause. The failed trace and sealed v1 remain
+immutable and rejected. No production compiler/runtime mechanism changes.
 
 ## 9. Realized arithmetic drives per-site policy
 

@@ -1,6 +1,9 @@
 # Mapal — Global Status
 
-Current continuation: **2026-10-22, arithmetic-aware GPU policy correction committed at50a57e5; comparison clocks audited; repaired library observer reviewed and awaiting explicit revised-bundle approval.**
+Current continuation: **2026-10-22, actual library capture complete: Mapal1/cuBLAS2/CUTLASS1 selected entries admitted, with4,608 numerical words checked. cuBLAS staged GEMM plus split-K reduction is observed; no new timing claim.**
+The [executed-image comparison](performance/gpu/disassembly/executed-library-images.md)
+records instruction anchors, decoder limits and controlled follow-up experiments. All12
+actual task rentals are closed; one further unavailable-offer attempt created no instance.
 The [backend correction](performance/gpu/disassembly/fact-driven-scheduling.md) connects
 existing facts through one actual-arithmetic selection: 65 library and 176 integration
 tests pass, one optional test ignored; eight successful LLVM/PTX controls stay unchanged.

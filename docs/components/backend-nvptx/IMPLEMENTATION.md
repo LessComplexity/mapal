@@ -110,3 +110,11 @@ The selection table's presence is not final validation. Acceptance still require
 integrated correctness and measurement evidence, independent confirmations and reconciled
 selection/report status. Numerical-policy and unplaced-shape exclusions remain in
 [ARCHITECTURE §8](ARCHITECTURE.md#8-what-is-not-placed-here); this map adds none.
+
+The separate sealed library observer v2 now has live evidence for its callback invocation,
+module/function and exact-entry joins: three admitted legs and four selected entries.
+Its `capture.cpp` callback and `admit.py` `admit` transformation remain standalone tooling
+in the retained source archive, not a replacement for the repository observer above or
+a compiler/runtime mechanism. [Source seal and repairs](../../../benches/results/gpu/disassembly/library-kernels/counter-free-capture/observation-schema-repair/README.md)
+and [live realization evidence](../../../benches/results/gpu/disassembly/library-kernels/counter-free-capture/rtx-5090/README.md)
+bind those functions to exact source and outputs. No production implementation row changes.

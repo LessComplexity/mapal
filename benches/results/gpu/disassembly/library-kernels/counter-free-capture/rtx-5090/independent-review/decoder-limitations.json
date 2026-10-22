@@ -1,0 +1,26 @@
+{
+  "mapal-sass-0": {
+    "unknown_transition_annotations": 151,
+    "first_annotation_line": 15,
+    "question_mark_lines": 223,
+    "decoder_stderr": ""
+  },
+  "cublas-sass-0": {
+    "unknown_transition_annotations": 1451,
+    "first_annotation_line": 15,
+    "question_mark_lines": 1669,
+    "decoder_stderr": ""
+  },
+  "cublas-sass-1": {
+    "unknown_transition_annotations": 562,
+    "first_annotation_line": 15,
+    "question_mark_lines": 868,
+    "decoder_stderr": ""
+  },
+  "cutlass-sass-0": {
+    "unknown_transition_annotations": 653,
+    "first_annotation_line": 14,
+    "question_mark_lines": 722,
+    "decoder_stderr": ""
+  }
+}

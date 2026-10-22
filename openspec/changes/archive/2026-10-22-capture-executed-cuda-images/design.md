@@ -166,3 +166,19 @@ invocation, requiring one valid binding and rejecting contradictory or ambiguous
 The original trace remains immutable and rejected. Replaying its fields through actual
 observer source with fresh CPU-owned invocation storage is compatibility evidence only;
 it does not recover the missing original invocation identity or establish GPU attribution.
+
+## Fresh admitted realization
+
+The explicitly approved repaired v2 completes the fresh primitive pilot: one selected
+Mapal entry, two cuBLAS entries and one selected CUTLASS entry. `admit.py`'s `admit`
+transformation and the callback implementation are bound by the retained v2 source seal;
+the full callback/image/decoder trace is independently hash-checked. The separate reader
+recomputes4,608 numerical words and provenance, and replays the sealed reviewed join
+parser. Its independence does not extend to a second implementation of attribution.
+
+The existing observation Dat gains no production compiler meaning: actual cuBLAS GEMM
+and reduction entries, shared/async instruction presence and queried launch resources
+are evidence for future experiments. Unknown decoder annotations and unavailable cuBLAS
+register fields remain explicit. All instrumented timing is excluded. The failed v1
+trace remains rejected. See `docs/performance/gpu/disassembly/executed-library-images.md`
+for exact selected entries, current source mappings and falsifiable next tests.

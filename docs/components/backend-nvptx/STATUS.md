@@ -1,7 +1,7 @@
 # Component: backend-nvptx
 
 Status: **built inside the LLVM backend; S54 validation passed; ordering, dead raw-storage and actual-arithmetic selection corrections integrated and checked.**
-Last updated: 2026-10-22 · Fused-library comparison and measurement boundaries verified; arithmetic selection correction independently reviewed; repaired library observer awaits explicit revised-bundle upload approval.
+Last updated: 2026-10-22 · Repaired library observer admits all three legs and four selected kernel entries; actual cuBLAS GEMM plus split-K reduction captured; no new timing claim.
 
 The [actual-arithmetic correction](../../performance/gpu/disassembly/fact-driven-scheduling.md)
 connects existing IR/layout/permission/device facts through `Launch::arithmetic` to policy
@@ -16,15 +16,18 @@ remain the existing ones.
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
 independently reproduced context/geometry rejections. S61 admits four actual Linux/GPU
-Contract captures, including exact callback cubins and SASS. Actual cuBLAS/CUTLASS images
-and the causes of their performance differences remain open.
+Contract captures, including exact callback cubins and SASS. The later standalone
+[library capture](../../performance/gpu/disassembly/executed-library-images.md) admits
+Mapal1/cuBLAS2/CUTLASS1 selected entries, with4,608 independently checked output words.
+All four decoder outputs contain unresolved annotations. Actual dispatch structure is
+established for this fresh host; causal performance attribution remains open.
 
 The [competitive CUTLASS comparison](../../performance/gpu/kernels/competitive-cutlass.md)
 admits six compiled geometries and eight held-out processes. The selected tile improves
 the old default 2.32–2.34× and beats the frozen Mapal baseline; cuBLAS remains ahead. No
 compiler policy changed. The separate NCU diagnostic was denied counter permission and
-produced no report. A callback library-image extension is planned; no dynamic counter or
-library SASS conclusion is admitted.
+produced no report. The callback extension subsequently admits exact library entries
+without requesting counters. No dynamic occupancy, traffic or stall result is admitted.
 
 The [fused-library comparison](../../performance/gpu/workloads/fused-library-comparison.md)
 admits20 native confirmations and10 original controls on one RTX5090. Tuned fused
