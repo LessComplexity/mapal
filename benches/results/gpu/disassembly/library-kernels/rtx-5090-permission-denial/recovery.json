@@ -1,0 +1,8 @@
+{
+  "raw_archive": "raw/diagnostic.tar.gz",
+  "sha256": "814c435211c313882007e1a8fc34c12f744fbd29f161956219c681eb4a217ad4",
+  "admitted": false,
+  "reason": "ERR_NVGPUCTRPERM",
+  "raw_ncu_reports": 0,
+  "timing_source": "Separate ordinary archive; diagnostic output does not alter ordinary admission"
+}

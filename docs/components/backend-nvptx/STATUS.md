@@ -1,13 +1,27 @@
 # Component: backend-nvptx
 
 Status: **built inside the LLVM backend; S54 validation passed; ordering and dead raw-storage corrections integrated and checked.**
-Last updated: 2026-10-22 · S61 allocation, kernel alternatives, ten composed rows and four executed Mapal images verified; competitive library extension in progress.
+Last updated: 2026-10-22 · Allocation, ten composed rows, four executed Mapal images and competitive CUTLASS primitive timing verified; fused-library comparison verified; callback-image extension in progress.
 
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and
 independently reproduced context/geometry rejections. S61 admits four actual Linux/GPU
 Contract captures, including exact callback cubins and SASS. Actual cuBLAS/CUTLASS images
 and the causes of their performance differences remain open.
+
+The [competitive CUTLASS comparison](../../performance/gpu/kernels/competitive-cutlass.md)
+admits six compiled geometries and eight held-out processes. The selected tile improves
+the old default 2.32–2.34× and beats the frozen Mapal baseline; cuBLAS remains ahead. No
+compiler policy changed. The separate NCU diagnostic was denied counter permission and
+produced no report. A callback library-image extension is planned; no dynamic counter or
+library SASS conclusion is admitted.
+
+The [fused-library comparison](../../performance/gpu/workloads/fused-library-comparison.md)
+admits20 native confirmations and10 original controls on one RTX5090. Tuned fused
+cuBLASLt is2.24×/2.16× faster than Mapal at the two M128 widths. Selected CUTLASS has
+lower observed medians too; no causal Mapal fusion/retention claim follows. All148 native
+executions,770,816 raw words and eight selections pass independent checks. The same-mode
+library fusion deltas preserve exact selected configurations. All task rentals are closed.
 
 The S41 packaging choice is realized as the GPU leg of `mapal-backend-llvm`, with the
 CUDA-driver runtime in `mapal-rt`. The component has no separate backend crate.

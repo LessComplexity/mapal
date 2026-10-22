@@ -2,10 +2,11 @@
 
 [Evidence index](../../README.md)
 
-| Experiment or topic | Artifacts |
+| Experiment | Evidence and purpose |
 | --- | --- |
-| [Cutlass Baseline](cutlass-baseline) | 2 |
-| [Initial Comparisons](initial-comparisons) | 14 |
-| [Library Comparison](library-comparison) | 7 |
-| [Optimization Ladder](optimization-ladder) | 46 |
-| [Small M](small-m) | 70 |
+| [Competitive CUTLASS](competitive-cutlass/README.md) | Frozen preparation, twelve attempted geometries and held-out RTX 5090 comparison |
+| [CUTLASS baseline audit](cutlass-baseline) | Original default configuration and independent source review |
+| [Initial comparisons](initial-comparisons) | Early kernel/library measurement records |
+| [Frozen library comparison](library-comparison) | Multi-architecture comparison tables and independent verification |
+| [Optimization ladder](optimization-ladder) | Per-feature measurements and selected/rejected configurations |
+| [Small-M alternatives](small-m) | Cooperative geometry and panel-depth experiments, raw samples and nulls |

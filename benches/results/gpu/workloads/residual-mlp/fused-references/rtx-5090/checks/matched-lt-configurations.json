@@ -1,0 +1,956 @@
+{
+  "pass": true,
+  "scope": "Exact selected Lt opaque/config bytes matched across unfused/fused descriptors; does not identify actual executed kernel code",
+  "cases": {
+    "matrix": {
+      "pass": true,
+      "indices": [
+        0,
+        1,
+        0
+      ],
+      "unfused_path": "calls/0041-matrix-cublaslt-unfused",
+      "fused_path": "calls/0062-matrix-cublaslt-fused",
+      "same_binary_sha256": true,
+      "unfused_wall_median": 0.036255,
+      "fused_wall_median": 0.032659,
+      "details": {
+        "unfused": [
+          {
+            "site": "p",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "p",
+              "logical_MNK": [
+                128,
+                256,
+                256
+              ],
+              "api_MNK": [
+                256,
+                128,
+                256
+              ],
+              "order": "column",
+              "ld": [
+                256,
+                256,
+                256,
+                256
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "p",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 524288,
+              "checked_workspace": 524288,
+              "waves": 0.0470588244,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 4
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "hraw",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "hraw",
+              "logical_MNK": [
+                128,
+                512,
+                256
+              ],
+              "api_MNK": [
+                512,
+                128,
+                256
+              ],
+              "order": "column",
+              "ld": [
+                512,
+                256,
+                512,
+                512
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "hraw",
+              "heuristic_index": 1,
+              "eligible_index": 1,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 1048576,
+              "checked_workspace": 1048576,
+              "waves": 0.0941176489,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 4
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "mraw",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "mraw",
+              "logical_MNK": [
+                128,
+                256,
+                512
+              ],
+              "api_MNK": [
+                256,
+                128,
+                512
+              ],
+              "order": "column",
+              "ld": [
+                256,
+                512,
+                256,
+                256
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "mraw",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 1048576,
+              "checked_workspace": 1048576,
+              "waves": 0.0941176489,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 8
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          }
+        ],
+        "fused": [
+          {
+            "site": "p",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "p",
+              "logical_MNK": [
+                128,
+                256,
+                256
+              ],
+              "api_MNK": [
+                256,
+                128,
+                256
+              ],
+              "order": "column",
+              "ld": [
+                256,
+                256,
+                256,
+                256
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "p",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 524288,
+              "checked_workspace": 524288,
+              "waves": 0.0470588244,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 4
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "h-bias-relu",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "h-bias-relu",
+              "logical_MNK": [
+                128,
+                512,
+                256
+              ],
+              "api_MNK": [
+                512,
+                128,
+                256
+              ],
+              "order": "column",
+              "ld": [
+                512,
+                256,
+                512,
+                512
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 6,
+              "bias_length": 512,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "h-bias-relu",
+              "heuristic_index": 1,
+              "eligible_index": 1,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 1048576,
+              "checked_workspace": 1048576,
+              "waves": 0.0941176489,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 4
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "m-bias",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "m-bias",
+              "logical_MNK": [
+                128,
+                256,
+                512
+              ],
+              "api_MNK": [
+                256,
+                128,
+                512
+              ],
+              "order": "column",
+              "ld": [
+                256,
+                512,
+                256,
+                256
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 4,
+              "bias_length": 256,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 7
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "m-bias",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 1048576,
+              "checked_workspace": 1048576,
+              "waves": 0.0941176489,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 15
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 8
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          }
+        ]
+      }
+    },
+    "matrix-large": {
+      "pass": true,
+      "indices": [
+        0,
+        3,
+        0
+      ],
+      "unfused_path": "calls/0106-matrix-large-cublaslt-unfused",
+      "fused_path": "calls/0130-matrix-large-cublaslt-fused",
+      "same_binary_sha256": true,
+      "unfused_wall_median": 0.063416,
+      "fused_wall_median": 0.05962,
+      "details": {
+        "unfused": [
+          {
+            "site": "p",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "p",
+              "logical_MNK": [
+                128,
+                1024,
+                1024
+              ],
+              "api_MNK": [
+                1024,
+                128,
+                1024
+              ],
+              "order": "column",
+              "ld": [
+                1024,
+                1024,
+                1024,
+                1024
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "p",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 4194304,
+              "checked_workspace": 4194304,
+              "waves": 0.250980407,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 10
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "hraw",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "hraw",
+              "logical_MNK": [
+                128,
+                2048,
+                1024
+              ],
+              "api_MNK": [
+                2048,
+                128,
+                1024
+              ],
+              "order": "column",
+              "ld": [
+                2048,
+                1024,
+                2048,
+                2048
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "hraw",
+              "heuristic_index": 3,
+              "eligible_index": 3,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 5242880,
+              "checked_workspace": 5242880,
+              "waves": 0.313725501,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 5
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "mraw",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "mraw",
+              "logical_MNK": [
+                128,
+                1024,
+                2048
+              ],
+              "api_MNK": [
+                1024,
+                128,
+                2048
+              ],
+              "order": "column",
+              "ld": [
+                1024,
+                2048,
+                1024,
+                1024
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "mraw",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 5242880,
+              "checked_workspace": 5242880,
+              "waves": 0.313725501,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 10
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          }
+        ],
+        "fused": [
+          {
+            "site": "p",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "p",
+              "logical_MNK": [
+                128,
+                1024,
+                1024
+              ],
+              "api_MNK": [
+                1024,
+                128,
+                1024
+              ],
+              "order": "column",
+              "ld": [
+                1024,
+                1024,
+                1024,
+                1024
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 1,
+              "bias_length": 0,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "p",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 4194304,
+              "checked_workspace": 4194304,
+              "waves": 0.250980407,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 10
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "h-bias-relu",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "h-bias-relu",
+              "logical_MNK": [
+                128,
+                2048,
+                1024
+              ],
+              "api_MNK": [
+                2048,
+                128,
+                1024
+              ],
+              "order": "column",
+              "ld": [
+                2048,
+                1024,
+                2048,
+                2048
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 6,
+              "bias_length": 2048,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "h-bias-relu",
+              "heuristic_index": 3,
+              "eligible_index": 3,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 5242880,
+              "checked_workspace": 5242880,
+              "waves": 0.313725501,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 5
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          },
+          {
+            "site": "m-bias",
+            "descriptor": {
+              "type": "lt_descriptor",
+              "site": "m-bias",
+              "logical_MNK": [
+                128,
+                1024,
+                2048
+              ],
+              "api_MNK": [
+                1024,
+                128,
+                2048
+              ],
+              "order": "column",
+              "ld": [
+                1024,
+                2048,
+                1024,
+                1024
+              ],
+              "compute": "CUBLAS_COMPUTE_32F_PEDANTIC",
+              "epilogue": 4,
+              "bias_length": 1024,
+              "alpha": 1,
+              "beta": 0,
+              "workspace_cap": 33554432,
+              "heuristic_status": 0,
+              "returned": 8
+            },
+            "algorithm": {
+              "type": "lt_algorithm",
+              "site": "m-bias",
+              "heuristic_index": 0,
+              "eligible_index": 0,
+              "state": 0,
+              "check_status": 0,
+              "check_state": 0,
+              "workspace": 5242880,
+              "checked_workspace": 5242880,
+              "waves": 0.313725501,
+              "supported": true,
+              "configuration": {
+                "id": {
+                  "status": 0,
+                  "value": 20
+                },
+                "tile": {
+                  "status": 0,
+                  "value": 18
+                },
+                "stages": {
+                  "status": 0,
+                  "value": 28
+                },
+                "split_k": {
+                  "status": 0,
+                  "value": 10
+                },
+                "reduction": {
+                  "status": 0,
+                  "value": 2
+                },
+                "swizzle": {
+                  "status": 0,
+                  "value": 0
+                },
+                "custom": {
+                  "status": 0,
+                  "value": 0
+                }
+              },
+              "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

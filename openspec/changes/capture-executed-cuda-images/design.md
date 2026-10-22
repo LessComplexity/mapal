@@ -48,7 +48,7 @@ Observe the exact existing driver-PTX path without CUDA calls, synchronization, 
 
 Root reviews the isolated prototype. Integrate only after component docs reconcile and independent review. Future explicitly budgeted Linux GPU smoke must verify callback layout, load chronology, completion, nonempty cubin, exact kernel section and real nvdisasm output. Ordinary timings remain separate uninstrumented runs. Rollback removes the observer invocation; production runtime has no changes.
 
-## S61 authorized extension: library execution and compiler mapping
+## Authorized extension: library execution and compiler mapping
 
 The user explicitly requests comparing actually executed cuBLAS/CUTLASS and Mapal code,
 then identifying which differences require IR facts, which already-derived facts are not
@@ -94,3 +94,32 @@ Clock control stays disabled. All internal kernels are preserved rather than ass
 SGEMM call launches one kernel. Unsupported profiler access, missing SASS, failed numeric
 markers or ambiguous identities cause non-admission. The exact 2025.1 CLI is the reviewed
 baseline; options introduced by later versions are not silently assumed.
+
+## Counter-denied host: callback image realization
+
+The actual RTX 5090 diagnostic reached the exact selected ordinary binary with Nsight
+Compute 2025.1.1, then failed with `ERR_NVGPUCTRPERM`. No report or SASS was produced.
+This proves access denial, not a parser defect or a specific host configuration. Do not
+change host driver/security controls to repair this diagnostic. Ordinary timings remain
+separate and admitted.
+
+The next planned realization returns to `library_admit?` above using the existing
+successful Mapal callback observer as its base. `Dat LibraryObservationPacket` binds
+the selected ordinary binary, explicit harness leg and profiler-control interval to
+copied module lifetimes, successful dispatches and completed numerical gates.
+`Trn observe_library` and `Trn admit_library` are planned under the standalone
+benchmark tooling, with a prototype in `/private/tmp/mapal-library-image-capture/`.
+They use the existing benchmark-process/evidence-directory `Loc`s and bounded
+callback-lifetime `Trm writefile`; no counter interface or production runtime change.
+
+Pinned CUDA/CUPTI header fields must support every identity edge. Resource module
+records lack a CUmodule handle, so they cannot alone establish a driver-handle join.
+Accept either an observed direct loader/function association or additional function
+metadata yielding one complete, unambiguous active context/module/exact-symbol join.
+Missing, reused, dropped, deferred or ambiguous identities reject. All supported internal
+library launch variants and every image required by the selected leg must be retained.
+Static SASS resources/opcodes cannot establish dynamic traffic, occupancy or stalls.
+
+Root reviews the exact extension before a live smoke. No loading-mode, compiler-option,
+numerical-budget or ordinary-clock changes are implied. FRAMEWORK §4.5 laws 1/4/5 retain
+their callback-lifetime, complete identity mediation and completed-leg obligations.

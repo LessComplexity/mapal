@@ -1,0 +1,21 @@
+{
+  "approved_for_operator_packet": true,
+  "reviewed_utc": "2026-10-22T19:07:40.347031+00:00",
+  "archive_sha256": "12fd10e54a2f9f56efda2d4cdc7f9939c2e2ea03f7ad54ba452beb31b52a6c4c",
+  "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+  "manifest_files_verified": 962,
+  "archive_regular_files_verified": 963,
+  "archive_directory_entries": 81,
+  "unsafe_or_mismatched_members": 0,
+  "runtime_source_hashes_match_independent_final_review": true,
+  "check_only_pass": true,
+  "independent_source_review": "/private/tmp/mapal-s61-gap-analysis/fused-review-final/results.json",
+  "scope": "Finite same-DAG FP32 native fused/unfused whole-program references; separate unchanged composed-v4 controls on the same device. No production change, no dynamic-counter request.",
+  "limits": [
+    "No CUDA runtime support or timing claim before live gates",
+    "Mapal-vs-library timing cannot isolate fusion/retention; input reset/cache differs",
+    "Inherited fixed numerical budgets; no new global outward-bound proof",
+    "User removed monetary caps;5400s operational deadline approved; protect every pre-existing instance"
+  ],
+  "uploaded_content": "Reviewed synthetic fixtures, frozen reference/runtime code, added benchmark plans/controller/checker, pinned CUTLASS and CPU validation receipts; no credentials."
+}
