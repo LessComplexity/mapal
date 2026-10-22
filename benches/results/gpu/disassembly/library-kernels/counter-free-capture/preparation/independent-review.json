@@ -1,0 +1,39 @@
+{
+  "pass": true,
+  "scope": "Independent source, exact-header callback/parser fixtures, sealed-request mutation fixtures and actual-source CPU owned-process lifecycle review; no live CUDA attribution admission",
+  "source_sha256": {
+    "capture.cpp": "e5c08e96a70834e5425efe7cc7547c4ecd8c6f01a96df5e1781485848488c4d0",
+    "admit.py": "75dabd7c152b65ceec1d90c052aca31e510ee736f8386afdadab9d58e8c78f0e",
+    "run_capture.py": "94dc4cc2446c4bd91450f88f81e4523e01d872a294f6db137dc518352005fcda",
+    "build_request.py": "f7bfbaa70671b8d6c32ee1ac7fd1a056cba7f1acf640593726e5e68f54469e36",
+    "protocol.py": "57175a54e6540ec6ae3e67824cced9b6e603ca4c826b61d6a8ae0086c969c2ea",
+    "test_callback.cpp": "d8e3bbcf4be14ae6641ba6278e72266c6161c17c8e951aa105fbf229ca3a0337",
+    "test_admission.py": "3457a29b52af5c3cab996cda32847503b3f0c02ec076b17851fccbe1007b86f0",
+    "test_runner.py": "869569f83a4d8a23f1e3c19354996bcf2c7fd4909a62cccfa8e7ff36699a227e",
+    "CONTRACT.md": "6561508ce4ae2e50c7e2c3375ccbed2009ed1b40f58afd44577a2ae21c249997",
+    "test_lifecycle.py": "2764f2b9bb855c5faeccfcb08d1c2eae4a9f789cf405f271355ec3a44ea8a133"
+  },
+  "tests": {
+    "callback_cases": 36,
+    "request_mutation_cases": 10,
+    "actual_source_lifecycle_cases": 5
+  },
+  "receipts": {
+    "callback": "/private/tmp/mapal-library-image-review/final-source-review/callback-tests/results.json",
+    "request": "/private/tmp/mapal-library-image-review/final-source-review/request-tests/results.json",
+    "lifecycle": "/private/tmp/mapal-library-image-review/lifecycle-final/results/results.json",
+    "header": "/private/tmp/mapal-library-image-review/schema-receipt.json"
+  },
+  "unresolved_production_blockers": [],
+  "limits": [
+    "No actual Linux injection/current-driver CUPTI FUNCTION/getter delivery or library SASS evidence yet",
+    "CPU lifecycle excludes Linux prctl/PDEATHSIG and deliberately escaped process groups",
+    "512MiB output limit is checked after commands;128MiB RLIMIT_FSIZE is per-file; total deadline bounds child wait budgets plus cleanup, not all Python CPU bookkeeping"
+  ],
+  "next": [
+    "seal exact reviewed packet",
+    "root/operator review and owned-host provision",
+    "bounded480s counter-free three-leg pilot",
+    "retrieve and independently admit exact kernel/image/SASS inventories or preserve clean non-admission"
+  ]
+}

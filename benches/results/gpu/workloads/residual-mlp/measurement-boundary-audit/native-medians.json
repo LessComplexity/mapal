@@ -1,0 +1,362 @@
+[
+  {
+    "case": "matrix",
+    "backend": "naive",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "unchanged_control"
+    ],
+    "wall_upper_median_ms": 0.055024,
+    "event_upper_median_ms": 0.0504320003,
+    "n": 30,
+    "receipt": "calls/0019-matrix-naive-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cublas",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "unchanged_control"
+    ],
+    "wall_upper_median_ms": 0.03948,
+    "event_upper_median_ms": 0.0349440016,
+    "n": 30,
+    "receipt": "calls/0020-matrix-cublas-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cublaslt",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "heuristic_zero_control"
+    ],
+    "wall_upper_median_ms": 0.038037,
+    "event_upper_median_ms": 0.0335679986,
+    "n": 30,
+    "receipt": "calls/0040-matrix-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cublaslt",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      1,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.036255,
+    "event_upper_median_ms": 0.0318080001,
+    "n": 30,
+    "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cublaslt",
+    "fusion": "fused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "heuristic_zero_control"
+    ],
+    "wall_upper_median_ms": 0.034382,
+    "event_upper_median_ms": 0.0298880003,
+    "n": 30,
+    "receipt": "calls/0061-matrix-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cublaslt",
+    "fusion": "fused",
+    "candidate": -1,
+    "indices": [
+      0,
+      1,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.032659,
+    "event_upper_median_ms": 0.028128,
+    "n": 30,
+    "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cutlass",
+    "fusion": "unfused",
+    "candidate": 0,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "matched_default_geometry_control"
+    ],
+    "wall_upper_median_ms": 0.09218,
+    "event_upper_median_ms": 0.0875839964,
+    "n": 30,
+    "receipt": "calls/0070-matrix-cutlass-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cutlass",
+    "fusion": "unfused",
+    "candidate": 2,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.047192,
+    "event_upper_median_ms": 0.0427200012,
+    "n": 30,
+    "receipt": "calls/0071-matrix-cutlass-unfused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cutlass",
+    "fusion": "fused",
+    "candidate": 0,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "matched_default_geometry_control"
+    ],
+    "wall_upper_median_ms": 0.087933,
+    "event_upper_median_ms": 0.0833600014,
+    "n": 30,
+    "receipt": "calls/0079-matrix-cutlass-fused/receipt.json"
+  },
+  {
+    "case": "matrix",
+    "backend": "cutlass",
+    "fusion": "fused",
+    "candidate": 2,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.046711,
+    "event_upper_median_ms": 0.0419199988,
+    "n": 30,
+    "receipt": "calls/0080-matrix-cutlass-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "naive",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "unchanged_control"
+    ],
+    "wall_upper_median_ms": 0.333596,
+    "event_upper_median_ms": 0.328480005,
+    "n": 30,
+    "receipt": "calls/0081-matrix-large-naive-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cublas",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "unchanged_control"
+    ],
+    "wall_upper_median_ms": 0.093041,
+    "event_upper_median_ms": 0.088320002,
+    "n": 30,
+    "receipt": "calls/0082-matrix-large-cublas-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cublaslt",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "heuristic_zero_control"
+    ],
+    "wall_upper_median_ms": 0.064839,
+    "event_upper_median_ms": 0.0601599999,
+    "n": 30,
+    "receipt": "calls/0105-matrix-large-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cublaslt",
+    "fusion": "unfused",
+    "candidate": -1,
+    "indices": [
+      0,
+      3,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.063416,
+    "event_upper_median_ms": 0.0587840006,
+    "n": 30,
+    "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cublaslt",
+    "fusion": "fused",
+    "candidate": -1,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "heuristic_zero_control"
+    ],
+    "wall_upper_median_ms": 0.060852,
+    "event_upper_median_ms": 0.0561919995,
+    "n": 30,
+    "receipt": "calls/0129-matrix-large-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cublaslt",
+    "fusion": "fused",
+    "candidate": -1,
+    "indices": [
+      0,
+      3,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.05962,
+    "event_upper_median_ms": 0.0550719984,
+    "n": 30,
+    "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cutlass",
+    "fusion": "unfused",
+    "candidate": 0,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "matched_default_geometry_control"
+    ],
+    "wall_upper_median_ms": 0.293545,
+    "event_upper_median_ms": 0.288863987,
+    "n": 30,
+    "receipt": "calls/0138-matrix-large-cutlass-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cutlass",
+    "fusion": "unfused",
+    "candidate": 2,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.127954,
+    "event_upper_median_ms": 0.123328,
+    "n": 30,
+    "receipt": "calls/0139-matrix-large-cutlass-unfused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cutlass",
+    "fusion": "fused",
+    "candidate": 0,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "matched_default_geometry_control"
+    ],
+    "wall_upper_median_ms": 0.291312,
+    "event_upper_median_ms": 0.286751986,
+    "n": 30,
+    "receipt": "calls/0147-matrix-large-cutlass-fused/receipt.json"
+  },
+  {
+    "case": "matrix-large",
+    "backend": "cutlass",
+    "fusion": "fused",
+    "candidate": 2,
+    "indices": [
+      0,
+      0,
+      0
+    ],
+    "roles": [
+      "selected"
+    ],
+    "wall_upper_median_ms": 0.123867,
+    "event_upper_median_ms": 0.119071998,
+    "n": 30,
+    "receipt": "calls/0148-matrix-large-cutlass-fused/receipt.json"
+  }
+]

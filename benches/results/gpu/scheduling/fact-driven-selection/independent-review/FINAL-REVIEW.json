@@ -1,0 +1,26 @@
+{
+  "pass": true,
+  "reviewed_gpu_sha256": "e932fcb811d5a245d4dfcc03134928af85af19443210014089c5e66f97092205",
+  "findings": [],
+  "source_review": "core requested-vs-actualmode, TF32fallback, unchangedeligibility/forcedarms/legacyFill/geometry andmodulePDLagreement passed",
+  "pre_fix_compiled_behavioral_failures": 2,
+  "new_focused_tests": 6,
+  "gpu_unit_tests_passed": 13,
+  "library_tests_passed_unsandboxed": 65,
+  "integration_tests_passed": 176,
+  "integration_tests_ignored": 1,
+  "independently_compared_emission_files": 104,
+  "unchanged_successful_controls": 8,
+  "affected_policy_controls": 5,
+  "mixed_module": "strided Exactscalar plus validMMA,2kernelwaits,hostinitflags5; hostbytes unchanged",
+  "worker_receipt_sha256": "ffc48e6d0c275443c980013f34f510ecdf8d1a01b630367a51309ae82d1bca9e",
+  "emission_review_sha256": "7f2c05156a4c6b7f1d02836d907026e3ba734cd61c6597305b0e6f9bf9135e92",
+  "production_edits_by_reviewer": false,
+  "gpu_executed": false,
+  "performance_claim": false,
+  "limits": [
+    "Actual GPU numerical/timing validation has not been run for this correction",
+    "Finite compile-time invariants and output controls do not prove generic profitability",
+    "Initial sandbox-nativehardwarequeryfailures resolved by unsandboxed native tests; no unrelatedcodechange"
+  ]
+}

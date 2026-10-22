@@ -1,0 +1,49 @@
+{
+  "scope": "Report/source index only; no completed raw-value/hash audit repeated",
+  "evidence": {
+    "E1": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/kernels/competitive-cutlass.md",
+      "sha256": "cc4177f20b126f6373fbad2ec7c359685dc6a6f5dd96c47928946fe00ec1285e"
+    },
+    "E2": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/workloads/fused-library-comparison.md",
+      "sha256": "270703a1581a49f9c7e8e36af84737f5c94fea46b31f6efae145d8ad68a1511b"
+    },
+    "E3": {
+      "path": "/private/tmp/mapal-measurement-boundary-audit/report.md",
+      "sha256": "b0b0b9aeabae3500935af9dff028e8106448400cdc0159bd2bdd25666e280d84"
+    },
+    "E4": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/disassembly/executed-mapal-images.md",
+      "sha256": "fa50f35f4cfc428fad71e8155a2c183b71ccb69749067ad9541bcad9f1c6a326"
+    },
+    "E5": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/memory/dead-output-allocation.md",
+      "sha256": "e910149a277f6f370fe006f88b279267406cc195410a33181f6dfa9321152161"
+    },
+    "E6": {
+      "path": "/private/tmp/mapal-s61-gap-analysis/IR-FACT-MAP.md",
+      "sha256": "622d9c78e02a67ba09775fcda738b5da4b4c20b663c0e2ed5ee26741b0b49cca"
+    },
+    "E7": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/kernels/panel-depth-comparison.md",
+      "sha256": "23cce7fa2fea0b1b871f892d03e7dea3a58bf83a2fb401f6d97a91c14bf112ad"
+    },
+    "E8": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/workloads/large-matrices-and-mlp-validation.md",
+      "sha256": "1ac1a4d765318e12c708a5990f789ef3a5476a951760b3827d14d140af954df0"
+    },
+    "selected-lt-attributes.json": {
+      "path": "/private/tmp/mapal-measurement-boundary-audit/selected-lt-attributes.json",
+      "sha256": "d5517588be8440b91173ee0ef29af4504be64eddd70646faf905bd0cec533093"
+    },
+    "native-medians.json": {
+      "path": "/private/tmp/mapal-measurement-boundary-audit/native-medians.json",
+      "sha256": "d2fa7a3f57044cbbe9aa04d8255cc5f624dfd9843c2642c91b3e6e2d1892586f"
+    },
+    "control-medians.json": {
+      "path": "/private/tmp/mapal-measurement-boundary-audit/control-medians.json",
+      "sha256": "9e3761977c0d1cf72de07b6d457e07e985c22da404e3a8df3c66e2b23ec5d3f6"
+    }
+  }
+}

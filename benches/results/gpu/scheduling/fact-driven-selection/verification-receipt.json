@@ -1,0 +1,206 @@
+{
+  "cwd": "/Volumes/LessComplex/Personal/mapal",
+  "baseline_build_command": "cargo build --offline --manifest-path /private/tmp/mapal-gpu-schedule-facts/baseline/Cargo.toml --target-dir /private/tmp/mapal-gpu-schedule-facts/baseline-target -p mapal-backend-llvm --example emit",
+  "candidate_build_command": "cargo build --offline -p mapal-backend-llvm --example emit",
+  "baseline_source": "Copy of workspace Cargo.toml/Cargo.lock/crates with only gpu.rs replaced by git show HEAD:crates/backends/llvm/src/func/gpu.rs; HEAD/source hashes retained.",
+  "clang_guard_note": "MAPAL_REQUIRE_CLANG unset on integration run; clang() helper was reviewed and clang is present. The differential/retain_delta compile-and-run targets executed for 45.04s/46.02s. No stronger forced-guard rerun claimed.",
+  "environment": {
+    "MAPAL_REQUIRE_CLANG": null,
+    "LLVM": null,
+    "RUSTFLAGS": null,
+    "CARGO_TARGET_DIR": null,
+    "CC": null,
+    "MAPAL_LD": null
+  },
+  "production_files_changed": [
+    "crates/backends/llvm/src/func/gpu.rs"
+  ],
+  "commands": [
+    {
+      "command": "cargo test -p mapal-backend-llvm --lib actual_arithmetic -- --nocapture",
+      "phase": "before production fix",
+      "expected_exit": 101,
+      "result": "2 compiled failures after arithmetic-emission assertions pass",
+      "log": "pre-fix.log"
+    },
+    {
+      "command": "cargo test -p mapal-backend-llvm --lib func::gpu::tests -- --nocapture",
+      "result": "13 passed",
+      "log": "gpu-unit-tests.log"
+    },
+    {
+      "command": "cargo test -p mapal-backend-llvm",
+      "result": "stops with 62pass/3 native detection failures in sandbox",
+      "log": "backend-tests.log"
+    },
+    {
+      "command": "cargo test -p mapal-backend-llvm --lib native_",
+      "execution": "require_escalated",
+      "result": "5 passed",
+      "log": "native-profile-tests-unsandboxed.log"
+    },
+    {
+      "command": "cargo test -p mapal-backend-llvm --lib",
+      "execution": "require_escalated",
+      "result": "65 passed",
+      "log": "library-tests-unsandboxed.log"
+    },
+    {
+      "command": "cargo test -p mapal-backend-llvm --test '*'",
+      "result": "176 passed / 1 ignored across 14 binaries",
+      "log": "integration-tests.log"
+    },
+    {
+      "command": "rustfmt --edition 2024 crates/backends/llvm/src/func/gpu.rs && cargo fmt --all -- --check",
+      "result": "passed",
+      "log": "fmt.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "python3 /private/tmp/mapal-gpu-schedule-facts/check-emissions.py",
+      "result": "13 before/after cases passed; 26 device modules lowered with LLVM opt -O3 and llc -O3 -nvptx-fma-level=0",
+      "log": "emission-check.log"
+    }
+  ],
+  "integration_binaries": [
+    {
+      "file": "devmap.rs",
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "differential.rs",
+      "passed": 38,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "epilogue.rs",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "golden_ll.rs",
+      "passed": 35,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "gpu_host.rs",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "gpu_wgmma.rs",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "move_panel.rs",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "perf_baseline.rs",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1
+    },
+    {
+      "file": "resident.rs",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "retain_delta.rs",
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "rowfold.rs",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "sme_rung.rs",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "streams.rs",
+      "passed": 19,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "file": "tile_sites_pin.rs",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "tools": {
+    "rustc": {
+      "path": "/Users/lesscomplex/.cargo/bin/rustc",
+      "version": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "sha256": "ec1b9233e7f72990ecd8e62063fa7f6c3dfc2bec8e97f88bff165f9100ac696a"
+    },
+    "cargo": {
+      "path": "/Users/lesscomplex/.cargo/bin/cargo",
+      "version": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+      "sha256": "ec1b9233e7f72990ecd8e62063fa7f6c3dfc2bec8e97f88bff165f9100ac696a"
+    },
+    "clang": {
+      "path": "/opt/homebrew/opt/llvm/bin/clang",
+      "version": "Homebrew clang version 22.1.8\nTarget: arm64-apple-darwin25.3.0\nThread model: posix\nInstalledDir: /opt/homebrew/Cellar/llvm/22.1.8/bin\nConfiguration file: /opt/homebrew/Cellar/llvm/22.1.8/etc/clang/arm64-apple-darwin25.cfg",
+      "sha256": "305697d3868243dca6e4aabf4f628df7de135d701eb4fd78f6a5d7528fef4395"
+    },
+    "opt": {
+      "path": "/opt/homebrew/opt/llvm/bin/opt",
+      "version": "Homebrew LLVM version 22.1.8\n  Optimized build.\n  Default target: arm64-apple-darwin25.3.0\n  Host CPU: apple-m4",
+      "sha256": "295c87a242f541f9fcb03cc9940519a6e0c0ef89d58c4b7fb16627eb16af9a1e"
+    },
+    "llc": {
+      "path": "/opt/homebrew/opt/llvm/bin/llc",
+      "version": "Homebrew LLVM version 22.1.8\n  Optimized build.\n  Default target: arm64-apple-darwin25.3.0\n  Host CPU: apple-m4\n\n  Registered Targets:\n    aarch64     - AArch64 (little endian)\n    aarch64_32  - AArch64 (little endian ILP32)\n    aarch64_be  - AArch64 (big endian)\n    amdgcn      - AMD GCN GPUs\n    arm         - ARM\n    arm64       - ARM64 (little endian)\n    arm64_32    - ARM64 (little endian ILP32)\n    armeb       - ARM (big endian)\n    avr         - Atmel AVR Microcontroller\n    bpf         - BPF (host endian)\n    bpfeb       - BPF (big endian)\n    bpfel       - BPF (little endian)\n    hexagon     - Hexagon\n    lanai       - Lanai\n    loongarch32 - 32-bit LoongArch\n    loongarch64 - 64-bit LoongArch\n    mips        - MIPS (32-bit big endian)\n    mips64      - MIPS (64-bit big endian)\n    mips64el    - MIPS (64-bit little endian)\n    mipsel      - MIPS (32-bit little endian)\n    msp430      - MSP430 [experimental]\n    nvptx       - NVIDIA PTX 32-bit\n    nvptx64     - NVIDIA PTX 64-bit\n    ppc32       - PowerPC 32\n    ppc32le     - PowerPC 32 LE\n    ppc64       - PowerPC 64\n    ppc64le     - PowerPC 64 LE\n    r600        - AMD GPUs HD2XXX-HD6XXX\n    riscv32     - 32-bit RISC-V\n    riscv32be   - 32-bit big endian RISC-V\n    riscv64     - 64-bit RISC-V\n    riscv64be   - 64-bit big endian RISC-V\n    sparc       - Sparc\n    sparcel     - Sparc LE\n    sparcv9     - Sparc V9\n    spirv       - SPIR-V Logical\n    spirv32     - SPIR-V 32-bit\n    spirv64     - SPIR-V 64-bit\n    systemz     - SystemZ\n    thumb       - Thumb\n    thumbeb     - Thumb (big endian)\n    ve          - VE\n    wasm32      - WebAssembly 32-bit\n    wasm64      - WebAssembly 64-bit\n    x86         - 32-bit X86: Pentium-Pro and above\n    x86-64      - 64-bit X86: EM64T and AMD64\n    xcore       - XCore",
+      "sha256": "6ddc5e82de297024b073ca45f4d5d7a5d583fd49b98895778b422f7879cb1c5f"
+    }
+  },
+  "source": {
+    "head": "d80d8f5d66ddee712bf552337b3ea1684cad5eea",
+    "baseline_gpu_sha256": "0a0835736bd2a31f72a53e311607ec63b5c6842f4830b250b7c8537f55bb4e7e",
+    "current_gpu_sha256": "e932fcb811d5a245d4dfcc03134928af85af19443210014089c5e66f97092205",
+    "baseline_binary_sha256": "0c884d44a237b36ab2c41c60d491f6f6fd5b2118939ab48c4c85896721968a54",
+    "current_binary_sha256": "5fcd856672968492b5969a4ea713beb5234bc0021f655ae800cae87081cb580d"
+  },
+  "proved": [
+    "Both original request/actual policy mismatches reproduced as test assertion failures before production edits.",
+    "Strided Contract emits separate arithmetic and selects same complete rung set as Exact.",
+    "Rejected TF32 returns identical complete Launch to scalar request across type/layout/alignment/nonseparability/geometry/device/forced-OFF boundaries.",
+    "8 successful scalar and default/forced MMA/WGMMA controls preserve raw host/device LLVM and PTX bytes; optimized LLVM compares equal after only input-path metadata normalization.",
+    "5 affected cases change device policy/instructions while static arithmetic operation counts and module PDL waits remain unchanged.",
+    "Real mixed module emits a separate strided scalar kernel and valid MMA kernel, 2 griddepcontrol.wait instructions and matching host PDL flag (init flags=5).",
+    "65 backend library tests plus 176 integration tests pass; optional ignored baseline performance test remains ignored."
+  ],
+  "inferred_from_source_review": [
+    "Legacy preliminary Fill, geometry formulas, tensor legality and WGMMA-before-MMA precedence unchanged.",
+    "Increasing-K recurrence and panel/transmission code unchanged; scalar operands and seed remain existing behavior.",
+    "Module-wide pdl(profile,requested_contract,arms) remains same host/device contract; kernel IDs remain requested-option based."
+  ],
+  "not_proved": [
+    "No new NVIDIA GPU numerical execution, ptxas/SASS/resource allocation, timing, speedup, or global schedule optimality validation.",
+    "Static LLVM/PTX operation counts do not alone prove runtime numerical equality; source review and existing backend differential/emulation tests supply separate evidence."
+  ]
+}

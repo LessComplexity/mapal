@@ -1,0 +1,35 @@
+{
+  "files": [
+    {
+      "source": "/private/tmp/mapal-library-image-review/compiler-semantic-audit/AUDIT.md",
+      "path": "semantic-audit.md",
+      "sha256": "92ead78847d2f3b6da9eddea42246c169aec520518f6155bffd3f611bedaa51a"
+    },
+    {
+      "source": "/private/tmp/mapal-library-image-review/compiler-semantic-audit/source-receipt.json",
+      "path": "semantic-source-receipt.json",
+      "sha256": "a3fd6615fb2c166b14ae9f746d6fbea1bac2e43dd76979c07411d3a387d06e9c"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/HARDWARE-SELECTION-AUDIT.md",
+      "path": "hardware-selection-audit.md",
+      "sha256": "ad0b87368f268a8dc98007f4d03d2df367b78e5c5e9dc088f90cb94832ff0434"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/hardware-audit-evidence.json",
+      "path": "hardware-audit-evidence.json",
+      "sha256": "1312379d11dde4d3856037b33d6f463abf353af6c03523e5ba1ef766cc5d84d0"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/warp-fill-comment-blame.txt",
+      "path": "warp-fill-comment-blame.txt",
+      "sha256": "bcf4c5a761ba664b8d0022c08e3002529e40de03277d7ff47728c8fbf9a0164e"
+    },
+    {
+      "source": "/private/tmp/mapal-gpu-gap-next-experiments/warp-fill-history.patch",
+      "path": "warp-fill-history.patch",
+      "sha256": "e549527840af0b5d045ebb7557d7ff1bef010cef05e3f3f3d74b17e9ddeb5052"
+    }
+  ],
+  "note": "Unmodified source audits before the arithmetic-selection correction; source line positions and temporary paths are historical provenance."
+}

@@ -1,7 +1,17 @@
 # Component: backend-nvptx
 
-Status: **built inside the LLVM backend; S54 validation passed; ordering and dead raw-storage corrections integrated and checked.**
-Last updated: 2026-10-22 · Allocation, ten composed rows, four executed Mapal images and competitive CUTLASS primitive timing verified; fused-library comparison verified; callback-image extension in progress.
+Status: **built inside the LLVM backend; S54 validation passed; ordering, dead raw-storage and actual-arithmetic selection corrections integrated and checked.**
+Last updated: 2026-10-22 · Fused-library comparison and measurement boundaries verified; arithmetic selection correction independently reviewed; library-image capture attribution under investigation.
+
+The [actual-arithmetic correction](../../performance/gpu/disassembly/fact-driven-scheduling.md)
+connects existing IR/layout/permission/device facts through `Launch::arithmetic` to policy
+and emission. Strided Contract and rejected TF32 now select their actual scalar policy.
+Two old-code regressions reproduce the defect; 65 backend library and 176 integration
+tests pass, with one optional baseline ignored. Eight successful LLVM/PTX controls are
+unchanged; five affected controls retain arithmetic inventories and module PDL agreement.
+Independent review passes. This establishes compiler consistency, with no new NVIDIA
+execution or measured speedup for the correction. Geometry and reduction permissions
+remain the existing ones.
 
 Standalone [image-observation tooling](../../../benches/gpu/capture_images/README.md)
 is saved with real CUDA/CUPTI 12.8 header compilation, eleven local test groups and

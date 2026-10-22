@@ -1,0 +1,454 @@
+[
+  {
+    "case": "scalar-exact",
+    "source": "mm_1024",
+    "target": "rtx-4090",
+    "sm": "sm_89",
+    "flags": [],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 32,
+      "fadd": 32,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 32,
+      "fadd": 32,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "scalar-contract",
+    "source": "mm_1024",
+    "target": "rtx-4090",
+    "sm": "sm_89",
+    "flags": [
+      "--contract"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 32,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 512
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 32,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 512
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "mma-default",
+    "source": "mm_1024",
+    "target": "rtx-4090",
+    "sm": "sm_89",
+    "flags": [
+      "--contract",
+      "--precision=tf32"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 32,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 32,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "wgmma-default",
+    "source": "mm_1024",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract",
+      "--precision=tf32"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 4,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 4,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "mma-hopper-wgmma-off",
+    "source": "mm_1024",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-off=wgmma-hopper"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 128,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 128,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "mma-forced",
+    "source": "mm_1024",
+    "target": "rtx-4090",
+    "sm": "sm_89",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-off=arch-rungs"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 32,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 32,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "wgmma-forced",
+    "source": "mm_1024",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-off=arch-rungs"
+    ],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 4,
+      "pdl_waits": 1,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 4,
+      "pdl_waits": 1,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "scalar-naive",
+    "source": "odd_100",
+    "target": "rtx-4090",
+    "sm": "sm_89",
+    "flags": [],
+    "expect_unchanged": true,
+    "before": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": true,
+      "opt.ll": true,
+      "ptx": true
+    }
+  },
+  {
+    "case": "mixed-pdl",
+    "source": "mixed",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-on=pdl"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 64,
+      "wgmma": 0,
+      "pdl_waits": 2,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 64,
+      "wgmma": 0,
+      "pdl_waits": 2,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  },
+  {
+    "case": "strided-contract",
+    "source": "strided",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  },
+  {
+    "case": "layout-fallback",
+    "source": "at_256",
+    "target": "rtx-3090",
+    "sm": "sm_86",
+    "flags": [
+      "--contract",
+      "--precision=tf32"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 64,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 256
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 64,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 256
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  },
+  {
+    "case": "type-fallback",
+    "source": "rm_128_f64",
+    "target": "rtx-3090",
+    "sm": "sm_86",
+    "flags": [
+      "--contract",
+      "--precision=tf32"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 16,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 64
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 16,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 64
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  },
+  {
+    "case": "mma-off-fallback",
+    "source": "mm_1024",
+    "target": "rtx-3090",
+    "sm": "sm_86",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-off=mma"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 64,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 512
+    },
+    "after": {
+      "fmul": 0,
+      "fadd": 0,
+      "fma": 64,
+      "mma": 0,
+      "wgmma": 0,
+      "pdl_waits": 0,
+      "ptx_fma": 512
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  }
+]

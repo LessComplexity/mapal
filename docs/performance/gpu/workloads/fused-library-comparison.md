@@ -59,3 +59,5 @@ The [raw experiment and independent checks](../../../../benches/results/gpu/work
 Next, obtain exact executed cuBLAS/CUTLASS images through the reviewed counter-free callback path, then compare instruction families, reduction organization, tiling and launch structure against the [existing Mapal images](../disassembly/executed-mapal-images.md) and [IR fact map](../disassembly/ir-facts-and-realization-gaps.md). Static disassembly alone cannot attribute stalls, cache behavior or the measured time gap. The failed Nsight counter diagnostic is retained separately.
 
 [Earlier residual MLP run](residual-mlp.md) · [Primitive CUTLASS tuning](../kernels/competitive-cutlass.md) · [Current GPU results](../current-results.md)
+
+A follow-up [measurement-boundary audit](measurement-boundaries.md) found no missing-sync or wrong-unit defect, documents excluded allocation/generation costs and event-clock scope, and records the selected Lt split-K/workspace attributes. These attributes do not prove a hardware cause of the performance gap.

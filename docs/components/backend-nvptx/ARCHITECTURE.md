@@ -362,3 +362,48 @@ flowchart LR
 - Demand-restricted sites (every reader `Const(k)` → compute only those rows): correct and
   derivable, but it would hollow the timed probes (their outputs are read at the corners) into
   two-row GEMMs. It waits for a program that needs it and a harness that keeps a whole reader.
+
+The library-observer extension in §8 remains planned after its first live pilot rejects
+attribution. Its next observation-only model adds `Dat CallbackInvocation` separate from
+activity correlation, bounded `Dat ExecutableSymbolRange` separate from a launch entry,
+and provisional versus authoritative context metadata. Planned observation/admission
+transformations remain in the standalone prototype; their exact contracts and failure
+boundaries are specified in OpenSpec `capture-executed-cuda-images`. The failed trace and
+sealed v1 are immutable; no current library-image admission follows from these plans.
+
+## 9. Realized arithmetic drives per-site policy
+
+Existing `Dat Launch` carries `Dat Arithmetic`: separate multiply/add, ordered FMA,
+TF32 MMA or TF32 WGMMA. `Trn launch` derives it from `TileSite/TileRead`, emission
+permissions and hardware/layout feasibility. It first attempts an eligible TF32
+tensor realization under that policy. If none is selected, it derives scalar
+arithmetic and queries the corresponding scalar policy. `Trn kernel_text` passes
+that selected fact to `Kernel::step`; the scalar emitter must not independently
+reinterpret requested precision or contraction.
+
+| Transformation | Domain → codomain | Realization |
+| --- | --- | --- |
+| Resolve launch (`Trn`) | IR geometry/order + permissions + device facts/policy → Launch including actual Arithmetic | `gpu.rs:launch`, `Arithmetic::scalar`, `Arithmetic::face` |
+| Emit selected arithmetic (`Trn`) | Launch + TileSite → device LLVM | `gpu.rs:kernel_text`, `Kernel::step` and selected tensor emitters |
+
+```mermaid
+flowchart LR
+    F[IR facts + permissions + device facts and policy]
+    L[Launch including actual Arithmetic]
+    D[Device LLVM]
+    F -->|Resolve launch| L
+    L -->|Emit selected arithmetic| D
+```
+
+FRAMEWORK §4.5 laws 1, 2 and 5 require the policy key to describe the arithmetic
+actually emitted. Source fold order, operands and seed retain their existing
+semantics. Module-wide PDL host flags and kernel waits retain their shared
+derivation (law 4); they are not rekeyed independently for each site. Existing
+`Loc Reg/Smem/Gmem` and `Trm` panel copies/stores/launch interfaces remain.
+Hardware facts stay in the backend, and no reassociation permission is inferred.
+
+The legacy preliminary geometry still derives Fill; the measured rung table,
+forced-arm precedence and conservative warp-fill register budget remain the
+existing policy. This connection is built and compile-time checked; it does not
+claim a globally optimal schedule or a measured speedup. The previously rejected
+blanket small-M geometry policy is not promoted.

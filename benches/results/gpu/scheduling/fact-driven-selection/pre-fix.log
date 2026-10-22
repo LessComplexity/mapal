@@ -1,0 +1,32 @@
+   Compiling mapal-ir v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/mapal-ir)
+   Compiling mapal-interp v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/mapal-interp)
+   Compiling mapal-lower v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/mapal-lower)
+   Compiling mapal-rewrite v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/mapal-rewrite)
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/backends/llvm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.91s
+     Running unittests src/lib.rs (target/debug/deps/mapal_backend_llvm-c9aca5ddd0fff219)
+
+running 2 tests
+
+thread 'func::gpu::tests::actual_arithmetic_strided_contract_selects_exact_policy' (14971714) panicked at crates/backends/llvm/src/func/gpu.rs:3075:9:
+assertion `left == right` failed: separate arithmetic needs Exact policy
+  left: GpuRungs { arch: true, interleave: true, unroll: true, min_blocks: false, warp: false, prefetch: true, mma: true, cp_async: false, wide: true, ldmatrix: true, fill: false, idx32: true, affine: false, pad: true, wide_fma: false, wgmma: true, resident: true, devgen: true, retain_delta: false, eager_init: true, arena: true, raster: true, l2_gate: true, l2_window: false, retain_resident: false, delta_h2d: true, lane_stride: true, rowfold: true, rowfold_layout: false, epilogue: true, devmap: true, cell_law: true, streams: false, stream_gate: true, pinned: false, pdl: false }
+ right: GpuRungs { arch: true, interleave: true, unroll: true, min_blocks: true, warp: true, prefetch: true, mma: true, cp_async: false, wide: true, ldmatrix: true, fill: true, idx32: false, affine: false, pad: true, wide_fma: false, wgmma: true, resident: true, devgen: true, retain_delta: false, eager_init: true, arena: true, raster: true, l2_gate: true, l2_window: false, retain_resident: false, delta_h2d: true, lane_stride: true, rowfold: true, rowfold_layout: false, epilogue: true, devmap: true, cell_law: true, streams: false, stream_gate: true, pinned: false, pdl: false }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test func::gpu::tests::actual_arithmetic_strided_contract_selects_exact_policy ... FAILED
+
+thread 'func::gpu::tests::actual_arithmetic_rejected_tf32_selects_scalar_policy' (14971713) panicked at crates/backends/llvm/src/func/gpu.rs:3088:9:
+assertion `left == right` failed: rejected TF32 needs scalar policy
+  left: GpuRungs { arch: true, interleave: false, unroll: true, min_blocks: false, warp: false, prefetch: true, mma: true, cp_async: false, wide: false, ldmatrix: false, fill: false, idx32: false, affine: false, pad: true, wide_fma: true, wgmma: true, resident: true, devgen: true, retain_delta: false, eager_init: true, arena: true, raster: false, l2_gate: true, l2_window: false, retain_resident: true, delta_h2d: true, lane_stride: true, rowfold: true, rowfold_layout: false, epilogue: true, devmap: true, cell_law: true, streams: false, stream_gate: true, pinned: false, pdl: true }
+ right: GpuRungs { arch: true, interleave: false, unroll: true, min_blocks: true, warp: false, prefetch: true, mma: true, cp_async: false, wide: false, ldmatrix: false, fill: false, idx32: false, affine: false, pad: true, wide_fma: true, wgmma: true, resident: true, devgen: true, retain_delta: false, eager_init: true, arena: true, raster: false, l2_gate: true, l2_window: false, retain_resident: true, delta_h2d: true, lane_stride: true, rowfold: true, rowfold_layout: false, epilogue: true, devmap: true, cell_law: true, streams: false, stream_gate: true, pinned: false, pdl: true }
+test func::gpu::tests::actual_arithmetic_rejected_tf32_selects_scalar_policy ... FAILED
+
+failures:
+
+failures:
+    func::gpu::tests::actual_arithmetic_rejected_tf32_selects_scalar_policy
+    func::gpu::tests::actual_arithmetic_strided_contract_selects_exact_policy
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p mapal-backend-llvm --lib`

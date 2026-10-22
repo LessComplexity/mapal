@@ -1,0 +1,13 @@
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/backends/llvm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running unittests src/lib.rs (target/debug/deps/mapal_backend_llvm-c9aca5ddd0fff219)
+
+running 5 tests
+test profile::tests::native_move_geometry_is_consistent ... ok
+test profile::tests::native_on_the_documented_m4_pro_reproduces_hand_written ... ok
+test profile::tests::native_on_the_documented_m4_pro_reproduces_the_hand_written_sme_facts ... ok
+test profile::tests::native_reads_the_facts_it_claims_to ... ok
+test profile::tests::native_sme_profile_is_consistent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.04s
+

@@ -1,0 +1,18 @@
+{
+  "read_only": true,
+  "tests_run": false,
+  "no_performance_claim": true,
+  "source_files": {
+    "/Volumes/LessComplex/Personal/mapal/crates/backends/llvm/src/profile.rs": "f9d7aa257ba6ef2da2ea73c630158c0524d10004eedc54f41600201f24398ec8",
+    "/Volumes/LessComplex/Personal/mapal/crates/backends/llvm/src/func/gpu.rs": "0a0835736bd2a31f72a53e311607ec63b5c6842f4830b250b7c8537f55bb4e7e",
+    "/Volumes/LessComplex/Personal/mapal/crates/backends/llvm/src/func/tile.rs": "f8dd8e818b78a5b0e09088232bdbbb5b4619bac3473846d25d846023647bb2ac",
+    "/Volumes/LessComplex/Personal/mapal/docs/components/backend-nvptx/plans/plan-s53-gpu-optimizations.md": "80c3a335ace26bc12fbadbc349b1f433d749cd30aceb2e748aaddbaa12242464",
+    "/private/tmp/mapal-library-image-review/compiler-semantic-audit/AUDIT.md": "92ead78847d2f3b6da9eddea42246c169aec520518f6155bffd3f611bedaa51a",
+    "/private/tmp/mapal-gpu-gap-next-experiments/warp-fill-history.patch": "e549527840af0b5d045ebb7557d7ff1bef010cef05e3f3f3d74b17e9ddeb5052",
+    "/private/tmp/mapal-gpu-gap-next-experiments/warp-fill-comment-blame.txt": "bcf4c5a761ba664b8d0022c08e3002529e40de03277d7ff47728c8fbf9a0164e"
+  },
+  "finding": "Warp-fill unshrunk register estimate is intentional conservative policy, not proved stale-fact defect",
+  "original_warp_fill_commit": "8aa994458d06b344bbf4e4be3403ad25b64fa11a",
+  "minimum_supported_fix": "Actual arithmetic realization shared by existing Launch selection/Face and emitter; independent semantic audit owns details",
+  "semble_search_worked": true
+}

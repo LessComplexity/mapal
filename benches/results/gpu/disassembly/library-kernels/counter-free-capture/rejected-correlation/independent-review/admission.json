@@ -1,0 +1,133 @@
+{
+  "schema": "independent-library-image-admission-v1",
+  "pass": false,
+  "gpu_executed_by_reader": false,
+  "timing_admissible": false,
+  "legs": {
+    "mapal": {
+      "pass": false,
+      "raw_status": {
+        "pass": false,
+        "status": "failed",
+        "error": "ValueError: Duplicate callback site"
+      },
+      "timing_admissible": false,
+      "partial_numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "observer_errors": [],
+      "observer_final_rows": [
+        "api-activity\t5003\t5\t165\t1426\t0\t749\t2690150400",
+        "api-activity\t5004\t5\t172\t1427\t0\t749\t2690150400",
+        "api-activity\t5005\t5\t31\t1428\t0\t749\t2690150400",
+        "api-activity\t5006\t5\t31\t1429\t0\t749\t2690150400",
+        "api-activity\t5007\t5\t31\t1430\t0\t749\t2690150400",
+        "buffer\t5008\t1048576\t71296\t0\t12\t0",
+        "final-drop\t5009\t0\t0",
+        "finish\t5010\t0\t0\t1\t1\t5\t11260736\t0"
+      ],
+      "stderr_tail": "",
+      "error": "ValueError: Raw leg did not complete"
+    },
+    "cublas": {
+      "pass": false,
+      "raw_status": {
+        "pass": false,
+        "status": "not_run"
+      },
+      "timing_admissible": false,
+      "error": "ValueError: Raw leg did not complete"
+    },
+    "cutlass": {
+      "pass": false,
+      "raw_status": {
+        "pass": false,
+        "status": "not_run"
+      },
+      "timing_admissible": false,
+      "error": "ValueError: Raw leg did not complete"
+    }
+  },
+  "failures": [
+    "mapal: ValueError: Raw leg did not complete",
+    "cublas: ValueError: Raw leg did not complete",
+    "cutlass: ValueError: Raw leg did not complete"
+  ],
+  "packet_seals": 185,
+  "primitive_seals": 983,
+  "ordinary_seals": 336,
+  "request_sha256": "ad6d739a88890e8d74323b0a14240f4cc4f968621d0bc48c0135cd94dbdeb1cb",
+  "result_seals": 31,
+  "raw_summary_pass": false,
+  "raw_error": "ValueError: Duplicate callback site",
+  "tools": {
+    "cuda_home": "/usr/local/cuda-12.8",
+    "cupti_library": {
+      "path": "/usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+      "sha256": "fccdc5fcc7c32f8cf4b3ed9b17f7f187a185a6fa0a5bcc06e3434cbd1687c808"
+    },
+    "nvdisasm": {
+      "path": "/usr/local/cuda-12.8/bin/nvdisasm",
+      "sha256": "250ebe97dd86617574a30daf8d8ee433e6c5d9d10bafff922078779d1ba36073"
+    },
+    "cxx": "/usr/bin/c++"
+  },
+  "outer_seals": 81,
+  "outer_pass": false,
+  "device_identity": "NVIDIA GeForce RTX 5090, GPU-dbe43abe-e81d-c8da-9e7c-1c431cc25be5, 595.71.05",
+  "command_count": 7,
+  "admitted_legs": [],
+  "decoder_unknown_annotations_present": false,
+  "reader_sha256": "eb924187825bd0a5aa4821437db4efa27233adc0bf7dc477a4a3f4db8e95279e"
+}

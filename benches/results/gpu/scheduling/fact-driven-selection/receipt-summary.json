@@ -1,0 +1,54 @@
+{
+  "integration_binaries": 14,
+  "mixed": {
+    "case": "mixed-pdl",
+    "source": "mixed",
+    "target": "h100-pcie",
+    "sm": "sm_90a",
+    "flags": [
+      "--contract",
+      "--precision=tf32",
+      "--gpu-on=pdl"
+    ],
+    "expect_unchanged": false,
+    "before": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 64,
+      "wgmma": 0,
+      "pdl_waits": 2,
+      "ptx_fma": 0
+    },
+    "after": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 64,
+      "wgmma": 0,
+      "pdl_waits": 2,
+      "ptx_fma": 0
+    },
+    "equal": {
+      "host.ll": true,
+      "device.ll": false,
+      "opt.ll": false,
+      "ptx": false
+    }
+  },
+  "tool_versions": {
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "clang": "Homebrew clang version 22.1.8",
+    "opt": "Homebrew LLVM version 22.1.8",
+    "llc": "Homebrew LLVM version 22.1.8"
+  },
+  "environment": {
+    "MAPAL_REQUIRE_CLANG": null,
+    "LLVM": null,
+    "RUSTFLAGS": null,
+    "CARGO_TARGET_DIR": null,
+    "CC": null,
+    "MAPAL_LD": null
+  }
+}

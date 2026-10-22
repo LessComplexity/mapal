@@ -1,6 +1,12 @@
 # Mapal — Global Status
 
-Current continuation: **2026-10-22, allocation elimination integrated; composed timing, actual Mapal images and competitive CUTLASS primitive timing verified; fused-library comparisons verified; exact library-image capture in progress.**
+Current continuation: **2026-10-22, arithmetic-aware GPU policy correction implemented and independently checked; comparison clocks audited; exact library-image attribution under investigation.**
+The [backend correction](performance/gpu/disassembly/fact-driven-scheduling.md) connects
+existing facts through one actual-arithmetic selection: 65 library and 176 integration
+tests pass, one optional test ignored; eight successful LLVM/PTX controls stay unchanged.
+No new GPU speedup is claimed. Published competitive/fused-library results remain bound
+to their frozen sources. The [measurement audit](performance/gpu/workloads/measurement-boundaries.md)
+establishes their warmed resident-compute boundary and remaining comparison controls.
 The only checkout is `s54-gpu-fusion`; historical worktrees remain safely archived.
 LLVM/CUDA example targets no longer collide, both profile tests register once, and constant folding now preserves guard-owned dependencies, including loop payloads.
 After the proved loop-route replay and grouped-writer ordering repairs, the required-clang

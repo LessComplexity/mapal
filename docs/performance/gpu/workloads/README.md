@@ -4,6 +4,7 @@
 
 | Report | Scope |
 | --- | --- |
+| [Measurement boundaries and arithmetic permissions](measurement-boundaries.md) | Exact emitted timer/sync/allocation boundaries; paired event/wall clocks and selected Lt attributes |
 | [Fused residual MLP: competitive libraries and same-device controls](fused-library-comparison.md) | Thirty admitted confirmation/control rows; matched library fusion deltas and finite tuning; cuBLASLt leads |
 | [Residual MLP: Mapal, CUDA, cuBLAS and PyTorch](residual-mlp.md) | Ten admitted timing rows at two M128 widths; cuBLAS wins both; reset/cache and graph-mode limits stated |
 | [Large matrices and MLP validation](large-matrices-and-mlp-validation.md) | Earlier 16K/model-shaped primitives and bounded composed correctness, including failures |
