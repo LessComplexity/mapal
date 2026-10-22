@@ -110,6 +110,8 @@ pair_table('Noise floor: null vs on', 'on', 'null', base)
 pair_table('Streams: on (shipped OFF) vs on-streams', 'on-streams', 'on', base)
 pair_table('Streams, gate off: on vs fs', 'fs', 'on', base)
 pair_table('Arena: off-arena vs on', 'on', 'off-arena', base)
+pair_table('Streams at one allocation policy: fs (chains, per-object buffers) vs off-arena (one stream, '
+           'per-object buffers)', 'off-arena', 'fs', base)
 pair_table('Retention: off-devgen vs on', 'on', 'off-devgen', lambda p: p.startswith('pt_rt_'))
 pair_table('Retention: off-resident vs on', 'on', 'off-resident', lambda p: p.startswith('pt_rt_'))
 
