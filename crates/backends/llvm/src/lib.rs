@@ -17,6 +17,7 @@
 //! SCC), rejected as [`EmitError::Unsupported`] — the same scope boundary as
 //! interp M1 / rewrite.
 
+pub mod flags;
 mod func;
 mod loops;
 mod module;
@@ -25,6 +26,7 @@ mod reuse;
 mod ty;
 
 pub use crate::profile::TargetProfile;
+pub use crate::profile::resolve as resolve_profile;
 
 use mapal_ir::{CategoryIr, FuncId, MorphismId, Operation, PathPlan, SourceLoc, TaskKind};
 use slotmap::SecondaryMap;
