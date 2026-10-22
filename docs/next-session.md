@@ -1,3 +1,49 @@
+# Live S60 — parallel implementation and composed comparison
+
+The user authorized proceeding with the three parallel workstreams after S59.
+Root owns integration, packet review, measurement admission and shared documentation.
+Workers own isolated `/private/tmp` directories; no worktree is added.
+
+| Agent | Responsibility | Working directory |
+| --- | --- | --- |
+| `/root/comparison_analysis` | Matched repeated-request composed timing, fixtures and references | `/private/tmp/mapal-s60-composed/` |
+| `/root/comparison_run` | Existing allocation gate, unified GPU batch and owned-rental cleanup | `/private/tmp/mapal-s60-gpu/` |
+| `/root/gap_actions` | Generic kernel alternatives and separate executed-image diagnostics | `/private/tmp/mapal-s60-kernel/` |
+
+No rental or upload has started. The previous $1 planning budget has $0.0963400468
+remaining; a concrete reviewed batch and explicit budget extension are required before
+exceeding it. Read-only inventory found four unrelated instances: 57065574, 57100404,
+57126023 and 57133432. Never modify or destroy any of them. Provider diagnostics stay
+private; do not print raw API errors. Keep `oainotes.md` and frozen emitter untouched.
+
+The composed v3 packet now has matched resident-input work clocks for two residual MLPs
+(M128/d256/h512 and M128/d1024/h2048), with separate checkpoint and final-only graphs.
+Root and the kernel worker independently reviewed synchronization/event ordering. Root
+verified six input generator sites before timing and three work launch sites inside each
+emitted host program. Arena allocation/free is outside those clocks; this comparison
+cannot establish allocation-elimination latency. The larger oracle certifies four full
+rows with full-width reductions; its 256 published cells per stage do not certify every
+M128 output. All GPU execution remains pending.
+
+Reviewed input archives (no rental/upload yet):
+
+| Packet | SHA256 | Bytes |
+| --- | --- | ---: |
+| `/private/tmp/mapal-s60-composed/composed-matrix-v3.tgz` | `750a72f414573417fcf2dae3c2f39e1cfb738d63417995309920541c55af0119` | 8,178,381 |
+| `/private/tmp/mapal-s58-allocation-gate/allocation-gate-v2.tgz` | `a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd` | 12,568,328 |
+| `/private/tmp/mapal-s60-kernel/kernel-B-comparison.tgz` | `09f8318c3aea5a38a5190d05361bd5840c45bceaf6ca12d5d87b117e61f515a2` | 2,861,573 |
+| `/private/tmp/mapal-s60-kernel/kernel-diagnostics.tgz` | `95d68cec8de2d386700322bd91ffd7becbe8ec6c7d747246175b10d6b295b618` | 2,815,657 |
+
+The allocation packet remains S58 v2 (640 ordinary processes plus 28 separate counter
+processes), forced streams rather than default5090 mode. Root verified the final
+26,444,972-byte stage, packet SHA `b37f14727ac878394046d520e83ef60c1679f1efe758e9ad37cf4dac20a12432`.
+An asynchronous request for up to $1 additional/$2 cumulative budget is pending;
+no approval has arrived. Generic kernel alternatives A/B are isolated
+experiments until measured; S59 blanket promotion remains rejected. Input review receipts
+are under `/private/tmp/mapal-s60-root/`. Provider diagnostics remain private. Runner
+retrieval, nested cancellation and spawn-assignment cancellation now have real local
+filesystem/process tests; none are GPU evidence.
+
 # Current continuation — S59 comparison complete
 
 ## S59 measured decision (2026-10-21 local / 2026-10-22 UTC)

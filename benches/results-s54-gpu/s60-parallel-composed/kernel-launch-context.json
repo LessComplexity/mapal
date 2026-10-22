@@ -1,0 +1,866 @@
+[
+  {
+    "arm": "old",
+    "N": 18432,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": true,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 18432,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 18432,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 2048,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 2048,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      256,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "old",
+    "N": 1024,
+    "K": 4096,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 1024,
+    "K": 4096,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "old",
+    "N": 1024,
+    "K": 4096,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "S58",
+    "N": 18432,
+    "K": 7168,
+    "face": "exact",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 144,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      576,
+      1,
+      32,
+      1536
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 18432,
+    "K": 7168,
+    "face": "contract",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 144,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      576,
+      1,
+      32,
+      1664
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 18432,
+    "K": 7168,
+    "face": "tf32",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 144,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      64,
+      10752
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "S58",
+    "N": 2048,
+    "K": 7168,
+    "face": "exact",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 16,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      32,
+      1536
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 16,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      32,
+      1664
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 2048,
+    "K": 7168,
+    "face": "tf32",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 16,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      256,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "S58",
+    "N": 1024,
+    "K": 4096,
+    "face": "exact",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 8,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      32,
+      1,
+      32,
+      1536
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 1024,
+    "K": 4096,
+    "face": "contract",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 8,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      32,
+      1,
+      32,
+      1664
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "S58",
+    "N": 1024,
+    "K": 4096,
+    "face": "tf32",
+    "base": "Some(GpuTile { tm: 8, tn: 8, tx: 16, ty: 2, bk: 8, blocks_per_sm: 16, stages: 1, pad_a: 0, a_row_lanes: 0, held: 0 })",
+    "base_blocks": 8,
+    "base_threads": 32,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "A",
+    "N": 18432,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      576,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": true,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "A",
+    "N": 18432,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 18432,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 2048,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 2048,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      256,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "A",
+    "N": 1024,
+    "K": 4096,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 1024,
+    "K": 4096,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      64,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "A",
+    "N": 1024,
+    "K": 4096,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "B",
+    "N": 18432,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": true,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "B",
+    "N": 18432,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "B",
+    "N": 18432,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 1152,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 13,
+    "selected_grid_block_smem": [
+      1152,
+      1,
+      256,
+      0
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": false,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "scalar"
+  },
+  {
+    "arm": "B",
+    "N": 2048,
+    "K": 7168,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      32,
+      2,
+      32,
+      4608
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "B",
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      32,
+      2,
+      32,
+      4864
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "B",
+    "N": 2048,
+    "K": 7168,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 128,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 1,
+    "selected_grid_block_smem": [
+      256,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  },
+  {
+    "arm": "B",
+    "N": 1024,
+    "K": 4096,
+    "face": "exact",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      16,
+      2,
+      32,
+      4608
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": false,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "B",
+    "N": 1024,
+    "K": 4096,
+    "face": "contract",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      16,
+      2,
+      32,
+      4864
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "cooperative"
+  },
+  {
+    "arm": "B",
+    "N": 1024,
+    "K": 4096,
+    "face": "tf32",
+    "base": "None",
+    "base_blocks": 64,
+    "base_threads": 256,
+    "base_warps_per_scheduler": 0,
+    "selected_grid_block_smem": [
+      128,
+      1,
+      32,
+      5376
+    ],
+    "selected_rungs": {
+      "mma": true,
+      "fill": true,
+      "cp_async": false,
+      "pad": true,
+      "wide_fma": false
+    },
+    "route": "mma"
+  }
+]

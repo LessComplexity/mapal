@@ -256,9 +256,15 @@ gate). An OFF arm disables that rung while preserving the other selected rungs; 
 historical compiler baseline. Neither `raster` nor `l2-window` is a `Trn` or a `Trm`:
 the grid order is how one realization walks its blocks, the window a cache policy on a `launch`
 over `Gmem` the graph proves is read again — `l2-window`'s output case is R6's residency seen from
-the L2 (a chain's intermediate, read by the next launch). A rung's fill key is the grid it
-ends up in: the host kernel for an epilogue, its own grid for a cell kernel, the union for
-streams (`profile.rs:Fill`).
+the L2 (a chain's intermediate, read by the next launch). A rung's fill key belongs to
+its launch context (`profile.rs:Fill`). For a tile, `gpu.rs:launch` derives the key from
+the preliminary `profile.rs:TargetProfile::gpu_tile` query with wide/fill disabled,
+before `rungs_at`; it queries geometry again after selecting those rungs. Thus changing
+geometry admission may also change the selected realization of the same tile `Trn` over
+`Gmem`, `Smem` and `Reg`. This is an existing selection dependency, not a new semantic
+object. Other contexts use the host kernel for an epilogue, its own grid for a cell
+kernel, or the union for streams. The [S60 audit](../../performance/s60-parallel-preparation.md)
+records the caller proof and isolated counterexamples to a simple profitability filter.
 
 The table is a rung too (`arch-rungs`; `emit --gpu-off=arch-select`): OFF bypasses the table and
 enables every rung, including S54 mechanisms, so ON vs OFF prices the per-part selection on

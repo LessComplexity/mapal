@@ -1,0 +1,24 @@
+{
+  "archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s60-parallel-composed/independent-readers.tgz",
+  "sha256": "d9cd982eb5ffae80de65a75e1cb8d57811aafc8d94d1723792a49d3f7de0b44b",
+  "bytes": 17940,
+  "files": 15,
+  "member_sha256": {
+    "mapal-s60-composed/analysis/README.md": "2eb62cc407d02e51702dc06565c0c29d4b6da23e61dc0827f3b359961f6ddb17",
+    "mapal-s60-composed/analysis/no-data-rejection/REPORT.md": "6e3b20c5d3d3cdc15e4d4e4eea1c6ff6b9c2d8df562bd5d9cd34c70ccef4a11e",
+    "mapal-s60-composed/analysis/no-data-rejection/analysis.json": "db3222532c719c96d56d29ac1dabe18a22258aa7fd6107c40657ac9f494700af",
+    "mapal-s60-composed/analysis/raw-export-test.json": "48b38c2c202c8f691c2cf1dd5e054bfd97f8d4bf8fcc204ca98c8980eed551ab",
+    "mapal-s60-composed/analysis/raw-export.diff": "b42e77d6858ea64db5d1dd6e1963320fa902a2e46feb2de8f2ad6820c35f8b82",
+    "mapal-s60-composed/analysis/read_results.py": "9b5eeed49e6d75d5f48418e8551c2d09690b2ba065c0de7ee550e1d8b76a389f",
+    "mapal-s60-composed/analysis/reader-manifest.json": "bc28b9c0b904bb89af6034d180d52b75d8eb43183945e64599fb4e9d8633fb28",
+    "mapal-s60-composed/analysis/test_reader.py": "97a61b4ef1c24aab0cf091122ac15a87bd062e6c03cabaf75486740bef71434b",
+    "mapal-s60-composed/analysis/tests.log": "c6085b0aeca4c6f677a55f82f8a51ff668d19c5f1796e58bd9b54b0553ef5c11",
+    "mapal-s60-kernel/analysis/README.md": "bef9fa608e34e4c0e13e11d6c94beebcec83079544430e19c18c274075e01bbc",
+    "mapal-s60-kernel/analysis/read_b.py": "0c8a82eae62cd4e77b8578ebb908b6d81f64dbfa662939fc2078af4b04d75e70",
+    "mapal-s60-kernel/analysis/read_images.py": "f3e1cd6aa60fb61408a3bd76b19a5ec71c638171fa27f6251b98fc0fdd9638a1",
+    "mapal-s60-kernel/analysis/reader-manifest.json": "49df250aa786a1a9757ff469f911aab587f1a947dbc72e60af7b726592d1a8d6",
+    "mapal-s60-kernel/analysis/test_readers.py": "f8b90e3194bdc82dfa768d9a072e0a265be3bca5f7c830c791cbb8b09679526b",
+    "mapal-s60-kernel/analysis/tests.log": "48c96ee5ca6f44e6a75748e468a98dde3f34dd8e4e9eef2f0916aae5a1de0b9a"
+  },
+  "scope": "Independent post-retrieval readers and explicitly synthetic local tests; no GPU results."
+}

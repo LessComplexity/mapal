@@ -37,3 +37,22 @@ A subsequent proposal within this change must evaluate generic grid/resource cos
 preserve scalar alternatives and test neighboring/boundary shapes. No model-specific
 gate or three-point fitted threshold is accepted. Numerical gates, executed images,
 large controls and before/after distributions remain acceptance duties.
+
+## S60 caller dependency and isolated alternatives
+
+`func/gpu.rs:launch` uses `gpu_tile(false, false)` to derive the preliminary `Fill`
+key before `rungs_at`, then calls geometry again with the selected wide/fill settings.
+The helper is therefore part of selection, not merely final geometry. The S60
+one-wave post-fit alternative A changes that key and loses the wide Contract/TF32
+paths that improved in S59. Alternative B preserves every old success first and tries
+row fitting before occupancy shrinking only after legacy rejection; it changes the
+smaller M16 geometries but preserves the old dense fallback. These are isolated
+alternatives, not cumulative production changes.
+
+Each passes 918,000 finite geometry comparisons, with 57 per-alternative emitted
+RTX 5090 modules preserved for comparison. They establish legality and selected-route
+facts, not generic profitability. Evaluate complete alternatives with numerical face
+and rung context known before introducing a profitability rejection into the shared
+helper. The sealed optional old/S58/B comparison remains unrun pending budget approval;
+see [S60 preparation](../../../docs/performance/s60-parallel-preparation.md). All existing
+numerical, ordinary timing, null, large-control and integration duties remain open.

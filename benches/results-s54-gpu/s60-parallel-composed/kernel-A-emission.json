@@ -1,0 +1,3137 @@
+[
+  {
+    "id": "rtx-5090__gate__dense_m1_n512_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m1_n512_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a9f27eb15c980b0c7220318e3ca12a18da1b6e38b193ed83e9c36e557303c85a",
+      "kernel.host.ll": "dbe384609f3b8768f0b01a1d7e65fda46a92bc3d5d69d9747df851cdaabb4262",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "18ebe3f829c5ade33dcf2656cb608670bda19a7b7b2cd2aab432dc85f8c9888c",
+      "kernel.ptx": "78cb76c1585310311aadba600eefba4a6b90f46bd6c3dba1b1d2efed7692d285",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 775744708392683668, i64 %t10, i64 %t11, i64 %t13, i32 2, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__dense_m1_n512_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m1_n512_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "8bfc6077c60d42edb8b60ea31085b25f815b5caf84406fabb7bba4086865260f",
+      "kernel.host.ll": "691e882197ff5d08ccce14130de3b6fd3d68c76f1786b291ae45c8a6bc5847c5",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "044a95b1eaad11cdb0990eb5d6b18f145548c8c6df449adeff77476f009cd1d8",
+      "kernel.ptx": "5d86178a2895a303329607b1b4e98247e939cff855e20f198d0c5e3e02ccda6a",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 2117663469667648107, i64 %t10, i64 %t11, i64 %t13, i32 2, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__dense_m1_n512_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m1_n512_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m1_n512_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "b10fda7e5ae565445e8298f3e48a9492b4d2e16b6c63751f3880cc3ed9eb387e",
+      "kernel.host.ll": "4316442a334d2de6bdbeae8e2ad7ba4e54a63699ab40dd516399e7e6daa29d6e",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "953c81e474c22aed939a9a30e27f11009e8ac8bd923e9a68e35d118e126f91ef",
+      "kernel.ptx": "120f7a632b1be1efd11a0469e40380e0aab142ca1db3c1f559763b2afb522663",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 3899279875731728047, i64 %t10, i64 %t11, i64 %t13, i32 2, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__dense_m16_n18432_k64__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m16_n18432_k64__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "ba58e6048a0a8c80e5c3ee3a1fe2c2d98ebb55f401e2e5406209b0d028906ecc",
+      "kernel.host.ll": "038df84337caf1d914449c59654f5017042eba55188b2a20a206396aef1fb28b",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "f110c567aae361226bbabbde41a6ed0b4388e083b1d8087aa74d12c9e44399b2",
+      "kernel.ptx": "3bd992073be9ff935d902de5be67993d6323b1e3574e5766140ccc910f9317d5",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -3731025438019710516, i64 %t10, i64 %t11, i64 %t13, i32 576, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": false,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__dense_m16_n18432_k64__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m16_n18432_k64__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "487a731c54ffba75e541986b657f35e22086b2bec368e26a8585b1c8a46c10a6",
+      "kernel.host.ll": "6f0743d872972662ba9fd17fcf463c980421909e6cee3dca4a6cb22bff56396d",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "70a54312e14af376d77aed4fe3a460a024243f243df0ddb3269f7d2e3c1cba23",
+      "kernel.ptx": "9681517da30459094d1756a2771bf95a40c51d8dc38d63734baeff191b54bcf1",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -463649533380673469, i64 %t10, i64 %t11, i64 %t13, i32 1152, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__dense_m16_n18432_k64__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m16_n18432_k64__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m16_n18432_k64__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "4ad43b2fcc9aea4473533d8106105a6fcab044f11087800def4af30a9213e943",
+      "kernel.host.ll": "c2640ecb5340e7a45ad17aa78493053a7c0e2148babf6ef22c7c37625d215eb7",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "735ab9bcfe13efb5483b137baf985ea6568a129f4ddcc9c194395441f009c360",
+      "kernel.ptx": "c1427cbf4671511d696218d107dc3dd94ab8f75cdb6c720c872b3e8d4aedcd11",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 5051524288001269079, i64 %t10, i64 %t11, i64 %t13, i32 1152, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__dense_m128_n128_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m128_n128_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "3ba5edb33f4fae3b1bb45788bc35420f00228ffb3ddd861983b93e57bd1c05b7",
+      "kernel.host.ll": "5da67b9f8ccc5eb6e27f09fa34a8423b701ee9d7fb63176b25af534bf544d356",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "5280f1e877c7882abeb89436a3db58d604d97fcb05f3ef8c874d6cfd5d3aedb3",
+      "kernel.ptx": "019fb90334836e664534869f1dce42baa9f3b370b4f82a12858d49263d919e2d",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -3571838645321561114, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1536)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__dense_m128_n128_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m128_n128_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "3a123589a0fe685dc1f5b8d4db6846b2228c6098b2452a2c39940988cb94f23b",
+      "kernel.host.ll": "7905a0a2c629666e6919ef2fafa7bb07a43f28d9cbfcd2eb0be15f91dd886ef6",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "b848f9abe3c5b1cafcf3819746dcf8d600eb034f9b9e9080609f777555b8dbab",
+      "kernel.ptx": "6671e54d22292e20ec383d4fd54efeca9aa70d91d2d6208d8efd6a2358f7a8fc",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -2559309243759637451, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1664)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__dense_m128_n128_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__dense_m128_n128_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__dense_m128_n128_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "4f45a49053fc5ef05da38f3f80779306215cb93e51cb790455eb8e2fb0df288c",
+      "kernel.host.ll": "ca48f68ca63a8507472101baffc67186a25e58d237391044142f418813c48655",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "e9c8a894ea1527c6d38b539fd33b95525ad7afdd6514c02d034516c24dc8c4e0",
+      "kernel.ptx": "ee6861cbba46656116409b9421ac553ec9ef3c60401a963574ffd667284e62c0",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 7797543686385536513, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 8, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "308b87968bd0b83289fc21334de795cb7f033600e2649a651b7a0985d0542ad2",
+      "kernel.host.ll": "ed551b69c9e45f4aedbbf63b3bb46c73d734791f37ecb5df1e7e869cd3b855e8",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "6b210dc4adb8e0f0f8d95073ccc7525faa1de716fd47dbc21614f9fb956ec1fd",
+      "kernel.ptx": "1a2d3c49911de8ab59717ce77c585b7472030d28cfa57104ad22a97aa8749a25",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -8692473538517135112, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a10264f5c6a381109bfec62bc65d45e584137561cd97aa7125e4c8c39f92720d",
+      "kernel.host.ll": "06dd3b1ea5cc7bc80bbb38fc1f53eda23afd26d88fc16e7bdd7216c1f3565f0c",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "d9530365b44bd83de3ff307144e1f4293ac8266c8a0574b6a954265c6c6906b4",
+      "kernel.ptx": "6a703dfd47cf36a4488dc9cdd68a438d7a51e9d95547de4ca0c43a1c2e1dffba",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -1073999249229118121, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m1_n256_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "356f13791a872c0b11da20c169b8ccaa7414a705c0c49dd8f53d6cec369689f7",
+      "kernel.host.ll": "e074166caade778ae3e5e8b1a84b4b8b25daf47745d44815d8d223da5cc47d14",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "a3f7ac30cec65cbd8a3932e41cfdb69e476b80ca5a1c2dd99afa02b1dd75b592",
+      "kernel.ptx": "e924c32d5907912b05195965561f7cd370ea381b9786322407eb054c3a623fa6",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -4607337086139059261, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "c2678e2f5062ebd698e1185b7dcec35b7c022b38b26bedd0f5e4fc5b1eacc9fc",
+      "kernel.host.ll": "8934d2871bfc4513641d52db71e0f365664a85921e6641b98284f540ac7396bc",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "965e0cda1e59d38e1028685322a409d0fbba472463795f16183c93ab86acac0e",
+      "kernel.ptx": "eeca71548d48e28f2aae5ccdaee3a610fd2a6104248daa006ed195160c95e636",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -6208452846733894468, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a6983f6426e623431cb7ee8c8b12cd738c13ae234d79330b91a6bf597af5f682",
+      "kernel.host.ll": "ecdaac4f740b2c6a464b4ec36568bfbf47f8fea4c93e57f9f204bd7ab347b773",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "1e71cf2734af58906cbf51d3ae2fe2db8f7b377e237faa585ba0891d72a31c84",
+      "kernel.ptx": "de804d0a1d55974fc52b8f1b49ca441389d652e4532b769c300673f1f7aef5eb",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -2279059350484327149, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m16_n256_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "f9c1e00b293593a454f025bfeebc699ecce5b3ae6ab7ee49462540393d4ac9d9",
+      "kernel.host.ll": "cf821b4fc625cdec1df0cb5fa00d935b5dbdf6b7cf030c516846de850d58bcd7",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "63fe2c8e4580fe10e2e0151f29c723e69f24e5a3647b01a4b04469f2b33b21b2",
+      "kernel.ptx": "1eebda56ba9482b27ba1c1ae9e9d00312e8804e90ef6611fb6b8042db3e3a590",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -5007032379590611993, i64 %t10, i64 %t11, i64 %t13, i32 32, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "eccd0407074df140123a65d1f2d106eccb39970ba820016151923c80adfec71e",
+      "kernel.host.ll": "5da67b9f8ccc5eb6e27f09fa34a8423b701ee9d7fb63176b25af534bf544d356",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "5280f1e877c7882abeb89436a3db58d604d97fcb05f3ef8c874d6cfd5d3aedb3",
+      "kernel.ptx": "019fb90334836e664534869f1dce42baa9f3b370b4f82a12858d49263d919e2d",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -3571838645321561114, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1536)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "9133381cc5b960b94a863726b98147b4a8c46c0b7df80a8e8d281a132872e229",
+      "kernel.host.ll": "7905a0a2c629666e6919ef2fafa7bb07a43f28d9cbfcd2eb0be15f91dd886ef6",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "b848f9abe3c5b1cafcf3819746dcf8d600eb034f9b9e9080609f777555b8dbab",
+      "kernel.ptx": "6671e54d22292e20ec383d4fd54efeca9aa70d91d2d6208d8efd6a2358f7a8fc",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -2559309243759637451, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1664)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__deepseek_expert_m128_n128_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "cfe70f9dd23b30cdd7e31a8f9a7ac24f51daf19162f95e0583743601d0e0e0e0",
+      "kernel.host.ll": "ca48f68ca63a8507472101baffc67186a25e58d237391044142f418813c48655",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "e9c8a894ea1527c6d38b539fd33b95525ad7afdd6514c02d034516c24dc8c4e0",
+      "kernel.ptx": "ee6861cbba46656116409b9421ac553ec9ef3c60401a963574ffd667284e62c0",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 7797543686385536513, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 8, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m1_n128_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "0d79ca7dc54a9e12f23f422741a1f3b6b58a1d9a08525a999385ffdfa8830a83",
+      "kernel.host.ll": "a31ef44ad8d001af53aa9f17a7fb07be5c37b3aaed3effff2d185fc38a0eaae9",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "0cc91fca4b194109cc8be2105bc7bbc17d5acab4093996e802ffc03acadc7eec",
+      "kernel.ptx": "47a3b0da80a12e3a1674fda5421288131a2b818709c5a2fb4af4386cd1edc4bf",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 8813817718052969256, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m1_n128_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "cdcbdada4460436f9e716247d58d457c44e2df88d02848bbf573f4aabdb9494d",
+      "kernel.host.ll": "8c61065113c1d4e37b0cbd86c875558f7c1a32313231ea4d2260850b0142dfea",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "bfd08f1ace8ef11f82edb181d076180bea274988ddd1e5ba574374e517196be2",
+      "kernel.ptx": "79e0260dba1c91de4ad9dedcd95399b58f85e307baa4cbeaa43b2e1d97d8a2c4",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 3635866660793759207, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m1_n128_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "363100d53c7994d128ef4863ad4ed708c9a60a8bdcc389b66dd399cd2a38c466",
+      "kernel.host.ll": "bd29feb37c04650eab764fdf1d4efb4adb43c4f6674c3117197d42fd2bcc5a31",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "a53c18e570a57426db52209480aa46bbb50e778151821a4d0f7a5cfdc07cf5b7",
+      "kernel.ptx": "3c6040b463c550876b5ce1a91ef474ea58b2a2a2bc312eba80d3884f0c3dad78",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 1459122283225917395, i64 %t10, i64 %t11, i64 %t13, i32 1, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m16_n128_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "7ac0ae233e7b80a75f1d597ceb9abd00c7c29b1e993a0dcd52fb7c5f28f7a869",
+      "kernel.host.ll": "9e5d9486f483259c81f6237017f0e71230f5be8a63ca3d783319e333943c17f1",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "1f073823aaa7e4ea00179a9e55dfa05cabc3ad5445c1c9486c2974c7df51b392",
+      "kernel.ptx": "aee5a3313cff0658217fcac1ab9292f272319029cb029706d00892ec309be859",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 5405253431239181692, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m16_n128_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "710bf3c247cd4071262250e6797feee69ec0a4953de89dd3ee5b438e128f689e",
+      "kernel.host.ll": "c4bca8eaa8ec0f88735520dc5a1fa806a15f033b778210ce00c6c0da75442cb4",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "5d4e6786d7a1df0d07ee8ad7e1f9deb4731e52f75ebdaa823d626348d2a0ce24",
+      "kernel.ptx": "af555b4a5933c6ccaec5f5b99c2260e3095094d2863937dc69b54570521e0b07",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -5820474415617243693, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m16_n128_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "bd7d2957ab5f7aac2f4cab8b05066e9e480aeb821d98664d4cc6472ac4721e34",
+      "kernel.host.ll": "9fa9e90910478c22fc0d5c32446afd3afd7f715b164c695d9911b89056e56b4e",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "c62033cebb7c408c77d71ed5dd45b24fae01f6ff7fcc3dd8a83f11c822f7d8c6",
+      "kernel.ptx": "77ffae70c8a21aa1154466c74b3830e65566c97a7fb5149acbcefe3192aa841d",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 1635957228091280551, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m128_n128_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "019052f2ea283d2e3845ec8c94ca0a2503f0fba9deb9f5793cd0ef1380f1486a",
+      "kernel.host.ll": "f1c350b8eebe561128be090106c5f4f34988d6a43fc1d6eb85ea7e77a74167bf",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "ee6b24612922cd14396f3eb47c508fc178fc532c70ec43d22e941130fdae2b17",
+      "kernel.ptx": "b826fbebc7cd9bb24ed4e319e5c2d2d4f2976a4f442627b8b15bee1482ffcf02",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 8833900496905142310, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1536)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m128_n128_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "7aee8c4f08d50a9cfaa46143ca0f481ef653ef60b8aa9c49508bba6f75822b17",
+      "kernel.host.ll": "3e8e919aa49f39bbdcb326296298ba950193a77f956efa24e1ef87712f29c38a",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "c06f90aed564a8eb8547565df5a25fa054800ed8c17e6982da3e4a121e4605ba",
+      "kernel.ptx": "22a2c08dd74ce903b0e428d91f363666350aceb76d6aee82e6e8089ed4341f9a",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -6596537655608201355, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 4, i32 32, i32 1664)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__gate__qwen_expert_m128_n128_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "13873944e2a3875830ce314256116d15a50bb347f2c8952a39b9ba8ec6843baa",
+      "kernel.host.ll": "9a9aef2d680d0711ebe8f6f8606986aefdbddce81ebdd47e93ebf8216a68f74c",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "50706db26f3ef6539d554ae631aa09117ac97d10424a9a256d7234b1e5e7cfbe",
+      "kernel.ptx": "bf5f64f9855a560d1bc7ad50e102aee24775645eb5abf088c1ec9551b55365b5",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -445204635855529919, i64 %t10, i64 %t11, i64 %t13, i32 16, i32 8, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m1_n18432_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m1_n18432_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "7c7d70e0c350128cb318362e8ae9bd4be59743b08fda3603b54d765a242a3d07",
+      "kernel.host.ll": "67a0f886777df0e65d6ad1f2ae2a25588db7d7faaad0dd044255372f043dbb16",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "e3f0b64d8b30bc864c91e8efc9369858a3e7babb7c60989ca2d9fc41c32c647d",
+      "kernel.ptx": "feb3d1174a0701bb430ee460b9c3f878b86594cfd20ae8dca7439bda4eb34be6",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -9035377435306344652, i64 %t10, i64 %t11, i64 %t13, i32 72, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m1_n18432_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m1_n18432_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "ab4f8aa4ded22cec15bd27b7baab8e0be403e1fd90d80d8511d1167317ce05c4",
+      "kernel.host.ll": "e0fd90b61cc3aff7448c943eeb2b46a11bee9f49d8038c7eafc8847c03f2401d",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "e054f94aaaa78ffd0fed24395243d0a0cf9fcebdcb1754aa5dd5f893c3621193",
+      "kernel.ptx": "30af98a73a822a43f3d6d75f97d61b66b83e99a3c7037602220eec7d7994228f",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 3386948788747810443, i64 %t10, i64 %t11, i64 %t13, i32 72, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m1_n18432_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m1_n18432_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m1_n18432_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "930b478736270c535df0f0b54a448c51d6b4c80b5496168f422334c09bc1fa1c",
+      "kernel.host.ll": "36ad6c2c4d60495e503bcdd2c129dd0a54768594a3983996106f847c575eadf1",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "4512e6c54bce758ef64d8b97d42152e21bede12d018a40db2cb5391cfeb3ed10",
+      "kernel.ptx": "5d41b6e8f7bb92b023665cbbd044574748573404f9505f6ba29108aa515d39ea",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -7944662354773896689, i64 %t10, i64 %t11, i64 %t13, i32 72, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m16_n18432_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m16_n18432_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "e12baa6d286a055c5bffb4228784ad9b42de57defbcce6b750774f07cf212005",
+      "kernel.host.ll": "0a79d208bae1a1a0ed0ea58a6e659f9ae8397db0cc54ab1314d1089e0accf572",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "f4dd27fc124c5a564d4e61b43b689f8b9bf44290b96ee2037d3e6d1abfe7952d",
+      "kernel.ptx": "fc1b16c6a8fa84ea6bcf376b58a27828cc394772b5c841566dead538b209332f",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -3356506666026992856, i64 %t10, i64 %t11, i64 %t13, i32 576, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": false,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__dense_m16_n18432_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m16_n18432_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "9b236052d6bd6ca5574f90d653b4b97445e8846008ee2259a489dca1b796e6f9",
+      "kernel.host.ll": "5d49e656eb3b7651732fad14cad892b5e919e1c9a3584edd221ca8f661dc2593",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "5fb52620664f509fea18072d607209289d07cc8b03a0832ff4c0a9abb1bcd0cc",
+      "kernel.ptx": "1fe7eca6ec91ffa5c21c6fd3b0725f0076725d398074d274dc9f2e00774fc3fa",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 7605035458380830183, i64 %t10, i64 %t11, i64 %t13, i32 1152, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__dense_m16_n18432_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m16_n18432_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m16_n18432_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "8462b088475a4cc64b76f7cf067410844b43adfab8bd91558c5900794ba36662",
+      "kernel.host.ll": "22f4a621e5f61dacf92fa42596592cfdb6c02e4128492e150d26e91579de8eca",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "37b4b49b09effb7e889e555b373f1be8c56b076439d4661b135923c339d4ea5d",
+      "kernel.ptx": "b4f828dfe12f79f07558ef9df1f7de63dd6d0a71ae8c9cb08fd2d6b31239ad94",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 2985060193287571411, i64 %t10, i64 %t11, i64 %t13, i32 1152, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__dense_m128_n18432_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m128_n18432_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "eeae7f09e20471e074b4efab6b2ab21128aeb3bb9ff04d62e176a654e23406f6",
+      "kernel.host.ll": "8edb15e00d6fb635016b01972656f948cf0255993d61edb1e05c473082146857",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "5275d49e909aaca9e676ad04fdeaa69602ce5ad229697bc96e807e8cdf117172",
+      "kernel.ptx": "93278f399056131b69e6ab988b71d479a9c804e75f58a0277488e384942489b1",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 3801256646834964986, i64 %t10, i64 %t11, i64 %t13, i32 288, i32 1, i32 256, i32 12288)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m128_n18432_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m128_n18432_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "d3dccd1446d26fd283ed8480ed96b77b4532e1c832cc5c4d1979b65cf32d78d0",
+      "kernel.host.ll": "023ae26eaec00946154c04c939c85b239c8d1e10b9a15a70cf9c252a2efb1c9e",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "c0e399943f1a9dd2646400af406b6b21e0fa07134aaf40063412738760630e05",
+      "kernel.ptx": "32890ad8a0c72b35fea0d6049fd039193f2129bcb48fc53a584c34bff0629cc0",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -2731320891478637631, i64 %t10, i64 %t11, i64 %t13, i32 288, i32 1, i32 256, i32 12544)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__dense_m128_n18432_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__dense_m128_n18432_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__dense_m128_n18432_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "5bcc1d394c3f3979ebf30931dfc46ed65b6dc7cb8bf7ed0532ae2715ecf2a4b0",
+      "kernel.host.ll": "226d18284219cd3b8ba69483d3e5a65700631bc2b15c1406d8936690f9cc7e63",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "fba89ab3edc6eb0088ea74bc3bb9b18b746f9e96c920adad23ed7a017f501134",
+      "kernel.ptx": "0b8519dc012c0af16bd4c6d2d0c42396ace5993401a77273b4c5cc4fb4ce3d98",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 6729469497193196309, i64 %t10, i64 %t11, i64 %t13, i32 144, i32 2, i32 256, i32 41472)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "afbfaa2db32cb15aa45afc8badcec89ad6fe1542a3b8cc0dada2613e3079d9f1",
+      "kernel.host.ll": "917a292949f85472b6c601df656635b3eec22d34d0cf39843c9c1bf06f7fff92",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "f38661b97d500f1af9c6041353872638b41a7d92d30482858b8c0d4a634704a6",
+      "kernel.ptx": "d90e2f34dee1c9515d8379f9ba083a72e6660c683e58ede4fc1dfba60c0514e4",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 384881027731766882, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "22e77415d0ecab2b0522f71b26fc31f666954f4bfa2e0ac4144b4ca37db240aa",
+      "kernel.host.ll": "187dbfad3e3ab615d3ee010856ddb941e8582425d9cb12082eefa295cd38fc07",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "398507bbcb7a00cc33f9662615fea0e4ae934e0b099ac20234a5107a01019a53",
+      "kernel.ptx": "e317e95d4c87e77c289c9282fffc3c2857a87663596b746b8a10023555182fb1",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 6019899108012609993, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "92a6a546a6a72a8832deb4f45a2db608dd8ebe5545dd97eca9742a43aaf413b5",
+      "kernel.host.ll": "0081d080cf827cc59abafa60705fa4b3997ba0f0c402be74e4d34043576d48fb",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "8e42331d0beefe66ecbcc266eb3cbcf3829dde122a75418ce5f72c8a925bc4cf",
+      "kernel.ptx": "cfd8d2740145392d87fcb15b33f3d2bc64a4d26fab2be0c432432c6f3d19d6c7",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 5999837583112965037, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a796f6c0d63f5388a152e042543bd6dd005ebd561b7b1c8cc2f785f86fffb20c",
+      "kernel.host.ll": "5338bff11611905594399f64c518b7ba3c9b69818cedc05dc10ace8f82fd86de",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "b88c5bd861c6fb7289f625fa09dcfc92a814f78c05ad04fa72bcf1b3316c3720",
+      "kernel.ptx": "bda12513d1e4acfba0607499d1c3c5f8a86561331eb1da199fcbc5687764643f",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 8743443796687208070, i64 %t10, i64 %t11, i64 %t13, i32 128, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "790dc7d86d194ceee224e1194b29fa51281704863291be3ba626300c299ae780",
+      "kernel.host.ll": "1a94dca5bf1b8e3e6b4d2f9479de0ca2ad99b3534095b793ef4c9221d70d6df6",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "958ab2759c443552274c7ade037b8f81050dff1bc24d50c6150d2453392b9c84",
+      "kernel.ptx": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 4018622852772908117, i64 %t10, i64 %t11, i64 %t13, i32 128, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a6fb5ea0ac8a029c28cac8f76c95e25d501bece3039ccef56281094fbd9027ec",
+      "kernel.host.ll": "cb44e6b5a9a83d749a664bff8f121dc37e7b5ba0d7a1ac0d163529bc0b640b88",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "f87cab3c1a85cfebca137540dfaf95b57b5238dd3ef734209b56b486eb62bf20",
+      "kernel.ptx": "d141ffff5c12b3728f32acc35c34da83b4a26b0fd8beffd6aa7e489ca5cf2450",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 5754894917431772001, i64 %t10, i64 %t11, i64 %t13, i32 256, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "4532b68e8d04240f21531d3ff0c2c3da10529181fb1c26376b85e3e402bf570a",
+      "kernel.host.ll": "61bf91387c5a6257c9cf9640a7df22a9f701d0781c536fab151f266f8497b5de",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "78e7c76e8bbec2e2265909cfff03f1957775fac5a5e2ab7f5ad6a5f30766d264",
+      "kernel.ptx": "160cee54fe37e0d91c98c972c956a0ed2d4828544761d939ba2f1a757b00aa08",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 2156694061503762968, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 64, i32 2048)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "2f4abc43d93fe6c1a4b5f773e947c9ba934e46e4cb75b0767aba9f8ff5a76dd0",
+      "kernel.host.ll": "9b0bfcefd28633be106234baee4140f6700354f2ce5d4898a153736908d36b40",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "b848bd80bd17e6881fcca4afa09b1a058aa5f7c50ad3e810abf687bee3bc7be3",
+      "kernel.ptx": "e841253f20195512b14d2c83851763d9681556f0b3d4c6c04197f4d6006d1cd2",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -8455549593538896777, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 64, i32 2176)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "5fce35d9076e3df0dc418656d54cf33fc5b59d433bd7a2fd712c72ca921d3473",
+      "kernel.host.ll": "228b40e4e9839a3c15ab7964399282c62003791091dd03ec90ea6bdbc866e5ab",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "07878415e3e099f26c8c6f64b59d8f414d6ce81cb985f0123dcae94517d6e4d2",
+      "kernel.ptx": "d127fa270e1c500955928edc59b91c7286e27d9e4cfca67165d01910a3884915",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -1513033246355110237, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 256, i32 37888)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a181ea1f42336ee7098db106782d75fe796f063397e18c2cd9ebac0f1ecf4bec",
+      "kernel.host.ll": "7ab4639a5009772a8908ab7a873dad7c46a0fe7d47b4966bf36690de144391ce",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "679c911587b556d08336fe9d11e27924733f72d564acd0db01677ac5e2fece37",
+      "kernel.ptx": "b9fdc26b22fd323c38f5b385efe1847178505ef1fec3ac3cde5179b07920d971",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -3749944609965660320, i64 %t10, i64 %t11, i64 %t13, i32 4, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "0fab36c31b1cce086075a245e0df3e6bca904b2508fbeac5bbf25e64d7106510",
+      "kernel.host.ll": "1a17bfcf2399bad84ec7f720887b581c4d5f7b7950be00000474a027da307cf4",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "52acf5a8e748d2b2f8dab804208eb11502b9bbacfeca045cbf41dafcf682589a",
+      "kernel.ptx": "9f5b1df084a1a1279bd8653a368ffaedf5bf55521698881490484391de66c24d",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 132868025324705215, i64 %t10, i64 %t11, i64 %t13, i32 4, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "2ddee31dafb00f94d05155c35b0dffa37a80fae7d50653f004dbb56ec78a902e",
+      "kernel.host.ll": "945912522dfdc742e432a7eb6c69de881fef090a91baeb5032fadcaf64c07ccb",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "7f85604dc8425a2a49b1d91df5d618cbdf68cc67aa8143f950743e7cea2d10f4",
+      "kernel.ptx": "ab883e98f654e1e86771b0a342332b77c53f31bb158120a6537f11b17870d520",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -1661313631497678021, i64 %t10, i64 %t11, i64 %t13, i32 4, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a7a77d25638a470a99e424ee062433c902db6664c898789178bdd5bb80cd0421",
+      "kernel.host.ll": "ff16db2256430507a2627503a00bc96f7d4140fa17130f7f6bfc67c56b249f6a",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "9a80a0fc96f86628f0b6fa5afd62427efbb6e612a073858bf1112af039608d62",
+      "kernel.ptx": "481d85bc1dce45586bd17c624936d83a8acbb1675b01d10d683f40c6a48ed367",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -5345295607748356700, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "6dd25bfbb09d2a52ae6aeb1a4f114dcd414bc4518444ce1a584d53fae2c35f72",
+      "kernel.host.ll": "a9000e59e4bfbff3cff7b7b8602cd1bf6ac045b6d05a7315cd14eb423925b245",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "983825975602a92862799eabd369ca5f5e4e00769b3695c4c25fe29e21a272cb",
+      "kernel.ptx": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 -80817264571568293, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 1, i32 256, i32 0)"
+    ],
+    "route": "scalar",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": false
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "59fa6c00203f61645b1a0dd4b906ce83b6542327679a019ba321fba4d75fbb5e",
+      "kernel.host.ll": "afaf976063399f0107154d62a7c9f03599c105ddc2d8c6be62bb4be79fcc3c55",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "0a655131d4b5155aaf94060c8f2ee3de6bc4b11893ded6ec8cc95f023936ab89",
+      "kernel.ptx": "12e31396026ac98cfab8d3c1ecfbda652e1be61ef28cff633934bf63bc6007b3",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 7145091712209667487, i64 %t10, i64 %t11, i64 %t13, i32 128, i32 1, i32 32, i32 5376)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "7b3491d4954ef4cfab916d27e047eed32c2d5c73f457aeac8c707d7435315439",
+      "kernel.host.ll": "888fbf4cc771c38957f92f128e960f0a2b7e33a43255c5d50af28a36ab06ae9b",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "8f9c31876bb46d25806d7bcbcb29715fd7172c96ae78b1fc972c7996e027cdaa",
+      "kernel.ptx": "7dbeb4dc8c27ead086343b08bf81df6199958eaf8b95138eeb1f9afea4f13d39",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 455571992607225454, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 32, i32 1536)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "3ed0d5e04cf37422feba52edd80160ab1696f7f4d5f1e5e6298bff79c31cc292",
+      "kernel.host.ll": "cc28ec05f637e9bc810d2fc326cff8905c0cadcdd34f07499f75380bdcb5ea5b",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "1816d292e3eb87c3ea3734151971b10593e57f1143de7ded80060fdc97a2b4be",
+      "kernel.ptx": "53596612754b6ac86e554edeb57330e4960a1605e83e236620445f35dcc54ade",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 8564920316982172733, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 32, i32 1664)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "f60deb2525c690cb78d9951fc91e1baec771ce700caf6c2efa0fc369760c5b1c",
+      "kernel.host.ll": "b3fecbbc6e30c8ea7717eeeed4c195c0ea37357491c56f5c58bb567e1c0634a1",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "d8d072d8e2269634941e375f3deed13341c235ab8c31ab07e36a4e1745c8080a",
+      "kernel.ptx": "6647ed78440bede447efb34a8013b7e05b0c5b0a0b98ae50f9cd049b8e31c0c0",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 6343818363077190969, i64 %t10, i64 %t11, i64 %t13, i32 64, i32 4, i32 128, i32 23040)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__exact",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/kernel.device.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__exact/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "22b91b4a12d90a8a9e7dcf9c6d383828ec60e108892507c28841ea39f8b81a47",
+      "kernel.host.ll": "9deb33832491fa7911fbe4f58eb7c3fdee0be96269267733aa174c37af77d478",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "b618828b5a71f045757001b315926992c960af171df14ad120f40d993d734b00",
+      "kernel.ptx": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 4951881712932282304, i64 %t10, i64 %t11, i64 %t13, i32 32, i32 32, i32 256, i32 33792)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__contract",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/kernel.device.ll",
+          "--contract"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__contract/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "a4335b9f98a2abea0ad2b83357d1cf6380bf79eddd4a21f300d8109a45eb15ab",
+      "kernel.host.ll": "2b6926c3a249a660549cb4d019e4fc49e7340915ae2edb94dd2c53670f0d6435",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "7ce22b1f502d1702efaf1443850eab10f029a2fe082f2f3298c83aca5f138997",
+      "kernel.ptx": "0ec5bf4171a415c6146bd4ea36362cf2027f95af5c90bb5b19105e77b6cd312b",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 3863732228651101343, i64 %t10, i64 %t11, i64 %t13, i32 32, i32 32, i32 256, i32 16640)"
+    ],
+    "route": "cooperative",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  },
+  {
+    "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__tf32",
+    "commands": [
+      {
+        "argv": [
+          "/private/tmp/mapal-s60-kernel/emit-A",
+          "/private/tmp/mapal-s59-gpu/check-packet/ptx/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/candidate/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--device-out=/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/kernel.device.ll",
+          "--contract",
+          "--precision=tf32"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/opt",
+          "-O3",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/kernel.device.ll",
+          "-S",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/kernel.device.opt.ll"
+        ],
+        "exit": 0
+      },
+      {
+        "argv": [
+          "/opt/homebrew/Cellar/llvm/22.1.8/bin/llc",
+          "-O3",
+          "-mcpu=sm_120",
+          "-nvptx-fma-level=0",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/kernel.device.opt.ll",
+          "-o",
+          "/private/tmp/mapal-s60-kernel/evidence/emission-A/rtx-5090__timing__square_control_m4096_n4096_k4096__tf32/kernel.ptx"
+        ],
+        "exit": 0
+      }
+    ],
+    "files": {
+      "kernel.device.opt.ll": "871d3e62f7f99a21d6b7b0e6f1eb914afa84fb31f48b2896bf09857207458a27",
+      "kernel.host.ll": "cdd93773a4e9cb445a4b7c6ab5ca178717604df5ef72ed126b1fd2f07655c49d",
+      "2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel.device.ll": "391dcede9f95bbd7cfdf0058444d3283b92cf44fada75d7bcd5505be465f38ab",
+      "kernel.ptx": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2",
+      "3.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch": [
+      "call void @mapal_gpu_launch(i64 1776789570163257051, i64 %t10, i64 %t11, i64 %t13, i32 32, i32 32, i32 256, i32 37888)"
+    ],
+    "route": "mma",
+    "matches_old_ptx": true,
+    "matches_s58_ptx": true
+  }
+]

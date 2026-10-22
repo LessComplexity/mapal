@@ -25,6 +25,13 @@ installed; 1,024 checkpoint and 128 final values independently recheck against b
 frozen numerical budgets. Recurrent/incremental and matched timing duties remain open,
 so these tasks are not marked complete from the small matrix result.
 
+S60 adds reviewed preparation for M128/d256/h512 and M128/d1024/h2048 residual MLPs:
+matched synchronized resident-work clocks, separate checkpoint/final-only graphs,
+componentwise full-width numerical oracles, raw PyTorch checker export, explicit
+allocator scope and independent readers. All GPU executions remain pending budget
+approval. This matrix-only preparation does not close the recurrent/incremental,
+retention, allocation/transfer or graph-mode duties in 3.1–3.5.
+
 ## 4. Measure composition and reconcile
 
 - [ ] 4.1 Run matrix and recurrent compositions at the admitted sizes with all matched implementations; retain ordinary timings, separate profiling, intermediate value evidence and rental cleanup receipts.
