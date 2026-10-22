@@ -45,7 +45,7 @@ for f in "$OUT"/tiles/*.mapal; do
         # Too big for the interpreter (1024 decode steps; a 2048² filled site):
         # the CPU build's conformance face is the interpreter bit for bit (the
         # backend differential suite's invariant).
-        decode_1024_*|wide_*|deep_*)
+        decode_1024_*|wide_*|deep_*|skinny_*)
             "$EMIT" "$f" - --rewrite --target=apple-m > "$b.cpu.ll"
             clang -O2 "$b.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu" 2>/dev/null
             "$b.cpu" > "$b.expect" ;;
@@ -113,6 +113,14 @@ for spec in "$@"; do
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
         case $b in
+        mm_*x*x*)
+            # S62: a projection-shaped kernel bench (M × N × K), Exact and Contract:
+            # every kernel arm, then the shipped kernel again (`null`).
+            arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
+            arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
+            for v in "$b" "${b}_c"; do
+                cp "$d/$v.ptx" "$d/$v.null.ptx"; cp "$d/$v.launch" "$d/$v.null.launch"
+            done ;;
         mm_[0-9]*)
             # The kernel benches: every rung flipped on all three faces; arms
             # at the four sizes the decisions cite, the shipped kernel at all.

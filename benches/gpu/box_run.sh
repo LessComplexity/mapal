@@ -99,7 +99,8 @@ nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/inclu
 # the S52 host object (`s52`, PREV), interleaved per repetition. One untraced
 # process for the wall time and the program's own `iter ms`, one traced for
 # the phase totals; the cuBLAS whole-program floor (`tile_bench --program`).
-say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
+# E2E=0 (S62): skip this section (a kernel item's session).
+[ "${E2E:-1}" = 1 ] && say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
 ARMS=${E2E_ARMS:-on off-resident off-devgen off-eager-init off-arena off-arch-rungs s52}
 arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
 e2e() { # <prog> <floor: n gemms ops>
@@ -125,13 +126,15 @@ e2e() { # <prog> <floor: n gemms ops>
     done
     for r in 1 2 3; do say "floor prog=$p rep=$r $(./tile_bench --program "$@" 2>&1)"; done
 }
-e2e e2e_1024 1024 1 2
-e2e e2e_4096 4096 1 2
-e2e mm_share_1024 1024 2 3
-e2e mm_chain_2048 2048 2 3
-e2e e2e_chain_4096 4096 2 3
-e2e loop_mm_1024_8 1024 8 2
-say "$(./tile_bench --h2d 64 10 2>&1)"
+if [ "${E2E:-1}" = 1 ]; then
+    e2e e2e_1024 1024 1 2
+    e2e e2e_4096 4096 1 2
+    e2e mm_share_1024 1024 2 3
+    e2e mm_chain_2048 2048 2 3
+    e2e e2e_chain_4096 4096 2 3
+    e2e loop_mm_1024_8 1024 8 2
+    say "$(./tile_bench --h2d 64 10 2>&1)"
+fi
 
 # S54 multi-computation probes (`pt_<probe>_<n>`, gen_tiles.py): per probe, both
 # faces × the host arms, interleaved per repetition — one untraced process for
@@ -176,6 +179,7 @@ for o in "$PROF"/pt_*.host.o; do
         done
     done
     # shellcheck disable=SC2086  # the values are separate arguments
+    case $n in *[!0-9]*) continue ;; esac  # S62 `rmlp_<M>x<d>x<h>`: no library leg
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 
@@ -215,26 +219,47 @@ if [ -x prog_decode_1024_256 ]; then
 fi
 
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
-bench() { # <n> <stem> <label> [--contract|--tf32]
-    local n=$1 stem=$2 label=$3; shift 3
+bench() { # <cell: n or MxNxK> <stem> <label> [--contract|--tf32]
+    local cell=$1 stem=$2 label=$3 m n kk; shift 3
     read -r k gx gy blk sm < "$stem.launch"
-    say "# n=$n face=$label"
-    ./tile_bench "$n" "$n" "$n" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
+    IFS=x read -r m n kk <<< "$cell"; n=${n:-$m}; kk=${kk:-$m}
+    say "# n=$cell face=$label"
+    ./tile_bench "$m" "$n" "$kk" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
 }
 # S54 arch-select: the session's first bench ran 3.6% off its own repeat (the `null` arm,
 # arch-select-rtx-3090.txt _exact 1024): one discarded bench first.
 [ -f "$PROF/mm_1024.launch" ] && { read -r k gx gy blk sm < "$PROF/mm_1024.launch"
     ./tile_bench 1024 1024 1024 "$PROF/mm_1024.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" > /dev/null 2>&1; }
-for n in 1024 1536 2048 3072 4096 8192; do
-    for face in _exact _c _tf; do
-        case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
-        [ -f "$PROF/$s.launch" ] || continue
-        bench "$n" "$PROF/$s" "$face" "${flag[@]}"
-        for v in "$PROF/$s".*.launch; do
-            [ -f "$v" ] || continue
-            var=${v%.launch}; var=${var#"$PROF/$s".}
-            bench "$n" "${v%.launch}" "$face.$var" "${flag[@]}"
+# The squares, then (S62) every `mm_<M>x<N>x<K>` cell the bundle holds.
+CELLS="1024 1536 2048 3072 4096 8192 $(for l in "$PROF"/mm_*x*x*.launch; do [ -f "$l" ] || continue
+    l=${l##*/mm_}; echo "${l%%[._]*}"; done | sort -u | tr '\n' ' ')"
+timing() { # <reverse: 1 = every bench's arms in reverse order, shipped last>
+    local cell face s flag v vars i r
+    for cell in $CELLS; do
+        for face in _exact _c _tf; do
+            case $face in _exact) s=mm_$cell; flag=() ;; _c) s=mm_${cell}_c; flag=(--contract) ;; _tf) s=mm_${cell}_tf; flag=(--tf32) ;; esac
+            [ -f "$PROF/$s.launch" ] || continue
+            vars=("")
+            for v in "$PROF/$s".*.launch; do
+                [ -f "$v" ] || continue
+                v=${v%.launch}; vars+=(".${v#"$PROF/$s".}")
+            done
+            if [ "$1" = 1 ]; then
+                r=(); for ((i = ${#vars[@]} - 1; i >= 0; i--)); do r+=("${vars[i]}"); done; vars=("${r[@]}")
+            fi
+            for v in "${vars[@]}"; do
+                bench "$cell" "$PROF/$s$v" "$face$v" "${flag[@]}"
+            done
         done
     done
-done
+}
+timing 0
+# S62: the timing section again with every bench's arms reversed (ABBA across the two
+# passes), into its own file: rungs.py reads the two passes as two sessions.
+if [ "${PASS2:-1}" = 1 ]; then
+    MAIN=$LOG; LOG=results-$PROF-pass2.txt; : > "$LOG"
+    say "== $PROF $SM $(date -u +%FT%TZ) pass 2 (arms reversed)"
+    timing 1
+    LOG=$MAIN
+fi
 say "== done"

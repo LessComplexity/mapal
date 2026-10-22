@@ -466,3 +466,75 @@ fan_body = twin(128)[1] + site('g', 'c', 'd', 128)
     probe_program(128, ('abef', fan_body, [('c', 128 * 128), ('d', 128 * 128), ('g', 128 * 128)]), True)
     .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
     .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))
+
+# --- S62 ordered tile geometry: skinny sites (M ≪ N). Differential: the row-fitted
+# and scalar-row (`fill-rows`) tiles, M1's one-row grid and an f64 (two-lane) tile;
+# oracle: the CPU build (bundle.sh `skinny_*`).
+for name, M, N, K, elem in (("skinny_16x16384x512", 16, 16384, 512, "f32"),
+                            ("skinny_16x2048x512", 16, 2048, 512, "f32"),
+                            ("skinny_1x16384x512", 1, 16384, 512, "f32"),
+                            ("skinny_8x4096x256_f64", 8, 4096, 256, "f64")):
+    (out / f"{name}.mapal").write_text(program(M, N, K, "rm", "rm", elem))
+
+
+def bench_mnk(M, N, K):
+    """`bench(n)` at M × N × K: the timed kernel of a projection-shaped site."""
+    return f"""fn main() {{
+    {M * K} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    {K * N} -> iota -> tb;
+    tb -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {K} -> iota -> krange;
+    {M * N} -> iota -> tc;
+    tc -> map {{ t ->
+        t / {N} -> i;
+        t % {N} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {K} + k] * b[k * {N} + j] }}
+    }} -> c;
+    c[0] -> println;
+}}
+"""
+
+
+for M in (1, 16, 128):
+    for N, K in ((2048, 7168), (1024, 4096), (18432, 7168)):
+        (out / f"mm_{M}x{N}x{K}.mapal").write_text(bench_mnk(M, N, K))
+
+
+def rmlp(M, d, h, timed):
+    """A residual MLP layer: out = relu(x·w1)·w2 + x, x M×d, w1 d×h, w2 h×d —
+    two skinny sites chained through a per-cell activation, the residual per cell."""
+    t0, t1 = ("    () -> time -> t0;\n", "    () -> time -> t1;\n") if timed else ("", "")
+    tail = f"    out[0] -> println;\n    out[{M * d - 1}] -> println;\n"
+    if timed:
+        tail += '    "iter ms=" -> print;\n    t1 - t0 -> println;\n'
+    else:
+        tail = f"    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> s;\n    s -> println;\n" + tail
+    return f"""fn main() {{
+    {M * d} -> iota -> tx;
+    {d * h} -> iota -> tw;
+    {M * h} -> iota -> tc;
+    {d} -> iota -> kd;
+    {h} -> iota -> kh;
+    tx -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x;
+    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / {d}.0 }} -> w1;
+    tw -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / {h}.0 }} -> w2;
+{t0}    tc -> map {{ t ->
+        t / {h} -> i;
+        t % {h} -> j;
+        (0.0, kd) -> fold {{ acc, k -> acc + x[i * {d} + k] * w1[k * {h} + j] }}
+    }} -> c;
+    c -> map {{ v -> {relu("v")} }} -> hr;
+    tx -> map {{ t ->
+        t / {d} -> i;
+        t % {d} -> j;
+        (0.0, kh) -> fold {{ acc, k -> acc + hr[i * {h} + k] * w2[k * {d} + j] }}
+    }} -> y;
+    tx -> map {{ t -> y[t] + x[t] }} -> out;
+{t1}{tail}}}
+"""
+
+
+(out / "px_rmlp_128x64x128.mapal").write_text(rmlp(128, 64, 128, False))
+for d, h in ((256, 512), (1024, 2048)):
+    (out / f"pt_rmlp_128x{d}x{h}.mapal").write_text(rmlp(128, d, h, True))

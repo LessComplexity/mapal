@@ -155,7 +155,7 @@ bb38:
   %t66 = load i64, ptr %d35
   %t67 = load i64, ptr %d29
   %t69 = call i64 @mapal_gpu_alloc(ptr %d68, i64 16384)
-  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t66, i64 %t67, i64 %t69, i32 4, i32 2, i32 32, i32 1664)
+  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t66, i64 %t67, i64 %t69, i32 4, i32 8, i32 32, i32 7168)
   %t70 = getelementptr { [4096 x float], i32 }, ptr %o16, i32 0, i32 0
   call void @llvm.memcpy.p0.p0.i64(ptr %t70, ptr %o13, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
   %t71 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0
