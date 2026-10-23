@@ -67,3 +67,30 @@ pub fn eval_call(ir: &CategoryIr, f: FuncId, arg: RValue, budget: u64) -> Outcom
         Err(abort) => abort.into_outcome(),
     }
 }
+
+/// The observable a compiled program must reproduce (L1 / BL8 `@main`
+/// protocol) — a public contract: the backend differential suite and
+/// `mapal test` both judge the native arm against it. `None` for a Diverged
+/// run (no verdict). `Some((None, 101))` for a trap (stdout ignored).
+/// `Some((Some(stdout), 0))` for a Done program — the entry protocol decides
+/// the stdout: an `IoToken` entry's is the token log; a closed `Unit → scalar`
+/// entry's is the wrapper-printed return.
+pub fn native_observable(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<String>, i32)> {
+    match &rr.outcome {
+        Outcome::Diverged => None,
+        Outcome::Trapped(_) => Some((None, 101)),
+        Outcome::Done(v) => {
+            let entry = ir.entry();
+            let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
+            let stdout = if *in_ty == Ty::IoToken {
+                rr.output.clone()
+            } else if let RValue::Scalar(sv) = v {
+                // The @main wrapper prints the scalar return with a newline.
+                format!("{}\n", render(sv))
+            } else {
+                String::new() // non-printable return: wrapper prints nothing
+            };
+            Some((Some(stdout), 0))
+        }
+    }
+}

@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
-use mapal_interp::{Outcome, RValue, RunResult, render, run};
+use mapal_interp::{Outcome, RunResult, native_observable as expect_native, run};
 use mapal_ir::{CategoryIr, Operation, Ty};
 use mapal_rewrite::{PassId, rewrite};
 
@@ -211,31 +211,6 @@ fn wait_boxed(mut command: Command, secs: u64) -> Option<(Vec<u8>, i32)> {
 }
 
 // --- oracle expectation ---------------------------------------------------
-
-/// The expected native observable from the interp oracle (L1 / BL8). Returns
-/// `None` for a Diverged run (skip). `Some((None, 101))` for a trap (stdout
-/// ignored). `Some((Some(stdout), 0))` for a Done program — the entry protocol
-/// decides the observable: an `IoToken` entry's stdout is the token log; a
-/// closed `Unit → scalar` entry's is the wrapper-printed return.
-fn expect_native(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<String>, i32)> {
-    match &rr.outcome {
-        Outcome::Diverged => None,
-        Outcome::Trapped(_) => Some((None, 101)),
-        Outcome::Done(v) => {
-            let entry = ir.entry();
-            let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
-            let stdout = if *in_ty == Ty::IoToken {
-                rr.output.clone()
-            } else if let RValue::Scalar(sv) = v {
-                // The @main wrapper prints the scalar return with a newline.
-                format!("{}\n", render(sv))
-            } else {
-                String::new() // non-printable return: wrapper prints nothing
-            };
-            Some((Some(stdout), 0))
-        }
-    }
-}
 
 /// Emit `ir`, compile+run at **both `-O0` and `-O2`**, and assert L1 parity
 /// against `rr` at each level — the same oracle expectations (DESIGN §8 `-O2`

@@ -17,6 +17,7 @@
 //! SCC), rejected as [`EmitError::Unsupported`] — the same scope boundary as
 //! interp M1 / rewrite.
 
+pub mod flags;
 mod func;
 mod loops;
 mod module;
@@ -25,6 +26,7 @@ mod reuse;
 mod ty;
 
 pub use crate::profile::TargetProfile;
+pub use crate::profile::resolve as resolve_profile;
 
 /// The profile a target name resolves to (`native` included), `None` for an
 /// unknown name — what [`EmitOpts::target`] and [`EmitOpts::host`] accept.
