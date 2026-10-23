@@ -1,0 +1,12 @@
+[00:54:39 rtx-3090] instance 57323688 from offer 54025930
+[00:56:12 rtx-3090] ssh 104.233.209.157:11159 up
+[01:00:59 rtx-3090] bundle uploaded
+[01:01:27 rtx-3090] box_run exit 255
+[01:01:27 rtx-3090] results retrieval failed
+[01:01:28 rtx-3090] results fetched: 0 lines
+[01:01:29 rtx-3090] destroyed 57323688
+[01:01:29 rtx-3090] instance 57324280 from offer 56697347
+[01:02:13 rtx-3090] ssh 194.26.196.174:11544 up
+[01:02:19 rtx-3090] bundle uploaded
+[01:05:03 rtx-3090] results fetched: 573 lines
+[01:05:04 rtx-3090] destroyed 57324280

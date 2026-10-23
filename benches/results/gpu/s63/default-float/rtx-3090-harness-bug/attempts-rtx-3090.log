@@ -1,0 +1,4 @@
+[00:54:38] try RTX_3090 offer=54025930 dph=0.193 pcie=19.7 cpu_ghz=2.4 cpu=AMD_EPYC_7532_32-Core_Processor host=483833 machine=153150 geo=California, US
+[01:01:29] no complete results from offer=54025930
+[01:01:29] try RTX_3090 offer=56697347 dph=0.255 pcie=19.6 cpu_ghz=2.35 cpu=AMD_EPYC_7452_32-Core_Processor host=151822 machine=58766 geo=Czechia, CZ
+[01:05:04] DONE RTX_3090 offer=56697347 host=151822 machine=58766

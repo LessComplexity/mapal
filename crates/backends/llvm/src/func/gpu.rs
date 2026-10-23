@@ -4453,7 +4453,7 @@ mod tests {
                     let (blocks, wave) = (l.gx * l.gy, l.wave(g));
                     // The fill class a `GPU_RUNGS_OFF` row keys (`launch`'s `wps`).
                     let base = p.gpu_tile(m, n, k, &s.elem, false, false);
-                    let (fb, ft) = base.map_or((blocks, l.block), |t| {
+                    let (fb, ft) = base.map_or(((m * n).div_ceil(NAIVE_THREADS), NAIVE_THREADS), |t| {
                         ((m / t.bm()) * (n / t.bn()), t.threads())
                     });
                     let fill = if g.warps_per_scheduler(fb, ft) < GPU_RESIDENT_BLOCKS {
@@ -4500,15 +4500,42 @@ mod tests {
             }
         }
         // The one-wave clamp (G6): the 3090 at 16 × 18432 × 7168 holds 984
-        // blocks of the 1152-block grid; no split fits one wave, so stream-K
-        // takes the tail. The 5090's M16 × 2048 cell-fill grid splits.
+        // blocks of the 1152-block grid; no split fits one wave. Stream-K
+        // would take the tail; its measured row (Filled) ships the grid.
         let r3090 = &crate::profile::RTX_3090;
         let s = site(16, 18432, 7168, true, true, Ty::f32());
         let l = launch_in(&s, r3090, true, arms, None, Order::Free);
         assert_eq!(l.combine.splits(), 1, "{:?}", l.combine);
         let s16 = site(16, 2048, 7168, true, true, Ty::f32());
-        let l = launch_in(&s16, &RTX_5090, true, arms, None, Order::Free);
-        assert_ne!(l.combine, Combine::None);
+        // S63 the shipped default per part (`GPU_RUNGS_OFF`, measured,
+        // `benches/results/gpu/s63/default-float/`): each is a session arm.
+        let shipped = |p, (m, n, k)| {
+            let c = launch_in(&site(m, n, k, true, true, Ty::f32()), p, true, arms, None, Order::Free)
+                .combine;
+            match c {
+                Combine::None => "none",
+                Combine::Workspace { .. } => "workspace",
+                Combine::Atomic { .. } => "atomic",
+                Combine::StreamK { .. } => "streamk",
+            }
+        };
+        let h100 = &H100_PCIE;
+        for (p, cell, want) in [
+            (&RTX_5090, (16, 2048, 7168), "none"),
+            (&RTX_5090, (16, 18432, 7168), "streamk"),
+            (&RTX_5090, (4096, 4096, 4096), "streamk"),
+            (&RTX_4090, (16, 18432, 7168), "none"),
+            (h100, (16, 1024, 4096), "streamk"),
+            (h100, (16, 2048, 7168), "workspace"),
+            (h100, (128, 2048, 7168), "streamk"),
+            (h100, (4096, 4096, 4096), "none"),
+            (r3090, (16, 1024, 4096), "atomic"),
+            (r3090, (16, 2048, 7168), "workspace"),
+            (r3090, (128, 2048, 7168), "atomic"),
+            (r3090, (4096, 4096, 4096), "none"),
+        ] {
+            assert_eq!(shipped(p, cell), want, "{} {cell:?}", p.name);
+        }
         // The measured table: the 3090 ships no workspace split at (filled,
         // exact) — its one split cell there lost (S62) — on the fixed face.
         let pre = off(&["row-fit", "wave-gate", "grid-share", "panel-regs", "fill-rows", "cell-fill"]);

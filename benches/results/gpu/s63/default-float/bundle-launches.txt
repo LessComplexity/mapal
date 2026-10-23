@@ -1,0 +1,56 @@
+cell rtx-5090 16x2048x7168 default mapal_tile_2fa3730df1e31ab8 326 1 32 28672 1 streamk
+arm rtx-5090/mm_16x2048x7168.off-streamk mapal_tile_37c5043169cbcc55 128 2 32 28672
+cell rtx-5090 16x1024x4096 default mapal_tile_a756f4129999cc0a 158 1 32 28672 1 streamk
+arm rtx-5090/mm_16x1024x4096.off-streamk mapal_tile_fee0e120457e2f5b 64 2 32 28672
+cell rtx-5090 16x18432x7168 default mapal_tile_79fadf9a6ce94016 170 1 32 9472 1 streamk
+arm rtx-5090/mm_16x18432x7168.off-streamk mapal_tile_698a8374c90a15e7 144 1 32 9472
+cell rtx-5090 128x2048x7168 default mapal_tile_b56d51854ad4f1e6 334 1 64 34816 1 streamk
+arm rtx-5090/mm_128x2048x7168.off-streamk mapal_tile_8aa7da71b06a5c77 64 4 64 34816
+cell rtx-5090 4096x4096x4096 default mapal_tile_6eab42dba437b31e 340 1 256 16640 1 streamk
+arm rtx-5090/mm_4096x4096x4096.off-streamk mapal_tile_359ebbfdb3fa2c9f 32 32 256 16640
+prog rtx-5090 pt_rm_m128_d256_h512 default = contract (host, PTX identical)
+prog rtx-5090 pt_rm_m128_d1024_h2048 default = contract (host, PTX identical)
+cell rtx-4090 16x2048x7168 default mapal_tile_6e4b9bcdd0843cf4 64 2 64 45056
+cell rtx-4090 16x1024x4096 default mapal_tile_163c7f5ccf8b5e2a 64 2 32 98304
+cell rtx-4090 16x18432x7168 default mapal_tile_c12d9613a5141bff 639 1 64 3328 1 streamk
+arm rtx-4090/mm_16x18432x7168.off-streamk mapal_tile_0ca772afc3771626 576 1 64 3328
+cell rtx-4090 128x2048x7168 default mapal_tile_d83f12ee616a9cb6 64 2 128 79872
+cell rtx-4090 4096x4096x4096 default mapal_tile_ef9b0c1ddb04347e 32 32 128 16640
+prog rtx-4090 pt_rm_m128_d256_h512 default = contract (host, PTX identical)
+prog rtx-4090 pt_rm_m128_d1024_h2048 default = contract (host, PTX identical)
+cell h100-pcie 16x2048x7168 default mapal_tile_89538c248e4adc0e 64 14 64 22528 7 atomic
+arm h100-pcie/mm_16x2048x7168.off-streamk+splitk-atomic mapal_tile_62db87fb1364f56e 64 14 64 22528 7 mapal_tile_7a30627f0e98010d 128 1 256 0
+arm h100-pcie/mm_16x2048x7168.off-streamk+splitk-atomic+splitk mapal_tile_c376f8270e0c7175 64 2 64 22528
+cell h100-pcie 16x1024x4096 default mapal_tile_86e9c4d6f2a9968e 683 1 256 9216 1 streamk
+arm h100-pcie/mm_16x1024x4096.off-streamk mapal_tile_213748b9ff70222c 64 8 256 9216 8 atomic
+arm h100-pcie/mm_16x1024x4096.off-streamk+splitk-atomic mapal_tile_15861fe509796e7c 64 8 256 9216 8 mapal_tile_f7cf25989164ec1b 64 1 256 0
+arm h100-pcie/mm_16x1024x4096.off-streamk+splitk-atomic+splitk mapal_tile_29d163e8903c830f 64 1 256 9216
+cell h100-pcie 16x18432x7168 default mapal_tile_03219cd7ed41018a 912 1 64 3328 1 streamk
+arm h100-pcie/mm_16x18432x7168.off-streamk mapal_tile_e6e4dac2c61db4db 576 1 64 3328
+cell h100-pcie 128x2048x7168 default mapal_tile_ed9da69cb472b05a 228 1 32 12800 1 streamk
+arm h100-pcie/mm_128x2048x7168.off-streamk mapal_tile_027b82bf54cadbeb 64 2 32 12800
+cell h100-pcie 4096x4096x4096 default mapal_tile_bff311f068495ec2 228 1 256 16640 1 streamk
+arm h100-pcie/mm_4096x4096x4096.off-streamk mapal_tile_eb50b87a44f46aa3 32 32 256 16640
+prog h100-pcie pt_rm_m128_d256_h512 default = contract (host, PTX identical)
+prog h100-pcie pt_rm_m128_d1024_h2048 default = contract (host, PTX identical)
+cell rtx-3090 16x2048x7168 default mapal_tile_2ae87a3cb89b56c6 652 1 64 5632 1 streamk
+arm rtx-3090/mm_16x2048x7168.off-streamk mapal_tile_1c381956ff36b504 64 8 64 5632 4 atomic
+arm rtx-3090/mm_16x2048x7168.off-streamk+splitk-atomic mapal_tile_aabc3f35b5cd6bd4 64 8 64 5632 4 mapal_tile_164c6cf40f1b1523 128 1 256 0
+arm rtx-3090/mm_16x2048x7168.off-streamk+splitk-atomic+splitk mapal_tile_b35f14c2b9584d57 64 2 64 5632
+cell rtx-3090 16x1024x4096 default mapal_tile_62a63560df4ff424 456 1 256 9216 1 streamk
+arm rtx-3090/mm_16x1024x4096.off-streamk mapal_tile_f407925cc90c0372 64 4 256 9216 4 atomic
+arm rtx-3090/mm_16x1024x4096.off-streamk+splitk-atomic mapal_tile_06f14c85529f6d4a 64 4 256 9216 4 mapal_tile_6e6985860e613e49 64 1 256 0
+arm rtx-3090/mm_16x1024x4096.off-streamk+splitk-atomic+splitk mapal_tile_2d055d5fed4dabb1 64 1 256 9216
+cell rtx-3090 16x18432x7168 default mapal_tile_401299c4ed6c0908 655 1 64 3328 1 streamk
+arm rtx-3090/mm_16x18432x7168.off-streamk mapal_tile_3b7a9e0a4eec2665 576 1 64 3328
+cell rtx-3090 128x2048x7168 default mapal_tile_6032266203f23ad8 1311 1 32 1536 1 streamk
+arm rtx-3090/mm_128x2048x7168.off-streamk mapal_tile_e7730fc4294aa20e 64 16 32 1536 8 atomic
+arm rtx-3090/mm_128x2048x7168.off-streamk+splitk-atomic mapal_tile_c0fb0b9aae64bb6e 64 8 32 1536 4 mapal_tile_d84fe61ea997c70d 1024 1 256 0
+arm rtx-3090/mm_128x2048x7168.off-streamk+splitk-atomic+splitk mapal_tile_853a6d1f9bcfa375 64 2 32 1536
+cell rtx-3090 4096x4096x4096 default mapal_tile_86a1499561c1f3d0 164 1 128 16640 1 streamk
+arm rtx-3090/mm_4096x4096x4096.off-streamk mapal_tile_2a54d22fbd9beb3d 32 32 128 16640
+prog rtx-3090 pt_rm_m128_d256_h512 default = contract (host, PTX identical)
+prog rtx-3090 pt_rm_m128_d1024_h2048 default = contract (host, PTX identical)
+bundle ready: /private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/d48de64b-c24f-4f25-9674-928a7ce97ccb/scratchpad/s63/bundle
+
+[exited with code 0]
