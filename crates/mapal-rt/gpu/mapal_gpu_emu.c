@@ -126,6 +126,67 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
       for (tid_x = 0; tid_x < (int32_t)block; tid_x++) k((void *)a, (void *)b, (void *)o);
   n_launch++;
 }
+/* An epilogue or chained launch (S54): the kernel takes `nptr` pointers.
+ * Run thread by thread (an epilogue kernel stages no shared memory here:
+ * tests that reach a staged one turn `async` off, as for `launch`). */
+typedef void (*kv_t)();
+static void call_v(kv_t k, uint32_t n, void **p) {
+  switch (n) {
+  case 3: ((void (*)(void *, void *, void *))k)(p[0], p[1], p[2]); break;
+  case 4: ((void (*)(void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3]); break;
+  case 5: ((void (*)(void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4]); break;
+  case 6: ((void (*)(void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
+  case 7:
+    ((void (*)(void *, void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
+    break;
+  case 8:
+    ((void (*)(void *, void *, void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5],
+                                                                               p[6], p[7]);
+    break;
+  default: fprintf(stderr, "emu: launchv with %u pointers\n", n); exit(102);
+  }
+}
+struct emu_vthread {
+  kv_t k;
+  uint32_t n;
+  void **p;
+  int32_t t;
+};
+static void *emu_vrun(void *q) {
+  struct emu_vthread *x = q;
+  tid_x = x->t;
+  call_v(x->k, x->n, x->p);
+  return 0;
+}
+void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                       uint32_t block, uint32_t smem) {
+  (void)stream;
+  kv_t k = (kv_t)sym("mapal_tile", id);
+  void *p[16];
+  for (uint32_t i = 0; i < nptr && i < 16; i++) p[i] = (void *)ptrs[i];
+  if (smem) {
+    pthread_t *th = malloc(block * sizeof *th);
+    struct emu_vthread *xs = malloc(block * sizeof *xs);
+    b_n = block;
+    for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
+      for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++) {
+        for (uint32_t t = 0; t < block; t++) {
+          xs[t] = (struct emu_vthread){k, nptr, p, (int32_t)t};
+          if (pthread_create(&th[t], 0, emu_vrun, &xs[t])) exit(102);
+        }
+        for (uint32_t t = 0; t < block; t++) pthread_join(th[t], 0);
+      }
+    free(th);
+    free(xs);
+  } else {
+    for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
+      for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++)
+        for (tid_x = 0; tid_x < (int32_t)block; tid_x++) call_v(k, nptr, p);
+  }
+  n_launch++;
+}
+void mapal_gpu_pin(const void *h, uint64_t bytes) { (void)h, (void)bytes; }
+void mapal_gpu_unpin(void) {}
 void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
   void (*k)(void *, uint64_t) = (void (*)(void *, uint64_t))sym("mapal_gen", id);
   for (ctaid_x = 0; (uint64_t)ctaid_x * 256 < n; ctaid_x++)

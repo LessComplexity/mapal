@@ -169,10 +169,14 @@ impl<'a> FnEmit<'a> {
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
+        arms: crate::GpuArms,
     ) -> String {
         let mut host = FnEmit::new(
             ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
         );
+        // The rung arms (S65 `by-ref` decides the frame's layout): the host and
+        // every task read the same ones.
+        host.gpu_arms = arms;
         host.perf_timing = perf_timing;
         // The host runs once per program, so its blocks may go to the arena.
         host.heap_ok = true;
@@ -570,6 +574,7 @@ impl<'a> FnEmit<'a> {
                 move_panel,
                 profile,
                 pack_task_of.contains_key(&task_id),
+                arms,
             ));
             out.push('\n');
         }
@@ -603,6 +608,7 @@ impl<'a> FnEmit<'a> {
         move_panel: MovePanel,
         profile: &'static TargetProfile,
         outer_pack: bool,
+        arms: crate::GpuArms,
     ) -> String {
         if let TaskKind::Split { site: m, n } = &task.kind
             && let Some(site) = tiling
@@ -615,6 +621,7 @@ impl<'a> FnEmit<'a> {
                 ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
+            slice.gpu_arms = arms;
             slice.guard_flavor = GuardFlavor::Task;
             slice.split_range = true;
             slice.prepare_storage();
@@ -638,6 +645,7 @@ impl<'a> FnEmit<'a> {
                 ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
+            pack.gpu_arms = arms;
             pack.guard_flavor = GuardFlavor::Task;
             pack.split_range = true;
             pack.prepare_storage();
@@ -663,6 +671,7 @@ impl<'a> FnEmit<'a> {
                 ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
+            emit.gpu_arms = arms;
             emit.guard_flavor = GuardFlavor::Task;
             emit.prepare_storage();
             emit.frame = Some(frame.clone());
@@ -723,8 +732,15 @@ impl<'a> FnEmit<'a> {
         let mut emit = FnEmit::new(
             ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
         );
+        emit.gpu_arms = arms;
         emit.guard_flavor = GuardFlavor::Task;
         emit.split_range = matches!(task.kind, TaskKind::Split { .. });
+        // A sequential task runs once per program (its registration is
+        // `kind = 0`), so its big blocks may live in the arena the entry
+        // releases after `mapal_par_finish` — not on a worker's stack (S65:
+        // `pt_loop_4096`'s in-loop 64 MB pack overflowed it, rc 139). No
+        // teardown here: the entry's frees everything.
+        emit.heap_ok = matches!(task.kind, TaskKind::Seq { .. });
         emit.watermark = match &task.kind {
             TaskKind::Split { .. } => false,
             TaskKind::Seq { morphisms } => !morphisms.iter().any(|&m| {

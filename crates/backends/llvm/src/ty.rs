@@ -92,6 +92,37 @@ pub(crate) fn lower_named_input_ty(ty: &Ty) -> Option<String> {
     }
 }
 
+/// [`lower_ty`] with the Array components at `paths` (component-index paths
+/// into nested products) lowered to `ptr` — S65 `by-ref`'s loop products. A
+/// `ptr` survives erasure, so residual arity and `erased_index` are unchanged.
+pub(crate) fn lower_ptr_paths(ty: &Ty, paths: &[Vec<u32>]) -> Option<String> {
+    if paths.iter().any(|p| p.is_empty()) {
+        return Some("ptr".into());
+    }
+    if paths.is_empty() || !matches!(ty, Ty::Tuple(_) | Ty::Struct { .. }) {
+        return lower_ty(ty);
+    }
+    let kept: Vec<String> = component_tys(ty)
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| lower_ptr_paths(c, &sub_paths(paths, i as u32)))
+        .collect();
+    match kept.len() {
+        0 => None,
+        1 => Some(kept.into_iter().next().unwrap()),
+        _ => Some(format!("{{ {} }}", kept.join(", "))),
+    }
+}
+
+/// The paths below component `k`.
+pub(crate) fn sub_paths(paths: &[Vec<u32>], k: u32) -> Vec<Vec<u32>> {
+    paths
+        .iter()
+        .filter(|p| p.first() == Some(&k))
+        .map(|p| p[1..].to_vec())
+        .collect()
+}
+
 /// The lowered LLVM types of a product's surviving (non-erased) components, in
 /// order. Empty for a fully-erased product or a non-product.
 fn residual_tys(ty: &Ty) -> Vec<String> {

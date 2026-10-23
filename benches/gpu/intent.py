@@ -140,6 +140,20 @@ INTENT = {
         ('the host object uses 256-bit AVX2 vectors (the x86-64-v3 profile)', 'host.obj.ymm_ops > 0')],
         off=[('generic x86-64: no 256-bit vectors', 'host.obj.ymm_ops == 0')]),
     'place': dict(host=True, note='site placement: diff the `.off-place` arm (device_sites, launches)'),
+    # S65 `by-ref` (rule R): each program loop's `; mapal.move` line is the facts' derivation of what crosses
+    # per trip; `host.move` is what the host IR does from the loop header to its latch (evidence.py
+    # move_facts). Any copy the facts do not require is a mismatch. CPU builds included (no bus: only copies).
+    'by-ref': dict(host=True, applies='host.move.loops > 0 and host.move.carried > 0', on=[
+        ('every carried array travels by reference', 'host.move.by_value == 0'),
+        ('no host copy per trip beyond the facts', 'host.move.copy_b == host.move.intent_host_copy'),
+        ("per-trip uploads are the facts' (a host producer, a device reader)",
+         'host.move.h2d_b == host.move.intent_h2d'),
+        ("per-trip copy-outs are the facts' (a device producer, a host observer)",
+         'host.move.d2h_b == host.move.intent_d2h')],
+        off=[('the by-value products copy the state every trip', 'host.move.copy_b > 0')]),
+    # S65 rule R for folds: a row fold over any device output is a device site (no whole copy-out to fold it).
+    'rowfold': dict(host=True, applies='dev.rowfold > 0', on=[
+        ('each placed row fold is launched', 'host.calls.launch >= dev.rowfold')]),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

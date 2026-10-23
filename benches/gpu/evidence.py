@@ -297,6 +297,177 @@ def host_facts(ll, asm):
     return f
 
 
+# ---- S65 movement: what the facts require to cross per trip vs what the host IR does ------------------
+def llt_size(t):
+    """Bytes of an LLVM type text (the emitter's closed grammar: iN, float, double, ptr, [n x T], { … })."""
+    t = t.strip()
+    if t.startswith('['):
+        n, e = t[1:-1].split(' x ', 1)
+        return int(n) * llt_size(e)
+    if t.startswith('{'):
+        fs, depth, cur = [], 0, ''
+        for ch in t[1:-1]:
+            depth += ch in '{['
+            depth -= ch in '}]'
+            if ch == ',' and depth == 0:
+                fs.append(cur)
+                cur = ''
+            else:
+                cur += ch
+        fs.append(cur)
+        size, al = 0, 1
+        for f in fs:
+            a = llt_align(f)
+            size = -(-size // a) * a + llt_size(f)
+            al = max(al, a)
+        return -(-size // al) * al
+    return {'ptr': 8, 'double': 8, 'float': 4}.get(t, int(t[1:]) // 8 if re.fullmatch(r'i\d+', t) else 0)
+
+
+def llt_align(t):
+    t = t.strip()
+    if t.startswith('['):
+        return llt_align(t[1:-1].split(' x ', 1)[1])
+    if t.startswith('{'):
+        return max(llt_align(f) for f in re.split(r',(?![^{\[]*[}\]])', t[1:-1]))
+    return max(1, llt_size(t))
+
+
+def copy_bytes(line):
+    """A host `llvm.memcpy`'s byte count (the gep-null sizeof or a literal); None when not constant."""
+    m = re.search(r'getelementptr \((.*), ptr null, i64 1\) to i64\)', line)
+    if m:
+        return llt_size(m.group(1))
+    m = re.search(r'llvm\.memcpy[^(]*\(ptr [^,]+, ptr [^,]+, i64 (\d+)', line)
+    return int(m.group(1)) if m else None
+
+
+def block_list(fn):
+    out, label, cur = [], '', []
+    for line in fn.splitlines():
+        m = re.match(r'^(\w[\w.]*):', line)
+        if m:
+            out.append((label, cur))
+            label, cur = m[1], []
+        else:
+            cur.append(line)
+    out.append((label, cur))
+    return out
+
+
+def block_moves(lines):
+    """memcpy / h2d / d2h / alloc call counts and bytes of one block."""
+    c = Counter()
+    for x in lines:
+        if 'call void @llvm.memcpy' in x:
+            c['copy_n'] += 1
+            b = copy_bytes(x)
+            c['copy_b'] += b or 0
+            c['copy_unknown'] += b is None
+        m = re.search(r'call \w+ @mapal_gpu_(h2d|d2h|d2h_on|alloc|arena|tile)\((.*)\)', x)
+        if not m:
+            continue
+        op, args = m.group(1), [a.split()[-1] for a in m.group(2).split(',')]
+        last = int(args[-1]) if re.fullmatch(r'\d+', args[-1]) else None
+        if op == 'h2d':
+            c['h2d_n'] += 1
+            c['h2d_b'] += last or 0
+        elif op in ('d2h', 'd2h_on'):
+            c['d2h_n'] += 1
+            c['d2h_b'] += last or 0
+        elif op == 'tile':  # the S52 round trip: two copies in, one out
+            c['h2d_n'] += 2
+            c['d2h_n'] += 1
+        elif op == 'arena':  # one allocation per function, on its first ask
+            c['arena_n'] += 1
+        else:
+            c['alloc_n'] += 1
+    return c
+
+
+MOVE_KEYS = ('copy_n', 'copy_b', 'h2d_n', 'h2d_b', 'd2h_n', 'd2h_b', 'alloc_n')
+
+
+def move_facts(ll, trips=()):
+    """Per program loop the emitter headed with `; mapal.move` (its intent: the facts' derivation), what
+    the host IR realizes per trip — every block from the header to the latch, less a first pass's
+    (`store i1 true` to a pass flag: once per loop entry) — and, with the source's trip counts, the
+    run's totals the trace must show (`runtime_*`: straight-line once, the decide cone trips + 1 times,
+    the advance cone trips times, a first-pass branch once and its sibling one trip fewer)."""
+    loops, total, once = [], Counter(), Counter()
+    li = arena = 0
+    for fn in re.split(r'\n(?=define )', ll):
+        if not fn.startswith('define'):
+            continue
+        arena += '@mapal_gpu_arena(' in fn
+        bbs = block_list(fn)
+        index = {lab: i for i, (lab, _) in enumerate(bbs)}
+        inside = set()
+        for h, (lab, lines) in enumerate(bbs):
+            mv = next((x for x in lines if x.startswith('; mapal.move ')), None)
+            if not mv:
+                continue
+            intent = {k: v for k, v in kv(mv[len('; mapal.move '):]).items() if k != 'rungs_on'}
+            latch = max(i for i, (_, ls) in enumerate(bbs) if any(re.search(r'br label %' + lab + r'$', x)
+                                                                  for x in ls))
+            exit_l = bbs[latch + 1][0] if latch + 1 < len(bbs) else None
+            adv = h
+            for i in range(h, latch + 1):
+                for x in bbs[i][1]:
+                    m = re.search(r'br i1 \S+, label %([\w.]+), label %' + str(exit_l) + r'$', x)
+                    if m:
+                        adv = index.get(m.group(1), h)
+            first = {i for i in range(h, latch + 1) if any(re.search(r'store i1 true, ptr %s\d+', x)
+                                                           for x in bbs[i][1])}
+            sib = set()
+            for i in range(h, latch + 1):
+                for x in bbs[i][1]:
+                    m = re.search(r'br i1 \S+, label %([\w.]+), label %([\w.]+)$', x)
+                    if m and index.get(m.group(2)) in first:
+                        sib.add(index.get(m.group(1)))
+                    elif m and index.get(m.group(1)) in first:
+                        sib.add(index.get(m.group(2)))
+            per, nested = Counter(), 0
+            n = trips[li] if li < len(trips) else None
+            run = Counter()
+            for i in range(h, latch + 1):
+                inside.add((id(fn), i))
+                c = block_moves(bbs[i][1])
+                if i not in first:
+                    per += c
+                if n is not None:
+                    mult = n + 1 if i < adv else n
+                    mult = 1 if i in first else mult - 1 if i in sib else mult
+                    for k in MOVE_KEYS:
+                        run[k] += c[k] * mult
+                for x in bbs[i][1]:
+                    m = re.search(r'br (?:i1 \S+, )?label %([\w.]+)', x)
+                    if m and h < index.get(m.group(1), -1) <= i and c['copy_n']:
+                        nested += 1
+            # a slot allocates once (`mapal_gpu_alloc` caches it): every call site counts once at runtime
+            run['alloc_n'] = sum(block_moves(bbs[i][1])['alloc_n'] for i in range(h, latch + 1))
+            loops.append(dict(intent=intent, trips=n, nested_copy_blocks=nested,
+                              **{k: per[k] for k in MOVE_KEYS}, run=dict(run)))
+            total += run
+            li += 1
+        for i, (_, lines) in enumerate(bbs):
+            if (id(fn), i) not in inside:
+                once += block_moves(lines)
+    f = dict(loops=len(loops), per_loop=loops, arena=arena)
+    for k in MOVE_KEYS:
+        f[k] = sum(x[k] for x in loops)
+    for k in ('h2d', 'd2h', 'host_copy'):
+        f['intent_' + k] = sum(int(x['intent'].get(k, 0)) for x in loops)
+    carried = [c for x in loops for c in str(x['intent'].get('carried', '-')).split(',') if c != '-']
+    f['carried'] = len(carried)
+    f['by_value'] = sum(c.endswith(':value') for c in carried)
+    f['carried_b'] = sum(int(c.split(':')[1]) for c in carried)
+    if all(x['trips'] is not None for x in loops):
+        for k in MOVE_KEYS:
+            f['runtime_' + k] = once[k] + total[k]
+    return f
+
+
 def kid(kernel):
     """A kernel's host id: its name's 64-bit hash as the signed i64 operand the host passes."""
     m = re.search(r'_([0-9a-f]{16})$', kernel)
@@ -329,6 +500,28 @@ def launches(host_ll):
             f['combine'] = 'streamk'
         out[int(m.group(2))] = f
     return out
+
+
+def source_text(d, stem):
+    base = stem.split('.')[0]
+    for cand in [base] + [base[:-len(f)] for f in ('_rc', '_r', '_x', '_c', '_tf') if base.endswith(f)]:
+        t = read(os.path.join(d, '..', 'tiles', cand + '.mapal'))
+        if t is not None:
+            return t
+    return None
+
+
+def source_trips(d, stem):
+    """Each `loop {`'s trip count, in source order: its guard `(<i> < <N>)` with the counter from 0 by 1
+    (every timed loop of the suite); () when a guard is not of that form."""
+    t = source_text(d, stem) or ''
+    out = []
+    for m in re.finditer(r'loop \{\s*\((\w+) < (\d+)\)', t):
+        v = m.group(1)
+        if not re.search(r'mut ' + v + r': i32 <- 0;', t) or not re.search(v + r' \+ 1 -> ' + v + ';', t):
+            return ()
+        out.append(int(m.group(2)))
+    return tuple(out) if len(out) == t.count('loop {') else ()
 
 
 def source_loops(d, stem):
@@ -448,6 +641,7 @@ def facts(d, sm):
                  device=kv(devm.group(1)) if devm else {}, kernels={})
         host['cpu'] = int(not devm and 'profile' not in host)
         host['loop'] = source_loops(d, stem)
+        host['move'] = move_facts(read(base + '.host.ll') or '', source_trips(d, stem))
         if rows:  # the host rungs the table ships at their fill (GPU_RESIDENT_BLOCKS: Filled) and face
             hr = {n for _, n, *_ in rows} - set(KERNEL_RUNGS)
             face = 'Contract' if e['device'].get('fma', host.get('fma', 1)) == 1 else 'Exact'
@@ -589,11 +783,48 @@ def check(d, results=None, out=sys.stdout):
                 continue
             state = 'off' if rung in off else 'on' if rung in hon or rung not in e.get('host_rungs', [rung]) else 'off'
             rows += [(prof, stem, '-', f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
+    rows += runtime_moves(prof, fx, results)
     print('arch\tstem\tkernel\trung\tcheck\texpected\trealized\tstatus', file=out)
     for r in rows:
         print('\t'.join(map(str, r)), file=out)
     st = Counter(r[-1] for r in rows)
     print(f"evidence: {len(rows)} checks, {st['MISMATCH']} mismatch, {st['n/a']} n/a", file=out)
+    return rows
+
+
+TRACE_KEYS = (('h2d', 'h2d_n'), ('bytes_in', 'h2d_b'), ('d2h', 'd2h_n'), ('bytes_out', 'd2h_b'),
+              ('allocs', 'alloc_n'))
+
+
+def traces(results):
+    """stem -> the first `mapal_gpu_trace_total` of its probe runs (box_run.sh: `probe prog= face= arm=`)."""
+    out = {}
+    if not results or not os.path.exists(results):
+        return out
+    for line in open(results, errors='replace'):
+        m = re.match(r'probe prog=(\S+) face=(\S+) arm=(\S+) .*mapal_gpu_trace_total (.*?) rc=', line)
+        if not m:
+            continue
+        face = '' if m.group(2) in ('_default', '_exact') else m.group(2)
+        stem = m.group(1) + face + ('' if m.group(3) == 'on' else '.' + m.group(3))
+        out.setdefault(stem, kv(m.group(4)))
+    return out
+
+
+def runtime_moves(prof, fx, results):
+    """S65 movement at runtime: the traced run's copies and allocations against the run the host IR and
+    the source's trip counts predict (`host.move.runtime_*`). One more crossing than predicted is a copy
+    no instruction in the host IR states — a finding."""
+    rows = []
+    for stem, t in sorted(traces(results).items()):
+        mv = fx.get(stem, {}).get('host', {}).get('move', {})
+        if 'runtime_h2d_n' not in mv:
+            continue
+        for tk, mk in TRACE_KEYS:
+            want = mv['runtime_' + mk] + (mv.get('arena', 0) if tk == 'allocs' else 0)
+            got = t.get(tk)
+            st = 'n/a' if got is None else 'ok' if got == want else 'MISMATCH'
+            rows.append((prof, stem, '-', 'by-ref:runtime', f'trace {tk} == predicted', f'{want}', f'{tk}={got}', st))
     return rows
 
 

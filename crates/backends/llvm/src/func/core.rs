@@ -88,6 +88,10 @@ impl<'a> FnEmit<'a> {
             cell_vals: Vec::new(),
             path_plan: None,
             split_slots: Vec::new(),
+            ref_paths: SecondaryMap::new(),
+            loop_owned: SecondaryMap::new(),
+            carry_refs: Vec::new(),
+            exit_by_device: SecondaryMap::new(),
         }
     }
 
@@ -241,7 +245,10 @@ impl<'a> FnEmit<'a> {
                 Some(v) => Some((lower_ty(&obj.ty)?, const_literal(v))),
             };
         }
-        let llt = lower_ty(&obj.ty)?;
+        let llt = match self.ref_paths.get(o) {
+            Some(paths) => lower_ptr_paths(&obj.ty, paths)?,
+            None => lower_ty(&obj.ty)?,
+        };
         let slot = self.slot(o)?;
         if self.ptr_resident.contains_key(o) {
             // By-ref capture: load the array through the forwarded pointer.
@@ -303,7 +310,9 @@ impl<'a> FnEmit<'a> {
                         text.clone(),
                     ),
                     _ => (
-                        if self.pointer_only_array_component(agg, k) {
+                        if let Some(paths) = self.ref_paths.get(agg) {
+                            lower_ptr_paths(comp_ty, &sub_paths(paths, k))?
+                        } else if self.pointer_only_array_component(agg, k) {
                             "ptr".into()
                         } else {
                             lower_ty(comp_ty)?
@@ -756,6 +765,9 @@ impl<'a> FnEmit<'a> {
     /// consumed only as addresses by collection/index/call ops are `ptr`
     /// fields (S20 #6/#8); value-observable components retain their ABI type.
     pub(super) fn lower_slot_ty(&self, o: ObjectId, ty: &Ty) -> Option<String> {
+        if let Some(paths) = self.ref_paths.get(o) {
+            return lower_ptr_paths(ty, paths);
+        }
         let components: Vec<&Ty> = match ty {
             Ty::Tuple(ts) => ts.iter().collect(),
             Ty::Struct { fields, .. } => fields.iter().map(|(_, ty)| ty).collect(),
@@ -891,7 +903,10 @@ impl<'a> FnEmit<'a> {
                     if *input == source
                         && k < *bk
                         && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. })));
-                if byref_field {
+                // S65 `by-ref`: a loop product's array field holds the pointer.
+                let ref_field = self.ref_paths.contains_key(source)
+                    && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. }));
+                if byref_field || ref_field {
                     let (_, fp) = self.component_ptr(source, k)?;
                     let p = self.tmp();
                     self.line(format!("{p} = load ptr, ptr {fp}"));

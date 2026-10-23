@@ -538,7 +538,16 @@ impl<'a> FnEmit<'a> {
                     let read = views
                         .iter()
                         .any(|&v| self.uses(sites, cells, v, &fwd).contains(&Use::Dev));
-                    if read && device_only(next) && views.iter().all(|&v| device_only(v)) {
+                    // S65 `by-ref`: a state no morphism of the trip reads
+                    // (only forwarded to the exit) stays where it is produced.
+                    let unread = self.families().iter().any(|f| f.merge == merge && f.k == k)
+                        && views.iter().all(|&v| {
+                            self.uses(sites, cells, v, &fwd).iter().all(|u| *u == Use::Fwd)
+                        });
+                    if (read || unread)
+                        && device_only(next)
+                        && views.iter().all(|&v| device_only(v))
+                    {
                         out.push(Carry {
                             merge,
                             k,
@@ -1004,9 +1013,42 @@ impl<'a> FnEmit<'a> {
     /// point from "every candidate": each round drops the cells whose operands
     /// or readers the round before no longer supports. Nothing is added, so it
     /// ends; with `devmap` off there is no candidate and the carries are S53's.
+    /// S65 rule R for row folds: a fold over an array complete on the device —
+    /// any device output (a cell kernel's, another fold's), not only a tile
+    /// site's (`rowfold::rowfold_sites`) — runs there. Every such fold is a
+    /// candidate site; [`Self::cell_sites`]' fixed point drops the ones whose
+    /// operand is not device-produced (the byte rule: a fold over a host array
+    /// stays on the host).
+    fn fold_candidates(&self, sites: &mut SecondaryMap<MorphismId, DevSite>) -> Vec<MorphismId> {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        if !rungs.rowfold
+            || !rungs.by_ref
+            || sites.is_empty()
+            || !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty()
+        {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for (m, site) in self.ir.row_fold(self.f).iter() {
+            if sites.contains_key(m) || !is_float(&site.elem) || site.k == 0 {
+                continue;
+            }
+            sites.insert(
+                m,
+                DevSite::RowFold(super::rowfold::RowFold {
+                    site: site.clone(),
+                    colmajor: None,
+                }),
+            );
+            out.push(m);
+        }
+        out
+    }
+
     fn cell_sites(
         &self,
-        sites: &SecondaryMap<MorphismId, DevSite>,
+        sites_mut: &mut SecondaryMap<MorphismId, DevSite>,
+        folds: &[MorphismId],
         devgen: bool,
     ) -> (SecondaryMap<MorphismId, Cell>, Vec<Carry>) {
         let mut cells = SecondaryMap::new();
@@ -1018,7 +1060,7 @@ impl<'a> FnEmit<'a> {
         if !body && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).devmap {
             for (m, site) in self.ir.cell_plan(self.f).iter() {
                 // An epilogue member (R1) runs in its site's store already.
-                if !sites.contains_key(m)
+                if !sites_mut.contains_key(m)
                     && self.member_src(m, 0).is_none()
                     && self.cell_pays(m, site)
                     && let Some(c) = self.cell_of(m, site)
@@ -1027,17 +1069,40 @@ impl<'a> FnEmit<'a> {
                 }
             }
         }
-        let mut feeders: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
-        for (m, site) in sites.iter() {
-            let src = self.ir.morphism(m).expect("site").source;
-            for slot in site.reads() {
-                if let Some(f) = self.pair_source(src, slot) {
-                    feeders.insert(f, ());
-                }
+        loop {
+            let (drop, unfed, carries) = self.cell_round(sites_mut, folds, &cells, devgen);
+            if drop.is_empty() && unfed.is_empty() {
+                return (cells, carries);
+            }
+            for m in drop {
+                cells.remove(m);
+            }
+            for m in unfed {
+                sites_mut.remove(m);
             }
         }
-        loop {
-            let carries = self.carries(sites, &cells);
+    }
+
+    /// One round of [`Self::cell_sites`]' fixed point: the cells and the
+    /// candidate folds the round before no longer supports.
+    fn cell_round(
+        &self,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        folds: &[MorphismId],
+        cells: &SecondaryMap<MorphismId, Cell>,
+        devgen: bool,
+    ) -> (Vec<MorphismId>, Vec<MorphismId>, Vec<Carry>) {
+        {
+            let mut feeders: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+            for (m, site) in sites.iter() {
+                let src = self.ir.morphism(m).expect("site").source;
+                for slot in site.reads() {
+                    if let Some(f) = self.pair_source(src, slot) {
+                        feeders.insert(f, ());
+                    }
+                }
+            }
+            let carries = self.carries(sites, cells);
             let carried = |o: ObjectId| {
                 carries
                     .iter()
@@ -1059,18 +1124,23 @@ impl<'a> FnEmit<'a> {
                 .filter(|(m, c)| {
                     let ops = c.operands();
                     let t = self.ir.morphism(*m).expect("cell").target;
-                    let host = || self.uses(sites, &cells, t, &[]).contains(&Use::Host);
+                    let host = || self.uses(sites, cells, t, &[]).contains(&Use::Host);
                     !ops.iter().all(|&(o, _)| there(o))
                         || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
                 })
                 .map(|(m, _)| m)
                 .collect();
-            if drop.is_empty() {
-                return (cells, carries);
-            }
-            for m in drop {
-                cells.remove(m);
-            }
+            let unfed: Vec<MorphismId> = folds
+                .iter()
+                .copied()
+                .filter(|&m| sites.contains_key(m))
+                .filter(|&m| {
+                    let src = self.ir.morphism(m).expect("fold").source;
+                    let a = sites[m].reads()[0];
+                    !self.pair_source(src, a).is_some_and(device_only)
+                })
+                .collect();
+            (drop, unfed, carries)
         }
     }
 
@@ -1096,8 +1166,9 @@ impl<'a> FnEmit<'a> {
     /// Build the plan. `None` when the function has no device site or cell.
     pub(crate) fn resident_plan(&self, rungs: crate::GpuRungs) -> Option<ResidentPlan> {
         let (devgen, arena) = (rungs.devgen, rungs.arena);
-        let sites = self.device_sites();
-        let (cells, carries) = self.cell_sites(&sites, devgen);
+        let mut sites = self.device_sites();
+        let folds = self.fold_candidates(&mut sites);
+        let (cells, carries) = self.cell_sites(&mut sites, &folds, devgen);
         if sites.is_empty() && cells.is_empty() {
             return None;
         }
@@ -1183,6 +1254,28 @@ impl<'a> FnEmit<'a> {
                 read.insert(o, ());
             }
         }
+        // S65 rule R: a device carry's init array that dies at the loop entry
+        // is observed by the device only (the init product forwards a
+        // pointer), so a closed-form one is built there — the entry then
+        // hands its buffer to the carry (`resident_loop_enter`).
+        let mut carried_init: Vec<ObjectId> = Vec::new();
+        for f in self.families() {
+            let a = f.feeder;
+            let kind = self.ir.object(a).expect("object resolves").kind;
+            if plan.carries.iter().any(|c| c.merge == f.merge && c.k == f.k)
+                && self.ir.out_edges(a).len() == 1
+                && kind != ObjectKind::Constant
+                && kind != ObjectKind::Parameter
+                && self.ir.try_owner(a) == Some(self.f)
+                && self
+                    .lup
+                    .position(f.enter)
+                    .is_some_and(|p| self.lup.dead_after(a, p))
+            {
+                read.insert(a, ());
+                carried_init.push(a);
+            }
+        }
         let carried = |o: ObjectId| plan.carries.iter().any(|c| c.views.contains(&o));
         for (o, _) in read.iter() {
             if carried(o) || self.produced_on_device(&sites, &cells, o) {
@@ -1191,12 +1284,14 @@ impl<'a> FnEmit<'a> {
             let Some(&p) = self.ir.in_edges(o).first() else {
                 continue; // a parameter: copied in at the site
             };
+            let init = carried_init.contains(&o);
             if devgen
                 && let Some(body) = self.gen_law(p)
-                && self
-                    .uses(&sites, &cells, o, &[])
-                    .iter()
-                    .all(|u| matches!(u, Use::Dev | Use::Elem(_) | Use::None))
+                && (init
+                    || self
+                        .uses(&sites, &cells, o, &[])
+                        .iter()
+                        .all(|u| matches!(u, Use::Dev | Use::Elem(_) | Use::None)))
             {
                 let n = array_len(&self.obj_ty(o));
                 plan.devgen.insert(
@@ -1219,6 +1314,8 @@ impl<'a> FnEmit<'a> {
                         }
                     }
                 }
+            } else if init {
+                continue; // host-built: the loop entry copies it in
             } else {
                 plan.upload.insert(o, ());
             }
@@ -1559,6 +1656,21 @@ impl<'a> FnEmit<'a> {
                 a.host_free.insert(o, ());
             }
         }
+        // S65 `by-ref`: a device carry whose loop products forward a pointer
+        // has no host bytes either — its views, its next state, and its exit
+        // object unless the host reads that whole.
+        let fams = self.families();
+        for c in &plan.carries {
+            if !fams.iter().any(|f| f.merge == c.merge && f.k == c.k) {
+                continue;
+            }
+            let exit = c.exit.filter(|x| plan.keep.contains_key(*x));
+            for o in c.views.iter().copied().chain([c.next]).chain(exit) {
+                if !self.lup.escapes(o) && self.ir.try_owner(o) == Some(self.f) {
+                    a.host_free.insert(o, ());
+                }
+            }
+        }
         a
     }
 
@@ -1779,6 +1891,14 @@ impl<'a> FnEmit<'a> {
     /// The device kernels of this function's cells, each with the functions
     /// it calls (name, text): the body — `cell-law`'s variant of it when a
     /// capture is evaluated — and each evaluated capture's law.
+    /// Every row fold this function runs on the device (the device unit's
+    /// kernels for the ones `rowfold::rowfold_sites` does not see).
+    pub(crate) fn rowfold_kernels(&self) -> Vec<mapal_ir::RowFoldSite> {
+        self.resident
+            .as_ref()
+            .map_or_else(Vec::new, |p| p.rowfold.values().map(|r| r.site.clone()).collect())
+    }
+
     pub(crate) fn cell_kernels(&self) -> Vec<gpu::CellKernel> {
         let Some(plan) = &self.resident else {
             return Vec::new();
@@ -2217,6 +2337,21 @@ impl<'a> FnEmit<'a> {
     /// Loop entry: the carry's buffer gets the init state, copied in once.
     pub(crate) fn resident_loop_enter(&mut self, merge: ObjectId, init: ObjectId) {
         for c in self.carries_of(merge) {
+            // S65: a device-built init array is the carry's first state — its
+            // buffer moves to the carry (its slot is emptied, so one free).
+            if let Some(a) = self.pair_source(init, c.k)
+                && self.host_free(a)
+                && self.dvalid.contains_key(a)
+            {
+                let (sa, sm) = (self.dslot(a), self.dslot(merge));
+                let d = self.tmp();
+                self.line(format!("{d} = load i64, ptr {sa}"));
+                self.line(format!("store i64 {d}, ptr {sm}"));
+                self.line(format!("store i64 0, ptr {sa}"));
+                self.dvalid.remove(a);
+                self.dvalid.insert(merge, ());
+                continue;
+            }
             let ty = self
                 .obj_ty(merge)
                 .component_ty(c.k)

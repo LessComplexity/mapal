@@ -1,9 +1,13 @@
-"""ADR-0040 D2's whole-program gate for the default face: every printed value within relative
-2·γ_{K+1} of the exact face's (u = 2⁻²⁴, γ_n = n·u/(1 − n·u)); non-numeric tokens equal.
+"""ADR-0040 D2's whole-program gate for the default face, u = 2⁻²⁴, γ_n = n·u/(1 − n·u).
 
-usage: python3 value_gate.py <exact.expect> "<got, one line>" <K>
-K is the program's longest tile-site fold. ponytail: box_run.sh reads it off the probe stem
-(`_d<d>_h<h>` → max(d, h)) until `mapal dump-ir` prints fold lengths.
+With the program's magnitude oracle (`<stem>_xabs.expect`, gen_tiles.py `xabs`: every fold step's term
+replaced by its magnitude, so each printed value's M = |seed| + Σ|terms| through the whole fold chain):
+D2 itself, absolute — |got − exact| ≤ (γ_{K+1}(2⁻²⁴) + γ_{K+1}(2⁻⁵³))·M. Without one: every printed value
+within relative 2·γ_{K+1} of the exact face's (which fails a correct result under cancellation, S64
+`pt_rowsum_2048`: |exact| ≪ M). Non-numeric tokens equal.
+
+usage: python3 value_gate.py <exact.expect> "<got, one line>" <K> [<xabs.expect>]
+K is the program's longest fold chain (`tiles/<stem>.kmax`, else the probe stem's `_d<d>_h<h>`).
 Exit 0 inside the bound, 1 outside (the offending tokens printed)."""
 import sys
 
@@ -12,20 +16,27 @@ def gamma(n, u=2.0 ** -24):
     return n * u / (1 - n * u)
 
 
-def within(want, got, k):
+def within(want, got, k, mags=None):
     w, g = want.split(), got.split()
-    if len(w) != len(g):
-        return False, [f"{len(g)} tokens, want {len(w)}"]
-    bad, tol = [], 2 * gamma(k + 1)
-    for x, y in zip(w, g):
+    m = mags.split() if mags is not None else None
+    if len(w) != len(g) or (m is not None and len(m) != len(w)):
+        return False, [f"{len(g)} tokens, want {len(w)}" + (f" (M: {len(m)})" if m is not None else "")]
+    bad = []
+    rel = 2 * gamma(k + 1)
+    absb = gamma(k + 1) + gamma(k + 1, 2.0 ** -53)
+    for i, (x, y) in enumerate(zip(w, g)):
         try:
             a, b = float(x), float(y)
         except ValueError:
             if x != y:
                 bad.append(f"{y} != {x}")
             continue
-        if abs(a - b) > tol * abs(a):
-            bad.append(f"{y} vs {x}: rel {abs(a - b) / max(abs(a), 1e-300):.3e} > {tol:.3e}")
+        if m is not None:
+            mag = abs(float(m[i]))
+            if abs(a - b) > absb * mag:
+                bad.append(f"{y} vs {x}: |d| {abs(a - b):.3e} > {absb:.3e}·M ({mag:.6g})")
+        elif abs(a - b) > rel * abs(a):
+            bad.append(f"{y} vs {x}: rel {abs(a - b) / max(abs(a), 1e-300):.3e} > {rel:.3e}")
     return not bad, bad
 
 
@@ -35,6 +46,11 @@ def demo():
     assert not within("1000.0", "1000.1", 512)[0]
     assert not within("1.0 x", "1.0 y", 8)[0]
     assert not within("1.0", "1.0 2.0", 8)[0]
+    # S64 pt_rowsum_2048 (K 4096): relative 8.3e-4 fails; against M it is a cancellation inside the bound.
+    assert not within("38.090485", "38.058914", 4096)[0]
+    assert within("38.090485", "38.058914", 4096, "200000.0")[0]  # |d| 0.032 ≤ 2.44e-4 · 2e5
+    assert not within("38.090485", "38.058914", 4096, "100.0")[0]
+    assert not within("1.0", "1.0", 8, "1.0 2.0")[0]
 
 
 if __name__ == "__main__":
@@ -42,6 +58,7 @@ if __name__ == "__main__":
         demo()
         print("ok")
         sys.exit(0)
-    ok, bad = within(open(sys.argv[1]).read(), sys.argv[2], int(sys.argv[3]))
-    print("within" if ok else "OUTSIDE " + "; ".join(bad))
+    mags = open(sys.argv[4]).read() if len(sys.argv) > 4 else None
+    ok, bad = within(open(sys.argv[1]).read(), sys.argv[2], int(sys.argv[3]), mags)
+    print(("within" + (" (absolute, M)" if mags is not None else "")) if ok else "OUTSIDE " + "; ".join(bad))
     sys.exit(0 if ok else 1)
