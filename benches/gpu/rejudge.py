@@ -12,7 +12,8 @@ A row's cells come from its cite: `n=a/b/c` / `n=a..b` (square cells, `mm_<n>`),
 `decode_1024_256`; its faces are the cite's face tokens the row's Face covers (`_exact` → `_x`, `_c`,
 `_tf`, `_r`, `_rc`; an S63 cell without a suffix is the default face; an S62 one, exact).
 Per cell, `evidence.py diff` of the shipped emission vs the ON arm (dropped by the bundle when equal):
-  removed(no-op)  the rung is OFF at every in-class cell and its ON arm is the shipped program
+  no-op at cited cells  the ON arm is the shipped program at every in-class cited cell (the row is kept:
+                  another cell of its class may differ; S64 records it, does not remove it)
   explained       an in-class ON arm carries a cost the cited timing sign agrees with (ON not faster):
                   more spills, fewer warps/SM, more instructions per k-step, more barriers per k-step,
                   fewer FFMA per shared load, another kernel kind, more launches / copies / allocations
@@ -110,10 +111,10 @@ def judge(bundle, results):
         if os.path.exists(fp):
             facts[p] = json.load(open(fp))
     remeasured = remeasure(results)
-    print('row\tprofile\trung\tfill\tface\tcells\tstatus\tevidence\tremeasured')
+    print('row\tprofile\trung\tfill\tface\tcells\tstatus\tevidence\tremeasured\tchange')
     for i, (p, rung, fill, face, cite) in enumerate(rows):
         if p == 'a100':
-            print(f'{i}\t{p}\t{rung}\t{fill}\t{face}\t-\tunverified (no box)\t-\t-')
+            print(f'{i}\t{p}\t{rung}\t{fill}\t{face}\t-\tunverified (no box)\t-\t-\tno')
             continue
         fx = facts.get(p, {})
         notes, costs, gains, inclass, noop = [], [], [], 0, 0
@@ -141,14 +142,21 @@ def judge(bundle, results):
         if inclass == 0:
             st = 'unverified (no in-class cell)'
         elif noop == inclass:
-            st = 'removed(no-op)'
+            st = 'no-op at cited cells'
         elif costs:
             st = 'explained'
         else:
             st = 'open'
         ev = '; '.join(costs[:6] + [f'+{x}' for x in gains[:3]] + notes[:4])
-        rm = '; '.join(f'{k} {v}' for k, v in remeasured.items() if k[0] == p and k[2] == rung) or '-'
-        print(f'{i}\t{p}\t{rung}\t{fill}\t{face}\t{" ".join(s + f for s, f in cells(cite, face))}\t{st}\t{ev}\t{rm}')
+        mine = {k[1]: v for k, v in remeasured.items() if k[0] == p and k[2] == rung
+                and k[1] in {s + f for s, f in cells(cite, face)}}
+        rm = '; '.join(fmt_remeasured(b, v) for b, v in sorted(mine.items())) or '-'
+        # The pre-registered change rule (S64 design C.4): ON faster beyond null in every process at every
+        # re-measured cell AND a static gain that explains it; otherwise the row stands.
+        change = ('remove: ON faster, static gain ' + '; '.join(gains[:2])
+                  if mine and gains and all(v['sign'] == 'faster' for v in mine.values()) else 'no')
+        print(f'{i}\t{p}\t{rung}\t{fill}\t{face}\t{" ".join(s + f for s, f in cells(cite, face))}\t{st}\t{ev}\t{rm}'
+              f'\t{change}')
 
 
 def rung_on(e, rung):
@@ -159,25 +167,50 @@ def rung_on(e, rung):
 
 
 def remeasure(results):
-    """(profile, stem, rung) -> 'ON/OFF med ratio per pass' from the box's tile_bench / probe lines."""
+    """(profile, base stem, rung) -> dict(on, off, ratios, null, sign) from a box's results: tile_bench /
+    mlp_bench `time leg=` medians per process (pass=1, 2), probe `iter ms` per repetition (each its own
+    process, ABBA). `sign`: slower / faster when every process's ON/OFF is beyond the part's null
+    (max |null / shipped - 1| of that cell or program), else inside."""
     out = {}
     for path in results:
         prof = re.search(r'results-([\w-]+)\.txt', path).group(1)
-        med = {}
+        med, probe = {}, {}
         for line in open(path, errors='replace'):
-            m = re.search(r'^pass=(\d) cell=(\S+) time leg=(\S+) .* med_ms=([\d.]+)', line)
-            if m:
-                med.setdefault((m.group(3), m.group(1)), float(m.group(4)))
-            m = re.search(r'^pass=(\d) mlp=\S+ time leg=(\S+) .*event_med_ms=([\d.]+)', line)
-            if m:
+            if m := re.search(r'^pass=(\d) (?:cell|mlp)=\S+ time leg=(\S+) .*?(?:event_med_ms|med_ms)=([\d.]+)', line):
                 med.setdefault((m.group(2), m.group(1)), float(m.group(3)))
+            if line.startswith('probe prog=') and (it := re.search(r'iter ms=\s*([-\d.eE+]+)', line)):
+                f = dict(re.findall(r'(\w+)=([^\s\[\]]+)', line))
+                face = '' if f['face'] == '_default' else f['face']
+                leg = f['prog'] + face + ('' if f['arm'] == 'on' else '.' + f['arm'])
+                probe.setdefault(leg, {})[f['rep']] = float(it.group(1))
         for (leg, ps), v in med.items():
+            probe.setdefault(leg, {})[f'p{ps}'] = v
+        for leg, on in probe.items():
             m = re.match(r'(.+)\.on-([\w+-]+)$', leg)
-            if m and (m.group(1), ps) in med:
-                key = (prof, m.group(1), m.group(2))
-                out[key] = (out.get(key, '') + f' p{ps} {v:.4f}/{med[(m.group(1), ps)]:.4f}='
-                            f'{v / med[(m.group(1), ps)]:.3f}').strip()
+            if not m or m.group(1) not in probe:
+                continue
+            base, off = m.group(1), probe[m.group(1)]
+            ks = sorted(k for k in on if k in off)
+            if not ks:
+                continue
+            r = [on[k] / off[k] for k in ks]
+            # the null: the default face's `.null` arm (cells `mm_X.null`, MLP `_c.null`, programs `.null`)
+            root = re.sub(r'_(x|c|r|rc|tf)$', '', base)
+            nl = probe.get(root + '.null') or probe.get(root + '_c.null') or {}
+            sh = probe.get(root) or probe.get(root + '_c') or {}
+            nul = [abs(nl[k] / sh[k] - 1) for k in nl if k in sh]
+            null = max(nul) if nul else None
+            sign = ('slower' if null is not None and all(x > 1 + null for x in r) else
+                    'faster' if null is not None and all(x < 1 - null for x in r) else 'inside')
+            out[(prof, base, m.group(2))] = dict(on=[on[k] for k in ks], off=[off[k] for k in ks], ratios=r,
+                                                 null=null, sign=sign, keys=ks)
     return out
+
+
+def fmt_remeasured(base, d):
+    r = '/'.join(f'{x:.3f}' for x in d['ratios'])
+    n = '-' if d['null'] is None else f"{d['null']:.3f}"
+    return f"{base} ON/OFF {r} null {n} {d['sign']}"
 
 
 if __name__ == '__main__':
