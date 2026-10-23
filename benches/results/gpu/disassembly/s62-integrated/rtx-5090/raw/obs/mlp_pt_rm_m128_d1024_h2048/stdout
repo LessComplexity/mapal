@@ -1,0 +1,43 @@
+arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_3acc2064c56c5203 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_c334f183fd4fa5f7 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_084d81fa89b130c2 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_b5ca2aa6d233aa58 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=2048 regs=77 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=2176 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=8388608 waves=0.502
+lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=5242880 waves=0.314
+libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+cold leg=pt_rm_m128_d1024_h2048 wall_ms=0.1982
+cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.0863
+cold leg=pt_rm_m128_d1024_h2048_r wall_ms=0.1412
+cold leg=pt_rm_m128_d1024_h2048_rc wall_ms=0.0868
+cold leg=pt_rm_m128_d1024_h2048.base wall_ms=0.1034
+cold leg=pt_rm_m128_d1024_h2048_c.base wall_ms=0.1029
+cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.0817
+cold leg=cublas wall_ms=5.3794
+cold leg=lt wall_ms=37.0885
+cold leg=cutlass wall_ms=0.2525
+cold leg=cutlass_tuned wall_ms=0.1197
+values leg=pt_rm_m128_d1024_h2048 cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048_r cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_rc cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048.base cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_c.base cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=cublas cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+values leg=lt cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+profile_region legs=11 all_ok=1

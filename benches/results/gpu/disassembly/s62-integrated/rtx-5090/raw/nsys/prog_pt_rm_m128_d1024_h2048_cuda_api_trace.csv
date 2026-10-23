@@ -1,0 +1,16 @@
+Start (ns),Duration (ns),Name,Result,CorrID,Pid,Tid,T-Pri,Thread Name
+562155582,970,cuCtxSetCurrent,0,3,8078,8092,20,prog_pt_rm_m128
+562401758,2066312,cuModuleLoadData,0,4,8078,8092,20,prog_pt_rm_m128
+564697745,3760,cuCtxSetCurrent,0,5,8078,8078,20,prog_pt_rm_m128
+564728466,556894,cuMemAlloc_v2,0,6,8078,8078,20,prog_pt_rm_m128
+565401423,57551,cuLaunchKernel,0,8,8078,8078,20,prog_pt_rm_m128
+565482105,15520,cuLaunchKernel,0,10,8078,8078,20,prog_pt_rm_m128
+565515926,8500,cuLaunchKernel,0,12,8078,8078,20,prog_pt_rm_m128
+565546156,8591,cuLaunchKernel,0,14,8078,8078,20,prog_pt_rm_m128
+565555907,11240,cuCtxSynchronize,0,15,8078,8078,20,prog_pt_rm_m128
+565719901,11530,cuLaunchKernel,0,17,8078,8078,20,prog_pt_rm_m128
+565811173,9360,cuLaunchKernel,0,19,8078,8078,20,prog_pt_rm_m128
+565821313,67172,cuCtxSynchronize,0,20,8078,8078,20,prog_pt_rm_m128
+565890335,52241,cuMemcpyDtoH_v2,0,21,8078,8078,20,prog_pt_rm_m128
+566092540,18290,cuMemcpyDtoH_v2,0,22,8078,8078,20,prog_pt_rm_m128
+566217933,402690,cuMemFree_v2,0,23,8078,8078,20,prog_pt_rm_m128

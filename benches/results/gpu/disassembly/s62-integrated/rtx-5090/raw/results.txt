@@ -1,0 +1,1211 @@
+== rtx-5090 setup 2026-10-23T02:41:16Z
+name, uuid, driver_version, clocks.max.sm [MHz], clocks.max.memory [MHz], power.limit [W], pcie.link.gen.max, pcie.link.width.max
+NVIDIA GeForce RTX 5090, GPU-2eeeeae2-bd08-eb33-7e79-51076c4bc2fc, 580.95.05, 3105 MHz, 14001 MHz, 450.00 W, 4, 16
+Build cuda_12.8.r12.8/compiler.35583870_0
+static: 44 Mapal SASS files
+built dis_bench
+built mlp_bench
+built capture.so
+nsys: /opt/nvidia/nsight-systems/2024.6.2/bin/nsys Processing triggers for libc-bin (2.35-0ubuntu3.8) ...
+== setup done 2026-10-23T02:41:57Z
+== time 2026-10-23T02:42:01Z 195 MHz, 46, 19.63 W
+pass=1 cell=16x2048x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=1 cell=16x2048x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168 face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168.null face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168_c face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168_c.null face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168_r face=reassoc+exact kernel=mapal_tile_6b1000e757b04934 grid=128x4 block=32 smem=24576 regs=242 local_bytes=0 S=2 reduce=mapal_tile_d6b461744e263b83 rgrid=128x1 rblock=256 rregs=12
+pass=1 cell=16x2048x7168 arm stem=mm_16x2048x7168_rc face=reassoc+contract kernel=mapal_tile_5cf8d59c3be44fff grid=128x4 block=32 smem=28672 regs=255 local_bytes=152 S=2 reduce=mapal_tile_08328d061eed2d9c rgrid=128x1 rblock=256 rregs=12
+pass=1 cell=16x2048x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 cell=16x2048x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168 cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168.null cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168_c cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168_c.null cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168_r cells=256 maxrel_vs_f64=3.281e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=2.060e-04 within_adr0040_bound=yes fnv=10f53a47bfb8de27
+pass=1 cell=16x2048x7168 values leg=mm_16x2048x7168_rc cells=256 maxrel_vs_f64=4.413e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.945e-04 within_adr0040_bound=yes fnv=dae272ba482aeb80
+pass=1 cell=16x2048x7168 values leg=cublas cells=256 maxrel_vs_f64=4.140e-03
+pass=1 cell=16x2048x7168 values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+pass=1 cell=16x2048x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.511e-04
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168 M=16 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0962
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168.null M=16 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0963
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168_c M=16 N=2048 K=7168 n=30 min_ms=0.0819 med_ms=0.0840 max_ms=0.0840
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168_c.null M=16 N=2048 K=7168 n=30 min_ms=0.0819 med_ms=0.0840 max_ms=0.0840
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168_r M=16 N=2048 K=7168 n=30 min_ms=0.0737 med_ms=0.0758 max_ms=0.0778
+pass=1 cell=16x2048x7168 time leg=mm_16x2048x7168_rc M=16 N=2048 K=7168 n=30 min_ms=0.0901 med_ms=0.0922 max_ms=0.0922
+pass=1 cell=16x2048x7168 time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0532 med_ms=0.0532 max_ms=0.0532
+pass=1 cell=16x2048x7168 time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.5222 med_ms=0.5243 max_ms=0.5263
+pass=1 cell=16x2048x7168 time leg=cutlass_tuned M=16 N=2048 K=7168 n=30 min_ms=0.2232 med_ms=0.2253 max_ms=0.2273
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168 same_output=yes fnv=cbb4a51200bca5e2
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168.null same_output=yes fnv=cbb4a51200bca5e2
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168_c same_output=yes fnv=bdb689b9fcb51801
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168_c.null same_output=yes fnv=bdb689b9fcb51801
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168_r same_output=yes fnv=10f53a47bfb8de27
+pass=1 cell=16x2048x7168 determinism leg=mm_16x2048x7168_rc same_output=yes fnv=dae272ba482aeb80
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168 0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0962,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942,0.0922,0.0942,0.0942
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168.null 0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0943
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168_c 0.0840,0.0819,0.0819,0.0840,0.0840,0.0840,0.0840,0.0840,0.0840,0.0819,0.0819,0.0840,0.0840,0.0840,0.0819,0.0819,0.0840,0.0840,0.0840,0.0819,0.0819,0.0840,0.0819,0.0819,0.0819,0.0819,0.0819,0.0819,0.0840,0.0819
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168_c.null 0.0819,0.0819,0.0840,0.0819,0.0840,0.0840,0.0840,0.0840,0.0819,0.0840,0.0819,0.0819,0.0840,0.0840,0.0840,0.0819,0.0840,0.0840,0.0840,0.0840,0.0840,0.0840,0.0819,0.0840,0.0840,0.0840,0.0840,0.0840,0.0840,0.0819
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168_r 0.0758,0.0737,0.0758,0.0737,0.0758,0.0758,0.0758,0.0758,0.0737,0.0758,0.0758,0.0758,0.0737,0.0778,0.0737,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758,0.0737,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758
+pass=1 cell=16x2048x7168 samples leg=mm_16x2048x7168_rc 0.0901,0.0901,0.0901,0.0922,0.0922,0.0901,0.0922,0.0901,0.0922,0.0901,0.0922,0.0922,0.0922,0.0922,0.0922,0.0901,0.0922,0.0901,0.0922,0.0901,0.0922,0.0922,0.0922,0.0901,0.0922,0.0901,0.0901,0.0901,0.0901,0.0922
+pass=1 cell=16x2048x7168 samples leg=cublas 0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532
+pass=1 cell=16x2048x7168 samples leg=cutlass 0.5222,0.5243,0.5222,0.5243,0.5222,0.5243,0.5243,0.5263,0.5243,0.5222,0.5243,0.5243,0.5222,0.5222,0.5222,0.5243,0.5222,0.5243,0.5243,0.5243,0.5222,0.5243,0.5243,0.5243,0.5243,0.5222,0.5222,0.5243,0.5222,0.5222
+pass=1 cell=16x2048x7168 samples leg=cutlass_tuned 0.2253,0.2232,0.2253,0.2253,0.2253,0.2253,0.2253,0.2232,0.2232,0.2253,0.2253,0.2252,0.2253,0.2232,0.2253,0.2253,0.2252,0.2253,0.2253,0.2253,0.2253,0.2253,0.2273,0.2253,0.2253,0.2253,0.2253,0.2253,0.2253,0.2253
+pass=2 cell=16x2048x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=2 cell=16x2048x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168_rc face=reassoc+contract kernel=mapal_tile_5cf8d59c3be44fff grid=128x4 block=32 smem=28672 regs=255 local_bytes=152 S=2 reduce=mapal_tile_08328d061eed2d9c rgrid=128x1 rblock=256 rregs=12
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168_r face=reassoc+exact kernel=mapal_tile_6b1000e757b04934 grid=128x4 block=32 smem=24576 regs=242 local_bytes=0 S=2 reduce=mapal_tile_d6b461744e263b83 rgrid=128x1 rblock=256 rregs=12
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168_c.null face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168_c face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168.null face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=2 cell=16x2048x7168 arm stem=mm_16x2048x7168 face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=2 cell=16x2048x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 cell=16x2048x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168_rc cells=256 maxrel_vs_f64=4.413e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.945e-04 within_adr0040_bound=yes fnv=dae272ba482aeb80
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168_r cells=256 maxrel_vs_f64=3.281e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=2.060e-04 within_adr0040_bound=yes fnv=10f53a47bfb8de27
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168_c.null cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168_c cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168.null cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+pass=2 cell=16x2048x7168 values leg=mm_16x2048x7168 cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+pass=2 cell=16x2048x7168 values leg=cublas cells=256 maxrel_vs_f64=4.140e-03
+pass=2 cell=16x2048x7168 values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+pass=2 cell=16x2048x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.511e-04
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168_rc M=16 N=2048 K=7168 n=30 min_ms=0.0901 med_ms=0.0922 max_ms=0.0922
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168_r M=16 N=2048 K=7168 n=30 min_ms=0.0717 med_ms=0.0758 max_ms=0.0778
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168_c.null M=16 N=2048 K=7168 n=30 min_ms=0.0819 med_ms=0.0819 max_ms=0.0840
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168_c M=16 N=2048 K=7168 n=30 min_ms=0.0819 med_ms=0.0819 max_ms=0.0840
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168.null M=16 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0963
+pass=2 cell=16x2048x7168 time leg=mm_16x2048x7168 M=16 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0963
+pass=2 cell=16x2048x7168 time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0532 med_ms=0.0532 max_ms=0.0532
+pass=2 cell=16x2048x7168 time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.5181 med_ms=0.5202 max_ms=0.5222
+pass=2 cell=16x2048x7168 time leg=cutlass_tuned M=16 N=2048 K=7168 n=30 min_ms=0.2253 med_ms=0.2273 max_ms=0.2273
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168_rc same_output=yes fnv=dae272ba482aeb80
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168_r same_output=yes fnv=10f53a47bfb8de27
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168_c.null same_output=yes fnv=bdb689b9fcb51801
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168_c same_output=yes fnv=bdb689b9fcb51801
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168.null same_output=yes fnv=cbb4a51200bca5e2
+pass=2 cell=16x2048x7168 determinism leg=mm_16x2048x7168 same_output=yes fnv=cbb4a51200bca5e2
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168_rc 0.0922,0.0922,0.0901,0.0901,0.0901,0.0901,0.0922,0.0922,0.0922,0.0922,0.0922,0.0922,0.0901,0.0922,0.0901,0.0922,0.0922,0.0901,0.0922,0.0901,0.0922,0.0922,0.0901,0.0901,0.0922,0.0901,0.0901,0.0922,0.0901,0.0922
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168_r 0.0758,0.0758,0.0758,0.0758,0.0778,0.0737,0.0758,0.0737,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758,0.0778,0.0758,0.0758,0.0758,0.0758,0.0758,0.0758,0.0778,0.0758,0.0737,0.0737,0.0758,0.0737,0.0778,0.0717,0.0737
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168_c.null 0.0840,0.0819,0.0840,0.0819,0.0840,0.0819,0.0840,0.0840,0.0840,0.0819,0.0819,0.0819,0.0840,0.0819,0.0819,0.0819,0.0819,0.0819,0.0840,0.0840,0.0819,0.0840,0.0819,0.0819,0.0840,0.0840,0.0819,0.0819,0.0840,0.0819
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168_c 0.0840,0.0840,0.0840,0.0819,0.0819,0.0840,0.0819,0.0819,0.0819,0.0819,0.0819,0.0819,0.0840,0.0819,0.0819,0.0840,0.0819,0.0840,0.0840,0.0819,0.0840,0.0840,0.0840,0.0819,0.0840,0.0819,0.0819,0.0840,0.0819,0.0819
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168.null 0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942,0.0942,0.0942
+pass=2 cell=16x2048x7168 samples leg=mm_16x2048x7168 0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0963,0.0942,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0942,0.0942
+pass=2 cell=16x2048x7168 samples leg=cublas 0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532,0.0532
+pass=2 cell=16x2048x7168 samples leg=cutlass 0.5222,0.5202,0.5222,0.5222,0.5222,0.5202,0.5202,0.5181,0.5181,0.5181,0.5202,0.5181,0.5202,0.5202,0.5181,0.5222,0.5202,0.5222,0.5202,0.5202,0.5202,0.5202,0.5222,0.5202,0.5181,0.5202,0.5222,0.5202,0.5202,0.5222
+pass=2 cell=16x2048x7168 samples leg=cutlass_tuned 0.2253,0.2253,0.2253,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2253,0.2253,0.2253,0.2273,0.2253,0.2253,0.2253,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2253,0.2273,0.2273,0.2253,0.2273,0.2253,0.2273,0.2273
+pass=1 cell=16x1024x4096 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=1 cell=16x1024x4096 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096 face=exact kernel=mapal_tile_b5d1b1f720b415a4 grid=64x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096.null face=exact kernel=mapal_tile_b5d1b1f720b415a4 grid=64x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096_c face=contract kernel=mapal_tile_fee0e120457e2f5b grid=64x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096_c.null face=contract kernel=mapal_tile_fee0e120457e2f5b grid=64x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096_r face=reassoc+exact kernel=mapal_tile_4587d3619c63e94a grid=64x4 block=32 smem=24576 regs=241 local_bytes=0 S=2 reduce=mapal_tile_ad000c625825ba49 rgrid=64x1 rblock=256 rregs=12
+pass=1 cell=16x1024x4096 arm stem=mm_16x1024x4096_rc face=reassoc+contract kernel=mapal_tile_9e3566a9b1333415 grid=64x4 block=32 smem=28672 regs=255 local_bytes=152 S=2 reduce=mapal_tile_28dacfecfe98c692 rgrid=64x1 rblock=256 rregs=12
+pass=1 cell=16x1024x4096 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 cell=16x1024x4096 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096 cells=256 maxrel_vs_f64=1.713e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=76611aa7a537768d
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096.null cells=256 maxrel_vs_f64=1.713e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=76611aa7a537768d
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096_c cells=256 maxrel_vs_f64=2.010e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=4ec9eddbb6ba0fa8
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096_c.null cells=256 maxrel_vs_f64=2.010e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=4ec9eddbb6ba0fa8
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096_r cells=256 maxrel_vs_f64=2.973e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.030e-04 within_adr0040_bound=yes fnv=4be835a5284e466e
+pass=1 cell=16x1024x4096 values leg=mm_16x1024x4096_rc cells=256 maxrel_vs_f64=1.713e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.106e-04 within_adr0040_bound=yes fnv=3fff735a406e4bda
+pass=1 cell=16x1024x4096 values leg=cublas cells=256 maxrel_vs_f64=7.541e-05
+pass=1 cell=16x1024x4096 values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+pass=1 cell=16x1024x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=2.010e-04
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096 M=16 N=1024 K=4096 n=30 min_ms=0.0492 med_ms=0.0492 max_ms=0.0512
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096.null M=16 N=1024 K=4096 n=30 min_ms=0.0492 med_ms=0.0492 max_ms=0.0512
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096_c M=16 N=1024 K=4096 n=30 min_ms=0.0450 med_ms=0.0451 max_ms=0.0471
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096_c.null M=16 N=1024 K=4096 n=30 min_ms=0.0450 med_ms=0.0451 max_ms=0.0451
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096_r M=16 N=1024 K=4096 n=30 min_ms=0.0369 med_ms=0.0369 max_ms=0.0389
+pass=1 cell=16x1024x4096 time leg=mm_16x1024x4096_rc M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0369 max_ms=0.0389
+pass=1 cell=16x1024x4096 time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0205 med_ms=0.0205 max_ms=0.0205
+pass=1 cell=16x1024x4096 time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.3031 med_ms=0.3031 max_ms=0.3052
+pass=1 cell=16x1024x4096 time leg=cutlass_tuned M=16 N=1024 K=4096 n=30 min_ms=0.1290 med_ms=0.1311 max_ms=0.1311
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096 same_output=yes fnv=76611aa7a537768d
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096.null same_output=yes fnv=76611aa7a537768d
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096_c same_output=yes fnv=4ec9eddbb6ba0fa8
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096_c.null same_output=yes fnv=4ec9eddbb6ba0fa8
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096_r same_output=yes fnv=4be835a5284e466e
+pass=1 cell=16x1024x4096 determinism leg=mm_16x1024x4096_rc same_output=yes fnv=3fff735a406e4bda
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096 0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0512,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096.null 0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0512,0.0492,0.0492,0.0512,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096_c 0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0450,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0471,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096_c.null 0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0450,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096_r 0.0369,0.0369,0.0389,0.0369,0.0389,0.0389,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0369,0.0389,0.0369,0.0389,0.0369,0.0389,0.0389,0.0369,0.0389,0.0389,0.0369,0.0369,0.0389,0.0389
+pass=1 cell=16x1024x4096 samples leg=mm_16x1024x4096_rc 0.0389,0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0348,0.0369,0.0348,0.0369,0.0348,0.0389,0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0369,0.0389,0.0369
+pass=1 cell=16x1024x4096 samples leg=cublas 0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205
+pass=1 cell=16x1024x4096 samples leg=cutlass 0.3052,0.3031,0.3052,0.3031,0.3031,0.3031,0.3031,0.3031,0.3031,0.3031,0.3031,0.3052,0.3031,0.3031,0.3052,0.3031,0.3031,0.3031,0.3052,0.3031,0.3052,0.3052,0.3031,0.3052,0.3031,0.3052,0.3052,0.3052,0.3052,0.3052
+pass=1 cell=16x1024x4096 samples leg=cutlass_tuned 0.1311,0.1291,0.1311,0.1290,0.1290,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1290,0.1290,0.1290,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1290
+pass=2 cell=16x1024x4096 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=2 cell=16x1024x4096 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096_rc face=reassoc+contract kernel=mapal_tile_9e3566a9b1333415 grid=64x4 block=32 smem=28672 regs=255 local_bytes=152 S=2 reduce=mapal_tile_28dacfecfe98c692 rgrid=64x1 rblock=256 rregs=12
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096_r face=reassoc+exact kernel=mapal_tile_4587d3619c63e94a grid=64x4 block=32 smem=24576 regs=241 local_bytes=0 S=2 reduce=mapal_tile_ad000c625825ba49 rgrid=64x1 rblock=256 rregs=12
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096_c.null face=contract kernel=mapal_tile_fee0e120457e2f5b grid=64x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096_c face=contract kernel=mapal_tile_fee0e120457e2f5b grid=64x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096.null face=exact kernel=mapal_tile_b5d1b1f720b415a4 grid=64x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=2 cell=16x1024x4096 arm stem=mm_16x1024x4096 face=exact kernel=mapal_tile_b5d1b1f720b415a4 grid=64x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+pass=2 cell=16x1024x4096 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 cell=16x1024x4096 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096_rc cells=256 maxrel_vs_f64=1.713e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.106e-04 within_adr0040_bound=yes fnv=3fff735a406e4bda
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096_r cells=256 maxrel_vs_f64=2.973e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.030e-04 within_adr0040_bound=yes fnv=4be835a5284e466e
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096_c.null cells=256 maxrel_vs_f64=2.010e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=4ec9eddbb6ba0fa8
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096_c cells=256 maxrel_vs_f64=2.010e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=4ec9eddbb6ba0fa8
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096.null cells=256 maxrel_vs_f64=1.713e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=76611aa7a537768d
+pass=2 cell=16x1024x4096 values leg=mm_16x1024x4096 cells=256 maxrel_vs_f64=1.713e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=76611aa7a537768d
+pass=2 cell=16x1024x4096 values leg=cublas cells=256 maxrel_vs_f64=7.541e-05
+pass=2 cell=16x1024x4096 values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+pass=2 cell=16x1024x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=2.010e-04
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096_rc M=16 N=1024 K=4096 n=30 min_ms=0.0369 med_ms=0.0369 max_ms=0.0389
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096_r M=16 N=1024 K=4096 n=30 min_ms=0.0369 med_ms=0.0369 max_ms=0.0389
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096_c.null M=16 N=1024 K=4096 n=30 min_ms=0.0451 med_ms=0.0451 max_ms=0.0471
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096_c M=16 N=1024 K=4096 n=30 min_ms=0.0451 med_ms=0.0451 max_ms=0.0471
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096.null M=16 N=1024 K=4096 n=30 min_ms=0.0492 med_ms=0.0492 max_ms=0.0512
+pass=2 cell=16x1024x4096 time leg=mm_16x1024x4096 M=16 N=1024 K=4096 n=30 min_ms=0.0492 med_ms=0.0492 max_ms=0.0512
+pass=2 cell=16x1024x4096 time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0205 med_ms=0.0205 max_ms=0.0225
+pass=2 cell=16x1024x4096 time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.3031 med_ms=0.3052 max_ms=0.3092
+pass=2 cell=16x1024x4096 time leg=cutlass_tuned M=16 N=1024 K=4096 n=30 min_ms=0.1290 med_ms=0.1311 max_ms=0.1311
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096_rc same_output=yes fnv=3fff735a406e4bda
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096_r same_output=yes fnv=4be835a5284e466e
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096_c.null same_output=yes fnv=4ec9eddbb6ba0fa8
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096_c same_output=yes fnv=4ec9eddbb6ba0fa8
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096.null same_output=yes fnv=76611aa7a537768d
+pass=2 cell=16x1024x4096 determinism leg=mm_16x1024x4096 same_output=yes fnv=76611aa7a537768d
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096_rc 0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096_r 0.0389,0.0389,0.0389,0.0369,0.0389,0.0369,0.0369,0.0369,0.0389,0.0369,0.0369,0.0389,0.0369,0.0369,0.0389,0.0369,0.0369,0.0369,0.0369,0.0369,0.0369,0.0389,0.0389,0.0389,0.0389,0.0369,0.0389,0.0369,0.0369,0.0369
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096_c.null 0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0471,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096_c 0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0471,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451,0.0451
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096.null 0.0492,0.0512,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0512
+pass=2 cell=16x1024x4096 samples leg=mm_16x1024x4096 0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492,0.0492,0.0512,0.0492,0.0492,0.0492,0.0492,0.0492
+pass=2 cell=16x1024x4096 samples leg=cublas 0.0225,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205,0.0205
+pass=2 cell=16x1024x4096 samples leg=cutlass 0.3052,0.3072,0.3031,0.3031,0.3031,0.3052,0.3052,0.3052,0.3052,0.3052,0.3052,0.3031,0.3052,0.3052,0.3092,0.3052,0.3031,0.3072,0.3031,0.3052,0.3052,0.3031,0.3052,0.3052,0.3031,0.3031,0.3052,0.3052,0.3031,0.3072
+pass=2 cell=16x1024x4096 samples leg=cutlass_tuned 0.1311,0.1290,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1290,0.1290,0.1311,0.1311,0.1311,0.1311,0.1311,0.1310,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311,0.1311
+pass=1 cell=16x18432x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=1 cell=16x18432x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168 face=exact kernel=mapal_tile_d16b4af8853afb28 grid=288x1 block=256 smem=45056 regs=72 local_bytes=0 S=1
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168.null face=exact kernel=mapal_tile_d16b4af8853afb28 grid=288x1 block=256 smem=45056 regs=72 local_bytes=0 S=1
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168_c face=contract kernel=mapal_tile_698a8374c90a15e7 grid=144x1 block=32 smem=9472 regs=213 local_bytes=0 S=1
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168_c.null face=contract kernel=mapal_tile_698a8374c90a15e7 grid=144x1 block=32 smem=9472 regs=213 local_bytes=0 S=1
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168_r face=reassoc+exact kernel=mapal_tile_b09493f9a54c963e grid=288x2 block=256 smem=45056 regs=68 local_bytes=0 S=2 reduce=mapal_tile_f30897d6fd7e047d rgrid=1152x1 rblock=256 rregs=12
+pass=1 cell=16x18432x7168 arm stem=mm_16x18432x7168_rc face=reassoc+contract kernel=mapal_tile_16e3d6249bff6f51 grid=144x2 block=32 smem=9472 regs=217 local_bytes=0 S=2 reduce=mapal_tile_d662ecb71a8847ae rgrid=1152x1 rblock=256 rregs=12
+pass=1 cell=16x18432x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x144x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 cell=16x18432x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x288x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168 cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=727d98f67fd563de
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168.null cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=727d98f67fd563de
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168_c cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=92218cb48bb37f90
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168_c.null cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=92218cb48bb37f90
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168_r cells=256 maxrel_vs_f64=1.017e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.984e-04 within_adr0040_bound=yes fnv=f5ca99622e24a0fd
+pass=1 cell=16x18432x7168 values leg=mm_16x18432x7168_rc cells=256 maxrel_vs_f64=1.088e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.755e-04 within_adr0040_bound=yes fnv=10ba36542f88a237
+pass=1 cell=16x18432x7168 values leg=cublas cells=256 maxrel_vs_f64=1.088e-04
+pass=1 cell=16x18432x7168 values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+pass=1 cell=16x18432x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.082e-04
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168 M=16 N=18432 K=7168 n=30 min_ms=0.3400 med_ms=0.3461 max_ms=0.3584
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168.null M=16 N=18432 K=7168 n=30 min_ms=0.3420 med_ms=0.3461 max_ms=0.3625
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168_c M=16 N=18432 K=7168 n=30 min_ms=0.4649 med_ms=0.4669 max_ms=0.4710
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168_c.null M=16 N=18432 K=7168 n=30 min_ms=0.4648 med_ms=0.4669 max_ms=0.4710
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168_r M=16 N=18432 K=7168 n=30 min_ms=0.3482 med_ms=0.3523 max_ms=0.3584
+pass=1 cell=16x18432x7168 time leg=mm_16x18432x7168_rc M=16 N=18432 K=7168 n=30 min_ms=0.3400 med_ms=0.3502 max_ms=0.3584
+pass=1 cell=16x18432x7168 time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.3359 med_ms=0.3379 max_ms=0.3420
+pass=1 cell=16x18432x7168 time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=0.5591 med_ms=0.5632 max_ms=0.5653
+pass=1 cell=16x18432x7168 time leg=cutlass_tuned M=16 N=18432 K=7168 n=30 min_ms=0.3686 med_ms=0.3727 max_ms=0.3768
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168 same_output=yes fnv=727d98f67fd563de
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168.null same_output=yes fnv=727d98f67fd563de
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168_c same_output=yes fnv=92218cb48bb37f90
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168_c.null same_output=yes fnv=92218cb48bb37f90
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168_r same_output=yes fnv=f5ca99622e24a0fd
+pass=1 cell=16x18432x7168 determinism leg=mm_16x18432x7168_rc same_output=yes fnv=10ba36542f88a237
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168 0.3482,0.3523,0.3408,0.3441,0.3461,0.3441,0.3502,0.3584,0.3441,0.3461,0.3523,0.3543,0.3543,0.3482,0.3441,0.3461,0.3564,0.3461,0.3441,0.3461,0.3523,0.3441,0.3502,0.3461,0.3461,0.3461,0.3482,0.3461,0.3461,0.3400
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168.null 0.3441,0.3461,0.3564,0.3420,0.3420,0.3441,0.3441,0.3523,0.3482,0.3523,0.3441,0.3502,0.3461,0.3502,0.3543,0.3543,0.3584,0.3461,0.3441,0.3523,0.3625,0.3441,0.3482,0.3441,0.3461,0.3482,0.3420,0.3441,0.3564,0.3420
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168_c 0.4669,0.4649,0.4690,0.4669,0.4669,0.4669,0.4669,0.4649,0.4669,0.4669,0.4690,0.4690,0.4669,0.4669,0.4669,0.4649,0.4669,0.4669,0.4669,0.4649,0.4710,0.4669,0.4649,0.4649,0.4669,0.4669,0.4669,0.4669,0.4669,0.4649
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168_c.null 0.4669,0.4669,0.4690,0.4669,0.4649,0.4669,0.4690,0.4669,0.4669,0.4690,0.4690,0.4690,0.4669,0.4669,0.4690,0.4649,0.4669,0.4690,0.4669,0.4710,0.4669,0.4648,0.4690,0.4669,0.4669,0.4649,0.4669,0.4669,0.4669,0.4669
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168_r 0.3502,0.3482,0.3482,0.3482,0.3482,0.3543,0.3523,0.3502,0.3564,0.3502,0.3523,0.3502,0.3584,0.3523,0.3502,0.3543,0.3502,0.3502,0.3543,0.3523,0.3482,0.3502,0.3523,0.3543,0.3502,0.3543,0.3584,0.3543,0.3584,0.3523
+pass=1 cell=16x18432x7168 samples leg=mm_16x18432x7168_rc 0.3441,0.3543,0.3482,0.3461,0.3523,0.3461,0.3461,0.3523,0.3441,0.3502,0.3482,0.3543,0.3523,0.3564,0.3543,0.3461,0.3584,0.3502,0.3523,0.3502,0.3502,0.3461,0.3502,0.3400,0.3461,0.3482,0.3523,0.3523,0.3523,0.3523
+pass=1 cell=16x18432x7168 samples leg=cublas 0.3359,0.3379,0.3379,0.3379,0.3379,0.3379,0.3379,0.3400,0.3379,0.3400,0.3420,0.3379,0.3400,0.3420,0.3400,0.3379,0.3420,0.3400,0.3400,0.3400,0.3379,0.3379,0.3400,0.3379,0.3396,0.3400,0.3379,0.3379,0.3379,0.3379
+pass=1 cell=16x18432x7168 samples leg=cutlass 0.5612,0.5632,0.5632,0.5591,0.5632,0.5612,0.5652,0.5612,0.5632,0.5612,0.5612,0.5632,0.5632,0.5632,0.5632,0.5612,0.5612,0.5612,0.5632,0.5652,0.5653,0.5612,0.5632,0.5591,0.5632,0.5591,0.5632,0.5632,0.5632,0.5632
+pass=1 cell=16x18432x7168 samples leg=cutlass_tuned 0.3727,0.3707,0.3768,0.3748,0.3727,0.3707,0.3727,0.3727,0.3707,0.3727,0.3707,0.3686,0.3727,0.3727,0.3727,0.3707,0.3725,0.3707,0.3707,0.3727,0.3727,0.3686,0.3748,0.3727,0.3707,0.3707,0.3727,0.3727,0.3727,0.3727
+pass=2 cell=16x18432x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=2 cell=16x18432x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168_rc face=reassoc+contract kernel=mapal_tile_16e3d6249bff6f51 grid=144x2 block=32 smem=9472 regs=217 local_bytes=0 S=2 reduce=mapal_tile_d662ecb71a8847ae rgrid=1152x1 rblock=256 rregs=12
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168_r face=reassoc+exact kernel=mapal_tile_b09493f9a54c963e grid=288x2 block=256 smem=45056 regs=68 local_bytes=0 S=2 reduce=mapal_tile_f30897d6fd7e047d rgrid=1152x1 rblock=256 rregs=12
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168_c.null face=contract kernel=mapal_tile_698a8374c90a15e7 grid=144x1 block=32 smem=9472 regs=213 local_bytes=0 S=1
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168_c face=contract kernel=mapal_tile_698a8374c90a15e7 grid=144x1 block=32 smem=9472 regs=213 local_bytes=0 S=1
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168.null face=exact kernel=mapal_tile_d16b4af8853afb28 grid=288x1 block=256 smem=45056 regs=72 local_bytes=0 S=1
+pass=2 cell=16x18432x7168 arm stem=mm_16x18432x7168 face=exact kernel=mapal_tile_d16b4af8853afb28 grid=288x1 block=256 smem=45056 regs=72 local_bytes=0 S=1
+pass=2 cell=16x18432x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x144x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 cell=16x18432x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x288x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168_rc cells=256 maxrel_vs_f64=1.088e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.755e-04 within_adr0040_bound=yes fnv=10ba36542f88a237
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168_r cells=256 maxrel_vs_f64=1.017e-04 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.984e-04 within_adr0040_bound=yes fnv=f5ca99622e24a0fd
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168_c.null cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=92218cb48bb37f90
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168_c cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=92218cb48bb37f90
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168.null cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=727d98f67fd563de
+pass=2 cell=16x18432x7168 values leg=mm_16x18432x7168 cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=727d98f67fd563de
+pass=2 cell=16x18432x7168 values leg=cublas cells=256 maxrel_vs_f64=1.088e-04
+pass=2 cell=16x18432x7168 values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+pass=2 cell=16x18432x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.082e-04
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168_rc M=16 N=18432 K=7168 n=30 min_ms=0.3400 med_ms=0.3502 max_ms=0.3604
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168_r M=16 N=18432 K=7168 n=30 min_ms=0.3502 med_ms=0.3543 max_ms=0.3584
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168_c.null M=16 N=18432 K=7168 n=30 min_ms=0.4649 med_ms=0.4669 max_ms=0.4690
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168_c M=16 N=18432 K=7168 n=30 min_ms=0.4649 med_ms=0.4669 max_ms=0.4710
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168.null M=16 N=18432 K=7168 n=30 min_ms=0.3420 med_ms=0.3441 max_ms=0.3584
+pass=2 cell=16x18432x7168 time leg=mm_16x18432x7168 M=16 N=18432 K=7168 n=30 min_ms=0.3420 med_ms=0.3441 max_ms=0.3584
+pass=2 cell=16x18432x7168 time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.3359 med_ms=0.3400 max_ms=0.3482
+pass=2 cell=16x18432x7168 time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=0.5591 med_ms=0.5632 max_ms=0.5653
+pass=2 cell=16x18432x7168 time leg=cutlass_tuned M=16 N=18432 K=7168 n=30 min_ms=0.3707 med_ms=0.3727 max_ms=0.3748
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168_rc same_output=yes fnv=10ba36542f88a237
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168_r same_output=yes fnv=f5ca99622e24a0fd
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168_c.null same_output=yes fnv=92218cb48bb37f90
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168_c same_output=yes fnv=92218cb48bb37f90
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168.null same_output=yes fnv=727d98f67fd563de
+pass=2 cell=16x18432x7168 determinism leg=mm_16x18432x7168 same_output=yes fnv=727d98f67fd563de
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168_rc 0.3461,0.3461,0.3502,0.3420,0.3502,0.3441,0.3502,0.3502,0.3461,0.3564,0.3523,0.3461,0.3584,0.3482,0.3543,0.3482,0.3420,0.3400,0.3502,0.3543,0.3420,0.3543,0.3461,0.3502,0.3564,0.3523,0.3502,0.3420,0.3604,0.3543
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168_r 0.3543,0.3502,0.3523,0.3564,0.3543,0.3523,0.3523,0.3543,0.3523,0.3523,0.3564,0.3523,0.3543,0.3523,0.3503,0.3564,0.3543,0.3543,0.3543,0.3543,0.3543,0.3502,0.3543,0.3564,0.3523,0.3543,0.3543,0.3502,0.3564,0.3584
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168_c.null 0.4669,0.4669,0.4649,0.4669,0.4669,0.4669,0.4669,0.4669,0.4690,0.4669,0.4669,0.4669,0.4669,0.4649,0.4669,0.4669,0.4669,0.4669,0.4669,0.4649,0.4669,0.4670,0.4669,0.4669,0.4669,0.4649,0.4649,0.4690,0.4669,0.4669
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168_c 0.4669,0.4710,0.4669,0.4669,0.4669,0.4690,0.4669,0.4669,0.4669,0.4669,0.4669,0.4690,0.4669,0.4649,0.4649,0.4669,0.4649,0.4690,0.4669,0.4669,0.4669,0.4649,0.4669,0.4669,0.4669,0.4649,0.4649,0.4690,0.4669,0.4669
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168.null 0.3502,0.3420,0.3441,0.3482,0.3420,0.3420,0.3441,0.3420,0.3461,0.3461,0.3420,0.3523,0.3441,0.3441,0.3461,0.3441,0.3584,0.3482,0.3441,0.3482,0.3564,0.3441,0.3441,0.3420,0.3420,0.3461,0.3502,0.3420,0.3482,0.3420
+pass=2 cell=16x18432x7168 samples leg=mm_16x18432x7168 0.3461,0.3482,0.3441,0.3420,0.3420,0.3484,0.3441,0.3420,0.3543,0.3420,0.3441,0.3420,0.3584,0.3482,0.3420,0.3482,0.3482,0.3420,0.3461,0.3441,0.3564,0.3502,0.3502,0.3441,0.3420,0.3502,0.3441,0.3441,0.3420,0.3420
+pass=2 cell=16x18432x7168 samples leg=cublas 0.3379,0.3379,0.3420,0.3400,0.3379,0.3379,0.3400,0.3379,0.3461,0.3379,0.3400,0.3420,0.3441,0.3400,0.3379,0.3400,0.3420,0.3400,0.3400,0.3420,0.3441,0.3379,0.3400,0.3400,0.3400,0.3400,0.3379,0.3379,0.3482,0.3359
+pass=2 cell=16x18432x7168 samples leg=cutlass 0.5652,0.5632,0.5591,0.5591,0.5632,0.5612,0.5591,0.5632,0.5632,0.5649,0.5612,0.5591,0.5632,0.5612,0.5632,0.5632,0.5612,0.5612,0.5632,0.5612,0.5591,0.5632,0.5653,0.5632,0.5612,0.5612,0.5632,0.5612,0.5612,0.5632
+pass=2 cell=16x18432x7168 samples leg=cutlass_tuned 0.3707,0.3727,0.3707,0.3707,0.3707,0.3727,0.3707,0.3727,0.3727,0.3727,0.3727,0.3727,0.3707,0.3707,0.3748,0.3727,0.3727,0.3707,0.3727,0.3727,0.3727,0.3727,0.3748,0.3707,0.3727,0.3707,0.3727,0.3727,0.3727,0.3707
+pass=1 cell=128x2048x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=1 cell=128x2048x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168 face=exact kernel=mapal_tile_1dee1dd281205218 grid=64x4 block=64 smem=32768 regs=194 local_bytes=0 S=1
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168.null face=exact kernel=mapal_tile_1dee1dd281205218 grid=64x4 block=64 smem=32768 regs=194 local_bytes=0 S=1
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168_c face=contract kernel=mapal_tile_8aa7da71b06a5c77 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 S=1
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168_c.null face=contract kernel=mapal_tile_8aa7da71b06a5c77 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 S=1
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168_r face=reassoc+exact kernel=mapal_tile_d694b4a597815f2e grid=64x8 block=64 smem=32768 regs=198 local_bytes=0 S=2 reduce=mapal_tile_9779c1fd17dd11cd rgrid=1024x1 rblock=256 rregs=12
+pass=1 cell=128x2048x7168 arm stem=mm_128x2048x7168_rc face=reassoc+contract kernel=mapal_tile_57120b16a87a20e1 grid=64x8 block=64 smem=34816 regs=201 local_bytes=0 S=2 reduce=mapal_tile_6de146d8a26ced1e rgrid=1024x1 rblock=256 rregs=12
+pass=1 cell=128x2048x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 cell=128x2048x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168 cells=256 maxrel_vs_f64=4.715e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=17863ebc28367f41
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168.null cells=256 maxrel_vs_f64=4.715e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=17863ebc28367f41
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168_c cells=256 maxrel_vs_f64=7.153e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=ba76a87ed3897c45
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168_c.null cells=256 maxrel_vs_f64=7.153e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=ba76a87ed3897c45
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168_r cells=256 maxrel_vs_f64=7.554e-05 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.755e-04 within_adr0040_bound=yes fnv=8a273d9f4d8508eb
+pass=1 cell=128x2048x7168 values leg=mm_128x2048x7168_rc cells=256 maxrel_vs_f64=2.929e-05 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.640e-04 within_adr0040_bound=yes fnv=a04b7d712f4d7718
+pass=1 cell=128x2048x7168 values leg=cublas cells=256 maxrel_vs_f64=2.235e-05
+pass=1 cell=128x2048x7168 values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+pass=1 cell=128x2048x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.153e-05
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168 M=128 N=2048 K=7168 n=30 min_ms=0.3154 med_ms=0.3174 max_ms=0.3174
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168.null M=128 N=2048 K=7168 n=30 min_ms=0.3154 med_ms=0.3174 max_ms=0.3195
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168_c M=128 N=2048 K=7168 n=30 min_ms=0.1475 med_ms=0.1495 max_ms=0.1556
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168_c.null M=128 N=2048 K=7168 n=30 min_ms=0.1475 med_ms=0.1495 max_ms=0.1577
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168_r M=128 N=2048 K=7168 n=30 min_ms=0.3174 med_ms=0.3215 max_ms=0.3236
+pass=1 cell=128x2048x7168 time leg=mm_128x2048x7168_rc M=128 N=2048 K=7168 n=30 min_ms=0.1597 med_ms=0.1618 max_ms=0.1638
+pass=1 cell=128x2048x7168 time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0963
+pass=1 cell=128x2048x7168 time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.5652 med_ms=0.5693 max_ms=0.5714
+pass=1 cell=128x2048x7168 time leg=cutlass_tuned M=128 N=2048 K=7168 n=30 min_ms=0.2253 med_ms=0.2273 max_ms=0.2294
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168 same_output=yes fnv=17863ebc28367f41
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168.null same_output=yes fnv=17863ebc28367f41
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168_c same_output=yes fnv=ba76a87ed3897c45
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168_c.null same_output=yes fnv=ba76a87ed3897c45
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168_r same_output=yes fnv=8a273d9f4d8508eb
+pass=1 cell=128x2048x7168 determinism leg=mm_128x2048x7168_rc same_output=yes fnv=a04b7d712f4d7718
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168 0.3154,0.3168,0.3154,0.3174,0.3154,0.3154,0.3174,0.3174,0.3154,0.3174,0.3154,0.3154,0.3154,0.3174,0.3154,0.3174,0.3174,0.3154,0.3174,0.3174,0.3174,0.3174,0.3174,0.3174,0.3174,0.3154,0.3154,0.3154,0.3154,0.3174
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168.null 0.3154,0.3174,0.3174,0.3195,0.3154,0.3195,0.3154,0.3174,0.3154,0.3174,0.3174,0.3174,0.3154,0.3174,0.3174,0.3174,0.3174,0.3174,0.3174,0.3195,0.3174,0.3174,0.3154,0.3174,0.3174,0.3174,0.3174,0.3154,0.3154,0.3174
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168_c 0.1495,0.1495,0.1516,0.1475,0.1495,0.1495,0.1516,0.1536,0.1495,0.1495,0.1516,0.1475,0.1516,0.1495,0.1495,0.1556,0.1536,0.1516,0.1495,0.1516,0.1536,0.1495,0.1536,0.1495,0.1475,0.1495,0.1475,0.1556,0.1516,0.1495
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168_c.null 0.1556,0.1536,0.1536,0.1495,0.1475,0.1495,0.1556,0.1475,0.1577,0.1516,0.1556,0.1536,0.1495,0.1536,0.1516,0.1536,0.1495,0.1475,0.1495,0.1495,0.1495,0.1577,0.1475,0.1516,0.1495,0.1495,0.1495,0.1516,0.1495,0.1475
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168_r 0.3215,0.3215,0.3215,0.3215,0.3215,0.3174,0.3195,0.3195,0.3195,0.3236,0.3174,0.3195,0.3215,0.3195,0.3215,0.3195,0.3215,0.3195,0.3215,0.3215,0.3215,0.3215,0.3195,0.3215,0.3215,0.3195,0.3215,0.3215,0.3195,0.3215
+pass=1 cell=128x2048x7168 samples leg=mm_128x2048x7168_rc 0.1618,0.1618,0.1597,0.1638,0.1618,0.1618,0.1597,0.1618,0.1618,0.1638,0.1597,0.1638,0.1618,0.1618,0.1618,0.1618,0.1597,0.1597,0.1618,0.1597,0.1638,0.1618,0.1597,0.1618,0.1618,0.1618,0.1638,0.1638,0.1638,0.1618
+pass=1 cell=128x2048x7168 samples leg=cublas 0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0922,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0942
+pass=1 cell=128x2048x7168 samples leg=cutlass 0.5673,0.5673,0.5673,0.5693,0.5693,0.5673,0.5714,0.5673,0.5693,0.5693,0.5693,0.5693,0.5693,0.5673,0.5693,0.5693,0.5693,0.5673,0.5693,0.5673,0.5693,0.5673,0.5714,0.5673,0.5673,0.5652,0.5693,0.5673,0.5693,0.5693
+pass=1 cell=128x2048x7168 samples leg=cutlass_tuned 0.2273,0.2273,0.2273,0.2253,0.2273,0.2294,0.2294,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2253,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2273,0.2253,0.2273,0.2273,0.2273,0.2294,0.2253,0.2273,0.2273
+pass=2 cell=128x2048x7168 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=2 cell=128x2048x7168 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168_rc face=reassoc+contract kernel=mapal_tile_57120b16a87a20e1 grid=64x8 block=64 smem=34816 regs=201 local_bytes=0 S=2 reduce=mapal_tile_6de146d8a26ced1e rgrid=1024x1 rblock=256 rregs=12
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168_r face=reassoc+exact kernel=mapal_tile_d694b4a597815f2e grid=64x8 block=64 smem=32768 regs=198 local_bytes=0 S=2 reduce=mapal_tile_9779c1fd17dd11cd rgrid=1024x1 rblock=256 rregs=12
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168_c.null face=contract kernel=mapal_tile_8aa7da71b06a5c77 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 S=1
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168_c face=contract kernel=mapal_tile_8aa7da71b06a5c77 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 S=1
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168.null face=exact kernel=mapal_tile_1dee1dd281205218 grid=64x4 block=64 smem=32768 regs=194 local_bytes=0 S=1
+pass=2 cell=128x2048x7168 arm stem=mm_128x2048x7168 face=exact kernel=mapal_tile_1dee1dd281205218 grid=64x4 block=64 smem=32768 regs=194 local_bytes=0 S=1
+pass=2 cell=128x2048x7168 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 cell=128x2048x7168 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168_rc cells=256 maxrel_vs_f64=2.929e-05 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.640e-04 within_adr0040_bound=yes fnv=a04b7d712f4d7718
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168_r cells=256 maxrel_vs_f64=7.554e-05 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.755e-04 within_adr0040_bound=yes fnv=8a273d9f4d8508eb
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168_c.null cells=256 maxrel_vs_f64=7.153e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=ba76a87ed3897c45
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168_c cells=256 maxrel_vs_f64=7.153e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=ba76a87ed3897c45
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168.null cells=256 maxrel_vs_f64=4.715e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=17863ebc28367f41
+pass=2 cell=128x2048x7168 values leg=mm_128x2048x7168 cells=256 maxrel_vs_f64=4.715e-05 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=17863ebc28367f41
+pass=2 cell=128x2048x7168 values leg=cublas cells=256 maxrel_vs_f64=2.235e-05
+pass=2 cell=128x2048x7168 values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+pass=2 cell=128x2048x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.153e-05
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168_rc M=128 N=2048 K=7168 n=30 min_ms=0.1569 med_ms=0.1618 max_ms=0.1638
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168_r M=128 N=2048 K=7168 n=30 min_ms=0.3174 med_ms=0.3195 max_ms=0.3236
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168_c.null M=128 N=2048 K=7168 n=30 min_ms=0.1475 med_ms=0.1516 max_ms=0.1556
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168_c M=128 N=2048 K=7168 n=30 min_ms=0.1475 med_ms=0.1516 max_ms=0.1557
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168.null M=128 N=2048 K=7168 n=30 min_ms=0.3153 med_ms=0.3174 max_ms=0.3174
+pass=2 cell=128x2048x7168 time leg=mm_128x2048x7168 M=128 N=2048 K=7168 n=30 min_ms=0.3154 med_ms=0.3174 max_ms=0.3195
+pass=2 cell=128x2048x7168 time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.0922 med_ms=0.0942 max_ms=0.0963
+pass=2 cell=128x2048x7168 time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.5673 med_ms=0.5693 max_ms=0.5714
+pass=2 cell=128x2048x7168 time leg=cutlass_tuned M=128 N=2048 K=7168 n=30 min_ms=0.2273 med_ms=0.2273 max_ms=0.2294
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168_rc same_output=yes fnv=a04b7d712f4d7718
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168_r same_output=yes fnv=8a273d9f4d8508eb
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168_c.null same_output=yes fnv=ba76a87ed3897c45
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168_c same_output=yes fnv=ba76a87ed3897c45
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168.null same_output=yes fnv=17863ebc28367f41
+pass=2 cell=128x2048x7168 determinism leg=mm_128x2048x7168 same_output=yes fnv=17863ebc28367f41
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168_rc 0.1638,0.1618,0.1618,0.1597,0.1618,0.1597,0.1618,0.1618,0.1597,0.1618,0.1597,0.1597,0.1638,0.1618,0.1569,0.1618,0.1597,0.1577,0.1618,0.1618,0.1597,0.1597,0.1618,0.1618,0.1618,0.1618,0.1597,0.1597,0.1618,0.1597
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168_r 0.3215,0.3215,0.3195,0.3174,0.3195,0.3195,0.3195,0.3195,0.3215,0.3195,0.3195,0.3215,0.3195,0.3195,0.3195,0.3195,0.3195,0.3215,0.3215,0.3236,0.3195,0.3215,0.3215,0.3236,0.3195,0.3215,0.3195,0.3195,0.3195,0.3215
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168_c.null 0.1556,0.1475,0.1536,0.1556,0.1475,0.1516,0.1516,0.1516,0.1516,0.1495,0.1536,0.1516,0.1495,0.1536,0.1516,0.1536,0.1516,0.1536,0.1495,0.1495,0.1495,0.1495,0.1536,0.1556,0.1516,0.1556,0.1495,0.1475,0.1536,0.1495
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168_c 0.1516,0.1536,0.1557,0.1495,0.1495,0.1495,0.1536,0.1556,0.1495,0.1556,0.1556,0.1516,0.1536,0.1536,0.1495,0.1475,0.1495,0.1495,0.1495,0.1495,0.1495,0.1495,0.1475,0.1515,0.1536,0.1516,0.1495,0.1536,0.1516,0.1536
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168.null 0.3174,0.3174,0.3174,0.3154,0.3174,0.3174,0.3174,0.3154,0.3154,0.3153,0.3154,0.3174,0.3154,0.3154,0.3174,0.3174,0.3154,0.3174,0.3174,0.3154,0.3174,0.3174,0.3154,0.3154,0.3154,0.3154,0.3174,0.3174,0.3174,0.3174
+pass=2 cell=128x2048x7168 samples leg=mm_128x2048x7168 0.3174,0.3195,0.3174,0.3154,0.3174,0.3174,0.3174,0.3154,0.3174,0.3154,0.3174,0.3174,0.3154,0.3154,0.3154,0.3195,0.3154,0.3174,0.3174,0.3154,0.3174,0.3174,0.3174,0.3154,0.3154,0.3154,0.3174,0.3154,0.3174,0.3174
+pass=2 cell=128x2048x7168 samples leg=cublas 0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0922,0.0942,0.0942,0.0942,0.0942,0.0942,0.0922,0.0963,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0942,0.0963,0.0942,0.0963,0.0922,0.0942,0.0942,0.0942,0.0963
+pass=2 cell=128x2048x7168 samples leg=cutlass 0.5714,0.5693,0.5714,0.5714,0.5693,0.5673,0.5693,0.5673,0.5714,0.5693,0.5714,0.5714,0.5693,0.5693,0.5673,0.5673,0.5673,0.5693,0.5673,0.5693,0.5673,0.5673,0.5693,0.5693,0.5673,0.5694,0.5693,0.5673,0.5714,0.5693
+pass=2 cell=128x2048x7168 samples leg=cutlass_tuned 0.2294,0.2294,0.2294,0.2273,0.2273,0.2273,0.2273,0.2273,0.2294,0.2273,0.2294,0.2294,0.2273,0.2294,0.2273,0.2273,0.2273,0.2273,0.2293,0.2273,0.2273,0.2294,0.2294,0.2273,0.2273,0.2293,0.2273,0.2294,0.2273,0.2273
+pass=1 cell=4096x4096x4096 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=1 cell=4096x4096x4096 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096 face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096.null face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_c face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_c.null face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_r face=reassoc+exact kernel=mapal_tile_bdec7fdeee76aaed grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=1 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_rc face=reassoc+contract kernel=mapal_tile_6d65558f22a4c664 grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=1 cell=4096x4096x4096 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=32x32x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 cell=4096x4096x4096 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=256x64x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096 cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096.null cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096_c cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096_c.null cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096_r cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 values leg=mm_4096x4096x4096_rc cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 values leg=cublas cells=256 maxrel_vs_f64=8.421e-04
+pass=1 cell=4096x4096x4096 values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+pass=1 cell=4096x4096x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.735e-04
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096 M=4096 N=4096 K=4096 n=30 min_ms=4.0284 med_ms=4.4288 max_ms=4.5076
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096.null M=4096 N=4096 K=4096 n=30 min_ms=4.0120 med_ms=4.4104 max_ms=4.5087
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096_c M=4096 N=4096 K=4096 n=30 min_ms=2.5795 med_ms=2.8324 max_ms=2.9143
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096_c.null M=4096 N=4096 K=4096 n=30 min_ms=2.5836 med_ms=2.8396 max_ms=2.8989
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096_r M=4096 N=4096 K=4096 n=30 min_ms=4.0233 med_ms=4.3848 max_ms=4.4984
+pass=1 cell=4096x4096x4096 time leg=mm_4096x4096x4096_rc M=4096 N=4096 K=4096 n=30 min_ms=2.5713 med_ms=2.8170 max_ms=2.8856
+pass=1 cell=4096x4096x4096 time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.3562 med_ms=2.5487 max_ms=2.5969
+pass=1 cell=4096x4096x4096 time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5733 med_ms=2.7945 max_ms=2.8652
+pass=1 cell=4096x4096x4096 time leg=cutlass_tuned M=4096 N=4096 K=4096 n=30 min_ms=5.3893 med_ms=5.6955 max_ms=5.8522
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096 same_output=yes fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096.null same_output=yes fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_c same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_c.null same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_r same_output=yes fnv=54485620f4ac4077
+pass=1 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_rc same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096 4.0284,4.1523,4.1626,4.1830,4.2117,4.2250,4.2353,4.2301,4.2230,4.2404,4.2414,4.2619,4.2578,4.3223,4.3264,4.4462,4.4452,4.4646,4.4524,4.4288,4.4329,4.4749,4.4913,4.4626,4.4534,4.4933,4.4780,4.4861,4.4605,4.5076
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096.null 4.0120,4.1585,4.1953,4.1810,4.2025,4.2148,4.2414,4.2373,4.2332,4.2148,4.2588,4.2271,4.2598,4.3397,4.3284,4.4339,4.4431,4.4698,4.4104,4.4513,4.4308,4.4995,4.4687,4.4861,4.4483,4.4759,4.4820,4.5087,4.4616,4.4739
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_c 2.5795,2.6747,2.6870,2.6972,2.6972,2.7187,2.7136,2.7187,2.7095,2.7003,2.7279,2.7372,2.7064,2.7873,2.7771,2.8519,2.8529,2.8672,2.8324,2.8774,2.8682,2.9143,2.8600,2.8867,2.8795,2.8733,2.8631,2.8979,2.8631,2.8815
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_c.null 2.5836,2.6880,2.7013,2.6675,2.7105,2.6819,2.7085,2.7095,2.7187,2.7034,2.7290,2.7095,2.7351,2.7730,2.7996,2.8396,2.8662,2.8426,2.8426,2.8662,2.8641,2.8682,2.8672,2.8908,2.8621,2.8713,2.8611,2.8989,2.8815,2.8826
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_r 4.0233,4.0346,4.2015,4.1902,4.1841,4.1974,4.2209,4.2342,4.2383,4.2179,4.2322,4.2394,4.2496,4.2916,4.3407,4.4206,4.3848,4.3981,4.4206,4.4360,4.4380,4.4472,4.4257,4.4902,4.4513,4.4370,4.4513,4.4984,4.4564,4.4616
+pass=1 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_rc 2.5713,2.5969,2.6849,2.6798,2.6860,2.7013,2.7085,2.7228,2.7126,2.7197,2.7054,2.7228,2.7136,2.7464,2.7873,2.8396,2.8191,2.8262,2.8170,2.8682,2.8252,2.8682,2.8488,2.8795,2.8488,2.8651,2.8570,2.8662,2.8477,2.8856
+pass=1 cell=4096x4096x4096 samples leg=cublas 2.3562,2.3726,2.4351,2.4351,2.4422,2.4422,2.4617,2.4586,2.4678,2.4494,2.4719,2.4668,2.4689,2.4689,2.5334,2.5651,2.5487,2.5641,2.5702,2.5651,2.5682,2.5969,2.5713,2.5764,2.5641,2.5866,2.5764,2.5692,2.5836,2.5948
+pass=1 cell=4096x4096x4096 samples leg=cutlass 2.5733,2.7761,2.6819,2.6911,2.6737,2.6941,2.7003,2.6993,2.7300,2.6993,2.7187,2.7105,2.7146,2.7269,2.7802,2.7945,2.8027,2.8170,2.8273,2.8170,2.8396,2.8559,2.8396,2.8580,2.8436,2.8559,2.8539,2.8559,2.8611,2.8652
+pass=1 cell=4096x4096x4096 samples leg=cutlass_tuned 5.3944,5.3893,5.4886,5.4764,5.5009,5.4917,5.5265,5.5306,5.5398,5.5409,5.5450,5.5357,5.5460,5.5460,5.6955,5.6852,5.7610,5.7651,5.7641,5.7661,5.8102,5.8255,5.8225,5.8276,5.8173,5.8194,5.8378,5.8317,5.8522,5.8388
+pass=2 cell=4096x4096x4096 device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+pass=2 cell=4096x4096x4096 facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_rc face=reassoc+contract kernel=mapal_tile_6d65558f22a4c664 grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_r face=reassoc+exact kernel=mapal_tile_bdec7fdeee76aaed grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_c.null face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096_c face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096.null face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=2 cell=4096x4096x4096 arm stem=mm_4096x4096x4096 face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+pass=2 cell=4096x4096x4096 libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=32x32x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 cell=4096x4096x4096 libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=256x64x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096_rc cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096_r cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096_c.null cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096_c cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096.null cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 values leg=mm_4096x4096x4096 cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 values leg=cublas cells=256 maxrel_vs_f64=8.421e-04
+pass=2 cell=4096x4096x4096 values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+pass=2 cell=4096x4096x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.735e-04
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096_rc M=4096 N=4096 K=4096 n=30 min_ms=2.5969 med_ms=2.8385 max_ms=2.9020
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096_r M=4096 N=4096 K=4096 n=30 min_ms=4.0274 med_ms=4.4175 max_ms=4.4984
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096_c.null M=4096 N=4096 K=4096 n=30 min_ms=2.5795 med_ms=2.8170 max_ms=2.9123
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096_c M=4096 N=4096 K=4096 n=30 min_ms=2.5856 med_ms=2.8211 max_ms=2.9010
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096.null M=4096 N=4096 K=4096 n=30 min_ms=4.0131 med_ms=4.3622 max_ms=4.4943
+pass=2 cell=4096x4096x4096 time leg=mm_4096x4096x4096 M=4096 N=4096 K=4096 n=30 min_ms=4.0131 med_ms=4.3725 max_ms=4.4790
+pass=2 cell=4096x4096x4096 time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=2.3480 med_ms=2.5395 max_ms=2.5917
+pass=2 cell=4096x4096x4096 time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=2.5692 med_ms=2.8078 max_ms=2.8938
+pass=2 cell=4096x4096x4096 time leg=cutlass_tuned M=4096 N=4096 K=4096 n=30 min_ms=5.4497 med_ms=5.6893 max_ms=5.8860
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_rc same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_r same_output=yes fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_c.null same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096_c same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096.null same_output=yes fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 determinism leg=mm_4096x4096x4096 same_output=yes fnv=54485620f4ac4077
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_rc 2.5969,2.6737,2.7023,2.6839,2.7054,2.6931,2.7085,2.7146,2.7249,2.7136,2.7238,2.7075,2.7249,2.7556,2.7791,2.8385,2.8518,2.8488,2.8744,2.8600,2.8856,2.8897,2.8918,2.8692,2.8744,2.8815,2.9020,2.8815,2.8805,2.8877
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_r 4.0274,4.1748,4.1708,4.2045,4.2025,4.2158,4.2045,4.2435,4.2424,4.2291,4.2220,4.2332,4.2312,4.2906,4.3284,4.4175,4.4237,4.4513,4.4575,4.4503,4.4401,4.4790,4.4923,4.4657,4.4564,4.4984,4.4902,4.4749,4.4667,4.4728
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_c.null 2.5795,2.6778,2.6870,2.6962,2.6880,2.7075,2.6952,2.7187,2.7075,2.7156,2.7218,2.7187,2.7310,2.7668,2.7689,2.8170,2.8314,2.8672,2.8488,2.8867,2.8733,2.8938,2.8631,2.8805,2.8631,2.8938,2.8774,2.8826,2.8682,2.9123
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096_c 2.5856,2.6685,2.6829,2.6757,2.7064,2.6911,2.7044,2.7146,2.7136,2.7064,2.7136,2.7095,2.7505,2.7638,2.7935,2.8211,2.8324,2.8529,2.8611,2.8672,2.8764,2.8815,2.8826,2.8867,2.8662,2.8826,2.8754,2.8836,2.8887,2.9010
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096.null 4.0131,4.1626,4.1708,4.1718,4.2035,4.1984,4.2394,4.2342,4.2168,4.2281,4.2793,4.2332,4.2844,4.2875,4.3295,4.3622,4.3909,4.4247,4.4411,4.4554,4.4943,4.4554,4.4759,4.4728,4.4646,4.4390,4.4759,4.4667,4.4667,4.4493
+pass=2 cell=4096x4096x4096 samples leg=mm_4096x4096x4096 4.0131,4.1728,4.2189,4.1964,4.2240,4.2045,4.2547,4.2476,4.2281,4.2455,4.2752,4.2414,4.2670,4.2670,4.3233,4.3725,4.4052,4.4206,4.4380,4.4667,4.4646,4.4493,4.4636,4.4790,4.4605,4.4493,4.4616,4.4708,4.4708,4.4544
+pass=2 cell=4096x4096x4096 samples leg=cublas 2.3480,2.4361,2.4412,2.4504,2.4463,2.4340,2.4535,2.4607,2.4709,2.4586,2.4719,2.4699,2.4771,2.4678,2.5160,2.5395,2.5641,2.5692,2.5661,2.5866,2.5764,2.5836,2.5866,2.5825,2.5733,2.5887,2.5825,2.5846,2.5897,2.5917
+pass=2 cell=4096x4096x4096 samples leg=cutlass 2.5692,2.6614,2.6972,2.7034,2.7126,2.7116,2.7105,2.7034,2.7300,2.7177,2.7310,2.7238,2.7392,2.7187,2.7740,2.8078,2.8457,2.8283,2.8436,2.8385,2.8754,2.8621,2.8713,2.8467,2.8580,2.8938,2.8539,2.8723,2.8774,2.8754
+pass=2 cell=4096x4096x4096 samples leg=cutlass_tuned 5.4508,5.4497,5.5224,5.5081,5.5286,5.5286,5.5398,5.5296,5.5378,5.5439,5.5818,5.5726,5.5767,5.5644,5.6893,5.6812,5.8071,5.7979,5.7866,5.7887,5.8307,5.8655,5.8266,5.8184,5.8419,5.8716,5.8511,5.8481,5.8860,5.8757
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_30e81d6e2d858283 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_bd9fa9ee6f350d4b grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_d1f14af25205fe42 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_0196e19a59309ba4 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=1536 regs=79 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=1664 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 lt site=up+bias+relu api_mnk=512,128,256 epilogue=6 beta=0 heuristics=7 chosen=0 algo_id=20 tile=16 stages=28 splitk=3 reduction=2 workspace=786432 waves=0.094
+pass=1 mlp=pt_rm_m128_d256_h512 lt site=down+residual api_mnk=256,128,512 epilogue=1 beta=1 heuristics=7 chosen=0 algo_id=20 tile=15 stages=28 splitk=8 reduction=2 workspace=1048576 waves=0.094
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x4x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x2x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x8x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x4x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cutlass_tuned wall_ms=0.0484
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cutlass wall_ms=0.0657
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=lt wall_ms=18.6408
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cublas wall_ms=1.0185
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.null wall_ms=0.0239
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.base wall_ms=0.0307
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512.base wall_ms=0.0311
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_rc wall_ms=0.0243
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_r wall_ms=0.0344
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c wall_ms=0.0240
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512 wall_ms=0.0354
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512 cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_r cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_rc cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512.base cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.base cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.null cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cublas cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=lt cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cutlass cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cutlass_tuned cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512 M=128 d=256 h=512 n=30 event_min_ms=0.0300 event_med_ms=0.0320 wall_min_ms=0.0351 wall_med_ms=0.0371 wall_max_ms=0.0385
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c M=128 d=256 h=512 n=30 event_min_ms=0.0180 event_med_ms=0.0200 wall_min_ms=0.0231 wall_med_ms=0.0251 wall_max_ms=0.0262
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_r M=128 d=256 h=512 n=30 event_min_ms=0.0300 event_med_ms=0.0319 wall_min_ms=0.0351 wall_med_ms=0.0372 wall_max_ms=0.0395
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_rc M=128 d=256 h=512 n=30 event_min_ms=0.0179 event_med_ms=0.0200 wall_min_ms=0.0230 wall_med_ms=0.0251 wall_max_ms=0.0265
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512.base M=128 d=256 h=512 n=30 event_min_ms=0.0241 event_med_ms=0.0261 wall_min_ms=0.0292 wall_med_ms=0.0312 wall_max_ms=0.0322
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.base M=128 d=256 h=512 n=30 event_min_ms=0.0241 event_med_ms=0.0261 wall_min_ms=0.0291 wall_med_ms=0.0312 wall_max_ms=0.0344
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.null M=128 d=256 h=512 n=30 event_min_ms=0.0180 event_med_ms=0.0201 wall_min_ms=0.0231 wall_med_ms=0.0252 wall_max_ms=0.0269
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cublas M=128 d=256 h=512 n=30 event_min_ms=0.0287 event_med_ms=0.0312 wall_min_ms=0.0339 wall_med_ms=0.0363 wall_max_ms=0.0497
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=lt M=128 d=256 h=512 n=30 event_min_ms=0.0198 event_med_ms=0.0214 wall_min_ms=0.0251 wall_med_ms=0.0266 wall_max_ms=0.0283
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cutlass M=128 d=256 h=512 n=30 event_min_ms=0.0625 event_med_ms=0.0631 wall_min_ms=0.0676 wall_med_ms=0.0681 wall_max_ms=0.0701
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cutlass_tuned M=128 d=256 h=512 n=30 event_min_ms=0.0197 event_med_ms=0.0200 wall_min_ms=0.0250 wall_med_ms=0.0251 wall_max_ms=0.0275
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512 event=0.0322,0.0313,0.0319,0.0322,0.0320,0.0321,0.0333,0.0302,0.0321,0.0302,0.0322,0.0312,0.0333,0.0302,0.0323,0.0323,0.0322,0.0319,0.0302,0.0302,0.0320,0.0324,0.0313,0.0334,0.0300,0.0301,0.0320,0.0312,0.0312,0.0301 wall=0.0373,0.0363,0.0370,0.0373,0.0372,0.0372,0.0385,0.0353,0.0372,0.0352,0.0374,0.0363,0.0383,0.0353,0.0374,0.0374,0.0372,0.0373,0.0354,0.0352,0.0371,0.0374,0.0364,0.0384,0.0354,0.0353,0.0371,0.0364,0.0362,0.0351
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c event=0.0211,0.0198,0.0196,0.0200,0.0209,0.0198,0.0202,0.0211,0.0198,0.0201,0.0200,0.0190,0.0201,0.0211,0.0200,0.0199,0.0209,0.0210,0.0180,0.0211,0.0199,0.0201,0.0190,0.0200,0.0201,0.0200,0.0190,0.0199,0.0198,0.0211 wall=0.0262,0.0249,0.0251,0.0251,0.0260,0.0251,0.0256,0.0262,0.0250,0.0252,0.0251,0.0241,0.0252,0.0261,0.0251,0.0250,0.0261,0.0261,0.0231,0.0262,0.0252,0.0252,0.0241,0.0252,0.0251,0.0251,0.0243,0.0251,0.0250,0.0262
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_r event=0.0316,0.0319,0.0316,0.0323,0.0322,0.0320,0.0340,0.0322,0.0320,0.0302,0.0321,0.0317,0.0323,0.0303,0.0323,0.0302,0.0321,0.0302,0.0302,0.0302,0.0303,0.0300,0.0323,0.0322,0.0321,0.0302,0.0316,0.0301,0.0323,0.0301 wall=0.0369,0.0372,0.0369,0.0376,0.0373,0.0373,0.0395,0.0373,0.0371,0.0353,0.0373,0.0373,0.0373,0.0353,0.0373,0.0353,0.0372,0.0352,0.0353,0.0352,0.0353,0.0351,0.0373,0.0373,0.0373,0.0353,0.0370,0.0353,0.0373,0.0351
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_rc event=0.0211,0.0207,0.0200,0.0197,0.0200,0.0198,0.0211,0.0211,0.0198,0.0200,0.0194,0.0189,0.0211,0.0191,0.0200,0.0201,0.0208,0.0201,0.0199,0.0201,0.0180,0.0199,0.0208,0.0190,0.0180,0.0211,0.0179,0.0199,0.0210,0.0211 wall=0.0262,0.0259,0.0255,0.0248,0.0250,0.0253,0.0265,0.0262,0.0249,0.0251,0.0246,0.0241,0.0262,0.0242,0.0252,0.0252,0.0260,0.0251,0.0250,0.0251,0.0230,0.0251,0.0259,0.0241,0.0231,0.0262,0.0234,0.0251,0.0262,0.0262
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512.base event=0.0261,0.0270,0.0261,0.0261,0.0260,0.0259,0.0262,0.0271,0.0260,0.0261,0.0260,0.0261,0.0262,0.0271,0.0262,0.0260,0.0270,0.0262,0.0241,0.0242,0.0241,0.0260,0.0262,0.0262,0.0262,0.0270,0.0260,0.0270,0.0272,0.0260 wall=0.0312,0.0320,0.0311,0.0312,0.0311,0.0309,0.0312,0.0322,0.0311,0.0312,0.0316,0.0312,0.0312,0.0322,0.0313,0.0312,0.0320,0.0313,0.0293,0.0292,0.0292,0.0312,0.0315,0.0312,0.0313,0.0311,0.0311,0.0322,0.0322,0.0310
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.base event=0.0271,0.0260,0.0261,0.0261,0.0260,0.0261,0.0272,0.0272,0.0258,0.0293,0.0258,0.0261,0.0268,0.0262,0.0262,0.0262,0.0256,0.0261,0.0241,0.0242,0.0261,0.0241,0.0262,0.0262,0.0241,0.0242,0.0260,0.0255,0.0270,0.0261 wall=0.0322,0.0312,0.0312,0.0312,0.0310,0.0311,0.0323,0.0324,0.0310,0.0344,0.0312,0.0312,0.0319,0.0313,0.0312,0.0312,0.0307,0.0312,0.0292,0.0292,0.0311,0.0292,0.0312,0.0313,0.0291,0.0292,0.0313,0.0311,0.0322,0.0312
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.null event=0.0204,0.0209,0.0196,0.0201,0.0196,0.0201,0.0188,0.0210,0.0197,0.0200,0.0212,0.0200,0.0209,0.0210,0.0199,0.0201,0.0218,0.0200,0.0200,0.0201,0.0210,0.0200,0.0211,0.0199,0.0200,0.0180,0.0195,0.0200,0.0212,0.0201 wall=0.0255,0.0260,0.0246,0.0251,0.0248,0.0252,0.0239,0.0261,0.0249,0.0253,0.0265,0.0252,0.0263,0.0260,0.0250,0.0251,0.0269,0.0251,0.0251,0.0252,0.0261,0.0251,0.0262,0.0251,0.0251,0.0231,0.0247,0.0251,0.0263,0.0252
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cublas event=0.0318,0.0311,0.0311,0.0325,0.0311,0.0309,0.0312,0.0322,0.0312,0.0321,0.0287,0.0311,0.0320,0.0296,0.0312,0.0368,0.0310,0.0324,0.0302,0.0297,0.0318,0.0299,0.0291,0.0322,0.0302,0.0312,0.0447,0.0323,0.0289,0.0298 wall=0.0370,0.0361,0.0365,0.0447,0.0363,0.0360,0.0364,0.0373,0.0363,0.0372,0.0339,0.0364,0.0371,0.0347,0.0362,0.0420,0.0361,0.0375,0.0352,0.0348,0.0371,0.0349,0.0342,0.0374,0.0352,0.0363,0.0497,0.0374,0.0340,0.0348
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=lt event=0.0216,0.0209,0.0210,0.0208,0.0209,0.0212,0.0210,0.0210,0.0229,0.0207,0.0221,0.0219,0.0220,0.0212,0.0221,0.0214,0.0220,0.0220,0.0209,0.0215,0.0230,0.0212,0.0220,0.0198,0.0210,0.0220,0.0221,0.0220,0.0211,0.0214 wall=0.0267,0.0260,0.0261,0.0259,0.0260,0.0263,0.0261,0.0260,0.0280,0.0257,0.0271,0.0270,0.0272,0.0265,0.0272,0.0265,0.0271,0.0271,0.0261,0.0267,0.0283,0.0266,0.0271,0.0251,0.0262,0.0272,0.0273,0.0271,0.0262,0.0266
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cutlass event=0.0625,0.0629,0.0628,0.0648,0.0645,0.0640,0.0629,0.0640,0.0625,0.0629,0.0631,0.0640,0.0630,0.0643,0.0640,0.0641,0.0626,0.0629,0.0628,0.0640,0.0629,0.0639,0.0631,0.0629,0.0640,0.0639,0.0630,0.0639,0.0629,0.0628 wall=0.0678,0.0679,0.0679,0.0701,0.0697,0.0691,0.0681,0.0691,0.0676,0.0680,0.0681,0.0690,0.0681,0.0695,0.0691,0.0691,0.0677,0.0680,0.0680,0.0690,0.0680,0.0689,0.0681,0.0681,0.0691,0.0690,0.0681,0.0690,0.0680,0.0680
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cutlass_tuned event=0.0214,0.0210,0.0208,0.0206,0.0199,0.0211,0.0199,0.0211,0.0210,0.0197,0.0200,0.0200,0.0200,0.0198,0.0199,0.0200,0.0199,0.0201,0.0200,0.0200,0.0200,0.0219,0.0200,0.0199,0.0209,0.0200,0.0200,0.0200,0.0200,0.0199 wall=0.0275,0.0261,0.0260,0.0259,0.0250,0.0262,0.0251,0.0261,0.0262,0.0251,0.0251,0.0251,0.0251,0.0250,0.0250,0.0251,0.0250,0.0252,0.0252,0.0252,0.0251,0.0272,0.0250,0.0250,0.0261,0.0251,0.0251,0.0252,0.0251,0.0251
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_30e81d6e2d858283 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_bd9fa9ee6f350d4b grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_d1f14af25205fe42 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_0196e19a59309ba4 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=1536 regs=79 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=1664 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 lt site=up+bias+relu api_mnk=512,128,256 epilogue=6 beta=0 heuristics=7 chosen=0 algo_id=20 tile=16 stages=28 splitk=3 reduction=2 workspace=786432 waves=0.094
+pass=2 mlp=pt_rm_m128_d256_h512 lt site=down+residual api_mnk=256,128,512 epilogue=1 beta=1 heuristics=7 chosen=0 algo_id=20 tile=15 stages=28 splitk=8 reduction=2 workspace=1048576 waves=0.094
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x4x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x2x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x8x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x4x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cutlass_tuned wall_ms=0.0491
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cutlass wall_ms=0.0666
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=lt wall_ms=19.8068
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cublas wall_ms=1.0335
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.null wall_ms=0.0244
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.base wall_ms=0.0298
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512.base wall_ms=0.0291
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_rc wall_ms=0.0223
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_r wall_ms=0.0363
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c wall_ms=0.0220
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512 wall_ms=0.0344
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512 cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_r cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_rc cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512.base cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.base cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.null cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cublas cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=lt cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cutlass cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cutlass_tuned cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512 M=128 d=256 h=512 n=30 event_min_ms=0.0301 event_med_ms=0.0322 wall_min_ms=0.0352 wall_med_ms=0.0373 wall_max_ms=0.0413
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c M=128 d=256 h=512 n=30 event_min_ms=0.0180 event_med_ms=0.0200 wall_min_ms=0.0231 wall_med_ms=0.0251 wall_max_ms=0.0262
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_r M=128 d=256 h=512 n=30 event_min_ms=0.0302 event_med_ms=0.0319 wall_min_ms=0.0353 wall_med_ms=0.0372 wall_max_ms=0.0415
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_rc M=128 d=256 h=512 n=30 event_min_ms=0.0179 event_med_ms=0.0199 wall_min_ms=0.0229 wall_med_ms=0.0250 wall_max_ms=0.0262
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512.base M=128 d=256 h=512 n=30 event_min_ms=0.0241 event_med_ms=0.0261 wall_min_ms=0.0292 wall_med_ms=0.0312 wall_max_ms=0.0466
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.base M=128 d=256 h=512 n=30 event_min_ms=0.0239 event_med_ms=0.0261 wall_min_ms=0.0290 wall_med_ms=0.0312 wall_max_ms=0.0323
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.null M=128 d=256 h=512 n=30 event_min_ms=0.0180 event_med_ms=0.0200 wall_min_ms=0.0230 wall_med_ms=0.0252 wall_max_ms=0.0323
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cublas M=128 d=256 h=512 n=30 event_min_ms=0.0293 event_med_ms=0.0312 wall_min_ms=0.0345 wall_med_ms=0.0364 wall_max_ms=0.0610
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=lt M=128 d=256 h=512 n=30 event_min_ms=0.0205 event_med_ms=0.0211 wall_min_ms=0.0255 wall_med_ms=0.0262 wall_max_ms=0.0301
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cutlass M=128 d=256 h=512 n=30 event_min_ms=0.0621 event_med_ms=0.0630 wall_min_ms=0.0672 wall_med_ms=0.0681 wall_max_ms=0.1643
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cutlass_tuned M=128 d=256 h=512 n=30 event_min_ms=0.0188 event_med_ms=0.0201 wall_min_ms=0.0241 wall_med_ms=0.0251 wall_max_ms=0.0266
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512 event=0.0323,0.0311,0.0323,0.0322,0.0363,0.0302,0.0314,0.0324,0.0322,0.0302,0.0331,0.0304,0.0323,0.0303,0.0322,0.0321,0.0302,0.0301,0.0303,0.0302,0.0302,0.0302,0.0323,0.0331,0.0322,0.0320,0.0322,0.0322,0.0323,0.0323 wall=0.0373,0.0364,0.0374,0.0372,0.0413,0.0353,0.0364,0.0375,0.0373,0.0353,0.0381,0.0355,0.0374,0.0353,0.0375,0.0371,0.0353,0.0352,0.0354,0.0353,0.0353,0.0353,0.0374,0.0383,0.0374,0.0373,0.0374,0.0374,0.0374,0.0374
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c event=0.0200,0.0196,0.0201,0.0201,0.0199,0.0190,0.0211,0.0210,0.0195,0.0201,0.0198,0.0200,0.0211,0.0212,0.0202,0.0201,0.0199,0.0211,0.0201,0.0200,0.0180,0.0200,0.0210,0.0197,0.0197,0.0198,0.0200,0.0200,0.0200,0.0200 wall=0.0251,0.0247,0.0251,0.0252,0.0250,0.0240,0.0260,0.0261,0.0245,0.0250,0.0253,0.0251,0.0261,0.0261,0.0252,0.0250,0.0249,0.0261,0.0251,0.0250,0.0231,0.0250,0.0262,0.0251,0.0248,0.0249,0.0251,0.0252,0.0251,0.0251
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_r event=0.0336,0.0331,0.0303,0.0303,0.0322,0.0303,0.0324,0.0313,0.0322,0.0303,0.0364,0.0323,0.0313,0.0314,0.0304,0.0322,0.0311,0.0322,0.0311,0.0314,0.0302,0.0314,0.0333,0.0333,0.0303,0.0302,0.0323,0.0319,0.0322,0.0323 wall=0.0387,0.0382,0.0353,0.0353,0.0373,0.0353,0.0374,0.0363,0.0372,0.0353,0.0415,0.0373,0.0363,0.0365,0.0354,0.0373,0.0362,0.0374,0.0364,0.0364,0.0353,0.0365,0.0384,0.0385,0.0357,0.0354,0.0374,0.0374,0.0373,0.0373
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_rc event=0.0212,0.0211,0.0199,0.0200,0.0200,0.0191,0.0191,0.0190,0.0199,0.0201,0.0201,0.0211,0.0190,0.0211,0.0199,0.0199,0.0198,0.0190,0.0179,0.0180,0.0179,0.0197,0.0209,0.0210,0.0196,0.0199,0.0210,0.0199,0.0197,0.0200 wall=0.0261,0.0260,0.0249,0.0249,0.0250,0.0242,0.0241,0.0240,0.0249,0.0252,0.0251,0.0261,0.0241,0.0261,0.0248,0.0250,0.0248,0.0241,0.0229,0.0230,0.0230,0.0247,0.0260,0.0261,0.0247,0.0250,0.0262,0.0250,0.0251,0.0252
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512.base event=0.0259,0.0252,0.0262,0.0242,0.0262,0.0261,0.0252,0.0262,0.0261,0.0266,0.0271,0.0252,0.0269,0.0262,0.0262,0.0261,0.0260,0.0261,0.0262,0.0241,0.0261,0.0252,0.0262,0.0262,0.0259,0.0259,0.0261,0.0261,0.0262,0.0261 wall=0.0311,0.0303,0.0313,0.0292,0.0312,0.0313,0.0302,0.0312,0.0312,0.0466,0.0322,0.0304,0.0322,0.0312,0.0314,0.0312,0.0312,0.0312,0.0312,0.0293,0.0313,0.0303,0.0313,0.0312,0.0312,0.0310,0.0312,0.0313,0.0313,0.0312
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.base event=0.0271,0.0261,0.0261,0.0262,0.0258,0.0261,0.0262,0.0273,0.0261,0.0242,0.0263,0.0268,0.0262,0.0263,0.0242,0.0262,0.0271,0.0252,0.0240,0.0239,0.0252,0.0240,0.0259,0.0272,0.0251,0.0262,0.0261,0.0260,0.0271,0.0260 wall=0.0322,0.0311,0.0312,0.0313,0.0308,0.0311,0.0312,0.0323,0.0312,0.0292,0.0313,0.0322,0.0312,0.0313,0.0293,0.0313,0.0321,0.0302,0.0293,0.0290,0.0304,0.0291,0.0310,0.0323,0.0303,0.0312,0.0312,0.0312,0.0322,0.0312
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.null event=0.0200,0.0201,0.0198,0.0196,0.0197,0.0191,0.0198,0.0201,0.0197,0.0201,0.0197,0.0200,0.0210,0.0201,0.0199,0.0200,0.0211,0.0200,0.0193,0.0180,0.0199,0.0199,0.0207,0.0211,0.0203,0.0200,0.0212,0.0200,0.0213,0.0210 wall=0.0253,0.0252,0.0248,0.0323,0.0247,0.0242,0.0250,0.0252,0.0247,0.0252,0.0247,0.0250,0.0261,0.0252,0.0249,0.0251,0.0262,0.0251,0.0243,0.0230,0.0249,0.0250,0.0261,0.0262,0.0254,0.0252,0.0264,0.0251,0.0265,0.0262
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cublas event=0.0308,0.0332,0.0311,0.0306,0.0312,0.0316,0.0330,0.0332,0.0321,0.0308,0.0293,0.0308,0.0313,0.0323,0.0312,0.0313,0.0295,0.0324,0.0298,0.0297,0.0312,0.0313,0.0557,0.0333,0.0298,0.0322,0.0298,0.0323,0.0296,0.0308 wall=0.0358,0.0383,0.0361,0.0357,0.0362,0.0367,0.0383,0.0383,0.0371,0.0358,0.0345,0.0358,0.0364,0.0374,0.0364,0.0363,0.0347,0.0374,0.0350,0.0348,0.0364,0.0364,0.0610,0.0384,0.0349,0.0373,0.0350,0.0374,0.0349,0.0360
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=lt event=0.0228,0.0228,0.0210,0.0226,0.0209,0.0225,0.0211,0.0207,0.0230,0.0205,0.0222,0.0206,0.0227,0.0219,0.0208,0.0230,0.0211,0.0210,0.0207,0.0215,0.0220,0.0219,0.0237,0.0209,0.0210,0.0209,0.0210,0.0209,0.0210,0.0212 wall=0.0279,0.0281,0.0262,0.0276,0.0260,0.0276,0.0261,0.0258,0.0281,0.0255,0.0273,0.0256,0.0280,0.0301,0.0261,0.0282,0.0261,0.0262,0.0261,0.0266,0.0271,0.0269,0.0290,0.0260,0.0261,0.0261,0.0261,0.0260,0.0261,0.0264
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cutlass event=0.0630,0.0627,0.0629,0.0631,0.0621,0.0639,0.0621,0.0671,0.0626,0.0630,0.0631,0.0630,0.0631,0.0623,0.0640,0.0639,0.0627,0.0629,0.0630,0.0630,0.0630,0.0630,0.0630,0.0630,0.0630,0.0628,0.0630,0.0640,0.0629,0.0636 wall=0.0681,0.0678,0.0679,0.0681,0.0674,0.0691,0.0672,0.0722,0.0676,0.0681,0.0681,0.0683,0.0682,0.0679,0.0690,0.0689,0.0676,0.0679,0.0680,0.0680,0.0681,0.0680,0.1643,0.0681,0.0682,0.0680,0.0681,0.0691,0.0681,0.0690
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cutlass_tuned event=0.0215,0.0199,0.0209,0.0201,0.0200,0.0200,0.0201,0.0200,0.0199,0.0201,0.0200,0.0207,0.0202,0.0200,0.0201,0.0201,0.0188,0.0201,0.0210,0.0201,0.0200,0.0201,0.0211,0.0200,0.0210,0.0200,0.0199,0.0200,0.0200,0.0200 wall=0.0266,0.0250,0.0260,0.0251,0.0251,0.0250,0.0251,0.0251,0.0250,0.0252,0.0250,0.0258,0.0251,0.0250,0.0252,0.0251,0.0241,0.0252,0.0261,0.0251,0.0252,0.0251,0.0262,0.0251,0.0261,0.0252,0.0250,0.0251,0.0251,0.0251
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_3acc2064c56c5203 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_c334f183fd4fa5f7 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_084d81fa89b130c2 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_b5ca2aa6d233aa58 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=2048 regs=77 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=2176 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=8388608 waves=0.502
+pass=1 mlp=pt_rm_m128_d1024_h2048 lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=5242880 waves=0.314
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass_tuned wall_ms=0.0947
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass wall_ms=0.2211
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=lt wall_ms=19.3984
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cublas wall_ms=1.0241
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.0673
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.base wall_ms=0.0856
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048.base wall_ms=0.0842
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_rc wall_ms=0.0660
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_r wall_ms=0.1226
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.0649
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048 wall_ms=0.1234
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048 cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_r cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_rc cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048.base cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.base cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cublas cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=lt cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048 M=128 d=1024 h=2048 n=30 event_min_ms=0.1172 event_med_ms=0.1183 wall_min_ms=0.1223 wall_med_ms=0.1234 wall_max_ms=0.1284
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c M=128 d=1024 h=2048 n=30 event_min_ms=0.0588 event_med_ms=0.0629 wall_min_ms=0.0639 wall_med_ms=0.0680 wall_max_ms=0.0708
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_r M=128 d=1024 h=2048 n=30 event_min_ms=0.1180 event_med_ms=0.1183 wall_min_ms=0.1231 wall_med_ms=0.1234 wall_max_ms=0.1255
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_rc M=128 d=1024 h=2048 n=30 event_min_ms=0.0607 event_med_ms=0.0629 wall_min_ms=0.0649 wall_med_ms=0.0681 wall_max_ms=0.0692
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048.base M=128 d=1024 h=2048 n=30 event_min_ms=0.0794 event_med_ms=0.0815 wall_min_ms=0.0845 wall_med_ms=0.0866 wall_max_ms=0.0886
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.base M=128 d=1024 h=2048 n=30 event_min_ms=0.0805 event_med_ms=0.0835 wall_min_ms=0.0854 wall_med_ms=0.0886 wall_max_ms=0.0897
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.null M=128 d=1024 h=2048 n=30 event_min_ms=0.0589 event_med_ms=0.0614 wall_min_ms=0.0640 wall_med_ms=0.0669 wall_max_ms=0.0760
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cublas M=128 d=1024 h=2048 n=30 event_min_ms=0.0762 event_med_ms=0.0783 wall_min_ms=0.0813 wall_med_ms=0.0835 wall_max_ms=0.0856
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=lt M=128 d=1024 h=2048 n=30 event_min_ms=0.0415 event_med_ms=0.0435 wall_min_ms=0.0465 wall_med_ms=0.0486 wall_max_ms=0.0517
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass M=128 d=1024 h=2048 n=30 event_min_ms=0.2182 event_med_ms=0.2198 wall_min_ms=0.2234 wall_med_ms=0.2254 wall_max_ms=0.2272
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass_tuned M=128 d=1024 h=2048 n=30 event_min_ms=0.0630 event_med_ms=0.0648 wall_min_ms=0.0680 wall_med_ms=0.0698 wall_max_ms=0.0712
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048 event=0.1192,0.1193,0.1183,0.1183,0.1181,0.1182,0.1204,0.1182,0.1172,0.1182,0.1195,0.1183,0.1183,0.1195,0.1181,0.1182,0.1182,0.1180,0.1182,0.1181,0.1183,0.1183,0.1183,0.1193,0.1182,0.1190,0.1191,0.1183,0.1183,0.1184 wall=0.1243,0.1244,0.1233,0.1284,0.1231,0.1233,0.1245,0.1223,0.1223,0.1232,0.1245,0.1234,0.1237,0.1249,0.1232,0.1233,0.1234,0.1231,0.1234,0.1234,0.1234,0.1234,0.1234,0.1244,0.1234,0.1241,0.1244,0.1234,0.1234,0.1235
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c event=0.0640,0.0611,0.0609,0.0630,0.0611,0.0630,0.0628,0.0630,0.0628,0.0630,0.0629,0.0609,0.0631,0.0619,0.0630,0.0590,0.0629,0.0639,0.0611,0.0639,0.0611,0.0588,0.0630,0.0630,0.0640,0.0589,0.0628,0.0610,0.0630,0.0610 wall=0.0691,0.0664,0.0660,0.0681,0.0666,0.0681,0.0708,0.0682,0.0679,0.0681,0.0679,0.0661,0.0681,0.0669,0.0681,0.0644,0.0680,0.0691,0.0661,0.0690,0.0661,0.0639,0.0688,0.0681,0.0692,0.0641,0.0679,0.0661,0.0681,0.0660
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_r event=0.1198,0.1183,0.1183,0.1194,0.1183,0.1184,0.1183,0.1183,0.1180,0.1184,0.1202,0.1203,0.1183,0.1183,0.1212,0.1180,0.1188,0.1183,0.1183,0.1189,0.1182,0.1184,0.1181,0.1183,0.1183,0.1193,0.1182,0.1182,0.1183,0.1180 wall=0.1250,0.1233,0.1233,0.1245,0.1237,0.1235,0.1233,0.1234,0.1231,0.1234,0.1255,0.1245,0.1234,0.1234,0.1253,0.1231,0.1238,0.1234,0.1234,0.1243,0.1232,0.1235,0.1233,0.1234,0.1234,0.1245,0.1233,0.1236,0.1234,0.1231
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_rc event=0.0639,0.0631,0.0628,0.0629,0.0609,0.0607,0.0641,0.0620,0.0628,0.0607,0.0641,0.0629,0.0631,0.0630,0.0640,0.0620,0.0629,0.0630,0.0628,0.0627,0.0629,0.0609,0.0630,0.0620,0.0610,0.0629,0.0630,0.0627,0.0629,0.0639 wall=0.0690,0.0682,0.0681,0.0680,0.0659,0.0660,0.0692,0.0670,0.0682,0.0649,0.0692,0.0680,0.0681,0.0682,0.0682,0.0671,0.0681,0.0681,0.0678,0.0678,0.0682,0.0661,0.0683,0.0672,0.0661,0.0684,0.0682,0.0678,0.0680,0.0682
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048.base event=0.0824,0.0813,0.0813,0.0815,0.0814,0.0815,0.0825,0.0826,0.0814,0.0804,0.0815,0.0815,0.0816,0.0813,0.0803,0.0824,0.0824,0.0815,0.0816,0.0794,0.0815,0.0814,0.0825,0.0824,0.0815,0.0821,0.0813,0.0835,0.0823,0.0824 wall=0.0875,0.0865,0.0863,0.0865,0.0865,0.0866,0.0876,0.0877,0.0865,0.0855,0.0866,0.0867,0.0868,0.0863,0.0854,0.0874,0.0874,0.0865,0.0868,0.0845,0.0866,0.0866,0.0876,0.0875,0.0865,0.0872,0.0865,0.0886,0.0874,0.0874
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.base event=0.0845,0.0844,0.0813,0.0835,0.0815,0.0836,0.0845,0.0844,0.0834,0.0836,0.0845,0.0834,0.0825,0.0835,0.0820,0.0836,0.0813,0.0835,0.0814,0.0835,0.0814,0.0834,0.0819,0.0845,0.0805,0.0834,0.0814,0.0835,0.0825,0.0845 wall=0.0897,0.0895,0.0864,0.0887,0.0864,0.0887,0.0896,0.0895,0.0884,0.0886,0.0895,0.0886,0.0883,0.0885,0.0872,0.0887,0.0863,0.0887,0.0854,0.0887,0.0865,0.0886,0.0873,0.0896,0.0856,0.0885,0.0865,0.0886,0.0875,0.0897
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.null event=0.0621,0.0608,0.0619,0.0708,0.0614,0.0609,0.0610,0.0641,0.0619,0.0610,0.0619,0.0638,0.0619,0.0611,0.0620,0.0630,0.0607,0.0609,0.0589,0.0630,0.0599,0.0609,0.0640,0.0641,0.0599,0.0600,0.0609,0.0610,0.0609,0.0629 wall=0.0672,0.0659,0.0670,0.0760,0.0666,0.0660,0.0690,0.0691,0.0669,0.0660,0.0670,0.0691,0.0670,0.0661,0.0672,0.0681,0.0657,0.0659,0.0640,0.0681,0.0650,0.0659,0.0692,0.0693,0.0650,0.0650,0.0660,0.0661,0.0660,0.0681
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cublas event=0.0790,0.0774,0.0762,0.0804,0.0772,0.0784,0.0781,0.0796,0.0770,0.0774,0.0783,0.0801,0.0769,0.0804,0.0791,0.0784,0.0771,0.0774,0.0772,0.0773,0.0784,0.0784,0.0791,0.0783,0.0773,0.0774,0.0793,0.0773,0.0783,0.0793 wall=0.0842,0.0825,0.0813,0.0855,0.0824,0.0836,0.0835,0.0845,0.0821,0.0825,0.0835,0.0854,0.0844,0.0856,0.0842,0.0834,0.0822,0.0825,0.0823,0.0823,0.0835,0.0835,0.0845,0.0834,0.0824,0.0826,0.0844,0.0825,0.0834,0.0844
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=lt event=0.0432,0.0432,0.0435,0.0435,0.0435,0.0435,0.0436,0.0435,0.0434,0.0422,0.0435,0.0432,0.0436,0.0466,0.0419,0.0436,0.0423,0.0436,0.0426,0.0436,0.0434,0.0415,0.0436,0.0434,0.0445,0.0433,0.0436,0.0434,0.0435,0.0435 wall=0.0482,0.0484,0.0486,0.0485,0.0485,0.0485,0.0486,0.0487,0.0485,0.0475,0.0486,0.0484,0.0486,0.0517,0.0468,0.0486,0.0474,0.0486,0.0474,0.0487,0.0486,0.0465,0.0486,0.0487,0.0497,0.0513,0.0487,0.0485,0.0486,0.0486
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass event=0.2188,0.2205,0.2206,0.2207,0.2196,0.2187,0.2187,0.2206,0.2198,0.2206,0.2186,0.2196,0.2187,0.2206,0.2195,0.2197,0.2182,0.2207,0.2206,0.2206,0.2187,0.2187,0.2186,0.2217,0.2196,0.2207,0.2187,0.2206,0.2207,0.2207 wall=0.2238,0.2255,0.2256,0.2257,0.2244,0.2238,0.2238,0.2256,0.2254,0.2256,0.2238,0.2247,0.2238,0.2257,0.2238,0.2248,0.2234,0.2258,0.2260,0.2257,0.2238,0.2238,0.2242,0.2272,0.2247,0.2260,0.2238,0.2257,0.2259,0.2257
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass_tuned event=0.0645,0.0651,0.0660,0.0631,0.0641,0.0660,0.0630,0.0651,0.0630,0.0631,0.0630,0.0661,0.0651,0.0641,0.0650,0.0660,0.0630,0.0661,0.0650,0.0630,0.0630,0.0640,0.0630,0.0648,0.0651,0.0650,0.0651,0.0641,0.0648,0.0630 wall=0.0706,0.0702,0.0711,0.0681,0.0691,0.0711,0.0681,0.0702,0.0683,0.0682,0.0681,0.0711,0.0701,0.0681,0.0691,0.0712,0.0681,0.0712,0.0701,0.0681,0.0680,0.0690,0.0682,0.0699,0.0702,0.0701,0.0701,0.0695,0.0698,0.0682
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_3acc2064c56c5203 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_c334f183fd4fa5f7 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_084d81fa89b130c2 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_b5ca2aa6d233aa58 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=2048 regs=77 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=2176 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=8388608 waves=0.502
+pass=2 mlp=pt_rm_m128_d1024_h2048 lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=5242880 waves=0.314
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass_tuned wall_ms=0.0933
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass wall_ms=0.2218
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=lt wall_ms=19.1048
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cublas wall_ms=1.0598
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.0662
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.base wall_ms=0.0873
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048.base wall_ms=0.0852
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_rc wall_ms=0.0646
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_r wall_ms=0.1237
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.0639
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048 wall_ms=0.1224
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048 cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_r cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_rc cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048.base cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.base cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cublas cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=lt cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048 M=128 d=1024 h=2048 n=30 event_min_ms=0.1180 event_med_ms=0.1184 wall_min_ms=0.1232 wall_med_ms=0.1234 wall_max_ms=0.1264
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c M=128 d=1024 h=2048 n=30 event_min_ms=0.0608 event_med_ms=0.0628 wall_min_ms=0.0660 wall_med_ms=0.0679 wall_max_ms=0.0692
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_r M=128 d=1024 h=2048 n=30 event_min_ms=0.1180 event_med_ms=0.1184 wall_min_ms=0.1231 wall_med_ms=0.1234 wall_max_ms=0.1265
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_rc M=128 d=1024 h=2048 n=30 event_min_ms=0.0590 event_med_ms=0.0630 wall_min_ms=0.0640 wall_med_ms=0.0681 wall_max_ms=0.0695
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048.base M=128 d=1024 h=2048 n=30 event_min_ms=0.0795 event_med_ms=0.0815 wall_min_ms=0.0845 wall_med_ms=0.0866 wall_max_ms=0.0896
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.base M=128 d=1024 h=2048 n=30 event_min_ms=0.0804 event_med_ms=0.0834 wall_min_ms=0.0856 wall_med_ms=0.0885 wall_max_ms=0.1049
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.null M=128 d=1024 h=2048 n=30 event_min_ms=0.0588 event_med_ms=0.0619 wall_min_ms=0.0640 wall_med_ms=0.0670 wall_max_ms=0.0753
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cublas M=128 d=1024 h=2048 n=30 event_min_ms=0.0762 event_med_ms=0.0773 wall_min_ms=0.0813 wall_med_ms=0.0825 wall_max_ms=0.0864
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=lt M=128 d=1024 h=2048 n=30 event_min_ms=0.0426 event_med_ms=0.0435 wall_min_ms=0.0475 wall_med_ms=0.0486 wall_max_ms=0.0568
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass M=128 d=1024 h=2048 n=30 event_min_ms=0.2180 event_med_ms=0.2196 wall_min_ms=0.2232 wall_med_ms=0.2247 wall_max_ms=0.2268
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass_tuned M=128 d=1024 h=2048 n=30 event_min_ms=0.0630 event_med_ms=0.0649 wall_min_ms=0.0680 wall_med_ms=0.0700 wall_max_ms=0.0723
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048 event=0.1201,0.1193,0.1183,0.1183,0.1212,0.1182,0.1193,0.1192,0.1191,0.1181,0.1181,0.1182,0.1191,0.1183,0.1183,0.1184,0.1199,0.1191,0.1184,0.1183,0.1183,0.1182,0.1193,0.1194,0.1182,0.1184,0.1180,0.1183,0.1193,0.1194 wall=0.1253,0.1243,0.1233,0.1233,0.1264,0.1233,0.1245,0.1242,0.1243,0.1232,0.1233,0.1233,0.1242,0.1234,0.1233,0.1234,0.1250,0.1242,0.1234,0.1234,0.1233,0.1234,0.1243,0.1245,0.1234,0.1234,0.1234,0.1234,0.1244,0.1244
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c event=0.0640,0.0629,0.0629,0.0610,0.0628,0.0609,0.0610,0.0641,0.0629,0.0609,0.0609,0.0629,0.0630,0.0610,0.0631,0.0630,0.0639,0.0641,0.0610,0.0608,0.0608,0.0630,0.0640,0.0628,0.0610,0.0610,0.0613,0.0608,0.0610,0.0630 wall=0.0692,0.0684,0.0680,0.0661,0.0679,0.0660,0.0661,0.0691,0.0680,0.0660,0.0660,0.0681,0.0682,0.0660,0.0682,0.0681,0.0690,0.0692,0.0660,0.0660,0.0661,0.0681,0.0691,0.0679,0.0661,0.0660,0.0665,0.0661,0.0661,0.0681
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_r event=0.1193,0.1192,0.1182,0.1183,0.1182,0.1183,0.1192,0.1193,0.1181,0.1184,0.1213,0.1181,0.1184,0.1192,0.1192,0.1182,0.1188,0.1192,0.1184,0.1183,0.1184,0.1180,0.1182,0.1183,0.1183,0.1183,0.1183,0.1182,0.1193,0.1194 wall=0.1243,0.1242,0.1233,0.1234,0.1233,0.1234,0.1243,0.1244,0.1232,0.1234,0.1265,0.1234,0.1235,0.1244,0.1243,0.1233,0.1238,0.1243,0.1234,0.1235,0.1234,0.1231,0.1234,0.1233,0.1233,0.1233,0.1239,0.1233,0.1244,0.1243
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_rc event=0.0619,0.0639,0.0609,0.0630,0.0629,0.0630,0.0640,0.0630,0.0607,0.0609,0.0626,0.0630,0.0631,0.0631,0.0620,0.0630,0.0637,0.0620,0.0609,0.0598,0.0610,0.0590,0.0630,0.0641,0.0631,0.0610,0.0628,0.0628,0.0630,0.0641 wall=0.0669,0.0691,0.0659,0.0681,0.0680,0.0682,0.0691,0.0681,0.0658,0.0660,0.0680,0.0681,0.0681,0.0681,0.0671,0.0681,0.0689,0.0671,0.0660,0.0649,0.0660,0.0640,0.0682,0.0695,0.0682,0.0661,0.0680,0.0681,0.0680,0.0692
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048.base event=0.0823,0.0833,0.0814,0.0815,0.0813,0.0814,0.0824,0.0826,0.0814,0.0813,0.0824,0.0808,0.0825,0.0825,0.0814,0.0824,0.0824,0.0825,0.0815,0.0815,0.0814,0.0815,0.0814,0.0811,0.0814,0.0795,0.0812,0.0812,0.0823,0.0833 wall=0.0876,0.0885,0.0865,0.0866,0.0864,0.0865,0.0876,0.0876,0.0865,0.0896,0.0876,0.0864,0.0876,0.0876,0.0866,0.0876,0.0874,0.0876,0.0865,0.0865,0.0865,0.0865,0.0865,0.0862,0.0865,0.0845,0.0866,0.0865,0.0876,0.0874
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.base event=0.0834,0.0844,0.0834,0.0835,0.0812,0.0834,0.0825,0.0844,0.0813,0.0834,0.0835,0.0835,0.0844,0.0835,0.0814,0.0849,0.0832,0.0844,0.0812,0.0832,0.0834,0.0835,0.0824,0.0832,0.0804,0.0815,0.0834,0.0831,0.0845,0.0818 wall=0.0884,0.0894,0.0885,0.0885,0.0864,0.0885,0.0876,0.0895,0.0864,0.0887,0.0886,0.0886,0.0895,0.0885,0.0864,0.1049,0.0883,0.0895,0.0862,0.0885,0.0885,0.0886,0.0874,0.0882,0.0856,0.0865,0.0886,0.0885,0.0897,0.0865
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.null event=0.0639,0.0620,0.0622,0.0605,0.0616,0.0610,0.0619,0.0620,0.0617,0.0617,0.0619,0.0588,0.0629,0.0610,0.0610,0.0630,0.0626,0.0630,0.0609,0.0620,0.0640,0.0589,0.0610,0.0630,0.0619,0.0630,0.0608,0.0629,0.0618,0.0620 wall=0.0691,0.0671,0.0676,0.0753,0.0668,0.0661,0.0669,0.0671,0.0668,0.0669,0.0670,0.0640,0.0680,0.0660,0.0661,0.0680,0.0677,0.0681,0.0660,0.0671,0.0691,0.0640,0.0661,0.0681,0.0670,0.0681,0.0659,0.0681,0.0670,0.0661
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cublas event=0.0771,0.0781,0.0762,0.0793,0.0812,0.0773,0.0763,0.0774,0.0770,0.0773,0.0782,0.0773,0.0764,0.0785,0.0763,0.0780,0.0771,0.0794,0.0769,0.0793,0.0763,0.0773,0.0784,0.0783,0.0783,0.0764,0.0784,0.0771,0.0763,0.0793 wall=0.0823,0.0834,0.0814,0.0845,0.0864,0.0824,0.0814,0.0825,0.0823,0.0825,0.0834,0.0858,0.0814,0.0836,0.0813,0.0831,0.0823,0.0844,0.0821,0.0843,0.0813,0.0825,0.0835,0.0834,0.0835,0.0814,0.0834,0.0825,0.0814,0.0834
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=lt event=0.0441,0.0434,0.0435,0.0434,0.0441,0.0435,0.0435,0.0435,0.0443,0.0435,0.0433,0.0441,0.0436,0.0443,0.0426,0.0435,0.0432,0.0435,0.0436,0.0436,0.0426,0.0435,0.0435,0.0433,0.0435,0.0436,0.0426,0.0435,0.0435,0.0434 wall=0.0493,0.0485,0.0486,0.0485,0.0494,0.0486,0.0486,0.0486,0.0493,0.0486,0.0484,0.0491,0.0487,0.0568,0.0476,0.0486,0.0482,0.0486,0.0490,0.0487,0.0477,0.0486,0.0485,0.0486,0.0486,0.0486,0.0476,0.0486,0.0486,0.0475
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass event=0.2187,0.2193,0.2207,0.2208,0.2204,0.2196,0.2187,0.2216,0.2182,0.2196,0.2186,0.2197,0.2187,0.2185,0.2208,0.2207,0.2181,0.2205,0.2188,0.2196,0.2186,0.2206,0.2188,0.2207,0.2207,0.2206,0.2187,0.2196,0.2180,0.2207 wall=0.2238,0.2246,0.2258,0.2258,0.2255,0.2246,0.2238,0.2268,0.2235,0.2247,0.2237,0.2248,0.2237,0.2236,0.2258,0.2258,0.2232,0.2258,0.2238,0.2247,0.2237,0.2257,0.2238,0.2258,0.2258,0.2258,0.2237,0.2246,0.2236,0.2255
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass_tuned event=0.0663,0.0648,0.0648,0.0630,0.0631,0.0651,0.0650,0.0648,0.0640,0.0649,0.0640,0.0661,0.0651,0.0630,0.0641,0.0660,0.0630,0.0650,0.0660,0.0630,0.0630,0.0660,0.0631,0.0650,0.0658,0.0649,0.0630,0.0650,0.0649,0.0647 wall=0.0723,0.0698,0.0700,0.0680,0.0682,0.0701,0.0701,0.0700,0.0691,0.0701,0.0692,0.0710,0.0702,0.0681,0.0691,0.0711,0.0681,0.0701,0.0711,0.0680,0.0681,0.0711,0.0681,0.0701,0.0711,0.0700,0.0681,0.0702,0.0700,0.0699
+-- whole MLP programs: iter ms, 30 processes per arm, ABBA
+value-gate prog=pt_rm_m128_d256_h512 pass
+trace prog=pt_rm_m128_d256_h512 mapal_gpu_trace op=launch kernel=mapal_tile_d506a71f3d8109c6 ms=0.016 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_09927473a38cf5dc ms=0.023 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=242.734 lead_ms=0.101 init_ms=93.286 ctx_ms=148.516 module_ms=0.870 alloc_ms=0.148 h2d_ms=0.000 kernel_ms=0.039 gen_ms=0.056 d2h_ms=0.042 free_ms=0.121 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d256_h512_c pass
+trace prog=pt_rm_m128_d256_h512_c mapal_gpu_trace op=launch kernel=mapal_tile_385f1ac282de6d85 ms=0.015 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_7d8bf3206d8af181 ms=0.018 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=236.917 lead_ms=0.102 init_ms=89.404 ctx_ms=146.763 module_ms=0.663 alloc_ms=0.415 h2d_ms=0.000 kernel_ms=0.033 gen_ms=0.093 d2h_ms=0.081 free_ms=0.215 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d256_h512.base pass
+trace prog=pt_rm_m128_d256_h512.base mapal_gpu_trace op=launch kernel=mapal_tile_d506a71f3d8109c6 ms=0.017 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_09927473a38cf5dc ms=0.023 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=246.166 lead_ms=0.113 init_ms=96.069 ctx_ms=149.638 module_ms=0.378 alloc_ms=0.409 h2d_ms=0.000 kernel_ms=0.040 gen_ms=0.081 d2h_ms=0.070 free_ms=0.235 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d256_h512_c.base pass
+trace prog=pt_rm_m128_d256_h512_c.base mapal_gpu_trace op=launch kernel=mapal_tile_385f1ac282de6d85 ms=0.016 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_7d8bf3206d8af181 ms=0.022 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=240.977 lead_ms=0.123 init_ms=91.253 ctx_ms=149.273 module_ms=0.340 alloc_ms=0.382 h2d_ms=0.000 kernel_ms=0.039 gen_ms=0.077 d2h_ms=0.075 free_ms=0.200 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=1 wall_us=402568 out=[1612.2343 1322.6953 iter ms=0.173875 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=1 wall_us=364218 out=[1612.2343 1322.6953 iter ms=0.038201 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=1 wall_us=372577 out=[1612.2351 1322.6967 iter ms=0.10674299999999999 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=1 wall_us=385222 out=[1612.2351 1322.6967 iter ms=0.030631 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=1 wall_us=362554 out=[1612.2343 1322.6953 iter ms=0.09841199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=1 wall_us=371538 out=[1612.2343 1322.6953 iter ms=0.03349100000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=1 wall_us=366143 out=[1612.2351 1322.6967 iter ms=0.080972 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=1 wall_us=365462 out=[1612.2351 1322.6967 iter ms=0.034471 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=2 wall_us=362932 out=[1612.2351 1322.6967 iter ms=0.040161 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=2 wall_us=362880 out=[1612.2351 1322.6967 iter ms=0.081452 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=2 wall_us=367586 out=[1612.2343 1322.6953 iter ms=0.032211 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=2 wall_us=373953 out=[1612.2343 1322.6953 iter ms=0.08542200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=2 wall_us=374605 out=[1612.2351 1322.6967 iter ms=0.030291 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=2 wall_us=370979 out=[1612.2351 1322.6967 iter ms=0.12198299999999998 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=2 wall_us=364790 out=[1612.2343 1322.6953 iter ms=0.038541 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=2 wall_us=374704 out=[1612.2343 1322.6953 iter ms=0.169434 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=3 wall_us=355896 out=[1612.2343 1322.6953 iter ms=0.17139500000000002 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=3 wall_us=369874 out=[1612.2343 1322.6953 iter ms=0.038191 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=3 wall_us=367447 out=[1612.2351 1322.6967 iter ms=0.121183 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=3 wall_us=368390 out=[1612.2351 1322.6967 iter ms=0.023451 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=3 wall_us=377013 out=[1612.2343 1322.6953 iter ms=0.08896299999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=3 wall_us=372327 out=[1612.2343 1322.6953 iter ms=0.03351 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=3 wall_us=349202 out=[1612.2351 1322.6967 iter ms=0.055192000000000005 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=3 wall_us=363954 out=[1612.2351 1322.6967 iter ms=0.034651 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=4 wall_us=370043 out=[1612.2351 1322.6967 iter ms=0.033941 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=4 wall_us=370771 out=[1612.2351 1322.6967 iter ms=0.080842 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=4 wall_us=366340 out=[1612.2343 1322.6953 iter ms=0.033371000000000005 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=4 wall_us=366508 out=[1612.2343 1322.6953 iter ms=0.08692199999999999 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=4 wall_us=371089 out=[1612.2351 1322.6967 iter ms=0.037150999999999997 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=4 wall_us=367968 out=[1612.2351 1322.6967 iter ms=0.11842300000000001 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=4 wall_us=367395 out=[1612.2343 1322.6953 iter ms=0.038671000000000004 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=4 wall_us=381704 out=[1612.2343 1322.6953 iter ms=0.170904 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=5 wall_us=352273 out=[1612.2343 1322.6953 iter ms=0.17143400000000003 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=5 wall_us=356126 out=[1612.2343 1322.6953 iter ms=0.03773100000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=5 wall_us=371148 out=[1612.2351 1322.6967 iter ms=0.120363 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=5 wall_us=368540 out=[1612.2351 1322.6967 iter ms=0.030631 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=5 wall_us=350754 out=[1612.2343 1322.6953 iter ms=0.085112 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=5 wall_us=366194 out=[1612.2343 1322.6953 iter ms=0.032680999999999995 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=5 wall_us=385549 out=[1612.2351 1322.6967 iter ms=0.080692 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=5 wall_us=366119 out=[1612.2351 1322.6967 iter ms=0.034171 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=6 wall_us=367291 out=[1612.2351 1322.6967 iter ms=0.034211000000000005 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=6 wall_us=373014 out=[1612.2351 1322.6967 iter ms=0.08254199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=6 wall_us=397696 out=[1612.2343 1322.6953 iter ms=0.033961 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=6 wall_us=368056 out=[1612.2343 1322.6953 iter ms=0.08754200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=6 wall_us=368176 out=[1612.2351 1322.6967 iter ms=0.030531000000000003 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=6 wall_us=368185 out=[1612.2351 1322.6967 iter ms=0.126373 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=6 wall_us=367021 out=[1612.2343 1322.6953 iter ms=0.035821 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=6 wall_us=367450 out=[1612.2343 1322.6953 iter ms=0.168624 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=7 wall_us=353085 out=[1612.2343 1322.6953 iter ms=0.17348400000000003 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=7 wall_us=368419 out=[1612.2343 1322.6953 iter ms=0.038081000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=7 wall_us=373952 out=[1612.2351 1322.6967 iter ms=0.130763 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=7 wall_us=372300 out=[1612.2351 1322.6967 iter ms=0.03006 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=7 wall_us=380537 out=[1612.2343 1322.6953 iter ms=0.089243 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=7 wall_us=374874 out=[1612.2343 1322.6953 iter ms=0.034101000000000006 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=7 wall_us=364862 out=[1612.2351 1322.6967 iter ms=0.079592 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=7 wall_us=372009 out=[1612.2351 1322.6967 iter ms=0.033521 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=8 wall_us=373470 out=[1612.2351 1322.6967 iter ms=0.034831 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=8 wall_us=377194 out=[1612.2351 1322.6967 iter ms=0.083982 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=8 wall_us=371264 out=[1612.2343 1322.6953 iter ms=0.033791 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=8 wall_us=373615 out=[1612.2343 1322.6953 iter ms=0.085212 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=8 wall_us=384285 out=[1612.2351 1322.6967 iter ms=0.027801 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=8 wall_us=365379 out=[1612.2351 1322.6967 iter ms=0.119943 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=8 wall_us=374114 out=[1612.2343 1322.6953 iter ms=0.03775099999999999 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=8 wall_us=368595 out=[1612.2343 1322.6953 iter ms=0.157544 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=9 wall_us=376203 out=[1612.2343 1322.6953 iter ms=0.174464 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=9 wall_us=373389 out=[1612.2343 1322.6953 iter ms=0.038181 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=9 wall_us=370603 out=[1612.2351 1322.6967 iter ms=0.121363 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=9 wall_us=366880 out=[1612.2351 1322.6967 iter ms=0.030651000000000005 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=9 wall_us=371390 out=[1612.2343 1322.6953 iter ms=0.087262 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=9 wall_us=370544 out=[1612.2343 1322.6953 iter ms=0.034040999999999995 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=9 wall_us=372908 out=[1612.2351 1322.6967 iter ms=0.081662 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=9 wall_us=370293 out=[1612.2351 1322.6967 iter ms=0.034180999999999996 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=10 wall_us=369479 out=[1612.2351 1322.6967 iter ms=0.034481000000000005 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=10 wall_us=379466 out=[1612.2351 1322.6967 iter ms=0.082052 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=10 wall_us=373506 out=[1612.2343 1322.6953 iter ms=0.034291 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=10 wall_us=368349 out=[1612.2343 1322.6953 iter ms=0.087912 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=10 wall_us=368056 out=[1612.2351 1322.6967 iter ms=0.023221000000000002 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=10 wall_us=367887 out=[1612.2351 1322.6967 iter ms=0.133004 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=10 wall_us=369596 out=[1612.2343 1322.6953 iter ms=0.039171 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=10 wall_us=380219 out=[1612.2343 1322.6953 iter ms=0.17048400000000002 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=11 wall_us=380160 out=[1612.2343 1322.6953 iter ms=0.16929400000000003 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=11 wall_us=372473 out=[1612.2343 1322.6953 iter ms=0.038541 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=11 wall_us=373979 out=[1612.2351 1322.6967 iter ms=0.119823 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=11 wall_us=374937 out=[1612.2351 1322.6967 iter ms=0.030471 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=11 wall_us=378129 out=[1612.2343 1322.6953 iter ms=0.09003199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=11 wall_us=380608 out=[1612.2343 1322.6953 iter ms=0.034151 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=11 wall_us=369435 out=[1612.2351 1322.6967 iter ms=0.08225199999999999 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=11 wall_us=374516 out=[1612.2351 1322.6967 iter ms=0.03414 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=12 wall_us=375111 out=[1612.2351 1322.6967 iter ms=0.034511 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=12 wall_us=371063 out=[1612.2351 1322.6967 iter ms=0.08101199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=12 wall_us=370259 out=[1612.2343 1322.6953 iter ms=0.033451 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=12 wall_us=366702 out=[1612.2343 1322.6953 iter ms=0.08761300000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=12 wall_us=372421 out=[1612.2351 1322.6967 iter ms=0.03001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=12 wall_us=371688 out=[1612.2351 1322.6967 iter ms=0.113653 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=12 wall_us=372897 out=[1612.2343 1322.6953 iter ms=0.039741 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=12 wall_us=386756 out=[1612.2343 1322.6953 iter ms=0.17532399999999998 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=13 wall_us=376327 out=[1612.2343 1322.6953 iter ms=0.21614499999999998 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=13 wall_us=366261 out=[1612.2343 1322.6953 iter ms=0.036951 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=13 wall_us=370002 out=[1612.2351 1322.6967 iter ms=0.12151300000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=13 wall_us=371652 out=[1612.2351 1322.6967 iter ms=0.030511 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=13 wall_us=370007 out=[1612.2343 1322.6953 iter ms=0.093052 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=13 wall_us=370368 out=[1612.2343 1322.6953 iter ms=0.035091000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=13 wall_us=371143 out=[1612.2351 1322.6967 iter ms=0.08304199999999999 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=13 wall_us=376803 out=[1612.2351 1322.6967 iter ms=0.034179999999999995 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=14 wall_us=369911 out=[1612.2351 1322.6967 iter ms=0.033681 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=14 wall_us=381433 out=[1612.2351 1322.6967 iter ms=0.076822 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=14 wall_us=374050 out=[1612.2343 1322.6953 iter ms=0.034291 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=14 wall_us=353263 out=[1612.2343 1322.6953 iter ms=0.088072 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=14 wall_us=371398 out=[1612.2351 1322.6967 iter ms=0.029261000000000002 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=14 wall_us=371729 out=[1612.2351 1322.6967 iter ms=0.121133 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=14 wall_us=369981 out=[1612.2343 1322.6953 iter ms=0.037710999999999995 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=14 wall_us=379930 out=[1612.2343 1322.6953 iter ms=0.171574 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=15 wall_us=373937 out=[1612.2343 1322.6953 iter ms=0.174784 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=15 wall_us=373882 out=[1612.2343 1322.6953 iter ms=0.040801000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=15 wall_us=370556 out=[1612.2351 1322.6967 iter ms=0.12063299999999999 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=15 wall_us=376318 out=[1612.2351 1322.6967 iter ms=0.029911 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=15 wall_us=378199 out=[1612.2343 1322.6953 iter ms=0.08868199999999998 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=15 wall_us=368889 out=[1612.2343 1322.6953 iter ms=0.033250999999999996 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=15 wall_us=376164 out=[1612.2351 1322.6967 iter ms=0.082272 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=15 wall_us=368378 out=[1612.2351 1322.6967 iter ms=0.040290999999999993 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=16 wall_us=369708 out=[1612.2351 1322.6967 iter ms=0.03371 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=16 wall_us=371131 out=[1612.2351 1322.6967 iter ms=0.08257199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=16 wall_us=378270 out=[1612.2343 1322.6953 iter ms=0.033861 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=16 wall_us=374130 out=[1612.2343 1322.6953 iter ms=0.08701199999999999 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=16 wall_us=368124 out=[1612.2351 1322.6967 iter ms=0.029941000000000002 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=16 wall_us=368729 out=[1612.2351 1322.6967 iter ms=0.120843 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=16 wall_us=369536 out=[1612.2343 1322.6953 iter ms=0.039521 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=16 wall_us=366881 out=[1612.2343 1322.6953 iter ms=0.171075 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=17 wall_us=383173 out=[1612.2343 1322.6953 iter ms=0.17761499999999997 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=17 wall_us=381679 out=[1612.2343 1322.6953 iter ms=0.038730999999999995 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=17 wall_us=378436 out=[1612.2351 1322.6967 iter ms=0.12240300000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=17 wall_us=366672 out=[1612.2351 1322.6967 iter ms=0.029421000000000003 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=17 wall_us=353584 out=[1612.2343 1322.6953 iter ms=0.087243 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=17 wall_us=369091 out=[1612.2343 1322.6953 iter ms=0.034221 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=17 wall_us=367716 out=[1612.2351 1322.6967 iter ms=0.08260200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=17 wall_us=368897 out=[1612.2351 1322.6967 iter ms=0.033891000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=18 wall_us=365248 out=[1612.2351 1322.6967 iter ms=0.034150999999999994 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=18 wall_us=360641 out=[1612.2351 1322.6967 iter ms=0.084632 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=18 wall_us=485919 out=[1612.2343 1322.6953 iter ms=0.033251 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=18 wall_us=502621 out=[1612.2343 1322.6953 iter ms=0.058201 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=18 wall_us=418968 out=[1612.2351 1322.6967 iter ms=0.030161 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=18 wall_us=379019 out=[1612.2351 1322.6967 iter ms=0.12297299999999999 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=18 wall_us=377094 out=[1612.2343 1322.6953 iter ms=0.037971 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=18 wall_us=377985 out=[1612.2343 1322.6953 iter ms=0.16810399999999998 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=19 wall_us=377011 out=[1612.2343 1322.6953 iter ms=0.167054 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=19 wall_us=378982 out=[1612.2343 1322.6953 iter ms=0.039341 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=19 wall_us=386288 out=[1612.2351 1322.6967 iter ms=0.122593 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=19 wall_us=373928 out=[1612.2351 1322.6967 iter ms=0.03171 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=19 wall_us=370674 out=[1612.2343 1322.6953 iter ms=0.088602 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=19 wall_us=372531 out=[1612.2343 1322.6953 iter ms=0.030730999999999998 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=19 wall_us=372203 out=[1612.2351 1322.6967 iter ms=0.08335200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=19 wall_us=378452 out=[1612.2351 1322.6967 iter ms=0.03503100000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=20 wall_us=375191 out=[1612.2351 1322.6967 iter ms=0.034581 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=20 wall_us=373183 out=[1612.2351 1322.6967 iter ms=0.081702 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=20 wall_us=377010 out=[1612.2343 1322.6953 iter ms=0.034341 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=20 wall_us=387607 out=[1612.2343 1322.6953 iter ms=0.08756200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=20 wall_us=356512 out=[1612.2351 1322.6967 iter ms=0.031060000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=20 wall_us=370823 out=[1612.2351 1322.6967 iter ms=0.12082299999999999 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=20 wall_us=368755 out=[1612.2343 1322.6953 iter ms=0.038991 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=20 wall_us=378148 out=[1612.2343 1322.6953 iter ms=0.17372500000000002 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=21 wall_us=372328 out=[1612.2343 1322.6953 iter ms=0.191974 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=21 wall_us=376302 out=[1612.2343 1322.6953 iter ms=0.038061 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=21 wall_us=372648 out=[1612.2351 1322.6967 iter ms=0.120383 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=21 wall_us=366600 out=[1612.2351 1322.6967 iter ms=0.030141 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=21 wall_us=392420 out=[1612.2343 1322.6953 iter ms=0.081412 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=21 wall_us=370811 out=[1612.2343 1322.6953 iter ms=0.03415100000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=21 wall_us=372764 out=[1612.2351 1322.6967 iter ms=0.081272 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=21 wall_us=368120 out=[1612.2351 1322.6967 iter ms=0.041031 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=22 wall_us=365860 out=[1612.2351 1322.6967 iter ms=0.033981000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=22 wall_us=374168 out=[1612.2351 1322.6967 iter ms=0.081382 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=22 wall_us=366227 out=[1612.2343 1322.6953 iter ms=0.034201 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=22 wall_us=367922 out=[1612.2343 1322.6953 iter ms=0.088622 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=22 wall_us=352902 out=[1612.2351 1322.6967 iter ms=0.030730000000000004 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=22 wall_us=371958 out=[1612.2351 1322.6967 iter ms=0.121893 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=22 wall_us=389973 out=[1612.2343 1322.6953 iter ms=0.038421000000000004 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=22 wall_us=369805 out=[1612.2343 1322.6953 iter ms=0.162304 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=23 wall_us=370983 out=[1612.2343 1322.6953 iter ms=0.16756400000000002 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=23 wall_us=368816 out=[1612.2343 1322.6953 iter ms=0.038031 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=23 wall_us=369007 out=[1612.2351 1322.6967 iter ms=0.122573 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=23 wall_us=374794 out=[1612.2351 1322.6967 iter ms=0.029391 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=23 wall_us=371239 out=[1612.2343 1322.6953 iter ms=0.08498199999999999 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=23 wall_us=376294 out=[1612.2343 1322.6953 iter ms=0.034881 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=23 wall_us=378466 out=[1612.2351 1322.6967 iter ms=0.082112 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=23 wall_us=370597 out=[1612.2351 1322.6967 iter ms=0.034191000000000006 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=24 wall_us=368579 out=[1612.2351 1322.6967 iter ms=0.033111 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=24 wall_us=372809 out=[1612.2351 1322.6967 iter ms=0.081442 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=24 wall_us=368361 out=[1612.2343 1322.6953 iter ms=0.033641000000000004 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=24 wall_us=377320 out=[1612.2343 1322.6953 iter ms=0.088173 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=24 wall_us=377984 out=[1612.2351 1322.6967 iter ms=0.03015 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=24 wall_us=375329 out=[1612.2351 1322.6967 iter ms=0.11665299999999999 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=24 wall_us=372226 out=[1612.2343 1322.6953 iter ms=0.037710999999999995 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=24 wall_us=369466 out=[1612.2343 1322.6953 iter ms=0.172154 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=25 wall_us=371685 out=[1612.2343 1322.6953 iter ms=0.171724 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=25 wall_us=376958 out=[1612.2343 1322.6953 iter ms=0.038801 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=25 wall_us=368363 out=[1612.2351 1322.6967 iter ms=0.126313 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=25 wall_us=393308 out=[1612.2351 1322.6967 iter ms=0.030541 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=25 wall_us=379319 out=[1612.2343 1322.6953 iter ms=0.085852 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=25 wall_us=365969 out=[1612.2343 1322.6953 iter ms=0.03415 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=25 wall_us=347989 out=[1612.2351 1322.6967 iter ms=0.08131200000000001 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=25 wall_us=370107 out=[1612.2351 1322.6967 iter ms=0.034391000000000005 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=26 wall_us=403629 out=[1612.2351 1322.6967 iter ms=0.034121 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=26 wall_us=384397 out=[1612.2351 1322.6967 iter ms=0.07962199999999998 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=26 wall_us=375015 out=[1612.2343 1322.6953 iter ms=0.035181000000000004 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=26 wall_us=352156 out=[1612.2343 1322.6953 iter ms=0.08843300000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=26 wall_us=371144 out=[1612.2351 1322.6967 iter ms=0.02942 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=26 wall_us=370015 out=[1612.2351 1322.6967 iter ms=0.135404 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=26 wall_us=379048 out=[1612.2343 1322.6953 iter ms=0.038721 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=26 wall_us=374427 out=[1612.2343 1322.6953 iter ms=0.175224 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=27 wall_us=372620 out=[1612.2343 1322.6953 iter ms=0.183205 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=27 wall_us=370939 out=[1612.2343 1322.6953 iter ms=0.037811 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=27 wall_us=417292 out=[1612.2351 1322.6967 iter ms=0.11976300000000001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=27 wall_us=361331 out=[1612.2351 1322.6967 iter ms=0.030771000000000003 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=27 wall_us=375081 out=[1612.2343 1322.6953 iter ms=0.098862 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=27 wall_us=378148 out=[1612.2343 1322.6953 iter ms=0.034181 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=27 wall_us=369105 out=[1612.2351 1322.6967 iter ms=0.082572 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=27 wall_us=370895 out=[1612.2351 1322.6967 iter ms=0.034621000000000006 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=28 wall_us=353252 out=[1612.2351 1322.6967 iter ms=0.034071 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=28 wall_us=372635 out=[1612.2351 1322.6967 iter ms=0.07647199999999998 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=28 wall_us=367611 out=[1612.2343 1322.6953 iter ms=0.03403 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=28 wall_us=373825 out=[1612.2343 1322.6953 iter ms=0.09335299999999999 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=28 wall_us=370702 out=[1612.2351 1322.6967 iter ms=0.030001 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=28 wall_us=377679 out=[1612.2351 1322.6967 iter ms=0.125273 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=28 wall_us=374735 out=[1612.2343 1322.6953 iter ms=0.038121 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=28 wall_us=374134 out=[1612.2343 1322.6953 iter ms=0.172574 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=29 wall_us=370331 out=[1612.2343 1322.6953 iter ms=0.18763399999999997 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=29 wall_us=371850 out=[1612.2343 1322.6953 iter ms=0.040311 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=29 wall_us=369408 out=[1612.2351 1322.6967 iter ms=0.119873 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=29 wall_us=373709 out=[1612.2351 1322.6967 iter ms=0.029811 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=29 wall_us=369327 out=[1612.2343 1322.6953 iter ms=0.085983 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=29 wall_us=348781 out=[1612.2343 1322.6953 iter ms=0.034111 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=29 wall_us=374652 out=[1612.2351 1322.6967 iter ms=0.085692 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=29 wall_us=370512 out=[1612.2351 1322.6967 iter ms=0.034141000000000005 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=EAGER rep=30 wall_us=370140 out=[1612.2351 1322.6967 iter ms=0.034091 ]
+prog prog=pt_rm_m128_d256_h512_c.base loading=LAZY rep=30 wall_us=370572 out=[1612.2351 1322.6967 iter ms=0.07693200000000001 ]
+prog prog=pt_rm_m128_d256_h512.base loading=EAGER rep=30 wall_us=381802 out=[1612.2343 1322.6953 iter ms=0.044181 ]
+prog prog=pt_rm_m128_d256_h512.base loading=LAZY rep=30 wall_us=369262 out=[1612.2343 1322.6953 iter ms=0.087722 ]
+prog prog=pt_rm_m128_d256_h512_c loading=EAGER rep=30 wall_us=369701 out=[1612.2351 1322.6967 iter ms=0.029811 ]
+prog prog=pt_rm_m128_d256_h512_c loading=LAZY rep=30 wall_us=365700 out=[1612.2351 1322.6967 iter ms=0.121783 ]
+prog prog=pt_rm_m128_d256_h512 loading=EAGER rep=30 wall_us=380395 out=[1612.2343 1322.6953 iter ms=0.038701000000000006 ]
+prog prog=pt_rm_m128_d256_h512 loading=LAZY rep=30 wall_us=370982 out=[1612.2343 1322.6953 iter ms=0.18257400000000001 ]
+value-gate prog=pt_rm_m128_d1024_h2048 pass
+trace prog=pt_rm_m128_d1024_h2048 mapal_gpu_trace op=launch kernel=mapal_tile_7e917faced76ec46 ms=0.056 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_b14728a86f55ade8 ms=0.075 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=250.825 lead_ms=0.075 init_ms=91.570 ctx_ms=157.910 module_ms=1.222 alloc_ms=0.390 h2d_ms=0.000 kernel_ms=0.131 gen_ms=0.092 d2h_ms=0.073 free_ms=0.225 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d1024_h2048_c pass
+trace prog=pt_rm_m128_d1024_h2048_c mapal_gpu_trace op=launch kernel=mapal_tile_cbe7c3dd51d6c105 ms=0.033 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_f2712f94fdb2bc25 ms=0.041 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=252.105 lead_ms=0.092 init_ms=93.154 ctx_ms=157.972 module_ms=0.865 alloc_ms=0.350 h2d_ms=0.000 kernel_ms=0.074 gen_ms=0.094 d2h_ms=0.083 free_ms=0.236 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d1024_h2048.base pass
+trace prog=pt_rm_m128_d1024_h2048.base mapal_gpu_trace op=launch kernel=mapal_tile_7e917faced76ec46 ms=0.036 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_b14728a86f55ade8 ms=0.059 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=244.664 lead_ms=0.136 init_ms=93.901 ctx_ms=150.293 module_ms=0.393 alloc_ms=0.330 h2d_ms=0.000 kernel_ms=0.096 gen_ms=0.089 d2h_ms=0.075 free_ms=0.227 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+value-gate prog=pt_rm_m128_d1024_h2048_c.base pass
+trace prog=pt_rm_m128_d1024_h2048_c.base mapal_gpu_trace op=launch kernel=mapal_tile_cbe7c3dd51d6c105 ms=0.035 stream=0 pdl=0 mapal_gpu_trace op=launch kernel=mapal_tile_f2712f94fdb2bc25 ms=0.060 stream=0 pdl=0 mapal_gpu_trace_total flags=1 load_ms=255.053 lead_ms=0.129 init_ms=93.072 ctx_ms=161.518 module_ms=0.341 alloc_ms=0.321 h2d_ms=0.000 kernel_ms=0.096 gen_ms=0.081 d2h_ms=0.072 free_ms=0.227 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=1 wall_us=373639 out=[-2342.9185 -568.328 iter ms=0.271967 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=1 wall_us=373818 out=[-2342.9185 -568.328 iter ms=0.12526299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=1 wall_us=373090 out=[-2342.9165 -568.33 iter ms=0.16438399999999997 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=1 wall_us=377197 out=[-2342.9165 -568.33 iter ms=0.06993200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=1 wall_us=369101 out=[-2342.9185 -568.328 iter ms=0.12336299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=1 wall_us=372279 out=[-2342.9185 -568.328 iter ms=0.091143 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=1 wall_us=381883 out=[-2342.9165 -568.33 iter ms=0.118853 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=1 wall_us=365111 out=[-2342.9165 -568.33 iter ms=0.08901300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=2 wall_us=376266 out=[-2342.9165 -568.33 iter ms=0.090113 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=2 wall_us=370792 out=[-2342.9165 -568.33 iter ms=0.11276299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=2 wall_us=371983 out=[-2342.9185 -568.328 iter ms=0.09143200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=2 wall_us=378663 out=[-2342.9185 -568.328 iter ms=0.125114 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=2 wall_us=379471 out=[-2342.9165 -568.33 iter ms=0.067302 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=2 wall_us=387069 out=[-2342.9165 -568.33 iter ms=0.161084 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=2 wall_us=375021 out=[-2342.9185 -568.328 iter ms=0.125773 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=2 wall_us=352723 out=[-2342.9185 -568.328 iter ms=0.26897699999999997 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=3 wall_us=374653 out=[-2342.9185 -568.328 iter ms=0.271667 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=3 wall_us=354265 out=[-2342.9185 -568.328 iter ms=0.12573299999999998 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=3 wall_us=382329 out=[-2342.9165 -568.33 iter ms=0.16301400000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=3 wall_us=350779 out=[-2342.9165 -568.33 iter ms=0.068842 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=3 wall_us=357177 out=[-2342.9185 -568.328 iter ms=0.127803 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=3 wall_us=376014 out=[-2342.9185 -568.328 iter ms=0.091222 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=3 wall_us=373264 out=[-2342.9165 -568.33 iter ms=0.120313 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=3 wall_us=369768 out=[-2342.9165 -568.33 iter ms=0.09233200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=4 wall_us=355262 out=[-2342.9165 -568.33 iter ms=0.08862199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=4 wall_us=373384 out=[-2342.9165 -568.33 iter ms=0.119203 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=4 wall_us=372163 out=[-2342.9185 -568.328 iter ms=0.089253 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=4 wall_us=378314 out=[-2342.9185 -568.328 iter ms=0.117463 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=4 wall_us=381815 out=[-2342.9165 -568.33 iter ms=0.070222 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=4 wall_us=373793 out=[-2342.9165 -568.33 iter ms=0.167224 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=4 wall_us=379305 out=[-2342.9185 -568.328 iter ms=0.124923 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=4 wall_us=380560 out=[-2342.9185 -568.328 iter ms=0.284757 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=5 wall_us=370073 out=[-2342.9185 -568.328 iter ms=0.281547 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=5 wall_us=369720 out=[-2342.9185 -568.328 iter ms=0.12812300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=5 wall_us=370110 out=[-2342.9165 -568.33 iter ms=0.160754 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=5 wall_us=367798 out=[-2342.9165 -568.33 iter ms=0.06930199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=5 wall_us=370256 out=[-2342.9185 -568.328 iter ms=0.12654300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=5 wall_us=372099 out=[-2342.9185 -568.328 iter ms=0.090493 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=5 wall_us=366243 out=[-2342.9165 -568.33 iter ms=0.11554299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=5 wall_us=371445 out=[-2342.9165 -568.33 iter ms=0.08930199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=6 wall_us=376282 out=[-2342.9165 -568.33 iter ms=0.08869200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=6 wall_us=370953 out=[-2342.9165 -568.33 iter ms=0.121523 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=6 wall_us=371284 out=[-2342.9185 -568.328 iter ms=0.09099199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=6 wall_us=375024 out=[-2342.9185 -568.328 iter ms=0.125873 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=6 wall_us=377301 out=[-2342.9165 -568.33 iter ms=0.07022199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=6 wall_us=406024 out=[-2342.9165 -568.33 iter ms=0.185154 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=6 wall_us=394495 out=[-2342.9185 -568.328 iter ms=0.125463 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=6 wall_us=377320 out=[-2342.9185 -568.328 iter ms=0.273746 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=7 wall_us=372595 out=[-2342.9185 -568.328 iter ms=0.265997 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=7 wall_us=373756 out=[-2342.9185 -568.328 iter ms=0.125663 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=7 wall_us=367290 out=[-2342.9165 -568.33 iter ms=0.16214399999999998 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=7 wall_us=371465 out=[-2342.9165 -568.33 iter ms=0.069781 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=7 wall_us=369985 out=[-2342.9185 -568.328 iter ms=0.126234 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=7 wall_us=380449 out=[-2342.9185 -568.328 iter ms=0.09076200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=7 wall_us=378037 out=[-2342.9165 -568.33 iter ms=0.113883 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=7 wall_us=374494 out=[-2342.9165 -568.33 iter ms=0.08920199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=8 wall_us=368569 out=[-2342.9165 -568.33 iter ms=0.089852 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=8 wall_us=371214 out=[-2342.9165 -568.33 iter ms=0.11341300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=8 wall_us=367757 out=[-2342.9185 -568.328 iter ms=0.091713 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=8 wall_us=352320 out=[-2342.9185 -568.328 iter ms=0.12674300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=8 wall_us=378940 out=[-2342.9165 -568.33 iter ms=0.064731 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=8 wall_us=365580 out=[-2342.9165 -568.33 iter ms=0.17671499999999998 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=8 wall_us=368541 out=[-2342.9185 -568.328 iter ms=0.12481300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=8 wall_us=352200 out=[-2342.9185 -568.328 iter ms=0.271336 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=9 wall_us=371312 out=[-2342.9185 -568.328 iter ms=0.275597 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=9 wall_us=369737 out=[-2342.9185 -568.328 iter ms=0.126123 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=9 wall_us=379043 out=[-2342.9165 -568.33 iter ms=0.171514 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=9 wall_us=365465 out=[-2342.9165 -568.33 iter ms=0.069222 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=9 wall_us=387989 out=[-2342.9185 -568.328 iter ms=0.12430300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=9 wall_us=370779 out=[-2342.9185 -568.328 iter ms=0.090932 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=9 wall_us=367014 out=[-2342.9165 -568.33 iter ms=0.118723 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=9 wall_us=386484 out=[-2342.9165 -568.33 iter ms=0.095212 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=10 wall_us=368755 out=[-2342.9165 -568.33 iter ms=0.08951200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=10 wall_us=375119 out=[-2342.9165 -568.33 iter ms=0.120803 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=10 wall_us=384291 out=[-2342.9185 -568.328 iter ms=0.091343 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=10 wall_us=368271 out=[-2342.9185 -568.328 iter ms=0.125073 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=10 wall_us=369950 out=[-2342.9165 -568.33 iter ms=0.06796200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=10 wall_us=370058 out=[-2342.9165 -568.33 iter ms=0.161114 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=10 wall_us=376916 out=[-2342.9185 -568.328 iter ms=0.124933 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=10 wall_us=373182 out=[-2342.9185 -568.328 iter ms=0.265366 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=11 wall_us=373308 out=[-2342.9185 -568.328 iter ms=0.27714700000000003 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=11 wall_us=380999 out=[-2342.9185 -568.328 iter ms=0.125403 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=11 wall_us=372907 out=[-2342.9165 -568.33 iter ms=0.179505 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=11 wall_us=370199 out=[-2342.9165 -568.33 iter ms=0.065952 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=11 wall_us=377648 out=[-2342.9185 -568.328 iter ms=0.11925299999999998 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=11 wall_us=391221 out=[-2342.9185 -568.328 iter ms=0.09708200000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=11 wall_us=346934 out=[-2342.9165 -568.33 iter ms=0.118793 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=11 wall_us=378700 out=[-2342.9165 -568.33 iter ms=0.090832 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=12 wall_us=370915 out=[-2342.9165 -568.33 iter ms=0.090362 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=12 wall_us=375922 out=[-2342.9165 -568.33 iter ms=0.11938299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=12 wall_us=377433 out=[-2342.9185 -568.328 iter ms=0.090372 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=12 wall_us=372589 out=[-2342.9185 -568.328 iter ms=0.12718300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=12 wall_us=371888 out=[-2342.9165 -568.33 iter ms=0.06900099999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=12 wall_us=368563 out=[-2342.9165 -568.33 iter ms=0.160284 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=12 wall_us=554803 out=[-2342.9185 -568.328 iter ms=0.12516300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=12 wall_us=565826 out=[-2342.9185 -568.328 iter ms=0.276227 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=13 wall_us=369298 out=[-2342.9185 -568.328 iter ms=0.279127 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=13 wall_us=363824 out=[-2342.9185 -568.328 iter ms=0.125003 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=13 wall_us=368580 out=[-2342.9165 -568.33 iter ms=0.168654 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=13 wall_us=370160 out=[-2342.9165 -568.33 iter ms=0.068012 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=13 wall_us=356140 out=[-2342.9185 -568.328 iter ms=0.120333 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=13 wall_us=360337 out=[-2342.9185 -568.328 iter ms=0.089222 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=13 wall_us=363212 out=[-2342.9165 -568.33 iter ms=0.125713 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=13 wall_us=373477 out=[-2342.9165 -568.33 iter ms=0.089582 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=14 wall_us=368125 out=[-2342.9165 -568.33 iter ms=0.09406199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=14 wall_us=375920 out=[-2342.9165 -568.33 iter ms=0.113332 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=14 wall_us=369410 out=[-2342.9185 -568.328 iter ms=0.089882 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=14 wall_us=364033 out=[-2342.9185 -568.328 iter ms=0.129144 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=14 wall_us=370151 out=[-2342.9165 -568.33 iter ms=0.06664199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=14 wall_us=378529 out=[-2342.9165 -568.33 iter ms=0.16111399999999998 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=14 wall_us=369760 out=[-2342.9185 -568.328 iter ms=0.12438300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=14 wall_us=367034 out=[-2342.9185 -568.328 iter ms=0.285517 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=15 wall_us=384156 out=[-2342.9185 -568.328 iter ms=0.190015 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=15 wall_us=363959 out=[-2342.9185 -568.328 iter ms=0.12451299999999998 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=15 wall_us=370703 out=[-2342.9165 -568.33 iter ms=0.167904 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=15 wall_us=365353 out=[-2342.9165 -568.33 iter ms=0.067842 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=15 wall_us=373332 out=[-2342.9185 -568.328 iter ms=0.125123 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=15 wall_us=348246 out=[-2342.9185 -568.328 iter ms=0.090892 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=15 wall_us=363974 out=[-2342.9165 -568.33 iter ms=0.117193 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=15 wall_us=366820 out=[-2342.9165 -568.33 iter ms=0.090953 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=16 wall_us=372893 out=[-2342.9165 -568.33 iter ms=0.089602 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=16 wall_us=373810 out=[-2342.9165 -568.33 iter ms=0.111233 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=16 wall_us=367460 out=[-2342.9185 -568.328 iter ms=0.091282 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=16 wall_us=366373 out=[-2342.9185 -568.328 iter ms=0.118503 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=16 wall_us=368508 out=[-2342.9165 -568.33 iter ms=0.068552 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=16 wall_us=366894 out=[-2342.9165 -568.33 iter ms=0.167274 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=16 wall_us=372971 out=[-2342.9185 -568.328 iter ms=0.125664 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=16 wall_us=367157 out=[-2342.9185 -568.328 iter ms=0.27109600000000006 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=17 wall_us=369007 out=[-2342.9185 -568.328 iter ms=0.276787 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=17 wall_us=364365 out=[-2342.9185 -568.328 iter ms=0.125653 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=17 wall_us=364514 out=[-2342.9165 -568.33 iter ms=0.168564 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=17 wall_us=364264 out=[-2342.9165 -568.33 iter ms=0.067691 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=17 wall_us=378322 out=[-2342.9185 -568.328 iter ms=0.146014 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=17 wall_us=364136 out=[-2342.9185 -568.328 iter ms=0.09037200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=17 wall_us=368763 out=[-2342.9165 -568.33 iter ms=0.118853 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=17 wall_us=376064 out=[-2342.9165 -568.33 iter ms=0.090102 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=18 wall_us=363176 out=[-2342.9165 -568.33 iter ms=0.08800199999999998 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=18 wall_us=349818 out=[-2342.9165 -568.33 iter ms=0.11934299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=18 wall_us=368413 out=[-2342.9185 -568.328 iter ms=0.090532 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=18 wall_us=367849 out=[-2342.9185 -568.328 iter ms=0.125784 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=18 wall_us=378170 out=[-2342.9165 -568.33 iter ms=0.069702 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=18 wall_us=357701 out=[-2342.9165 -568.33 iter ms=0.16460399999999997 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=18 wall_us=372684 out=[-2342.9185 -568.328 iter ms=0.12646300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=18 wall_us=369084 out=[-2342.9185 -568.328 iter ms=0.26862600000000003 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=19 wall_us=368792 out=[-2342.9185 -568.328 iter ms=0.288377 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=19 wall_us=363945 out=[-2342.9185 -568.328 iter ms=0.125943 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=19 wall_us=376884 out=[-2342.9165 -568.33 iter ms=0.160144 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=19 wall_us=359495 out=[-2342.9165 -568.33 iter ms=0.06823199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=19 wall_us=372592 out=[-2342.9185 -568.328 iter ms=0.12406299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=19 wall_us=368905 out=[-2342.9185 -568.328 iter ms=0.089932 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=19 wall_us=364866 out=[-2342.9165 -568.33 iter ms=0.100812 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=19 wall_us=361254 out=[-2342.9165 -568.33 iter ms=0.088843 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=20 wall_us=369270 out=[-2342.9165 -568.33 iter ms=0.08839200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=20 wall_us=364846 out=[-2342.9165 -568.33 iter ms=0.118403 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=20 wall_us=367857 out=[-2342.9185 -568.328 iter ms=0.090672 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=20 wall_us=376143 out=[-2342.9185 -568.328 iter ms=0.12442299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=20 wall_us=366849 out=[-2342.9165 -568.33 iter ms=0.068532 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=20 wall_us=372094 out=[-2342.9165 -568.33 iter ms=0.168154 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=20 wall_us=379579 out=[-2342.9185 -568.328 iter ms=0.12480400000000001 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=20 wall_us=364551 out=[-2342.9185 -568.328 iter ms=0.26249700000000004 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=21 wall_us=374454 out=[-2342.9185 -568.328 iter ms=0.281467 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=21 wall_us=388321 out=[-2342.9185 -568.328 iter ms=0.126673 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=21 wall_us=376066 out=[-2342.9165 -568.33 iter ms=0.165544 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=21 wall_us=383363 out=[-2342.9165 -568.33 iter ms=0.069562 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=21 wall_us=373972 out=[-2342.9185 -568.328 iter ms=0.12769300000000003 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=21 wall_us=373466 out=[-2342.9185 -568.328 iter ms=0.089362 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=21 wall_us=380705 out=[-2342.9165 -568.33 iter ms=0.119823 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=21 wall_us=351829 out=[-2342.9165 -568.33 iter ms=0.088842 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=22 wall_us=371959 out=[-2342.9165 -568.33 iter ms=0.089972 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=22 wall_us=369138 out=[-2342.9165 -568.33 iter ms=0.13608299999999998 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=22 wall_us=369022 out=[-2342.9185 -568.328 iter ms=0.090492 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=22 wall_us=395338 out=[-2342.9185 -568.328 iter ms=0.120023 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=22 wall_us=367704 out=[-2342.9165 -568.33 iter ms=0.067781 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=22 wall_us=353468 out=[-2342.9165 -568.33 iter ms=0.162434 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=22 wall_us=374350 out=[-2342.9185 -568.328 iter ms=0.125373 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=22 wall_us=370357 out=[-2342.9185 -568.328 iter ms=0.262307 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=23 wall_us=377315 out=[-2342.9185 -568.328 iter ms=0.27305700000000005 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=23 wall_us=373432 out=[-2342.9185 -568.328 iter ms=0.124933 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=23 wall_us=369642 out=[-2342.9165 -568.33 iter ms=0.173394 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=23 wall_us=384187 out=[-2342.9165 -568.33 iter ms=0.068391 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=23 wall_us=376511 out=[-2342.9185 -568.328 iter ms=0.122563 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=23 wall_us=375151 out=[-2342.9185 -568.328 iter ms=0.089782 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=23 wall_us=375798 out=[-2342.9165 -568.33 iter ms=0.119543 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=23 wall_us=364573 out=[-2342.9165 -568.33 iter ms=0.087963 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=24 wall_us=370722 out=[-2342.9165 -568.33 iter ms=0.09104200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=24 wall_us=380372 out=[-2342.9165 -568.33 iter ms=0.117893 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=24 wall_us=374984 out=[-2342.9185 -568.328 iter ms=0.090242 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=24 wall_us=370201 out=[-2342.9185 -568.328 iter ms=0.125543 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=24 wall_us=377533 out=[-2342.9165 -568.33 iter ms=0.06968200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=24 wall_us=365267 out=[-2342.9165 -568.33 iter ms=0.176184 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=24 wall_us=368199 out=[-2342.9185 -568.328 iter ms=0.126033 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=24 wall_us=372810 out=[-2342.9185 -568.328 iter ms=0.26765700000000003 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=25 wall_us=381779 out=[-2342.9185 -568.328 iter ms=0.281237 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=25 wall_us=379861 out=[-2342.9185 -568.328 iter ms=0.12596300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=25 wall_us=379762 out=[-2342.9165 -568.33 iter ms=0.16786399999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=25 wall_us=371613 out=[-2342.9165 -568.33 iter ms=0.070142 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=25 wall_us=390139 out=[-2342.9185 -568.328 iter ms=0.109763 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=25 wall_us=365297 out=[-2342.9185 -568.328 iter ms=0.090532 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=25 wall_us=357648 out=[-2342.9165 -568.33 iter ms=0.11362300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=25 wall_us=366488 out=[-2342.9165 -568.33 iter ms=0.088502 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=26 wall_us=369980 out=[-2342.9165 -568.33 iter ms=0.089922 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=26 wall_us=377291 out=[-2342.9165 -568.33 iter ms=0.11365199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=26 wall_us=393183 out=[-2342.9185 -568.328 iter ms=0.09062300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=26 wall_us=385166 out=[-2342.9185 -568.328 iter ms=0.11349300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=26 wall_us=368186 out=[-2342.9165 -568.33 iter ms=0.06795199999999998 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=26 wall_us=366415 out=[-2342.9165 -568.33 iter ms=0.146474 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=26 wall_us=368863 out=[-2342.9185 -568.328 iter ms=0.12627300000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=26 wall_us=374138 out=[-2342.9185 -568.328 iter ms=0.272587 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=27 wall_us=359579 out=[-2342.9185 -568.328 iter ms=0.269567 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=27 wall_us=361266 out=[-2342.9185 -568.328 iter ms=0.125193 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=27 wall_us=351093 out=[-2342.9165 -568.33 iter ms=0.164234 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=27 wall_us=373005 out=[-2342.9165 -568.33 iter ms=0.06803200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=27 wall_us=395755 out=[-2342.9185 -568.328 iter ms=0.12330300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=27 wall_us=363949 out=[-2342.9185 -568.328 iter ms=0.089723 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=27 wall_us=374898 out=[-2342.9165 -568.33 iter ms=0.12639300000000003 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=27 wall_us=361561 out=[-2342.9165 -568.33 iter ms=0.089242 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=28 wall_us=370379 out=[-2342.9165 -568.33 iter ms=0.089183 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=28 wall_us=373862 out=[-2342.9165 -568.33 iter ms=0.111143 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=28 wall_us=390900 out=[-2342.9185 -568.328 iter ms=0.087412 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=28 wall_us=375005 out=[-2342.9185 -568.328 iter ms=0.121933 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=28 wall_us=358659 out=[-2342.9165 -568.33 iter ms=0.06866200000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=28 wall_us=372790 out=[-2342.9165 -568.33 iter ms=0.175034 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=28 wall_us=365448 out=[-2342.9185 -568.328 iter ms=0.124263 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=28 wall_us=369241 out=[-2342.9185 -568.328 iter ms=0.19481500000000002 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=29 wall_us=368392 out=[-2342.9185 -568.328 iter ms=0.289367 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=29 wall_us=369887 out=[-2342.9185 -568.328 iter ms=0.126193 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=29 wall_us=367461 out=[-2342.9165 -568.33 iter ms=0.228366 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=29 wall_us=392513 out=[-2342.9165 -568.33 iter ms=0.069562 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=29 wall_us=367443 out=[-2342.9185 -568.328 iter ms=0.117893 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=29 wall_us=390658 out=[-2342.9185 -568.328 iter ms=0.089392 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=29 wall_us=375345 out=[-2342.9165 -568.33 iter ms=0.10593299999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=29 wall_us=362770 out=[-2342.9165 -568.33 iter ms=0.088442 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=EAGER rep=30 wall_us=367368 out=[-2342.9165 -568.33 iter ms=0.09081199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048_c.base loading=LAZY rep=30 wall_us=368400 out=[-2342.9165 -568.33 iter ms=0.129443 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=EAGER rep=30 wall_us=363884 out=[-2342.9185 -568.328 iter ms=0.09435199999999999 ]
+prog prog=pt_rm_m128_d1024_h2048.base loading=LAZY rep=30 wall_us=362876 out=[-2342.9185 -568.328 iter ms=0.12451300000000001 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=EAGER rep=30 wall_us=366797 out=[-2342.9165 -568.33 iter ms=0.070282 ]
+prog prog=pt_rm_m128_d1024_h2048_c loading=LAZY rep=30 wall_us=368047 out=[-2342.9165 -568.33 iter ms=0.157634 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=EAGER rep=30 wall_us=368741 out=[-2342.9185 -568.328 iter ms=0.125053 ]
+prog prog=pt_rm_m128_d1024_h2048 loading=LAZY rep=30 wall_us=369146 out=[-2342.9185 -568.328 iter ms=0.314628 ]
+== time done 2026-10-23T02:45:47Z
+nsys mlp=pt_rm_m128_d256_h512 24 files
+nsys mlp=pt_rm_m128_d1024_h2048 24 files
+nsys cell=16x2048x7168 nsys/cell_16x2048x7168_cuda_gpu_trace.csv 
+nsys cell=16x1024x4096 nsys/cell_16x1024x4096_cuda_gpu_trace.csv 
+nsys cell=16x18432x7168 nsys/cell_16x18432x7168_cuda_gpu_trace.csv 
+nsys cell=128x2048x7168 nsys/cell_128x2048x7168_cuda_gpu_trace.csv 
+nsys cell=4096x4096x4096 nsys/cell_4096x4096x4096_cuda_gpu_trace.csv 
+== nsys done 2026-10-23T02:46:30Z
+observe cell_16x2048x7168: exit=0 admitted launches=12 images=10
+observe cell_16x1024x4096: exit=0 admitted launches=12 images=10
+observe cell_16x18432x7168: exit=0 admitted launches=11 images=9
+observe cell_128x2048x7168: exit=0 admitted launches=11 images=9
+observe cell_4096x4096x4096: exit=0 admitted launches=9 images=9
+observe mlp_pt_rm_m128_d256_h512: exit=0 admitted launches=28 images=11
+observe mlp_pt_rm_m128_d1024_h2048: exit=0 admitted launches=26 images=11
+== observe done 2026-10-23T02:47:40Z

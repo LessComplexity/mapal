@@ -1,0 +1,43 @@
+arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512 kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_30e81d6e2d858283 grid=32x4 block=32 smem=12288 regs=167 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512_r kernel=mapal_tile_bd9fa9ee6f350d4b grid=16x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_d1f14af25205fe42 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512_rc kernel=mapal_tile_0196e19a59309ba4 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_d506a71f3d8109c6 grid=32x4 block=32 smem=1536 regs=79 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512.base kernel=mapal_tile_09927473a38cf5dc grid=16x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=1664 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512_c.base kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_385f1ac282de6d85 grid=32x4 block=32 smem=13312 regs=194 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_7d8bf3206d8af181 grid=16x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+lt site=up+bias+relu api_mnk=512,128,256 epilogue=6 beta=0 heuristics=7 chosen=0 algo_id=20 tile=16 stages=28 splitk=3 reduction=2 workspace=786432 waves=0.094
+lt site=down+residual api_mnk=256,128,512 epilogue=1 beta=1 heuristics=7 chosen=0 algo_id=20 tile=15 stages=28 splitk=8 reduction=2 workspace=1048576 waves=0.094
+libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x4x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x2x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x8x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x4x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+cold leg=pt_rm_m128_d256_h512 wall_ms=0.1157
+cold leg=pt_rm_m128_d256_h512_c wall_ms=0.0634
+cold leg=pt_rm_m128_d256_h512_r wall_ms=0.0657
+cold leg=pt_rm_m128_d256_h512_rc wall_ms=0.0607
+cold leg=pt_rm_m128_d256_h512.base wall_ms=0.0630
+cold leg=pt_rm_m128_d256_h512_c.base wall_ms=0.0618
+cold leg=pt_rm_m128_d256_h512_c.null wall_ms=0.0572
+cold leg=cublas wall_ms=42.6650
+cold leg=lt wall_ms=0.2368
+cold leg=cutlass wall_ms=0.1209
+cold leg=cutlass_tuned wall_ms=0.1090
+values leg=pt_rm_m128_d256_h512 cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+values leg=pt_rm_m128_d256_h512_c cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+values leg=pt_rm_m128_d256_h512_r cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+values leg=pt_rm_m128_d256_h512_rc cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+values leg=pt_rm_m128_d256_h512.base cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+values leg=pt_rm_m128_d256_h512_c.base cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+values leg=pt_rm_m128_d256_h512_c.null cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+values leg=cublas cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+values leg=lt cells=256 maxrel_vs_f64=8.092e-05 y0=1612.23474 ylast=1322.69702
+values leg=cutlass cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+values leg=cutlass_tuned cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+profile_region legs=11 all_ok=1

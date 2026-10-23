@@ -1,0 +1,69 @@
+arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048 kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_3acc2064c56c5203 grid=64x4 block=64 smem=32768 regs=200 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_r kernel=mapal_tile_c334f183fd4fa5f7 grid=64x4 block=32 smem=12288 regs=167 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_084d81fa89b130c2 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_rc kernel=mapal_tile_b5ca2aa6d233aa58 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_7e917faced76ec46 grid=64x4 block=64 smem=2048 regs=77 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048.base kernel=mapal_tile_b14728a86f55ade8 grid=64x4 block=32 smem=1536 regs=79 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=2176 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c.base kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=1664 regs=80 local_bytes=0 args=hh,w2,0,x,y
+arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_cbe7c3dd51d6c105 grid=64x4 block=64 smem=34816 regs=197 local_bytes=0 args=x,w1,0,bias,hh
+arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_f2712f94fdb2bc25 grid=64x4 block=32 smem=13312 regs=194 local_bytes=0 args=hh,w2,0,x,y
+lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=8388608 waves=0.502
+lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=10 reduction=2 workspace=5242880 waves=0.314
+libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+cold leg=pt_rm_m128_d1024_h2048 wall_ms=0.1692
+cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.0671
+cold leg=pt_rm_m128_d1024_h2048_r wall_ms=0.1236
+cold leg=pt_rm_m128_d1024_h2048_rc wall_ms=0.0667
+cold leg=pt_rm_m128_d1024_h2048.base wall_ms=0.0872
+cold leg=pt_rm_m128_d1024_h2048_c.base wall_ms=0.0867
+cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.0674
+cold leg=cublas wall_ms=2.8691
+cold leg=lt wall_ms=23.2036
+cold leg=cutlass wall_ms=0.2277
+cold leg=cutlass_tuned wall_ms=0.0697
+values leg=pt_rm_m128_d1024_h2048 cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048_r cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_rc cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048.base cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+values leg=pt_rm_m128_d1024_h2048_c.base cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+values leg=cublas cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+values leg=lt cells=256 maxrel_vs_f64=3.036e-04 y0=-2342.91455 ylast=-568.333618
+values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+time leg=pt_rm_m128_d1024_h2048 M=128 d=1024 h=2048 n=5 event_min_ms=0.1207 event_med_ms=0.1216 wall_min_ms=0.1269 wall_med_ms=0.1278 wall_max_ms=0.1350
+time leg=pt_rm_m128_d1024_h2048_c M=128 d=1024 h=2048 n=5 event_min_ms=0.0632 event_med_ms=0.0635 wall_min_ms=0.0696 wall_med_ms=0.0700 wall_max_ms=0.0726
+time leg=pt_rm_m128_d1024_h2048_r M=128 d=1024 h=2048 n=5 event_min_ms=0.1205 event_med_ms=0.1226 wall_min_ms=0.1269 wall_med_ms=0.1289 wall_max_ms=0.1300
+time leg=pt_rm_m128_d1024_h2048_rc M=128 d=1024 h=2048 n=5 event_min_ms=0.0631 event_med_ms=0.0633 wall_min_ms=0.0696 wall_med_ms=0.0698 wall_max_ms=0.0716
+time leg=pt_rm_m128_d1024_h2048.base M=128 d=1024 h=2048 n=5 event_min_ms=0.0836 event_med_ms=0.0844 wall_min_ms=0.0901 wall_med_ms=0.0911 wall_max_ms=0.0914
+time leg=pt_rm_m128_d1024_h2048_c.base M=128 d=1024 h=2048 n=5 event_min_ms=0.0837 event_med_ms=0.0839 wall_min_ms=0.0900 wall_med_ms=0.0902 wall_max_ms=0.0918
+time leg=pt_rm_m128_d1024_h2048_c.null M=128 d=1024 h=2048 n=5 event_min_ms=0.0633 event_med_ms=0.0649 wall_min_ms=0.0697 wall_med_ms=0.0713 wall_max_ms=0.0727
+time leg=cublas M=128 d=1024 h=2048 n=5 event_min_ms=0.0906 event_med_ms=0.0920 wall_min_ms=0.0967 wall_med_ms=0.0983 wall_max_ms=0.1107
+time leg=lt M=128 d=1024 h=2048 n=5 event_min_ms=0.0464 event_med_ms=0.0477 wall_min_ms=0.0530 wall_med_ms=0.0541 wall_max_ms=0.0558
+time leg=cutlass M=128 d=1024 h=2048 n=5 event_min_ms=0.2221 event_med_ms=0.2229 wall_min_ms=0.2288 wall_med_ms=0.2294 wall_max_ms=0.2304
+time leg=cutlass_tuned M=128 d=1024 h=2048 n=5 event_min_ms=0.0665 event_med_ms=0.0685 wall_min_ms=0.0727 wall_med_ms=0.0748 wall_max_ms=0.0756
+samples leg=pt_rm_m128_d1024_h2048 event=0.1271,0.1220,0.1207,0.1216,0.1207 wall=0.1350,0.1280,0.1269,0.1278,0.1274
+samples leg=pt_rm_m128_d1024_h2048_c event=0.0661,0.0632,0.0635,0.0634,0.0637 wall=0.0726,0.0697,0.0696,0.0700,0.0700
+samples leg=pt_rm_m128_d1024_h2048_r event=0.1236,0.1226,0.1218,0.1227,0.1205 wall=0.1300,0.1289,0.1280,0.1292,0.1269
+samples leg=pt_rm_m128_d1024_h2048_rc event=0.0655,0.0632,0.0631,0.0635,0.0633 wall=0.0716,0.0697,0.0698,0.0699,0.0696
+samples leg=pt_rm_m128_d1024_h2048.base event=0.0848,0.0844,0.0836,0.0850,0.0837 wall=0.0914,0.0911,0.0901,0.0912,0.0902
+samples leg=pt_rm_m128_d1024_h2048_c.base event=0.0856,0.0837,0.0840,0.0838,0.0839 wall=0.0918,0.0901,0.0902,0.0903,0.0900
+samples leg=pt_rm_m128_d1024_h2048_c.null event=0.0652,0.0649,0.0633,0.0665,0.0643 wall=0.0716,0.0713,0.0697,0.0727,0.0706
+samples leg=cublas event=0.1043,0.0906,0.0920,0.0907,0.0921 wall=0.1107,0.0967,0.0984,0.0973,0.0983
+samples leg=lt event=0.0467,0.0497,0.0478,0.0477,0.0464 wall=0.0530,0.0558,0.0541,0.0541,0.0534
+samples leg=cutlass event=0.2238,0.2229,0.2238,0.2221,0.2228 wall=0.2304,0.2294,0.2301,0.2288,0.2291
+samples leg=cutlass_tuned event=0.0685,0.0686,0.0671,0.0665,0.0692 wall=0.0748,0.0748,0.0737,0.0727,0.0756
+Collecting data...
+Generating '/tmp/nsys-report-275a.qdstrm'
+[1/1] [0%                          ] mlp_pt_rm_m128_d1024_h2048.nsys-rep[1/1] [0%                          ] mlp_pt_rm_m128_d1024_h2048.nsys-rep[1/1] [=====================88%    ] mlp_pt_rm_m128_d1024_h2048.nsys-rep[1/1] [========================100%] mlp_pt_rm_m128_d1024_h2048.nsys-rep[1/1] [========================100%] mlp_pt_rm_m128_d1024_h2048.nsys-rep
+Generated:
+    /w/nsys/mlp_pt_rm_m128_d1024_h2048.nsys-rep
