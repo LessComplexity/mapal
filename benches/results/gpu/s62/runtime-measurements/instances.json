@@ -19,6 +19,19 @@
    ]
   },
   {
+   "at": "2026-10-23T00:21:24.431119+00:00",
+   "preexisting_ids": [
+    57065574,
+    57100404,
+    57126023,
+    57133432,
+    57285249,
+    57294918,
+    57294919,
+    57294920
+   ]
+  },
+  {
    "at": "2026-10-22T22:26:48.688842Z",
    "preexisting_ids": [
     57065574,
@@ -33,6 +46,18 @@
   }
  ],
  "created": [
+  {
+   "id": 57295345,
+   "session": "h100-pcie-confirm-rg",
+   "created": "20:21:33",
+   "offer": 41555537,
+   "gpu": "H100_SXM",
+   "host": 214845,
+   "machine": 140932,
+   "destroy_receipt": "[20:32:07 h100-pcie] destroyed 57295345",
+   "destroyed_by_hand": false,
+   "absent_now": true
+  },
   {
    "id": 57287529,
    "session": "h100-pcie-confirm-s",
@@ -166,6 +191,18 @@
    "absent_now": true
   },
   {
+   "id": 57295375,
+   "session": "rtx-3090-confirm-rg",
+   "created": "20:21:47",
+   "offer": 55281041,
+   "gpu": "RTX_3090",
+   "host": 685226,
+   "machine": 153725,
+   "destroy_receipt": "[20:31:18 rtx-3090] destroyed 57295375",
+   "destroyed_by_hand": false,
+   "absent_now": true
+  },
+  {
    "id": 57289411,
    "session": "rtx-3090-confirm-s2",
    "created": "19:27:42",
@@ -259,6 +296,18 @@
    "machine": 55636,
    "destroy_receipt": "[18:58:58 rtx-3090] destroyed 57283055",
    "destroyed_by_hand": true,
+   "absent_now": true
+  },
+  {
+   "id": 57295344,
+   "session": "rtx-3090-rg",
+   "created": "20:21:32",
+   "offer": 56692199,
+   "gpu": "RTX_3090",
+   "host": 483833,
+   "machine": 150616,
+   "destroy_receipt": "[20:30:38 rtx-3090] destroyed 57295344",
+   "destroyed_by_hand": false,
    "absent_now": true
   },
   {
