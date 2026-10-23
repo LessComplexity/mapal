@@ -1,0 +1,14 @@
+EPS = 0.0489 (max of 1% and the null arms' deviation)
+
+| rung | fill | face | shipped | rule (2 sessions) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |
+|---|---|---|---|---|---|---|---|
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Contract | OFF/ON | OFF | OFF/ON | composite | _c 16x18432x7168: 0.219* 4.544* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Exact | OFF/ON | OFF | OFF/ON | composite | _exact 16x18432x7168: 1.000 6.264* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Contract | ON | ON | ON | composite | _c 128x1024x4096: 3.821* 3.978*; _c 128x2048x7168: 4.274* 4.260*; _c 16x1024x4096: 3.271* 3.132*; _c 16x2048x7168: 3.250* 3.276*; rmlp_128x1024x2048_c: 0.709*; rmlp_128x256x512_c: 0.674 |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Exact | ON | ON | ON | composite | _exact 128x1024x4096: 2.458* 2.474*; _exact 128x2048x7168: 2.101* 2.081*; _exact 16x1024x4096: 3.139* 3.122*; _exact 16x2048x7168: 2.798* 2.821*; rmlp_128x1024x2048_exact: 0.430*; rmlp_128x256x512_exact: 0.445* |
+
+null A/B (shipped vs itself), results-rtx-5090.txt: max |s-1| = 0.044; _c 1024: 1.000; _c 128x1024x4096: 0.977; _c 128x18432x7168: 0.986; _c 128x2048x7168: 1.000; _c 16x1024x4096: 1.044; _c 16x18432x7168: 0.994; _c 16x2048x7168: 1.000; _c 1x1024x4096: 1.000; _c 1x18432x7168: 0.988; _c 1x2048x7168: 0.992; _c 4096: 1.000; _exact 1024: 1.000; _exact 128x1024x4096: 1.000; _exact 128x18432x7168: 0.999; _exact 128x2048x7168: 1.000; _exact 16x1024x4096: 1.005; _exact 16x18432x7168: 0.994; _exact 16x2048x7168: 1.000; _exact 1x1024x4096: 1.000; _exact 1x18432x7168: 1.006; _exact 1x2048x7168: 1.000; _exact 4096: 1.000; _tf 1024: 1.000; _tf 4096: 1.001
+
+null A/B (shipped vs itself), results-rtx-5090-pass2.txt: max |s-1| = 0.049; _c 1024: 1.000; _c 128x1024x4096: 1.000; _c 128x18432x7168: 1.013; _c 128x2048x7168: 1.014; _c 16x1024x4096: 1.000; _c 16x18432x7168: 1.000; _c 16x2048x7168: 1.000; _c 1x1024x4096: 1.000; _c 1x18432x7168: 1.000; _c 1x2048x7168: 1.000; _c 4096: 0.997; _exact 1024: 1.000; _exact 128x1024x4096: 1.014; _exact 128x18432x7168: 1.027; _exact 128x2048x7168: 1.000; _exact 16x1024x4096: 1.000; _exact 16x18432x7168: 0.994; _exact 16x2048x7168: 1.000; _exact 1x1024x4096: 1.000; _exact 1x18432x7168: 1.011; _exact 1x2048x7168: 1.000; _exact 4096: 0.999; _tf 1024: 0.951; _tf 4096: 0.999
+
+// GPU_RUNGS_OFF rows that ship on rtx-5090 (new = a class that ships ON today)

@@ -1,0 +1,14 @@
+EPS = 0.0342 (max of 1% and the null arms' deviation)
+
+| rung | fill | face | shipped | rule (2 sessions) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |
+|---|---|---|---|---|---|---|---|
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Contract | OFF/ON | OFF | OFF/ON | composite | _c 16x18432x7168: 0.901* 3.996*; _c 16x2048x7168: 1.013 5.803* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Exact | OFF/ON | ON | OFF/ON | composite | _exact 16x18432x7168: 0.854* 3.436*; _exact 16x2048x7168: 3.502* 3.472* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Contract | OFF/ON | ON | OFF/ON | composite | _c 128x1024x4096: 1.263* 1.259*; _c 128x2048x7168: 1.203* 1.203*; _c 16x1024x4096: 0.830* 1.200*; rmlp_128x1024x2048_c: 1.060; rmlp_128x256x512_c: 0.460* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Exact | ON | ON | ON | composite | _exact 128x1024x4096: 1.048* 1.041*; _exact 128x2048x7168: 1.000 1.000; _exact 16x1024x4096: 2.804* 2.765*; _exact 1x18432x7168: 1.168* 1.163*; rmlp_128x1024x2048_exact: 0.505*; rmlp_128x256x512_exact: 0.517* |
+
+null A/B (shipped vs itself), results-h100-pcie.txt: max |s-1| = 0.007; _c 1024: 1.005; _c 128x1024x4096: 1.000; _c 128x18432x7168: 1.000; _c 128x2048x7168: 0.995; _c 16x1024x4096: 1.006; _c 16x18432x7168: 0.998; _c 16x2048x7168: 0.999; _c 1x1024x4096: 1.003; _c 1x18432x7168: 0.999; _c 1x2048x7168: 1.003; _c 4096: 1.000; _exact 1024: 0.995; _exact 128x1024x4096: 0.999; _exact 128x18432x7168: 1.000; _exact 128x2048x7168: 0.999; _exact 16x1024x4096: 1.002; _exact 16x18432x7168: 1.002; _exact 16x2048x7168: 1.002; _exact 1x1024x4096: 1.005; _exact 1x18432x7168: 1.000; _exact 1x2048x7168: 1.000; _exact 4096: 1.000; _tf 1024: 1.000; _tf 4096: 0.993
+
+null A/B (shipped vs itself), results-h100-pcie-pass2.txt: max |s-1| = 0.034; _c 1024: 1.000; _c 128x1024x4096: 0.999; _c 128x18432x7168: 0.999; _c 128x2048x7168: 0.999; _c 16x1024x4096: 1.000; _c 16x18432x7168: 1.000; _c 16x2048x7168: 0.997; _c 1x1024x4096: 0.994; _c 1x18432x7168: 1.004; _c 1x2048x7168: 0.999; _c 4096: 1.000; _exact 1024: 1.003; _exact 128x1024x4096: 1.000; _exact 128x18432x7168: 1.000; _exact 128x2048x7168: 1.001; _exact 16x1024x4096: 1.002; _exact 16x18432x7168: 1.000; _exact 16x2048x7168: 0.994; _exact 1x1024x4096: 1.006; _exact 1x18432x7168: 0.997; _exact 1x2048x7168: 1.001; _exact 4096: 1.000; _tf 1024: 1.002; _tf 4096: 1.034
+
+// GPU_RUNGS_OFF rows that ship on h100-pcie (new = a class that ships ON today)

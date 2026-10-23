@@ -1,0 +1,7 @@
+prog face arm | kernel-sum ms med (min-max) | iter ms med | kernel-sum arm/on
+pt_rmlp_128x1024x2048 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 0.0660 (0.064-0.067) | 0.0942 | 1.015
+pt_rmlp_128x1024x2048 _c on | 0.0650 (0.063-0.066) | 0.1350 | 1.000
+pt_rmlp_128x1024x2048 _exact on | 0.0840 (0.083-0.089) | 0.1140 | 1.000
+pt_rmlp_128x256x512 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 0.0250 (0.025-0.025) | 0.0663 | 0.962
+pt_rmlp_128x256x512 _c on | 0.0260 (0.024-0.026) | 0.1332 | 1.000
+pt_rmlp_128x256x512 _exact on | 0.0300 (0.030-0.031) | 0.0563 | 1.000

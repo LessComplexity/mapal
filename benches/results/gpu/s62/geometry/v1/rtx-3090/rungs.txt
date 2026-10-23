@@ -1,0 +1,48 @@
+EPS = 0.0768 (max of 1% and the null arms' deviation)
+
+| rung | fill | face | shipped | rule (2 sessions) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |
+|---|---|---|---|---|---|---|---|
+| fill-rows | Filled | Contract | ON | ON | ON | ok | _c 16x18432x7168: 0.931 0.921; _c 16x2048x7168: 3.981* 4.032* |
+| fill-rows | Filled | Exact | ON | ON | ON | mixed (held) | _exact 16x18432x7168: 0.857 0.834*; _exact 16x2048x7168: 2.704* 2.704* |
+| fill-rows | Under | Exact | ON | ON | ON | mixed (held) | _exact 128x1024x4096: 0.854* 0.804*; _exact 128x2048x7168: 0.947 0.958*; _exact 16x1024x4096: 2.521* 2.521*; rmlp_128x1024x2048_exact: 1.180; rmlp_128x256x512_exact: 1.072 |
+| fill-rows+row-fit | Under | Exact | ON | n/a | ON | composite | rmlp_128x1024x2048_exact: 1.195; rmlp_128x256x512_exact: 1.133 |
+| fill-rows+wave-gate | Filled | Contract | ON | ON | ON | composite | _c 16x18432x7168: 0.949 0.922; _c 16x2048x7168: 1.159* 1.191* |
+| fill-rows+wave-gate | Filled | Exact | ON | ON | ON | composite | _exact 16x18432x7168: 0.864* 0.831; _exact 16x2048x7168: 1.564* 1.564* |
+| fill-rows+wave-gate | Under | Contract | ON | ON | ON | composite | _c 16x1024x4096: 1.968* 1.968* |
+| fill-rows+wave-gate | Under | Exact | ON | ON | ON | composite | _exact 128x1024x4096: 0.854* 0.804*; _exact 128x2048x7168: 0.958 0.952*; _exact 16x1024x4096: 2.062* 2.060*; rmlp_128x1024x2048_exact: 1.002; rmlp_128x256x512_exact: 1.335 |
+| grid-share | Filled | Contract | ON | OFF | OFF | FLIP (disjoint) | _c 16x2048x7168: 0.834* 0.844* |
+| grid-share | Filled | Exact | ON | OFF | OFF | FLIP | _exact 16x2048x7168: 0.926 0.926* |
+| grid-share | Under | Contract | ON | ON | ON | ok | _c 1024: 0.987 0.987; _c 128x1024x4096: 1.329* 1.336*; _c 128x2048x7168: 1.342* 1.343*; rmlp_128x1024x2048_c: 1.046; rmlp_128x256x512_c: 0.536* |
+| grid-share | Under | Exact | ON | ON | ON | ok | _exact 16x1024x4096: 1.429* 1.446*; rmlp_128x256x512_exact: 0.805 |
+| panel-regs | Filled | Contract | ON | OFF | OFF | FLIP (disjoint) | _c 16x18432x7168: 1.018 0.979; _c 16x2048x7168: 0.875* 0.871* |
+| panel-regs | Filled | Exact | ON | OFF | OFF | FLIP | _exact 16x18432x7168: 1.013 0.985; _exact 16x2048x7168: 0.879 0.869* |
+| panel-regs | Under | Contract | ON | ON | ON | ok | _c 1024: 0.948* 0.948; _c 128x1024x4096: 1.329* 1.330*; _c 128x2048x7168: 1.343* 1.333*; rmlp_128x1024x2048_c: 1.019; rmlp_128x256x512_c: 0.494 |
+| panel-regs | Under | Exact | ON | ON | ON | ok | _exact 1024: 0.970 0.966; _exact 128x1024x4096: 0.986 0.911*; _exact 128x2048x7168: 0.933 0.932*; _exact 16x1024x4096: 1.614* 1.614*; rmlp_128x1024x2048_exact: 0.777*; rmlp_128x256x512_exact: 0.585* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Contract | ON | ON | ON | composite | _c 16x18432x7168: 10.146* 9.833*; _c 16x2048x7168: 3.981* 4.031* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Exact | ON | ON | ON | composite | _exact 16x18432x7168: 10.243* 10.625*; _exact 16x2048x7168: 2.711* 2.704* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Contract | ON | ON | ON | composite | _c 1024: 0.987 0.987; _c 128x1024x4096: 1.329* 1.333*; _c 128x2048x7168: 1.341* 1.343* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Exact | ON | ON | ON | composite | _exact 1024: 0.970 0.961*; _exact 128x1024x4096: 0.823* 0.769*; _exact 128x2048x7168: 0.732* 0.731*; _exact 16x1024x4096: 2.521* 2.521* |
+| wave-gate | Under | Contract | ON | ON | ON | ok | _c 16x1024x4096: 1.968* 1.968* |
+| wave-gate | Under | Exact | ON | ON | ON | ok | _exact 1x1024x4096: 1.217* 1.211*; _exact 1x2048x7168: 1.270* 1.216* |
+
+null A/B (shipped vs itself), results-rtx-3090.txt: max |s-1| = 0.077; _c 1024: 1.000; _c 128x1024x4096: 1.000; _c 128x18432x7168: 1.000; _c 128x2048x7168: 1.005; _c 16x1024x4096: 1.000; _c 16x18432x7168: 1.016; _c 16x2048x7168: 1.000; _c 1x1024x4096: 1.000; _c 1x18432x7168: 1.000; _c 1x2048x7168: 1.000; _c 4096: 1.004; _exact 1024: 0.996; _exact 128x1024x4096: 1.057; _exact 128x18432x7168: 0.999; _exact 128x2048x7168: 1.002; _exact 16x1024x4096: 1.000; _exact 16x18432x7168: 0.994; _exact 16x2048x7168: 0.923; _exact 1x1024x4096: 1.001; _exact 1x18432x7168: 1.000; _exact 1x2048x7168: 1.004; _exact 4096: 1.007; _tf 1024: 1.000; _tf 4096: 1.000
+
+null A/B (shipped vs itself), results-rtx-3090-pass2.txt: max |s-1| = 0.021; _c 1024: 1.000; _c 128x1024x4096: 1.003; _c 128x18432x7168: 0.992; _c 128x2048x7168: 0.998; _c 16x1024x4096: 1.001; _c 16x18432x7168: 0.987; _c 16x2048x7168: 1.011; _c 1x1024x4096: 1.000; _c 1x18432x7168: 1.003; _c 1x2048x7168: 1.000; _c 4096: 0.997; _exact 1024: 1.000; _exact 128x1024x4096: 1.000; _exact 128x18432x7168: 0.993; _exact 128x2048x7168: 0.995; _exact 16x1024x4096: 1.000; _exact 16x18432x7168: 0.996; _exact 16x2048x7168: 1.007; _exact 1x1024x4096: 1.000; _exact 1x18432x7168: 1.000; _exact 1x2048x7168: 1.021; _exact 4096: 1.011; _tf 1024: 0.998; _tf 4096: 0.993
+
+// GPU_RUNGS_OFF rows that ship on rtx-3090 (new = a class that ships ON today)
+    // new
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "results-rtx-3090.txt / results-rtx-3090-pass2.txt OFF/ON (kernels cuBLAS-normalized, programs interleaved): _c 16x2048x7168: 0.834* 0.844*; _exact 16x2048x7168: 0.926 0.926* (ms in the files)",
+    },
+    // new
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "results-rtx-3090.txt / results-rtx-3090-pass2.txt OFF/ON (kernels cuBLAS-normalized, programs interleaved): _c 16x18432x7168: 1.018 0.979; _c 16x2048x7168: 0.875* 0.871*; _exact 16x18432x7168: 1.013 0.985; _exact 16x2048x7168: 0.879 0.869* (ms in the files)",
+    },

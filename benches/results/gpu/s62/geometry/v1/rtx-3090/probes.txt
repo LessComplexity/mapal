@@ -1,0 +1,18 @@
+prog face arm | kernel-sum ms med (min-max) | iter ms med | kernel-sum arm/on
+pt_rmlp_128x1024x2048 _c off-grid-share | 0.3250 (0.322-0.327) | 0.3478 | 1.316
+pt_rmlp_128x1024x2048 _c off-panel-regs | 0.3260 (0.323-0.328) | 0.3388 | 1.320
+pt_rmlp_128x1024x2048 _c on | 0.2470 (0.241-0.263) | 0.3323 | 1.000
+pt_rmlp_128x1024x2048 _exact off-fill-rows | 0.2180 (0.214-0.222) | 0.3766 | 0.908
+pt_rmlp_128x1024x2048 _exact off-fill-rows+row-fit | 0.2160 (0.212-0.222) | 0.3812 | 0.900
+pt_rmlp_128x1024x2048 _exact off-fill-rows+wave-gate | 0.2190 (0.217-0.223) | 0.3196 | 0.913
+pt_rmlp_128x1024x2048 _exact off-panel-regs | 0.2220 (0.218-0.223) | 0.2478 | 0.925
+pt_rmlp_128x1024x2048 _exact on | 0.2400 (0.236-0.242) | 0.3191 | 1.000
+pt_rmlp_128x256x512 _c off-grid-share | 0.0810 (0.080-0.086) | 0.1269 | 1.038
+pt_rmlp_128x256x512 _c off-panel-regs | 0.0820 (0.077-0.111) | 0.1168 | 1.051
+pt_rmlp_128x256x512 _c on | 0.0780 (0.074-0.085) | 0.2366 | 1.000
+pt_rmlp_128x256x512 _exact off-fill-rows | 0.0560 (0.055-0.057) | 0.1370 | 1.143
+pt_rmlp_128x256x512 _exact off-fill-rows+row-fit | 0.0570 (0.050-0.059) | 0.1449 | 1.163
+pt_rmlp_128x256x512 _exact off-fill-rows+wave-gate | 0.0540 (0.052-0.057) | 0.1707 | 1.102
+pt_rmlp_128x256x512 _exact off-grid-share | 0.0450 (0.042-0.048) | 0.1030 | 0.918
+pt_rmlp_128x256x512 _exact off-panel-regs | 0.0420 (0.039-0.047) | 0.0748 | 0.857
+pt_rmlp_128x256x512 _exact on | 0.0490 (0.046-0.054) | 0.1279 | 1.000
