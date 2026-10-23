@@ -1,0 +1,4 @@
+14c14
+<  need((typ,machine,version,eh,size)==(2,190,1,64,64)and count>=2 and names<count and off>=64 and off+count*64<=len(data),'Bad CUDA ELF header')
+---
+>  need(typ in(1,2)and machine==190 and version in(1,123,128)and(eh,size)==(64,64)and count>=2 and names<count and off>=64 and off+count*64<=len(data),'Bad CUDA ELF header')
