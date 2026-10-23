@@ -202,14 +202,22 @@ def remeasure(results):
                 continue
             base, off = m.group(1), probe[m.group(1)]
             ks = sorted(k for k in on if k in off)
+            # A kernel arm timed by tile_bench / mlp_bench (events, one median per process) is judged there,
+            # not on the whole program's `iter ms`.
+            if any(k.startswith('p') for k in ks):
+                ks = [k for k in ks if k.startswith('p')]
             if not ks:
                 continue
             r = [on[k] / off[k] for k in ks]
             # the null: the default face's `.null` arm (cells `mm_X.null`, MLP `_c.null`, programs `.null`)
             root = re.sub(r'_(x|c|r|rc|tf)$', '', base)
-            nl = probe.get(root + '.null') or probe.get(root + '_c.null') or {}
-            sh = probe.get(root) or probe.get(root + '_c') or {}
-            nul = [abs(nl[k] / sh[k] - 1) for k in nl if k in sh]
+            kind = ks[0].startswith('p')
+            nul = []
+            for n0, s0 in ((root + '.null', root), (root + '_c.null', root + '_c')):
+                nl, sh = probe.get(n0, {}), probe.get(s0, {})
+                nul = [abs(nl[k] / sh[k] - 1) for k in nl if k in sh and k.startswith('p') == kind]
+                if nul:
+                    break
             null = max(nul) if nul else None
             sign = ('slower' if null is not None and all(x > 1 + null for x in r) else
                     'faster' if null is not None and all(x < 1 - null for x in r) else 'inside')
