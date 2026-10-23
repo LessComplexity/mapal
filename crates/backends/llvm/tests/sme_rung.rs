@@ -147,7 +147,7 @@ fn emit_at(src: &str, target: &'static str, contract: bool) -> String {
         &EmitOpts {
             contract,
             target,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits")

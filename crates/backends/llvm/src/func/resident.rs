@@ -1833,6 +1833,7 @@ impl<'a> FnEmit<'a> {
             self.tile_plan.is_some(),
             self.packing,
             self.contract,
+            self.order,
             self.kc_nest,
             self.move_panel,
             self.profile,

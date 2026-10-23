@@ -119,11 +119,7 @@ impl<'a> FnEmit<'a> {
         let mul_op = if is_float(&site.elem) { "fmul" } else { "mul" };
         let add_op = if is_float(&site.elem) { "fadd" } else { "add" };
         let tile_j = self.profile.tile_j(&site.elem);
-        let contract_flag = if self.contract && is_float(&site.elem) {
-            " contract"
-        } else {
-            ""
-        };
+        let contract_flag = self.fp_flags(&site.elem);
 
         let a_ptr = self
             .array_operand_ptr(source, Some(site.a.slot))
@@ -485,11 +481,7 @@ impl<'a> FnEmit<'a> {
             tile_i,
             tile_kc,
             packed,
-            contract_flag: if self.contract && is_float(&site.elem) {
-                " contract"
-            } else {
-                ""
-            },
+            contract_flag: self.fp_flags(&site.elem),
         };
         let (lo, hi) = self.bulk_bounds(n);
 

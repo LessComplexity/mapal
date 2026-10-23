@@ -10,7 +10,13 @@
 //! and loop CFG are additionally covered by the `abs` / `fir` / `sum_to_n`
 //! example snapshots.
 
-use mapal_backend_llvm::{EmitError, EmitOpts, GpuArms, emit, emit_with_opts};
+use mapal_backend_llvm::{EmitError, EmitOpts, GpuArms, emit_with_opts};
+
+/// The goldens are the exact face's text (ADR-0040: the default face adds
+/// `reassoc contract` to the tiled steps; `default_face_flags_the_tiled_steps`).
+fn emit(ir: &mapal_ir::CategoryIr) -> Result<String, EmitError> {
+    emit_with_opts(ir, &EmitOpts::exact())
+}
 use mapal_ir::{CategoryIr, Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value};
 
 const L: SourceLoc = SourceLoc { start: 0, end: 0 };
@@ -545,7 +551,7 @@ fn golden_tile_map_shapes() {
         &EmitOpts {
             host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -678,7 +684,7 @@ fn golden_tile_map_shapes() {
             host: "generic",
             tiling: false,
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -702,7 +708,7 @@ fn golden_tile_map_shapes() {
         &EmitOpts {
             host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -760,7 +766,7 @@ fn golden_tile_map_shape_kc() {
             // changes the derived `tile_kc` that decides whether this nest fires.
             // This golden pins the nest's SHAPE, so it pins the reference profile.
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -894,13 +900,13 @@ fn golden_tile_map_shape_kc() {
 #[test]
 fn tile_contract_flags_are_opt_in() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let plain = emit_with_opts(&ir, &EmitOpts::default()).unwrap();
+    let plain = emit_with_opts(&ir, &EmitOpts::exact()).unwrap();
     let contracted = emit_with_opts(
         &ir,
         &EmitOpts {
             host: "generic",
             contract: true,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -909,6 +915,31 @@ fn tile_contract_flags_are_opt_in() {
     assert!(!plain.contains("fadd contract"));
     assert!(contracted.contains("fmul contract float"));
     assert!(contracted.contains("fadd contract float"));
+    assert!(!contracted.contains("reassoc"), "a sequential order never reassociates");
+}
+
+/// ADR-0040 D1/D4: the default face's tiled steps carry `reassoc contract`
+/// (the fold's order is free, a step fuses) and nothing else — no `fast`,
+/// `nsz`, `afn`, `arcp`, `ninf`, `nnan`.
+#[test]
+fn default_face_flags_the_tiled_steps() {
+    let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
+    let opts = EmitOpts {
+        target: "generic",
+        ..EmitOpts::default()
+    };
+    let ll = emit_with_opts(&ir, &opts).unwrap();
+    assert!(ll.contains("fmul reassoc contract float"));
+    assert!(ll.contains("fadd reassoc contract float"));
+    for f in [" fast ", " nsz ", " afn ", " arcp ", " ninf ", " nnan "] {
+        assert!(!ll.contains(f), "{f}");
+    }
+    let free = EmitOpts {
+        contract: false,
+        ..opts
+    };
+    let ll = emit_with_opts(&ir, &free).unwrap();
+    assert!(ll.contains("fmul reassoc float") && !ll.contains("contract"));
 }
 
 #[test]
@@ -920,7 +951,7 @@ fn golden_tile_map_shape_1d() {
         &EmitOpts {
             host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1053,7 +1084,7 @@ fn golden_tile_map_shape_conv() {
         &EmitOpts {
             host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1662,7 +1693,7 @@ fn perf_timing_golden() {
     let opts = EmitOpts {
         host: "generic",
         perf_timing: true,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     let parallel = emit_with_opts(&build_example("abs"), &opts).unwrap();
     let main = mapal_main(&parallel);
@@ -1703,7 +1734,7 @@ fn default_opts_are_byte_identical() {
     let ir = build_example("vector_add");
     assert_eq!(
         emit(&ir).unwrap(),
-        emit_with_opts(&ir, &EmitOpts::default()).unwrap()
+        emit_with_opts(&ir, &EmitOpts::exact()).unwrap()
     );
 }
 
@@ -1806,7 +1837,7 @@ fn profile_closes_the_kc_gate_by_derivation() {
                 kc_nest: true,
                 contract: true,
                 target,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits")
@@ -1832,7 +1863,7 @@ fn profile_closes_the_kc_gate_by_derivation() {
             host: "generic",
             contract: true,
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits");
@@ -1854,7 +1885,7 @@ fn unknown_profile_is_an_error_not_a_silent_default() {
         &EmitOpts {
             host: "generic",
             target: "apple_m",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect_err("unknown profile must not emit");
@@ -1893,7 +1924,7 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
         &EmitOpts {
             host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2018,7 +2049,7 @@ fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
             &EmitOpts {
                 host: "generic",
                 target,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .unwrap();
@@ -2095,7 +2126,7 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
                 host: "generic",
                 target,
                 gpu,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .unwrap()
@@ -2217,7 +2248,7 @@ fn rtx_4090_streams_with_cp_async_only_under_filled() {
             target: "rtx-4090",
             contract: true,
             gpu: arms,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         };
         mapal_backend_llvm::emit_detailed(&gpu_mm(n), &opts)
             .expect("emit")

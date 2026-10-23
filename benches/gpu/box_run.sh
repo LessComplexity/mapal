@@ -105,6 +105,12 @@ nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/inclu
 nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
     chain_bench.cu -lcublasLt -lcublas -o chain_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
 [ -x chain_bench ] || say "CHAIN HARNESS BUILD FAILED"
+# S63: the residual MLP's kernels vs cuBLAS, cuBLASLt and CUTLASS (mlp_bench.cu).
+if [ -f mlp_bench.cu ]; then
+    nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
+        mlp_bench.cu -lcublasLt -lcublas -lcuda -o mlp_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+    [ -x mlp_bench ] || say "MLP HARNESS BUILD FAILED"
+fi
 
 # Whole programs, both faces: the shipped emission, each host rung off, and
 # the S52 host object (`s52`, PREV), interleaved per repetition. One untraced
@@ -168,11 +174,14 @@ val_fail=0
 for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
-    case $b in *.*|*_c) continue ;; esac
+    case $b in *.*|*_c|*_x) continue ;; esac
     pa=$( (off_arms "$b"; off_arms "${b}_c"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
     probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
+    # S63 (ADR-0040 D2): the program's longest fold, off the stem (`_d<d>_h<h>`).
+    kmax=$(sed -nE 's/.*_d([0-9]+)_h([0-9]+).*/\1 \2/p' <<< "$b" | awk '{ print ($1 > $2) ? $1 : $2 }')
+    faces=("" _c); [ -f "$PROF/${b}_x.host.o" ] && faces=("" _x _c)
     runs=()
-    for face in "" _c; do
+    for face in "${faces[@]}"; do
         for arm in $pa; do
             s=$(arm_stem "$b$face" "$arm")
             [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "pt_$s"
@@ -184,6 +193,15 @@ for o in "$PROF"/pt_*.host.o; do
     for fa in "${runs[@]}"; do
         face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
         got=$(probe_out "$s"); got=${got%%iter ms=*}
+        # S63: the default face answers to the exact face within D2's bound (value_gate.py).
+        if [ -z "$face" ] && [ -s "tiles/${b}_x.expect" ] && [ -n "$kmax" ]; then
+            if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax"); then
+                bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
+            else
+                say "value-bound prog=$b face=_default arm=$arm K=$kmax $g got=[$got] exact=[$(tr '\n' ' ' < "tiles/${b}_x.expect")]"
+            fi
+            continue
+        fi
         exp="tiles/$b$face.expect"
         if [ -s "$exp" ]; then want=$(tr '\n' ' ' < "$exp"); else want=$(probe_out "$b$face.cpu"); want=${want%%iter ms=*}; fi
         if [ "$got" != "$want" ]; then
@@ -207,9 +225,9 @@ for o in "$PROF"/pt_*.host.o; do
             if [ "$r" -le "${PROBE_TRACE_REPS:-2}" ]; then
                 tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
             fi
-            say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
+            say "probe prog=$b face=${face:-_default} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
             # S54: each launch's kernel time under the trace, in launch order.
-            [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
+            [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_default} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
             [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
             [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
             # S62 SUBMIT="<arm>...": a third process under MAPAL_GPU_TRACE=2 (no
@@ -236,6 +254,25 @@ for o in "$PROF"/pt_*.host.o; do
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 say "probe value gate: $val_fail program(s) failed"
+
+# S63: the residual MLP's kernels in one process with cuBLAS, cuBLASLt, stock and tuned CUTLASS
+# (mlp_bench.cu: Mapal arms bit-exact vs their face's ordered fold, then 30 iterations ABBA),
+# twice, the second with the legs reversed. The default face's MLP is its contract face (both
+# sites are epilogue groups: no combine), so the `_c` stems stand for it (bundle: `same`).
+if [ -x mlp_bench ]; then
+    say "-- mlp: residual MLP kernels vs cuBLAS / cuBLASLt / CUTLASS (mlp_bench, reps=$REPS)"
+    for k in "$PROF"/pt_rm_m*_d*_h*_c.k; do
+        [ -f "$k" ] || continue
+        p=$(basename "$k" _c.k); dims=$(sed -nE 's/^pt_rm_m([0-9]+)_d([0-9]+)_h([0-9]+)$/\1 \2 \3/p' <<< "$p")
+        [ -n "$dims" ] || continue
+        legs=$(cd "$PROF" && ls "${p}"_c.k "${p}"_c.*.k "${p}"_x.k 2>/dev/null | sed 's/\.k$//' | tr '\n' ' ')
+        for pass in 1 2; do
+            rev=; [ $pass = 2 ] && rev=1
+            # shellcheck disable=SC2086  # dims and legs are separate arguments
+            DIS_REVERSE=$rev ./mlp_bench $dims "$REPS" "$PROF" $legs 2>&1 | sed "s/^/pass=$pass mlp=$p /" | tee -a "$LOG"
+        done
+    done
+fi
 
 # The decode loop end to end, both faces, interleaved: shipped vs each R5 rung
 # off (S54 `retain-resident`, `delta-h2d`, `lane-stride`), the s54-base placement
@@ -284,8 +321,8 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
     for l in "$PROF"/mm_*x*x*_r.launch; do
         cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
         # S62 integration: every arm the bundle built for the cell (`.base`, `.off-<rung>`, `.null`).
-        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_c.launch "${cell}"_c.*.launch "${cell}"_r*.launch 2>/dev/null |
-            sed 's/\.launch$//' | tr '\n' ' ')
+        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_x.launch "${cell}"_c.launch "${cell}"_c.*.launch \
+            "${cell}"_r*.launch 2>/dev/null | sed 's/\.launch$//' | tr '\n' ' ')
         say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
         for pass in 1 2; do
             order=$arms; [ $pass = 2 ] && order=$(tr ' ' '\n' <<< "$arms" | sed '/^$/d' | tac | tr '\n' ' ')
@@ -293,21 +330,26 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
             ./tile_bench --splitk "$M" "$N" "$K" "$REPS" "$PROF" $order 2>&1 | sed "s/^/pass=$pass cell=$cell /" | tee -a "$LOG"
             [ "${PIPESTATUS[0]}" -eq 0 ] || say "SPLITK GATE FAILED cell=$cell pass=$pass"
         done
-        for v in _r _rc; do
-            [ -f "$PROF/$cell$v.host.o" ] || continue
-            for s in "$cell$v" "$cell$v.off-splitk"; do
-                [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
-            done
-            on=$(MAPAL_PTX="$PROF/$cell$v.ptx" "./prog_$cell$v" 2>&1 | tr '\n' ' '); rc=$?
-            off=$on; [ -x "prog_$cell$v.off-splitk" ] && off=$(MAPAL_PTX="$PROF/$cell$v.off-splitk.ptx" "./prog_$cell$v.off-splitk" 2>&1 | tr '\n' ' ')
-            ok=$(awk -v a="$on" -v b="$off" 'BEGIN { n = split(a, x, " "); m = split(b, y, " "); ok = n == 3 && m == 3
-                for (i = 2; i <= n && ok; i++) { d = x[i] - y[i]; s = y[i] < 0 ? -y[i] : y[i]; if ((d < 0 ? -d : d) > 1e-3 * (s > 1 ? s : 1)) ok = 0 }
-                print ok ? "yes" : "NO" }')
-            say "splitk_program prog=$cell$v rc=$rc out=[$on] off=[$off] within_1e-3=$ok"
+        # S63: the whole program of every arm through mapal_gpu.c (the output's
+        # `mapal_gpu_zero` + the atomic launch on the default face, the workspace +
+        # reduce on the fixed one) prints the exact face's value within D2's bound.
+        [ -f "$PROF/${cell}_x.host.o" ] && link "$PROF/${cell}_x.host.o" "prog_${cell}_x"
+        ref=$(MAPAL_PTX="$PROF/${cell}_x.ptx" "./prog_${cell}_x" 2>&1 | tr '\n' ' ')
+        echo "$ref" > "prog_${cell}_x.out"
+        for l2 in "$PROF/$cell".launch "$PROF/$cell".off-*.launch "$PROF/${cell}"_c.launch "$PROF/${cell}"_r.launch "$PROF/${cell}"_rc.launch; do
+            [ -f "$l2" ] || continue
+            s=$(basename "$l2" .launch)
+            [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
+            on=$(MAPAL_PTX="$PROF/$s.ptx" "./prog_$s" 2>&1 | tr '\n' ' '); rc=$?
+            g=$(python3 value_gate.py "prog_${cell}_x.out" "$on" "$K")
+            say "splitk_program prog=$s rc=$rc out=[$on] exact=[$ref] launch=[$(cat "$l2")] $g"
+            [ "$rc" -eq 0 ] && [ "${g%% *}" = within ] || say "SPLITK PROGRAM FAILED prog=$s"
         done
     done
 fi
 
+# TIMING=0 (S63): skip the single-arm square-cell section (a cell session runs tile_bench --splitk).
+if [ "${TIMING:-1}" = 1 ]; then
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS, passes=${PASSES:-1})"
 # A cell is `n` (square) or `MxNxK` (S62: the `mm_<M>x<N>x<K>` programs).
 dims() { case $1 in *x*x*) echo "${1//x/ }" ;; *) echo "$1 $1 $1" ;; esac; }
@@ -353,4 +395,5 @@ for pass in $(seq "${PASSES:-1}"); do
         done
     done
 done
+fi
 say "== done"

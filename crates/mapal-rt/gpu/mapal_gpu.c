@@ -274,6 +274,16 @@ void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
             (unsigned long long)bytes);
 }
 
+/* S63 `splitk-atomic` / `streamk` (ADR-0040 D4): zero `bytes` of the device
+ * buffer `d` on the legacy stream, ahead of the kernel whose partials add into
+ * it. Not a kernel: the launch behind it is not a dependent (PDL) launch. */
+void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
+  load_module();
+  CK(cuMemsetD8Async((CUdeviceptr)d, 0, bytes, streams[0]));
+  legacy_ops++;
+  last_kernel[0] = 0;
+}
+
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
  * Synchronous: it waits for every launch before it on the stream. */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {

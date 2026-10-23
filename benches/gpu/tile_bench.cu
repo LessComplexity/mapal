@@ -67,6 +67,15 @@
 using CutlassGemm = cutlass::gemm::device::Gemm<
     float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, float,
     cutlass::layout::RowMajor, float, cutlass::arch::OpClassSimt, CUTLASS_ARCH>;
+// S63: the tuned SIMT configuration of docs/performance/gpu/kernels/competitive-cutlass.md
+// (candidate m16-n64-k16: block 16x64x16, warp 8x32x16, instruction 1x1x1, 2 stages,
+// alignment 1) — the S62 disassembly sessions' `cutlass_tuned` leg.
+using CutlassTuned = cutlass::gemm::device::Gemm<float, cutlass::layout::RowMajor,
+    float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, float,
+    cutlass::arch::OpClassSimt, cutlass::arch::Sm80, cutlass::gemm::GemmShape<16, 64, 16>,
+    cutlass::gemm::GemmShape<8, 32, 16>, cutlass::gemm::GemmShape<1, 1, 1>,
+    cutlass::epilogue::thread::LinearCombination<float, 1, float, float>,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>, 2, 1, 1, false>;
 // --tf32: CUTLASS's tensor-core GEMM for f32 operands (TF32 mma, sm_80+), in
 // the configuration of CUTLASS's own Ampere TF32 example (examples/14): the
 // library default (128x256x64) does not instantiate for these layouts.
@@ -297,23 +306,28 @@ static int decode_main(int T, int d, int reps) {
   return 0;
 }
 
-// --- S62 `--splitk M N K reps dir stem...` (ADR-0040): every Mapal arm of one
+// --- S62/S63 `--splitk M N K reps dir stem...` (ADR-0040): every Mapal arm of one
 // cell (`<dir>/<stem>.ptx` + `.launch`: `kernel gx gy block smem [S rkernel
-// rgx rgy rblock rsmem]`), cuBLAS and stock CUTLASS in ONE process, timed
-// round-robin, the order reversed on odd reps (ABBA). The face is the stem's
-// suffix before any `.`: `_rc` reassoc+contract, `_r` reassoc, `_c` contract,
-// else exact. A split arm's two launches (partials into a preallocated
-// workspace, then the reduce) are one timed leg.
-// Gates, before any timing, per Mapal arm: bit-exact on 256 sampled cells
-// against the CPU fold in the arm's order (ADR-0040 §2: S contiguous partial
-// folds, added in partition order; S = 1 is the ordered fold); on a reassoc
-// arm also |got - ordered| <= (g_K + g_{K/S+S}) * sum|a_k b_k| (ADR-0040 §3,
-// f64). After timing: the whole output re-run and compared byte for byte, and
-// its FNV-1a printed (box_run.sh runs two processes: the hashes must match).
+// rgx rgy rblock rsmem | S atomic | 1 streamk]`), cuBLAS, stock CUTLASS and the
+// tuned CUTLASS 16x64x16 in ONE process, timed round-robin, the order reversed on
+// odd reps (ABBA). The face is the stem's suffix before any `.` (ADR-0040 D1):
+// `_rc` fixed order + fma, `_r` fixed order + separate steps, `_c` contract
+// (sequential fma), `_x` exact, none: the default face (fma, order free). A
+// workspace split's two launches (partials, then the reduce) are one timed leg; an
+// atomic one (`splitk-atomic`, `streamk`) is the output's memset plus its launch.
+// Gates, before any timing, per Mapal arm: on a deterministic realization (no
+// atomics), bit-exact on 256 sampled cells against the CPU fold in the arm's order
+// (ADR-0040 D3: S contiguous partial folds, added in partition order; S = 1 is the
+// ordered fold); on the default face also D2's a-priori bound, f64 reference:
+// |got - ref| <= g_{K+1}(2^-24)*M + g_{K+1}(2^-53)*M, M = sum|a_k b_k| (an atomic
+// realization: the bound only); on a fixed-order arm the S62 bound against the
+// ordered fold. After timing: the whole output re-run and compared byte for byte,
+// its FNV-1a printed — a gate on a deterministic arm, recorded (not gated) on an
+// atomic one, whose order the default face leaves unspecified.
 // A failed gate drops that arm from timing and exits 1 at the end.
 struct Arm {
   std::string stem;
-  bool contract = false, reassoc = false;
+  bool contract = false, reassoc = false, free = false, atomic = false;
   CUfunction fn = 0, red = 0;
   unsigned gx = 0, gy = 0, block = 0, smem = 0, s = 1, rgx = 0, rgy = 0, rblock = 0, rsmem = 0;
   float *out = 0, *ws = 0;
@@ -336,7 +350,7 @@ static int splitk_main(int argc, char **argv) {
   uint64_t seed = 0x5eed;
   for (auto &x : A) x = frand(seed);
   for (auto &x : B) x = frand(seed);
-  float *dA, *dB, *dLib[2];
+  float *dA, *dB, *dLib[3];
   CUDA(cudaMalloc(&dA, A.size() * 4));
   CUDA(cudaMalloc(&dB, B.size() * 4));
   for (auto &c : dLib) CUDA(cudaMalloc(&c, (size_t)M * N * 4));
@@ -356,7 +370,8 @@ static int splitk_main(int argc, char **argv) {
       return face.size() >= n && face.compare(face.size() - n, n, x) == 0;
     };
     a.reassoc = ends("_r") || ends("_rc");
-    a.contract = ends("_c") || ends("_rc");
+    a.free = !a.reassoc && !ends("_c") && !ends("_x");
+    a.contract = ends("_c") || ends("_rc") || a.free;
     std::string path = dir + "/" + a.stem;
     FILE *f = fopen((path + ".ptx").c_str(), "rb");
     FILE *l = fopen((path + ".launch").c_str(), "r");
@@ -371,7 +386,8 @@ static int splitk_main(int argc, char **argv) {
                      &a.smem, &a.s, rname, &a.rgx, &a.rgy, &a.rblock, &a.rsmem);
     fclose(l);
     if (got < 5) { fprintf(stderr, "bad launch line %s\n", path.c_str()); return 102; }
-    if (got < 11) a.s = 1;
+    a.atomic = got >= 7 && (!strcmp(rname, "atomic") || !strcmp(rname, "streamk"));
+    if (got < 11 && !a.atomic) a.s = 1;
     CUmodule mod;
     CU(cuModuleLoadData(&mod, ptx.c_str()));
     CU(cuModuleGetFunction(&a.fn, mod, kname));
@@ -386,9 +402,10 @@ static int splitk_main(int argc, char **argv) {
       CUDA(cudaMalloc(&a.ws, (size_t)a.s * M * N * 4));
     }
     CUDA(cudaMalloc(&a.out, (size_t)M * N * 4));
-    printf("arm stem=%s face=%s%s kernel=%s grid=%ux%u block=%u smem=%u regs=%d local_bytes=%d S=%u", a.stem.c_str(),
-           a.reassoc ? "reassoc+" : "", a.contract ? "contract" : "exact", kname, a.gx, a.gy, a.block, a.smem,
-           regs, spill, a.s);
+    printf("arm stem=%s face=%s%s kernel=%s grid=%ux%u block=%u smem=%u regs=%d local_bytes=%d S=%u combine=%s",
+           a.stem.c_str(), a.free ? "default+" : a.reassoc ? "fixed+" : "", a.contract ? "fma" : "separate", kname,
+           a.gx, a.gy, a.block, a.smem, regs, spill, a.s,
+           a.atomic ? rname : a.s > 1 ? "workspace" : "none");
     if (a.s > 1) printf(" reduce=%s rgrid=%ux%u rblock=%u rregs=%d", rname, a.rgx, a.rgy, a.rblock, rregs);
     printf("\n");
     arms.push_back(a);
@@ -404,27 +421,38 @@ static int splitk_main(int argc, char **argv) {
     fprintf(stderr, "cutlass cannot run %dx%dx%d\n", M, N, K);
     return 102;
   }
+  CutlassTuned tuned_gemm;
+  CutlassTuned::Arguments targs({M, N, K}, {dA, K}, {dB, N}, {dLib[2], N}, {dLib[2], N}, {1.0f, 0.0f});
+  const bool tuned_ok = tuned_gemm.can_implement(targs) == cutlass::Status::kSuccess &&
+                        tuned_gemm.initialize(targs) == cutlass::Status::kSuccess;
+  if (!tuned_ok) printf("cutlass_tuned cannot run %dx%dx%d: leg skipped\n", M, N, K);
   const float one = 1.0f, zero = 0.0f;
   const size_t na = arms.size();
   auto run = [&](size_t leg) {
     if (leg < na) {
       Arm &a = arms[leg];
-      float *o = a.s > 1 ? a.ws : a.out;
+      float *o = a.s > 1 && !a.atomic ? a.ws : a.out;
       void *args[] = {&dA, &dB, &o};
+      if (a.atomic) CUDA(cudaMemsetAsync(a.out, 0, (size_t)M * N * 4));
       CU(cuLaunchKernel(a.fn, a.gx, a.gy, 1, a.block, 1, 1, a.smem, 0, args, 0));
-      if (a.s > 1) {
+      if (a.s > 1 && !a.atomic) {
         CUdeviceptr none = 0;
         void *rargs[] = {&a.ws, &none, &a.out};
         CU(cuLaunchKernel(a.red, a.rgx, a.rgy, 1, a.rblock, 1, 1, a.rsmem, 0, rargs, 0));
       }
     } else if (leg == na) {
       cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, dB, N, dA, K, &zero, dLib[0], N);
-    } else {
+    } else if (leg == na + 1) {
       cutlass_gemm();
+    } else if (tuned_ok) {
+      tuned_gemm();
     }
   };
-  auto name = [&](size_t leg) { return leg < na ? arms[leg].stem : std::string(leg == na ? "cublas" : "cutlass"); };
-  for (size_t leg = 0; leg < na + 2; ++leg)
+  auto name = [&](size_t leg) {
+    return leg < na ? arms[leg].stem : std::string(leg == na ? "cublas" : leg == na + 1 ? "cutlass" : "cutlass_tuned");
+  };
+  const size_t nl = na + 3;
+  for (size_t leg = 0; leg < nl; ++leg)
     for (int w = 0; w < 3; ++w) run(leg);
   CUDA(cudaDeviceSynchronize());
 
@@ -448,11 +476,12 @@ static int splitk_main(int argc, char **argv) {
   std::vector<std::vector<float>> before(na);
   bool all_ok = true;
   std::vector<float> C((size_t)M * N);
-  for (size_t leg = 0; leg < na + 2; ++leg) {
+  for (size_t leg = 0; leg < nl; ++leg) {
+    if (leg == na + 2 && !tuned_ok) continue;
     float *src = leg < na ? arms[leg].out : dLib[leg - na];
     CUDA(cudaMemcpy(C.data(), src, C.size() * 4, cudaMemcpyDeviceToHost));
     double maxrel = 0, maxabs_ord = 0;
-    int mism = 0, over = 0;
+    int mism = 0, over = 0, out_d2 = 0;
     for (auto [i, j] : cells) {
       double ref = 0, mag = 0;
       for (int k = 0; k < K; ++k) {
@@ -475,15 +504,22 @@ static int splitk_main(int argc, char **argv) {
       double d = std::fabs((double)got - ordered);
       maxabs_ord = std::max(maxabs_ord, d);
       if (a.reassoc && d > (gamma(K) + gamma(K / a.s + a.s)) * mag) ++over;
+      // ADR-0040 D2: every realization the default face admits, against the f64 sum.
+      const double u53 = std::ldexp(1.0, -53);
+      if (std::fabs((double)got - ref) > gamma(K + 1) * mag + (K + 1) * u53 / (1 - (K + 1) * u53) * mag)
+        ++out_d2;
     }
     printf("values leg=%s cells=%zu maxrel_vs_f64=%.3e", name(leg).c_str(), cells.size(), maxrel);
     if (leg < na) {
       Arm &a = arms[leg];
-      a.ok = !mism && !over;
+      // An atomic realization's bits are unspecified (ADR-0040 D1): the bound only.
+      a.ok = (a.atomic || !mism) && !over && (!a.free || !out_d2);
       all_ok &= a.ok;
       before[leg] = C;
-      printf(" S=%u bit_exact_vs_reference=%s maxabs_vs_ordered=%.3e", a.s, mism ? "NO" : "yes", maxabs_ord);
+      printf(" S=%u bit_exact_vs_reference=%s%s maxabs_vs_ordered=%.3e", a.s, mism ? "NO" : "yes",
+             a.atomic ? "(info)" : "", maxabs_ord);
       if (a.reassoc) printf(" within_adr0040_bound=%s", over ? "NO" : "yes");
+      printf(" within_bound=%s", out_d2 ? "NO" : "yes");
       printf(" fnv=%016llx%s", (unsigned long long)fnv(C), a.ok ? "" : " GATE-FAILED");
     }
     printf("\n");
@@ -493,11 +529,12 @@ static int splitk_main(int argc, char **argv) {
   cudaEvent_t t0, t1;
   CUDA(cudaEventCreate(&t0));
   CUDA(cudaEventCreate(&t1));
-  std::vector<std::vector<float>> ms(na + 2);
+  std::vector<std::vector<float>> ms(nl);
   for (int r = 0; r < reps; ++r)
-    for (size_t x = 0; x < na + 2; ++x) {
-      size_t leg = r & 1 ? na + 1 - x : x;
+    for (size_t x = 0; x < nl; ++x) {
+      size_t leg = r & 1 ? nl - 1 - x : x;
       if (leg < na && !arms[leg].ok) continue;
+      if (leg == na + 2 && !tuned_ok) continue;
       CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
       CUDA(cudaEventRecord(t0));
       run(leg);
@@ -507,7 +544,7 @@ static int splitk_main(int argc, char **argv) {
       CUDA(cudaEventElapsedTime(&e, t0, t1));
       ms[leg].push_back(e);
     }
-  for (size_t leg = 0; leg < na + 2; ++leg) {
+  for (size_t leg = 0; leg < nl; ++leg) {
     if (ms[leg].empty()) continue;
     auto v = ms[leg];
     std::sort(v.begin(), v.end());
@@ -522,11 +559,11 @@ static int splitk_main(int argc, char **argv) {
     CUDA(cudaDeviceSynchronize());
     CUDA(cudaMemcpy(C.data(), arms[leg].out, C.size() * 4, cudaMemcpyDeviceToHost));
     bool same = !memcmp(C.data(), before[leg].data(), C.size() * 4);
-    all_ok &= same;
-    printf("determinism leg=%s same_output=%s fnv=%016llx\n", arms[leg].stem.c_str(), same ? "yes" : "NO",
-           (unsigned long long)fnv(C));
+    if (!arms[leg].atomic) all_ok &= same;  // an atomic arm's run-to-run bits: recorded, not gated
+    printf("determinism leg=%s same_output=%s%s fnv=%016llx\n", arms[leg].stem.c_str(), same ? "yes" : "NO",
+           arms[leg].atomic ? "(info)" : "", (unsigned long long)fnv(C));
   }
-  for (size_t leg = 0; leg < na + 2; ++leg) {
+  for (size_t leg = 0; leg < nl; ++leg) {
     printf("samples leg=%s ", name(leg).c_str());
     for (size_t i = 0; i < ms[leg].size(); ++i) printf("%s%.4f", i ? "," : "", ms[leg][i]);
     printf("\n");

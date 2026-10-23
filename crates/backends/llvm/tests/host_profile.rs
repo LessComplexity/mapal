@@ -39,7 +39,7 @@ fn emit(ir: &CategoryIr, target: &'static str, host: &'static str, gpu: GpuArms)
         target,
         host,
         gpu,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     let em = emit_detailed(ir, &opts).expect("emits");
     assert!(em.device.is_none(), "{target}: no device-capable site");
@@ -114,7 +114,7 @@ fn small_site_stays_on_the_host() {
         let opts = EmitOpts {
             target,
             host: "x86-64-v3",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         };
         let em = emit_detailed(&small, &opts).expect("emits");
         assert!(em.device.is_none(), "{target}");
@@ -139,7 +139,7 @@ fn host_must_be_a_cpu_profile_of_a_gpu_target() {
         let opts = EmitOpts {
             target,
             host,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         };
         assert!(
             matches!(emit_detailed(&ir, &opts), Err(EmitError::Internal(_))),

@@ -51,7 +51,13 @@ impl<'a> FnEmit<'a> {
     }
 
     /// Emit the function body: prologue store, the topo walk, epilogue return.
-    pub fn emit(mut self) -> String {
+    pub fn emit(self) -> String {
+        self.emit_ordered().0
+    }
+
+    /// [`Self::emit`] and the split folds it compiled under
+    /// [`crate::Order::Fixed`] (ADR-0040 D3).
+    pub fn emit_ordered(mut self) -> (String, Vec<crate::FoldOrder>) {
         let fd = self.ir.func(self.f).expect("func resolves");
         let ret_ty = self.obj_ty(fd.output);
         let fname = if self.cell_slots.is_empty() {
@@ -141,10 +147,11 @@ impl<'a> FnEmit<'a> {
             .cell_vals
             .iter()
             .fold(param, |p, (s, t)| format!("{p}, {t} %cv{s}"));
-        format!(
+        let text = format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n",
             perf_begin, self.allocas, self.body
-        )
+        );
+        (text, self.orders)
     }
 
     pub(crate) fn emit_parallel(
@@ -158,12 +165,13 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
     ) -> String {
         let mut host = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
         );
         host.perf_timing = perf_timing;
         // The host runs once per program, so its blocks may go to the arena.
@@ -557,6 +565,7 @@ impl<'a> FnEmit<'a> {
                 tiling,
                 packing,
                 contract,
+                order,
                 kc_nest,
                 move_panel,
                 profile,
@@ -589,6 +598,7 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
@@ -602,7 +612,7 @@ impl<'a> FnEmit<'a> {
             && packing_site(&site, profile, contract)
         {
             let mut slice = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
             slice.guard_flavor = GuardFlavor::Task;
@@ -625,7 +635,7 @@ impl<'a> FnEmit<'a> {
             // wall — 30.2%, thread-count-independent, pure Amdahl.
             let source = ir.morphism(*m).expect("tile map resolves").source;
             let mut pack = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
             pack.guard_flavor = GuardFlavor::Task;
@@ -650,7 +660,7 @@ impl<'a> FnEmit<'a> {
             }
 
             let mut emit = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
                 profile,
             );
             emit.guard_flavor = GuardFlavor::Task;
@@ -711,7 +721,7 @@ impl<'a> FnEmit<'a> {
         }
 
         let mut emit = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
         );
         emit.guard_flavor = GuardFlavor::Task;
         emit.split_range = matches!(task.kind, TaskKind::Split { .. });

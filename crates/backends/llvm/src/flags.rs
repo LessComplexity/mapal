@@ -1,7 +1,7 @@
 //! The emitter's command-line flags, shared by the `emit` dev example and the
 //! `mapal` CLI so every rung's OFF arm is reachable from the product binary.
 
-use crate::{EmitOpts, GpuRungs, MovePanel, Reduced};
+use crate::{EmitOpts, GpuRungs, MovePanel, Order, Reduced};
 
 /// Apply one emitter flag to `opts`. `Ok(false)` = not an emitter flag (the
 /// caller owns it); `Err` = an emitter flag with a malformed value.
@@ -13,7 +13,26 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // The KC k-panel nest is default-OFF (a measured 3x loss locally at
         // 1024 f32, S29); this is how a box run opts in.
         "--kc" => opts.kc_nest = true,
+        // ADR-0040 D1: the float face's two axes. `fma` steps and the free
+        // order are the default; `--contract` survives as the steps flag.
         "--contract" => opts.contract = true,
+        "--no-contract" => opts.contract = false,
+        "--exact" => {
+            opts.contract = false;
+            opts.order = Order::Sequential;
+        }
+        _ if a.starts_with("--order=") => {
+            opts.order = match &a["--order=".len()..] {
+                "sequential" => Order::Sequential,
+                "fixed" => Order::Fixed,
+                "free" => Order::Free,
+                v => {
+                    return Err(format!(
+                        "--order expects sequential, fixed or free, got `{v}`"
+                    ));
+                }
+            };
+        }
         // The move-panel traversal. **Deduced by default (S45)** — the
         // geometry comes from `mapal_ir::MoveSite` and the machine facts
         // from the target profile, so there is nothing to pass. This flag
@@ -67,10 +86,8 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // A reduced-precision face (ADR-0032 D1): changes values by the
         // format's bound and admits the tensor cores.
         "--precision=tf32" => opts.reduced = Some(Reduced::Tf32),
-        // S62 (ADR-0040): opt-in reassociation of a tile site's k fold
-        // (deterministic split-K); steps stay the face's (`--contract`).
-        "--precision=reassoc" => opts.reduced = Some(Reduced::Reassoc),
-        // Measurement only: force split-K's partition count (0 = derive).
+        // Measurement only: force split-K's partition count (0 = derive), on
+        // `splitk` and `splitk-atomic`.
         _ if a.starts_with("--splitk=") => {
             let Ok(s) = a["--splitk=".len()..].parse::<u64>() else {
                 return Err(format!("--splitk expects a partition count, got `{a}`"));

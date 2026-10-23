@@ -64,7 +64,7 @@ fn emit_with(src: &str, move_panel: MovePanel) -> String {
         &ir,
         &EmitOpts {
             move_panel,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits")
@@ -98,7 +98,7 @@ fn default_off_is_character_identical() {
     let opts = |move_panel| EmitOpts {
         target: "generic",
         move_panel,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     let deduced = emit_with_opts(&ir, &opts(MovePanel::default())).expect("emits");
     assert_eq!(
@@ -156,7 +156,7 @@ fn the_flag_cannot_reach_a_recognized_tile_site() {
             &EmitOpts {
                 tiling,
                 move_panel,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits")
@@ -269,7 +269,7 @@ fn the_deduction_fires_without_a_flag_and_declines_without_a_reason() {
             &ir,
             &EmitOpts {
                 target,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits")
@@ -294,7 +294,7 @@ fn the_deduction_fires_without_a_flag_and_declines_without_a_reason() {
         &EmitOpts {
             target: "apple-m4-sme",
             move_panel: MovePanel::Off,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits");
@@ -313,7 +313,7 @@ fn the_deduction_fires_without_a_flag_and_declines_without_a_reason() {
                 &EmitOpts {
                     target: "generic",
                     move_panel: MovePanel::Off,
-                    ..EmitOpts::default()
+                    ..EmitOpts::exact()
                 },
             )
             .expect("emits")

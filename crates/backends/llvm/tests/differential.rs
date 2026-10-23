@@ -12,7 +12,7 @@
 //!
 //! Profile policy (ADR-0038 D4): every emission here pins a profile by name —
 //! `generic`, whose NEON-derived geometry is what the tile-shape assertions
-//! bind — because S46 made `EmitOpts::default().target` the host-detected
+//! bind — because S46 made `EmitOpts::exact().target` the host-detected
 //! `native`, and a detected AVX2/AVX-512/L2 yields different tile constants.
 //! The ONE leg that intentionally floats on the ambient default is
 //! `differential_native_profile_is_value_correct` (values only, no shape).
@@ -226,7 +226,7 @@ fn assert_parity(clang: &str, ir: &CategoryIr, rr: &RunResult, tag: &str) {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap_or_else(|e| panic!("{tag}: emit failed: {e:?}"));
@@ -420,7 +420,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .expect("emit");
@@ -663,7 +663,7 @@ fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap_or_else(|e| panic!("{tag}: emit: {e:?}"));
@@ -909,7 +909,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -936,7 +936,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1003,7 +1003,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1023,7 +1023,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1070,7 +1070,7 @@ fn differential_default_rewritten_matmul4_lifts_and_tiles() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1129,7 +1129,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1148,7 +1148,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1207,7 +1207,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1225,7 +1225,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1270,7 +1270,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1285,7 +1285,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1357,7 +1357,7 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1368,7 +1368,7 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1382,7 +1382,7 @@ fn emit_tiled_and_untiled(ir: &CategoryIr) -> (String, String) {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1393,7 +1393,7 @@ fn emit_tiled_and_untiled(ir: &CategoryIr) -> (String, String) {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1566,7 +1566,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1583,7 +1583,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1654,7 +1654,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1671,7 +1671,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1721,7 +1721,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1738,7 +1738,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1749,7 +1749,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1838,7 +1838,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1870,7 +1870,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1936,7 +1936,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1953,7 +1953,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2005,7 +2005,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2021,7 +2021,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2182,7 +2182,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2198,7 +2198,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2209,7 +2209,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2518,7 +2518,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2559,7 +2559,7 @@ fn differential_heap_lowered_arrays() {
             &ir,
             &mapal_backend_llvm::EmitOpts {
                 target: "generic",
-                ..mapal_backend_llvm::EmitOpts::default()
+                ..mapal_backend_llvm::EmitOpts::exact()
             },
         )
         .unwrap();
@@ -2611,7 +2611,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2656,7 +2656,7 @@ fn differential_parallel_env_matrix() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2725,7 +2725,7 @@ fn main() {
         &lower_src(src),
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2773,7 +2773,7 @@ fn differential_parallel_run_twice() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2844,7 +2844,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2852,7 +2852,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "zen3",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2868,7 +2868,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2913,9 +2913,9 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("native oracle completes") else {
         panic!("native oracle must complete");
     };
-    // The only ambient `emit` left in this file — the host-detected default is
-    // the whole point of this leg.
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // The only ambient profile left in this file — the host-detected default
+    // is the whole point of this leg (on the exact face: the oracle's bits).
+    let ll = mapal_backend_llvm::emit_with_opts(&ir, &mapal_backend_llvm::EmitOpts::exact()).unwrap();
     for opt in ["-O0", "-O2"] {
         let (out, code) = compile_run(&clang, &ll, &format!("native_profile/{opt}"), opt)
             .unwrap_or_else(|| panic!("native_profile/{opt}: run timed out"));

@@ -20,7 +20,7 @@ mod eval;
 mod loops;
 mod value;
 
-use mapal_ir::{CategoryIr, FuncId, Ty};
+use mapal_ir::{CategoryIr, FuncId, MorphismId, Ty};
 
 pub use value::{Outcome, RValue, TrapKind, render};
 
@@ -35,6 +35,15 @@ pub struct RunResult {
 /// Run a program: seed the entry function, walk the graph, collect output
 /// (interp DESIGN §7). `budget` is the global step counter (E1).
 pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
+    run_ordered(ir, budget, &[])
+}
+
+/// [`run`] with the compiled program's split folds replayed (ADR-0040 D3):
+/// each `(func, fold, S)` folds in `S` contiguous partitions — partition 0
+/// from its seed, the others from 0 — added in partition order. The `fixed`
+/// face's oracle; `orders` comes from the emitter (`Emission::orders`), keyed
+/// on the IR it compiled.
+pub fn run_ordered(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, u64)]) -> RunResult {
     let entry = ir.entry();
     let fd = ir.func(entry).expect("sealed graph: entry resolves");
     let input_ty = &ir
@@ -50,7 +59,11 @@ pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
         _ => (RValue::Unit, false),
     };
 
-    let outcome = eval_call(ir, entry, arg, budget);
+    let mut fuel = budget;
+    let outcome = match eval::eval_fn(ir, entry, arg, &mut fuel, orders) {
+        Ok(v) => Outcome::Done(v),
+        Err(abort) => abort.into_outcome(),
+    };
     let output = match (&outcome, is_token) {
         (Outcome::Done(RValue::Token(log)), true) => log.clone(),
         _ => String::new(),
@@ -62,7 +75,7 @@ pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
 /// lift of the internal `Result<RValue, Abort>` at the entry boundary.
 pub fn eval_call(ir: &CategoryIr, f: FuncId, arg: RValue, budget: u64) -> Outcome {
     let mut budget = budget;
-    match eval::eval_fn(ir, f, arg, &mut budget) {
+    match eval::eval_fn(ir, f, arg, &mut budget, &[]) {
         Ok(v) => Outcome::Done(v),
         Err(abort) => abort.into_outcome(),
     }

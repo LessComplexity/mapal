@@ -184,3 +184,41 @@ fn gpu_profile_build_writes_device_unit() {
         );
     }
 }
+
+/// ADR-0040: `mapal test` judges the bit-replayable faces only — the default
+/// (forced to the fixed face), `--exact`, `--no-contract --order=fixed`; the
+/// default face's own flags (`--contract`, `--order=free`), the contract face
+/// (`--order=sequential` with fma steps) and TF32 are bound-checked
+/// elsewhere, so they are refused (exit 2) before anything runs.
+#[test]
+fn test_judges_the_replayable_faces() {
+    if !clang_present() {
+        return;
+    }
+    let f = "examples/fir.mapal";
+    for ok in [
+        &[][..],
+        &["--exact"],
+        &["--no-contract", "--order=fixed"],
+        &["--no-contract", "--order=sequential"],
+    ] {
+        let mut a = vec!["test", f, "--target=generic"];
+        a.extend_from_slice(ok);
+        let o = mapal(&a);
+        assert_eq!(o.status.code(), Some(0), "{ok:?}: {}", String::from_utf8_lossy(&o.stdout));
+    }
+    for refused in [
+        &["--contract"][..],
+        &["--order=free"],
+        &["--order=sequential"],
+        &["--precision=tf32"],
+    ] {
+        let mut a = vec!["test", f, "--target=generic"];
+        a.extend_from_slice(refused);
+        let o = mapal(&a);
+        assert_eq!(o.status.code(), Some(2), "{refused:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("fixed face"));
+    }
+    let o = mapal(&["run", f, "--order=sideways"]);
+    assert_eq!(o.status.code(), Some(2), "a malformed order is an error");
+}

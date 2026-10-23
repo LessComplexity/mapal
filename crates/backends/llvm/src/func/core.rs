@@ -14,6 +14,7 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
@@ -67,6 +68,8 @@ impl<'a> FnEmit<'a> {
             elided_arrays: SecondaryMap::new(),
             packing,
             contract,
+            order,
+            orders: Vec::new(),
             kc_nest,
             move_panel,
             profile,
@@ -85,6 +88,21 @@ impl<'a> FnEmit<'a> {
             cell_vals: Vec::new(),
             path_plan: None,
             split_slots: Vec::new(),
+        }
+    }
+
+    /// The fast-math flags a tiled float step carries (ADR-0040 D1, D4):
+    /// `contract` lets a step fuse (one rounding), `reassoc` lets the fold's
+    /// order move (the `free` order). Never `afn`, `arcp`, `ninf`, `nnan` or
+    /// `nsz`: order may move, a step's rounding may not. Host sites are never
+    /// split, so `fixed` is `sequential` here.
+    pub(super) fn fp_flags(&self, elem: &Ty) -> &'static str {
+        match (is_float(elem), self.contract, self.order) {
+            (false, _, _) => "",
+            (true, false, crate::Order::Free) => " reassoc",
+            (true, false, _) => "",
+            (true, true, crate::Order::Free) => " reassoc contract",
+            (true, true, _) => " contract",
         }
     }
 

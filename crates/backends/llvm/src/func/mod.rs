@@ -360,6 +360,13 @@ pub(crate) struct FnEmit<'a> {
     /// change the launch (the prefetch rung's panel depth).
     gpu_arms: crate::GpuArms,
     reduced: Option<crate::Reduced>,
+    /// The `k` fold's order (ADR-0040 D1): the device chooser's input
+    /// ([`gpu::combine`]) and, on the host, whether `reassoc` rides the
+    /// tiled steps ([`FnEmit::fp_flags`]).
+    order: crate::Order,
+    /// The split folds this function compiled under [`crate::Order::Fixed`]
+    /// (ADR-0040 D3), for [`crate::Emission::orders`].
+    orders: Vec<crate::FoldOrder>,
     /// S53 `resident`: where each array's device copy lives and moves
     /// (`func/resident.rs`). `None` off a GPU profile, with the rung off, or
     /// in a function with no device site — the S52 emission exactly.

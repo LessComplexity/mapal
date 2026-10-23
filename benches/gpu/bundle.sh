@@ -37,8 +37,10 @@ keep() {
     matches "$1" "${ONLY_GLOBS[@]}"
 }
 
-# The oracle: the interpreter on the conformance face; the CPU build on the
-# contract face (per-step fmaf — the same fused step the GPU emits). The timed
+# The oracle: the interpreter on the exact face; the CPU build on the contract
+# face (per-step fmaf — the same fused step the GPU emits). S63 (ADR-0040): the
+# shipped `""` and `_c` builds here are `--exact` and `--order=sequential`, so
+# the differential stays bit for bit; the default face is integrated_bundle.sh's. The timed
 # probes (`pt_*`) have none: chain_bench.cu gates the libraries against them.
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
@@ -48,7 +50,7 @@ for f in "$OUT"/tiles/*.mapal; do
     pt_*)
         for face in "" _c; do
             [ -s "$b$face.expect" ] && continue
-            flags=(); [ "$face" = _c ] && flags=(--contract)
+            flags=(--exact); [ "$face" = _c ] && flags=(--order=sequential)
             "$EMIT" "$f" - --rewrite ${flags[@]+"${flags[@]}"} --target=apple-m > "$b$face.cpu.ll"
             clang -O2 "$b$face.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b$face.cpu" 2>/dev/null
             "$b$face.cpu" | grep -v '^iter ms=' > "$b$face.expect"
@@ -62,14 +64,14 @@ for f in "$OUT"/tiles/*.mapal; do
         # the CPU build's conformance face is the interpreter bit for bit (the
         # backend differential suite's invariant).
         decode_1024_*|wide_*|deep_*|skinny_*)
-            "$EMIT" "$f" - --rewrite --target=apple-m > "$b.cpu.ll"
+            "$EMIT" "$f" - --rewrite --exact --target=apple-m > "$b.cpu.ll"
             clang -O2 "$b.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu" 2>/dev/null
             "$b.cpu" > "$b.expect" ;;
         *) "$RUN" "$f" --budget 20000000000 > "$b.expect" ;;
         esac
     fi
     if [ ! -s "${b}_c.expect" ]; then
-        "$EMIT" "$f" - --rewrite --contract --target=apple-m > "$b.cpu_c.ll"
+        "$EMIT" "$f" - --rewrite --order=sequential --target=apple-m > "$b.cpu_c.ll"
         clang -O2 "$b.cpu_c.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu_c" 2>/dev/null
         "$b.cpu_c" > "${b}_c.expect"
     fi
@@ -149,12 +151,12 @@ for spec in "$@"; do
     for f in "$OUT"/tiles/*.mapal; do
         b=$(basename "$f" .mapal)
         keep "$b" || continue
-        emit_one "$f" "$d/$b" "$prof" "$sm"
-        emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        emit_one "$f" "$d/$b" "$prof" "$sm" --exact
+        emit_one "$f" "$d/${b}_c" "$prof" "$sm" --order=sequential
         # S62: the CPU-only build and the null arm of every timed whole program.
         case $b in pt_*|e2e_*|decode_1024_*)
-            emit_cpu "$f" "$d/$b.cpu"
-            emit_cpu "$f" "$d/${b}_c.cpu" --contract
+            emit_cpu "$f" "$d/$b.cpu" --exact
+            emit_cpu "$f" "$d/${b}_c.cpu" --order=sequential
             for v in "$b" "${b}_c"; do
                 cp "$d/$v.host.o" "$d/$v.null.host.o"
                 if [ -f "$d/$v.ptx" ]; then cp "$d/$v.ptx" "$d/$v.null.ptx"; fi
@@ -164,8 +166,8 @@ for spec in "$@"; do
         mm_*x*x*)
             # S62: a projection-shaped kernel bench (M × N × K), Exact and Contract:
             # every kernel arm, then the shipped kernel again (`null`).
-            arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
-            arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
+            arms "$f" "$d/${b}_c" "$prof" "$sm" --order=sequential -- $KERNEL_RUNGS
+            arms "$f" "$d/$b" "$prof" "$sm" --exact -- $KERNEL_RUNGS
             for v in "$b" "${b}_c"; do
                 cp "$d/$v.ptx" "$d/$v.null.ptx"; cp "$d/$v.launch" "$d/$v.null.launch"
             done
@@ -175,7 +177,7 @@ for spec in "$@"; do
             # diagnostic, S forced to a quarter, a half and twice the derived one
             # (dropped where it falls back to the derived S). tile_bench --splitk.
             for v in _r _rc; do
-                fl=(--precision=reassoc); [ $v = _rc ] && fl=(--contract --precision=reassoc)
+                fl=(--no-contract --order=fixed); [ $v = _rc ] && fl=(--order=fixed)
                 emit_one "$f" "$d/$b$v" "$prof" "$sm" "${fl[@]}"
                 arms "$f" "$d/$b$v" "$prof" "$sm" "${fl[@]}" -- splitk
                 cp "$d/$b$v.ptx" "$d/$b$v.null.ptx"; cp "$d/$b$v.launch" "$d/$b$v.null.launch"
@@ -192,8 +194,8 @@ for spec in "$@"; do
             emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
             case $b in mm_1536|mm_3072) ;; *)
                 arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- $TF32_RUNGS
-                arms "$f" "$d/${b}_c" "$prof" "$sm" --contract -- $KERNEL_RUNGS
-                arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
+                arms "$f" "$d/${b}_c" "$prof" "$sm" --order=sequential -- $KERNEL_RUNGS
+                arms "$f" "$d/$b" "$prof" "$sm" --exact -- $KERNEL_RUNGS
                 # The shipped kernel again as an arm: one A/B's noise floor in
                 # this session, bench position included (rungs.py `null_ab`).
                 for v in "$b" "${b}_c" "${b}_tf"; do
@@ -208,7 +210,7 @@ for spec in "$@"; do
             # what the per-part selection is worth on a multi-computation program).
             [ ${#NOARMS_GLOBS[@]} -gt 0 ] && matches "$b" "${NOARMS_GLOBS[@]}" && continue
             for face in "" _c; do
-                flags=(); [ "$face" = _c ] && flags=(--contract)
+                flags=(--exact); [ "$face" = _c ] && flags=(--order=sequential)
                 arms "$f" "$d/$b$face" "$prof" "$sm" ${flags[@]+"${flags[@]}"} -- $HOST_RUNGS
                 # retain-delta's measured OFF arm: every site a round trip. S54:
                 # the s54-base placement (R5's three rungs off) in the same run.
