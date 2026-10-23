@@ -218,6 +218,40 @@ if [ -x prog_decode_1024_256 ]; then
     [ -x chain_bench ] && ./chain_bench decode_1024 256 "$REPS" $vals 2>&1 | tee -a "$LOG"
 fi
 
+# S62 `splitk` (ADR-0040): per `mm_MxNxK` cell, every arm (exact, contract, the
+# reassociation face on both step faces, its OFF / null / forced-S arms) with
+# cuBLAS and CUTLASS in ONE process (tile_bench --splitk: value gates first,
+# round-robin, ABBA inside), twice, the second in reversed arm order. Then the
+# whole programs of the split arms on this driver (workspace + two launches):
+# each must exit 0 and print the two cells its OFF arm prints within 1e-3
+# relative (the first line, a sum over every cell, cancels: not compared).
+if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
+    say "-- splitk: mm_MxNxK cells, every arm in one process, two processes ABBA (reps=$REPS)"
+    for l in "$PROF"/mm_*x*x*_r.launch; do
+        cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
+        arms=$(cd "$PROF" && ls "$cell".launch "${cell}"_c.launch "${cell}"_r*.launch | sed 's/\.launch$//' | tr '\n' ' ')
+        say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
+        for pass in 1 2; do
+            order=$arms; [ $pass = 2 ] && order=$(tr ' ' '\n' <<< "$arms" | sed '/^$/d' | tac | tr '\n' ' ')
+            # shellcheck disable=SC2086  # the arms are separate arguments
+            ./tile_bench --splitk "$M" "$N" "$K" "$REPS" "$PROF" $order 2>&1 | sed "s/^/pass=$pass cell=$cell /" | tee -a "$LOG"
+            [ "${PIPESTATUS[0]}" -eq 0 ] || say "SPLITK GATE FAILED cell=$cell pass=$pass"
+        done
+        for v in _r _rc; do
+            [ -f "$PROF/$cell$v.host.o" ] || continue
+            for s in "$cell$v" "$cell$v.off-splitk"; do
+                [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
+            done
+            on=$(MAPAL_PTX="$PROF/$cell$v.ptx" "./prog_$cell$v" 2>&1 | tr '\n' ' '); rc=$?
+            off=$on; [ -x "prog_$cell$v.off-splitk" ] && off=$(MAPAL_PTX="$PROF/$cell$v.off-splitk.ptx" "./prog_$cell$v.off-splitk" 2>&1 | tr '\n' ' ')
+            ok=$(awk -v a="$on" -v b="$off" 'BEGIN { n = split(a, x, " "); m = split(b, y, " "); ok = n == 3 && m == 3
+                for (i = 2; i <= n && ok; i++) { d = x[i] - y[i]; s = y[i] < 0 ? -y[i] : y[i]; if ((d < 0 ? -d : d) > 1e-3 * (s > 1 ? s : 1)) ok = 0 }
+                print ok ? "yes" : "NO" }')
+            say "splitk_program prog=$cell$v rc=$rc out=[$on] off=[$off] within_1e-3=$ok"
+        done
+    done
+fi
+
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS, passes=${PASSES:-1})"
 # A cell is `n` (square) or `MxNxK` (S62: the `mm_<M>x<N>x<K>` programs).
 dims() { case $1 in *x*x*) echo "${1//x/ }" ;; *) echo "$1 $1 $1" ;; esac; }

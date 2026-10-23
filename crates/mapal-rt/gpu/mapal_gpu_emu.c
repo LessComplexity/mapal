@@ -33,6 +33,8 @@ uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
   }
   return *slot;
 }
+/* `arena` (S54): one allocation per function, made on the first ask. */
+uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) { return mapal_gpu_alloc(slot, bytes); }
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
   memcpy((void *)d, h, bytes);
   n_h2d++;

@@ -1,5 +1,5 @@
 //! Emit textual LLVM IR for a `.mapal` file (ADR-0020; dev tool — the future
-//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>]`
+//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]`
 //! (writes `<file>.ll` next to the source, `<file>_perf.ll` with `--perf`, or
 //! stdout with `-`; `--rewrite` rewrites the lowered IR before emission).
 
@@ -9,7 +9,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
         eprintln!(
-            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>]"
+            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]"
         );
         return ExitCode::from(2);
     };
@@ -89,6 +89,17 @@ fn main() -> ExitCode {
             // A reduced-precision face (ADR-0032 D1): changes values by the
             // format's bound and admits the tensor cores.
             "--precision=tf32" => opts.reduced = Some(mapal_backend_llvm::Reduced::Tf32),
+            // S62 (ADR-0040): opt-in reassociation of a tile site's k fold
+            // (deterministic split-K); steps stay the face's (`--contract`).
+            "--precision=reassoc" => opts.reduced = Some(mapal_backend_llvm::Reduced::Reassoc),
+            // Measurement only: force split-K's partition count (0 = derive).
+            _ if a.starts_with("--splitk=") => {
+                let Ok(s) = a["--splitk=".len()..].parse::<u64>() else {
+                    eprintln!("--splitk expects a partition count, got `{a}`");
+                    return ExitCode::from(2);
+                };
+                opts.gpu.splitk = s;
+            }
             _ if a.starts_with("--device-out=") => {
                 device_out = Some(a["--device-out=".len()..].to_owned());
             }
@@ -97,7 +108,7 @@ fn main() -> ExitCode {
             }
             other => {
                 eprintln!(
-                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>])"
+                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>])"
                 );
                 return ExitCode::from(2);
             }

@@ -70,8 +70,15 @@ emit_one() {
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
     # (A program whose every site has an epilogue launches only `launchv`: no line.)
-    { grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -1 |
-        python3 -c 'import sys,re; s=sys.stdin.read(); m=re.search(r"i64 (-?\d+)",s); n=re.findall(r"i32 (\d+)",s); m and print(f"mapal_tile_{int(m.group(1)) & (2**64-1):016x}", *n)' \
+    # S62 `splitk`: a split site's launch ends `; splitk=S` and the reduce launch
+    # follows: `kernel gx gy block smem S rkernel rgx rgy rblock rsmem`.
+    { grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -2 |
+        python3 -c 'import sys,re
+ls = sys.stdin.read().splitlines()
+k = lambda l: "mapal_tile_%016x" % (int(re.search(r"i64 (-?\d+)", l).group(1)) & (2**64 - 1))
+n = lambda l: re.findall(r"i32 (\d+)", l.split(";")[0])
+s = ls and re.search(r"; splitk=(\d+)", ls[0])
+ls and print(k(ls[0]), *n(ls[0]), *([s.group(1), k(ls[1]), *n(ls[1])] if s else []))' \
         > "$stem.launch"
 }
 
@@ -120,6 +127,23 @@ for spec in "$@"; do
             arms "$f" "$d/$b" "$prof" "$sm" -- $KERNEL_RUNGS
             for v in "$b" "${b}_c"; do
                 cp "$d/$v.ptx" "$d/$v.null.ptx"; cp "$d/$v.launch" "$d/$v.null.launch"
+            done
+            # S62 `splitk` (ADR-0040): the reassociation face on both step faces
+            # (`_r` exact steps, `_rc` fma steps), its OFF arm (dropped where it
+            # equals ON: S = 1), the box's null (the same PTX twice) and, as a
+            # diagnostic, S forced to a quarter, a half and twice the derived one
+            # (dropped where it falls back to the derived S). tile_bench --splitk.
+            for v in _r _rc; do
+                fl=(--precision=reassoc); [ $v = _rc ] && fl=(--contract --precision=reassoc)
+                emit_one "$f" "$d/$b$v" "$prof" "$sm" "${fl[@]}"
+                arms "$f" "$d/$b$v" "$prof" "$sm" "${fl[@]}" -- splitk
+                cp "$d/$b$v.ptx" "$d/$b$v.null.ptx"; cp "$d/$b$v.launch" "$d/$b$v.null.launch"
+                s=$(awk '{print $6}' "$d/$b$v.launch")
+                for x in ${s:+$((s / 4)) $((s / 2)) $((s * 2))}; do
+                    [ "$x" -ge 2 ] || continue
+                    emit_one "$f" "$d/$b$v.s$x" "$prof" "$sm" "${fl[@]}" "--splitk=$x"
+                    if same "$d/$b$v.s$x" "$d/$b$v"; then rm -f "$d/$b$v.s$x".*; fi
+                done
             done ;;
         mm_[0-9]*)
             # The kernel benches: every rung flipped on all three faces; arms
