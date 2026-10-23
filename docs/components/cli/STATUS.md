@@ -12,6 +12,8 @@ Depends on: syntax, ir, lower, check, interp, rewrite, backend-llvm Depended on 
 - `mapal test <f>`: compiled (rewritten, Exact, `-O2`) vs the interpreter, exit code and stdout byte for byte.
 - Every emitter flag and rung arm (`--target=`, `--gpu-off=`, `--gpu-on=`, `--move-panel=`, ...) through `mapal_backend_llvm::flags`.
 
+- GPU builds under `hostopt` (`<gpu>+<host>` profile name) resolve the device arch from the GPU half (fixed at integration; before, a panic).
+
 ## What does not / known issues
 - No CUDA on the host: a GPU build writes `.ll`/`.dev.ll`/`.ptx` and exits 3.
 - `dump-ir --stage=lowered|rewritten` is `Debug` text, no JSON.

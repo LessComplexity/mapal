@@ -1,6 +1,7 @@
 # Mapal — Global Status
 
-Current continuation: **2026-10-22, actual library capture complete: Mapal1/cuBLAS2/CUTLASS1 selected entries admitted, with4,608 numerical words checked. cuBLAS staged GEMM plus split-K reduction is observed; no new timing claim.**
+Current continuation: **2026-10-23, S62 integrated on `s62-integrated` (6a0e3a0): six items merged, M16 E/C kernels 1.6–10.6× faster than 4e1102c on four parts; residual-MLP whole programs still slower than base on three. [Gap map](performance/gpu/disassembly/s62-gap-map.md) · [session](sessions/2026-10-23-s62-optimize-integrate.md) · [next](next-session.md).**
+Previous continuation: 2026-10-22, actual library capture complete (Mapal1/cuBLAS2/CUTLASS1, 4,608 numerical words checked; no timing claim).
 The [executed-image comparison](performance/gpu/disassembly/executed-library-images.md)
 records instruction anchors, decoder limits and controlled follow-up experiments. All12
 actual task rentals are closed; one further unavailable-offer attempt created no instance.
@@ -14,7 +15,7 @@ The only checkout is `s54-gpu-fusion`; historical worktrees remain safely archiv
 LLVM/CUDA example targets no longer collide, both profile tests register once, and constant folding now preserves guard-owned dependencies, including loop payloads.
 After the proved loop-route replay and grouped-writer ordering repairs, the required-clang
 host workspace now covers **1,190 passing tests / 1 ignored across the workspace and host-access backend recheck**; the three initial native-detection failures are preserved in the S61 report. Frozen validation remains bound to b4152c5.
-Latest drift: **0 dead / 581 references**.
+Latest drift: **0 dead / 639 references** (S62).
 The disputed GPU selections are resolved at `b4152c5`: 5090 streams OFF, H100 retention/window OFF,
 and the 5090 derived raster gate restored. Independent selection runs and the final host suite pass;
 all five primaries now pass every validation/cleanup gate, including H100 PCIe.

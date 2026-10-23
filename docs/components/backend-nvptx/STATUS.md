@@ -1,7 +1,16 @@
 # Component: backend-nvptx
 
-Status: **built inside the LLVM backend; S54 validation passed; ordering, dead raw-storage and actual-arithmetic selection corrections integrated and checked.**
-Last updated: 2026-10-22 · Repaired library observer admits all three legs and four selected kernel entries; actual cuBLAS GEMM plus split-K reduction captured; no new timing claim.
+Status: **built inside the LLVM backend; S62 integration (6a0e3a0) merged six items and measured on four parts.**
+Last updated: 2026-10-23 · S62: M16 E/C kernel cells 1.6–10.6× faster than 4e1102c; residual-MLP whole programs still slower than base on three parts.
+
+| S62 | result |
+| --- | --- |
+| merged | geometry, asyncstage, splitk, cpugpu, runtime, cli; no item skipped |
+| integration fix | 9a9cc20: cell-fill × splitk stores omitted the `z·rows·c` slab offset (wrong reassoc results, caught by value gates on all four parts); regression `cell_tile_split_stores_into_its_slab` |
+| tests | `cargo test -p mapal-backend-llvm` 258/0/1 ignored; required-clang workspace 1217/0/1 |
+| kernels vs cuBLAS (int/cuBLAS) | 16x2048 and 16x1024 E/C 1.03–3.01; 16x18432 E/C 0.97–1.43; 4096³ C 0.90–1.08, E 1.54–1.81 |
+| per-part rungs | asyncstage OFF everywhere; new H100/3090 rows for row-fit, grid-share, panel-regs, fill-rows, splitk ([table](../../performance/gpu/current-results.md#s62-integrated-6a0e3a0)) |
+| open | residual-MLP single iteration slower than base (5090 E 0.51–0.52, C 0.68–0.88; 4090 C 0.44–0.62; 3090 E 0.47–0.84; H100 C d256 0.77 base/int); grid-share × splitk conflict; nine ranked gaps in the [gap map](../../performance/gpu/disassembly/s62-gap-map.md) |
 
 The [actual-arithmetic correction](../../performance/gpu/disassembly/fact-driven-scheduling.md)
 connects existing IR/layout/permission/device facts through `Launch::arithmetic` to policy
