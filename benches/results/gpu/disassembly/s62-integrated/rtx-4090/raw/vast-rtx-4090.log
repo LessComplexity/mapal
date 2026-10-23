@@ -1,0 +1,9 @@
+[22:37:13 rtx-4090] instance 57309646 from offer 53867752
+[22:47:54 rtx-4090] ssh 46.224.213.21:40801 up
+[22:50:01 rtx-4090] bundle upload failed 5 times
+[22:50:04 rtx-4090] destroyed 57309646
+[22:50:11 rtx-4090] instance 57310933 from offer 47377536
+[22:50:44 rtx-4090] ssh 38.114.84.170:50711 up
+[22:50:49 rtx-4090] bundle uploaded
+[22:59:02 rtx-4090] results fetched: 1312 lines
+[22:59:03 rtx-4090] destroyed 57310933

@@ -1,0 +1,8 @@
+pt_rm_m128_d256_h512 eager launches=6 kernel_us_warm=13.0 kernel_us_flushed=19.2 gpu_span_us_flushed=24.6
+pt_rm_m128_d256_h512 lt launches=4 kernel_us_warm=10.9 kernel_us_flushed=16.8 gpu_span_us_flushed=18.8
+pt_rm_m128_d256_h512 cutlass launches=2 kernel_us_warm=61.8 kernel_us_flushed=63.9 gpu_span_us_flushed=65.1
+pt_rm_m128_d256_h512 cutlass_tuned launches=2 kernel_us_warm=16.3 kernel_us_flushed=27.7 gpu_span_us_flushed=28.4
+pt_rm_m128_d1024_h2048 eager launches=5 kernel_us_warm=40.1 kernel_us_flushed=66.1 gpu_span_us_flushed=69.9
+pt_rm_m128_d1024_h2048 lt launches=4 kernel_us_warm=39.1 kernel_us_flushed=63.6 gpu_span_us_flushed=66.2
+pt_rm_m128_d1024_h2048 cutlass launches=2 kernel_us_warm=225.2 kernel_us_flushed=229.4 gpu_span_us_flushed=230.0
+pt_rm_m128_d1024_h2048 cutlass_tuned launches=2 kernel_us_warm=65.8 kernel_us_flushed=93.1 gpu_span_us_flushed=93.9

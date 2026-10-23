@@ -1,0 +1,31 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_a43f9c31c556755b' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_a43f9c31c556755b
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 9.336 ms
+ptxas info    : Compiling entry function 'mapal_gen_ee7272a293da9fca' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_ee7272a293da9fca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 8.194 ms
+ptxas info    : Compiling entry function 'mapal_gen_b295782a5fe8e45b' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_b295782a5fe8e45b
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 7.536 ms
+ptxas info    : Compiling entry function 'mapal_gen_341f54a750563d9e' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_341f54a750563d9e
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 7.554 ms
+ptxas info    : Compiling entry function 'mapal_tile_5d80c0c8603c388c' for 'sm_89'
+ptxas info    : Function properties for mapal_tile_5d80c0c8603c388c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 65 registers, used 1 barriers, 392 bytes cmem[0], 8 bytes cmem[2]
+ptxas info    : Compile time = 40.453 ms
+ptxas info    : Compiling entry function 'mapal_tile_42c6b80cd25a0576' for 'sm_89'
+ptxas info    : Function properties for mapal_tile_42c6b80cd25a0576
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 1 barriers, 392 bytes cmem[0]
+ptxas info    : Compile time = 34.067 ms

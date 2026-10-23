@@ -1,0 +1,4 @@
+before (2026-10-23T02:37:04Z, vastai show instances --raw): 57065574 57100404 57126023 57133432 57285249 (none touched)
+57309646 created 02:37:13Z offer 53867752 (RTX 4090, Zhejiang CN): bundle upload failed 5x; destroyed -y 02:50:04Z
+57310933 created 02:50:11Z offer 47377536 (RTX 4090, Missouri US, Ryzen 7 3700X, driver 580.173.02): run 02:50:50Z-02:58:59Z; destroyed -y 02:59:03Z
+after (2026-10-23T02:59:13Z, vastai show instances --raw): 57065574 57100404 57126023 57133432 57285249 (both created ids absent)
