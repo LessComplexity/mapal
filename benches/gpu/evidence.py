@@ -291,6 +291,26 @@ def host_facts(ll, asm):
     return f
 
 
+def launched(kernel, host_ll):
+    """How many host calls name the kernel: its id is the name's 64-bit hash, a signed i64 operand."""
+    m = re.search(r'_([0-9a-f]{16})$', kernel)
+    if not m:
+        return -1
+    v = int(m.group(1), 16)
+    v -= (v >= 1 << 63) << 64
+    return len(re.findall(r'\bi64 ' + str(v) + r'\b', host_ll))
+
+
+def source_loops(d, stem):
+    """`loop {` blocks in the stem's program (`<bundle>/tiles/<program>.mapal`); -1: source not found."""
+    base = stem.split('.')[0]
+    for cand in [base] + [base[:-len(f)] for f in ('_rc', '_r', '_x', '_c', '_tf') if base.endswith(f)]:
+        t = read(os.path.join(d, '..', 'tiles', cand + '.mapal'))
+        if t is not None:
+            return t.count('loop {')
+    return -1
+
+
 def kv(s):
     out = {}
     for t in s.split():
@@ -397,14 +417,16 @@ def facts(d, sm):
         e = dict(stem=stem, arch=prof, sm=sm, arm=[sorted(arm[0]), sorted(arm[1])], host=host, launch=launch,
                  device=kv(devm.group(1)) if devm else {}, kernels={})
         host['cpu'] = int(not devm and 'profile' not in host)
+        host['loop'] = source_loops(d, stem)
         if rows:  # the host rungs the table ships at their fill (GPU_RESIDENT_BLOCKS: Filled) and face
             hr = {n for _, n, *_ in rows} - set(KERNEL_RUNGS)
             face = 'Contract' if e['device'].get('fma', host.get('fma', 1)) == 1 else 'Exact'
             e['host_rungs'] = sorted(hr)
             e['host_table'] = [r for r in table_rungs(rows, prof, 2, face, arm) if r not in KERNEL_RUNGS]
+        hll = read(base + '.host.ll') or ''
         for k in sorted(set(plans) | set(pf)):
             p = plans.get(k, {})
-            kf = dict(plan=p, ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
+            kf = dict(plan=p, ptx=pf.get(k, {}), ptxas=pa.get(k, {}), mod=dict(launched=launched(k, hll)),
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
             if 'face' in p and rows:
@@ -446,11 +468,13 @@ class D(dict):
 
 class Scope(dict):
     def __missing__(self, k):
+        if k in SAFE:  # eval looks a builtin up in the locals first: fall through to the globals
+            raise KeyError(k)
         raise Missing(k)
 
 
 SAFE = dict(ceil=math.ceil, set=set, max=max, min=min, len=len, sum=sum, any=any, all=all, abs=abs)
-NAMES = re.compile(r'\b(plan|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device)(\.\w+)+')
+NAMES = re.compile(r'\b(plan|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod)(\.\w+)+')
 
 
 def ev(expr, ns):
@@ -507,7 +531,7 @@ def check(d, results=None, out=sys.stdout):
             continue
         on, off = (set(x) for x in e['arm'])
         for k, kf in sorted(e['kernels'].items()):
-            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'ptx', 'ptxas', 'sass', 'occ', 'table')})
+            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'ptx', 'ptxas', 'sass', 'occ', 'table', 'mod')})
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
                       launch=D(e['launch'] if e['launch'].get('kernel') == k else {}),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'])
@@ -515,7 +539,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host'):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec')) else 'off'
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module')) else 'off'
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

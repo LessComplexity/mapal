@@ -101,10 +101,11 @@ fi
 
 # S64: the PyTorch legs (torch_bench.py) run last; their install overlaps the Mapal sections.
 if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
-    ( python3 -m pip --version >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq python3-pip; }
-      for idx in https://download.pytorch.org/whl/cu128 https://download.pytorch.org/whl/cu129 ""; do
-          python3 -m pip install -q "torch==${TORCH_VERSION:-2.14.1}" ${idx:+--index-url "$idx"} && break
-      done ) > torch-install.log 2>&1 &
+    # The pin: the newest cu128 wheel for the image's Python 3.10 (2026-10-23: 2.11.0). torch.compile's
+    # Triton builds a C launcher against Python.h: python3-dev.
+    ( { apt-get update -qq && apt-get install -y -qq python3-pip python3-dev; } || true
+      python3 -m pip install -q "torch==${TORCH_VERSION:-2.11.0}" --index-url https://download.pytorch.org/whl/cu128
+    ) > torch-install.log 2>&1 &
     TORCH_PID=$!
 fi
 nvcc --version | tail -1 | tee -a "$LOG"
@@ -137,7 +138,8 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
     for l in "$PROF"/mm_*x*x*_r.launch; do
         cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
         # S62 integration: every arm the bundle built for the cell (`.base`, `.off-<rung>`, `.null`).
-        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_x.launch "${cell}"_c.launch "${cell}"_c.*.launch \
+        # S64: and the exact face's re-judge arms (`_x.on-<rung>`).
+        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_x.launch "${cell}"_x.*.launch "${cell}"_c.launch "${cell}"_c.*.launch \
             "${cell}"_r*.launch 2>/dev/null | sed 's/\.launch$//' | tr '\n' ' ')
         say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
         for pass in 1 2; do
@@ -177,7 +179,7 @@ if [ -x mlp_bench ]; then
         [ -f "$k" ] || continue
         p=$(basename "$k" _c.k); dims=$(sed -nE 's/^pt_rm_m([0-9]+)_d([0-9]+)_h([0-9]+)$/\1 \2 \3/p' <<< "$p")
         [ -n "$dims" ] || continue
-        legs=$(cd "$PROF" && ls "${p}"_c.k "${p}"_c.*.k "${p}"_x.k 2>/dev/null | sed 's/\.k$//' | tr '\n' ' ')
+        legs=$(cd "$PROF" && ls "${p}"_c.k "${p}"_c.*.k "${p}"_x.k "${p}"_x.*.k 2>/dev/null | sed 's/\.k$//' | tr '\n' ' ')
         for pass in 1 2; do
             rev=; [ $pass = 2 ] && rev=1
             # shellcheck disable=SC2086  # dims and legs are separate arguments
