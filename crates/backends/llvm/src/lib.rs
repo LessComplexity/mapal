@@ -304,12 +304,22 @@ pub struct GpuRungs {
     /// up to 4.0× with L2 flushed — but loses with operands in L2 and in the
     /// composed residual MLP, and no fact the launch reads separates the two.
     pub async_stage: bool,
-    /// S62, under the reassociation face only ([`Reduced::Reassoc`], ADR-0040):
-    /// a resident site whose output domain cannot fill the part folds its `k`
-    /// axis as [`TargetProfile::gpu_splitk`] contiguous partial folds into a
+    /// S62 (ADR-0040 D3/D4), on the `fixed` and `free` orders: a resident site
+    /// whose output domain cannot fill the part folds its `k` axis as
+    /// [`TargetProfile::split_count`] contiguous partial folds into a
     /// workspace, then one deterministic reduce launch adds them in partition
-    /// order. Off: the ordered kernel. Never fires on Exact/Contract/TF32.
+    /// order. Off: the ordered kernel. Never fires on a sequential order.
     pub splitk: bool,
+    /// S63 (ADR-0040 D4), on the `free` order only: the partial folds of
+    /// `splitk` `atomicrmw fadd` into the zeroed output — no workspace, no
+    /// reduce launch, combine order unspecified. Off: the next realization
+    /// (`splitk`'s workspace, else the ordered kernel).
+    pub splitk_atomic: bool,
+    /// S63 (ADR-0040 D4), on the `free` order only: one wave of blocks walks
+    /// the `tiles × panels` iteration space in equal shares; a tile cut
+    /// between blocks combines by `atomicrmw fadd` into the zeroed output.
+    /// Off: the next realization (`splitk-atomic`, `splitk`, ordered).
+    pub streamk: bool,
     /// S62: a GPU build emits everything outside a device site against the
     /// host's CPU profile ([`EmitOpts::host`], [`profile::with_host`]), and a
     /// build whose every site stays on the host is that host's CPU build
@@ -372,13 +382,15 @@ impl GpuRungs {
         cell_fill: true,
         async_stage: true,
         splitk: true,
+        splitk_atomic: true,
+        streamk: true,
         hostopt: true,
         place: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 46] = [
+    pub const NAMES: [&'static str; 48] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -423,6 +435,8 @@ impl GpuRungs {
         "cell-fill",
         "asyncstage",
         "splitk",
+        "splitk-atomic",
+        "streamk",
         "hostopt",
         "place",
     ];
@@ -474,6 +488,8 @@ impl GpuRungs {
             "cell-fill" => &mut self.cell_fill,
             "asyncstage" => &mut self.async_stage,
             "splitk" => &mut self.splitk,
+            "splitk-atomic" => &mut self.splitk_atomic,
+            "streamk" => &mut self.streamk,
             "hostopt" => &mut self.hostopt,
             "place" => &mut self.place,
             _ => return None,
@@ -501,8 +517,9 @@ pub struct GpuArms {
     pub on: GpuRungs,
     pub off: GpuRungs,
     /// S62 measurement override (`emit --splitk=<S>`, the `MovePanel::Force`
-    /// precedent): where `splitk` fires, partition into `S` instead of the
-    /// derived count, when `S` cuts `k` into whole units. 0 = derive.
+    /// precedent): where `splitk` or `splitk-atomic` fires, partition into `S`
+    /// instead of the derived count, when `S` cuts `k` into whole units.
+    /// 0 = derive.
     pub splitk: u64,
 }
 
@@ -516,11 +533,33 @@ pub enum Reduced {
     /// f32 storage, operands rounded to TF32 (10-bit mantissa, `cvt.rna`),
     /// f32 accumulation — `mma.sync.m16n8k8.tf32` on sm_80+.
     Tf32,
-    /// Not a format: permission to evaluate a tile site's `k` fold as ordered
-    /// partial folds over contiguous `k` ranges, added in partition order
-    /// (ADR-0040). Steps round as on the Exact/Contract face it rides on; the
-    /// bound is ADR-0040's a-priori `γ_{K/S+S}`. Opt-in only.
-    Reassoc,
+}
+
+/// The order a tile site's `k` fold may be evaluated in (ADR-0040 D1): the
+/// second axis of the float face, beside the steps ([`EmitOpts::contract`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Order {
+    /// Increasing `k`, one chain per cell: the interpreter's left fold.
+    Sequential,
+    /// ADR-0040 D3: `S` contiguous partial folds added in partition order,
+    /// `S` the profile's; bits a function of `(site, profile)`, replayed by
+    /// the interpreter from [`Emission::orders`]. The test/debug face.
+    Fixed,
+    /// Unspecified (the default): any realization within ADR-0040 D2's bound —
+    /// atomic split, stream-K, the fixed split, sequential — per part by
+    /// measurement. Run-to-run bits may differ.
+    Free,
+}
+
+/// One split fold the emitter compiled under [`Order::Fixed`]: the `Fold`
+/// morphism `fold` of function `func` (a tile site's map body) folds in `s`
+/// contiguous partitions, added in partition order (ADR-0040 D3). The
+/// interpreter replays exactly these (`mapal_interp::run_ordered`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoldOrder {
+    pub func: FuncId,
+    pub fold: MorphismId,
+    pub s: u64,
 }
 
 /// Emission options. [`emit`] delegates to these product defaults.
@@ -532,9 +571,12 @@ pub struct EmitOpts {
     pub tiling: bool,
     /// Pack tiled two-dimensional right-hand operands.
     pub packing: bool,
-    /// Use single-rounding FMA contraction on the product face; the default
-    /// conformance face stays bit-exact.
+    /// Steps (ADR-0040 D1): single-rounding `fma` per fold step. Default
+    /// `true` (the default face); `false` is the separate `fmul` + `fadd` of
+    /// the `exact` and `fixed` faces.
     pub contract: bool,
+    /// Order of a tile site's `k` fold (ADR-0040 D1); default [`Order::Free`].
+    pub order: Order,
     /// Split deep packed tile sites into k-panels — the OpenBLAS (jc, kc, ic)
     /// nest with an A-panel pack and partial sums parked in `out`.
     ///
@@ -629,7 +671,10 @@ impl Default for EmitOpts {
             perf_timing: false,
             tiling: true,
             packing: true,
-            contract: false,
+            // ADR-0040 (Sapir, 2026-10-23): the default face is full
+            // precision, fma steps, order unspecified, bounded.
+            contract: true,
+            order: Order::Free,
             kc_nest: false,
             move_panel: MovePanel::Deduce,
             // S46 (Sapir): the DEFAULT detects the machine. Every rung that
@@ -641,6 +686,18 @@ impl Default for EmitOpts {
             host: "native",
             gpu: GpuArms::default(),
             reduced: None,
+        }
+    }
+}
+
+impl EmitOpts {
+    /// The `exact` face (`--exact`): separate `fmul` + `fadd`, sequential —
+    /// the interpreter's bits. What every bit-for-bit oracle check pins.
+    pub fn exact() -> Self {
+        Self {
+            contract: false,
+            order: Order::Sequential,
+            ..Self::default()
         }
     }
 }
@@ -661,6 +718,9 @@ pub struct Emission {
     pub device: Option<String>,
     /// The resolved [`TargetProfile`]'s name.
     pub profile: &'static str,
+    /// The split folds compiled under [`Order::Fixed`] (ADR-0040 D3), for the
+    /// interpreter to replay. Empty on every other order.
+    pub orders: Vec<FoldOrder>,
 }
 
 /// Emit one LLVM translation unit for `ir` (ADR-0020 §1). `Ok` is the `.ll`
@@ -823,6 +883,7 @@ fn emit_module(
     // `devmap` (S54): each function's cell kernels and the bodies they call.
     let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
+    let mut orders: Vec<FoldOrder> = Vec::new();
     for (id, _) in ir.funcs() {
         if id == entry && parallel {
             funcs.push_str(&FnEmit::emit_parallel(
@@ -836,6 +897,7 @@ fn emit_module(
                 opts.tiling,
                 opts.packing,
                 opts.contract,
+                opts.order,
                 opts.kc_nest,
                 opts.move_panel,
                 profile,
@@ -850,6 +912,7 @@ fn emit_module(
                 opts.tiling,
                 opts.packing,
                 opts.contract,
+                opts.order,
                 opts.kc_nest,
                 opts.move_panel,
                 profile,
@@ -869,7 +932,8 @@ fn emit_module(
             epis.extend(es);
             epi_calls.extend(cs);
             cells.extend(fe.cell_kernels());
-            let text = fe.emit();
+            let (text, os) = fe.emit_ordered();
+            orders.extend(os);
             funcs.push_str(&text);
             texts.insert(id, text);
         }
@@ -1012,6 +1076,7 @@ fn emit_module(
                 opts.tiling,
                 opts.packing,
                 opts.contract,
+                opts.order,
                 opts.kc_nest,
                 opts.move_panel,
                 profile,
@@ -1031,6 +1096,7 @@ fn emit_module(
                 opts.contract,
                 opts.gpu,
                 opts.reduced,
+                opts.order,
                 &gens,
                 &epis,
                 &epi_bodies,
@@ -1042,6 +1108,7 @@ fn emit_module(
         text: out,
         device,
         profile: profile.name,
+        orders,
     })
 }
 
@@ -1190,7 +1257,7 @@ mod place_tests {
     }
 
     fn emit_on(ir: &CategoryIr, place: bool) -> Emission {
-        emit_module(ir, &EmitOpts::default(), synth(place)).expect("emits")
+        emit_module(ir, &EmitOpts::exact(), synth(place)).expect("emits")
     }
 
     fn count(text: &str, pat: &str) -> usize {
@@ -1229,7 +1296,7 @@ mod place_tests {
     #[test]
     fn without_costs_every_capable_site_is_placed() {
         let ir = mixed();
-        let today = emit_module(&ir, &EmitOpts::default(), &RTX_4090).expect("emits");
+        let today = emit_module(&ir, &EmitOpts::exact(), &RTX_4090).expect("emits");
         assert_eq!(
             emit_on(&ir, false).device,
             today.device,

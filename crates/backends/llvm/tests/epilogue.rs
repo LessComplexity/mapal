@@ -27,7 +27,7 @@ fn emit_on(src: &str, target: &'static str, contract: bool, mut gpu: GpuArms) ->
             target,
             contract,
             gpu,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits")
@@ -432,7 +432,7 @@ fn every_kernel_takes_the_epilogue() {
                 contract: true,
                 reduced: Some(Reduced::Tf32),
                 gpu: on(),
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits");

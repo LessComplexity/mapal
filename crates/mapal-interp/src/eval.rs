@@ -21,6 +21,9 @@ pub(crate) struct EvalCtx<'a> {
     pub ir: &'a CategoryIr,
     /// The current function being evaluated.
     pub f: FuncId,
+    /// ADR-0040 D3: the folds a compiled program split, `(func, fold, S)`,
+    /// replayed in partition order. Empty: every fold in order.
+    pub orders: &'a [(FuncId, MorphismId, u64)],
     /// Object → its resolved value.
     pub env: SecondaryMap<ObjectId, RValue>,
     /// Per-product staging buffers: `target → [Option<component>; arity]`.
@@ -35,7 +38,7 @@ pub(crate) struct EvalCtx<'a> {
 }
 
 impl<'a> EvalCtx<'a> {
-    fn new(ir: &'a CategoryIr, f: FuncId) -> Self {
+    fn new(ir: &'a CategoryIr, f: FuncId, orders: &'a [(FuncId, MorphismId, u64)]) -> Self {
         let mut guards = SecondaryMap::new();
         let mut gated = SecondaryMap::new();
         for site in ir.guard_plan(f).into_iter().filter(GuardSite::gated) {
@@ -47,6 +50,7 @@ impl<'a> EvalCtx<'a> {
         EvalCtx {
             ir,
             f,
+            orders,
             env: SecondaryMap::new(),
             staging: SecondaryMap::new(),
             guards,
@@ -82,9 +86,10 @@ pub(crate) fn eval_fn(
     f: FuncId,
     arg: RValue,
     budget: &mut u64,
+    orders: &[(FuncId, MorphismId, u64)],
 ) -> Result<RValue, Abort> {
     let fd = ir.func(f).expect("sealed graph: func resolves");
-    let mut ctx = EvalCtx::new(ir, f);
+    let mut ctx = EvalCtx::new(ir, f, orders);
 
     // Seed: the one Parameter object, and every Constant.
     ctx.env.insert(fd.input, arg);
@@ -290,7 +295,7 @@ pub(crate) fn eval_morphism(
         }
         Operation::Call(g) => {
             let arg = read(ctx, source).clone();
-            let v = eval_fn(ctx.ir, g, arg, budget)?;
+            let v = eval_fn(ctx.ir, g, arg, budget, ctx.orders)?;
             write(ctx, target, v);
             Ok(())
         }
@@ -318,7 +323,7 @@ pub(crate) fn eval_morphism(
                     v.push(e.clone());
                     RValue::Tuple(v)
                 };
-                out.push(eval_fn(ctx.ir, body, arg, budget)?);
+                out.push(eval_fn(ctx.ir, body, arg, budget, ctx.orders)?);
             }
             write(ctx, target, RValue::array(out));
             Ok(())
@@ -328,7 +333,7 @@ pub(crate) fn eval_morphism(
             // gets (c₁…cₖ, acc, e) per step.
             let k = captures as usize;
             let src = read(ctx, source).clone();
-            let (caps, mut acc, elems) = if k == 0 {
+            let (caps, acc, elems) = if k == 0 {
                 let acc = component(&src, 0).clone();
                 let elems = match component(&src, 1).clone() {
                     RValue::Array(es) => es,
@@ -344,18 +349,38 @@ pub(crate) fn eval_morphism(
                 };
                 (caps, acc, elems)
             };
-            for e in elems.iter() {
-                let pair = if k == 0 {
-                    RValue::Tuple(vec![acc, e.clone()])
-                } else {
-                    let mut v = caps.clone();
-                    v.push(acc);
-                    v.push(e.clone());
-                    RValue::Tuple(v)
-                };
-                acc = eval_fn(ctx.ir, body, pair, budget)?;
+            // ADR-0040 D3: a fold the compiled program split into `S`
+            // contiguous partitions — partition 0 from the seed, the others
+            // from 0 — added in partition order. The order is the compiler's
+            // (`Emission::orders`), never derived here.
+            let parts = ctx
+                .orders
+                .iter()
+                .find(|&&(f, fm, _)| f == ctx.f && fm == m)
+                .map(|&(_, _, s)| s as usize)
+                .filter(|&s| s > 1 && elems.len() % s == 0)
+                .unwrap_or(1);
+            let kc = elems.len() / parts;
+            let mut total: Option<RValue> = None;
+            for z in 0..parts {
+                let mut acc = if z == 0 { acc.clone() } else { zero_of(&acc) };
+                for e in &elems[z * kc..(z + 1) * kc] {
+                    let pair = if k == 0 {
+                        RValue::Tuple(vec![acc, e.clone()])
+                    } else {
+                        let mut v = caps.clone();
+                        v.push(acc);
+                        v.push(e.clone());
+                        RValue::Tuple(v)
+                    };
+                    acc = eval_fn(ctx.ir, body, pair, budget, ctx.orders)?;
+                }
+                total = Some(match total {
+                    None => acc,
+                    Some(t) => add_floats(&t, &acc),
+                });
             }
-            write(ctx, target, acc);
+            write(ctx, target, total.expect("one partition at least"));
             Ok(())
         }
         Operation::Index => {
@@ -724,5 +749,28 @@ fn as_int(v: &Value) -> i128 {
         Value::I64(n) => *n as i128,
         Value::U8(n) => *n as i128,
         _ => unreachable!("Index's index operand is not an integer"),
+    }
+}
+
+/// The scalar `0.0` of a float accumulator (a split partition's seed,
+/// ADR-0040 D3). Only tile-site folds split, and their accumulator is a float.
+fn zero_of(acc: &RValue) -> RValue {
+    match acc {
+        RValue::Scalar(Value::F32(_)) => RValue::Scalar(Value::F32(0.0)),
+        RValue::Scalar(Value::F64(_)) => RValue::Scalar(Value::F64(0.0)),
+        _ => unreachable!("a split fold accumulates a float"),
+    }
+}
+
+/// `x + y` on two float scalars, one rounding — the combine of ADR-0040 D3.
+fn add_floats(x: &RValue, y: &RValue) -> RValue {
+    match (x, y) {
+        (RValue::Scalar(Value::F32(a)), RValue::Scalar(Value::F32(b))) => {
+            RValue::Scalar(Value::F32(a + b))
+        }
+        (RValue::Scalar(Value::F64(a)), RValue::Scalar(Value::F64(b))) => {
+            RValue::Scalar(Value::F64(a + b))
+        }
+        _ => unreachable!("a split fold accumulates a float"),
     }
 }

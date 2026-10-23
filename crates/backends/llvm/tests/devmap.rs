@@ -31,7 +31,7 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
             target: GPU,
             gpu,
             contract,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits")

@@ -133,7 +133,7 @@ fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
         target: "rtx-4090",
         gpu,
         contract,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     let e = emit_detailed(&lower_src(src), &opts).expect("emits");
     (e.text, e.device.unwrap_or_default())

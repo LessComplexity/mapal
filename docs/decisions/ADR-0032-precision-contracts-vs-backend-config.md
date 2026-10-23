@@ -36,6 +36,10 @@ interp oracle), `contract` (single-rounding class — today's fma product face),
 the mma class). Default `exact`: naive code is portable bit-exactly with zero
 annotations.
 
+> **Amended by ADR-0040 (2026-10-23, Sapir).** The default class is `default`: full precision, `fma` steps, the
+> `k` fold's order unspecified, checked against ADR-0040 D2's a-priori bound. `exact` (and `contract`) are opt-in
+> (`--exact`, `--order=sequential`). D5 stands: the face is a language permission; its realization is backend config.
+
 **D2 — Format conversions as explicit ops.** Conversion into reduced formats is
 an explicit morphism in the graph (the `widen_*` family's sibling — e.g. a
 `to_tf32`-class op): visible, checkable, portable. A region whose operands are

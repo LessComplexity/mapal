@@ -5,16 +5,37 @@
 use std::process::Command;
 
 /// The device unit compiled for the host: special registers become the
-/// emulator's `emu_*` (`mapal_gpu_emu.c`), global pointers generic.
+/// emulator's `emu_*` (`mapal_gpu_emu.c`), global and shared pointers generic
+/// (shared memory is `emu_smem`, `barrier0` is `emu_barrier`), the PTX-only
+/// inline asm (`griddepcontrol`, the raster's opaque `mov`) dropped or an
+/// identity, and an atomic's device scope the host's. `cp.async` is not
+/// emulated: tests that reach a staged kernel turn `async` off.
 pub fn host_device(dev: &str) -> String {
     let mut out = String::new();
     for line in dev.lines() {
         let nvvm_decl = line.starts_with("declare")
             && (line.contains("@llvm.nvvm.") || line.contains("cp.async"));
-        if line.starts_with("target ") || line.starts_with("@mapal_smem") || nvvm_decl {
+        if line.starts_with("target ")
+            || line.starts_with("@mapal_smem")
+            || nvvm_decl
+            || line.contains("asm sideeffect \"griddepcontrol")
+        {
             continue;
         }
-        let mut l = line.replace("ptx_kernel ", "").replace("addrspace(1) ", "");
+        let mut l = line
+            .replace("ptx_kernel ", "")
+            .replace("addrspace(1) ", "")
+            .replace("addrspace(3) ", "")
+            .replace("@mapal_smem", "@emu_smem")
+            .replace("call void @llvm.nvvm.barrier0()", "call void @emu_barrier()")
+            .replace(" syncscope(\"device\")", "");
+        for (ty, bits, c) in [("i32", 32, "r"), ("i64", 64, "l")] {
+            let asm = format!("call {ty} asm \"mov.b{bits} $0, $1;\", \"={c},{c}\"({ty} ");
+            if let Some(i) = l.find(&asm) {
+                let v = l[i + asm.len()..].trim_end_matches(')').to_string();
+                l = format!("{}add {ty} {v}, 0", &l[..i]);
+            }
+        }
         for (r, e) in [
             ("tid.x", "tid_x"),
             ("ctaid.x", "ctaid_x"),
@@ -28,7 +49,8 @@ pub fn host_device(dev: &str) -> String {
         out.push_str(&l);
         out.push('\n');
     }
-    out + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n"
+    out + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
+           declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n"
 }
 
 /// Build and run `host` + `dev` against the emulated device; its stdout.

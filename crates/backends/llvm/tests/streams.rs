@@ -26,7 +26,7 @@ fn emit(src: &str, target: &'static str, mut gpu: GpuArms) -> Emission {
             host: "generic",
             target,
             gpu,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits")
@@ -427,7 +427,7 @@ fn grouped(src: &str, contract: bool) -> Emission {
             target: "rtx-5090",
             contract,
             gpu,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("combined placement emits")

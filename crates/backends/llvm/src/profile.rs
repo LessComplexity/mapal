@@ -368,9 +368,8 @@ impl Face {
     pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
         match (reduced, contract) {
             (Some(crate::Reduced::Tf32), _) => Face::Tf32,
-            // ADR-0040: reassociation runs the scalar kernels, so the
-            // Exact/Contract rows cover it; `splitk` is its only own decision.
-            (Some(crate::Reduced::Reassoc), c) => Face::of(c, None),
+            // ADR-0040: the order axis runs the scalar kernels, so the
+            // Exact/Contract rows cover it; its realizations are own rungs.
             (None, true) => Face::Contract,
             (None, false) => Face::Exact,
         }
@@ -2728,42 +2727,41 @@ impl TargetProfile {
         })
     }
 
-    /// **S62 `splitk`: how many contiguous `k` partitions a tile site's fold
-    /// is cut into under the reassociation face (ADR-0040)**; 1 = the ordered
-    /// kernel. `blocks` is the site's grid, `wave` the blocks the part holds at
-    /// that geometry at once (`Launch::wave`: SMs × the blocks one SM keeps
-    /// resident), `unit` the `k` steps one panel covers (`GpuTile::bk`; 1 for
-    /// one thread per cell), `cells` the output extent, `elem` its bytes.
+    /// **S62/S63 split-K sizing (ADR-0040 D4, gap map M1): how many contiguous
+    /// `k` partitions a tile site's fold is cut into**; 1 = the ordered kernel.
+    /// `blocks` is the site's grid, `wave` the blocks the part holds at that
+    /// geometry at once (`Launch::wave`), `panels` the fold's whole panels
+    /// (`k / GpuTile::bk`; `k` for one thread per cell), `cells` the output
+    /// extent, `elem` its bytes; `workspace` when the partials are materialized
+    /// (`splitk`) rather than added into the output (`splitk-atomic`).
     ///
     /// Every output cell is independent (`TilePlan`), so the grid already is
     /// every block the output domain gives; when it leaves resident slots
-    /// empty, the fold is the only parallel axis left. Double the partitions
-    /// while the grid still leaves a slot empty, every partition stays whole
-    /// panels (`k % (2·S·unit) = 0`: each partition's affine reads stay inside
-    /// the bounds the site proved, no remainder path), and the partials the
-    /// reduce launch reads back stay in L2 (`2·S·cells·elem ≤ l2_bytes`). Only
-    /// device facts and site extents enter.
-    pub fn gpu_splitk(
+    /// empty, the fold is the only parallel axis left. The largest `S` that
+    /// divides the panels (each partition's affine reads stay inside the
+    /// bounds the site proved, no remainder path), keeps the split grid inside
+    /// one wave (`blocks·S ≤ wave`: no tail wave, G6) and, for a workspace,
+    /// keeps the partials the reduce reads back in L2 (`S·cells·elem ≤ l2`,
+    /// the S62 derivation's invariant). Only device facts and site extents
+    /// enter.
+    pub fn split_count(
         &self,
         blocks: u64,
         wave: u64,
-        k: u64,
-        unit: u64,
+        panels: u64,
         cells: u64,
         elem: u64,
+        workspace: bool,
     ) -> u64 {
         let Some(g) = self.gpu() else {
             return 1;
         };
-        let unit = unit.max(1);
-        let mut s = 1;
-        while blocks * s < wave
-            && k.is_multiple_of(2 * s * unit)
-            && 2 * s * cells * elem <= g.l2_bytes
-        {
-            s *= 2;
-        }
-        s
+        (1..=panels.min(wave / blocks.max(1)))
+            .rev()
+            .find(|&d| {
+                panels.is_multiple_of(d) && (!workspace || d * cells * elem <= g.l2_bytes)
+            })
+            .unwrap_or(1)
     }
 
     /// The streaming matrix unit's facts, when this part has one. Same seam

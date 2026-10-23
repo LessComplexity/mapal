@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
-use mapal_backend_llvm::{EmitError, EmitOpts, emit_detailed, flags, resolve_profile};
+use mapal_backend_llvm::{EmitError, EmitOpts, Order, emit_detailed, flags, resolve_profile};
 use mapal_interp::{Outcome, TrapKind, native_observable};
 use mapal_ir::CategoryIr;
 use mapal_syntax::{Diagnostic, LineIndex, Severity};
@@ -23,15 +23,18 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test> <file.mapal> [options
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
   run      [--interp] [--budget N]        compile and execute (--interp: the oracle)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
-  test     [--budget N] [--timeout SECS]  compiled output vs the oracle, byte for byte
+  test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
 common: --target=<profile> --no-rewrite -v, and the emitter flags
-  --perf --no-tile --no-pack --kc --contract --move-panel=off|W:B
-  --gpu-off=<rung,..> --gpu-on=<rung,..> --precision=tf32
+  --perf --no-tile --no-pack --kc --move-panel=off|W:B
+  --exact --no-contract --contract --order=sequential|fixed|free --precision=tf32
+  --gpu-off=<rung,..> --gpu-on=<rung,..> --splitk=<S>
+  (default face: fma steps, order free, bounded — ADR-0040)
 env: CC (clang), MAPAL_RT (libmapal_rt.a), LLVM (opt/llc dir), MAPAL_CUDA, MAPAL_LD";
 
 /// `Err` carries the exit code; the message is already on stderr.
 type Res<T> = Result<T, u8>;
 
+#[derive(Clone)]
 struct Args {
     cmd: String,
     file: String,
@@ -44,6 +47,8 @@ struct Args {
     rewrite: bool,
     verbose: bool,
     opts: EmitOpts,
+    /// The face flags as given (`test` judges only bit-replayable faces).
+    face_flags: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -82,12 +87,16 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         rewrite: true,
         verbose: false,
         opts: EmitOpts::default(),
+        face_flags: Vec::new(),
     };
     let num = |v: Option<String>, f: &str| -> Res<u64> {
         v.and_then(|v| v.parse().ok())
             .ok_or_else(|| usage(&format!("{f} expects a non-negative integer")))
     };
     while let Some(s) = it.next() {
+        if matches!(s.as_str(), "--contract" | "--no-contract" | "--exact") || s.starts_with("--order=") {
+            a.face_flags.push(s.clone());
+        }
         match flags::apply(&mut a.opts, &s) {
             Ok(true) => continue,
             Err(e) => return Err(usage(&e)),
@@ -433,23 +442,51 @@ fn dump_ir(a: &Args) -> Res<u8> {
 }
 
 /// The equalizer check: `exec∘link∘emit∘rewrite ≡ interp` on the observable
-/// (exit code, and stdout byte for byte when the oracle defines it).
+/// (exit code, and stdout byte for byte when the oracle defines it), on the
+/// `fixed` face (ADR-0040 D3: separate steps, the compiled partition order,
+/// which the oracle replays) — or `--exact` (sequential).
 fn test_cmd(a: &Args) -> Res<u8> {
-    if a.opts.contract || a.opts.reduced.is_some() {
+    let given = |f: &str| a.face_flags.iter().any(|x| x == f);
+    let separate = given("--no-contract") || given("--exact");
+    if a.opts.reduced.is_some()
+        || given("--contract")
+        || given("--order=free")
+        || (given("--order=sequential") && !separate)
+    {
         eprintln!(
-            "mapal: test judges the Exact face only — the contract/reduced faces are \
-             bound-checked against the CPU contract build, not bit-equal to the \
-             interpreter (see benches/gpu/bundle.sh)"
+            "mapal: test judges the fixed face (or --exact) — the default, contract and \
+             reduced faces are bound-checked, not bit-equal to the interpreter \
+             (ADR-0040 D2; benches/gpu/value_gate.py)"
         );
         return Err(2);
     }
-    let raw = frontend(a)?;
-    let rr = mapal_interp::run(&raw, a.budget);
-    let Some((want_out, want_code)) = native_observable(&raw, &rr) else {
+    let mut a = a.clone();
+    a.opts.contract = false;
+    if a.opts.order == Order::Free {
+        a.opts.order = Order::Fixed;
+    }
+    let a = &a;
+    let ir = rewritten(a, frontend(a)?);
+    // The orders are keyed on the IR the compiler saw: a split program's
+    // oracle runs on it too (`--no-rewrite`: the lowered IR is that IR); an
+    // unsplit one on the lowered IR, as before.
+    let orders: Vec<_> = emit(a, &ir)?
+        .orders
+        .iter()
+        .map(|o| (o.func, o.fold, o.s))
+        .collect();
+    let raw;
+    let oracle = if orders.is_empty() {
+        raw = frontend(a)?;
+        &raw
+    } else {
+        &ir
+    };
+    let rr = mapal_interp::run_ordered(oracle, a.budget, &orders);
+    let Some((want_out, want_code)) = native_observable(oracle, &rr) else {
         println!("SKIP {}: oracle diverged at budget {}", a.file, a.budget);
         return Err(1);
     };
-    let ir = rewritten(a, raw);
     let (profile, got) = in_temp(a, &ir, |mut cmd| {
         cmd.stdout(Stdio::piped());
         wait_boxed(cmd, a.timeout)

@@ -41,7 +41,7 @@ fn host(src: &str, target: &'static str, gpu: GpuArms) -> String {
         host: "generic",
         target,
         gpu,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     emit_detailed(&lower_src(src), &opts).unwrap().text
 }
@@ -107,7 +107,7 @@ fn the_host_rung_moves_nothing_but_the_flag() {
             host: "generic",
             target: "rtx-5090",
             gpu,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         };
         emit_detailed(&lower_src(SITE), &opts).unwrap().device
     };

@@ -33,7 +33,7 @@ fn device(target: &'static str, contract: bool, reduced: Option<Reduced>, gpu: G
         contract,
         reduced,
         gpu,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     emit_detailed(&ir, &opts)
         .expect("emits")

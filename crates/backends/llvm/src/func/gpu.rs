@@ -24,7 +24,7 @@
 
 use super::resident::Window;
 use super::*;
-use crate::Reduced;
+use crate::{Order, Reduced};
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
     MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
@@ -151,7 +151,7 @@ pub(crate) const LAUNCHV_MAX: usize = 16;
 /// S54 entries (`streams`, `pinned`), each declared only where it is called,
 /// so a module that never opens a stream or pins keeps its S53 text.
 /// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
-pub(crate) const S54_DECLS: [(&str, &str); 4] = [
+pub(crate) const S54_DECLS: [(&str, &str); 5] = [
     (
         "@mapal_gpu_event(",
         "declare void @mapal_gpu_event(i32, i32)\n",
@@ -162,6 +162,8 @@ pub(crate) const S54_DECLS: [(&str, &str); 4] = [
     ),
     ("@mapal_gpu_pin(", "declare void @mapal_gpu_pin(ptr, i64)\n"),
     ("@mapal_gpu_unpin(", "declare void @mapal_gpu_unpin()\n"),
+    // S63 `splitk-atomic` / `streamk`: the output zeroed before its partials add.
+    ("@mapal_gpu_zero(", "declare void @mapal_gpu_zero(i64, i64)\n"),
 ];
 
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
@@ -342,9 +344,37 @@ pub(crate) struct Launch {
     /// The rungs this site's kernel is emitted with: the profile's table at
     /// the site's fill, under the measurement arms.
     pub rungs: crate::GpuRungs,
-    /// S62 `splitk` (ADR-0040): the `k` partitions the split variant folds,
-    /// `z` riding in `ctaid.y` above the unsplit `gy`; 1 = never split.
-    pub splitk: u64,
+    /// How the site's `k` fold is realized (ADR-0040 D4): in order, or cut
+    /// and combined. [`launch`] gives `None`; [`launch_in`] chooses under
+    /// the emission's order.
+    pub combine: Combine,
+}
+
+/// The realization of a tile site's `k` fold (ADR-0040 D3/D4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Combine {
+    /// One chain per cell, increasing `k`: the ordered kernel.
+    None,
+    /// S62 `splitk`: `s` partial folds (`z` in `ctaid.y` above the unsplit
+    /// `gy`) into a workspace, then one reduce launch in partition order.
+    Workspace { s: u64 },
+    /// S63 `splitk-atomic`: the same `s` partial folds, each added into the
+    /// zeroed output by `atomicrmw fadd` (combine order unspecified).
+    Atomic { s: u64 },
+    /// S63 `streamk`: `ctas` blocks, each walking `iters` consecutive units
+    /// of the `tiles × panels` iteration space; a tile's pieces add into the
+    /// zeroed output by `atomicrmw fadd`.
+    StreamK { ctas: u64, iters: u64 },
+}
+
+impl Combine {
+    /// The partitions a split kernel folds (`z` extent); 1 otherwise.
+    pub(crate) fn splits(self) -> u64 {
+        match self {
+            Combine::Workspace { s } | Combine::Atomic { s } => s,
+            _ => 1,
+        }
+    }
 }
 
 impl Launch {
@@ -433,7 +463,7 @@ pub(crate) fn launch(
                     smem: w.smem_bytes(),
                     raster: raster(rungs, w.bm(), w.bn(), w.blocks_per_sm),
                     rungs,
-                    splitk: 1,
+                    combine: Combine::None,
                 };
             }
             let mma = profile.gpu_mma_tile(site.rows, site.c, site.k, rungs.wide, rungs.fill);
@@ -449,7 +479,7 @@ pub(crate) fn launch(
                     smem: m.smem_bytes(),
                     raster: raster(rungs, m.bm(), m.bn(), m.blocks_per_sm),
                     rungs,
-                    splitk: 1,
+                    combine: Combine::None,
                 };
             }
         }
@@ -514,7 +544,7 @@ pub(crate) fn launch(
                 .flatten()
                 .unwrap_or(g)
         });
-    let mut l = match tiled {
+    match tiled {
         Some(g) => Launch {
             arithmetic,
             tiled: Some(g),
@@ -526,7 +556,7 @@ pub(crate) fn launch(
             smem: g.smem_bytes(e),
             raster: raster(rungs, g.bm(), g.bn(), g.blocks_per_sm),
             rungs,
-            splitk: 1,
+            combine: Combine::None,
         },
         None => Launch {
             arithmetic,
@@ -539,31 +569,101 @@ pub(crate) fn launch(
             smem: 0,
             raster: 1,
             rungs,
-            splitk: 1,
+            combine: Combine::None,
         },
+    }
+}
+
+/// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
+pub(crate) fn launch_in(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    reduced: Option<Reduced>,
+    order: Order,
+) -> Launch {
+    let mut l = launch(site, profile, contract, arms, reduced);
+    l.combine = combine(&l, site, profile, order, arms);
+    l
+}
+
+/// **The chooser (ADR-0040 D4, gap map M1/G2/G6)**: how a site's `k` fold is
+/// realized, from IR facts (`TilePlan`'s independent cells, the site's
+/// extents and step) and the part's (`Launch::wave`, `sm`, L2).
+///
+/// - `sequential`: in order.
+/// - `fixed`: the deterministic workspace split (`splitk`), when the grid
+///   leaves resident slots empty.
+/// - `free`: stream-K when its makespan — `⌈blocks·P / wave⌉` panel steps per
+///   block plus one fixup — beats the best split's
+///   `⌈blocks·S / wave⌉ · P/S` (wave quantization, G6); else the atomic split
+///   (`splitk-atomic`); else the workspace split (deterministic, legal under
+///   `free`); else in order. Each step down is the rung above's OFF arm.
+///
+/// Only the scalar kernels have a fold to cut; `raster` and a split are
+/// exclusive by derivation (a grid is grouped only above one wave, split only
+/// below), stream-K walks tiles in the raster order instead. A forced
+/// `--splitk=S` replaces the derived count where `S` divides the panels.
+fn combine(
+    l: &Launch,
+    site: &TileSite,
+    profile: &TargetProfile,
+    order: Order,
+    arms: crate::GpuArms,
+) -> Combine {
+    if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() {
+        return Combine::None;
+    }
+    let gpu = profile.gpu().expect("a GPU site has a GPU profile");
+    let rungs = l.rungs;
+    let e = elem_bytes_of(&site.elem);
+    let panels = site.k / l.tiled.map_or(1, |g| g.bk);
+    let blocks = l.gx * l.gy;
+    let wave = l.wave(gpu);
+    let count = |workspace| match arms.splitk {
+        s if s > 0 && panels.is_multiple_of(s) => s,
+        _ => profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace),
     };
-    // S62 `splitk`: only the reassociation face permits a partitioned fold
-    // (ADR-0040), and only the scalar kernels have one. `raster` and `splitk`
-    // are exclusive by derivation — a grid is grouped only above one wave,
-    // split only below — so a forced count never meets a remapped grid.
-    if reduced == Some(Reduced::Reassoc) && rungs.splitk && l.raster == 1 {
-        let unit = l.tiled.map_or(1, |g| g.bk);
-        let derived = || {
-            profile.gpu_splitk(
-                l.gx * l.gy,
-                l.wave(gpu),
-                site.k,
-                unit,
-                site.rows * site.c,
-                e,
-            )
-        };
-        l.splitk = match arms.splitk {
-            s if s > 0 && site.k.is_multiple_of(s * unit) => s,
-            _ => derived(),
+    let s_ws = if rungs.splitk && l.raster == 1 {
+        count(true)
+    } else {
+        1
+    };
+    if order == Order::Fixed {
+        return match s_ws {
+            1 => Combine::None,
+            s => Combine::Workspace { s },
         };
     }
-    l
+    // `red.global.add.f32` exists from sm_20, `.f64` from sm_60.
+    let atomic = e == 4 || gpu.sm() >= 60;
+    let s_at = count(false);
+    // ponytail: stream-K runs the register-staged tile (its panel loop takes
+    // a runtime trip count); the cp.async pipeline's prologue is unrolled over
+    // a constant one — add a predicated prologue when a streamed tile needs it.
+    let streamk = rungs.streamk
+        && atomic
+        && l.tiled.is_some_and(|g| g.stages < 2)
+        && panels >= 2
+        && blocks * panels > wave;
+    if streamk {
+        let iters = (blocks * panels).div_ceil(wave);
+        let split = (blocks * s_at).div_ceil(wave) * (panels / s_at);
+        if iters + 1 < split {
+            return Combine::StreamK {
+                ctas: (blocks * panels).div_ceil(iters),
+                iters,
+            };
+        }
+    }
+    if rungs.splitk_atomic && atomic && l.raster == 1 && s_at > 1 {
+        return Combine::Atomic { s: s_at };
+    }
+    match s_ws {
+        1 => Combine::None,
+        s => Combine::Workspace { s },
+    }
 }
 
 /// The prefetch rung holds the next panel in registers while the current one
@@ -668,18 +768,18 @@ pub(crate) fn kernel_id_col(
     })
 }
 
-/// S62 `splitk`: the ids of a site's split kernel (`reduce` false: partial
-/// folds into the workspace) and its reduce kernel (true) — the `col`
-/// precedent. The ordered kernel keeps [`kernel_id`], so a function that does
-/// not split the site (non-resident, an epilogue, a stream) launches that.
+/// S62/S63: the ids of a site's combine kernels — `part` is `splitk` (the
+/// partial folds into the workspace), `reduce` (its reduce), `atomic` (the
+/// partial folds added into the output) or `streamk` — the `col` precedent.
+/// The ordered kernel keeps [`kernel_id`], so a function that does not split
+/// the site (non-resident, an epilogue, a stream) launches that.
 pub(crate) fn kernel_id_split(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
     reduced: Option<Reduced>,
-    reduce: bool,
+    part: &str,
 ) -> u64 {
-    let part = if reduce { "reduce" } else { "splitk" };
     let key = format!("{site:?}|{}|{contract}|{reduced:?}|{part}", profile.name);
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -926,6 +1026,23 @@ pub(crate) fn cell_grid(n: u64) -> (u64, u64) {
     (n.div_ceil(NAIVE_THREADS), NAIVE_THREADS)
 }
 
+/// The `Fold` a tile site's map `m` evaluates per cell: the one fold of its
+/// body (`CategoryIr::tile_site` admits exactly one).
+fn site_fold(ir: &CategoryIr, m: MorphismId) -> (FuncId, MorphismId) {
+    let Operation::Map { body, .. } = ir.morphism(m).expect("site morphism").op else {
+        unreachable!("a tile site is a map");
+    };
+    let fold = ir
+        .func(body)
+        .expect("map body")
+        .morphisms
+        .iter()
+        .copied()
+        .find(|&x| matches!(ir.morphism(x).map(|g| g.op), Some(Operation::Fold { .. })))
+        .expect("a tile site's body folds");
+    (body, fold)
+}
+
 /// `cell-law`'s device variant of body `name` (`FnEmit::cell_vals`).
 pub(crate) fn cell_variant(name: &str) -> String {
     format!("{name}_cell")
@@ -1034,6 +1151,7 @@ pub(crate) fn device_module(
     contract: bool,
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
+    order: Order,
     gens: &[GenKernel],
     epis: &[EpiSite],
     epi_bodies: &[(String, String)],
@@ -1066,22 +1184,38 @@ pub(crate) fn device_module(
                 let name = kernel_name(kernel_id_col(site, profile, contract, reduced, col));
                 kernels.entry(name.clone()).or_insert_with(|| {
                     kernel_text(
-                        &name, site, profile, contract, arms, reduced, col, None, false,
+                        &name,
+                        site,
+                        profile,
+                        contract,
+                        arms,
+                        reduced,
+                        col,
+                        None,
+                        Combine::None,
                     )
                 });
-                // S62 `splitk`: a whole site that may split gets its split and
-                // reduce kernels too; the host picks per function (resident,
-                // no epilogue, one stream), so the ordered one stays.
-                if whole && !col && launch(site, profile, contract, arms, reduced).splitk > 1 {
-                    let id = |r| kernel_name(kernel_id_split(site, profile, contract, reduced, r));
-                    let (split, red) = (id(false), id(true));
-                    kernels.entry(split.clone()).or_insert_with(|| {
-                        kernel_text(
-                            &split, site, profile, contract, arms, reduced, false, None, true,
-                        )
-                    });
+                // S62/S63 (ADR-0040 D4): a whole site whose fold is cut gets
+                // its combine kernels too; the host picks per function
+                // (resident, no epilogue, one stream), so the ordered one stays.
+                let c = launch_in(site, profile, contract, arms, reduced, order).combine;
+                if !whole || col || c == Combine::None {
+                    continue;
+                }
+                let id = |part| kernel_name(kernel_id_split(site, profile, contract, reduced, part));
+                let part = match c {
+                    Combine::Workspace { .. } => "splitk",
+                    Combine::Atomic { .. } => "atomic",
+                    _ => "streamk",
+                };
+                let k = id(part);
+                kernels.entry(k.clone()).or_insert_with(|| {
+                    kernel_text(&k, site, profile, contract, arms, reduced, false, None, c)
+                });
+                if let Combine::Workspace { s } = c {
+                    let red = id("reduce");
                     kernels.entry(red.clone()).or_insert_with(|| {
-                        reduce_kernel_text(&red, site, profile, contract, arms, reduced)
+                        reduce_kernel_text(&red, site, profile, contract, arms, reduced, s)
                     });
                 }
             }
@@ -1106,7 +1240,7 @@ pub(crate) fn device_module(
                 reduced,
                 false,
                 Some(&e.k),
-                false,
+                Combine::None,
             )
         });
     }
@@ -1192,15 +1326,15 @@ fn kernel_text(
     reduced: Option<Reduced>,
     col: bool,
     epi: Option<&EpiKernel>,
-    split: bool,
+    combine: Combine,
 ) -> String {
-    let mut k = kernel(site, profile, contract, arms, reduced, col, epi, split);
+    let mut k = kernel(site, profile, contract, arms, reduced, col, epi, combine);
     let l = launch(site, profile, contract, arms, reduced);
     debug_assert!(
         !col || col_store(&l, site),
         "a column-major store this kernel has"
     );
-    debug_assert!(!split || (l.splitk > 1 && !col && epi.is_none()));
+    debug_assert!(combine == Combine::None || (!col && epi.is_none()));
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
         (None, Some(m), _) => k.mma(name, m),
@@ -1212,9 +1346,9 @@ fn kernel_text(
 
 /// S62 `splitk`'s second launch: `o[t] = ((P₀[t] + P₁[t]) + …) + P_{S−1}[t]`,
 /// one thread per cell over the workspace `%a` (`S` partitions of `rows·c`),
-/// partition order fixed, straight-line — ADR-0040's combine, so the bits are
-/// a function of the site and the profile. No fast-math flag: LLVM may not
-/// re-bracket what the text fixes. `%b` is unused.
+/// partition order fixed, straight-line — ADR-0040 D3's combine, so the bits
+/// are a function of the site and the profile. No fast-math flag: LLVM may
+/// not re-bracket what the text fixes. `%b` is unused.
 fn reduce_kernel_text(
     name: &str,
     site: &TileSite,
@@ -1222,9 +1356,18 @@ fn reduce_kernel_text(
     contract: bool,
     arms: crate::GpuArms,
     reduced: Option<Reduced>,
+    s: u64,
 ) -> String {
-    let s = launch(site, profile, contract, arms, reduced).splitk;
-    let mut k = kernel(site, profile, contract, arms, reduced, false, None, true);
+    let mut k = kernel(
+        site,
+        profile,
+        contract,
+        arms,
+        reduced,
+        false,
+        None,
+        Combine::Workspace { s },
+    );
     let (t, ix, cells) = (k.t.clone(), k.idx, site.rows * site.c);
     let e = elem_bytes_of(&site.elem);
     k.header(name, NAIVE_THREADS, e, 0);
@@ -1258,7 +1401,7 @@ fn reduce_kernel_text(
 }
 
 /// The kernel builder for a site's launch: its index width, arithmetic,
-/// rungs and, for the split variant (`split`), the partition count.
+/// rungs and the fold's realization (`combine`; `None` for the ordered kernel).
 #[allow(clippy::too_many_arguments)]
 fn kernel<'s>(
     site: &'s TileSite,
@@ -1268,15 +1411,15 @@ fn kernel<'s>(
     reduced: Option<Reduced>,
     col: bool,
     epi: Option<&'s EpiKernel>,
-    split: bool,
+    combine: Combine,
 ) -> Kernel<'s> {
     let l = launch(site, profile, contract, arms, reduced);
     let rungs = l.rungs;
-    let splitk = if split { l.splitk } else { 1 };
+    let splitk = combine.splits();
     // `idx32` is an FMA / one-thread-per-cell rung: the tensor-core kernels
     // (`mma.sync`, `wgmma`) form their indices in `i64`.
     let tensor = l.mma.is_some() || l.wgmma.is_some();
-    let idx = if rungs.idx32 && !tensor && max_index(site, &l, splitk) < 1 << 31 {
+    let idx = if rungs.idx32 && !tensor && max_index(site, &l, combine) < 1 << 31 {
         "i32"
     } else {
         "i64"
@@ -1299,6 +1442,13 @@ fn kernel<'s>(
         splitk,
         gy_out: l.gy,
         z: None,
+        atomic: matches!(combine, Combine::Atomic { .. } | Combine::StreamK { .. }),
+        streamk: match combine {
+            Combine::StreamK { iters, .. } => Some(iters),
+            _ => None,
+        },
+        p0: None,
+        head: "entry",
     }
 }
 
@@ -1307,15 +1457,28 @@ fn kernel<'s>(
 /// every cell a launched thread can name (the one-thread-per-cell grid rounds
 /// up to whole blocks), and `k`. Every intermediate of the index arithmetic is
 /// a partial sum of one of these, so below 2³¹ the kernel indexes in `i32`
-/// with `nuw nsw`; pointers stay 64-bit. A split kernel (S62) names its
-/// workspace cell `z·rows·c + cell`, `z < splitk`; a partition's reads stay
-/// inside the operand's own last element.
-fn max_index(site: &TileSite, l: &Launch, splitk: u64) -> u64 {
+/// with `nuw nsw`; pointers stay 64-bit. A workspace split kernel (S62)
+/// names its workspace cell `z·rows·c + cell`, `z < S`; a partition's reads
+/// stay inside the operand's own last element. A stream-K kernel (S63) counts
+/// its iteration space up to `ctas·iters` (`tiles × panels`, rounded up).
+fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
     let last = |r: &mapal_ir::TileRead| {
         r.base + r.ci * (site.rows - 1) + r.clane * (site.c - 1) + r.ck * (site.k - 1)
     };
-    let cells = (site.rows * site.c).max(l.gx * l.gy * l.block) * splitk;
-    last(&site.a).max(last(&site.b)).max(cells).max(site.k)
+    let slabs = match combine {
+        Combine::Workspace { s } => s,
+        _ => 1,
+    };
+    let walk = match combine {
+        Combine::StreamK { ctas, iters } => ctas * iters,
+        _ => 0,
+    };
+    let cells = (site.rows * site.c).max(l.gx * l.gy * l.block) * slabs;
+    last(&site.a)
+        .max(last(&site.b))
+        .max(cells)
+        .max(site.k)
+        .max(walk)
 }
 
 /// The integer arithmetic a panel lane map is written in, so one definition
@@ -1516,6 +1679,17 @@ struct Kernel<'s> {
     splitk: u64,
     gy_out: u64,
     z: Option<String>,
+    /// S63 `splitk-atomic` / `streamk`: the partials add into `%o` itself
+    /// (`atomicrmw fadd`), which the host zeroed; no workspace slab.
+    atomic: bool,
+    /// S63 `streamk`: the units of the `tiles × panels` space one block walks.
+    streamk: Option<u64>,
+    /// S63 `streamk`: the current piece's first panel (the seed rides the
+    /// piece that starts its tile, [`Kernel::split_seed`]).
+    p0: Option<String>,
+    /// The block the panel loop is entered from: `entry`, or `seg` in a
+    /// stream-K kernel (one panel loop per piece).
+    head: &'static str,
 }
 
 impl Kernel<'_> {
@@ -1789,11 +1963,58 @@ impl Kernel<'_> {
         }
     }
 
+    /// Output cell `v`'s index: workspace slab `z` in a workspace split
+    /// kernel, `v` itself in an atomic one (its partials add into `%o`).
+    fn slab(&mut self, v: String) -> String {
+        if self.atomic {
+            return v;
+        }
+        let cells = self.site.rows * self.site.c;
+        self.at_z(v, cells)
+    }
+
+    /// Store `v` at `%o[oi]`: a plain store, or (S63 `splitk-atomic`,
+    /// `streamk`) `atomicrmw fadd`, device scope, relaxed, result unused —
+    /// `red.global.add` in the SASS. One instruction per element: a vector
+    /// value is split lane by lane.
+    fn store_o(&mut self, v: &[String], oi: &str) {
+        let (t, e) = (self.t.clone(), elem_bytes_of(&self.site.elem));
+        if !self.atomic {
+            let n = v.len() as u64;
+            let (ty, val) = if n == 1 {
+                (t.clone(), v[0].clone())
+            } else {
+                let vt = format!("<{n} x {t}>");
+                let mut vec = "poison".to_string();
+                for (j, x) in v.iter().enumerate() {
+                    let nv = self.tmp();
+                    self.line(format!("{nv} = insertelement {vt} {vec}, {t} {x}, i64 {j}"));
+                    vec = nv;
+                }
+                (vt, vec)
+            };
+            let p = self.gep(1, "%o", oi);
+            self.line(format!(
+                "store {ty} {val}, ptr addrspace(1) {p}, align {}",
+                n * e
+            ));
+            return;
+        }
+        for (j, x) in v.iter().enumerate() {
+            let i = self.plus(oi.to_string(), j as u64);
+            let p = self.gep(1, "%o", &i);
+            let r = self.tmp();
+            self.line(format!(
+                "{r} = atomicrmw fadd ptr addrspace(1) {p}, {t} {x} syncscope(\"device\") monotonic, align {e}"
+            ));
+        }
+    }
+
     /// The fold's seed: partition 0 starts from the site's seed, every other
     /// partition from `0.0` (ADR-0040's partial folds), so the reduce adds
     /// the seed exactly once.
     fn split_seed(&mut self, seed: &str) -> String {
-        let Some(z) = self.z.clone() else {
+        let Some(z) = self.z.clone().or(self.p0.clone()) else {
             return seed.to_string();
         };
         let (t, ix) = (self.t.clone(), self.idx);
@@ -1970,13 +2191,13 @@ impl Kernel<'_> {
         } else {
             cell
         };
-        // A split kernel stores its partial into workspace slab `z`.
-        let cell = self.at_z(cell, s.rows * s.c);
+        // A split kernel stores its partial into workspace slab `z`, or
+        // (`splitk-atomic`) adds it into the output.
+        let cell = self.slab(cell);
         if self.epi.is_some() {
             self.store_cells(std::slice::from_ref(&accn), &cell);
         } else {
-            let p = self.gep(1, "%o", &cell);
-            self.line(format!("store {t} {accn}, ptr addrspace(1) {p}, align {e}"));
+            self.store_o(std::slice::from_ref(&accn), &cell);
         }
         self.line("br label %done");
         self.out.push_str("done:\n  ret void\n}\n");
@@ -2633,7 +2854,24 @@ impl Kernel<'_> {
         };
         self.header(name, threads, GPU_VEC_BYTES, blocks);
         let tid = self.sreg("tid.x");
-        let (bx, by) = self.block_ids();
+        let accs = (tm * tn) as usize;
+        let acc = self.tmp();
+        // S63 `streamk`: the accumulators live across pieces (the entry block,
+        // where they promote to registers); each piece re-seeds them.
+        let seg = self.streamk.map(|iters| {
+            self.line(format!(
+                "{acc} = alloca [{accs} x {t}], align {GPU_VEC_BYTES}"
+            ));
+            self.segment(iters, kext / bk, bk)
+        });
+        let (bx, by) = match &seg {
+            Some(sg) => (sg.bx.clone(), sg.by.clone()),
+            None => self.block_ids(),
+        };
+        let (kbeg, kend) = match &seg {
+            Some(sg) => (sg.kbeg.clone(), sg.kend.clone()),
+            None => ("0".to_string(), kext.to_string()),
+        };
         // Warp shape (S52 rung `warp`): lay a warp's 32 lanes out as
         // `warp / wx` rows × `wx` columns of threads, `wx` = the lanes one
         // shared-memory wavefront serves with vector loads (128 B / 16 B = 8).
@@ -2683,11 +2921,11 @@ impl Kernel<'_> {
         let bs_off = bk * sa;
         let stage_elems = g.stage_elems();
 
-        let accs = (tm * tn) as usize;
-        let acc = self.tmp();
-        self.line(format!(
-            "{acc} = alloca [{accs} x {t}], align {GPU_VEC_BYTES}"
-        ));
+        if seg.is_none() {
+            self.line(format!(
+                "{acc} = alloca [{accs} x {t}], align {GPU_VEC_BYTES}"
+            ));
+        }
         let acc_slot = |k: &mut Self, idx: usize| {
             let p = k.tmp();
             k.line(format!(
@@ -2827,7 +3065,9 @@ impl Kernel<'_> {
             .collect();
 
         // `cbase`: the stage the compute reads (async), else the one buffer.
+        let head = self.head;
         let (cbase, pre) = if streamed {
+            debug_assert!(seg.is_none(), "stream-K runs the register-staged tile");
             // Issue panel `tile` into stage `stage`: one `cp.async` per unit.
             let issue = |k: &mut Self, tile: &str, stage: &str| {
                 let k0 = k.op("mul", tile, bk);
@@ -2903,19 +3143,19 @@ impl Kernel<'_> {
             // `bk` steps of arithmetic. The last trip re-reads its own panel
             // (in bounds, never stored) rather than branching.
             let first = if self.rungs.prefetch {
-                load_panels(self, "0")
+                load_panels(self, &kbeg)
             } else {
                 Vec::new()
             };
             self.line("br label %kt");
             self.out.push_str("kt:\n");
             let (k0, k0n) = (self.tmp(), self.tmp());
-            self.line(format!("{k0} = phi {ix} [0, %entry], [{k0n}, %ktl]"));
+            self.line(format!("{k0} = phi {ix} [{kbeg}, %{head}], [{k0n}, %ktl]"));
             if self.rungs.prefetch {
                 let held: Vec<String> = first.iter().map(|_| self.tmp()).collect();
                 for (i, (h, f)) in held.iter().zip(&first).enumerate() {
                     self.line(format!(
-                        "{h} = phi {} [{f}, %entry], [@NEXT{i}@, %ktl]",
+                        "{h} = phi {} [{f}, %{head}], [@NEXT{i}@, %ktl]",
                         tys[i]
                     ));
                 }
@@ -2923,7 +3163,7 @@ impl Kernel<'_> {
                 self.line("call void @llvm.nvvm.barrier0()");
                 let nk = self.op("add", &k0, bk);
                 let more = self.tmp();
-                self.line(format!("{more} = icmp ult {ix} {nk}, {kext}"));
+                self.line(format!("{more} = icmp ult {ix} {nk}, {kend}"));
                 let kl = self.tmp();
                 self.line(format!("{kl} = select i1 {more}, {ix} {nk}, {ix} {k0}"));
                 let next = load_panels(self, &kl);
@@ -3010,7 +3250,7 @@ impl Kernel<'_> {
             let (k0, k0n) = self.sync_tail.take().expect("sync panel loop");
             self.line("call void @llvm.nvvm.barrier0()");
             self.line(format!("{k0n} = add {ix} {k0}, {bk}"));
-            self.line(format!("{ktd} = icmp eq {ix} {k0n}, {kext}"));
+            self.line(format!("{ktd} = icmp eq {ix} {k0n}, {kend}"));
         }
         self.line(format!("br i1 {ktd}, label %done, label %kt"));
 
@@ -3036,17 +3276,17 @@ impl Kernel<'_> {
                         self.op("add", &rr, &cc)
                     };
                     // A split kernel stores its partials into workspace slab
-                    // `z` (S62 integration: `cell-fill` × `splitk`).
-                    let oi = self.at_z(oi, s.rows * s.c);
+                    // `z` (S62 integration: `cell-fill` × `splitk`), or adds
+                    // them into the output (S63).
+                    let oi = self.slab(oi);
                     if self.epi.is_some() {
                         self.store_cells(&[x], &oi);
                         continue;
                     }
-                    let op = self.gep(1, "%o", &oi);
-                    self.line(format!("store {t} {x}, ptr addrspace(1) {op}, align {e}"));
+                    self.store_o(&[x], &oi);
                 }
             }
-            self.out.push_str("  ret void\n}\n");
+            self.finish(seg.as_ref());
             return;
         }
         if self.col {
@@ -3090,8 +3330,9 @@ impl Kernel<'_> {
             let rr = self.op("mul", &r, s.c);
             let c0 = self.op("add", &rr, &col0);
             let c0 = self.op("add", &c0, &b_frag0);
-            // A split kernel stores its partials into workspace slab `z`.
-            let c0 = self.at_z(c0, s.rows * s.c);
+            // A split kernel stores its partials into workspace slab `z`,
+            // or adds them into the output (S63).
+            let c0 = self.slab(c0);
             for v in 0..tn / lanes {
                 if self.epi.is_some() {
                     let mut xs = Vec::new();
@@ -3105,24 +3346,105 @@ impl Kernel<'_> {
                     self.store_cells(&xs, &oi);
                     continue;
                 }
-                let mut vec = "poison".to_string();
+                let mut xs = Vec::new();
                 for j in 0..lanes {
                     let p = acc_slot(self, (i * tn + v * lanes + j) as usize);
                     let x = self.tmp();
                     self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
-                    let nv = self.tmp();
-                    self.line(format!("{nv} = insertelement {vt} {vec}, {t} {x}, i64 {j}"));
-                    vec = nv;
+                    xs.push(x);
                 }
                 let oi = self.op("add", &c0, v * b_chunk);
-                let op = self.gep(1, "%o", &oi);
-                self.line(format!(
-                    "store {vt} {vec}, ptr addrspace(1) {op}, align {GPU_VEC_BYTES}"
-                ));
+                self.store_o(&xs, &oi);
             }
         }
-        self.out.push_str("  ret void\n}\n");
+        self.finish(seg.as_ref());
     }
+
+    /// **S63 `streamk`'s walk** (ADR-0040 D4): block `ctaid.x` owns units
+    /// `[cta·iters, min((cta+1)·iters, tiles·P))` of the `tiles × panels`
+    /// space, `P = panels`. Emits the entry's branch into the piece loop's
+    /// head `seg`, and there the current piece: tile `it / P` (in the grid's
+    /// raster order), panels `[p0, p1)`, `p1 = min(P, p0 + (end − it))`.
+    /// Every block of the grid is resident (`ctas ≤ wave`), so the units a
+    /// block walks are its whole share; a tile cut between blocks combines in
+    /// the output ([`Kernel::store_o`]). The bounds sit inside the site's
+    /// proved panels: the reads are the ordered kernel's.
+    fn segment(&mut self, iters: u64, panels: u64, bk: u64) -> Segment {
+        let ix = self.idx;
+        let (gx, h) = self.raster;
+        let total = gx * self.gy_out * panels;
+        let cta = self.sreg("ctaid.x");
+        let start = self.op("mul", &cta, iters);
+        let end0 = self.op("add", &start, iters);
+        let past = self.tmp();
+        self.line(format!("{past} = icmp ult {ix} {end0}, {total}"));
+        let end = self.tmp();
+        self.line(format!("{end} = select i1 {past}, {ix} {end0}, {ix} {total}"));
+        self.line("br label %seg");
+        self.out.push_str("seg:\n");
+        let it = self.tmp();
+        self.line(format!("{it} = phi {ix} [{start}, %entry], [@SEG_NEXT@, %segl]"));
+        let tile = self.op("udiv", &it, panels);
+        let p0 = self.op("urem", &it, panels);
+        let left = self.tmp();
+        self.line(format!("{left} = sub {ix} {end}, {it}"));
+        let p1a = self.op("add", &p0, &left);
+        let fits = self.tmp();
+        self.line(format!("{fits} = icmp ult {ix} {p1a}, {panels}"));
+        let p1 = self.tmp();
+        self.line(format!("{p1} = select i1 {fits}, {ix} {p1a}, {ix} {panels}"));
+        let bx = self.op("urem", &tile, gx);
+        let by = self.op("udiv", &tile, gx);
+        let (bx, by) = if h < 2 {
+            (bx, by)
+        } else {
+            self.line(format!("; raster: {h} block-rows per group"));
+            let (c, r) = raster_block(self, &bx, &by, gx, h);
+            (self.opaque(&c), self.opaque(&r))
+        };
+        let kbeg = self.op("mul", &p0, bk);
+        let kend = self.op("mul", &p1, bk);
+        let base = self.op("mul", &tile, panels);
+        let next = self.op("add", &base, &p1);
+        self.p0 = Some(p0);
+        self.head = "seg";
+        Segment {
+            bx,
+            by,
+            kbeg,
+            kend,
+            next,
+            end,
+        }
+    }
+
+    /// The kernel's end: `ret`, or in a stream-K kernel the piece loop's
+    /// latch — the next piece starts at the unit after this one's last.
+    fn finish(&mut self, seg: Option<&Segment>) {
+        let Some(sg) = seg else {
+            self.out.push_str("  ret void\n}\n");
+            return;
+        };
+        let ix = self.idx;
+        self.line("br label %segl");
+        self.out.push_str("segl:\n");
+        let more = self.tmp();
+        self.line(format!("{more} = icmp ult {ix} {}, {}", sg.next, sg.end));
+        self.line(format!("br i1 {more}, label %seg, label %exit"));
+        self.out.push_str("exit:\n  ret void\n}\n");
+        self.out = self.out.replace("@SEG_NEXT@", &sg.next);
+    }
+}
+
+/// One stream-K piece's values ([`Kernel::segment`]).
+struct Segment {
+    bx: String,
+    by: String,
+    kbeg: String,
+    kend: String,
+    /// The first unit after the piece, and the block's end.
+    next: String,
+    end: String,
 }
 
 impl<'a> FnEmit<'a> {
@@ -3155,13 +3477,44 @@ impl<'a> FnEmit<'a> {
                     epi.as_ref(),
                 )
             } as i64;
-            let l = launch(
+            let l = launch_in(
                 site,
                 self.profile,
                 self.contract,
                 self.gpu_arms,
                 self.reduced,
+                self.order,
             );
+            let cells = site.rows * site.c;
+            let bytes_o = cells * elem_bytes_of(&site.elem);
+            let combined = epi.is_none() && !col && !streams;
+            // S63 (ADR-0040 D4) `splitk-atomic` / `streamk`: the output zeroed
+            // on stream 0, then one launch whose partials add into it — no
+            // workspace, no second kernel. Same exclusions as the workspace
+            // split below.
+            let atomic = match l.combine {
+                Combine::Atomic { s } if combined => {
+                    let geom = format!("i32 {}, i32 {}, i32 {}, i32 {}", l.gx, l.gy * s, l.block, l.smem);
+                    Some(("atomic", geom, format!(" ; splitk={s} atomic")))
+                }
+                Combine::StreamK { ctas, iters } if combined => {
+                    let geom = format!("i32 {ctas}, i32 1, i32 {}, i32 {}", l.block, l.smem);
+                    Some(("streamk", geom, format!(" ; streamk={ctas}x{iters}")))
+                }
+                _ => None,
+            };
+            if let Some((part, geom, tag)) = atomic {
+                let aid =
+                    kernel_id_split(site, self.profile, self.contract, self.reduced, part) as i64;
+                self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], None, |ops, o| {
+                    format!(
+                        "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
+                         call void @mapal_gpu_launch(i64 {aid}, i64 {}, i64 {}, i64 {o}, {geom}){tag}",
+                        ops[0], ops[1]
+                    )
+                });
+                return;
+            }
             // S62 `splitk` (ADR-0040): the split kernel folds `S` partitions
             // into a workspace (`gy·S` blocks), then the reduce kernel adds
             // them into the output in partition order, both on stream 0. The
@@ -3170,12 +3523,18 @@ impl<'a> FnEmit<'a> {
             // function on streams keep the ordered kernel (and an L2 window
             // is not given to the split launch); split them when a measured
             // program needs it.
-            if l.splitk > 1 && epi.is_none() && !col && !streams {
-                let s = l.splitk;
+            if let Combine::Workspace { s } = l.combine
+                && combined
+            {
                 let id = |r| kernel_id_split(site, self.profile, self.contract, self.reduced, r);
-                let (sid, rid) = (id(false) as i64, id(true) as i64);
-                let (rgx, rblock) = cell_grid(site.rows * site.c);
-                let bytes = s * site.rows * site.c * elem_bytes_of(&site.elem);
+                let (sid, rid) = (id("splitk") as i64, id("reduce") as i64);
+                let (rgx, rblock) = cell_grid(cells);
+                let bytes = s * bytes_o;
+                // ADR-0040 D3: the order the interpreter replays (`fixed`).
+                if self.order == Order::Fixed {
+                    let (func, fold) = site_fold(self.ir, m);
+                    self.orders.push(crate::FoldOrder { func, fold, s });
+                }
                 let slot = format!("%d{}", self.fresh());
                 self.allocas.push_str(&format!(
                     "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
@@ -3516,7 +3875,7 @@ mod tests {
         let s = site(1, 256, 128, true, false, Ty::f32());
         let arms = crate::GpuArms::default();
         let text = kernel_text(
-            "strided", &s, &H100_PCIE, true, arms, None, false, None, false,
+            "strided", &s, &H100_PCIE, true, arms, None, false, None, Combine::None,
         );
         assert!(text.contains(" = fmul float ") && text.contains(" = fadd float "));
         assert!(!text.contains("call float @llvm.fma"));
@@ -3542,7 +3901,7 @@ mod tests {
             Some(Reduced::Tf32),
             false,
             None,
-            false,
+            Combine::None,
         );
         assert!(text.contains("call float @llvm.fma"));
         assert!(!text.contains("mma.sync") && !text.contains("wgmma.mma_async"));
@@ -3579,7 +3938,7 @@ mod tests {
                         assert_eq!(l.arithmetic, expected);
                         assert_eq!(l.tiled.is_some(), n == 256, "{} {s:?}", p.name);
                         let text =
-                            kernel_text("scalar", &s, p, contract, arms, None, false, None, false);
+                            kernel_text("scalar", &s, p, contract, arms, None, false, None, Combine::None);
                         assert_eq!(text.contains("@llvm.fma"), contract);
                         assert_eq!(text.contains(" = fmul "), !contract);
                         assert_eq!(text.contains(" = fadd "), !contract);
@@ -3603,6 +3962,10 @@ mod tests {
                             splitk: 1,
                             gy_out: l.gy,
                             z: None,
+                            atomic: false,
+                            streamk: None,
+                            p0: None,
+                            head: "entry",
                         };
                         let result = k.step("%acc", "%a", "%b");
                         let t = &k.t;
@@ -3680,7 +4043,7 @@ mod tests {
                             Some(Reduced::Tf32),
                             false,
                             None,
-                            false,
+                            Combine::None,
                         );
                         assert!(
                             !text.contains("tf32")
@@ -3749,7 +4112,7 @@ mod tests {
                     Some(Reduced::Tf32),
                     false,
                     None,
-                    false,
+                    Combine::None,
                 );
                 assert!(text.contains(instruction));
                 assert!(!text.contains("@llvm.fma") && !text.contains(" = fmul "));
@@ -3787,7 +4150,7 @@ mod tests {
                     .zip([Arithmetic::SeparateMulAdd, Arithmetic::OrderedFma])
                 {
                     assert_eq!(launch(s, p, true, arms, None).arithmetic, expected);
-                    let text = kernel_text("mixed", s, p, true, arms, None, false, None, false);
+                    let text = kernel_text("mixed", s, p, true, arms, None, false, None, Combine::None);
                     assert_eq!(text.contains("griddepcontrol.wait"), wait);
                 }
             }
@@ -4012,51 +4375,54 @@ mod tests {
     /// M16 × 2048 × 7168) stores partition `z`'s partials at `z·rows·c` in the
     /// workspace. Its scalar store dropped that offset, so every partition
     /// raced on slab 0 (the box gate: not bit-exact, a different hash per
-    /// process — `benches/results/gpu/s62/integrated/rtx-5090`).
+    /// process — `benches/results/gpu/s62/integrated/rtx-5090`). S63: the
+    /// atomic variant of the same kernel adds into `%o` itself, no slab.
     #[test]
     fn cell_tile_split_stores_into_its_slab() {
         let s = site(16, 2048, 7168, true, true, Ty::f32());
         let mut arms = crate::GpuArms::default();
         arms.off.fill_rows = true;
         for contract in [false, true] {
-            let l = launch(&s, &RTX_5090, contract, arms, Some(Reduced::Reassoc));
+            let l = launch_in(&s, &RTX_5090, contract, arms, None, Order::Fixed);
             let g = l.tiled.expect("tiled");
-            assert_eq!(
-                (g.tm, g.tn, l.splitk > 1),
-                (1, 1, true),
-                "the split cell tile"
-            );
-            let text = kernel_text(
-                "k",
-                &s,
-                &RTX_5090,
-                contract,
-                arms,
-                Some(Reduced::Reassoc),
-                false,
-                None,
-                true,
-            );
-            let z = text
-                .lines()
-                .find_map(|x| x.trim().split_once(" = udiv ").map(|(z, _)| z.to_string()))
-                .expect("z = ctaid.y / gy");
-            let slab = format!("{z}, {}", 16 * 2048);
-            assert!(
-                text.lines()
-                    .any(|x| x.contains(" = mul ") && x.contains(&slab)),
-                "the store offsets by z·rows·c"
-            );
+            let Combine::Workspace { s: parts } = l.combine else {
+                panic!("the fixed order splits the cell tile: {:?}", l.combine)
+            };
+            assert_eq!((g.tm, g.tn), (1, 1), "the cell tile");
+            for (c, slab_offset) in [
+                (Combine::Workspace { s: parts }, true),
+                (Combine::Atomic { s: parts }, false),
+            ] {
+                let text = kernel_text("k", &s, &RTX_5090, contract, arms, None, false, None, c);
+                let z = text
+                    .lines()
+                    .find_map(|x| x.trim().split_once(" = udiv ").map(|(z, _)| z.to_string()))
+                    .expect("z = ctaid.y / gy");
+                let slab = format!("{z}, {}", 16 * 2048);
+                assert_eq!(
+                    text.lines()
+                        .any(|x| x.contains(" = mul ") && x.contains(&slab)),
+                    slab_offset,
+                    "{c:?}: the workspace store offsets by z·rows·c, the atomic one not"
+                );
+                assert_eq!(
+                    text.contains("atomicrmw fadd ptr addrspace(1)"),
+                    !slab_offset,
+                    "{c:?}"
+                );
+                assert!(!text.contains(" fast ") && !text.contains(" reassoc "));
+            }
         }
     }
 
-    /// S62 `splitk` on the measured cells and parts (`--nocapture` prints the
-    /// table the results' `derived-S.txt` records): only the reassociation face
-    /// splits; a split grid was under one wave and its partitions are whole
-    /// panels; a grid that fills the part (16 × 18432 × 7168 on the 5090, the
-    /// 4096³ control) keeps the ordered kernel.
+    /// S63 the chooser (ADR-0040 D4) on the measured cells and parts
+    /// (`--nocapture` prints the table): the sequential order never cuts;
+    /// the fixed order cuts only into a workspace; the free order picks
+    /// stream-K, the atomic split, the workspace split or nothing, and each
+    /// rung's OFF arm is the next realization down. Every split stays inside
+    /// one wave and cuts whole panels (M1/G6).
     #[test]
-    fn splitk_derivation_on_the_measured_cells() {
+    fn the_chooser_on_the_measured_cells() {
         let cells = [
             (16, 2048, 7168),
             (16, 1024, 4096),
@@ -4068,96 +4434,124 @@ mod tests {
             (4096, 4096, 4096),
         ];
         let parts = [&RTX_5090, &RTX_4090, &H100_PCIE, &crate::profile::RTX_3090];
-        let reassoc = Some(Reduced::Reassoc);
         let arms = crate::GpuArms::default();
+        let off = |names: &[&str]| {
+            let mut a = arms;
+            for n in names {
+                *a.off.rung(n).expect("a rung") = true;
+            }
+            a
+        };
         for p in parts {
             let g = p.gpu().unwrap();
             for (m, n, k) in cells {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
-                    let l = launch(&s, p, contract, arms, reassoc);
+                    let at = |a, o| launch_in(&s, p, contract, a, None, o);
+                    let l = at(arms, Order::Free);
                     let unit = l.tiled.map_or(1, |t| t.bk);
                     let (blocks, wave) = (l.gx * l.gy, l.wave(g));
+                    // The fill class a `GPU_RUNGS_OFF` row keys (`launch`'s `wps`).
                     let base = p.gpu_tile(m, n, k, &s.elem, false, false);
                     let (fb, ft) = base.map_or((blocks, l.block), |t| {
                         ((m / t.bm()) * (n / t.bn()), t.threads())
                     });
-                    let wps = g.warps_per_scheduler(fb, ft);
+                    let fill = if g.warps_per_scheduler(fb, ft) < GPU_RESIDENT_BLOCKS {
+                        "under"
+                    } else {
+                        "filled"
+                    };
                     println!(
-                        "{} {m}x{n}x{k} {} kernel={} grid={}x{} block={} blocks={blocks} wave={wave} \
-                         fill={} S={} kc={}",
+                        "{} {m}x{n}x{k} contract={contract} fill={fill} kernel={} grid={}x{} \
+                         block={} blocks={blocks} wave={wave} free={:?} fixed={:?}",
                         p.name,
-                        if contract { "_rc" } else { "_r" },
                         if l.tiled.is_some() { "tiled" } else { "naive" },
                         l.gx,
                         l.gy,
                         l.block,
-                        if wps < GPU_RESIDENT_BLOCKS {
-                            "under"
-                        } else {
-                            "filled"
-                        },
-                        l.splitk,
-                        k / l.splitk,
+                        l.combine,
+                        at(arms, Order::Fixed).combine,
                     );
-                    assert!(l.splitk == 1 || blocks < wave);
-                    assert!(k.is_multiple_of(l.splitk * unit));
-                    assert_eq!(launch(&s, p, contract, arms, None).splitk, 1);
-                    let off = crate::GpuArms {
-                        off: GpuRungs {
-                            splitk: true,
-                            ..GpuRungs::default()
-                        },
-                        ..arms
-                    };
-                    assert_eq!(launch(&s, p, contract, off, reassoc).splitk, 1);
+                    assert_eq!(at(arms, Order::Sequential).combine, Combine::None);
+                    for o in [Order::Free, Order::Fixed] {
+                        let c = at(arms, o).combine;
+                        let parts_ = c.splits();
+                        assert!(parts_ == 1 || blocks * parts_ <= wave, "{c:?}");
+                        assert!(k.is_multiple_of(parts_ * unit), "{c:?}");
+                        if let Combine::StreamK { ctas, iters } = c {
+                            assert!(ctas <= wave && ctas * iters >= blocks * (k / unit));
+                        }
+                    }
+                    assert!(matches!(
+                        at(arms, Order::Fixed).combine,
+                        Combine::None | Combine::Workspace { .. }
+                    ));
+                    // Each OFF arm is the next realization down.
+                    let no_sk = at(off(&["streamk"]), Order::Free).combine;
+                    assert!(!matches!(no_sk, Combine::StreamK { .. }));
+                    let no_at = at(off(&["streamk", "splitk-atomic"]), Order::Free).combine;
+                    assert_eq!(no_at, at(arms, Order::Fixed).combine);
+                    let none = at(off(&["streamk", "splitk-atomic", "splitk"]), Order::Free);
+                    assert_eq!(none.combine, Combine::None);
+                    let base = launch(&s, p, contract, arms, None);
+                    let geom = |l: &Launch| (l.tiled, l.gx, l.gy, l.block, l.smem, l.raster);
+                    assert_eq!(geom(&none), geom(&base), "the order never moves the tile");
                 }
             }
         }
-        // The S the splitk item measured (S62) were derived on the pre-S62
-        // tiles: the geometry and cell-fill rungs off. With them on (the
-        // integrated build) a skinny site's grid is re-tiled and `grid-share`
-        // sizes residency to it, so fewer slots stand empty (5090 M16 × 2048:
-        // 256 blocks on 340 slots, S = 2) — the invariants above still hold.
-        let mut arms = arms;
-        for r in [
-            "row-fit",
-            "wave-gate",
-            "grid-share",
-            "panel-regs",
-            "fill-rows",
-            "cell-fill",
-        ] {
-            *arms.off.rung(r).expect("a rung") = true;
-        }
-        let at = |p, (m, n, k)| {
-            launch(
-                &site(m, n, k, true, true, Ty::f32()),
-                p,
-                true,
-                arms,
-                reassoc,
-            )
-            .splitk
-        };
-        assert_eq!(
-            at(&RTX_5090, (16, 2048, 7168)),
-            8,
-            "128 blocks, 170 × 6 slots"
-        );
-        assert_eq!(at(&RTX_5090, (16, 1024, 4096)), 16);
-        assert_eq!(
-            at(&RTX_5090, (16, 18432, 7168)),
-            1,
-            "1152 blocks fill 1020 slots"
-        );
-        assert_eq!(at(&RTX_5090, (4096, 4096, 4096)), 1);
-        // The measured table: the 3090 ships the ordered kernel at (filled,
-        // exact) — its one split cell there lost — and splits on the fma face.
-        let s16 = site(16, 2048, 7168, true, true, Ty::f32());
+        // The one-wave clamp (G6): the 3090 at 16 × 18432 × 7168 holds 984
+        // blocks of the 1152-block grid; no split fits one wave, so stream-K
+        // takes the tail. The 5090's M16 × 2048 cell-fill grid splits.
         let r3090 = &crate::profile::RTX_3090;
-        assert_eq!(launch(&s16, r3090, false, arms, reassoc).splitk, 1);
-        assert_eq!(launch(&s16, r3090, true, arms, reassoc).splitk, 4);
+        let s = site(16, 18432, 7168, true, true, Ty::f32());
+        let l = launch_in(&s, r3090, true, arms, None, Order::Free);
+        assert_eq!(l.combine.splits(), 1, "{:?}", l.combine);
+        let s16 = site(16, 2048, 7168, true, true, Ty::f32());
+        let l = launch_in(&s16, &RTX_5090, true, arms, None, Order::Free);
+        assert_ne!(l.combine, Combine::None);
+        // The measured table: the 3090 ships no workspace split at (filled,
+        // exact) — its one split cell there lost (S62) — on the fixed face.
+        let pre = off(&["row-fit", "wave-gate", "grid-share", "panel-regs", "fill-rows", "cell-fill"]);
+        let l = launch_in(&s16, r3090, false, pre, None, Order::Fixed);
+        assert_eq!(l.combine, Combine::None);
+        let l = launch_in(&s16, r3090, true, pre, None, Order::Fixed);
+        assert!(matches!(l.combine, Combine::Workspace { .. }));
+    }
+
+    /// S63 `streamk`: the kernel walks its share of the `tiles × panels`
+    /// space piece by piece — one panel loop per piece entered from `seg`,
+    /// the seed only on a tile's first piece, the store an atomic add, the
+    /// latch back to `seg` — and keeps the register-staged tile's panel loop.
+    #[test]
+    fn streamk_kernel_walks_pieces() {
+        let s = site(128, 2048, 7168, true, true, Ty::f32());
+        let arms = crate::GpuArms::default();
+        let l = launch(&s, &RTX_5090, true, arms, None);
+        let g = l.tiled.expect("tiled");
+        if g.stages >= 2 {
+            return;
+        }
+        let panels = 7168 / g.bk;
+        let blocks = l.gx * l.gy;
+        let iters = (blocks * panels).div_ceil(l.wave(RTX_5090.gpu().unwrap()));
+        let c = Combine::StreamK {
+            ctas: (blocks * panels).div_ceil(iters),
+            iters,
+        };
+        let text = kernel_text("k", &s, &RTX_5090, true, arms, None, false, None, c);
+        assert!(text.contains("seg:\n") && text.contains("segl:\n") && text.contains("exit:\n"));
+        assert!(text.contains("label %seg, label %exit"));
+        assert!(text.contains(&format!(", {iters}\n")), "start = cta·iters");
+        assert!(text.contains(", %seg], ["), "the panel loop is entered per piece");
+        assert!(text.contains("atomicrmw fadd ptr addrspace(1)"));
+        assert!(
+            !text
+                .lines()
+                .any(|x| x.trim_start().starts_with("store") && x.contains("addrspace(1)")),
+            "no plain output store"
+        );
+        assert!(text.contains("select i1"), "the seed rides p0 = 0");
+        assert!(!text.contains("@SEG_NEXT@") && !text.contains("@NEXT"));
     }
 
     /// The block map is a bijection on the grid for every height it is
@@ -4226,7 +4620,7 @@ mod tests {
         for p in PARTS {
             for s in s52_sites() {
                 let l = launch(&s, p, false, force(GpuRungs::ALL), None);
-                assert!(max_index(&s, &l, 1) < 1 << 31, "{} {s:?}", p.name);
+                assert!(max_index(&s, &l, Combine::None) < 1 << 31, "{} {s:?}", p.name);
                 let k = kernel_text(
                     "k",
                     &s,
@@ -4236,7 +4630,7 @@ mod tests {
                     None,
                     false,
                     None,
-                    false,
+                    Combine::None,
                 );
                 assert!(k.contains("add nuw nsw i32"), "{} {s:?}", p.name);
             }
@@ -4244,7 +4638,7 @@ mod tests {
         // 2¹⁶ rows of 2¹⁶: `a`'s last element is 2³² − 1.
         let big = site(1 << 16, 1 << 16, 1 << 16, true, true, Ty::f32());
         let l = launch(&big, &RTX_4090, false, force(GpuRungs::ALL), None);
-        assert!(max_index(&big, &l, 1) >= 1 << 31);
+        assert!(max_index(&big, &l, Combine::None) >= 1 << 31);
         let k = kernel_text(
             "k",
             &big,
@@ -4254,7 +4648,7 @@ mod tests {
             None,
             false,
             None,
-            false,
+            Combine::None,
         );
         assert!(!k.contains("nuw nsw i32") && k.contains("add i64"));
     }
@@ -4419,7 +4813,7 @@ mod tests {
                 );
                 assert!(g.stages <= s.k / g.bk);
                 assert_eq!(l.smem, g.stages * stage);
-                let text = kernel_text("m16", &s, p, contract, arms, None, false, None, false);
+                let text = kernel_text("m16", &s, p, contract, arms, None, false, None, Combine::None);
                 assert!(
                     text.contains("@llvm.nvvm.cp.async.cg.shared.global.16"),
                     "{}",
@@ -4475,7 +4869,7 @@ mod tests {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
                     let text =
-                        |arms| kernel_text("f", &s, p, contract, arms, None, false, None, false);
+                        |arms| kernel_text("f", &s, p, contract, arms, None, false, None, Combine::None);
                     assert_eq!(
                         text(crate::GpuArms::default()),
                         text(off(&["asyncstage"])),

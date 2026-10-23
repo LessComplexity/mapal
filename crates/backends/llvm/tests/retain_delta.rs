@@ -122,7 +122,7 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
     let mut opts = EmitOpts {
         host: "generic",
         target,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     opts.gpu.on.retain_delta = on;
     opts.gpu.off.retain_delta = !on;
@@ -144,7 +144,7 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
         host: "generic",
         target: "rtx-4090",
         contract,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     opts.gpu.on.retain_resident = true;
     opts.gpu.on.delta_h2d = true;
@@ -244,7 +244,7 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
                 host: "generic",
                 target: "rtx-4090",
                 gpu,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits")
@@ -373,7 +373,7 @@ fn lane_stride_places_q_kt_on_the_device() {
         let mut opts = EmitOpts {
             host: "generic",
             target: "rtx-4090",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         };
         for r in off {
             *opts.gpu.off.rung(r).unwrap() = true;
@@ -592,7 +592,7 @@ fn resident_path_matches_the_oracle_emulated() {
             host: "generic",
             target: "generic",
             contract: true,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap()
