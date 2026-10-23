@@ -55,7 +55,7 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}'"
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}' WARM='${WARM:-0}'"
 run_rc=0
 "${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_run exit $run_rc"; }
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || {

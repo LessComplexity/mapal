@@ -15,6 +15,8 @@
 //
 // Timing: legs interleaved round-robin, each launch bracketed by cudaEvents,
 // L2 flushed (256 MB memset) before every timed launch, warmup 3 per leg.
+// --warm (S62, after the face flag): no flush — each leg re-reads operands its
+// previous launch left in L2, the state of a producer feeding its consumer.
 //
 // --tf32: the TF32 face. cuBLAS runs CUBLAS_TF32_TENSOR_OP_MATH, CUTLASS its
 // OpClassTensorOp GEMM; values are bounded, not bit-exact: Mapal's max error vs
@@ -313,6 +315,8 @@ int main(int argc, char **argv) {
   const int reps = atoi(argv[10]);
   const bool tf32 = argc > 11 && !strcmp(argv[11], "--tf32");
   const bool contract = tf32 || (argc > 11 && !strcmp(argv[11], "--contract"));
+  bool warm = false;
+  for (int i = 11; i < argc; ++i) warm |= !strcmp(argv[i], "--warm");
 
   CUDA(cudaFree(0));  // primary context, shared by the runtime and driver legs
   device_facts();
@@ -440,7 +444,7 @@ int main(int argc, char **argv) {
   std::vector<float> ms[3];
   for (int r = 0; r < reps; ++r)
     for (int leg = 0; leg < 3; ++leg) {
-      CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
+      if (!warm) CUDA(cudaMemsetAsync(flush, r & 0xff, flush_bytes));
       CUDA(cudaEventRecord(t0));
       run(leg);
       CUDA(cudaEventRecord(t1));
