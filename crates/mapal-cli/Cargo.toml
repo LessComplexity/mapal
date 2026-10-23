@@ -4,5 +4,14 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "flow"
+name = "mapal"
 path = "src/main.rs"
+
+[dependencies]
+mapal-syntax = { path = "../mapal-syntax" }
+mapal-ir = { path = "../mapal-ir" }
+mapal-lower = { path = "../mapal-lower" }
+mapal-check = { path = "../mapal-check" }
+mapal-rewrite = { path = "../mapal-rewrite" }
+mapal-interp = { path = "../mapal-interp" }
+mapal-backend-llvm = { path = "../backends/llvm" }

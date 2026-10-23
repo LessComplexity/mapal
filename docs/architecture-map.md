@@ -83,7 +83,7 @@ the E1 `valid/busy/done/result` handshake.
 | backend-cuda | `F_CUDA` emit (host/device split; kernels + H↔D `Trm`s) | built (P6/M3, S15) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPL](components/backend-cuda/IMPLEMENTATION.md) |
 | backend-nvptx | LLVM GPU realization and placement over IR geometry; CUDA-driver `Trm`s | built; frozen S54 matrix passed; targeted ordering open | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPL](components/backend-nvptx/IMPLEMENTATION.md) |
 | backend-verilog | `F_Verilog` emit + done-protocol | planned (P7/M4) | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPL](components/backend-verilog/IMPLEMENTATION.md) |
-| cli | `mapal build\|run\|dump-ir\|test`, `render` | planned (M5) | [DESIGN](components/cli/DESIGN.md) | [IMPL](components/cli/IMPLEMENTATION.md) |
+| cli | `mapal build\|run\|dump-ir\|test`, `render` | implemented (S62) | [DESIGN](components/cli/DESIGN.md) | [IMPL](components/cli/IMPLEMENTATION.md) |
 
 Status detail: [`docs/STATUS.md`](STATUS.md) (global roll-up, HANDOFF §7.1.1).
 

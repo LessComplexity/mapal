@@ -13,23 +13,19 @@ Mapal is a general-purpose language whose surface syntax directly denotes a data
 ## 2. Install and build your first program
 
 ```bash
-# Install (placeholder — tooling not yet released)
-curl -sSf https://mapal-lang.org/install | sh
+# The `mapal` binary and its runtime; linking needs clang on PATH
+cargo build --release -p mapal-cli -p mapal-rt
 
-# Create a project
-flow pkg init hello
-cd hello
-
-# Source: src/main.mapal
-cat > src/main.mapal <<'EOF'
+cat > hello.mapal <<'EOF'
 fn main() {
-    "Hello, world!" -> print;
+    "Hello, world!" -> println;
 }
 EOF
 
-# Build and run
-flow build
-flow run
+target/release/mapal build hello.mapal          # writes hello.ll and ./hello
+target/release/mapal run hello.mapal
+target/release/mapal run --interp hello.mapal   # the oracle
+target/release/mapal test hello.mapal           # compiled output vs the oracle
 ```
 
 ## 3. The five things you need to know
@@ -133,7 +129,7 @@ flowchart TD
     phi --> ret(("ret : i32"))
 ```
 
-The graph is not a separate artifact — it's exactly what the compiler holds internally. Running `mapal build --debug` and opening the project in the visual debugger will show you this graph live.
+The graph is not a separate artifact — it's exactly what the compiler holds internally. `mapal dump-ir --stage=lowered hello.mapal` prints it (`mapal dump-ir hello.mapal` prints the realized LLVM translation unit); a visual debugger that shows the graph live is future work.
 
 ## 5. What makes Mapal different
 
