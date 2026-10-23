@@ -976,7 +976,8 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "streams-rtx-3090-confirm.txt / -final.txt pt_twin_512 (device-only) on 0.971/0.941 vs off \
                0.967/0.945 ms, on 0.706/0.700 vs off 0.711/0.696 ms: no effect in two sessions; every probe with a \
                host join slower on streams (streams-rtx-3090.txt, -confirm.txt: diamond_512 0.82-0.88x, mlp2_512 \
-               0.62-0.84x)",
+               0.62-0.84x); S62 after the dead-output DCE (s62/runtime-measurements/rtx-3090/summary-rtx-3090.md, \
+               two sessions): shipped/on-streams iter 0.02-0.40, 12 of 12 cells stable- (chains drop the arena)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -985,7 +986,9 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "streams-rtx-4090-final.txt pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms, pt_twin_1024 on \
                0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
-               diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x)",
+               diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x); \
+               S62 after the dead-output DCE (s62/runtime-measurements/rtx-4090/summary-rtx-4090.md, \
+               two sessions): shipped/on-streams iter 0.18-0.31, 16 of 16 cells stable- (chains drop the arena)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -995,7 +998,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "s56-selection-rtx-5090-a2.txt / -b.txt, independent machines 55053/55265, 15 interleaved reps: \
                all 16 changed probe/face cells per host favor OFF with disjoint iteration ranges. \
                mlp2_4096 OFF/ON exact 0.836/0.791, contract 0.765/0.702; twin_4096 a2 exact \
-               7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established",
+               7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established; \
+               S62 after the dead-output DCE \
+               (s62/runtime-measurements/rtx-5090/summary-rtx-5090.md, two sessions): shipped/on-streams iter \
+               0.11-0.19, 8 of 8 cells stable- (chains drop the arena)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1004,7 +1010,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "pt_twin_512: streams-h100-final.txt (H100 SXM, no PCIe box left) on 0.752/0.739 vs off \
                0.763/0.762 ms, one session inside the H100 noise floor; streams-h100-pcie-confirm.txt on \
-               4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established",
+               4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established; \
+               S62 after the dead-output DCE \
+               (s62/runtime-measurements/h100-pcie/summary-h100.md, H100 PCIe + H100 SXM sessions): shipped/on-streams \
+               iter 0.07-0.89, 16 of 16 cells stable- (chains drop the arena)",
     },
     RungOff {
         profile: "rtx-3090",
