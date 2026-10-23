@@ -63,7 +63,14 @@ fn emit(ir: &CategoryIr, contract: bool, reduced: Option<Reduced>, off: bool) ->
     // one-thread-per-cell grid, the tile the M16 cell had before the geometry
     // and cell-fill rungs (which re-tile it; gpu.rs
     // `splitk_derivation_on_the_measured_cells` covers that composition).
-    for r in ["row-fit", "wave-gate", "grid-share", "panel-regs", "fill-rows", "cell-fill"] {
+    for r in [
+        "row-fit",
+        "wave-gate",
+        "grid-share",
+        "panel-regs",
+        "fill-rows",
+        "cell-fill",
+    ] {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }
     let em = emit_detailed(ir, &opts).expect("emits");

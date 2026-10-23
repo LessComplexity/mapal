@@ -3035,6 +3035,9 @@ impl Kernel<'_> {
                         let rr = self.op("mul", &r, s.c);
                         self.op("add", &rr, &cc)
                     };
+                    // A split kernel stores its partials into workspace slab
+                    // `z` (S62 integration: `cell-fill` × `splitk`).
+                    let oi = self.at_z(oi, s.rows * s.c);
                     if self.epi.is_some() {
                         self.store_cells(&[x], &oi);
                         continue;
@@ -4004,6 +4007,49 @@ mod tests {
         }
     }
 
+    /// S62 integration: `cell-fill`'s one-output-per-thread tile under
+    /// `splitk` (reached with `fill-rows` off: the 5090 session's LOO arm at
+    /// M16 × 2048 × 7168) stores partition `z`'s partials at `z·rows·c` in the
+    /// workspace. Its scalar store dropped that offset, so every partition
+    /// raced on slab 0 (the box gate: not bit-exact, a different hash per
+    /// process — `benches/results/gpu/s62/integrated/rtx-5090`).
+    #[test]
+    fn cell_tile_split_stores_into_its_slab() {
+        let s = site(16, 2048, 7168, true, true, Ty::f32());
+        let mut arms = crate::GpuArms::default();
+        arms.off.fill_rows = true;
+        for contract in [false, true] {
+            let l = launch(&s, &RTX_5090, contract, arms, Some(Reduced::Reassoc));
+            let g = l.tiled.expect("tiled");
+            assert_eq!(
+                (g.tm, g.tn, l.splitk > 1),
+                (1, 1, true),
+                "the split cell tile"
+            );
+            let text = kernel_text(
+                "k",
+                &s,
+                &RTX_5090,
+                contract,
+                arms,
+                Some(Reduced::Reassoc),
+                false,
+                None,
+                true,
+            );
+            let z = text
+                .lines()
+                .find_map(|x| x.trim().split_once(" = udiv ").map(|(z, _)| z.to_string()))
+                .expect("z = ctaid.y / gy");
+            let slab = format!("{z}, {}", 16 * 2048);
+            assert!(
+                text.lines()
+                    .any(|x| x.contains(" = mul ") && x.contains(&slab)),
+                "the store offsets by z·rows·c"
+            );
+        }
+    }
+
     /// S62 `splitk` on the measured cells and parts (`--nocapture` prints the
     /// table the results' `derived-S.txt` records): only the reassociation face
     /// splits; a split grid was under one wave and its partitions are whole
@@ -4428,7 +4474,8 @@ mod tests {
             for (m, n, k) in [(4096, 4096, 4096), (16, 18432, 7168)] {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
-                    let text = |arms| kernel_text("f", &s, p, contract, arms, None, false, None, false);
+                    let text =
+                        |arms| kernel_text("f", &s, p, contract, arms, None, false, None, false);
                     assert_eq!(
                         text(crate::GpuArms::default()),
                         text(off(&["asyncstage"])),
