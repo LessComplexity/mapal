@@ -205,6 +205,26 @@ pub fn fma_held_regs(tm: u64, tn: u64, elem_bytes: u64) -> u64 {
     (tm * tn + 2 * (tm + tn)) * elem_bytes.div_ceil(4) + FMA_ADDR_REGS
 }
 
+/// [`TargetProfile::gpu_tile`] step 1 (S52 rule): the largest square
+/// power-of-two register tile side `t`, at least one vector, whose
+/// accumulators fit half of `regs_per_thread`; and its per-thread register
+/// estimate, twice the accumulators.
+fn square_register_tile(g: &Gpu, elem_bytes: u64) -> (u64, u64) {
+    let regs_per_elem = elem_bytes.div_ceil(4);
+    let mut t = (GPU_VEC_BYTES / elem_bytes).max(1);
+    while (2 * t) * (2 * t) * regs_per_elem <= g.regs_per_thread / 2 {
+        t *= 2;
+    }
+    (t, 2 * t * t * regs_per_elem)
+}
+
+/// [`TargetProfile::gpu_tile`] step 2: threads per block — the resident-thread
+/// budget at `regs_est` registers a thread, split across
+/// [`GPU_RESIDENT_BLOCKS`], capped by the block limit.
+fn block_threads(g: &Gpu, regs_est: u64) -> u64 {
+    (g.regs_per_sm / regs_est / GPU_RESIDENT_BLOCKS).min(g.max_threads_per_block)
+}
+
 impl Gpu {
     /// The compute capability as a number: `sm_89` → 89. The capability
     /// table below is read off it — ISA rules, not part facts.
@@ -1153,6 +1173,59 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
                no stable gain (null 4.3%; ms in the files)",
     },
+    // S62 `asyncstage` (`benches/results/gpu/s62/asyncstage/`, r1 = round1/, r2 = round2/ on another
+    // box): its kernel gains are DRAM-latency hiding — with L2 flushed before every launch it wins on
+    // every part but the 3090, with operands left in L2 (`tile_bench --warm`) the signs split, and
+    // the composed residual MLP (operands device-produced, one iteration) is slower on all four. The
+    // fact that separates the cells (where an operand is read from: DRAM or L2) is not one the
+    // launch consumes yet, so the rung ships OFF in every class.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-5090.txt: flushed L2 wins (r1 _c 16x2048x7168 on 0.1065 vs off 0.1167 ms), \
+               warm L2 loses (r2 l2=warm _exact 128x1024x1024 on 0.0348 vs off 0.0287 ms); pt_rmlp256x512_128 \
+               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-4090.txt: flushed _c n=1024 on 0.0707 vs off 0.0666 ms (r1), warm L2 _c \
+               16x2048x7168 on 0.1208 vs off 0.1116 ms (r2); pt_rmlp256x512_128 _exact iter on 0.1179 vs off \
+               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-h100-pcie.txt (an H100 SXM box): flushed L2 wins 1.216-1.838 on every cell, but \
+               pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585 ms, _exact 0.2812 vs 0.1876 ms; \
+               pt_rmlp1024x2048_128 _exact 0.3402 vs 0.2914 ms; r2 results-h100-pcie.partial-50562987.txt (an \
+               H100 PCIe box): flushed _c n=1024 on 0.1724 vs off 0.1292 ms; r2 partial-41555537 (SXM) warm L2 \
+               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-rtx-3090.txt: flushed L2 _c 16x2048x7168 on 0.3328 vs off 0.3113 ms, _c n=1024 \
+               0.2028 vs 0.1567 ms, _exact 128x2048x7168 0.5396 vs 0.4055 ms; pt_rmlp256x512_128 _exact iter \
+               on 0.1421 vs off 0.0913 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "not measured on an A100: held OFF with the four measured parts, whose composed residual MLP is \
+               slower with it on every one (r1 results-rtx-4090.txt pt_rmlp256x512_128 _exact iter on 0.1179 vs \
+               off 0.0759 ms)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -1897,6 +1970,126 @@ impl TargetProfile {
         Some(GpuTile { stages, ..geom })
     }
 
+    /// **One output per thread as a staged tile (S62 rung `cell-fill`)**, for
+    /// a shaped `rows × c × k` site [`Self::gpu_tile`] does not divide (its
+    /// thread grid, halved to fill the SMs, outgrows `rows`). The fold of each
+    /// cell stays one register's in-order chain (`tm = tn = 1`); what changes
+    /// is who reads a panel element: the block's `bm` rows share one `b`
+    /// lane panel and its `bn` lanes one `a` row panel, where the
+    /// one-thread-per-cell block (one row, `threads` lanes) reads `b` once per
+    /// output row.
+    ///
+    /// - Threads: [`Self::gpu_tile`] step 2's count — the one-thread-per-cell
+    ///   grid's block size on every profiled part.
+    /// - Block: square-most, `bm` the largest power of two dividing `rows`
+    ///   with `bm² ≤ threads`, `bn = threads / bm` (fewest panel bytes,
+    ///   `(bm + bn)·bk`, per `bm·bn` cells); `c % bn == 0`.
+    /// - Blocks per SM from what such a thread holds ([`fma_held_regs`] at
+    ///   1 × 1), the thread and block-slot limits.
+    /// - `bk`: [`Self::gpu_tile`] step 5 at that share — every thread copies
+    ///   whole vectors, so a one-row block (`bm = 1`) needs `bk ≥ lanes·threads`
+    ///   and is refused by the share: one-row sites keep `naive`.
+    pub fn gpu_cell_tile(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let g = self.gpu()?;
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let threads = block_threads(g, square_register_tile(g, e).1);
+        let bm = (0..=rows.max(1).ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|&b| rows.is_multiple_of(b) && b * b <= threads)
+            .max()?;
+        let bn = threads / bm;
+        if !c.is_multiple_of(bn) {
+            return None;
+        }
+        let blocks_per_sm = (g.regs_per_sm / fma_held_regs(1, 1, e) / threads)
+            .min(g.max_threads_per_sm / threads)
+            .min(g.max_blocks_per_sm)
+            .max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+        let loads_whole = |bk: u64| {
+            (bm * bk / lanes).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads)
+        };
+        let bk = (0..=k.max(1).ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|&bk| {
+                bk >= lanes
+                    && k.is_multiple_of(bk)
+                    && (bm + bn) * bk * e <= share
+                    && loads_whole(bk)
+            })
+            .max()?;
+        Some(GpuTile {
+            tm: 1,
+            tn: 1,
+            tx: bn,
+            ty: bm,
+            bk,
+            blocks_per_sm,
+            stages: 1,
+            pad_a: 0,
+            a_row_lanes: 0,
+            held: 0,
+        })
+    }
+
+    /// **Panel stages from the wave the grid actually puts on an SM (S62
+    /// rung `asyncstage`).** A tile's shared memory is budgeted for
+    /// `blocks_per_sm` resident blocks; a grid of `blocks` puts
+    /// `w = min(blocks_per_sm, ⌈blocks / sms⌉)` on the fullest SM. When
+    /// `w < blocks_per_sm` the share a block may take is larger than the tile
+    /// was sized for and nothing else will use it, so the panels stream with
+    /// `cp.async` through as many stages as `w` blocks' shares hold, up to the
+    /// number of panels. Fewer resident blocks is also fewer warps to issue
+    /// while one waits at the panel barrier: the stages in flight are what
+    /// covers the load latency instead.
+    ///
+    /// The panel depth is the tile's own when the element/vector copies divide
+    /// among the threads (the register-staged arm's depth: only the pipeline
+    /// changes), else [`Self::gpu_tile_async`]'s at the larger share.
+    /// `blocks_per_sm` becomes `w` (`.minnctapersm`, the wave, the raster agree
+    /// with the shared memory allocated). `None` when the wave fills every slot
+    /// (`w = blocks_per_sm`: the share is the one [`Self::gpu_tile_async`]
+    /// already derives — that rung's decision stands), on a part without
+    /// `cp.async`, or when two stages do not fit.
+    pub fn gpu_tile_stages(&self, g: GpuTile, blocks: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let gpu = self.gpu()?;
+        let w = blocks.div_ceil(gpu.sms).clamp(1, g.blocks_per_sm.max(1));
+        if w >= g.blocks_per_sm || !gpu.has_mma_sync() {
+            return None;
+        }
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let (bm, bn, threads) = (g.bm(), g.bn(), g.threads());
+        let share = (gpu.smem_per_sm / w)
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let wave = GpuTile {
+            blocks_per_sm: w,
+            ..g
+        };
+        let whole = (bm * g.bk).is_multiple_of(threads)
+            && (g.bk * bn / lanes).is_multiple_of(threads)
+            && k.is_multiple_of(g.bk);
+        let held = whole
+            .then(|| conflict_free_pad(bm, |l| (l % lanes, l / lanes)))
+            .flatten()
+            .map(|pad_a| GpuTile {
+                stages: 2,
+                pad_a,
+                ..wave
+            })
+            .filter(|h| h.smem_bytes(e) <= share);
+        let geom = match held {
+            Some(h) => h,
+            None => self.gpu_tile_async(wave, k, elem)?,
+        };
+        let stages = (share / (geom.stage_elems() * e)).min(k / geom.bk).max(2);
+        Some(GpuTile { stages, ..geom })
+    }
+
     /// **The register-staged transposed-A store (S53 rung `pad`).** A thread
     /// loads `lanes` consecutive `k` of one `a` row and stores them as `lanes`
     /// scalar stores, one `k` row of `As` apart. With all `bk / lanes` lanes of a
@@ -2272,7 +2465,6 @@ impl TargetProfile {
         let g = self.gpu()?;
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
-        let regs_per_elem = e.div_ceil(4);
 
         let (mut tm, mut tn, regs_est) = if wide {
             let (mut tm, mut tn) = (lanes, lanes);
@@ -2285,12 +2477,8 @@ impl TargetProfile {
             }
             (tm, tn, fma_held_regs(tm, tn, e))
         } else {
-            let budget = g.regs_per_thread / 2;
-            let mut t = lanes;
-            while (2 * t) * (2 * t) * regs_per_elem <= budget {
-                t *= 2;
-            }
-            (t, t, 2 * t * t * regs_per_elem)
+            let (t, regs_est) = square_register_tile(g, e);
+            (t, t, regs_est)
         };
         let under_warps =
             |tm: u64, tn: u64| fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
@@ -2306,7 +2494,7 @@ impl TargetProfile {
         }
 
         let resident_threads = g.regs_per_sm / regs_est;
-        let threads = (resident_threads / GPU_RESIDENT_BLOCKS).min(g.max_threads_per_block);
+        let threads = block_threads(g, regs_est);
         let (mut tx, mut ty) = if wide {
             let threads = 1 << threads.max(1).ilog2();
             let aspect = |ty: u64| {

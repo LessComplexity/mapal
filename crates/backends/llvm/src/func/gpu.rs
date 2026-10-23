@@ -378,6 +378,13 @@ pub(crate) fn launch(
             profile.gpu_tile_with(site.rows, site.c, site.k, &site.elem, rungs.wide_fma, rungs)
         })
         .flatten()
+        // S62 `cell-fill`: no register tile divides the site — one output per
+        // thread, still staged ([`TargetProfile::gpu_cell_tile`]).
+        .or_else(|| {
+            (shaped && rungs.cell_fill)
+                .then(|| profile.gpu_cell_tile(site.rows, site.c, site.k, &site.elem))
+                .flatten()
+        })
         .map(|g| {
             let streamed = rungs
                 .cp_async
@@ -410,6 +417,19 @@ pub(crate) fn launch(
             } else {
                 g
             }
+        })
+        // S62 `asyncstage`: stages from the blocks this grid puts on an SM.
+        // Legal for the unpredicated copies above: `rows % bm`, `c % bn`,
+        // `k % bk` are 0 (`TileSite` extents) and `shaped` makes each panel
+        // one read per block; the panel order `0..k/bk` and each cell's step
+        // order are unchanged ([`Kernel::step`]).
+        .map(|g| {
+            let blocks = (site.rows / g.bm()) * (site.c / g.bn());
+            rungs
+                .async_stage
+                .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
+                .flatten()
+                .unwrap_or(g)
         });
     match tiled {
         Some(g) => Launch {
@@ -544,13 +564,16 @@ pub(crate) fn kernel_id_col(
 /// Can this launch store its output column-major (`o[j·rows + i]`)? The FMA
 /// tile writes `lanes` consecutive rows of one column per vector, which needs
 /// whole vectors of rows (`tm % lanes == 0`); the one-thread-per-cell kernel
-/// one word. ponytail: the tensor-core kernels keep row-major — no program
-/// reads a TF32 site through a fold; add their store when one does.
+/// and the `cell-fill` tile (`tn < lanes`, the kernel's `narrow` store) one
+/// word. A `fill-rows` tile (`tm < lanes ≤ tn`) stores row vectors: row-major.
+/// ponytail: the tensor-core kernels keep row-major — no program reads a TF32
+/// site through a fold; add their store when one does.
 pub(crate) fn col_store(l: &Launch, site: &TileSite) -> bool {
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&site.elem);
     l.mma.is_none()
         && l.wgmma.is_none()
-        && l.tiled.is_none_or(|g| g.tm.is_multiple_of(lanes))
+        && l.tiled
+            .is_none_or(|g| g.tm.is_multiple_of(lanes) || g.tn < lanes)
         && site.rows.is_multiple_of(lanes)
 }
 
@@ -2446,9 +2469,12 @@ impl Kernel<'_> {
         // (Off arm: one contiguous `tm × tn` block per thread, chunk = lanes.)
         // S62 `fill-rows`: a register tile `tm` rows tall, `tm < lanes`, reads
         // its `a` fragment as one `tm`-wide chunk (`aw`); `tn` keeps whole
-        // vectors (the output's vector store).
+        // vectors (the output's vector store). A tile narrower than a vector
+        // in `tn` (`cell-fill`'s 1 × 1) has no chunks to space: each thread's
+        // cells are contiguous and stored one word each (`narrow`).
         let aw = tm.min(lanes);
-        let (a_step, b_step, a_chunk, b_chunk) = if self.rungs.interleave {
+        let narrow = tn < lanes;
+        let (a_step, b_step, a_chunk, b_chunk) = if self.rungs.interleave && !narrow {
             (aw, lanes, g.ty * aw, g.tx * lanes)
         } else {
             (tm, tn, aw, lanes)
@@ -2709,6 +2735,36 @@ impl Kernel<'_> {
 
         // --- one vector store per `lanes` columns of each owned row
         self.out.push_str("done:\n");
+        if narrow {
+            // One scalar store per owned cell (`cell-fill`), row- or
+            // column-major; the epilogue's store takes one cell at a time.
+            for i in 0..tm {
+                for j in 0..tn {
+                    let p = acc_slot(self, (i * tn + j) as usize);
+                    let x = self.tmp();
+                    self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
+                    let r = self.op("add", &row0, &a_frag0);
+                    let r = self.plus(r, i);
+                    let cc = self.op("add", &col0, &b_frag0);
+                    let cc = self.plus(cc, j);
+                    let oi = if self.col {
+                        let cr = self.op("mul", &cc, s.rows);
+                        self.op("add", &cr, &r)
+                    } else {
+                        let rr = self.op("mul", &r, s.c);
+                        self.op("add", &rr, &cc)
+                    };
+                    if self.epi.is_some() {
+                        self.store_cells(&[x], &oi);
+                        continue;
+                    }
+                    let op = self.gep(1, "%o", &oi);
+                    self.line(format!("store {t} {x}, ptr addrspace(1) {op}, align {e}"));
+                }
+            }
+            self.out.push_str("  ret void\n}\n");
+            return;
+        }
         if self.col {
             // Column-major (`rowfold-layout`): one vector store per `lanes`
             // rows of each owned column — a thread's rows come in runs of
@@ -3447,7 +3503,15 @@ mod tests {
             Some((4, 4, 16, 32, 32, 32, 3))
         );
         assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
-        assert_eq!(geo(18432, true, on("wave-gate")), None);
+        // Gated, the site has no register tile: `cell-fill` (S62 asyncstage
+        // item) takes it, else the one-thread-per-cell kernel.
+        assert_eq!(
+            geo(18432, true, on("wave-gate")),
+            Some((1, 1, 16, 16, 256, 64, 1))
+        );
+        let mut gated = on("wave-gate");
+        gated.off.cell_fill = true;
+        assert_eq!(geo(18432, true, gated), None);
         assert_eq!(
             geo(2048, false, off("panel-regs")),
             Some((1, 4, 8, 16, 32, 16, 1))
@@ -3771,6 +3835,7 @@ mod tests {
             for wide_fma in [true, false] {
                 let on = GpuRungs {
                     cp_async: false,
+                    async_stage: false,
                     wide_fma,
                     ..GpuRungs::ALL
                 };
@@ -3786,6 +3851,150 @@ mod tests {
                     assert_eq!(worst_way(&s, &g), ways, "{} {n} S52 map", p.name);
                     assert!(ways > 1);
                 }
+            }
+        }
+    }
+
+    /// Arms with `names` forced off, the profile's table otherwise.
+    fn off(names: &[&str]) -> crate::GpuArms {
+        let mut off = GpuRungs::default();
+        for n in names {
+            *off.rung(n).expect("a listed name") = true;
+        }
+        crate::GpuArms {
+            on: GpuRungs::default(),
+            off,
+        }
+    }
+
+    /// S62: the M16 projection (16 × 2048 × 7168) was a one-thread-per-cell
+    /// launch on every part (`gpu_tile` halves its thread grid past 16 rows).
+    /// Now one output per thread in a 16 × 16 block of the same 128 × 256
+    /// grid (`cell-fill`, shipped) — and, under `asyncstage` (an arm: its
+    /// table rows ship it OFF), its panels streamed by `cp.async` through the
+    /// stages the share left by ≤ 2 blocks per SM holds, each bound pinned.
+    /// S62 integration: the geometry rungs (`fill-rows`, `row-fit`) give this
+    /// site a register tile first; `cell-fill` is what it takes without them.
+    #[test]
+    fn starved_m16_site_takes_the_cell_tile_and_streams() {
+        use crate::profile::RTX_3090;
+        let s = site(16, 2048, 7168, true, true, Ty::f32());
+        let base = off(&["fill-rows", "row-fit"]);
+        for p in [&RTX_5090, &RTX_4090, &H100_PCIE, &RTX_3090] {
+            let gpu = p.gpu().unwrap();
+            for contract in [false, true] {
+                let shipped = launch(&s, p, contract, base, None);
+                let g = shipped
+                    .tiled
+                    .unwrap_or_else(|| panic!("{} cell tile", p.name));
+                assert_eq!(
+                    (g.tm, g.tn, g.threads(), g.stages),
+                    (1, 1, 256, 1),
+                    "{}",
+                    p.name
+                );
+                assert_eq!(shipped.gx * shipped.gy, 128);
+                let mut arms = base;
+                arms.on.async_stage = true;
+                let l = launch(&s, p, contract, arms, None);
+                let g = l.tiled.unwrap_or_else(|| panic!("{} tiled", p.name));
+                assert_eq!(
+                    (g.tm, g.tn, g.threads(), l.gx * l.gy),
+                    (1, 1, 256, 128),
+                    "{}",
+                    p.name
+                );
+                assert!(g.stages >= 2, "{} streams", p.name);
+                let w = 128u64.div_ceil(gpu.sms);
+                assert_eq!(g.blocks_per_sm, w, "{}", p.name);
+                let share =
+                    (gpu.smem_per_sm / w - gpu.smem_reserved_per_block).min(gpu.smem_per_block);
+                let stage = g.stage_elems() * 4;
+                assert!(g.stages * stage <= share, "{} fits", p.name);
+                assert!(
+                    g.stages == s.k / g.bk || (g.stages + 1) * stage > share,
+                    "{} fills",
+                    p.name
+                );
+                assert!(g.stages <= s.k / g.bk);
+                assert_eq!(l.smem, g.stages * stage);
+                let text = kernel_text("m16", &s, p, contract, arms, None, false, None);
+                assert!(
+                    text.contains("@llvm.nvvm.cp.async.cg.shared.global.16"),
+                    "{}",
+                    p.name
+                );
+                let wait = format!("@llvm.nvvm.cp.async.wait.group(i32 {})", g.stages - 2);
+                assert!(text.contains(&wait), "{}", p.name);
+                // The fold stays one in-order chain per cell.
+                assert_eq!(text.contains("@llvm.fma.f32"), contract);
+            }
+        }
+    }
+
+    /// Every S62 tile rung off (these two and the geometry rungs) reproduces
+    /// the launches emitted before S62 (the selection table's literals): one
+    /// thread per cell at M16, the register-staged 4 × 4 tile at M128 on the
+    /// RTX 5090.
+    #[test]
+    fn the_off_arms_reproduce_todays_launch() {
+        let arms = off(&[
+            "cell-fill",
+            "asyncstage",
+            "row-fit",
+            "wave-gate",
+            "grid-share",
+            "panel-regs",
+            "fill-rows",
+        ]);
+        let s = site(16, 2048, 7168, true, true, Ty::f32());
+        let l = launch(&s, &RTX_5090, false, arms, None);
+        assert_eq!(
+            (l.tiled, l.gx, l.gy, l.block, l.smem),
+            (None, 128, 1, 256, 0)
+        );
+        let s = site(128, 2048, 7168, true, true, Ty::f32());
+        for (contract, smem) in [(false, 2048), (true, 2176)] {
+            let l = launch(&s, &RTX_5090, contract, arms, None);
+            let g = l.tiled.expect("tiled");
+            assert_eq!(
+                (g.stages, l.gx, l.gy, l.block, l.smem),
+                (1, 64, 4, 64, smem)
+            );
+        }
+    }
+
+    /// A grid whose wave fills every block slot its tile was budgeted for
+    /// keeps the text it had: `asyncstage` derives nothing there.
+    #[test]
+    fn filled_grids_are_untouched() {
+        use crate::profile::GPU_MEASURED;
+        for p in GPU_MEASURED {
+            for (m, n, k) in [(4096, 4096, 4096), (16, 18432, 7168)] {
+                let s = site(m, n, k, true, true, Ty::f32());
+                for contract in [false, true] {
+                    let text = |arms| kernel_text("f", &s, p, contract, arms, None, false, None);
+                    assert_eq!(
+                        text(crate::GpuArms::default()),
+                        text(off(&["asyncstage"])),
+                        "{} {m}x{n}x{k}",
+                        p.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// One-row sites keep the one-thread-per-cell kernel: a 1 × 256 block
+    /// copies whole vectors only at `bk ≥ 1024`, which no share holds.
+    #[test]
+    fn m1_keeps_the_naive_kernel() {
+        use crate::profile::GPU_MEASURED;
+        let s = site(1, 2048, 7168, true, true, Ty::f32());
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let l = launch(&s, p, contract, crate::GpuArms::default(), None);
+                assert_eq!(l.tiled, None, "{}", p.name);
             }
         }
     }

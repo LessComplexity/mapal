@@ -13,11 +13,13 @@ PROF=$1; SM=$2
 CUDA=${CUDA:-/usr/local/cuda}
 mkdir -p prof
 
-for p in "$PROF"/mm_4096[._]*.ptx; do
+# (S62: and every `mm_<M>x<N>x<K>` cell's arms.)
+for p in "$PROF"/mm_4096[._]*.ptx "$PROF"/mm_*x*x*[._]*.ptx; do
+    [ -f "$p" ] || continue
     v=$(basename "$p" .ptx)
     ptxas -arch="$SM" -O3 -v "$p" -o "prof/$v.cubin" > "prof/$v.ptxas" 2>&1
 done
-for c in prof/mm_4096[._]*.cubin; do cuobjdump -sass "$c" > "${c%.cubin}.sass" 2>&1; done
+for c in prof/mm_4096[._]*.cubin prof/mm_*x*x*[._]*.cubin; do [ -f "$c" ] && cuobjdump -sass "$c" > "${c%.cubin}.sass" 2>&1; done
 cp prof/mm_4096_c.sass prof/mapal.sass
 cuobjdump -sass tile_bench > prof/tile_bench.sass 2>&1
 

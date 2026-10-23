@@ -270,6 +270,23 @@ pub struct GpuRungs {
     /// S62 `fill-rows`, under `warp-fill`: the fill rule shrinks the register
     /// tile's rows down to one (scalar `a` fragments); off, down to one vector.
     pub fill_rows: bool,
+    /// S62: a shaped site no register tile divides runs one output per thread
+    /// as a staged tile (square-most `bm × bn` block of cells,
+    /// [`profile::TargetProfile::gpu_cell_tile`]). Off: one thread per cell,
+    /// unstaged (`naive`). Ships ON on every measured part (no
+    /// `GPU_RUNGS_OFF` row): `benches/results/gpu/s62/asyncstage/`, OFF/ON
+    /// cuBLAS-normalized, two passes and two boxes per part, every M16 cell
+    /// stable+ on both faces with L2 flushed: RTX 5090 1.90–3.25, RTX 4090
+    /// 1.70–3.58, H100 1.61–5.69, RTX 3090 1.32–3.93; 1.01–6.09 with L2 warm
+    /// (5090 16×1024×4096 the one cell inside its null).
+    pub cell_fill: bool,
+    /// S62: when the grid leaves an SM fewer blocks than the tile's smem was
+    /// budgeted for, stream its panels with `cp.async` through as many stages
+    /// as the share left holds ([`profile::TargetProfile::gpu_tile_stages`]).
+    /// Ships OFF everywhere (rows in `GPU_RUNGS_OFF`): it hides DRAM latency —
+    /// up to 4.0× with L2 flushed — but loses with operands in L2 and in the
+    /// composed residual MLP, and no fact the launch reads separates the two.
+    pub async_stage: bool,
 }
 
 impl GpuRungs {
@@ -316,11 +333,13 @@ impl GpuRungs {
         grid_share: true,
         panel_regs: true,
         fill_rows: true,
+        cell_fill: true,
+        async_stage: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 41] = [
+    pub const NAMES: [&'static str; 43] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -362,6 +381,8 @@ impl GpuRungs {
         "grid-share",
         "panel-regs",
         "fill-rows",
+        "cell-fill",
+        "asyncstage",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -408,6 +429,8 @@ impl GpuRungs {
             "grid-share" => &mut self.grid_share,
             "panel-regs" => &mut self.panel_regs,
             "fill-rows" => &mut self.fill_rows,
+            "cell-fill" => &mut self.cell_fill,
+            "asyncstage" => &mut self.async_stage,
             _ => return None,
         })
     }
