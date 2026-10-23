@@ -1095,7 +1095,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
                128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
-               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 iter ms OFF/ON 0.438 / 0.253",
+               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038",
     },
     RungOff {
         profile: "rtx-4090",
