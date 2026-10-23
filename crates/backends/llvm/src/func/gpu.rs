@@ -27,7 +27,7 @@ use super::*;
 use crate::Reduced;
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
-    MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES,
+    MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
 };
 use mapal_ir::{RowFoldOp, RowFoldSite};
 
@@ -375,14 +375,7 @@ pub(crate) fn launch(
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
     let tiled = shaped
         .then(|| {
-            profile.gpu_tile(
-                site.rows,
-                site.c,
-                site.k,
-                &site.elem,
-                rungs.wide_fma,
-                rungs.fill,
-            )
+            profile.gpu_tile_with(site.rows, site.c, site.k, &site.elem, rungs.wide_fma, rungs)
         })
         .flatten()
         .map(|g| {
@@ -394,11 +387,20 @@ pub(crate) fn launch(
                 return a;
             }
             // Register staging: the prefetch panel takes what a whole-file tile
-            // leaves of the file (`wide-fma`), else one fragment pair's worth.
+            // leaves of the file (`wide-fma`), else (S62 `panel-regs`) what the
+            // derived residency leaves after the tile, else one fragment pair.
+            // `panel-regs` only on a grid that leaves a warp scheduler without a
+            // warp: there the panel's independent loads are the only latency
+            // hiding; with a warp per scheduler, warps hide it and the deeper
+            // panel costs registers (S62 v1, the 5090, 4090, H100 PCIe and 3090:
+            // 35 of 38 measured cells on this side of the line).
+            let grid = (site.rows / g.bm()) * (site.c / g.bn());
             let g = match rungs.prefetch {
                 true if g.held > 0 => {
-                    let gpu = profile.gpu().expect("gpu");
                     prefetch_depth(g, e, gpu.regs_per_thread.saturating_sub(g.held))
+                }
+                true if rungs.panel_regs && gpu.warps_per_scheduler(grid, g.threads()) == 0 => {
+                    prefetch_depth(g, e, panel_regs(gpu, &g, e))
                 }
                 true => prefetch_depth(g, e, g.tm + g.tn),
                 false => g,
@@ -456,6 +458,18 @@ fn prefetch_depth(g: GpuTile, elem_bytes: u64, budget: u64) -> GpuTile {
         bk /= 2;
     }
     GpuTile { bk, ..g }
+}
+
+/// S62 `panel-regs`: the registers a register-staged thread has free for its
+/// prefetch panel — the file the derived residency gives it (`regs_per_sm`
+/// over `threads × blocks_per_sm`, at most `regs_per_thread`; the bound
+/// `minctasm` holds ptxas to) less what its tile holds ([`fma_held_regs`]),
+/// and never less than S52's one fragment pair. The S52 8×8 tile at 256
+/// threads, two per SM, holds its whole 128-register share: the pair.
+fn panel_regs(gpu: &Gpu, g: &GpuTile, elem_bytes: u64) -> u64 {
+    let file = (gpu.regs_per_sm / (g.threads() * g.blocks_per_sm.max(1))).min(gpu.regs_per_thread);
+    file.saturating_sub(fma_held_regs(g.tm, g.tn, elem_bytes))
+        .max(g.tm + g.tn)
 }
 
 fn aligned(site: &TileSite, x: u64) -> bool {
@@ -2430,10 +2444,14 @@ impl Kernel<'_> {
         // output stores coalesce. The CPU's move-panel rung answers the same
         // question for cache sets; here the geometry is the 32 × 4 B banks.
         // (Off arm: one contiguous `tm × tn` block per thread, chunk = lanes.)
+        // S62 `fill-rows`: a register tile `tm` rows tall, `tm < lanes`, reads
+        // its `a` fragment as one `tm`-wide chunk (`aw`); `tn` keeps whole
+        // vectors (the output's vector store).
+        let aw = tm.min(lanes);
         let (a_step, b_step, a_chunk, b_chunk) = if self.rungs.interleave {
-            (lanes, lanes, g.ty * lanes, g.tx * lanes)
+            (aw, lanes, g.ty * aw, g.tx * lanes)
         } else {
-            (tm, tn, lanes, lanes)
+            (tm, tn, aw, lanes)
         };
         let a_frag0 = self.op("mul", &trow, a_step);
         let b_frag0 = self.op("mul", &tcol, b_step);
@@ -2624,17 +2642,30 @@ impl Kernel<'_> {
             let r = k.op("add", &r, first);
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
+            // `w` elements per load: a vector, or (`fill-rows`) the whole
+            // fragment when it is narrower than one — `w = 1` a scalar.
+            let w = n.min(lanes);
+            let wt = if w == 1 {
+                t.clone()
+            } else {
+                format!("<{w} x {t}>")
+            };
             let mut vals = Vec::new();
-            for v in 0..n / lanes {
+            for v in 0..n / w {
                 let si = k.op("add", &r, v * chunk);
                 let sp = k.gep(3, smem, &si);
                 let x = k.tmp();
                 k.line(format!(
-                    "{x} = load {vt}, ptr addrspace(3) {sp}, align {GPU_VEC_BYTES}"
+                    "{x} = load {wt}, ptr addrspace(3) {sp}, align {}",
+                    w * e
                 ));
-                for j in 0..lanes {
+                if w == 1 {
+                    vals.push(x);
+                    continue;
+                }
+                for j in 0..w {
                     let y = k.tmp();
-                    k.line(format!("{y} = extractelement {vt} {x}, i64 {j}"));
+                    k.line(format!("{y} = extractelement {wt} {x}, i64 {j}"));
                     vals.push(y);
                 }
             }
@@ -2715,7 +2746,7 @@ impl Kernel<'_> {
         }
         for i in 0..tm {
             let r = self.op("add", &row0, &a_frag0);
-            let r = self.op("add", &r, (i / lanes) * a_chunk + i % lanes);
+            let r = self.op("add", &r, (i / aw) * a_chunk + i % aw);
             let rr = self.op("mul", &r, s.c);
             let c0 = self.op("add", &rr, &col0);
             let c0 = self.op("add", &c0, &b_frag0);
@@ -3367,6 +3398,141 @@ mod tests {
                     assert_eq!(launch(s, p, true, arms, None).arithmetic, expected);
                     let text = kernel_text("mixed", s, p, true, arms, None, false, None);
                     assert_eq!(text.contains("griddepcontrol.wait"), wait);
+                }
+            }
+        }
+    }
+
+    /// S62: the skinny M16 projections take the cooperative ordered tile on the
+    /// 5090 — on S53 code both took the one-thread-per-cell kernel (`None`).
+    /// 2048 columns: `fill-rows` 1×4 at 8 × 4 threads, 256 blocks; two per SM
+    /// (`grid-share`) ⇒ bk 512; `panel-regs` (255 − 46 registers free for
+    /// the panel at ¾ register per `k`) ⇒ bk 256. 18432 columns (Filled):
+    /// the 5090 ships `row-fit` OFF on the exact face (no effect measured), so
+    /// the vector floor does not fit 16 rows and `fill-rows` takes 1×4 at
+    /// 16 × 16 threads, 288 blocks, `cp.async`; with `row-fit` the floor 4×4
+    /// row-fits to 16 × 32. The contract face ships `warp-fill` and
+    /// `wave-gate` OFF there: 8×8 row-fits to 144 blocks (gated: the
+    /// one-thread-per-cell kernel, 4.5× slower on the 5090). `panel-regs`
+    /// reads only grids that leave a scheduler without a warp: not 1024² or
+    /// 128 × 18432 (3 warps per scheduler), whose launch is its OFF arm's.
+    #[test]
+    fn skinny_projections_take_the_ordered_cooperative_tile() {
+        let geo = |n, contract, arms| {
+            let s = site(16, n, 7168, true, true, Ty::f32());
+            launch(&s, &RTX_5090, contract, arms, None)
+                .tiled
+                .map(|g| (g.tm, g.tn, g.bm(), g.bn(), g.threads(), g.bk, g.stages))
+        };
+        let shipped = crate::GpuArms::default();
+        let off = |r: &str| {
+            let mut a = crate::GpuArms::default();
+            *a.off.rung(r).expect("a rung") = true;
+            a
+        };
+        let on = |r: &str| {
+            let mut a = crate::GpuArms::default();
+            *a.on.rung(r).expect("a rung") = true;
+            a
+        };
+        for contract in [false, true] {
+            assert_eq!(
+                geo(2048, contract, shipped),
+                Some((1, 4, 8, 16, 32, 256, 1))
+            );
+        }
+        assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
+        assert_eq!(
+            geo(18432, false, on("row-fit")),
+            Some((4, 4, 16, 32, 32, 32, 3))
+        );
+        assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
+        assert_eq!(geo(18432, true, on("wave-gate")), None);
+        assert_eq!(
+            geo(2048, false, off("panel-regs")),
+            Some((1, 4, 8, 16, 32, 16, 1))
+        );
+        for (m, n, k) in [(1024, 1024, 1024), (128, 18432, 7168)] {
+            for contract in [false, true] {
+                let at = |arms| {
+                    let l = launch(
+                        &site(m, n, k, true, true, Ty::f32()),
+                        &RTX_5090,
+                        contract,
+                        arms,
+                        None,
+                    );
+                    (l.tiled, l.smem)
+                };
+                assert_eq!(at(shipped), at(off("panel-regs")), "{m}x{n}x{k} {contract}");
+            }
+        }
+    }
+
+    /// Every staged copy of a skinny site's panels lands once, in the panel,
+    /// on every rung setting the S62 geometry rungs reach (row-fitted, gated
+    /// off, scalar-row register tiles, f32 and f64, every operand layout).
+    #[test]
+    fn skinny_cooperative_copies_cover_each_panel_once() {
+        use crate::profile::{A100, RTX_3090};
+        use std::collections::BTreeSet;
+        let geometry = |r: GpuRungs, names: &[&str]| {
+            let mut r = r;
+            for n in names {
+                *r.rung(n).expect("a rung") = false;
+            }
+            r
+        };
+        for p in [&A100, &RTX_3090].into_iter().chain(PARTS) {
+            for m in [1, 16, 128] {
+                for (n, depth) in [(18432, 7168), (2048, 7168), (1024, 4096)] {
+                    for (arm, brm) in [(true, true), (false, true), (true, false)] {
+                        for elem in [Ty::f32(), Ty::f64()] {
+                            let s = site(m, n, depth, arm, brm, elem);
+                            let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
+                            for base in arms() {
+                                for names in [
+                                    &[][..],
+                                    &["fill-rows"],
+                                    &["fill-rows", "wave-gate"],
+                                    &["grid-share"],
+                                    &["panel-regs"],
+                                ] {
+                                    let r = force(geometry(base, names));
+                                    let Some(g) = launch(&s, p, false, r, None).tiled else {
+                                        continue;
+                                    };
+                                    for (i, (map, loads)) in
+                                        lane_maps(&s, &g).into_iter().enumerate()
+                                    {
+                                        let vec = if i == 0 {
+                                            vector_a(&s) && g.stages < 2
+                                        } else {
+                                            vector_b(&s)
+                                        };
+                                        let width = if vec { lanes } else { 1 };
+                                        let mut seen = BTreeSet::new();
+                                        for copy in 0..loads {
+                                            for tid in 0..g.threads() {
+                                                let li = tid + copy * g.threads();
+                                                let (row, col) = map.coords(&mut Num, &li);
+                                                for v in 0..width {
+                                                    assert!(seen.insert((row, col + v)), "{g:?}");
+                                                }
+                                            }
+                                        }
+                                        let (rows, cols) = if i == 0 {
+                                            (g.bm(), g.bk)
+                                        } else {
+                                            (g.bk, g.bn())
+                                        };
+                                        assert_eq!(seen.len() as u64, rows * cols, "{g:?}");
+                                        assert!(seen.iter().all(|&(r, c)| r < rows && c < cols));
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

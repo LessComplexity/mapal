@@ -28,7 +28,11 @@ decided. Every session's `null` arm (the shipped kernel benched again) prints th
 Then the RungOff rows that ship, merged across classes where they agree (a `Contract` row covers
 the TF32 face too: profile.rs `Face::covers`), to paste into GPU_RUNGS_OFF.
 
-usage: python3 benches/gpu/rungs.py [--new <rung>,...] <results-session-1> [<results-session-2>...]
+S62: a kernel bench may be a cell `# n=<M>x<N>x<K>`; its fill is the site's own, read from
+`--fill <tsv>` (`<profile> <M>x<N>x<K> <Under|Filled>` lines, gpu.rs `launch`'s fill key).
+`--null-eps`: no effect within max(1%, the sessions' largest null-arm deviation) instead of 1%.
+
+usage: python3 benches/gpu/rungs.py [--new <rung>,...] [--fill <tsv>] [--null-eps] <results-session-1> [...]
        python3 benches/gpu/rungs.py --selftest
 """
 import os
@@ -45,10 +49,16 @@ HOST = {'resident', 'devgen', 'eager-init', 'retain-delta', 'arena', 'devmap', '
         'pdl', 'l2-window'}
 COMPOSITE = {'arch-rungs', 'fma-regs'}
 FACE = {'_exact': 'Exact', '_c': 'Contract', '_tf': 'Tf32'}
+FILL = {}  # (profile, 'MxNxK') -> fill, from --fill
+PROFILE = '?'
 
 
 def fill_of(rung, n):
-    return 'Any' if rung in HOST else ('Under' if n <= 1024 else 'Filled')
+    if rung in HOST:
+        return 'Any'
+    if isinstance(n, str) and not n.isdigit():
+        return FILL.get((PROFILE, n), '?')
+    return 'Under' if int(n) <= 1024 else 'Filled'
 
 
 def profile_of(path):
@@ -62,9 +72,9 @@ def profile_of(path):
 def kernel_rows(path):
     rows, cur = {}, {}
     for l in open(path):
-        m = re.match(r'# n=(\d+) face=(\S+)', l)
+        m = re.match(r'# n=(\S+) face=(\S+)', l)
         if m:
-            cur = {'n': int(m[1]), 'key': m[2]}
+            cur = {'n': m[1], 'key': m[2]}
             continue
         m = re.match(r'time leg=(\w+) .* min_ms=([\d.]+) med_ms=([\d.]+) max_ms=([\d.]+)', l)
         if m:
@@ -267,6 +277,16 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     new = set(args[1].split(',')) if args[:1] == ['--new'] else set()
     files = args[2:] if new else args
+    if files[:1] == ['--fill']:
+        for line in open(files[1]):
+            prof, cell, fill = line.split()
+            FILL[(prof, cell)] = fill
+        files = files[2:]
+    if files[:1] == ['--null-eps']:
+        files = files[1:]
+        EPS = max([EPS] + [abs(v - 1) for f in files for v in null_ab(f).values()])
+        print(f"EPS = {EPS:.4f} (max of 1% and the null arms' deviation)\n")
+    PROFILE = profile_of(files[0])
     out, ns = classes(files, new)
     print(f"| rung | fill | face | shipped | rule ({ns} session{'s' if ns > 1 else ''}) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |")
     print('|---|---|---|---|---|---|---|---|')

@@ -249,6 +249,27 @@ pub struct GpuRungs {
     /// sm_90+: a site launched right behind another kernel on its stream is a
     /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
     pub pdl: bool,
+    /// S62 `row-fit`: a thread grid taller than the site's rows (`ty·tm >
+    /// rows`, `TileSite::rows`) trades rows of threads for columns until the
+    /// block fits, keeping the thread count. Off: such a site takes the
+    /// one-thread-per-cell kernel.
+    pub row_fit: bool,
+    /// S62 `wave-gate`, under `row-fit`: a row-fitted grid with fewer blocks
+    /// than SMs ([`profile::Gpu::sms`]) takes the one-thread-per-cell kernel
+    /// instead. Off: the row-fitted grid at any block count.
+    pub wave_gate: bool,
+    /// S62 `grid-share`: an SM holds at most `⌈blocks / sms⌉` of this launch's
+    /// blocks, so the panel depth is sized against that share of its shared
+    /// memory (and `minctasm` says so). Off: the resource-derived residency.
+    pub grid_share: bool,
+    /// S62 `panel-regs`: the register-staged prefetch panel takes what the
+    /// derived residency leaves a thread after its tile
+    /// ([`profile::fma_held_regs`]), at least one fragment pair. Off: one
+    /// fragment pair (`tm + tn`, S52).
+    pub panel_regs: bool,
+    /// S62 `fill-rows`, under `warp-fill`: the fill rule shrinks the register
+    /// tile's rows down to one (scalar `a` fragments); off, down to one vector.
+    pub fill_rows: bool,
 }
 
 impl GpuRungs {
@@ -290,11 +311,16 @@ impl GpuRungs {
         stream_gate: true,
         pinned: true,
         pdl: true,
+        row_fit: true,
+        wave_gate: true,
+        grid_share: true,
+        panel_regs: true,
+        fill_rows: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 36] = [
+    pub const NAMES: [&'static str; 41] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -331,6 +357,11 @@ impl GpuRungs {
         "stream-gate",
         "pinned",
         "pdl",
+        "row-fit",
+        "wave-gate",
+        "grid-share",
+        "panel-regs",
+        "fill-rows",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -372,6 +403,11 @@ impl GpuRungs {
             "stream-gate" => &mut self.stream_gate,
             "pinned" => &mut self.pinned,
             "pdl" => &mut self.pdl,
+            "row-fit" => &mut self.row_fit,
+            "wave-gate" => &mut self.wave_gate,
+            "grid-share" => &mut self.grid_share,
+            "panel-regs" => &mut self.panel_regs,
+            "fill-rows" => &mut self.fill_rows,
             _ => return None,
         })
     }
