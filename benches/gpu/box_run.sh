@@ -218,48 +218,49 @@ if [ -x prog_decode_1024_256 ]; then
     [ -x chain_bench ] && ./chain_bench decode_1024 256 "$REPS" $vals 2>&1 | tee -a "$LOG"
 fi
 
-say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS)"
-bench() { # <cell: n or MxNxK> <stem> <label> [--contract|--tf32]
-    local cell=$1 stem=$2 label=$3 m n kk; shift 3
+say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS, passes=${PASSES:-1})"
+# A cell is `n` (square) or `MxNxK` (S62: the `mm_<M>x<N>x<K>` programs).
+dims() { case $1 in *x*x*) echo "${1//x/ }" ;; *) echo "$1 $1 $1" ;; esac; }
+bench() { # <cell> <stem> <label> [--contract|--tf32]
+    local n=$1 stem=$2 label=$3; shift 3
     read -r k gx gy blk sm < "$stem.launch"
-    IFS=x read -r m n kk <<< "$cell"; n=${n:-$m}; kk=${kk:-$m}
-    say "# n=$cell face=$label"
-    ./tile_bench "$m" "$n" "$kk" "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
+    say "# n=$n face=$label pass=$pass"
+    # shellcheck disable=SC2046  # M N K are three arguments
+    ./tile_bench $(dims "$n") "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
+    # WARM=1 (S62): the same bench again with operands left in L2 (`tile_bench --warm`).
+    if [ "${WARM:-0}" = 1 ]; then
+        say "# n=$n face=$label pass=$pass l2=warm"
+        # shellcheck disable=SC2046
+        ./tile_bench $(dims "$n") "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" --warm 2>&1 | tee -a "$LOG"
+    fi
 }
 # S54 arch-select: the session's first bench ran 3.6% off its own repeat (the `null` arm,
 # arch-select-rtx-3090.txt _exact 1024): one discarded bench first.
 [ -f "$PROF/mm_1024.launch" ] && { read -r k gx gy blk sm < "$PROF/mm_1024.launch"
     ./tile_bench 1024 1024 1024 "$PROF/mm_1024.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" > /dev/null 2>&1; }
-# The squares, then (S62) every `mm_<M>x<N>x<K>` cell the bundle holds.
-CELLS="1024 1536 2048 3072 4096 8192 $(for l in "$PROF"/mm_*x*x*.launch; do [ -f "$l" ] || continue
-    l=${l##*/mm_}; echo "${l%%[._]*}"; done | sort -u | tr '\n' ' ')"
-timing() { # <reverse: 1 = every bench's arms in reverse order, shipped last>
-    local cell face s flag v vars i r
-    for cell in $CELLS; do
-        for face in _exact _c _tf; do
-            case $face in _exact) s=mm_$cell; flag=() ;; _c) s=mm_${cell}_c; flag=(--contract) ;; _tf) s=mm_${cell}_tf; flag=(--tf32) ;; esac
+cells="1024 1536 2048 3072 4096 8192 $(for f in "$PROF"/mm_*x*x*.launch; do [ -f "$f" ] && basename "$f" .launch; done |
+    sed -n 's/^mm_\([0-9]*x[0-9]*x[0-9]*\)$/\1/p' | sort -t x -n -k1,1 -k2,2 -k3,3)"
+# PASSES=2 (S62): every cell again with its arm order reversed (ABBA), so an arm's
+# place in the bench order is not read as its effect. FACES narrows the faces.
+for pass in $(seq "${PASSES:-1}"); do
+    for n in $cells; do
+        for face in ${FACES:-_exact _c _tf}; do
+            case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
             [ -f "$PROF/$s.launch" ] || continue
-            vars=("")
+            legs=(shipped)
             for v in "$PROF/$s".*.launch; do
                 [ -f "$v" ] || continue
-                v=${v%.launch}; vars+=(".${v#"$PROF/$s".}")
+                var=${v%.launch}; legs+=("${var#"$PROF/$s".}")
             done
-            if [ "$1" = 1 ]; then
-                r=(); for ((i = ${#vars[@]} - 1; i >= 0; i--)); do r+=("${vars[i]}"); done; vars=("${r[@]}")
+            order=("${legs[@]}")
+            if [ $((pass % 2)) = 0 ]; then
+                order=(); for ((i = ${#legs[@]} - 1; i >= 0; i--)); do order+=("${legs[i]}"); done
             fi
-            for v in "${vars[@]}"; do
-                bench "$cell" "$PROF/$s$v" "$face$v" "${flag[@]}"
+            for var in "${order[@]}"; do
+                if [ "$var" = shipped ]; then bench "$n" "$PROF/$s" "$face" "${flag[@]}"
+                else bench "$n" "$PROF/$s.$var" "$face.$var" "${flag[@]}"; fi
             done
         done
     done
-}
-timing 0
-# S62: the timing section again with every bench's arms reversed (ABBA across the two
-# passes), into its own file: rungs.py reads the two passes as two sessions.
-if [ "${PASS2:-1}" = 1 ]; then
-    MAIN=$LOG; LOG=results-$PROF-pass2.txt; : > "$LOG"
-    say "== $PROF $SM $(date -u +%FT%TZ) pass 2 (arms reversed)"
-    timing 1
-    LOG=$MAIN
-fi
+done
 say "== done"
