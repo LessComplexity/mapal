@@ -518,3 +518,4 @@ entry:
   call void @mapal_main()
   ret i32 0
 }
+; mapal.host profile=h100-pcie+generic fma=0 order=Sequential device_sites=1 host_sites=0

@@ -3,6 +3,7 @@ source: crates/backends/llvm/tests/devmap.rs
 expression: "ew.device.expect(\"device\")"
 ---
 ; mapal-backend-llvm device module
+; mapal.device target=rtx-4090 fma=0 order=Sequential reduced=None
 target datalayout = "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64"
 target triple = "nvptx64-nvidia-cuda"
 
@@ -252,6 +253,7 @@ entry:
 }
 
 ; cell
+; mapal.plan kernel=mapal_tile_23b2fb35808bdeae kind=cell
 define ptx_kernel void @mapal_tile_23b2fb35808bdeae(ptr addrspace(1) %o) "nvvm.maxntid"="256" {
 entry:
   %t = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()

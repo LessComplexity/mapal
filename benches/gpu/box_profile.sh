@@ -73,5 +73,26 @@ if command -v nsys >/dev/null; then
             "prof/tl_$b.nsys-rep" > "prof/tl_$b.csv" 2>&1
     done
 fi
+# S64 evidence pass: the driver's JIT image vs offline ptxas on one cell (both step faces): the
+# static SASS stands for the executed one only where their opcode sequences agree (S62: 36/36 on
+# the H100). capture.cpp (benches/gpu/capture_images) saves the module the driver built from
+# exactly that PTX; `evidence.py jit` compares it, function by function.
+JIT_CELL=${JIT_CELL:-16x2048x7168}
+if [ -f capture.cpp ] && [ -f evidence.py ] && [ -f "$PROF/mm_$JIT_CELL.launch" ]; then
+    inc=$(dirname "$(ls "$CUDA"/extras/CUPTI/include/cupti.h "$CUDA"/targets/x86_64-linux/include/cupti.h 2>/dev/null | head -1)")
+    lib=$(dirname "$(ls "$CUDA"/extras/CUPTI/lib64/libcupti.so "$CUDA"/targets/x86_64-linux/lib/libcupti.so 2>/dev/null | head -1)")
+    g++ -std=c++17 -O2 -fPIC -shared -I"$CUDA/include" -I"$inc" capture.cpp -L"$lib" -Wl,-rpath,"$lib" -lcupti \
+        -pthread -o capture.so > prof/capture-build.log 2>&1
+    M=${JIT_CELL%%x*}; r=${JIT_CELL#*x}; N=${r%%x*}; K=${r#*x}
+    for s in "mm_$JIT_CELL" "mm_${JIT_CELL}_x"; do
+        o=prof/jit_$s; rm -rf "$o"
+        CUDA_INJECTION64_PATH=$PWD/capture.so MAPAL_CAPTURE_OUT=$o MAPAL_CAPTURE_PTX="$PROF/$s.ptx" \
+            timeout 120 ./tile_bench --splitk "$M" "$N" "$K" 1 "$PROF" "$s" > "$o.out" 2>&1
+        for c in "$o"/module-*.cubin; do [ -f "$c" ] && cuobjdump -sass "$c" > "${c%.cubin}.sass"; done
+        ptxas -arch="$SM" -O3 "$PROF/$s.ptx" -o "$o.ptxas.cubin" && cuobjdump -sass "$o.ptxas.cubin" > "$o.ptxas.sass"
+        echo "jit $s images=$(ls "$o"/module-*.cubin 2>/dev/null | wc -l) $(python3 evidence.py jit "$o" "$o.ptxas.sass" 2>&1 | tail -1)" |
+            tee -a "results-$PROF.txt"
+    done
+fi
 tar czf "prof-$PROF.tgz" prof
 echo "profile done: $(ls prof | wc -l) files"

@@ -35,10 +35,15 @@ fn device(target: &'static str, contract: bool, reduced: Option<Reduced>, gpu: G
         gpu,
         ..EmitOpts::exact()
     };
+    // The kernels, without the S64 `; mapal.` evidence comments (they name rungs).
     emit_detailed(&ir, &opts)
         .expect("emits")
         .device
         .expect("a GPU profile offloads the site")
+        .lines()
+        .filter(|l| !l.starts_with("; mapal."))
+        .map(|l| format!("{l}\n"))
+        .collect()
 }
 
 const TF32: Option<Reduced> = Some(Reduced::Tf32);

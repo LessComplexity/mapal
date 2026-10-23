@@ -41,7 +41,8 @@ while [ -n "${WAIT_FILE:-}" ] && [ ! -e "$WAIT_FILE" ]; do sleep 10; done
 
 # A bundle holds every part's directory: upload this part's only, and no LLVM
 # IR (the box reads host.o, ptx and launch).
-skip=(--exclude='*.ll')
+skip=(--exclude='*.ll' --exclude='*.yaml' --exclude='*.yaml.gz' --exclude='*.sass' --exclude='*.ptxas' \
+    --exclude='*.host.asm' --exclude='*.alias' --exclude='evidence.tsv')
 for x in "$BUNDLE"/*/; do
     n=$(basename "$x")
     if [ "$n" != "$PROF" ] && compgen -G "$x*.host.o" >/dev/null; then skip+=(--exclude="./$n"); fi
@@ -66,6 +67,9 @@ run_rc=0
 }
 "${SSH[@]}" "cat /w/results-$PROF-pass2.txt" > "$RES/results-$PROF-pass2.txt" 2>/dev/null || true
 "${SSH[@]}" "cat /w/ncu-$PROF.csv" > "$RES/ncu-$PROF.csv" 2>/dev/null || true
+# S64: the intent check of this run, the PyTorch install log.
+"${SSH[@]}" "cat /w/evidence-$PROF.tsv" > "$RES/evidence-$PROF.tsv" 2>/dev/null || true
+"${SSH[@]}" "cat /w/torch-install.log /w/torch.err" > "$RES/torch-$PROF.log" 2>/dev/null || true
 "${SSH[@]}" "cd /w && [ -d trace ] && tar czf - trace" > "$RES/trace-$PROF.tgz" 2>/dev/null || true
 if [ "$run_rc" -eq 0 ] && [ "${PROFILE:-0}" = 1 ] && [ "${DIFFERENTIAL_ONLY:-0}" != 1 ]; then
     "${SSH[@]}" "cd /w && $ENVS bash box_profile.sh $PROF $SM" >> "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_profile exit $run_rc"; }

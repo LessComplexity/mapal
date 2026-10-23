@@ -353,3 +353,4 @@ entry:
   call void @mapal_main()
   ret i32 0
 }
+; mapal.host profile=rtx-4090+generic fma=0 order=Sequential device_sites=0 host_sites=0

@@ -757,3 +757,49 @@ for tag, regen in (('rt', False), ('rg', True)):
         loop_requests(128, probes(128)['mlp2'], regen, R=2)
         .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
         .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))
+
+
+# --- S64 evidence suite (integrated_bundle.sh SUITE): the workloads beyond matmul, timed like the
+# probes (`time` around the computation, then the corners of every output and `iter ms`). `<stem>.kmax`:
+# the longest fold chain a printed value passes through, the K of ADR-0040 D2's default-face value gate
+# (value_gate.py; box_run.sh reads it before the stem's `_d<d>_h<h>`).
+def fir(n, taps):
+    """A 1-D window site (`func/window.rs`): y[t] = fold_k c[k]·s[t + k] — the taps invariant, the
+    signal sliding, one row of n lanes."""
+    body = (f"    {n} -> iota -> o_y;\n    {taps} -> iota -> k_y;\n"
+            f"    o_y -> map {{ t -> (0.0, k_y) -> fold {{ acc, k -> acc + c[k] * s[t + k] }} }} -> y;\n")
+    return composed([("c", taps, 'e'), ("s", n + taps, 'a')], body, [("y", n)])
+
+
+def conv(n, kk):
+    """A 2-D convolution (`func/conv.rs`'s k÷div taps — a host site on every GPU profile: `gpu_site`
+    has no `ksplit` encoding): y[i][j] = fold_k w[k]·img[(i + k/kk)·(n+kk-1) + j + k%kk]."""
+    w = n + kk - 1
+    body = (f"    {n * n} -> iota -> o_y;\n    {kk * kk} -> iota -> k_y;\n"
+            f"    o_y -> map {{ t ->\n        t / {n} -> i;\n        t % {n} -> j;\n"
+            f"        (0.0, k_y) -> fold {{ acc, k -> acc + w[k] * img[(i + k / {kk}) * {w} + j + k % {kk}] }}\n"
+            f"    }} -> y;\n")
+    return composed([("w", kk * kk, 'e'), ("img", w * w, 'a')], body, [("y", n * n)])
+
+
+def timed_loop(src):
+    """`time` around a program's top-level loop (its `mut` state is declared before it)."""
+    src = src.replace("    loop {\n", "    () -> time -> t0;\n    loop {\n", 1)
+    src = src.replace("\n    }\n    out[0] -> println;\n", "\n    }\n    () -> time -> t1;\n    out[0] -> println;\n", 1)
+    assert src.count("time -> t") == 2, "one top-level loop"
+    return src[:src.rindex("}")] + '    "iter ms=" -> print;\n    t1 - t0 -> println;\n}\n'
+
+
+SUITE = {
+    "pt_fir_4194304_16": (fir(1 << 22, 16), 16),
+    "pt_conv_2048_5": (conv(2048, 5), 25),
+    "pt_decode_1024_256": (timed_loop(decode(1024, 256)), 1024 * 256),
+    "pt_loopmm_1024_8": (timed_loop(loop_mm(1024, 8)), 8 * 1024),
+}
+for stem, (src, _) in SUITE.items():
+    (out / f"{stem}.mapal").write_text(src)
+for stem, kmax in [(s, k) for s, (_, k) in SUITE.items()] + [
+        (f"pt_{p}_{n}", f * n) for n in (2048, 4096)
+        for p, f in (('softmax_rows', 2), ('rowsum', 2), ('ew', 8), ('fanout', 2), ('diamond', 2), ('indep', 1),
+                     ('loop', 8), ('mlp', 2))] + [("pt_rt_mlp2_1024", 2 * 1024), ("pt_rt_mlp2_2048", 2 * 2048)]:
+    (out / f"{stem}.kmax").write_text(f"{kmax}\n")
