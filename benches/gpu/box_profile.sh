@@ -73,6 +73,25 @@ if command -v nsys >/dev/null; then
             "prof/tl_$b.nsys-rep" > "prof/tl_$b.csv" 2>&1
     done
 fi
+# S64 evidence pass: the library kernels each cell and MLP actually launches (cuBLAS, cuBLASLt, stock
+# and tuned CUTLASS): names, grid, block, registers, smem and time per launch (nsys cuda_gpu_trace).
+if command -v nsys >/dev/null; then
+    for l in "$PROF"/mm_*x*x*_r.launch; do
+        [ -f "$l" ] || continue
+        cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
+        timeout 300 nsys profile -o "prof/lib_$cell" --force-overwrite true -t cuda \
+            ./tile_bench --splitk "$M" "$N" "$K" 3 "$PROF" "$cell" > "prof/lib_$cell.out" 2>&1
+        nsys stats -q --format csv -r cuda_gpu_kern_sum,cuda_gpu_trace "prof/lib_$cell.nsys-rep" > "prof/lib_$cell.csv" 2>&1
+    done
+    for k in "$PROF"/pt_rm_m*_d*_h*_c.k; do
+        [ -f "$k" ] && [ -x mlp_bench ] || continue
+        p=$(basename "$k" _c.k); dims=$(sed -nE 's/^pt_rm_m([0-9]+)_d([0-9]+)_h([0-9]+)$/\1 \2 \3/p' <<< "$p")
+        # shellcheck disable=SC2086  # the dims are separate arguments
+        timeout 300 nsys profile -o "prof/lib_$p" --force-overwrite true -t cuda ./mlp_bench $dims 3 "$PROF" "${p}_c" \
+            > "prof/lib_$p.out" 2>&1
+        nsys stats -q --format csv -r cuda_gpu_kern_sum,cuda_gpu_trace "prof/lib_$p.nsys-rep" > "prof/lib_$p.csv" 2>&1
+    done
+fi
 # S64 evidence pass: the driver's JIT image vs offline ptxas on one cell (both step faces): the
 # static SASS stands for the executed one only where their opcode sequences agree (S62: 36/36 on
 # the H100). capture.cpp (benches/gpu/capture_images) saves the module the driver built from

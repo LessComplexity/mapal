@@ -98,7 +98,7 @@ INTENT = {
         ('S partial folds, then one reduce launch', "launch.S == plan.S and launch.combine == 'splitk'"),
         ('no atomics', 'ptx.atom_add + ptx.red_add == 0')]),
     'splitk-atomic': dict(applies_on="plan.combine == 'atomic'", on=[
-        ('one red.global.add per accumulator', 'ptx.atom_add + ptx.red_add >= plan.tm * plan.tn'),
+        ('one red.global.add per accumulator', 'ptx.atom_add + ptx.red_add >= (plan.tm * plan.tn if plan.kind == "tile" else 1)'),
         ('no workspace, no reduce launch', "launch.combine == 'atomic'")]),
     'streamk': dict(applies_on="plan.combine == 'streamk'", on=[
         ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),

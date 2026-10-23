@@ -139,6 +139,9 @@ def ptx_facts(text):
                 key = (c['fma_f32'] + c['mul_f32'] + c['mma'] + c['wgmma'], -len(seg))
                 if best is None or key > best[0]:
                     best = (key, seg, c)
+        if best is None:  # no loop (a fully unrolled fold): the whole body is the hot region
+            seg = lines
+            best = (None, seg, ptx_counts(seg))
         if best:
             seg, c = best[1], best[2]
             bases = {m.group(1) for x in seg if re.match(r'^(@!?%p\d+\s+)?(ld\.global|cp\.async\.c)', x)
@@ -192,7 +195,9 @@ def sass_facts(body):
         key = (sum(ops[k] for k in MAC), -len(loop))
         if best is None or key > best[0]:
             best = (key, loop)
-    if best and best[0][0] > 0:
+    if best is None or best[0][0] == 0:  # no MAC loop (a fully unrolled fold): the whole body
+        best = ((0, 0), body)
+    if best:
         loop = best[1]
         lc, lw = stats(loop)
         ops = [split(x)[1] for _, x in loop]
@@ -200,8 +205,8 @@ def sass_facts(body):
         mac = lc['FFMA'] + min(lc['FMUL'], lc['FADD'])
         acc = accumulators(loop)
         ismac = [b in ('FFMA', 'FMUL', 'HMMA', 'HGMMA') for b in base]
-        fm = ismac.index(True)
-        lm = len(base) - 1 - ismac[::-1].index(True)
+        fm = ismac.index(True) if any(ismac) else 0
+        lm = len(base) - 1 - ismac[::-1].index(True) if any(ismac) else len(base) - 1
         isg = [b in ('LDG', 'LDGSTS') for b in base]
         # MAC between each register-staged LDG and its first reader (cyclic): the math covering it.
         cover = []
@@ -291,14 +296,38 @@ def host_facts(ll, asm):
     return f
 
 
-def launched(kernel, host_ll):
-    """How many host calls name the kernel: its id is the name's 64-bit hash, a signed i64 operand."""
+def kid(kernel):
+    """A kernel's host id: its name's 64-bit hash as the signed i64 operand the host passes."""
     m = re.search(r'_([0-9a-f]{16})$', kernel)
     if not m:
-        return -1
+        return None
     v = int(m.group(1), 16)
-    v -= (v >= 1 << 63) << 64
-    return len(re.findall(r'\bi64 ' + str(v) + r'\b', host_ll))
+    return v - ((v >= 1 << 63) << 64)
+
+
+def launched(kernel, host_ll):
+    """How many host calls name the kernel."""
+    v = kid(kernel)
+    return -1 if v is None else len(re.findall(r'\bi64 ' + str(v) + r'\b', host_ll))
+
+
+def launches(host_ll):
+    """id -> the kernel's first `mapal_gpu_launch[_l2]` call: gx gy block smem, combine and S off the
+    emitter's comment (`; splitk=S [atomic]`, `; streamk=CxI`)."""
+    out = {}
+    for m in re.finditer(r'call void @mapal_gpu_(launch|launch_l2)\(i64 (-?\d+),([^\n]*)', host_ll):
+        if int(m.group(2)) in out:
+            continue
+        i32 = [int(x) for x in re.findall(r'i32 (\d+)', m.group(3))][-4:]
+        if len(i32) < 4:
+            continue
+        f = dict(gx=i32[0], gy=i32[1], block=i32[2], smem=i32[3], S=1, combine='none')
+        if c := re.search(r'; splitk=(\d+)( atomic)?', m.group(3)):
+            f.update(S=int(c.group(1)), combine='atomic' if c.group(2) else 'splitk')
+        elif re.search(r'; streamk=', m.group(3)):
+            f['combine'] = 'streamk'
+        out[int(m.group(2))] = f
+    return out
 
 
 def source_loops(d, stem):
@@ -424,9 +453,11 @@ def facts(d, sm):
             e['host_rungs'] = sorted(hr)
             e['host_table'] = [r for r in table_rungs(rows, prof, 2, face, arm) if r not in KERNEL_RUNGS]
         hll = read(base + '.host.ll') or ''
+        lau = launches(hll)
         for k in sorted(set(plans) | set(pf)):
             p = plans.get(k, {})
             kf = dict(plan=p, ptx=pf.get(k, {}), ptxas=pa.get(k, {}), mod=dict(launched=launched(k, hll)),
+                      launch=lau.get(kid(k), {}),
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
             if 'face' in p and rows:
@@ -533,7 +564,7 @@ def check(d, results=None, out=sys.stdout):
         for k, kf in sorted(e['kernels'].items()):
             ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'ptx', 'ptxas', 'sass', 'occ', 'table', 'mod')})
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
-                      launch=D(e['launch'] if e['launch'].get('kernel') == k else {}),
+                      launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'])
             kon = set(kf.get('plan', {}).get('rungs_on', [])) | on
             for rung, it in INTENT.items():
