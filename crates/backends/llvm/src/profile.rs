@@ -346,6 +346,22 @@ pub enum Fill {
     Under,
     /// At least [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
     Filled,
+    /// S64: `Under` with at least one warp per scheduler — the class a row
+    /// keeps when its rung pays on a grid that leaves schedulers empty
+    /// (fewer than one warp each) and costs on one that does not.
+    Partial,
+}
+
+impl Fill {
+    /// Whether a row keyed `self` covers a site at `wps` warps per scheduler.
+    pub fn covers(self, wps: u64) -> bool {
+        match self {
+            Fill::Any => true,
+            Fill::Under => wps < GPU_RESIDENT_BLOCKS,
+            Fill::Filled => wps >= GPU_RESIDENT_BLOCKS,
+            Fill::Partial => (1..GPU_RESIDENT_BLOCKS).contains(&wps),
+        }
+    }
 }
 
 /// Which face a measured rung decision covers: the conformance face (`mul.rn`
@@ -415,7 +431,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; _exact with fma-regs on \
                (fma-regs-rtx-4090.txt) cp.async 0.508/4.437/39.162 vs register staging 0.492/4.245/37.149 ms, \
                -run1.txt 0.520/4.520/39.002 vs 0.502/4.249/36.698 ms; kept under-filled (_c n=1024 on 0.070 vs \
-               off 0.101 ms)",
+               off 0.101 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 0)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -423,28 +439,28 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "arch-rungs-rtx-4090-confirm.txt _c n=2048/4096/8192 on 0.362/2.843/26.796 vs off 0.355/2.813/25.311 ms; \
-               arch-rungs-rtx-4090.txt (unroll on) on 0.359/2.823/25.554 vs off 0.364/2.863/25.788 ms: no stable sign",
+               arch-rungs-rtx-4090.txt (unroll on) on 0.359/2.823/25.554 vs off 0.364/2.863/25.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 1)",
     },
     RungOff {
         profile: "rtx-4090",
         rung: "ldmatrix",
         fill: Fill::Any,
         face: Face::Any,
-        cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms",
+        cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 2)",
     },
     RungOff {
         profile: "rtx-4090",
         rung: "idx32",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.067 ms: no effect",
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.067 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 3)",
     },
     RungOff {
         profile: "rtx-4090",
         rung: "affine",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.068 ms: no effect",
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.068 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 4)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -452,7 +468,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "arch-rungs-h100-pcie.txt _c n=1024..8192 on 0.146/0.717/4.188/37.655 vs off 0.139/0.675/3.889/33.640 ms; \
-               _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641 ms",
+               _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 5)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -460,7 +476,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Contract,
         cite: "arch-rungs-h100-pcie.txt _c n=1024 on 0.139 vs off 0.122 ms (v2/v4/v5/v6-h100*.txt the same sign); \
-               kept filled (n=2048/4096/8192 on 0.675/3.889/33.640 vs off 0.793/4.753/41.168 ms)",
+               kept filled (n=2048/4096/8192 on 0.675/3.889/33.640 vs off 0.793/4.753/41.168 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 6)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -468,7 +484,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "fma-regs-h100-pcie.txt register staging n=2048/4096/8192 _c on 0.795/4.054/33.097 vs off \
-               0.654/3.851/33.608 ms, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms",
+               0.654/3.851/33.608 ms, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 7)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -476,7 +492,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Exact,
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect",
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 8)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -485,7 +501,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
                1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; integrated-h100-pcie-confirm.txt _exact \
-               n=2048/4096/8192 off 1.08x/1.20x/1.23x faster than on",
+               n=2048/4096/8192 off 1.08x/1.20x/1.23x faster than on; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 9)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -494,7 +510,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms; integrated-h100-pcie.txt \
                _c n=1024 on 0.921x of off; kept filled with min-blocks off (integrated-h100-pcie-confirm.txt _c \
-               n=2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms)",
+               n=2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 10)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -504,7 +520,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
                1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; base-h100-pcie.txt / -confirm.txt \
                (S54) _exact n=2048/4096/8192 OFF/ON cuBLAS-normalized 0.889/0.855/0.860 vs 0.884/0.842/0.825 (ms in \
-               the files); ON under-filled since (n=1024 1.037 vs 1.031, disjoint in both)",
+               the files); ON under-filled since (n=1024 1.037 vs 1.031, disjoint in both); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 11)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -513,7 +529,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "integrated-h100-pcie.txt (with idx32+pad, the cap spills 8-16 B) _c n=2048/4096/8192 on \
                0.656/3.950/36.832 vs off 0.618/3.729/37.530 ms, _exact on 1.118/6.521/57.781 vs off \
-               1.089/6.366/58.483 ms; kept under-filled on the exact face (n=1024 on 0.193 vs off 0.213 ms)",
+               1.089/6.366/58.483 ms; kept under-filled on the exact face (n=1024 on 0.193 vs off 0.213 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 12)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -521,16 +537,20 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Contract,
         cite: "integrated-h100-pcie.txt _c n=1024 on 0.139 vs off 0.136 ms; kept filled (n=2048/4096/8192 on \
-               0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms)",
+               0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 13)",
     },
     RungOff {
         profile: "h100-pcie",
         rung: "warp-fill",
-        fill: Fill::Under,
+        fill: Fill::Partial,
         face: Face::Contract,
         cite: "arch-select-h100-pcie.txt / base-h100-pcie-verify.txt (S54) _c n=1024 on 0.1512 / 0.1524 vs off 0.1445 / \
                0.1464 ms (cuBLAS-normalized OFF/ON 0.952 / 0.957, disjoint in both); kept on the exact face (on 0.2144 / \
-               0.2163 vs off 0.2192 / 0.2214 ms, 1.025 / 1.028, disjoint in both)",
+               0.2163 vs off 0.2192 / 0.2214 ms, 1.025 / 1.028, disjoint in both). S64 class split Under -> Partial \
+               (s64/warp-fill/h100-pcie/results-h100-pcie.txt, mlp_bench two processes ABBA, bit-exact): at 0 warps \
+               per scheduler the residual MLP's contract kernels ON 0.1501/0.1500 vs OFF 0.3726/0.3724 ms (d1024) and \
+               0.0332/0.0332 vs 0.1027/0.1028 ms (d256), null 0.000/0.001; SASS: OFF 8x8 tile, 32-thread blocks, 254 \
+               regs, 0.56/1.12 resident warps per SM; ON 4x4, 2.25/4.49",
     },
     RungOff {
         profile: "rtx-5090",
@@ -539,7 +559,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "arch-rungs-rtx-5090.txt _c n=2048/4096/8192 on 0.320/2.346/20.277 vs off 0.315/2.328/19.542 ms, \
                -confirm.txt on 0.358/3.043/27.908 vs off 0.352/2.991/27.069 ms; kept under-filled (n=1024 on 0.074 \
-               vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192)",
+               vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 15)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -547,7 +567,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "fma-regs-rtx-5090.txt _c register staging n=2048/4096/8192 on 0.344/3.194/26.885 vs off \
-               0.348/2.947/28.434 ms, -run1.txt on 0.313/2.592/19.681 vs off 0.311/2.360/19.382 ms (4096 disjoint)",
+               0.348/2.947/28.434 ms, -run1.txt on 0.313/2.592/19.681 vs off 0.311/2.360/19.382 ms (4096 disjoint); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 16)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -555,7 +575,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Exact,
         cite: "fma-regs-rtx-5090.txt _exact cp.async n=1024..8192 on 0.076/0.588/4.920/40.005 vs off \
-               0.076/0.586/4.907/40.004 ms: no effect",
+               0.076/0.586/4.907/40.004 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 17)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -563,7 +583,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Exact,
         cite: "fma-regs-rtx-5090.txt _exact cp.async n=2048/4096/8192 on 0.588/4.920/40.005 vs off \
-               0.580/4.876/39.878 ms; kept under-filled (n=1024 on 0.076 vs off 0.084 ms)",
+               0.580/4.876/39.878 ms; kept under-filled (n=1024 on 0.076 vs off 0.084 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 18)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -571,14 +591,14 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Exact,
         cite: "fma-regs-rtx-5090.txt _exact register staging n=2048/4096/8192 on 0.545/4.446/39.511 vs off \
-               0.541/4.613/38.788 ms: no stable sign",
+               0.541/4.613/38.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 19)",
     },
     RungOff {
         profile: "rtx-5090",
         rung: "idx32",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.074 ms: no effect",
+        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.074 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 20)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -586,7 +606,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Contract,
         cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.078 ms, ranges overlap, one session: \
-               not established",
+               not established; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 21)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -594,7 +614,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "warp-fill-rtx-5090.txt _tf n=2048 on 0.2314 vs off 0.2252 ms, disjoint; _c and _exact PTX \
-               byte-identical at every filled size",
+               byte-identical at every filled size; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 22)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -603,7 +623,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "integrated-rtx-4090.txt decode_1024_256 wall, rung on (resident yields) 1589/1568 ms vs off \
                (resident takes the loop) 905/886 ms exact/contract, 3 procs, disjoint; against S52 round trips the rung \
-               measured 1.57/1.65x (retain-delta-rtx-4090.txt) — resident is the better arm",
+               measured 1.57/1.65x (retain-delta-rtx-4090.txt) — resident is the better arm; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 23)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -612,7 +632,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "integrated-h100-pcie.txt decode_1024_256 wall, rung on (resident yields) 1756/1906 ms vs off \
                (resident takes the loop) 1109/1144 ms exact/contract, 3 procs; against S52 round trips 1.53/1.50x \
-               (retain-delta-h100-pcie.txt)",
+               (retain-delta-h100-pcie.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 24)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -621,14 +641,14 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "integrated-rtx-5090.txt (with warp-fill's 4x4 tile) n=1024 _c on 0.0635 vs off 0.0573 ms, _exact on \
                0.0737 vs off 0.0676 ms, disjoint; before warp-fill it paid (arch-rungs-rtx-5090.txt n=1024 on 0.074 vs \
-               off 0.092 ms)",
+               off 0.092 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 25)",
     },
     RungOff {
         profile: "rtx-5090",
         rung: "wide",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "integrated-rtx-5090.txt _tf n=1024 on 0.0492 vs off 0.0389 ms, disjoint",
+        cite: "integrated-rtx-5090.txt _tf n=1024 on 0.0492 vs off 0.0389 ms, disjoint; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 26)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -637,7 +657,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "integrated-rtx-5090.txt decode_1024_256 wall, rung on (resident yields) 825/847 ms vs off \
                (resident takes the loop) 630/616 ms exact/contract, 3 procs, disjoint; against S52 round trips \
-               1.63/1.63x (retain-delta-rtx-5090.txt)",
+               1.63/1.63x (retain-delta-rtx-5090.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 27)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -645,49 +665,49 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "base-rtx-5090.txt / base-rtx-5090-confirm.txt (S54) _tf n=2048/4096/8192 OFF/ON cuBLAS-normalized \
-               0.981/0.993/1.006 vs 0.982/0.999/1.031 (ms in the files): no size ON-faster in both sessions",
+               0.981/0.993/1.006 vs 0.982/0.999/1.031 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 28)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "affine",
         fill: Fill::Under,
         face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.996 vs 1.019; _exact n=1024 1.041 vs 1.006 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.996 vs 1.019; _exact n=1024 1.041 vs 1.006 (ms in the files): no size ON-faster in both sessions; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 29)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "async",
         fill: Fill::Any,
         face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.906/0.896/0.928 vs 0.907/0.897/0.879; _exact n=2048/4096/8192 0.936/0.958/0.994 vs 0.925/0.930/0.958; _c n=1024 0.897 vs 0.878; _exact n=1024 1.000 vs 0.951 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.906/0.896/0.928 vs 0.907/0.897/0.879; _exact n=2048/4096/8192 0.936/0.958/0.994 vs 0.925/0.930/0.958; _c n=1024 0.897 vs 0.878; _exact n=1024 1.000 vs 0.951 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 30)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "idx32",
         fill: Fill::Any,
         face: Face::Exact,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.993/1.004/0.997 vs 1.000/1.005/0.995; _exact n=1024 1.003 vs 0.996 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.993/1.004/0.997 vs 1.000/1.005/0.995; _exact n=1024 1.003 vs 0.996 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 31)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "idx32",
         fill: Fill::Under,
         face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: arch-select-rtx-3090-table.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF)",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: arch-select-rtx-3090-table.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 32)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "interleave",
         fill: Fill::Under,
         face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 1.000; _exact n=1024 1.003 vs 0.991 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 1.000; _exact n=1024 1.003 vs 0.991 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 33)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "ldmatrix",
         fill: Fill::Any,
         face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 34)",
     },
     // S54 arch-select: the FMA tile takes `.minnctapersm` under register
     // staging on both faces (exact n=1024 1.032 / 1.094 / 1.090, the first
@@ -703,14 +723,14 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                0.890/0.890/0.890 (ms 0.0993 shipped vs 0.1116 ON, cuBLAS 0.0881, both sessions), n=2048/4096/8192 \
                0.997/1.002/1.000, 1.000/0.993/1.000, 0.994/0.994/1.006: never ON-faster; FMA face ON (_c n=1024 \
                1.034/1.014/1.041, n=2048 1.057/1.052/1.086, n=8192 1.086/1.070/1.046; arch-select ms n=2048 0.8745 \
-               vs 0.8325, n=8192 51.971 vs 48.936)",
+               vs 0.8325, n=8192 51.971 vs 48.936); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 35)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "warp",
         fill: Fill::Under,
         face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions; on warp-fill's tile it paid under-filled contract (arch-select-rtx-3090.txt / -verify2 / -verify 1.055/1.036/1.056); with warp-fill off there (S54 arch-select) it changes no text",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions; on warp-fill's tile it paid under-filled contract (arch-select-rtx-3090.txt / -verify2 / -verify 1.055/1.036/1.056); with warp-fill off there (S54 arch-select) it changes no text; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 36)",
     },
     // S54 arch-select, one coordinate step for the under-filled FMA class: four
     // single flips each paid on the warp-fill tile (idx32 ON 1.070/1.050/1.071,
@@ -721,12 +741,15 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-3090",
         rung: "warp-fill",
-        fill: Fill::Under,
+        fill: Fill::Partial,
         face: Face::Contract,
         cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
                every session: _c n=1024 0.935/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
                n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; arch-select-rtx-3090-table.txt 0.0881 vs \
-               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign)",
+               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign). S64 class \
+               split Under -> Partial (s64/warp-fill/rtx-3090/results-rtx-3090.txt, mlp_bench two processes ABBA, \
+               bit-exact): at 0 warps per scheduler the residual MLP's contract kernels ON 0.1630/0.1629 vs OFF \
+               0.3092/0.3092 ms (d1024) and 0.0338/0.0338 vs 0.0707/0.0715 ms (d256), null 0.000/0.010",
     },
     RungOff {
         profile: "rtx-3090",
@@ -736,14 +759,14 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.812 vs 1.009 (ms in \
                the files): no size ON-faster in both sessions; kept filled: _tf n=2048/4096/8192 1.011/1.017/1.023 vs \
                1.008/1.010/1.004, and with it off base-rtx-3090-verify.txt _tf 2048/4096 0.781/5.358 vs 0.741/5.129 ms \
-               (cuBLAS 0.681/5.141 vs 0.677/5.090)",
+               (cuBLAS 0.681/5.141 vs 0.677/5.090); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 38)",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "wide-fma",
         fill: Fill::Filled,
         face: Face::Exact,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.959/0.936/0.991 vs 0.956/0.904/0.961 (ms in the files): no size ON-faster in both sessions",
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.959/0.936/0.991 vs 0.956/0.904/0.961 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 39)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -752,7 +775,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "base-rtx-3090.txt decode_1024_256 wall, rung on (resident yields) 2.715/2.697 s vs off (resident takes \
                the loop) 1.473/1.473 s exact/contract, 3 procs; base-rtx-3090-confirm.txt 1.386/1.396 vs 0.935/0.942 s (ms: \
-               the files' trace totals)",
+               the files' trace totals); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 40)",
     },
     RungOff {
         profile: "a100",
@@ -853,7 +876,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "rowfold-rtx-3090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
                4096 9.081 vs 8.994, 9.856 vs 9.790; _c 4096 5.637 vs 5.624, 5.936 vs 5.929; 2048 within 0.4%: no \
-               size faster in both sessions",
+               size faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 52)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -862,7 +885,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "rowfold-rtx-5090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
                4096 3.478 vs 3.432, 3.378 vs 3.330; _c 4096 2.216 vs 2.153, 2.161 vs 2.088 (2048 2.5-2.8% faster, \
-               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class)",
+               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class); S64 evidence: open, re-measured ON slower, no static cost (benches/results/evidence/s64/judge.tsv row 53)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -872,7 +895,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "rowfold-h100-pcie.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
                4096 7.851 vs 6.451, 9.101 vs 7.615; _c 4096 4.033 vs 3.760, 4.735 vs 4.441; 2048 the same sign; \
                -v2.txt / -v2-confirm.txt too (_exact 4096 8.97 vs 7.52 ms): the HBM part pays 7-22% for the \
-               column-major tile store",
+               column-major tile store; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 54)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -881,7 +904,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "rowfold-rtx-4090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
                4096 4.189 vs 4.018, 4.267 vs 4.160 (the exact tile pays 4-6% for the store); kept on the contract \
-               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms",
+               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 55)",
     },
     RungOff {
         profile: "a100",
@@ -916,7 +939,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "l2-raster-rtx-3090-run2.txt / -run3.txt mm_8192 OFF/ON cuBLAS-normalized exact 0.986 / 1.029, \
                contract 0.992 / 1.017, TF32 0.991 / 0.956 (ON ms 92.743/55.147/34.632 vs OFF 91.632/54.659/34.341; \
-               116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions",
+               116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 58)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -924,7 +947,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "l2-raster-rtx-3090*.txt: no probe has an operand within the 6 MB L2 (pt_* at 2048 are 16 MB), so no \
-               probe row has a window arm (0 ms measured): unmeasured, not shipped",
+               probe row has a window arm (0 ms measured): unmeasured, not shipped; S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 59)",
     },
     RungOff {
         profile: "a100",
@@ -941,7 +964,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "l2-raster-rtx-4090-run2.txt / -run4.txt / l2-raster-rtx-4090.txt traced kernel ms off/on: \
                diamond_2048_c 0.933 / 0.939 / 0.959, mlp2_2048_c 0.938 / 0.949 / 0.954 (the window costs on \
-               contract); exact 0.977-1.003",
+               contract); exact 0.977-1.003; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 61)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -949,7 +972,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "l2-raster-rtx-5090{,-run2,-run3,-run4,-run5}.txt traced kernel ms off/on: 60 cells 0.976-1.005, \
-               none > 1.01 in any session (diamond_2048_c 0.988/0.989/0.976/0.991/0.986)",
+               none > 1.01 in any session (diamond_2048_c 0.988/0.989/0.976/0.991/0.986); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 62)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -960,7 +983,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                1.934879/1.969309, mlp2 2.589975/2.643185, mlp 1.291543/1.357854 ms (overlapping ranges). \
                Traced kernels 0.998/1.007/1.007x do not establish an iteration win; 4096 arms are identical. \
                Prior l2-raster-h100-pcie{-run2,-run3}.txt likewise lacks a stable iteration win. \
-               Disputed S54 selection fails initial acceptance; OFF is not claimed faster on every host",
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster on every host; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 63)",
     },
     // Historical S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`) decisions used
     // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
@@ -978,7 +1001,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                five reps with overlapping ranges. Prior retain-resident-h100-pcie{,-confirm}.txt wall \
                exact 0.971/0.705x and contract 1.143/1.016x; fresh run repeats the confirm host. \
                Traced kernels improve 1.219/1.130x but do not establish a stable wall win. \
-               Disputed S54 selection fails initial acceptance; OFF is not claimed faster",
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 64)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -988,7 +1011,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "retain-resident-rtx-5090.txt / retain-resident-rtx-5090-confirm.txt decode_1024_256 OFF/ON loop \
                1.008 / 1.016 (ON 343–360 / 328–366 ms vs OFF 345–363 / 336–351 ms, overlapping), process wall \
                1.022 / 1.005: not > 1% in both sessions. The whole K/V site is launch-bound there: traced kernel \
-               76 vs 82 ms over 1024 steps",
+               76 vs 82 ms over 1024 steps; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 65)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -998,7 +1021,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "retain-resident-rtx-4090.txt / retain-resident-rtx-4090-confirm.txt decode_1024_256 OFF/ON loop \
                1.025 / 0.981 (ON 337–367 / 357–411 ms vs OFF 341–365 / 341–419 ms, overlapping), process wall \
                1.011 / 0.988: the sign changes between sessions. The whole K/V site costs what the row does \
-               there (traced kernel 103 vs 105 and 108 vs 110 ms over 1024 steps, exact)",
+               there (traced kernel 103 vs 105 and 108 vs 110 ms over 1024 steps, exact); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 66)",
     },
     // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
     // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
@@ -1017,7 +1040,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                0.967/0.945 ms, on 0.706/0.700 vs off 0.711/0.696 ms: no effect in two sessions; every probe with a \
                host join slower on streams (streams-rtx-3090.txt, -confirm.txt: diamond_512 0.82-0.88x, mlp2_512 \
                0.62-0.84x); S62 after the dead-output DCE (s62/runtime-measurements/rtx-3090/summary-rtx-3090.md, \
-               two sessions): shipped/on-streams iter 0.02-0.40, 12 of 12 cells stable- (chains drop the arena)",
+               two sessions): shipped/on-streams iter 0.02-0.40, 12 of 12 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 67)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1028,7 +1051,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
                diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x); \
                S62 after the dead-output DCE (s62/runtime-measurements/rtx-4090/summary-rtx-4090.md, \
-               two sessions): shipped/on-streams iter 0.18-0.31, 16 of 16 cells stable- (chains drop the arena)",
+               two sessions): shipped/on-streams iter 0.18-0.31, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 68)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -1041,7 +1064,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established; \
                S62 after the dead-output DCE \
                (s62/runtime-measurements/rtx-5090/summary-rtx-5090.md, two sessions): shipped/on-streams iter \
-               0.11-0.19, 8 of 8 cells stable- (chains drop the arena)",
+               0.11-0.19, 8 of 8 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 69)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1053,7 +1076,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established; \
                S62 after the dead-output DCE \
                (s62/runtime-measurements/h100-pcie/summary-h100.md, H100 PCIe + H100 SXM sessions): shipped/on-streams \
-               iter 0.07-0.89, 16 of 16 cells stable- (chains drop the arena)",
+               iter 0.07-0.89, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 70)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1062,7 +1085,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "pt_loop_2048 (copies in the loop pinned): streams-rtx-3090.txt on 130.755/126.012 vs off \
                131.314/125.685 ms, -confirm.txt on 107.350/103.422 vs off 103.603/98.630 ms, -final.txt on \
-               110.819/106.843 vs off 114.186/108.992 ms: no stable sign",
+               110.819/106.843 vs off 114.186/108.992 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 71)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1071,7 +1094,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "pt_loop_2048: streams-rtx-4090.txt on 108.529/105.036 vs off 105.843/105.855 ms, -final.txt on \
                69.409/68.007 vs off 70.917/69.474 ms: no stable sign (the session-1 box copies pageable at the pinned \
-               rate, 13.3 vs 13.4 GB/s)",
+               rate, 13.3 vs 13.4 GB/s); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 72)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1079,7 +1102,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Any,
         face: Face::Any,
         cite: "pt_loop_2048: streams-h100-pcie.txt on 75.623/69.702 vs off 72.974/73.441 ms, -confirm.txt on \
-               70.811/69.016 vs off 72.437/69.029 ms: no stable sign",
+               70.811/69.016 vs off 72.437/69.029 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 73)",
     },
     RungOff {
         profile: "a100",
@@ -1098,7 +1121,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "pt_loop_2048: streams-rtx-5090.txt on 77.545/75.830 vs off 92.102/88.746 ms, -confirm.txt on \
                50.086/48.318 vs off 58.865/57.286 ms (pageable 9-19 GB/s vs pinned 26-52), -final.txt on \
-               57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host",
+               57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 75)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1107,7 +1130,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "streams-h100-pcie.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.211/1.174 vs off \
                1.243/1.269 ms, then 1.936/1.808 vs 1.716/1.931 ms; pt_diamond_2048 10.037/9.153 vs 10.416/8.907, \
-               then 20.825/24.517 vs 26.320/24.602 ms)",
+               then 20.825/24.517 vs 26.320/24.602 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 76)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -1116,7 +1139,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "streams-rtx-5090.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.031/1.069 vs off \
                1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
-               6.119/5.545 vs 6.122/5.549 ms)",
+               6.119/5.545 vs 6.122/5.549 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 77)",
     },
     // S62 ordered tile geometry: benches/results/gpu/s62/geometry/v2/<part>/results-<part>.txt and
     // -pass2.txt (ABBA), OFF/ON per pass, each bench normalized by its own cuBLAS leg; no effect
@@ -1127,7 +1150,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _c 16x18432x7168 OFF/ON 0.223/0.225: on 2.0659 ms (the \
-               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs)",
+               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 78)",
     },
     RungOff {
         profile: "rtx-5090",
@@ -1135,7 +1158,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Exact,
         cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _exact 16x18432x7168 OFF/ON 0.988/0.994, no effect within \
-               the session null 7.9%: on 0.3420 vs off 0.3420 ms",
+               the session null 7.9%: on 0.3420 vs off 0.3420 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 79)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1144,7 +1167,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
                128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
-               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038",
+               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 80)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1152,7 +1175,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Any,
         cite: "s62 v2 results-rtx-4090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.965/0.963, _exact 0.963/0.965 \
-               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms",
+               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 81)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1160,7 +1183,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x2048x7168 OFF/ON 1.013/1.014, no effect within the \
-               session null 2.6% (ms in the files)",
+               session null 2.6% (ms in the files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 82)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1168,7 +1191,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Any,
         cite: "s62 v2 results-h100-pcie.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 \
-               (disjoint; ms in the files)",
+               (disjoint; ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 83)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1176,7 +1199,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Contract,
         cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint; ms in the \
-               files)",
+               files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 84)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1184,7 +1207,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Any,
         cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935; \
-               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files)",
+               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 85)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1192,7 +1215,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Any,
         cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 \
-               (ms in the files)",
+               (ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 86)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1200,7 +1223,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Any,
         cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
-               no stable gain (null 4.3%; ms in the files)",
+               no stable gain (null 4.3%; ms in the files); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 87)",
     },
     // S62 `asyncstage` (`benches/results/gpu/s62/asyncstage/`, r1 = round1/, r2 = round2/ on another
     // box): its kernel gains are DRAM-latency hiding — with L2 flushed before every launch it wins on
@@ -1215,7 +1238,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "r1/r2 results-rtx-5090.txt: flushed L2 wins (r1 _c 16x2048x7168 on 0.1065 vs off 0.1167 ms), \
                warm L2 loses (r2 l2=warm _exact 128x1024x1024 on 0.0348 vs off 0.0287 ms); pt_rmlp256x512_128 \
-               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2)",
+               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 88)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1224,7 +1247,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "r1/r2 results-rtx-4090.txt: flushed _c n=1024 on 0.0707 vs off 0.0666 ms (r1), warm L2 _c \
                16x2048x7168 on 0.1208 vs off 0.1116 ms (r2); pt_rmlp256x512_128 _exact iter on 0.1179 vs off \
-               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2)",
+               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 89)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1235,7 +1258,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585 ms, _exact 0.2812 vs 0.1876 ms; \
                pt_rmlp1024x2048_128 _exact 0.3402 vs 0.2914 ms; r2 results-h100-pcie.partial-50562987.txt (an \
                H100 PCIe box): flushed _c n=1024 on 0.1724 vs off 0.1292 ms; r2 partial-41555537 (SXM) warm L2 \
-               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms",
+               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 90)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1244,7 +1267,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "r1 results-rtx-3090.txt: flushed L2 _c 16x2048x7168 on 0.3328 vs off 0.3113 ms, _c n=1024 \
                0.2028 vs 0.1567 ms, _exact 128x2048x7168 0.5396 vs 0.4055 ms; pt_rmlp256x512_128 _exact iter \
-               on 0.1421 vs off 0.0913 ms",
+               on 0.1421 vs off 0.0913 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 91)",
     },
     RungOff {
         profile: "a100",
@@ -1265,7 +1288,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "s62/splitk-reassoc/rtx-3090/results-rtx-3090.txt mm_16x2048x7168_r (S=4, the class's only split \
                cell): ON 0.5458/0.5396 vs off-splitk 0.4813/0.4792 ms, ON/OFF 1.134/1.126 against a null of \
-               0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789)",
+               0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 93)",
     },
     // S62 integration (`benches/results/gpu/s62/integrated/<part>/results-<part>.txt`: every S62
     // item merged, each gate/partial rung left out one at a time, two tile_bench processes ABBA
@@ -1279,7 +1302,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096_c (with cell-fill merged the \
                fitted 8-block grid now loses to the cell tile): ON 0.4332/0.4327 vs off-row-fit 0.1018/0.1011 ms \
-               (null 0.001); the class's other cells unchanged",
+               (null 0.001); the class's other cells unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 94)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1288,7 +1311,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Exact,
         cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off \
                0.0947/0.0944 ms, _r ON 0.0712/0.0703 vs off 0.0429/0.0420 ms (kernel null 0.010); \
-               pt_rm_m128_d1024_h2048 iter ON 0.4060 vs off 0.2940 ms, pt_rm_m128_d256_h512 0.2390 vs 0.1937 ms",
+               pt_rm_m128_d1024_h2048 iter ON 0.4060 vs off 0.2940 ms, pt_rm_m128_d256_h512 0.2390 vs 0.1937 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 95)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1296,7 +1319,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Exact,
         cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off-fill-rows \
-               0.0907/0.0904 ms (null 0.010; the cell tile takes the site); the class's whole programs unchanged",
+               0.0907/0.0904 ms (null 0.010; the cell tile takes the site); the class's whole programs unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 96)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1306,7 +1329,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "s62/integrated/confirm/h100-pcie/results-h100-pcie.txt (with the three rows above, the class's \
                kernel cells take the cell tile, which panel-regs leaves unchanged): pt_rm_m128_d1024_h2048 iter ON \
                0.1865 vs off 0.1783 ms, pt_rm_m128_d256_h512 0.1022 vs 0.0684 ms (30 processes each, null \
-               0.001/0.003)",
+               0.001/0.003); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 97)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1314,7 +1337,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Under,
         face: Face::Exact,
         cite: "s62/integrated/rtx-3090/results-rtx-3090.txt mm_16x1024x4096_r (the class's only split cell): ON \
-               0.0758/0.0676 vs off-splitk 0.0655/0.0594 ms, ON/OFF 1.157/1.138 (kernel null 0.016)",
+               0.0758/0.0676 vs off-splitk 0.0655/0.0594 ms, ON/OFF 1.157/1.138 (kernel null 0.016); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 98)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1323,7 +1346,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3701 \
                ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1591 ms (30 processes each, null 0.019/0.034); the class's \
-               kernel cells unchanged",
+               kernel cells unchanged; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 99)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1332,7 +1355,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3668 \
                ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1574 ms (30 processes each, null 0.019/0.034); the class's \
-               kernel cells unchanged",
+               kernel cells unchanged; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 100)",
     },
     // S63 (ADR-0040 D5) the default face's realizations, `benches/results/gpu/s63/default-float/<part>/
     // results-<part>.txt`: per cell the ON arm against the next realization down (`.off-<rung>`), two
@@ -1347,7 +1370,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s63/default-float/rtx-5090/results-rtx-5090.txt mm_16x2048x7168: ON 0.0860/0.0860 vs off-streamk \
                0.0819/0.0819 ms, ON/OFF 1.050/1.050, null 0.012; forgone 128x2048x7168 0.851/0.863; \
-               16x1024x4096 inside null (0.958/1.000)",
+               16x1024x4096 inside null (0.958/1.000); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 101)",
     },
     RungOff {
         profile: "rtx-4090",
@@ -1355,7 +1378,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "s63/default-float/rtx-4090/results-rtx-4090.txt mm_16x18432x7168 (the only cell it changes): ON \
-               0.6537/0.6543 vs off-streamk 0.6185/0.6176 ms, ON/OFF 1.057/1.059, null 0.002",
+               0.6537/0.6543 vs off-streamk 0.6185/0.6176 ms, ON/OFF 1.057/1.059, null 0.002; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 102)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1363,7 +1386,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         fill: Fill::Filled,
         face: Face::Contract,
         cite: "s63/default-float/h100-pcie/results-h100-pcie.txt mm_4096x4096x4096: ON 5.0664/5.0721 vs \
-               off-streamk 4.4731/4.4743 ms, ON/OFF 1.133/1.134, null 0.000; forgone 16x18432x7168 0.748/0.748",
+               off-streamk 4.4731/4.4743 ms, ON/OFF 1.133/1.134, null 0.000; forgone 16x18432x7168 0.748/0.748; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 103)",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1372,7 +1395,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s63/default-float/h100-pcie/results-h100-pcie.txt against the workspace split, no win in either \
                class: mm_16x1024x4096 (under) 0.0506/0.0508 vs 0.0510/0.0508 ms (0.992/1.000, null 0.004), \
-               mm_16x2048x7168 (filled) 0.0977/0.0978 vs 0.0981/0.0980 ms (0.996/0.998, null 0.002)",
+               mm_16x2048x7168 (filled) 0.0977/0.0978 vs 0.0981/0.0980 ms (0.996/0.998, null 0.002); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 104)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1381,7 +1404,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_128x2048x7168 against the atomic split: ON \
                0.3338/0.3328 vs 0.3205/0.3185 ms, ON/OFF 1.041/1.045, null 0.003; forgone 16x1024x4096 \
-               0.880/0.863",
+               0.880/0.863; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 105)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1390,7 +1413,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 against the atomic split: ON \
                0.1495/0.1485 vs 0.1198/0.1178 ms (1.248/1.261, null 0.007); mm_4096x4096x4096 7.1977/7.3185 vs \
-               7.0277/7.1127 ms (1.024/1.029, null 0.014); forgone 16x18432x7168 0.924/0.928",
+               7.0277/7.1127 ms (1.024/1.029, null 0.014); forgone 16x18432x7168 0.924/0.928; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 106)",
     },
     RungOff {
         profile: "rtx-3090",
@@ -1399,7 +1422,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Contract,
         cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 (the only cell it changes) \
                against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
-               win",
+               win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
     },
 ];
 
@@ -2106,11 +2129,6 @@ impl TargetProfile {
 
     /// [`Self::gpu_rungs`] on a site's face, TF32 included.
     pub fn gpu_rungs_on(&self, warps_per_scheduler: u64, face: Face) -> crate::GpuRungs {
-        let fill = if warps_per_scheduler < GPU_RESIDENT_BLOCKS {
-            Fill::Under
-        } else {
-            Fill::Filled
-        };
         let arch = self.gpu().map(|g| g.arch);
         let same: Vec<&str> = GPU_MEASURED
             .iter()
@@ -2119,9 +2137,7 @@ impl TargetProfile {
             .collect();
         let mut r = crate::GpuRungs::ALL;
         for d in GPU_RUNGS_OFF {
-            if same.contains(&d.profile)
-                && (d.fill == Fill::Any || d.fill == fill)
-                && d.face.covers(face)
+            if same.contains(&d.profile) && d.fill.covers(warps_per_scheduler) && d.face.covers(face)
             {
                 *r.rung(d.rung).expect("a GpuRungs name") = false;
             }
@@ -4600,11 +4616,6 @@ mod tests {
             assert!(d.cite.contains(".txt") && d.cite.contains("ms"), "{d:?}");
         }
         for wps in [0, 1, 2, 4, 64] {
-            let fill = if wps < GPU_RESIDENT_BLOCKS {
-                Fill::Under
-            } else {
-                Fill::Filled
-            };
             // S54: a `Contract` row covers the TF32 face (a contract face);
             // a `Tf32` row covers it alone.
             for face in [Face::Exact, Face::Contract, Face::Tf32] {
@@ -4615,7 +4626,7 @@ mod tests {
                         let cited = GPU_RUNGS_OFF.iter().any(|d| {
                             d.profile == p.name
                                 && d.rung == n
-                                && (d.fill == Fill::Any || d.fill == fill)
+                                && d.fill.covers(wps)
                                 && (d.face == Face::Any
                                     || d.face == face
                                     || (d.face == Face::Contract && face == Face::Tf32))

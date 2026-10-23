@@ -62,7 +62,7 @@ rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	async:on	LDGSTS in the h
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=32	ok
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	min-blocks:on	.minnctapersm = the derived blocks/SM	ptx.minnctapersm == plan.blocks_per_sm	ptx.minnctapersm=4 plan.blocks_per_sm=4	ok
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	min-blocks:on	ptxas met it without spilling	ptxas.spill_st == 0	ptxas.spill_st=0	ok
-rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=4.0 plan.tn=4 plan.tm=4	ok
+rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=16.0 plan.tn=4 plan.tm=4	ok
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	idx32:on	hot loop: at most one 64-bit address IMAD.WIDE per global access	sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts	sass.hot.imad_wide=1 sass.hot.ldg=0 sass.hot.ldgsts=9	ok
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	row-fit:on	the block rows fit the site	plan.ty * plan.tm <= plan.rows	plan.ty=16 plan.tm=4 plan.rows=128	ok
 rtx-4090	mm_128x2048x7168_r	mapal_tile_9916b1984bd1df08	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=4 plan.S=4 launch.combine=splitk	ok
@@ -220,7 +220,7 @@ rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	async:on	LDGSTS in the ho
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=16	ok
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	min-blocks:on	.minnctapersm = the derived blocks/SM	ptx.minnctapersm == plan.blocks_per_sm	ptx.minnctapersm=16 plan.blocks_per_sm=16	ok
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	min-blocks:on	ptxas met it without spilling	ptxas.spill_st == 0	ptxas.spill_st=0	ok
-rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=1.0 plan.tn=4 plan.tm=1	ok
+rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=16.0 plan.tn=4 plan.tm=1	ok
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	idx32:on	hot loop: at most one 64-bit address IMAD.WIDE per global access	sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts	sass.hot.imad_wide=1 sass.hot.ldg=0 sass.hot.ldgsts=6	ok
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	row-fit:on	the block rows fit the site	plan.ty * plan.tm <= plan.rows	plan.ty=8 plan.tm=1 plan.rows=16	ok
 rtx-4090	mm_16x1024x4096_r	mapal_tile_967c5dbe24debf04	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=16 plan.S=16 launch.combine=splitk	ok

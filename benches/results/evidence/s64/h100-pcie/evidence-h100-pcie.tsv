@@ -105,7 +105,7 @@ h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	async:off	register stag
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=32	ok
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	min-blocks:on	.minnctapersm = the derived blocks/SM	ptx.minnctapersm == plan.blocks_per_sm	ptx.minnctapersm=4 plan.blocks_per_sm=4	ok
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	min-blocks:on	ptxas met it without spilling	ptxas.spill_st == 0	ptxas.spill_st=0	ok
-h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=4.49 plan.tn=4 plan.tm=4	ok
+h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=8.98 plan.tn=4 plan.tm=4	ok
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	row-fit:on	the block rows fit the site	plan.ty * plan.tm <= plan.rows	plan.ty=16 plan.tm=4 plan.rows=128	ok
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=2 plan.S=2 launch.combine=splitk	ok
 h100-pcie	mm_128x2048x7168_r	mapal_tile_099dca58c8b88659	splitk:on	no atomics	ptx.atom_add + ptx.red_add == 0	ptx.atom_add=0 ptx.red_add=0	ok
@@ -350,7 +350,7 @@ h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	prefetch:on	the next pan
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	async:off	register staging: no cp.async	ptx.cp_async == 0 and sass.ldgsts == 0	ptx.cp_async=0 sass.ldgsts=0	ok
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	min-blocks:on	.minnctapersm = the derived blocks/SM	ptx.minnctapersm == plan.blocks_per_sm	ptx.minnctapersm=6 plan.blocks_per_sm=6	ok
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	min-blocks:on	ptxas met it without spilling	ptxas.spill_st == 0	ptxas.spill_st=0	ok
-h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=4.49 plan.tn=1 plan.tm=1	ok
+h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=35.93 plan.tn=1 plan.tm=1	ok
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	row-fit:on	the block rows fit the site	plan.ty * plan.tm <= plan.rows	plan.ty=16 plan.tm=1 plan.rows=16	ok
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	cell-fill:on	one output per thread, staged through shared memory	sass.hot.lds > 0	sass.hot.lds=128	ok
 h100-pcie	mm_16x1024x4096_r	mapal_tile_1b0013a2bc93b795	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=8 plan.S=8 launch.combine=splitk	ok
@@ -665,7 +665,7 @@ h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	prefetch:on	the next panel
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	async:off	register staging: no cp.async	ptx.cp_async == 0 and sass.ldgsts == 0	ptx.cp_async=0 sass.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=128	ok
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	min-blocks:off	no .minnctapersm	ptx.minnctapersm == 0	ptx.minnctapersm=0	ok
-h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=2.25 plan.tn=4 plan.tm=1	ok
+h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=15.72 plan.tn=4 plan.tm=1	ok
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	idx32:on	hot loop: at most one 64-bit address IMAD.WIDE per global access	sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts	sass.hot.imad_wide=2 sass.hot.ldg=20 sass.hot.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	panel-regs:on	the prefetch panel fits the register file: no spill	ptxas.spill_st == 0	ptxas.spill_st=0	ok
 h100-pcie	mm_16x2048x7168	mapal_tile_62db87fb1364f56e	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=7 plan.S=7 launch.combine=splitk	ok
@@ -731,7 +731,7 @@ h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	prefetch:
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	async:off	register staging: no cp.async	ptx.cp_async == 0 and sass.ldgsts == 0	ptx.cp_async=0 sass.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=128	ok
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	min-blocks:off	no .minnctapersm	ptx.minnctapersm == 0	ptx.minnctapersm=0	ok
-h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=2.25 plan.tn=4 plan.tm=1	ok
+h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=15.72 plan.tn=4 plan.tm=1	ok
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	idx32:on	hot loop: at most one 64-bit address IMAD.WIDE per global access	sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts	sass.hot.imad_wide=2 sass.hot.ldg=20 sass.hot.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	panel-regs:on	the prefetch panel fits the register file: no spill	ptxas.spill_st == 0	ptxas.spill_st=0	ok
 h100-pcie	mm_16x2048x7168.on-splitk-atomic	mapal_tile_89538c248e4adc0e	splitk-atomic:on	one red.global.add per accumulator	ptx.atom_add + ptx.red_add >= (plan.tm * plan.tn if plan.kind == "tile" else 1)	ptx.atom_add=4 ptx.red_add=0 plan.tm=1 plan.tn=4 plan.kind=tile	ok
@@ -820,7 +820,7 @@ h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	prefetch:on	the next pa
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	async:off	register staging: no cp.async	ptx.cp_async == 0 and sass.ldgsts == 0	ptx.cp_async=0 sass.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	interleave:on	128-bit shared fragment loads	sass.hot.lds128 > 0	sass.hot.lds128=128	ok
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	min-blocks:off	no .minnctapersm	ptx.minnctapersm == 0	ptx.minnctapersm=0	ok
-h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=2.25 plan.tn=4 plan.tm=1	ok
+h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	warp-fill:on	every warp scheduler holds two warps, or the tile is at the fill floor	occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)	occ.resident_warps_per_sm=15.72 plan.tn=4 plan.tm=1	ok
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	idx32:on	hot loop: at most one 64-bit address IMAD.WIDE per global access	sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts	sass.hot.imad_wide=2 sass.hot.ldg=20 sass.hot.ldgsts=0	ok
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	panel-regs:on	the prefetch panel fits the register file: no spill	ptxas.spill_st == 0	ptxas.spill_st=0	ok
 h100-pcie	mm_16x2048x7168_rc	mapal_tile_62db87fb1364f56e	splitk:on	S partial folds, then one reduce launch	launch.S == plan.S and launch.combine == 'splitk'	launch.S=7 plan.S=7 launch.combine=splitk	ok
