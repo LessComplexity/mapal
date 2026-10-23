@@ -2153,7 +2153,12 @@ impl TargetProfile {
     ///
     /// - `fill-rows` (step 3): the fill rule may shrink `tm` to 1, not one
     ///   vector — the vector floor was the emitter's `<lanes x t>` fragment
-    ///   load, not a fact. `tn` keeps it (the output's vector store).
+    ///   load, not a fact. `tn` keeps it (the output's vector store). Only
+    ///   where the vector-floor tile has no geometry on these rows: a scalar
+    ///   `a` row costs a shared load per FMA row, which pays against the
+    ///   one-thread-per-cell kernel, not against a vector tile (S62 v1 on the
+    ///   5090, 4090, H100 PCIe and 3090: 1.15–5.7× over the former in every
+    ///   cell; against the latter 0.53–0.96× in 12 cells, ±2% in 5, 1.18–1.40× in 2).
     /// - `row-fit` (after step 4): a thread grid taller than the site
     ///   (`ty·tm > rows`) halves `ty` and doubles `tx`, thread count kept.
     /// - `wave-gate`: a row-fitted grid with fewer blocks than SMs is `None` —
@@ -2171,6 +2176,15 @@ impl TargetProfile {
         r: crate::GpuRungs,
     ) -> Option<GpuTile> {
         let fill = r.fill;
+        if r.fill_rows && fill && !wide {
+            let floor = crate::GpuRungs {
+                fill_rows: false,
+                ..r
+            };
+            if let Some(t) = self.gpu_tile_with(rows, c, k, elem, wide, floor) {
+                return Some(t);
+            }
+        }
         let g = self.gpu()?;
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
@@ -4199,12 +4213,20 @@ mod tests {
             geo(&RTX_5090, 16, 2048, 7168, without(&["grid-share"])),
             Some((1, 4, 8, 16, 32, 32, 16))
         );
-        // Wide: 1×4 already fills (2304 warps) at 16 × 16 threads ⇒ 16 × 64,
-        // 288 blocks ⇒ 2 per SM ⇒ bk 128.
+        // Wide: the vector floor has a geometry — 4×4 at 32 threads row-fits to
+        // 16 × 32, 576 blocks ≥ 170 SMs — so `fill-rows` keeps it; ⌈576 / 170⌉ =
+        // 4 per SM ⇒ bk 128. Likewise M128: a vector tile exists, no scalar rows.
         assert_eq!(
             geo(&RTX_5090, 16, 18432, 7168, on),
-            Some((1, 4, 16, 64, 256, 128, 2))
+            Some((4, 4, 16, 32, 32, 128, 4))
         );
+        for (m, n, k) in [(16, 18432, 7168), (128, 2048, 7168), (128, 1024, 4096)] {
+            assert_eq!(
+                geo(&RTX_5090, m, n, k, on),
+                geo(&RTX_5090, m, n, k, without(&["fill-rows"])),
+                "{m}x{n}x{k}"
+            );
+        }
         // `fill-rows` off: 4×4 at 32 threads is 32 rows tall ⇒ `row-fit` 16 × 32,
         // 64 blocks < 170 SMs ⇒ `wave-gate` ⇒ the one-thread-per-cell kernel;
         // with the gate off too, the S59 geometry — one SM's share, bk 512.
