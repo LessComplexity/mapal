@@ -2,6 +2,7 @@
 """Exercise GPU smoke status and rental cleanup without CUDA, SSH or a rental."""
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import tempfile
@@ -230,6 +231,43 @@ esac
                 self.assertLess(calls.index("cat /w/results-test.txt"),
                                 calls.index("vastai destroy instance 123 -y"))
                 self.assertNotIn("box_profile.sh", calls)
+
+
+class RuntimeProgramTests(unittest.TestCase):
+    """S62: the request clock and the retention loops are where gen_tiles.py puts them."""
+
+    def test_request_clock_and_retention_placement(self):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["python3", str(HERE / "gen_tiles.py"), d], check=True, capture_output=True)
+            rq = sorted(Path(d).glob("pt_rq_*.mapal"))
+            self.assertEqual(len(rq), 12)
+            for p in rq:
+                s = p.read_text()
+                inside = s[s.index("() -> time -> t0;"):s.index("() -> time -> t1;")]
+                after = s[s.index("() -> time -> t1;"):]
+                base = (Path(d) / p.name.replace("pt_rq_", "pt_")).read_text()
+                outs = re.findall(r"    (\w+)\[0\] -> println;", base)
+                self.assertTrue(outs, p.name)
+                for o in outs:
+                    self.assertIn(f"{o}[0] -> r0_{o};", inside, p.name)
+                    self.assertIn(f"-> r1_{o};", inside, p.name)
+                    self.assertIn(f"r0_{o} -> println;", after, p.name)
+                self.assertNotIn("println", inside, p.name)
+            for tag in ("rt", "rg"):
+                progs = sorted(Path(d).glob(f"pt_{tag}_*.mapal"))
+                self.assertEqual(len(progs), 4)
+                for p in progs:
+                    s = p.read_text()
+                    pre, body = s.split("    loop {", 1)
+                    immutable = re.findall(r"\(t \* \d+ \+ \d+\) % \d+ - \d+ -> widen_f32 -> v; v / [\d.]+ \} -> (\w+);", s)
+                    immutable += re.findall(r"krange -> map \{ t -> t % \d+ - \d+ -> widen_f32 -> v; v / [\d.]+ \} -> (\w+);", s)
+                    request = re.findall(r"\(\(t \+ it\) \* \d+ \+ \d+\) % [^}]*\} -> (\w+);", s)
+                    self.assertTrue(immutable and request, p.name)
+                    for x in request:
+                        self.assertIn(f"-> {x};", body, p.name)
+                    for x in immutable:
+                        self.assertIn(f"-> {x};", body if tag == "rg" else pre, p.name)
+                        self.assertNotIn(f"-> {x};", pre if tag == "rg" else body, p.name)
 
 
 if __name__ == "__main__":

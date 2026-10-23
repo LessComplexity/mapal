@@ -7,6 +7,7 @@ plus two corner cells. The interpreter's stdout is the oracle.
 
 usage: gen_tiles.py <outdir>
 """
+import re
 import sys
 from pathlib import Path
 
@@ -440,20 +441,28 @@ def loop_act(n, iters):
 """, [('out', n * n)])
 
 
-def probe_program(n, spec, timed, w=None):
+def probe_program(n, spec, timed, w=None, clock='iter'):
+    """`clock='request'` (S62): the corner reads are bound before `t1` and
+    printed after it, so every output's death — its free, and the one-element
+    copies — lands inside the clock."""
     names, body, outs = spec
     s = head(n) + probe_ops(names, n, w)
     tail = "" if timed else "    0.0 -> zero: f32;\n"
+    reads = ""
     for o, length in outs:
         if not timed:
             tail += f"    (zero, {o}) -> fold {{ acc, v -> acc + v }} -> s_{o};\n    s_{o} -> println;\n"
-        tail += f"    {o}[0] -> println;\n    {o}[{length - 1}] -> println;\n"
+        if clock == 'request':
+            reads += f"    {o}[0] -> r0_{o};\n    {o}[{length - 1}] -> r1_{o};\n"
+            tail += f"    r0_{o} -> println;\n    r1_{o} -> println;\n"
+        else:
+            tail += f"    {o}[0] -> println;\n    {o}[{length - 1}] -> println;\n"
     if timed:
         # Declarations (a loop's `mut` state) stay outside the clock.
         lines = body.splitlines(keepends=True)
         decl = [x for x in lines if x.startswith("    mut ")]
         rest = [x for x in lines if not x.startswith("    mut ")]
-        s += "".join(decl) + "    () -> time -> t0;\n" + "".join(rest) + "    () -> time -> t1;\n"
+        s += "".join(decl) + "    () -> time -> t0;\n" + "".join(rest) + reads + "    () -> time -> t1;\n"
         tail += '    "iter ms=" -> print;\n    t1 - t0 -> println;\n'
     else:
         s += body
@@ -689,3 +698,62 @@ for s in (32, 64, 128):
 # The mixed cell's differential (oracle: the interpreter; 128 keeps it ~1 min).
 (out / "px_pm_128_32.mapal").write_text(
     composed(*mixed(128, 32)).replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))
+# --- S62 runtime measurements (benches/results/gpu/s62/runtime-measurements).
+# `pt_rq_<probe>_<n>`: the request clock — each output's corner reads, and so
+# its death and free, inside `time`.
+for n, names in ((512, ('indep', 'diamond', 'mlp2', 'mlp')), (1024, ('indep', 'diamond', 'mlp2', 'mlp')),
+                 (2048, ('mlp2',))):
+    for name in names:
+        (out / f"pt_rq_{name}_{n}.mapal").write_text(probe_program(n, probes(n)[name], True, clock='request'))
+for n in (512, 1024, 2048):
+    (out / f"pt_rq_twin_{n}.mapal").write_text(probe_program(n, twin(n), True, clock='request'))
+
+
+def loop_requests(n, spec, regen, R=8):
+    """R requests of one probe in a loop, `time` around the loop. A request's
+    input is every site's left operand, its law shifted by the request index
+    `it` — an invariant body is hoisted out of the loop whole, so without it
+    the loop would time one request. The immutable inputs (right operands and
+    bias vectors: no writer in the loop) are built before the loop
+    (`regen=False`, `pt_rt_*`: retained) or inside the body (`regen=True`,
+    `pt_rg_*`: the same bits rebuilt every request). The last request's
+    outputs, joined per cell when there are several, are carried out."""
+    names, body, outs = spec
+    lines = body.splitlines(keepends=True)
+    req = set(re.findall(r'acc \+ (\w+)\[i \*', body)) & set(names)
+
+    def law(x):
+        s = operand(x, n, *OPS[x])
+        return s.replace("(t * ", "((t + it) * ") if x in req else s
+    is_bias = lambda x: x.startswith("    krange -> map { t -> t % ")
+    gen = "".join(law(x) for x in names if x not in req) + "".join(x for x in lines if is_bias(x))
+    work = "".join(law(x) for x in names if x in req) + "".join(x for x in lines if not is_bias(x))
+    if len(outs) > 1:
+        work += f"    ta -> map {{ t -> {' + '.join(f'{o}[t]' for o, _ in outs)} }} -> h;\n"
+        res = 'h'
+    else:
+        res = outs[0][0]
+    ind = lambda s: "".join(" " * 12 + x for x in s.splitlines(keepends=True))
+    N = n * n
+    return (head(n) + ("" if regen else gen) + f"    (0.0, {N}) -> fill -> z0;\n"
+            + f"    mut carry: [f32; {N}] <- z0;\n    mut it: i32 <- 0;\n    () -> time -> t0;\n"
+            + f"    loop {{\n        (it < {R}) -> {{\n            -true-> {{\n"
+            + ind((gen if regen else "") + work)
+            + f"                {res} -> carry;\n                it + 1 -> it;\n                -> loop;\n"
+            + "            }\n            -false-> carry -> out;\n        }\n    }\n"
+            + "    () -> time -> t1;\n"
+            + f"    out[0] -> println;\n    out[{N - 1}] -> println;\n"
+            + '    "iter ms=" -> print;\n    t1 - t0 -> println;\n}\n')
+
+
+# `pt_rt_*` / `pt_rg_*`: retained vs regenerated immutable inputs, same kernels.
+for n in (1024, 2048):
+    for name in ('mlp2', 'indep'):
+        for tag, regen in (('rt', False), ('rg', True)):
+            (out / f"pt_{tag}_{name}_{n}.mapal").write_text(loop_requests(n, probes(n)[name], regen))
+# ... and their differential (oracle-checked, two requests at 128).
+for tag, regen in (('rt', False), ('rg', True)):
+    (out / f"px_{tag}_mlp2_128.mapal").write_text(
+        loop_requests(128, probes(128)['mlp2'], regen, R=2)
+        .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
+        .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))

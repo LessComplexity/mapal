@@ -212,6 +212,14 @@ for o in "$PROF"/pt_*.host.o; do
             [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
             [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
             [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
+            # S62 SUBMIT="<arm>...": a third process under MAPAL_GPU_TRACE=2 (no
+            # post-launch synchronize), so each launch's ms is its CPU enqueue.
+            case " ${SUBMIT:-} " in *" $arm "*)
+                got2=$(MAPAL_GPU_TRACE=2 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>submit.err | tr '\n' ' '); submit_rc=$?
+                say "submit prog=$b face=${face:-_exact} arm=$arm rep=$r out=[$got2] $(grep -m1 mapal_gpu_trace_total submit.err) rc=$submit_rc"
+                say "submit_ops prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -oE 'op=(launch kernel=mapal_tile_[0-9a-f]*|gen kernel=mapal_gen_[0-9a-f]*|event record=[0-9]* wait=[0-9]* auto=[0-9]*) ms=[0-9.]*' submit.err | sed -E 's/op=(launch|gen) kernel=mapal_//; s/op=event /event:/; s/ (wait|auto)=/,\1=/g' | tr '\n' ' ')"
+                [ "$submit_rc" -eq 0 ] || { say "VALIDATION FAILED (submit $s rep=$r process exit)"; exit 1; } ;;
+            esac
         done
     done
     # S62: one host lane's rates (`place`'s host facts): the CPU-only build at MAPAL_PAR=1.

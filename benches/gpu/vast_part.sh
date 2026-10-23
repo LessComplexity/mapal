@@ -28,6 +28,8 @@ while :; do
         while read -r o dph pcie cpu host mach cpuname geo; do
             [ -n "$o" ] || continue
             case "$tried" in *" $o "*) continue ;; esac
+            # S62: a watchdog that ends a session over its time cap leaves STOP: no next rental.
+            [ -e "$RES/STOP" ] && { echo "[$(date +%T)] STOP: no further offers" | tee -a "$RES/attempts-$PROF.log"; exit 1; }
             case " ${SKIP_HOSTS:-} " in *" $host "*) continue ;; esac
             tried="$tried$o "
             echo "[$(date +%T)] try $g offer=$o dph=$dph pcie=$pcie cpu_ghz=$cpu cpu=$cpuname host=$host machine=$mach geo=$geo" | tee -a "$RES/attempts-$PROF.log"

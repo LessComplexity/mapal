@@ -118,10 +118,16 @@ pub struct GpuRungs {
     /// Keep an object's device copy between sites (S53, plan-s53 §2.3): copy
     /// in at the producer, carry loop state on the device, copy out only what
     /// the host reads, free at death. Off: one `mapal_gpu_tile` round trip
-    /// per site (S52).
+    /// per site (S52). S62 retention probes (`pt_rt_{indep,mlp2}_{1024,2048}`,
+    /// eight requests, `benches/results/gpu/s62/runtime-measurements/<part>/summary-*.md`,
+    /// two sessions): off-resident/ON iter 1.43–3.08 (3090), 1.38–2.76 (4090),
+    /// 1.13–3.36 (H100), 1.44–2.48 (5090), stable+ on 8 of 8 cells per part.
     pub resident: bool,
     /// Under `resident`, compute a closed-form producer that only device sites
     /// read on the device (`mapal_gen_<id>`) instead of copying it in.
+    /// S62 retention probes (same files as `resident`): off-devgen/ON iter
+    /// 0.86–1.10 (3090), 0.99–1.02 (4090), 0.83–1.01 (H100), 0.96–1.00
+    /// (5090), no stable sign on any cell: ships ON (no stable-).
     pub devgen: bool,
     /// S53 retention at part-of-object scope: a row-local site over a carried
     /// array whose iteration writes one row ([`mapal_ir::Delta::Rows`])
@@ -145,6 +151,9 @@ pub struct GpuRungs {
     /// stable+ on 38–44 of 50 rows per part and stable- on none; e2e_chain_4096
     /// wall OFF/ON 1.17/1.09 (3090), 1.03/1.06 (A100), 1.16/1.23 (4090),
     /// 1.04/1.06 (H100 PCIe), 1.06/1.30 (5090), exact face, ms in the files.
+    /// S62 (`benches/results/gpu/s62/runtime-measurements/<part>/summary-*.md`, two
+    /// sessions, 22 probe cells per part): off-arena/ON iter 1.56–20.72 (3090),
+    /// 1.80–5.21 (4090), 1.27–10.35 (H100), 1.46–8.34 (5090), stable+ on all.
     pub arena: bool,
     /// S54: walk the tile grid in block-row groups (`TargetProfile` →
     /// [`profile::Gpu::raster`]): a wave reads fewer distinct panels. Off:
