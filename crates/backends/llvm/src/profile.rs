@@ -741,15 +741,17 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-3090",
         rung: "warp-fill",
-        fill: Fill::Partial,
+        fill: Fill::Under,
         face: Face::Contract,
         cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
                every session: _c n=1024 0.935/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
                n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; arch-select-rtx-3090-table.txt 0.0881 vs \
-               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign). S64 class \
-               split Under -> Partial (s64/warp-fill/rtx-3090/results-rtx-3090.txt, mlp_bench two processes ABBA, \
-               bit-exact): at 0 warps per scheduler the residual MLP's contract kernels ON 0.1630/0.1629 vs OFF \
-               0.3092/0.3092 ms (d1024) and 0.0338/0.0338 vs 0.0707/0.0715 ms (d256), null 0.000/0.010",
+               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign). S64: open, \
+               the Partial split measured and not taken (s64/warp-fill/rtx-3090/results-rtx-3090.txt, \
+               s64/endcheck/rtx-3090/results-rtx-3090.txt, two processes ABBA): at 0 warps per scheduler the residual \
+               MLP's contract kernels ON 0.1630/0.1629 vs OFF 0.3092/0.3092 ms (d1024), 0.0338/0.0338 vs \
+               0.0707/0.0715 ms (d256), 128x2048x7168 _c ON/OFF 0.523, but the default and _rc faces 1.179 / 1.058 \
+               (null 0.003): the filled tile lowers the split count (atomic S 8 -> 2, workspace S 4 -> 2)",
     },
     RungOff {
         profile: "rtx-3090",
