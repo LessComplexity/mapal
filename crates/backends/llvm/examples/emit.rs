@@ -1,5 +1,5 @@
 //! Emit textual LLVM IR for a `.mapal` file (ADR-0020; dev tool — the future
-//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]`
+//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]`
 //! (writes `<file>.ll` next to the source, `<file>_perf.ll` with `--perf`, or
 //! stdout with `-`; `--rewrite` rewrites the lowered IR before emission).
 
@@ -9,13 +9,14 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
         eprintln!(
-            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]"
+            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>]"
         );
         return ExitCode::from(2);
     };
     let mut to_stdout = false;
     let mut rewrite = false;
     let mut device_out: Option<String> = None;
+    let mut host_given = false;
     let mut opts = mapal_backend_llvm::EmitOpts::default();
     for a in args {
         match a.as_str() {
@@ -106,13 +107,28 @@ fn main() -> ExitCode {
             _ if a.starts_with("--target=") => {
                 opts.target = a["--target=".len()..].to_owned().leak();
             }
+            // S62 `hostopt`: the CPU profile a GPU target's host code is emitted
+            // against (`native` by default); an error with a CPU target.
+            _ if a.starts_with("--host=") => {
+                opts.host = a["--host=".len()..].to_owned().leak();
+                host_given = true;
+            }
             other => {
                 eprintln!(
-                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>])"
+                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--contract] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32|reassoc] [--splitk=<S>])"
                 );
                 return ExitCode::from(2);
             }
         }
+    }
+    if host_given
+        && mapal_backend_llvm::target_profile(opts.target).is_some_and(|p| p.gpu().is_none())
+    {
+        eprintln!(
+            "--host names the host of a GPU target; `{}` is a CPU profile",
+            opts.target
+        );
+        return ExitCode::from(2);
     }
     let src = match std::fs::read_to_string(&path) {
         Ok(s) => s,

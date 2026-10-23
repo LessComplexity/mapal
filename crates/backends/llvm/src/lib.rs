@@ -26,6 +26,12 @@ mod ty;
 
 pub use crate::profile::TargetProfile;
 
+/// The profile a target name resolves to (`native` included), `None` for an
+/// unknown name — what [`EmitOpts::target`] and [`EmitOpts::host`] accept.
+pub fn target_profile(name: &str) -> Option<&'static TargetProfile> {
+    profile::resolve(name)
+}
+
 use mapal_ir::{CategoryIr, FuncId, MorphismId, Operation, PathPlan, SourceLoc, TaskKind};
 use slotmap::SecondaryMap;
 
@@ -293,6 +299,19 @@ pub struct GpuRungs {
     /// workspace, then one deterministic reduce launch adds them in partition
     /// order. Off: the ordered kernel. Never fires on Exact/Contract/TF32.
     pub splitk: bool,
+    /// S62: a GPU build emits everything outside a device site against the
+    /// host's CPU profile ([`EmitOpts::host`], [`profile::with_host`]), and a
+    /// build whose every site stays on the host is that host's CPU build
+    /// (parallel entry, tiling, packing). Off: the host takes [`GENERIC`]'s
+    /// facts and runs sequentially — the S52–S54 GPU build.
+    ///
+    /// [`GENERIC`]: crate::profile::GENERIC
+    pub hostopt: bool,
+    /// S62, under `hostopt`: a capable site runs on the device only where the
+    /// part's measured costs say it finishes sooner there
+    /// ([`TargetProfile::device_pays`]), or where an operand is already
+    /// device-produced (`func/gpu.rs:placement`). Off: every capable site.
+    pub place: bool,
 }
 
 impl GpuRungs {
@@ -342,11 +361,13 @@ impl GpuRungs {
         cell_fill: true,
         async_stage: true,
         splitk: true,
+        hostopt: true,
+        place: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 44] = [
+    pub const NAMES: [&'static str; 46] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -391,6 +412,8 @@ impl GpuRungs {
         "cell-fill",
         "asyncstage",
         "splitk",
+        "hostopt",
+        "place",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -440,6 +463,8 @@ impl GpuRungs {
             "cell-fill" => &mut self.cell_fill,
             "asyncstage" => &mut self.async_stage,
             "splitk" => &mut self.splitk,
+            "hostopt" => &mut self.hostopt,
+            "place" => &mut self.place,
             _ => return None,
         })
     }
@@ -576,6 +601,11 @@ pub struct EmitOpts {
     /// value-invariant, which the differential suite enforces by running under
     /// a non-default profile.
     pub target: &'static str,
+    /// S62 `hostopt`: on a GPU `target`, the CPU profile everything outside a
+    /// device site is emitted against — resolved like `target` (`native` by
+    /// default, so default emission is machine-dependent here too: tests pin
+    /// it). A CPU `target` ignores it; the `emit` CLI rejects the pair.
+    pub host: &'static str,
     /// Measurement arms over the GPU rung table; see [`GpuArms`].
     pub gpu: GpuArms,
     /// A reduced-precision face, when the program admits one; see [`Reduced`].
@@ -597,6 +627,7 @@ impl Default for EmitOpts {
             // `native` falls back to `generic` when detection fails, and tests
             // that must be reproducible across machines pin `generic` by name.
             target: "native",
+            host: "native",
             gpu: GpuArms::default(),
             reduced: None,
         }
@@ -643,14 +674,63 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // is an error, never a silent fall back to `generic` — a typo that quietly
     // emits the default profile's numbers is the exact failure the table exists
     // to remove.
-    let Some(profile) = profile::resolve(opts.target) else {
-        return Err(EmitError::Internal(format!(
-            "unknown target profile `{}`; known: {}",
-            opts.target,
+    let unknown = |name: &str| {
+        EmitError::Internal(format!(
+            "unknown target profile `{name}`; known: {}",
             profile::names()
-        )));
+        ))
     };
+    let profile = profile::resolve(opts.target).ok_or_else(|| unknown(opts.target))?;
+    if profile.gpu().is_none() {
+        return emit_module(ir, opts, profile);
+    }
+    // S62 `hostopt`: everything outside a device site is emitted against the
+    // host's CPU facts; off, against `generic`'s — the S52–S54 GPU build.
+    let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+    if !rungs.hostopt {
+        return emit_module(ir, opts, profile);
+    }
+    let host = profile::resolve(opts.host).ok_or_else(|| unknown(opts.host))?;
+    if host.gpu().is_some() {
+        return Err(EmitError::Internal(format!(
+            "host profile `{}` is a GPU profile",
+            host.name
+        )));
+    }
+    let mut both = profile::with_host(profile, host);
+    // `place` off, or the TF32 face (no host kernel reproduces it): no
+    // measured cost, so every capable site is a device site.
+    if (!rungs.place || opts.reduced.is_some())
+        && let profile::Machine::Gpu(g) = &mut both.machine
+    {
+        g.cost = None;
+    }
+    let both: &'static TargetProfile = Box::leak(Box::new(both));
+    let name: &'static str = format!("{}+{}", profile.name, host.name).leak();
+    let em = emit_module(ir, opts, both)?;
+    // A GPU build of a program whose every site stays on the host IS the
+    // host's CPU build: parallel entry, the whole CPU ladder, no runtime.
+    // ponytail: per site, not per program — a one-shot program pays the
+    // device's start (context, module) once; gating on it needs the host cost
+    // of what `devgen` builds on the device, which no profile fact carries.
+    let em = if em.device.is_none() {
+        emit_module(ir, opts, host)?
+    } else {
+        em
+    };
+    Ok(Emission {
+        profile: name,
+        ..em
+    })
+}
 
+/// One module against one resolved profile — a CPU profile, or a GPU profile
+/// whose CPU-shaped fields describe the host ([`emit_detailed`]).
+fn emit_module(
+    ir: &CategoryIr,
+    opts: &EmitOpts,
+    profile: &'static TargetProfile,
+) -> Result<Emission, EmitError> {
     // Capability gate (L3): canonical loops only — every SCC has exactly one
     // merge and a well-formed `loop_plan`. Same predicate as rewrite's
     // `is_canonical` / interp M1 (BL6/BL7).
@@ -696,8 +776,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         .ok()
         .filter(path_plan_is_acyclic);
     // On a GPU profile the device is the parallelism: the host runs the program
-    // around the offloaded sites sequentially. ponytail: host threads alongside
-    // the device is co-execution (ADR-0035) — add when a program needs both.
+    // around the offloaded sites sequentially (S62: a GPU build with no device
+    // site is re-emitted as the host's CPU build, `emit_detailed`, so it takes
+    // this parallel entry). ponytail: host threads alongside the device is
+    // co-execution (ADR-0035) — add when a program needs both.
     let parallel = profile.gpu().is_none()
         && path_plan
             .as_ref()
@@ -710,10 +792,11 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     let prefetch = opts.tiling
         && opts.packing
         && ir.funcs().any(|(f, _)| {
-            ir.tile_plan(f)
-                .sites
+            let plan = ir.tile_plan(f);
+            let dev = crate::func::gpu::placement(ir, f, &plan, profile);
+            plan.sites
                 .iter()
-                .any(|(_, site)| packing_site(site, profile, opts.contract))
+                .any(|(m, site)| !dev.contains_key(m) && packing_site(site, profile, opts.contract))
         });
 
     // Functions first: the arena declarations are gated on the emitted text
@@ -1024,5 +1107,122 @@ fn mark_body_closure(
         {
             mark_body_closure(ir, body, site_topo, out);
         }
+    }
+}
+
+#[cfg(test)]
+mod place_tests {
+    //! S62 `place`, the mechanism: one predicate decides every reader of a
+    //! site's placement. Synthetic costs (not a part's), so the verdicts are
+    //! fixed whatever the calibration tables say.
+    use super::*;
+    use crate::profile::{DeviceCost, DispatchCost, Machine, RTX_4090, X86_64_V3, with_host};
+
+    /// rtx-4090's device and x86-64-v3's host, with round costs: a launch is
+    /// 20 µs, the device 20 Tflop/s; one host lane 50 Gflop/s.
+    fn synth(place: bool) -> &'static TargetProfile {
+        let mut p = with_host(&RTX_4090, &X86_64_V3);
+        p.dispatch = Some(DispatchCost {
+            flops_per_ns: 50,
+            bytes_per_ns: 10,
+            dispatch_ns: 10_000,
+        });
+        if let Machine::Gpu(g) = &mut p.machine {
+            g.cost = place.then_some(DeviceCost {
+                flops_per_ns: 20_000,
+                bytes_per_ns: 500,
+                launch_ns: 20_000,
+            });
+        }
+        Box::leak(Box::new(p))
+    }
+
+    fn lower(src: &str) -> CategoryIr {
+        let po = mapal_syntax::parse(src);
+        assert!(po.diagnostics.is_empty(), "{:?}", po.diagnostics);
+        mapal_rewrite::rewrite(mapal_lower::lower(src, &po.program).expect("lowers")).ir
+    }
+
+    fn law(name: &str, len: u64, mul: u64) -> String {
+        format!(
+            "    {len} -> iota -> i_{name};\n    i_{name} -> map {{ t -> (t * {mul} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n"
+        )
+    }
+
+    fn site(out: &str, a: &str, b: &str, m: u64, n: u64, k: u64) -> String {
+        format!(
+            "    {mn} -> iota -> o_{out};\n    {k} -> iota -> k_{out};\n    o_{out} -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, k_{out}) -> fold {{ acc, k -> acc + {a}[i * {k} + k] * {b}[k * {n} + j] }} }} -> {out};\n",
+            mn = m * n
+        )
+    }
+
+    /// An 8³ chain (three sites) written first, then a 256³ chain, then a
+    /// small site (8×8, k = 256) over the large chain's output.
+    fn mixed() -> CategoryIr {
+        let mut s = String::from("fn main() {\n");
+        for (x, mul) in [("sa", 7), ("sb", 11), ("se", 5), ("sf", 3)] {
+            s += &law(x, 64, mul);
+        }
+        for (x, mul) in [("a", 7), ("b", 11), ("e", 5)] {
+            s += &law(x, 65536, mul);
+        }
+        s += &law("w", 2048, 13);
+        s += &site("c1", "sa", "sb", 8, 8, 8);
+        s += &site("c2", "c1", "se", 8, 8, 8);
+        s += &site("c3", "c2", "sf", 8, 8, 8);
+        s += &site("c", "a", "b", 256, 256, 256);
+        s += "    c -> map { v -> v * 0.5 } -> h;\n";
+        s += &site("d", "h", "e", 256, 256, 256);
+        s += &site("g", "d", "w", 8, 8, 256);
+        s += "    c3[63] -> println;\n    d[65535] -> println;\n    g[63] -> println;\n}\n";
+        lower(&s)
+    }
+
+    fn emit_on(ir: &CategoryIr, place: bool) -> Emission {
+        emit_module(ir, &EmitOpts::default(), synth(place)).expect("emits")
+    }
+
+    fn count(text: &str, pat: &str) -> usize {
+        text.matches(pat).count()
+    }
+
+    /// The three 8³ sites move to the host — no launch, no kernel, no device
+    /// generation of their operands — while the 256³ chain and the small site
+    /// it feeds stay on the device.
+    #[test]
+    fn place_is_one_predicate() {
+        let ir = mixed();
+        let (on, off) = (emit_on(&ir, true), emit_on(&ir, false));
+        let (don, doff) = (
+            on.device.expect("a device chain"),
+            off.device.expect("device"),
+        );
+        let kernels = |d: &str| count(d, "define ptx_kernel void @mapal_tile_");
+        // The host walk, the residency plan and the device unit agree: the
+        // three small sites (one kernel: the same shape) lost their kernel
+        // AND their launches together.
+        assert_eq!(kernels(&doff) - kernels(&don), 1, "{don}");
+        let launches = |t: &str| count(t, "call void @mapal_gpu_launch");
+        assert_eq!(launches(&off.text) - launches(&on.text), 3);
+        // Left on the device: `c` (with `h` in its store), `d`, and `g` — an
+        // 8×8 site its roofline puts on the host, kept on the device because
+        // its operand `d` is device-produced (`fed`): `d` never crosses whole.
+        assert_eq!(launches(&on.text), 3, "{}", on.text);
+        // Their closed-form operands are no longer built on the device.
+        let gens = |d: &str| count(d, "define ptx_kernel void @mapal_gen_");
+        assert_eq!(gens(&doff) - gens(&don), 4);
+    }
+
+    /// Without measured costs (`place` off, or a part without a `cost` row)
+    /// the placement is S52–S54's: every capable site.
+    #[test]
+    fn without_costs_every_capable_site_is_placed() {
+        let ir = mixed();
+        let today = emit_module(&ir, &EmitOpts::default(), &RTX_4090).expect("emits");
+        assert_eq!(
+            emit_on(&ir, false).device,
+            today.device,
+            "the device unit is S54's"
+        );
     }
 }

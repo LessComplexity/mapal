@@ -3,8 +3,12 @@
 # the emitted PTX and the host object of every program in benches/gpu, the
 # x86-64 Linux runtime, the oracle outputs, the harness source and CUTLASS.
 #
-# usage: benches/gpu/bundle.sh <outdir> <profile:sm>...
+# usage: benches/gpu/bundle.sh <outdir> <profile:sm[:host]>...
 #   e.g. rtx-4090:sm_89 h100-pcie:sm_90a rtx-5090:sm_120 rtx-3090:sm_86 a100:sm_80
+# `host` (S62 `hostopt`, default x86-64-v3) is the CPU profile the host code is emitted
+# against; host objects are compiled for that ISA level (`-march`), and every timed whole
+# program also gets `<stem>.cpu` (the CPU-only build, `--target=<host>`) and `<stem>.null`
+# (a copy of the shipped build: the box's null variation).
 # ONLY="<glob>..." builds only the programs whose stem matches one of the globs
 # (e.g. ONLY="px_* pt_*_2048 mm_4096"); every program by default.
 # HOST_RUNGS="<rung>..." narrows the whole programs' arms (default: every host rung).
@@ -39,7 +43,19 @@ keep() {
 for f in "$OUT"/tiles/*.mapal; do
     b=${f%.mapal}
     keep "$(basename "$b")" || continue
-    case $(basename "$b") in mm_*|e2e_*|loop_mm_*|pt_*) continue ;; esac
+    case $(basename "$b") in
+    # S62: the timed programs answer to the CPU build too (`iter ms` dropped).
+    pt_*)
+        for face in "" _c; do
+            [ -s "$b$face.expect" ] && continue
+            flags=(); [ "$face" = _c ] && flags=(--contract)
+            "$EMIT" "$f" - --rewrite ${flags[@]+"${flags[@]}"} --target=apple-m > "$b$face.cpu.ll"
+            clang -O2 "$b$face.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b$face.cpu" 2>/dev/null
+            "$b$face.cpu" | grep -v '^iter ms=' > "$b$face.expect"
+        done
+        continue ;;
+    mm_*|e2e_*|loop_mm_*) continue ;;
+    esac
     if [ ! -s "$b.expect" ]; then
         case $(basename "$b") in
         # Too big for the interpreter (1024 decode steps; a 2048² filled site):
@@ -59,13 +75,21 @@ for f in "$OUT"/tiles/*.mapal; do
     fi
 done
 
+# The ISA level a host profile describes (S62): its host objects are compiled for it, so
+# the vector width and FMA the IR was emitted for lower as written. ponytail: by name — add
+# a row with each new host profile.
+march() { case $1 in x86-64-v3) echo x86-64-v3 ;; *) echo x86-64 ;; esac; }
+
 # emit_one <src.mapal> <out-stem> <profile> <sm> [emit flags...]: host object,
 # PTX, and the launch line (kernel gx gy block smem) of the first site.
+# HOST: the host profile; an arm with `hostopt` off is the S52-S54 build (generic, x86-64).
 emit_one() {
-    local src=$1 stem=$2 prof=$3 sm=$4; shift 4
+    local src=$1 stem=$2 prof=$3 sm=$4 a m; shift 4
+    m=$(march "$HOST")
+    for a in "$@"; do case $a in --gpu-off=*hostopt*) m=x86-64 ;; esac; done
     rm -f "$stem.dev.ll"
-    "$EMIT" "$src" - --rewrite "--target=$prof" "--device-out=$stem.dev.ll" "$@" > "$stem.host.ll"
-    clang -O2 -c --target=x86_64-unknown-linux-gnu -Wno-override-module "$stem.host.ll" -o "$stem.host.o"
+    "$EMIT" "$src" - --rewrite "--target=$prof" "--host=$HOST" "--device-out=$stem.dev.ll" "$@" > "$stem.host.ll"
+    clang -O2 -c --target=x86_64-unknown-linux-gnu -march="$m" -Wno-override-module "$stem.host.ll" -o "$stem.host.o"
     [ -f "$stem.dev.ll" ] || return 0
     "$LLVM/opt" -O3 "$stem.dev.ll" -S -o "$stem.dev.opt.ll"
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx"
@@ -80,6 +104,14 @@ n = lambda l: re.findall(r"i32 (\d+)", l.split(";")[0])
 s = ls and re.search(r"; splitk=(\d+)", ls[0])
 ls and print(k(ls[0]), *n(ls[0]), *([s.group(1), k(ls[1]), *n(ls[1])] if s else []))' \
         > "$stem.launch"
+}
+
+# emit_cpu <src.mapal> <out-stem> [emit flags...]: the CPU-only build on the host profile.
+emit_cpu() {
+    local src=$1 stem=$2; shift 2
+    "$EMIT" "$src" - --rewrite "--target=$HOST" "$@" > "$stem.host.ll"
+    clang -O2 -c --target=x86_64-unknown-linux-gnu -march="$(march "$HOST")" -Wno-override-module \
+        "$stem.host.ll" -o "$stem.host.o"
 }
 
 # same <stem> <stem>: the two emissions are one program (host, PTX, launch).
@@ -113,12 +145,21 @@ KERNEL_RUNGS=${KERNEL_RUNGS:-"interleave unroll min-blocks warp prefetch async w
 TF32_RUNGS=${TF32_RUNGS:-"mma wide ldmatrix min-blocks warp-fill wgmma-hopper arch-rungs raster l2-gate"}
 HOST_RUNGS=${HOST_RUNGS:-"async resident devgen eager-init retain-delta arena arch-rungs l2-window raster retain-resident delta-h2d lane-stride rowfold rowfold-layout epilogue devmap cell-law streams stream-gate pinned pdl cell-fill asyncstage"}
 for spec in "$@"; do
-    prof=${spec%%:*}; sm=${spec##*:}; d="$OUT/$prof"; mkdir -p "$d"
+    IFS=: read -r prof sm HOST <<< "$spec"; HOST=${HOST:-x86-64-v3}; d="$OUT/$prof"; mkdir -p "$d"
     for f in "$OUT"/tiles/*.mapal; do
         b=$(basename "$f" .mapal)
         keep "$b" || continue
         emit_one "$f" "$d/$b" "$prof" "$sm"
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --contract
+        # S62: the CPU-only build and the null arm of every timed whole program.
+        case $b in pt_*|e2e_*|decode_1024_*)
+            emit_cpu "$f" "$d/$b.cpu"
+            emit_cpu "$f" "$d/${b}_c.cpu" --contract
+            for v in "$b" "${b}_c"; do
+                cp "$d/$v.host.o" "$d/$v.null.host.o"
+                if [ -f "$d/$v.ptx" ]; then cp "$d/$v.ptx" "$d/$v.null.ptx"; fi
+            done ;;
+        esac
         case $b in
         mm_*x*x*)
             # S62: a projection-shaped kernel bench (M × N × K), Exact and Contract:

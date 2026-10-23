@@ -1,0 +1,5 @@
+[18:19:07 rtx-4090] instance 57281973 from offer 53492622
+[18:21:37 rtx-4090] ssh <box> up
+[18:21:48 rtx-4090] bundle uploaded
+[18:43:53 rtx-4090] results fetched: 4271 lines
+[18:43:54 rtx-4090] destroyed 57281973

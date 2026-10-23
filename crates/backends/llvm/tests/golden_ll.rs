@@ -543,6 +543,7 @@ fn golden_tile_map_shapes() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -674,6 +675,7 @@ fn golden_tile_map_shapes() {
     let untiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             tiling: false,
             target: "generic",
             ..EmitOpts::default()
@@ -698,6 +700,7 @@ fn golden_tile_map_shapes() {
     let f64 = emit_with_opts(
         &f64_ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -751,6 +754,7 @@ fn golden_tile_map_shape_kc() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             kc_nest: true,
             // S46: the default target now DETECTS the machine, and a detected L2
             // changes the derived `tile_kc` that decides whether this nest fires.
@@ -894,6 +898,7 @@ fn tile_contract_flags_are_opt_in() {
     let contracted = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             contract: true,
             ..EmitOpts::default()
         },
@@ -913,6 +918,7 @@ fn golden_tile_map_shape_1d() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -1045,6 +1051,7 @@ fn golden_tile_map_shape_conv() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -1653,6 +1660,7 @@ fn determinism_emit_twice_byte_equal() {
 #[test]
 fn perf_timing_golden() {
     let opts = EmitOpts {
+        host: "generic",
         perf_timing: true,
         ..EmitOpts::default()
     };
@@ -1794,6 +1802,7 @@ fn profile_closes_the_kc_gate_by_derivation() {
         emit_with_opts(
             &ir,
             &EmitOpts {
+                host: "generic",
                 kc_nest: true,
                 contract: true,
                 target,
@@ -1820,6 +1829,7 @@ fn profile_closes_the_kc_gate_by_derivation() {
     let generic_kc_off = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             contract: true,
             target: "generic",
             ..EmitOpts::default()
@@ -1842,6 +1852,7 @@ fn unknown_profile_is_an_error_not_a_silent_default() {
     let err = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "apple_m",
             ..EmitOpts::default()
         },
@@ -1880,6 +1891,7 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
     let ll = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -2004,6 +2016,7 @@ fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
         let ll = emit_with_opts(
             &ir,
             &EmitOpts {
+                host: "generic",
                 target,
                 ..EmitOpts::default()
             },
@@ -2079,6 +2092,7 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
         emit_with_opts(
             &ir,
             &EmitOpts {
+                host: "generic",
                 target,
                 gpu,
                 ..EmitOpts::default()
@@ -2199,6 +2213,7 @@ fn gpu_mm(n: u64) -> CategoryIr {
 fn rtx_4090_streams_with_cp_async_only_under_filled() {
     let device = |n, arms: mapal_backend_llvm::GpuArms| {
         let opts = EmitOpts {
+            host: "generic",
             target: "rtx-4090",
             contract: true,
             gpu: arms,
