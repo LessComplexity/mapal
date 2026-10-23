@@ -3407,10 +3407,13 @@ mod tests {
     /// 5090 — on S53 code both took the one-thread-per-cell kernel (`None`).
     /// 2048 columns: `fill-rows` 1×4 at 8 × 4 threads, 256 blocks; two per SM
     /// (`grid-share`) ⇒ bk 512; `panel-regs` (255 − 46 registers free for
-    /// the panel at ¾ register per `k`) ⇒ bk 256. 18432 columns: the vector
-    /// floor 4×4 row-fits to 16 × 32 (576 blocks), `cp.async` on the filled
-    /// exact face. The filled contract face ships `warp-fill` OFF there: 8×8
-    /// row-fits to 144 blocks < 170 SMs ⇒ gated (`wave-gate`). `panel-regs`
+    /// the panel at ¾ register per `k`) ⇒ bk 256. 18432 columns (Filled):
+    /// the 5090 ships `row-fit` OFF on the exact face (no effect measured), so
+    /// the vector floor does not fit 16 rows and `fill-rows` takes 1×4 at
+    /// 16 × 16 threads, 288 blocks, `cp.async`; with `row-fit` the floor 4×4
+    /// row-fits to 16 × 32. The contract face ships `warp-fill` and
+    /// `wave-gate` OFF there: 8×8 row-fits to 144 blocks (gated: the
+    /// one-thread-per-cell kernel, 4.5× slower on the 5090). `panel-regs`
     /// reads only grids that leave a scheduler without a warp: not 1024² or
     /// 128 × 18432 (3 warps per scheduler), whose launch is its OFF arm's.
     #[test]
@@ -3422,26 +3425,32 @@ mod tests {
                 .map(|g| (g.tm, g.tn, g.bm(), g.bn(), g.threads(), g.bk, g.stages))
         };
         let shipped = crate::GpuArms::default();
+        let off = |r: &str| {
+            let mut a = crate::GpuArms::default();
+            *a.off.rung(r).expect("a rung") = true;
+            a
+        };
+        let on = |r: &str| {
+            let mut a = crate::GpuArms::default();
+            *a.on.rung(r).expect("a rung") = true;
+            a
+        };
         for contract in [false, true] {
             assert_eq!(
                 geo(2048, contract, shipped),
                 Some((1, 4, 8, 16, 32, 256, 1))
             );
         }
-        assert_eq!(geo(18432, false, shipped), Some((4, 4, 16, 32, 32, 32, 3)));
-        assert_eq!(geo(18432, true, shipped), None);
-        let off = |r: &str| {
-            let mut a = crate::GpuArms::default();
-            *a.off.rung(r).expect("a rung") = true;
-            a
-        };
+        assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
+        assert_eq!(
+            geo(18432, false, on("row-fit")),
+            Some((4, 4, 16, 32, 32, 32, 3))
+        );
+        assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
+        assert_eq!(geo(18432, true, on("wave-gate")), None);
         assert_eq!(
             geo(2048, false, off("panel-regs")),
             Some((1, 4, 8, 16, 32, 16, 1))
-        );
-        assert_eq!(
-            geo(18432, true, off("wave-gate")),
-            Some((8, 8, 16, 128, 32, 16, 1))
         );
         for (m, n, k) in [(1024, 1024, 1024), (128, 18432, 7168)] {
             for contract in [false, true] {
