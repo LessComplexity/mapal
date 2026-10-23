@@ -156,6 +156,24 @@ pub struct Gpu {
     /// CPU's shared last level, not a per-SM quantity (S54 `raster`,
     /// `l2-window`).
     pub l2_bytes: u64,
+    /// What a device site costs on this part, measured (S62 `place`). `None`:
+    /// every capable site is a device site — the behaviour before it existed.
+    pub cost: Option<DeviceCost>,
+}
+
+/// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
+/// silicon's peak: the honest number for a gate choosing between two Mapal
+/// realizations of one site. Each field cites the calibration run it was read
+/// from ([`TargetProfile::device_pays`] is the only reader).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceCost {
+    /// Compute-bound rate of the shipped FMA tile kernel, flops per ns.
+    pub flops_per_ns: u64,
+    /// Memory-bound rate of a one-thread-per-cell kernel, bytes per ns.
+    pub bytes_per_ns: u64,
+    /// What placing one more site on the device costs before its arithmetic:
+    /// the launch, its operands' generation and its completion, in ns.
+    pub launch_ns: u64,
 }
 
 /// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
@@ -1371,6 +1389,17 @@ pub struct DispatchCost {
     pub dispatch_ns: u64,
 }
 
+/// Nanoseconds a roofline gives `flops` and `bytes` at these rates.
+pub(crate) fn roofline_ns(flops: u64, bytes: u64, flops_per_ns: u64, bytes_per_ns: u64) -> u64 {
+    (flops / flops_per_ns.max(1)).max(bytes / bytes_per_ns.max(1))
+}
+
+/// A tile site's bytes: each operand panel and the output walked once.
+pub(crate) fn tile_bytes(rows: u64, c: u64, k: u64, elem: &Ty) -> u64 {
+    (rows.saturating_mul(k) + k.saturating_mul(c) + rows.saturating_mul(c))
+        .saturating_mul(elem_bytes(elem))
+}
+
 /// One target's machine facts, plus the two policy ratios that are honestly
 /// search space rather than facts (see the field docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1721,6 +1750,24 @@ impl TargetProfile {
         (2..=target.min(tile))
             .rev()
             .find(|b| tile.is_multiple_of(*b))
+    }
+
+    /// **S62 `place`: does a site of `flops` and `bytes` finish sooner on the
+    /// device than on one host lane?** `launch_ns + roofline(device)` against
+    /// `roofline(lane)` — the device's [`DeviceCost`] and the host's one-lane
+    /// rates ([`DispatchCost`]: a site placed on the host of a GPU build runs
+    /// on one lane, the entry of a program with device work being sequential).
+    /// Without both facts the answer is the device — what every GPU build did
+    /// before this existed. Transfers
+    /// are not a term: a site with a device-produced operand stays on the
+    /// device by placement (`func/gpu.rs:placement`), so a host placement never
+    /// adds a copy-out, and closed-form operands are built where they are read.
+    pub fn device_pays(&self, flops: u64, bytes: u64) -> bool {
+        let (Some(d), Some(h)) = (self.gpu().and_then(|g| g.cost), self.dispatch) else {
+            return true;
+        };
+        let dev = d.launch_ns + roofline_ns(flops, bytes, d.flops_per_ns, d.bytes_per_ns);
+        dev < roofline_ns(flops, bytes, h.flops_per_ns, h.bytes_per_ns)
     }
 
     /// The GPU facts, when this profile describes one. `None` for every CPU
@@ -2454,6 +2501,20 @@ impl TargetProfile {
     }
 }
 
+/// **S62 `hostopt`: a GPU build's one profile** — the device's facts
+/// (`name`, `machine`) and the host's CPU facts for everything outside an
+/// offloaded site. Not one field with two readings (the S45 lesson): every
+/// CPU-shaped field of a GPU profile always described the host, and this
+/// fills them from a host profile instead of [`GENERIC`]. `name` stays the
+/// device's — the rung table and kernel names key on it.
+pub fn with_host(dev: &TargetProfile, host: &TargetProfile) -> TargetProfile {
+    TargetProfile {
+        name: dev.name,
+        machine: dev.machine,
+        ..*host
+    }
+}
+
 /// Today's six literals, exactly: 128-bit vectors, 32 registers, a 512 KB
 /// per-core L2. Emission under this profile is byte-identical to the
 /// pre-profile emitter for every shape — the plan's rule 1, and the reason it
@@ -2541,6 +2602,41 @@ pub const RAPTORLAKE: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
+/// **The rented GPU boxes' host (S62 `hostopt`): x86-64-v3** — the ISA level
+/// (AVX2 + FMA: 32 B vectors, 16 registers) every vast.ai host CPU met so far
+/// implements, and the `-march` `benches/gpu/bundle.sh` compiles its host
+/// objects for. A level, not a family: the boxes' CPUs vary per rental
+/// (`lscpu` is recorded in every results file), so only the ISA facts are
+/// written down; the cache facts stay [`GENERIC`]'s lower bounds (512 KB L2
+/// per core, no L1D geometry ⇒ move-panel declines), which no cell of the
+/// S62 set reads.
+pub const X86_64_V3: TargetProfile = TargetProfile {
+    name: "x86-64-v3",
+    vec_bytes: 32,
+    vec_regs: 16,
+    // MEASURED ON THE BOXES (S62, `benches/results/gpu/s62/cpugpu/`), each the
+    // most conservative of the boxes it was read on:
+    //
+    // `flops_per_ns` — one lane of this build, `run1/results-*.txt` `lane` rows
+    //   (the CPU build at MAPAL_PAR=1): pt_pc_128, 3 × 2·128³ / iter ms — 47
+    //   (EPYC 7402), 30 (EPYC 7402), 26 (Xeon 8480+), 24 (EPYC 7B12). A slower
+    //   lane only ever keeps a site on the device, and dispatches a task.
+    // `bytes_per_ns` — pt_pj_m1_n2048_k7168, its site's 58.76 MB / iter ms on
+    //   the same rows: 5, 5, 7, 6.
+    // `dispatch_ns` — the S51 difference method, `run2/results-*.txt`:
+    //   pt_pc_32's CPU build minus its every-task-inline build (a scratch
+    //   profile, deleted after the run), over the 3 tile tasks between its
+    //   clocks — 28.1 us (EPYC 7742, 128 threads), 34.5 us (EPYC 7452, 128),
+    //   16.7 us (Xeon SPR, 32). The smallest dispatches the most tasks: the
+    //   behaviour before this was measured is dispatch_ns = 0.
+    dispatch: Some(DispatchCost {
+        flops_per_ns: 24,
+        bytes_per_ns: 5,
+        dispatch_ns: 16_700,
+    }),
+    ..GENERIC
+};
+
 /// **MEASUREMENT SCRATCH — S51b, DELETE AFTER USE. Not a machine.**
 ///
 /// `raptorlake` with one field changed: a `dispatch_ns` so large that
@@ -2602,6 +2698,7 @@ const ADA_SM: Gpu = Gpu {
     max_threads_per_sm: 1536,
     max_blocks_per_sm: 24,
     l2_bytes: 48 * 1024 * 1024,
+    cost: None,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -2612,6 +2709,12 @@ pub const RTX_4090: TargetProfile = TargetProfile {
     machine: Machine::Gpu(Gpu {
         sms: 128,
         l2_bytes: 72 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-4090.txt: mm_4096 contract Mapal 41.69 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 58.76 MB at 490 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 41690,
+            bytes_per_ns: 490,
+            launch_ns: 13723,
+        }),
         ..ADA_SM
     }),
     ..GENERIC
@@ -2648,6 +2751,20 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
         max_blocks_per_sm: 32,
         // `facts l2_bytes=52428800` (base-h100-pcie.txt).
         l2_bytes: 50 * 1024 * 1024,
+        // S62 `place`, measured. `launch_ns` on the H100 PCIe
+        // (`s62/cpugpu/run2/results-h100-pcie.txt`: pt_pc_64's all-device
+        // build, `off-place`, iter ms / 3 sites). The rates on an H100 80GB HBM3
+        // (SXM) box running this build, the only H100 rentable for run 1
+        // (`run1/results-h100-pcie.txt`: mm_4096 contract Mapal 49.07 Tflop/s;
+        // pt_pj_m1_n2048_k7168's site kernel 135 B/ns) — no site of the S62 set
+        // is placed by them (`placediff.sh`: only `launch_ns` moves a site).
+        // The SXM box's `launch_ns`, 28 799, put the 64³ chains on the host,
+        // which the PCIe box measured 1.6–2.2% slower (run2 `pt_pm_2048_64`).
+        cost: Some(DeviceCost {
+            flops_per_ns: 49070,
+            bytes_per_ns: 135,
+            launch_ns: 11315,
+        }),
         ..ADA_SM
     }),
     ..GENERIC
@@ -2663,6 +2780,12 @@ pub const RTX_5090: TargetProfile = TargetProfile {
         sms: 170,
         // `facts l2_bytes=100663296` (base-rtx-5090.txt).
         l2_bytes: 96 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-5090.txt: mm_4096 contract Mapal 53.41 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 494 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 53410,
+            bytes_per_ns: 494,
+            launch_ns: 17015,
+        }),
         ..ADA_SM
     }),
     ..GENERIC
@@ -2682,6 +2805,12 @@ pub const RTX_3090: TargetProfile = TargetProfile {
         max_blocks_per_sm: 16,
         // `facts l2_bytes=6291456` (base-rtx-3090.txt).
         l2_bytes: 6 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-3090.partial-51025609.txt (the box dropped before its mm_4096 timing): pt_pj_m128_n18432_k7168 contract site kernel 22.33 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 161 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 22325,
+            bytes_per_ns: 161,
+            launch_ns: 18217,
+        }),
         ..ADA_SM
     }),
     ..GENERIC
@@ -2781,7 +2910,7 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 13] = [
+const PROFILES: [&TargetProfile; 14] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
@@ -2795,6 +2924,7 @@ const PROFILES: [&TargetProfile; 13] = [
     &APPLE_M4_SME,
     &RAPTORLAKE,
     &RAPTORLAKE_INLINE,
+    &X86_64_V3,
 ];
 
 /// Resolve a profile by name. `None` for an unknown name — never a silent

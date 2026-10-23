@@ -55,9 +55,11 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}'"
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PROBE_TRACE_REPS='${PROBE_TRACE_REPS:-}' LANE_PROGS='${LANE_PROGS:-}'"
 run_rc=0
-"${SSH[@]}" "cd /w && $ENVS bash box_run.sh $PROF $SM $REPS" > "$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_run exit $run_rc"; }
+# RUN_MIN (S62): the box run's ceiling in minutes, so a rental stays inside its time budget
+# (start + upload + run + fetch); the results so far are still fetched.
+"${SSH[@]}" "cd /w && $ENVS timeout ${RUN_MIN:-70}m bash box_run.sh $PROF $SM $REPS" >"$RES/run-$PROF.out" 2>&1 || { run_rc=$?; log "box_run exit $run_rc"; }
 "${SSH[@]}" "cat /w/results-$PROF.txt" > "$RES/results-$PROF.txt" 2>/dev/null || {
     log "results retrieval failed"
     [ "$run_rc" -ne 0 ] || run_rc=1

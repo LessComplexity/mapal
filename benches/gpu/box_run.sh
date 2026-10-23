@@ -7,7 +7,10 @@
 # 3. the timing harness vs cuBLAS and CUTLASS, every kernel arm.
 # E2E_ARMS narrows the e2e section's arms; PROBE_ARMS / PROBE_REPS the probe section
 # (default: the bundle's `probe_arms` file, else on + every off-<rung> arm the bundle
-# built for the probe; 5 repetitions).
+# built for the probe + `cpu` and `null` where built; 5 repetitions). S62: every probe
+# arm is value-gated against the program's oracle (`tiles/<stem>.expect`, else its
+# `cpu` arm) before any timing, the arm order is reversed on even repetitions (ABBA),
+# and PROBE_TRACE_REPS (default 2) repetitions also run a traced process.
 # DIFFERENTIAL_ONLY=1 stops after value and trap checks, without compiling harnesses.
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
@@ -21,6 +24,14 @@ link() { cc "$1" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stub
 : > "$LOG"
 say "== $PROF $SM $(date -u +%FT%TZ)"
 nvidia-smi --query-gpu=name,driver_version,clocks.max.sm,clocks.sm,power.limit,temperature.gpu,persistence_mode --format=csv | tee -a "$LOG"
+# S62 `hostopt`: the host CPU the host objects run on (the host profile's facts are checked
+# against these; a run on another CPU family is another host).
+lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket|L1d|L2|L3|CPU max MHz)' | sed 's/^/lscpu: /' | tee -a "$LOG"
+say "cpu_flags $(grep -o -w -E 'avx2|fma|avx512f' /proc/cpuinfo | sort | uniq -c | tr -s ' \n' ' ') nproc=$(nproc)"
+for x in index0 index2; do
+    c=/sys/devices/system/cpu/cpu0/cache/$x
+    say "cache $x size=$(cat $c/size 2>/dev/null) line=$(cat $c/coherency_line_size 2>/dev/null) sets=$(cat $c/number_of_sets 2>/dev/null) shared=$(cat $c/shared_cpu_list 2>/dev/null)"
+done
 
 say "-- differential (GPU stdout vs oracle)"
 pass=0; fail=0
@@ -104,6 +115,8 @@ ARMS=${E2E_ARMS:-on off-resident off-devgen off-eager-init off-arena off-arch-ru
 arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
 e2e() { # <prog> <floor: n gemms ops>
     local p=$1; shift
+    compgen -G "$PROF/$p.*host.o" > /dev/null || compgen -G "$PROF/${p}_c.*host.o" > /dev/null ||
+        [ -f "$PROF/$p.host.o" ] || return 0
     for face in "" _c; do
         for arm in $ARMS; do
             b=$(arm_stem "$p$face" "$arm")
@@ -144,40 +157,73 @@ say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chai
 # bundle.sh drops an arm equal to the shipped text, so these are exactly the
 # rungs this part ships ON there.
 off_arms() { local o; for o in "$PROF/$1".off-*.host.o; do [ -f "$o" ] && { o=${o%.host.o}; echo "${o##*.}"; }; done; }
+# S62: the CPU-only build and the null copy, where the bundle built them.
+xtra_arms() { local x; for x in cpu cpu-inline null; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
+# probe_out <stem>: one untraced process's stdout, one line (`iter ms` included).
+probe_out() { MAPAL_PTX="$PROF/$1.ptx" "./pt_$1" 2>/dev/null | tr '\n' ' '; }
+val_fail=0
 for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     case $b in *.*|*_c) continue ;; esac
-    pa=$( (off_arms "$b"; off_arms "${b}_c") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
+    pa=$( (off_arms "$b"; off_arms "${b}_c"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
     probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
+    runs=()
     for face in "" _c; do
         for arm in $pa; do
             s=$(arm_stem "$b$face" "$arm")
             [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "pt_$s"
+            [ -x "pt_$s" ] && runs+=("$face:$arm")
         done
     done
+    # The value gate, before any timing: every arm prints its face's oracle.
+    bad=0
+    for fa in "${runs[@]}"; do
+        face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
+        got=$(probe_out "$s"); got=${got%%iter ms=*}
+        exp="tiles/$b$face.expect"
+        if [ -s "$exp" ]; then want=$(tr '\n' ' ' < "$exp"); else want=$(probe_out "$b$face.cpu"); want=${want%%iter ms=*}; fi
+        if [ "$got" != "$want" ]; then
+            bad=1; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
+        fi
+    done
+    [ "$bad" = 0 ] || { val_fail=$((val_fail + 1)); continue; }
+    say "value-gate prog=$b arms=${#runs[@]} pass"
     vals=""
     for r in $(seq "${PROBE_REPS:-5}"); do
-        for face in "" _c; do
-            for arm in $pa; do
-                s=$(arm_stem "$b$face" "$arm")
-                [ -x "pt_$s" ] || continue
-                t0=$(date +%s%N)
-                got=$(MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>/dev/null | tr '\n' ' '); rc=$?
-                t1=$(date +%s%N)
+        order=("${runs[@]}")
+        if [ $((r % 2)) = 0 ]; then
+            order=(); for ((i = ${#runs[@]} - 1; i >= 0; i--)); do order+=("${runs[$i]}"); done
+        fi
+        for fa in "${order[@]}"; do
+            face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
+            t0=$(date +%s%N)
+            got=$(probe_out "$s"); rc=$?
+            t1=$(date +%s%N)
+            tr=""; trace_rc=0
+            if [ "$r" -le "${PROBE_TRACE_REPS:-2}" ]; then
                 tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
-                t2=$(date +%s%N)
-                say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) traced_wall_us=$(( (t2 - t1) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
-                # S54: each launch's kernel time under the trace, in launch order.
-                say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
-                [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
-                [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
-            done
+            fi
+            say "probe prog=$b face=${face:-_exact} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
+            # S54: each launch's kernel time under the trace, in launch order.
+            [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
+            [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
+            [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
         done
     done
+    # S62: one host lane's rates (`place`'s host facts): the CPU-only build at MAPAL_PAR=1.
+    case " ${LANE_PROGS:-pt_pc_128 pt_pj_m1_n2048_k7168} " in *" $b "*)
+        for r in $(seq 10); do
+            for face in "" _c; do
+                [ -x "pt_$b$face.cpu" ] || continue
+                say "lane prog=$b face=${face:-_exact} rep=$r out=[$(MAPAL_PAR=1 MAPAL_PTX=none "./pt_$b$face.cpu" 2>/dev/null | tr '\n' ' ')]"
+            done
+        done ;;
+    esac
     # shellcheck disable=SC2086  # the values are separate arguments
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
+say "probe value gate: $val_fail program(s) failed"
 
 # The decode loop end to end, both faces, interleaved: shipped vs each R5 rung
 # off (S54 `retain-resident`, `delta-h2d`, `lane-stride`), the s54-base placement
@@ -189,7 +235,7 @@ if [ -x prog_decode_1024_256 ]; then
     say "-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1"
     for r in 1 2 3 4 5; do
         for face in "" _c; do
-            for arm in "" .off-retain-resident .on-retain-resident .off-delta-h2d .off-lane-stride \
+            for arm in "" .null .cpu .off-hostopt .off-place .off-retain-resident .on-retain-resident .off-delta-h2d .off-lane-stride \
                 .off-retain-resident+delta-h2d+lane-stride .off-retain-delta .on-retain-delta .off-retain-delta+resident; do
                 b=decode_1024_256$face$arm
                 [ -x "prog_$b" ] || continue

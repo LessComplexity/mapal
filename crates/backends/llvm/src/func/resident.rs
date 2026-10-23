@@ -330,7 +330,7 @@ impl<'a> FnEmit<'a> {
         let mut out = SecondaryMap::new();
         if let Some(plan) = &self.tile_plan {
             for (m, site) in plan.sites.iter() {
-                if gpu::gpu_site(site, self.profile) {
+                if self.device.contains_key(m) {
                     out.insert(m, DevSite::Tile(site.clone()));
                 }
             }
@@ -1020,6 +1020,7 @@ impl<'a> FnEmit<'a> {
                 // An epilogue member (R1) runs in its site's store already.
                 if !sites.contains_key(m)
                     && self.member_src(m, 0).is_none()
+                    && self.cell_pays(m, site)
                     && let Some(c) = self.cell_of(m, site)
                 {
                     cells.insert(m, c);
@@ -1071,6 +1072,25 @@ impl<'a> FnEmit<'a> {
                 cells.remove(m);
             }
         }
+    }
+
+    /// One thread per cell: `extent` flops, every read and the store.
+    fn cell_roofline(&self, m: MorphismId, site: &CellSite) -> (u64, u64) {
+        let t = self.ir.morphism(m).expect("cell").target;
+        let w = crate::profile::elem_bytes(array_elem(&self.obj_ty(t)));
+        let bytes = (site.reads.len() as u64 + 1)
+            .saturating_mul(site.extent)
+            .saturating_mul(w);
+        (site.extent, bytes)
+    }
+
+    /// S62 `place` for a per-cell map: on the device when an operand is
+    /// device-produced, or when one cell per thread (`extent` flops, every
+    /// read and the store) finishes there first — [`gpu::placement`]'s rule.
+    fn cell_pays(&self, m: MorphismId, site: &CellSite) -> bool {
+        let t = self.ir.morphism(m).expect("cell").target;
+        let (flops, bytes) = self.cell_roofline(m, site);
+        gpu::device_made(self.ir, &self.device, t) || self.profile.device_pays(flops, bytes)
     }
 
     /// Build the plan. `None` when the function has no device site or cell.

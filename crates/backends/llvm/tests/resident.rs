@@ -21,6 +21,7 @@ fn emit(src: &str, gpu: GpuArms) -> String {
     emit_with_opts(
         &lower_src(src),
         &EmitOpts {
+            host: "generic",
             target: GPU,
             gpu,
             ..EmitOpts::default()
@@ -324,6 +325,7 @@ fn off_arm_is_the_s52_round_trip() {
     let cpu = emit_with_opts(
         &lower_src(&e2e_src()),
         &EmitOpts {
+            host: "generic",
             target: "generic",
             ..EmitOpts::default()
         },
@@ -458,6 +460,7 @@ fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
         let shipped = emit_with_opts(
             &lower_src(&chain_src()),
             &EmitOpts {
+                host: "generic",
                 target: GPU,
                 contract,
                 gpu: on(),

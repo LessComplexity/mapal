@@ -187,6 +187,82 @@ pub(crate) fn gpu_site(site: &TileSite, profile: &TargetProfile) -> bool {
         && site.rows * site.c > 0
 }
 
+/// **S62 `place`: the tile sites of `f` that run on the device** — of
+/// `plan`, the sites as the caller walks them. One answer for every reader
+/// (the host walk, the residency plan, retention, row folds, the device
+/// unit): a site one of them placed and another did not would be a kernel
+/// reading a buffer nobody wrote — the [`super::packing_site`] lesson.
+///
+/// In walk order, a capable site ([`gpu_site`]) is a device site when an
+/// operand is device-produced (`fed`: the host placement would copy it out —
+/// the resident plan's whole point) or when its roofline says the device
+/// finishes first ([`TargetProfile::device_pays`]: `2·rows·c·k` flops over
+/// [`crate::profile::tile_bytes`], the dispatch rule's arithmetic). Without
+/// measured costs every capable site is placed: the S52–S54 rule.
+pub(crate) fn placement(
+    ir: &CategoryIr,
+    f: FuncId,
+    plan: &TilePlan,
+    profile: &TargetProfile,
+) -> SecondaryMap<MorphismId, ()> {
+    let mut dev = SecondaryMap::new();
+    if profile.gpu().is_none() {
+        return dev;
+    }
+    for m in ir.topo_order(f) {
+        let Some(site) = plan.sites.get(m).filter(|s| gpu_site(s, profile)) else {
+            continue;
+        };
+        let src = ir.morphism(m).expect("site resolves").source;
+        let fed = [site.a.slot, site.b.slot]
+            .into_iter()
+            .any(|k| super::pair_source_ir(ir, src, k).is_some_and(|o| device_made(ir, &dev, o)));
+        let flops = 2u64
+            .saturating_mul(site.rows)
+            .saturating_mul(site.c)
+            .saturating_mul(site.k);
+        let bytes = crate::profile::tile_bytes(site.rows, site.c, site.k, &site.elem);
+        if fed || profile.device_pays(flops, bytes) {
+            dev.insert(m, ());
+        }
+    }
+    dev
+}
+
+/// `o` is produced on the device: by a placed site, or by a map or fold over
+/// an array that is (a per-cell kernel, a row fold, an epilogue member — the
+/// runs `devmap`, `rowfold` and `epilogue` keep beside their producer).
+/// ponytail: a map that reads a device array but stays on the host counts too;
+/// that over-approximation only ever keeps a reader on the device (today).
+pub(crate) fn device_made(
+    ir: &CategoryIr,
+    dev: &SecondaryMap<MorphismId, ()>,
+    o: ObjectId,
+) -> bool {
+    let Some(&p) = ir.in_edges(o).first() else {
+        return false;
+    };
+    if dev.contains_key(p) {
+        return true;
+    }
+    let morph = ir.morphism(p).expect("morphism resolves");
+    if !matches!(morph.op, Operation::Map { .. } | Operation::Fold { .. }) {
+        return false;
+    }
+    let pairs: Vec<ObjectId> = ir
+        .in_edges(morph.source)
+        .iter()
+        .map(|&q| ir.morphism(q).expect("morphism resolves"))
+        .filter(|q| matches!(q.op, Operation::Pair { .. }))
+        .map(|q| q.source)
+        .collect();
+    if pairs.is_empty() {
+        device_made(ir, dev, morph.source)
+    } else {
+        pairs.into_iter().any(|x| device_made(ir, dev, x))
+    }
+}
+
 /// The tile sites of `f` a GPU profile places (S54 `lane-stride`): the CPU's
 /// [`CategoryIr::tile_plan`] plus the one-row strided-lane sites
 /// ([`CategoryIr::tile_plan_strided`]) that are device sites — the
@@ -203,10 +279,12 @@ pub(crate) fn tile_plan(
     }
     let strict = ir.tile_plan(f);
     let mut plan = ir.tile_plan_strided(f);
+    // S62: an extra is a site only where it is placed on the device.
+    let dev = placement(ir, f, &plan, profile);
     let extra: Vec<MorphismId> = plan
         .sites
         .iter()
-        .filter(|&(m, s)| !strict.sites.contains_key(m) && !gpu_site(s, profile))
+        .filter(|&(m, _)| !strict.sites.contains_key(m) && !dev.contains_key(m))
         .map(|(m, _)| m)
         .collect();
     for m in extra {
@@ -881,6 +959,7 @@ pub(crate) fn device_module(
     for (f, _) in ir.funcs() {
         let rungs = host_rungs(profile, contract, arms);
         let plan = tile_plan(ir, f, profile, rungs);
+        let dev = placement(ir, f, &plan, profile);
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);
         // S54 `rowfold`: the device folds, and the sites that store for them.
@@ -890,9 +969,15 @@ pub(crate) fn device_module(
         let sites = plan
             .sites
             .iter()
+            .filter(|&(m, _)| dev.contains_key(m))
             .filter(|&(m, _)| !epis.iter().any(|e| e.f == f && e.m == m))
             .map(|(m, s)| (s, col(m)));
-        for (site, col) in sites.chain(retained.values().map(|r| (&r.row, false))) {
+        // A retained site's row kernel exists where the site is placed (S62).
+        let rows = retained
+            .iter()
+            .filter(|&(y, _)| ir.in_edges(y).first().is_some_and(|&m| dev.contains_key(m)))
+            .map(|(_, r)| (&r.row, false));
+        for (site, col) in sites.chain(rows) {
             if gpu_site(site, profile) {
                 let name = kernel_name(kernel_id_col(site, profile, contract, reduced, col));
                 kernels.entry(name.clone()).or_insert_with(|| {

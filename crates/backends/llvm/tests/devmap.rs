@@ -27,6 +27,7 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
     emit_detailed(
         &lower_src(src),
         &EmitOpts {
+            host: "generic",
             target: GPU,
             gpu,
             contract,

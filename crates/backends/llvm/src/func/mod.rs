@@ -316,6 +316,9 @@ pub(crate) struct FnEmit<'a> {
     perf_timing: bool,
     /// Matmul-shaped map sites recognized once for this function.
     tile_plan: Option<TilePlan>,
+    /// The sites of `tile_plan` that run on the device (S62
+    /// [`gpu::placement`]); empty on a CPU profile.
+    device: SecondaryMap<MorphismId, ()>,
     /// plan-s37-stage-structure: the per-element law of each array. Consulted
     /// at elementwise reads; absence means "load it", i.e. today's behavior.
     elem: ElemPlan,
@@ -400,6 +403,11 @@ pub(crate) struct FnEmit<'a> {
 /// a kernel reading a layout nobody wrote (FRAMEWORK §5 — one source of truth
 /// for shared structure).
 ///
+/// A device site (S62 [`gpu::placement`]) never packs — it stages its panels in
+/// shared memory, and a host pack would be copied across the bus and never
+/// read — so the two callers that can meet one (`bulk.rs`, `lib.rs`) ask the
+/// placement first; the parallel paths only exist without a device site.
+///
 /// The `profile`/`contract` arguments are what made this a two-part question:
 /// shape decides whether a packed layout can *represent* the site, size decides
 /// whether it *pays* (plan-s51 H1 — [`TargetProfile::pack_pays`]).
@@ -415,9 +423,6 @@ pub(crate) fn packing_site(site: &TileSite, profile: &TargetProfile, contract: b
     site.rows > 1
         && site.b.ci == 0
         && site.b.ksplit.is_none()
-        // A GPU site stages its panels in shared memory on the device; a host
-        // pack would be copied across the bus and never read.
-        && !gpu::gpu_site(site, profile)
         && (!crate::func::sme::sme_shape(site, profile, contract)
             || profile.pack_pays(site.rows, site.c, site.k, &site.elem))
 }
