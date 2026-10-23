@@ -1,0 +1,1129 @@
+== rtx-3090 sm_86 2026-10-23T00:26:19Z pass 2 (arms reversed)
+# n=1024 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2916603ae2979e36 grid=16x8 block=256 smem=12544 regs=107 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1987 med_ms=0.1987 max_ms=0.2007 tflops_med=10.81
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1290 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1198 med_ms=0.1208 max_ms=0.1341 tflops_med=17.77
+ratio mapal_vs_cublas=0.593 mapal_vs_cutlass=0.608 (>1 = mapal faster, medians)
+samples mapal=0.1987,0.1997,0.1997,0.1987,0.1997,0.2007,0.1987,0.1997,0.1987,0.1987,0.1987,0.1987,0.1987,0.1997,0.1987,0.1987,0.1997,0.1997,0.1987,0.1997,0.1987,0.1997,0.1987,0.1997,0.1997,0.1997,0.1997,0.1987,0.1987,0.1987 cublas=0.1178,0.1178,0.1178,0.1188,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1188,0.1178,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1188,0.1178,0.1178,0.1178,0.1188,0.1168,0.1178,0.1178,0.1178,0.1290 cutlass=0.1208,0.1219,0.1208,0.1219,0.1209,0.1219,0.1198,0.1208,0.1208,0.1219,0.1198,0.1208,0.1219,0.1208,0.1208,0.1208,0.1208,0.1209,0.1208,0.1208,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1341
+# n=1024 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2916603ae2979e36 grid=16x8 block=256 smem=12544 regs=107 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1976 med_ms=0.1997 max_ms=0.2202 tflops_med=10.75
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1300 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1198 med_ms=0.1210 max_ms=0.1342 tflops_med=17.75
+ratio mapal_vs_cublas=0.590 mapal_vs_cutlass=0.606 (>1 = mapal faster, medians)
+samples mapal=0.2007,0.1997,0.1997,0.1987,0.1997,0.1997,0.1987,0.1987,0.1987,0.1987,0.1987,0.1987,0.1997,0.1987,0.1997,0.1987,0.1997,0.1997,0.1997,0.1997,0.2007,0.1997,0.1987,0.1987,0.1987,0.1987,0.1976,0.2202,0.2192,0.2202 cublas=0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1188,0.1167,0.1178,0.1167,0.1188,0.1178,0.1178,0.1168,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1188,0.1178,0.1188,0.1178,0.1188,0.1178,0.1290,0.1300,0.1290,0.1300 cutlass=0.1208,0.1219,0.1198,0.1219,0.1208,0.1210,0.1208,0.1208,0.1219,0.1219,0.1208,0.1219,0.1209,0.1219,0.1210,0.1219,0.1208,0.1219,0.1219,0.1208,0.1208,0.1209,0.1208,0.1209,0.1208,0.1229,0.1331,0.1341,0.1331,0.1342
+# n=1024 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2916603ae2979e36 grid=16x8 block=256 smem=25088 regs=120 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.2050 med_ms=0.2068 max_ms=0.2263 tflops_med=10.38
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1290 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1198 med_ms=0.1208 max_ms=0.1331 tflops_med=17.77
+ratio mapal_vs_cublas=0.569 mapal_vs_cutlass=0.584 (>1 = mapal faster, medians)
+samples mapal=0.2068,0.2068,0.2058,0.2068,0.2050,0.2068,0.2068,0.2058,0.2058,0.2058,0.2058,0.2058,0.2068,0.2068,0.2068,0.2059,0.2058,0.2058,0.2068,0.2059,0.2058,0.2068,0.2058,0.2253,0.2253,0.2253,0.2253,0.2253,0.2263,0.2253 cublas=0.1178,0.1167,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1167,0.1178,0.1167,0.1280,0.1280,0.1280,0.1280,0.1280,0.1280,0.1290,0.1290 cutlass=0.1208,0.1208,0.1208,0.1208,0.1198,0.1208,0.1208,0.1219,0.1208,0.1208,0.1208,0.1219,0.1208,0.1219,0.1208,0.1229,0.1208,0.1219,0.1198,0.1208,0.1208,0.1219,0.1321,0.1321,0.1321,0.1331,0.1321,0.1331,0.1321,0.1331
+# n=1024 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2916603ae2979e36 grid=16x8 block=256 smem=25088 regs=120 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.133e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.2048 med_ms=0.2068 max_ms=0.2263 tflops_med=10.38
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1290 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1198 med_ms=0.1219 max_ms=0.1331 tflops_med=17.62
+ratio mapal_vs_cublas=0.569 mapal_vs_cutlass=0.589 (>1 = mapal faster, medians)
+samples mapal=0.2069,0.2058,0.2068,0.2048,0.2099,0.2058,0.2058,0.2048,0.2068,0.2058,0.2058,0.2058,0.2058,0.2058,0.2068,0.2060,0.2058,0.2068,0.2079,0.2068,0.2048,0.2058,0.2068,0.2263,0.2253,0.2253,0.2253,0.2263,0.2253,0.2253 cublas=0.1178,0.1178,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1178,0.1167,0.1170,0.1167,0.1178,0.1178,0.1167,0.1178,0.1178,0.1169,0.1178,0.1178,0.1178,0.1178,0.1178,0.1280,0.1280,0.1270,0.1280,0.1290,0.1290,0.1280 cutlass=0.1198,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1208,0.1209,0.1219,0.1208,0.1208,0.1207,0.1219,0.1209,0.1219,0.1208,0.1208,0.1321,0.1331,0.1321,0.1331,0.1329,0.1331,0.1321,0.1331
+# n=1024 face=_c.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=128 smem=6272 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1556 med_ms=0.1567 max_ms=0.1720 tflops_med=13.71
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1280 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1208 med_ms=0.1208 max_ms=0.1331 tflops_med=17.77
+ratio mapal_vs_cublas=0.752 mapal_vs_cutlass=0.771 (>1 = mapal faster, medians)
+samples mapal=0.1577,0.1567,0.1564,0.1556,0.1567,0.1567,0.1567,0.1556,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1567,0.1720 cublas=0.1178,0.1167,0.1178,0.1178,0.1188,0.1178,0.1179,0.1167,0.1188,0.1178,0.1178,0.1178,0.1188,0.1176,0.1178,0.1177,0.1178,0.1178,0.1178,0.1178,0.1188,0.1178,0.1178,0.1167,0.1188,0.1178,0.1188,0.1178,0.1178,0.1280 cutlass=0.1208,0.1210,0.1208,0.1208,0.1219,0.1208,0.1208,0.1219,0.1208,0.1219,0.1208,0.1208,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1209,0.1208,0.1228,0.1208,0.1229,0.1208,0.1217,0.1208,0.1209,0.1321,0.1331
+# n=1024 face=_c.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=128 smem=6272 regs=157 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1495 med_ms=0.1505 max_ms=0.1649 tflops_med=14.27
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1290 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1198 med_ms=0.1209 max_ms=0.1331 tflops_med=17.77
+ratio mapal_vs_cublas=0.782 mapal_vs_cutlass=0.803 (>1 = mapal faster, medians)
+samples mapal=0.1516,0.1505,0.1505,0.1505,0.1495,0.1505,0.1505,0.1505,0.1496,0.1516,0.1505,0.1495,0.1505,0.1495,0.1505,0.1496,0.1505,0.1505,0.1505,0.1505,0.1495,0.1495,0.1516,0.1516,0.1516,0.1495,0.1649,0.1638,0.1638,0.1649 cublas=0.1178,0.1167,0.1167,0.1178,0.1167,0.1167,0.1178,0.1167,0.1178,0.1167,0.1168,0.1167,0.1178,0.1167,0.1178,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1167,0.1178,0.1178,0.1178,0.1280,0.1290,0.1280,0.1290,0.1290 cutlass=0.1208,0.1211,0.1198,0.1208,0.1208,0.1219,0.1209,0.1208,0.1208,0.1208,0.1198,0.1219,0.1200,0.1219,0.1208,0.1209,0.1219,0.1219,0.1208,0.1209,0.1198,0.1208,0.1200,0.1219,0.1208,0.1331,0.1321,0.1321,0.1321,0.1331
+# n=1024 face=_c.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=128 smem=6272 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1556 med_ms=0.1567 max_ms=0.1577 tflops_med=13.71
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1178 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1208 med_ms=0.1208 max_ms=0.1219 tflops_med=17.77
+ratio mapal_vs_cublas=0.752 mapal_vs_cutlass=0.771 (>1 = mapal faster, medians)
+samples mapal=0.1577,0.1556,0.1567,0.1567,0.1567,0.1567,0.1577,0.1567,0.1567,0.1567,0.1556,0.1567,0.1567,0.1556,0.1567,0.1567,0.1577,0.1567,0.1567,0.1577,0.1556,0.1567,0.1567,0.1567,0.1577,0.1556,0.1568,0.1567,0.1567,0.1556 cublas=0.1178,0.1167,0.1178,0.1167,0.1178,0.1168,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1167,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1178,0.1177 cutlass=0.1208,0.1210,0.1208,0.1210,0.1208,0.1208,0.1208,0.1208,0.1208,0.1211,0.1209,0.1208,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1208,0.1208,0.1208,0.1208,0.1216,0.1219,0.1219,0.1208,0.1219,0.1217,0.1219
+# n=1024 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=128 smem=50176 regs=241 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1577 med_ms=0.1587 max_ms=0.1608 tflops_med=13.53
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1188 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1208 med_ms=0.1219 max_ms=0.1229 tflops_med=17.62
+ratio mapal_vs_cublas=0.742 mapal_vs_cutlass=0.768 (>1 = mapal faster, medians)
+samples mapal=0.1597,0.1587,0.1587,0.1597,0.1597,0.1597,0.1577,0.1577,0.1597,0.1587,0.1597,0.1587,0.1577,0.1587,0.1587,0.1577,0.1587,0.1597,0.1587,0.1587,0.1608,0.1577,0.1597,0.1587,0.1587,0.1587,0.1587,0.1577,0.1587,0.1577 cublas=0.1178,0.1167,0.1188,0.1178,0.1178,0.1178,0.1188,0.1178,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178,0.1167,0.1178,0.1178,0.1178,0.1178,0.1178,0.1178 cutlass=0.1219,0.1228,0.1208,0.1219,0.1208,0.1219,0.1219,0.1228,0.1219,0.1219,0.1208,0.1219,0.1208,0.1228,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1219,0.1228,0.1219,0.1219,0.1208,0.1229,0.1219,0.1219
+# n=1024 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_8533293f8dc87365 grid=16x8 block=128 smem=50176 regs=241 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.985e-05
+values leg=cublas cells=256 maxrel_vs_f64=2.207e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.985e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.1577 med_ms=0.1587 max_ms=0.1720 tflops_med=13.53
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.1167 med_ms=0.1178 max_ms=0.1270 tflops_med=18.24
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.1208 med_ms=0.1219 max_ms=0.1311 tflops_med=17.62
+ratio mapal_vs_cublas=0.742 mapal_vs_cutlass=0.768 (>1 = mapal faster, medians)
+samples mapal=0.1608,0.1587,0.1587,0.1577,0.1577,0.1587,0.1587,0.1577,0.1597,0.1577,0.1579,0.1577,0.1577,0.1597,0.1577,0.1587,0.1586,0.1587,0.1587,0.1649,0.1710,0.1710,0.1710,0.1710,0.1700,0.1701,0.1720,0.1700,0.1720,0.1700 cublas=0.1188,0.1167,0.1178,0.1167,0.1178,0.1167,0.1178,0.1178,0.1178,0.1167,0.1169,0.1167,0.1178,0.1167,0.1178,0.1167,0.1167,0.1178,0.1178,0.1249,0.1260,0.1260,0.1260,0.1249,0.1260,0.1260,0.1270,0.1260,0.1260,0.1249 cutlass=0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1208,0.1219,0.1219,0.1219,0.1208,0.1219,0.1219,0.1219,0.1210,0.1219,0.1208,0.1208,0.1208,0.1300,0.1300,0.1300,0.1300,0.1311,0.1300,0.1311,0.1300,0.1311,0.1300,0.1311
+# n=1024 face=_tf.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_259382a2b468f871 grid=16x8 block=128 smem=16896 regs=102 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0860 med_ms=0.0881 max_ms=0.0891 tflops_med=24.39
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0879 max_ms=0.0891 tflops_med=24.42
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0881 max_ms=0.0881 tflops_med=24.39
+ratio mapal_vs_cublas=0.999 mapal_vs_cutlass=1.000 (>1 = mapal faster, medians)
+samples mapal=0.0881,0.0891,0.0881,0.0881,0.0871,0.0870,0.0881,0.0870,0.0880,0.0881,0.0881,0.0870,0.0860,0.0872,0.0881,0.0860,0.0870,0.0870,0.0862,0.0870,0.0870,0.0881,0.0881,0.0870,0.0870,0.0881,0.0891,0.0881,0.0881,0.0881 cublas=0.0881,0.0870,0.0881,0.0879,0.0881,0.0872,0.0881,0.0871,0.0872,0.0870,0.0881,0.0870,0.0880,0.0870,0.0881,0.0870,0.0891,0.0870,0.0881,0.0870,0.0881,0.0870,0.0870,0.0870,0.0881,0.0881,0.0881,0.0870,0.0880,0.0879 cutlass=0.0870,0.0870,0.0873,0.0881,0.0881,0.0881,0.0870,0.0881,0.0881,0.0881,0.0881,0.0870,0.0871,0.0879,0.0870,0.0881,0.0881,0.0881,0.0870,0.0881,0.0870,0.0881,0.0872,0.0881,0.0881,0.0870,0.0870,0.0881,0.0870,0.0881
+# n=1024 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_259382a2b468f871 grid=16x8 block=128 smem=16896 regs=102 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.156e-02
+values leg=cublas cells=256 maxrel_vs_f64=3.156e-02
+values leg=mapal cells=256 maxrel_vs_f64=3.156e-02 within_4x_cublas_tf32=yes
+time leg=mapal M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0881 max_ms=0.0901 tflops_med=24.39
+time leg=cublas M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0881 max_ms=0.0881 tflops_med=24.39
+time leg=cutlass M=1024 N=1024 K=1024 n=30 min_ms=0.0870 med_ms=0.0881 max_ms=0.0891 tflops_med=24.39
+ratio mapal_vs_cublas=1.000 mapal_vs_cutlass=1.000 (>1 = mapal faster, medians)
+samples mapal=0.0901,0.0881,0.0881,0.0881,0.0870,0.0870,0.0881,0.0881,0.0870,0.0881,0.0870,0.0870,0.0870,0.0870,0.0891,0.0870,0.0881,0.0870,0.0870,0.0881,0.0870,0.0881,0.0881,0.0891,0.0881,0.0881,0.0870,0.0881,0.0891,0.0881 cublas=0.0881,0.0870,0.0881,0.0881,0.0881,0.0870,0.0879,0.0881,0.0870,0.0870,0.0870,0.0870,0.0881,0.0870,0.0881,0.0870,0.0870,0.0881,0.0881,0.0870,0.0881,0.0871,0.0881,0.0881,0.0881,0.0870,0.0881,0.0870,0.0881,0.0870 cutlass=0.0871,0.0881,0.0870,0.0881,0.0881,0.0881,0.0870,0.0881,0.0872,0.0881,0.0870,0.0881,0.0870,0.0881,0.0870,0.0881,0.0881,0.0881,0.0870,0.0881,0.0881,0.0891,0.0870,0.0881,0.0871,0.0883,0.0881,0.0881,0.0881,0.0881
+# n=4096 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=9.5887 med_ms=13.0550 max_ms=16.1894 tflops_med=10.53
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.5204 med_ms=7.7025 max_ms=11.0961 tflops_med=17.84
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.6863 med_ms=7.7814 max_ms=11.5558 tflops_med=17.66
+ratio mapal_vs_cublas=0.590 mapal_vs_cutlass=0.596 (>1 = mapal faster, medians)
+samples mapal=9.5887,11.5302,14.0268,13.2219,12.8563,13.0765,12.8430,12.8502,13.6622,13.1932,12.6904,13.0550,13.0038,12.5389,12.8635,12.8850,13.2260,13.0109,13.3274,13.0017,13.3253,13.0058,13.4226,13.0079,13.0068,13.4984,13.3345,13.1625,13.5107,16.1894 cublas=5.5204,8.3159,7.7588,7.6134,7.4824,7.6124,7.4322,7.7619,7.8991,7.5141,7.3708,7.8008,7.3974,7.6134,7.4250,7.8039,7.6104,7.7066,7.7076,7.6851,7.7025,7.6431,7.8029,7.5162,8.1039,7.7281,7.7046,7.6104,8.1019,11.0961 cutlass=5.6863,8.3620,7.8520,7.6493,7.6626,7.6964,7.5735,8.0507,7.9585,7.6483,7.6636,7.9503,7.3124,7.7578,7.5735,7.9514,7.6780,7.8531,7.7056,7.8531,7.7240,7.8520,7.7814,7.6666,8.1428,7.8518,7.8080,7.7599,8.8105,11.5558
+# n=4096 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=4.291e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=9.5785 med_ms=13.3683 max_ms=19.0679 tflops_med=10.28
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.5112 med_ms=7.8019 max_ms=12.4140 tflops_med=17.62
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.6974 med_ms=7.9503 max_ms=10.8083 tflops_med=17.29
+ratio mapal_vs_cublas=0.584 mapal_vs_cutlass=0.595 (>1 = mapal faster, medians)
+samples mapal=9.5785,11.1053,14.5428,13.3908,13.0161,13.2055,13.0058,13.3632,13.3171,13.6284,13.1553,13.3683,13.0099,13.4953,13.1604,13.4994,13.4943,13.3243,13.1645,13.4943,13.1656,13.4953,13.1574,14.0452,14.9893,13.6653,13.5946,13.0058,14.9422,19.0679 cublas=5.5112,6.4768,8.1050,7.7046,7.8039,7.6145,7.8039,7.7076,7.6636,7.8039,7.8019,7.7056,7.7466,7.7998,7.7855,7.8029,7.8039,7.7056,7.7957,7.8019,7.7875,7.8019,7.8612,8.2104,8.6610,7.9012,7.8029,7.7220,9.4372,12.4140 cutlass=5.6974,8.0353,8.2596,7.6636,7.9503,7.6759,7.9514,7.8541,8.2586,7.7722,7.9503,7.6913,7.9503,7.7967,7.9494,7.9524,7.8531,7.7793,7.9493,7.7978,7.9483,7.7957,8.0507,8.7572,8.7050,8.0507,7.8746,8.2606,10.2042,10.8083
+# n=4096 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=5.5798 med_ms=8.5617 max_ms=9.2508 tflops_med=16.05
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.3217 med_ms=8.3180 max_ms=9.7270 tflops_med=16.52
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.5960 med_ms=8.5955 max_ms=9.6338 tflops_med=15.99
+ratio mapal_vs_cublas=0.972 mapal_vs_cutlass=1.004 (>1 = mapal faster, medians)
+samples mapal=5.5798,5.5962,9.2508,9.0092,8.5617,8.0886,8.6487,8.5258,8.3425,8.4255,8.4152,8.4214,8.4142,8.4152,8.4419,8.2043,8.8812,8.6938,8.3098,8.7654,8.6385,8.3087,8.8852,8.7050,8.2985,8.8842,8.8330,8.7562,8.7532,9.0583 cublas=5.3217,7.9380,9.7270,8.7962,8.0004,8.0026,8.5084,8.3251,8.2104,8.3169,8.3180,8.3180,8.3180,8.3835,8.2094,8.1039,8.7798,8.2094,8.2104,8.6600,8.2094,8.2094,8.7807,8.2094,8.2104,8.7808,8.5432,8.6579,9.1208,8.6589 cutlass=5.5960,8.4787,9.3778,8.8320,8.1531,8.4222,8.5924,8.4808,8.4050,8.4808,8.4787,8.4808,8.4808,8.5955,8.3671,8.7429,8.9559,8.3692,8.6313,8.8330,8.3671,8.7419,8.9559,8.3671,8.7224,8.9559,8.7142,8.8320,9.6338,8.7542
+# n=4096 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+values leg=mapal cells=256 maxrel_vs_f64=7.735e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=5.7272 med_ms=8.5361 max_ms=9.1464 tflops_med=16.10
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=5.5214 med_ms=8.3180 max_ms=8.7767 tflops_med=16.52
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=5.7293 med_ms=8.5934 max_ms=9.1402 tflops_med=15.99
+ratio mapal_vs_cublas=0.974 mapal_vs_cutlass=1.007 (>1 = mapal faster, medians)
+samples mapal=5.7272,6.1000,8.8187,9.1464,8.5074,7.9892,8.7634,8.7644,8.2053,8.6487,8.5371,8.1818,8.7695,8.5361,8.3302,8.6436,8.5350,8.5330,8.1932,8.7624,8.5115,8.3077,8.8791,8.6415,8.3098,8.8822,8.5033,8.3057,9.0102,8.6446 cublas=5.5214,5.9986,8.7767,8.7654,8.1029,7.9012,8.6589,8.6118,8.1050,8.5412,8.0026,8.1029,8.5914,8.3180,8.2094,8.5217,8.4306,8.1736,8.1060,8.5637,8.3180,8.2094,8.6856,8.4285,8.2104,8.6066,8.3180,8.2104,8.7050,8.4306 cutlass=5.7293,6.1420,9.1402,8.8310,8.2371,8.6057,8.8320,8.4705,8.5668,8.7101,8.1541,8.5268,8.5924,8.4787,8.5105,8.5955,8.5934,8.2616,8.8330,8.7122,8.4490,8.8463,8.8320,8.5320,8.9354,8.7122,8.4511,8.9620,8.8310,8.5555
+# n=4096 face=_tf.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_62294f9299787c39 grid=32x32 block=128 smem=37888 regs=194 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=3.9680 med_ms=4.9807 max_ms=5.1528 tflops_med=27.59
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.8697 med_ms=4.9449 max_ms=5.1487 tflops_med=27.79
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=3.7079 med_ms=4.6316 max_ms=4.8159 tflops_med=29.67
+ratio mapal_vs_cublas=0.993 mapal_vs_cutlass=0.930 (>1 = mapal faster, medians)
+samples mapal=3.9680,3.9721,4.4882,5.1528,5.1528,5.0739,5.0268,4.9756,4.9439,4.9275,5.0258,5.0258,4.9787,4.9777,4.9807,5.0248,4.9736,4.9428,4.9296,4.9275,5.0043,4.9889,4.9869,4.9869,5.0340,4.9756,4.9490,4.9275,5.0218,5.0268 cublas=3.8738,3.8697,4.4595,5.1487,5.0472,5.0176,4.9889,4.9408,4.8947,4.9828,4.9930,4.9920,4.9439,4.9449,4.9551,4.9879,4.9387,4.8977,4.8947,4.8937,4.9398,4.9428,4.9439,4.9541,4.9992,4.9459,4.8968,4.9408,4.9961,4.9981 cutlass=3.7079,4.1452,4.1677,4.8159,4.7155,4.6684,4.6367,4.6275,4.5783,4.6643,4.6684,4.6612,4.6234,4.6223,4.6684,4.6459,4.6223,4.5804,4.5773,4.5804,4.6295,4.6316,4.6285,4.6756,4.6612,4.6275,4.5752,4.6674,4.6684,4.6674
+# n=4096 face=_tf
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_62294f9299787c39 grid=32x32 block=128 smem=37888 regs=194 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=4.401e-01
+values leg=cublas cells=256 maxrel_vs_f64=4.401e-01
+values leg=mapal cells=256 maxrel_vs_f64=4.401e-01 within_4x_cublas_tf32=yes
+time leg=mapal M=4096 N=4096 K=4096 n=30 min_ms=3.9741 med_ms=4.9869 max_ms=5.3443 tflops_med=27.56
+time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=3.9004 med_ms=4.9838 max_ms=5.3115 tflops_med=27.58
+time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=3.7140 med_ms=4.6582 max_ms=4.9664 tflops_med=29.50
+ratio mapal_vs_cublas=0.999 mapal_vs_cutlass=0.934 (>1 = mapal faster, medians)
+samples mapal=3.9741,4.0110,4.0878,5.3443,5.2388,5.1825,5.0739,5.0227,4.9766,4.9377,4.9336,5.0319,5.0330,4.9828,4.9889,4.9859,5.0330,5.0340,5.0371,4.9736,5.0227,5.0278,4.9756,4.9787,4.9869,4.9838,4.9869,4.9848,4.9838,5.0831 cublas=3.9004,4.0591,4.0622,5.3115,5.2029,5.0452,5.0207,4.9900,4.9459,4.9019,4.9838,4.9889,4.9930,4.9398,4.9408,4.9592,4.9889,4.9910,4.9480,4.9869,4.9930,4.9910,4.9469,4.9408,4.9428,4.9469,4.9398,4.9439,5.0289,5.0360 cutlass=3.7140,3.8001,4.4820,4.9664,4.8599,4.7155,4.6653,4.6356,4.6213,4.5783,4.6776,4.6735,4.6746,4.6305,4.6264,4.6766,4.6735,4.6787,4.6213,4.6715,4.6653,4.6582,4.6244,4.6315,4.6275,4.6295,4.6295,4.6285,4.7227,4.6725
+# n=128x1024x4096 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=32x4 block=64 smem=2176 regs=74 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.1969 med_ms=0.1987 max_ms=0.2120 tflops_med=5.41
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0747 med_ms=0.0758 max_ms=0.0799 tflops_med=14.17
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4014 med_ms=0.4024 max_ms=0.4516 tflops_med=2.67
+ratio mapal_vs_cublas=0.381 mapal_vs_cutlass=2.026 (>1 = mapal faster, medians)
+samples mapal=0.1978,0.1987,0.1987,0.1987,0.1976,0.1976,0.1987,0.1987,0.1987,0.1987,0.1986,0.1987,0.2007,0.1987,0.1969,0.1987,0.1976,0.1987,0.1976,0.1989,0.1987,0.1976,0.1987,0.2109,0.2109,0.2110,0.2109,0.2120,0.2099,0.2120 cublas=0.0768,0.0748,0.0758,0.0758,0.0758,0.0748,0.0748,0.0758,0.0748,0.0758,0.0748,0.0748,0.0748,0.0748,0.0747,0.0768,0.0749,0.0758,0.0748,0.0748,0.0758,0.0748,0.0758,0.0788,0.0788,0.0799,0.0788,0.0788,0.0788,0.0788 cutlass=0.4014,0.4014,0.4025,0.4014,0.4014,0.4014,0.4024,0.4023,0.4014,0.4024,0.4024,0.4024,0.4014,0.4021,0.4024,0.4014,0.4014,0.4014,0.4024,0.4024,0.4024,0.4014,0.4280,0.4506,0.4506,0.4516,0.4515,0.4516,0.4506,0.4506
+# n=128x1024x4096 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=16x8 block=256 smem=21504 regs=72 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2273 med_ms=0.2386 max_ms=0.2560 tflops_med=4.50
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0737 med_ms=0.0768 max_ms=0.0819 tflops_med=13.98
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.3983 med_ms=0.3994 max_ms=0.4598 tflops_med=2.69
+ratio mapal_vs_cublas=0.322 mapal_vs_cutlass=1.674 (>1 = mapal faster, medians)
+samples mapal=0.2355,0.2345,0.2273,0.2365,0.2355,0.2304,0.2386,0.2304,0.2355,0.2345,0.2314,0.2294,0.2345,0.2304,0.2345,0.2386,0.2314,0.2550,0.2550,0.2550,0.2550,0.2550,0.2550,0.2550,0.2550,0.2550,0.2550,0.2560,0.2550,0.2550 cublas=0.0768,0.0747,0.0748,0.0758,0.0758,0.0748,0.0737,0.0748,0.0758,0.0748,0.0748,0.0758,0.0758,0.0737,0.0748,0.0748,0.0809,0.0799,0.0799,0.0809,0.0809,0.0799,0.0799,0.0809,0.0809,0.0809,0.0799,0.0799,0.0819,0.0799 cutlass=0.3994,0.3983,0.3994,0.3983,0.3994,0.3983,0.3994,0.3994,0.3994,0.3983,0.3994,0.3983,0.3983,0.3994,0.3994,0.3985,0.4588,0.4588,0.4598,0.4588,0.4588,0.4588,0.4588,0.4588,0.4588,0.4588,0.4598,0.4588,0.4588,0.4588
+# n=128x1024x4096 face=_exact.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=32x4 block=64 smem=34816 regs=196 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2191 med_ms=0.2191 max_ms=0.2211 tflops_med=4.90
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0799 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4557 max_ms=0.4567 tflops_med=2.36
+ratio mapal_vs_cublas=0.364 mapal_vs_cutlass=2.079 (>1 = mapal faster, medians)
+samples mapal=0.2202,0.2191,0.2202,0.2191,0.2191,0.2192,0.2202,0.2191,0.2191,0.2202,0.2202,0.2202,0.2202,0.2191,0.2191,0.2202,0.2191,0.2191,0.2191,0.2191,0.2211,0.2191,0.2192,0.2191,0.2202,0.2202,0.2202,0.2191,0.2191,0.2191 cublas=0.0799,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0809,0.0809,0.0799,0.0799,0.0809,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799,0.0809,0.0809,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0799,0.0809,0.0809 cutlass=0.4557,0.4547,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557,0.4557,0.4557,0.4547,0.4557,0.4557,0.4567,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557,0.4557,0.4556,0.4547,0.4548,0.4567,0.4548,0.4557,0.4557
+# n=128x1024x4096 face=_exact.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=32x4 block=64 smem=34816 regs=196 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2171 med_ms=0.2191 max_ms=0.2212 tflops_med=4.90
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4507 med_ms=0.4557 max_ms=0.4557 tflops_med=2.36
+ratio mapal_vs_cublas=0.364 mapal_vs_cutlass=2.079 (>1 = mapal faster, medians)
+samples mapal=0.2212,0.2191,0.2202,0.2191,0.2202,0.2202,0.2192,0.2191,0.2202,0.2191,0.2192,0.2191,0.2191,0.2171,0.2181,0.2171,0.2181,0.2182,0.2181,0.2180,0.2181,0.2181,0.2202,0.2202,0.2202,0.2202,0.2202,0.2191,0.2192,0.2202 cublas=0.0809,0.0799,0.0799,0.0809,0.0799,0.0789,0.0799,0.0809,0.0809,0.0788,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0788,0.0788,0.0798,0.0799,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799 cutlass=0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557,0.4557,0.4557,0.4556,0.4547,0.4516,0.4526,0.4516,0.4507,0.4516,0.4516,0.4516,0.4516,0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557
+# n=128x1024x4096 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=16x8 block=256 smem=43008 regs=96 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2705 med_ms=0.2724 max_ms=0.2755 tflops_med=3.94
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4547 max_ms=0.4557 tflops_med=2.36
+ratio mapal_vs_cublas=0.293 mapal_vs_cutlass=1.669 (>1 = mapal faster, medians)
+samples mapal=0.2744,0.2724,0.2724,0.2734,0.2724,0.2714,0.2714,0.2724,0.2714,0.2714,0.2724,0.2724,0.2724,0.2755,0.2724,0.2705,0.2724,0.2734,0.2724,0.2714,0.2714,0.2724,0.2734,0.2724,0.2734,0.2734,0.2724,0.2724,0.2714,0.2714 cublas=0.0809,0.0799,0.0799,0.0799,0.0799,0.0799,0.0788,0.0799,0.0799,0.0788,0.0788,0.0799,0.0799,0.0799,0.0789,0.0799,0.0799,0.0789,0.0799,0.0799,0.0799,0.0790,0.0799,0.0799,0.0799,0.0801,0.0799,0.0806,0.0799,0.0788 cutlass=0.4547,0.4547,0.4557,0.4547,0.4548,0.4547,0.4547,0.4557,0.4557,0.4556,0.4557,0.4547,0.4547,0.4547,0.4557,0.4547,0.4557,0.4547,0.4547,0.4547,0.4548,0.4557,0.4557,0.4548,0.4547,0.4547,0.4557,0.4547,0.4547,0.4547
+# n=128x1024x4096 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_f351208cce3aa2c0 grid=16x8 block=256 smem=43008 regs=96 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.084e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2703 med_ms=0.2724 max_ms=0.2755 tflops_med=3.94
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4556 max_ms=0.4557 tflops_med=2.36
+ratio mapal_vs_cublas=0.293 mapal_vs_cutlass=1.672 (>1 = mapal faster, medians)
+samples mapal=0.2755,0.2714,0.2714,0.2724,0.2714,0.2724,0.2714,0.2714,0.2734,0.2734,0.2726,0.2724,0.2703,0.2725,0.2724,0.2714,0.2724,0.2724,0.2724,0.2724,0.2714,0.2724,0.2734,0.2724,0.2734,0.2714,0.2734,0.2734,0.2724,0.2724 cublas=0.0799,0.0799,0.0789,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0788,0.0790,0.0799,0.0799,0.0799,0.0788,0.0799,0.0799,0.0788,0.0788,0.0809,0.0799,0.0799,0.0788,0.0799,0.0809,0.0798,0.0788,0.0799,0.0799,0.0799 cutlass=0.4557,0.4556,0.4557,0.4547,0.4547,0.4557,0.4557,0.4547,0.4547,0.4547,0.4557,0.4547,0.4547,0.4547,0.4557,0.4547,0.4547,0.4547,0.4557,0.4557,0.4557,0.4556,0.4557,0.4557,0.4547,0.4547,0.4557,0.4557,0.4548,0.4547
+# n=128x1024x4096 face=_c.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_82269f74359ddd9f grid=32x2 block=32 smem=1536 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=9.945e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.4004 med_ms=0.4014 max_ms=0.4035 tflops_med=2.67
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4557 max_ms=0.4567 tflops_med=2.36
+ratio mapal_vs_cublas=0.199 mapal_vs_cutlass=1.135 (>1 = mapal faster, medians)
+samples mapal=0.4024,0.4014,0.4024,0.4024,0.4014,0.4004,0.4015,0.4014,0.4013,0.4004,0.4024,0.4024,0.4014,0.4014,0.4024,0.4024,0.4014,0.4014,0.4014,0.4014,0.4014,0.4024,0.4004,0.4024,0.4014,0.4035,0.4014,0.4004,0.4014,0.4014 cublas=0.0799,0.0799,0.0788,0.0799,0.0809,0.0788,0.0809,0.0809,0.0809,0.0809,0.0789,0.0799,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0788,0.0809,0.0809,0.0799,0.0799,0.0809,0.0809,0.0799,0.0788,0.0809,0.0809,0.0798 cutlass=0.4547,0.4547,0.4557,0.4557,0.4547,0.4557,0.4557,0.4547,0.4547,0.4557,0.4557,0.4547,0.4547,0.4557,0.4557,0.4547,0.4557,0.4547,0.4557,0.4557,0.4547,0.4557,0.4567,0.4557,0.4557,0.4557,0.4557,0.4556,0.4557,0.4547
+# n=128x1024x4096 face=_c.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_82269f74359ddd9f grid=32x2 block=32 smem=1536 regs=165 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=9.945e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.3994 med_ms=0.4004 max_ms=0.4014 tflops_med=2.68
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4557 max_ms=0.4557 tflops_med=2.36
+ratio mapal_vs_cublas=0.199 mapal_vs_cutlass=1.138 (>1 = mapal faster, medians)
+samples mapal=0.4014,0.4014,0.4014,0.4004,0.4004,0.4014,0.4014,0.4014,0.4004,0.4004,0.4014,0.4014,0.4014,0.4004,0.3994,0.4004,0.3994,0.4004,0.4013,0.4004,0.4004,0.3994,0.4004,0.4004,0.4014,0.4014,0.4004,0.4004,0.4014,0.4004 cublas=0.0809,0.0799,0.0797,0.0799,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0798,0.0799,0.0799,0.0809,0.0809,0.0788,0.0799,0.0799,0.0809,0.0799,0.0799,0.0808,0.0809,0.0799 cutlass=0.4547,0.4547,0.4557,0.4557,0.4547,0.4547,0.4557,0.4547,0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4547,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557,0.4556,0.4547,0.4556,0.4557,0.4547,0.4547,0.4547
+# n=128x1024x4096 face=_c.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_82269f74359ddd9f grid=32x2 block=32 smem=1536 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=9.945e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.4004 med_ms=0.4024 max_ms=0.4035 tflops_med=2.67
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4557 max_ms=0.4557 tflops_med=2.36
+ratio mapal_vs_cublas=0.198 mapal_vs_cutlass=1.132 (>1 = mapal faster, medians)
+samples mapal=0.4024,0.4014,0.4014,0.4014,0.4024,0.4035,0.4033,0.4024,0.4014,0.4014,0.4014,0.4024,0.4004,0.4035,0.4024,0.4024,0.4004,0.4024,0.4014,0.4014,0.4024,0.4004,0.4024,0.4015,0.4024,0.4004,0.4024,0.4014,0.4024,0.4024 cublas=0.0809,0.0788,0.0799,0.0809,0.0809,0.0799,0.0788,0.0799,0.0799,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799,0.0799,0.0799,0.0799,0.0788,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0809,0.0789 cutlass=0.4557,0.4547,0.4557,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557,0.4557,0.4557,0.4557,0.4547,0.4547,0.4557,0.4557,0.4547,0.4547,0.4547,0.4555,0.4547,0.4547,0.4557,0.4547,0.4557,0.4547,0.4557,0.4547,0.4557,0.4547
+# n=128x1024x4096 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_82269f74359ddd9f grid=32x2 block=32 smem=12800 regs=255 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=9.945e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2959 med_ms=0.3011 max_ms=0.3082 tflops_med=3.57
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4556 max_ms=0.4567 tflops_med=2.36
+ratio mapal_vs_cublas=0.265 mapal_vs_cutlass=1.513 (>1 = mapal faster, medians)
+samples mapal=0.2980,0.3000,0.3062,0.2980,0.3040,0.3011,0.3044,0.3041,0.3012,0.3000,0.2990,0.2990,0.3000,0.3032,0.2980,0.2970,0.3012,0.3072,0.2982,0.3011,0.3072,0.3000,0.3021,0.3082,0.3021,0.2959,0.3082,0.3000,0.3012,0.3011 cublas=0.0799,0.0799,0.0799,0.0808,0.0809,0.0799,0.0799,0.0799,0.0788,0.0799,0.0788,0.0809,0.0799,0.0797,0.0796,0.0809,0.0809,0.0799,0.0799,0.0799,0.0799,0.0788,0.0799,0.0799,0.0799,0.0788,0.0799,0.0799,0.0799,0.0789 cutlass=0.4556,0.4557,0.4557,0.4547,0.4548,0.4556,0.4547,0.4547,0.4547,0.4547,0.4557,0.4557,0.4548,0.4548,0.4557,0.4556,0.4547,0.4557,0.4557,0.4547,0.4557,0.4547,0.4567,0.4557,0.4547,0.4547,0.4557,0.4547,0.4557,0.4547
+# n=128x1024x4096 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_82269f74359ddd9f grid=32x2 block=32 smem=12800 regs=255 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=9.945e-05
+values leg=cublas cells=256 maxrel_vs_f64=6.086e-05
+values leg=mapal cells=256 maxrel_vs_f64=9.945e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=1024 K=4096 n=30 min_ms=0.2959 med_ms=0.3021 max_ms=0.3103 tflops_med=3.55
+time leg=cublas M=128 N=1024 K=4096 n=30 min_ms=0.0788 med_ms=0.0799 max_ms=0.0809 tflops_med=13.44
+time leg=cutlass M=128 N=1024 K=4096 n=30 min_ms=0.4547 med_ms=0.4557 max_ms=0.4567 tflops_med=2.36
+ratio mapal_vs_cublas=0.264 mapal_vs_cutlass=1.508 (>1 = mapal faster, medians)
+samples mapal=0.3000,0.3072,0.3011,0.3021,0.3041,0.3041,0.3021,0.3000,0.3041,0.2970,0.2970,0.3072,0.3031,0.3021,0.3000,0.2959,0.3073,0.3011,0.3031,0.3011,0.3062,0.2980,0.2990,0.2990,0.2970,0.3021,0.3062,0.3021,0.2980,0.3103 cublas=0.0809,0.0799,0.0799,0.0809,0.0809,0.0799,0.0799,0.0809,0.0809,0.0788,0.0799,0.0809,0.0808,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0799,0.0788,0.0809,0.0809,0.0799,0.0799,0.0799,0.0809,0.0799 cutlass=0.4557,0.4557,0.4557,0.4547,0.4547,0.4547,0.4557,0.4547,0.4547,0.4547,0.4557,0.4557,0.4547,0.4557,0.4557,0.4547,0.4547,0.4547,0.4567,0.4547,0.4547,0.4547,0.4567,0.4547,0.4557,0.4557,0.4557,0.4557,0.4547,0.4557
+# n=128x18432x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c5afad7150fa7a54 grid=144x1 block=256 smem=16640 regs=128 local_bytes=24
+values leg=cutlass cells=256 maxrel_vs_f64=5.346e-05
+values leg=cublas cells=256 maxrel_vs_f64=5.346e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.127e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=18432 K=7168 n=30 min_ms=2.7597 med_ms=3.6014 max_ms=3.8164 tflops_med=9.39
+time leg=cublas M=128 N=18432 K=7168 n=30 min_ms=1.4490 med_ms=1.8932 max_ms=2.0285 tflops_med=17.87
+time leg=cutlass M=128 N=18432 K=7168 n=30 min_ms=1.5544 med_ms=2.0255 max_ms=2.1606 tflops_med=16.70
+ratio mapal_vs_cublas=0.526 mapal_vs_cutlass=0.562 (>1 = mapal faster, medians)
+samples mapal=2.7617,2.7597,2.7597,2.7607,3.7683,3.8164,3.7970,3.7724,3.7714,3.6495,3.6454,3.5645,3.5676,3.5348,3.4877,3.4847,3.6465,3.6485,3.6065,3.6065,3.6024,3.6014,3.6065,3.6035,3.5686,3.5267,3.5226,3.5215,3.5256,3.5237 cublas=1.4510,1.4490,1.4500,1.4490,2.0285,2.0285,2.0040,2.0028,1.9672,1.9313,1.9323,1.8883,1.8893,1.8463,1.8473,1.8534,1.9333,1.9333,1.9118,1.9098,1.9128,1.9108,1.9098,1.8932,1.8893,1.8668,1.8678,1.8688,1.8678,1.8668 cutlass=1.5544,1.5544,1.5555,1.5555,2.1596,2.1606,2.1330,2.1340,2.0582,2.0582,2.0244,2.0111,2.0101,1.9651,1.9661,2.0582,2.0582,2.0531,2.0337,2.0347,2.0337,2.0337,2.0326,2.0101,2.0101,1.9876,1.9876,1.9886,1.9876,2.0255
+# n=128x18432x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c5afad7150fa7a54 grid=144x1 block=256 smem=16640 regs=128 local_bytes=24
+values leg=cutlass cells=256 maxrel_vs_f64=5.346e-05
+values leg=cublas cells=256 maxrel_vs_f64=5.346e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.127e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=18432 K=7168 n=30 min_ms=2.5518 med_ms=3.6096 max_ms=4.2936 tflops_med=9.37
+time leg=cublas M=128 N=18432 K=7168 n=30 min_ms=1.3782 med_ms=1.9118 max_ms=2.2845 tflops_med=17.69
+time leg=cutlass M=128 N=18432 K=7168 n=30 min_ms=1.4889 med_ms=2.0348 max_ms=2.4310 tflops_med=16.62
+ratio mapal_vs_cublas=0.530 mapal_vs_cutlass=0.564 (>1 = mapal faster, medians)
+samples mapal=2.5549,2.5518,2.5620,2.8703,2.8692,2.8692,4.2895,4.2936,4.1247,4.1216,3.7816,3.7755,3.6577,3.6065,3.6055,3.6035,3.6065,3.7315,3.7325,3.6434,3.6096,3.6096,3.6045,3.6045,3.6444,3.6506,3.6178,3.6076,3.6065,3.6874 cublas=1.3782,1.3804,1.3814,1.5094,1.5104,1.5094,2.2845,2.2835,2.1924,2.1903,2.0040,2.0040,1.9118,1.9108,1.9117,1.9098,1.9108,1.9784,1.9802,1.9118,1.9108,1.9108,1.9118,1.9087,1.9343,1.9333,1.9128,1.9098,1.9200,1.9548 cutlass=1.4889,1.4930,1.6036,1.6036,1.6046,1.8084,2.4310,2.3450,2.3337,2.2385,2.1330,2.1340,2.0337,2.0347,2.0326,2.0347,2.0347,2.1074,2.1084,2.0357,2.0326,2.0337,2.0337,2.0429,2.0582,2.0582,2.0337,2.0348,2.0828,2.0828
+# n=128x18432x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b0c59abe7a61102b grid=144x1 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=5.346e-05
+values leg=cublas cells=256 maxrel_vs_f64=5.346e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.346e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=18432 K=7168 n=30 min_ms=1.5247 med_ms=2.3245 max_ms=3.6413 tflops_med=14.55
+time leg=cublas M=128 N=18432 K=7168 n=30 min_ms=1.3722 med_ms=2.1617 max_ms=3.3720 tflops_med=15.65
+time leg=cutlass M=128 N=18432 K=7168 n=30 min_ms=1.4888 med_ms=2.3040 max_ms=3.5932 tflops_med=14.68
+ratio mapal_vs_cublas=0.930 mapal_vs_cutlass=0.991 (>1 = mapal faster, medians)
+samples mapal=1.5299,1.5462,1.5247,1.5288,1.5401,1.5462,3.6413,3.6403,3.2348,3.1355,2.5303,2.5293,2.3235,2.3235,2.3224,2.3245,2.3245,2.3255,2.3235,2.3255,2.2938,2.2948,2.3572,2.3572,2.1760,2.0736,2.0747,2.3562,2.3900,2.3880 cublas=1.3722,1.3742,1.3783,1.3783,1.3783,1.3814,3.3720,3.1212,3.0003,2.3491,2.3521,2.3480,2.1617,2.1606,2.1617,2.1617,2.1627,2.1617,2.1617,2.1555,2.1350,2.1320,2.1924,2.1903,1.9333,1.9313,1.9323,2.2200,2.2211,2.2047 cutlass=1.4950,1.4888,1.4909,1.4950,1.5002,3.5932,3.5922,3.1939,3.1939,2.5027,2.5015,2.3470,2.3030,2.3040,2.3020,2.3030,2.3020,2.3040,2.3030,2.2733,2.2733,2.3337,2.3337,2.3337,2.0572,2.0593,2.0572,2.3665,2.3654,2.3337
+# n=128x18432x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b0c59abe7a61102b grid=144x1 block=256 smem=16640 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=5.346e-05
+values leg=cublas cells=256 maxrel_vs_f64=5.346e-05
+values leg=mapal cells=256 maxrel_vs_f64=5.346e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=18432 K=7168 n=30 min_ms=1.5380 med_ms=2.2958 max_ms=3.8011 tflops_med=14.73
+time leg=cublas M=128 N=18432 K=7168 n=30 min_ms=1.3773 med_ms=2.1524 max_ms=3.5154 tflops_med=15.71
+time leg=cutlass M=128 N=18432 K=7168 n=30 min_ms=1.4920 med_ms=2.2743 max_ms=3.7478 tflops_med=14.87
+ratio mapal_vs_cublas=0.938 mapal_vs_cutlass=0.991 (>1 = mapal faster, medians)
+samples mapal=1.5380,1.5380,1.5391,1.5401,1.5454,1.5514,3.8011,3.6291,3.2963,2.6286,2.5672,2.5661,2.3583,2.3572,2.3235,2.3255,2.3255,2.2948,2.2938,2.2938,2.2938,2.2938,2.2948,2.2948,2.2948,2.2938,2.2958,2.3419,2.3552,2.3572 cublas=1.3773,1.3773,1.3783,1.3773,1.3804,2.2876,3.5154,3.0546,3.0536,2.3849,2.3839,2.2917,2.1924,2.1924,2.1637,2.1627,2.1524,2.1340,2.1350,2.1350,2.1340,2.1350,2.1340,2.1350,2.1340,2.1340,2.1340,2.1903,2.1914,2.1842 cutlass=1.4981,1.5084,1.4930,1.4920,1.4981,3.7478,3.7478,3.2532,3.2532,2.5395,2.5375,2.3347,2.3337,2.3347,2.3030,2.3040,2.2733,2.2733,2.2733,2.2733,2.2733,2.2723,2.2733,2.2733,2.2723,2.2743,2.2733,2.3337,2.3337,2.3040
+# n=128x2048x7168 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=64x2 block=128 smem=6400 regs=77 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.4024 med_ms=0.4045 max_ms=0.4260 tflops_med=9.29
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1872 med_ms=0.1884 max_ms=0.1987 tflops_med=19.95
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.7916 max_ms=0.8356 tflops_med=4.75
+ratio mapal_vs_cublas=0.466 mapal_vs_cutlass=1.957 (>1 = mapal faster, medians)
+samples mapal=0.4035,0.4045,0.4024,0.4024,0.4035,0.4045,0.4024,0.4035,0.4035,0.4045,0.4045,0.4035,0.4035,0.4024,0.4024,0.4024,0.4024,0.4035,0.4188,0.4178,0.4168,0.4188,0.4157,0.4188,0.4168,0.4178,0.4168,0.4260,0.4250,0.4239 cublas=0.1884,0.1874,0.1874,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1874,0.1872,0.1874,0.1884,0.1874,0.1884,0.1874,0.1874,0.1874,0.1946,0.1935,0.1946,0.1935,0.1944,0.1935,0.1946,0.1946,0.1987,0.1966,0.1966,0.1966 cutlass=0.7916,0.7926,0.7905,0.7916,0.7916,0.7916,0.7905,0.7916,0.7905,0.7916,0.7916,0.7916,0.7916,0.7916,0.7916,0.7925,0.7913,0.7914,0.8202,0.8202,0.8202,0.8194,0.8202,0.8203,0.8212,0.8212,0.8356,0.8356,0.8346,0.8356
+# n=128x2048x7168 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=32x4 block=256 smem=12800 regs=64 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5120 med_ms=0.5294 max_ms=0.5366 tflops_med=7.10
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1874 med_ms=0.1935 max_ms=0.1966 tflops_med=19.42
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7906 med_ms=0.8202 max_ms=0.8294 tflops_med=4.58
+ratio mapal_vs_cublas=0.366 mapal_vs_cutlass=1.549 (>1 = mapal faster, medians)
+samples mapal=0.5130,0.5120,0.5121,0.5120,0.5120,0.5120,0.5120,0.5120,0.5120,0.5120,0.5130,0.5120,0.5130,0.5130,0.5120,0.5304,0.5304,0.5294,0.5304,0.5304,0.5304,0.5315,0.5315,0.5356,0.5356,0.5356,0.5356,0.5366,0.5366,0.5366 cublas=0.1874,0.1874,0.1874,0.1884,0.1884,0.1884,0.1884,0.1874,0.1874,0.1874,0.1884,0.1874,0.1874,0.1874,0.1884,0.1935,0.1936,0.1935,0.1946,0.1935,0.1956,0.1946,0.1956,0.1956,0.1966,0.1966,0.1956,0.1966,0.1966,0.1956 cutlass=0.7916,0.7916,0.7906,0.7916,0.7916,0.7916,0.7916,0.7916,0.7916,0.7926,0.7916,0.7926,0.7926,0.7926,0.8202,0.8202,0.8193,0.8212,0.8202,0.8212,0.8202,0.8203,0.8284,0.8294,0.8284,0.8284,0.8284,0.8284,0.8274,0.8284
+# n=128x2048x7168 face=_exact.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=64x2 block=128 smem=49152 regs=204 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5068 med_ms=0.5181 max_ms=0.5468 tflops_med=7.25
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1823 med_ms=0.1842 max_ms=0.1956 tflops_med=20.40
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7711 med_ms=0.7721 max_ms=0.8212 tflops_med=4.87
+ratio mapal_vs_cublas=0.355 mapal_vs_cutlass=1.490 (>1 = mapal faster, medians)
+samples mapal=0.5181,0.5110,0.5068,0.5132,0.5069,0.5089,0.5171,0.5120,0.5089,0.5120,0.5079,0.5181,0.5090,0.5171,0.5068,0.5079,0.5088,0.5407,0.5386,0.5427,0.5419,0.5418,0.5427,0.5468,0.5437,0.5437,0.5386,0.5417,0.5468,0.5427 cublas=0.1842,0.1833,0.1833,0.1843,0.1835,0.1833,0.1834,0.1823,0.1833,0.1833,0.1833,0.1842,0.1833,0.1833,0.1833,0.1833,0.1833,0.1944,0.1956,0.1946,0.1946,0.1946,0.1946,0.1956,0.1935,0.1935,0.1956,0.1935,0.1955,0.1946 cutlass=0.7711,0.7721,0.7711,0.7721,0.7711,0.7721,0.7712,0.7721,0.7711,0.7711,0.7720,0.7721,0.7721,0.7721,0.7719,0.7721,0.7782,0.8212,0.8202,0.8212,0.8192,0.8212,0.8192,0.8202,0.8202,0.8202,0.8202,0.8212,0.8202,0.8212
+# n=128x2048x7168 face=_exact.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=64x2 block=128 smem=49152 regs=204 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5059 med_ms=0.5151 max_ms=0.5437 tflops_med=7.30
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1823 med_ms=0.1843 max_ms=0.1956 tflops_med=20.39
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7711 med_ms=0.7721 max_ms=0.8212 tflops_med=4.87
+ratio mapal_vs_cublas=0.358 mapal_vs_cutlass=1.499 (>1 = mapal faster, medians)
+samples mapal=0.5171,0.5140,0.5100,0.5100,0.5089,0.5151,0.5069,0.5100,0.5140,0.5079,0.5151,0.5130,0.5120,0.5130,0.5089,0.5059,0.5089,0.5161,0.5356,0.5386,0.5345,0.5366,0.5417,0.5386,0.5407,0.5437,0.5376,0.5417,0.5396,0.5417 cublas=0.1833,0.1823,0.1833,0.1843,0.1843,0.1843,0.1833,0.1833,0.1833,0.1833,0.1833,0.1833,0.1843,0.1833,0.1843,0.1833,0.1833,0.1833,0.1946,0.1925,0.1935,0.1925,0.1935,0.1935,0.1935,0.1925,0.1956,0.1935,0.1956,0.1946 cutlass=0.7721,0.7721,0.7721,0.7721,0.7721,0.7721,0.7721,0.7721,0.7711,0.7721,0.7711,0.7721,0.7721,0.7721,0.7721,0.7721,0.7711,0.8131,0.8131,0.8141,0.8131,0.8141,0.8140,0.8131,0.8131,0.8159,0.8202,0.8202,0.8202,0.8212
+# n=128x2048x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=32x4 block=256 smem=49152 regs=120 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5478 med_ms=0.5622 max_ms=0.5704 tflops_med=6.68
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1864 med_ms=0.1915 max_ms=0.1956 tflops_med=19.63
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.8131 max_ms=0.8212 tflops_med=4.62
+ratio mapal_vs_cublas=0.341 mapal_vs_cutlass=1.446 (>1 = mapal faster, medians)
+samples mapal=0.5509,0.5509,0.5478,0.5499,0.5499,0.5478,0.5498,0.5478,0.5499,0.5478,0.5488,0.5499,0.5499,0.5489,0.5478,0.5632,0.5632,0.5622,0.5630,0.5632,0.5622,0.5642,0.5622,0.5673,0.5683,0.5683,0.5683,0.5704,0.5693,0.5683 cublas=0.1884,0.1864,0.1884,0.1874,0.1884,0.1874,0.1874,0.1874,0.1874,0.1874,0.1884,0.1884,0.1874,0.1864,0.1874,0.1925,0.1925,0.1915,0.1925,0.1925,0.1925,0.1927,0.1925,0.1935,0.1946,0.1935,0.1937,0.1935,0.1956,0.1946 cutlass=0.7916,0.7916,0.7916,0.7917,0.7907,0.7905,0.7905,0.7926,0.7906,0.7917,0.7905,0.7916,0.7916,0.7924,0.8131,0.8131,0.8131,0.8141,0.8130,0.8141,0.8131,0.8131,0.8192,0.8212,0.8212,0.8202,0.8194,0.8202,0.8192,0.8202
+# n=128x2048x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3e8de735cd7b9c26 grid=32x4 block=256 smem=49152 regs=120 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=4.715e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5478 med_ms=0.5683 max_ms=0.5724 tflops_med=6.61
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1874 med_ms=0.1946 max_ms=0.1956 tflops_med=19.32
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7916 med_ms=0.8202 max_ms=0.8212 tflops_med=4.58
+ratio mapal_vs_cublas=0.342 mapal_vs_cutlass=1.443 (>1 = mapal faster, medians)
+samples mapal=0.5499,0.5489,0.5489,0.5499,0.5509,0.5478,0.5478,0.5489,0.5489,0.5519,0.5499,0.5489,0.5489,0.5693,0.5693,0.5673,0.5693,0.5693,0.5724,0.5683,0.5683,0.5683,0.5683,0.5693,0.5693,0.5684,0.5683,0.5683,0.5683,0.5683 cublas=0.1885,0.1874,0.1884,0.1884,0.1874,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1955,0.1946,0.1946,0.1956,0.1935,0.1946,0.1946,0.1956,0.1946,0.1956,0.1946,0.1956,0.1946,0.1946,0.1946,0.1946,0.1946 cutlass=0.7916,0.7926,0.7916,0.7935,0.7916,0.7926,0.7926,0.7926,0.7916,0.7926,0.7926,0.7916,0.8069,0.8203,0.8202,0.8212,0.8202,0.8212,0.8202,0.8212,0.8202,0.8212,0.8202,0.8212,0.8202,0.8212,0.8202,0.8202,0.8202,0.8212
+# n=128x2048x7168 face=_c.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=7.153e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.7014 med_ms=0.7035 max_ms=0.7045 tflops_med=5.34
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1864 med_ms=0.1874 max_ms=0.1884 tflops_med=20.05
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.7916 max_ms=0.7926 tflops_med=4.75
+ratio mapal_vs_cublas=0.266 mapal_vs_cutlass=1.125 (>1 = mapal faster, medians)
+samples mapal=0.7035,0.7035,0.7045,0.7025,0.7025,0.7035,0.7045,0.7025,0.7035,0.7025,0.7044,0.7015,0.7014,0.7025,0.7045,0.7025,0.7025,0.7025,0.7035,0.7025,0.7035,0.7014,0.7025,0.7035,0.7045,0.7025,0.7035,0.7014,0.7035,0.7035 cublas=0.1884,0.1864,0.1884,0.1872,0.1884,0.1864,0.1874,0.1874,0.1874,0.1874,0.1882,0.1874,0.1884,0.1873,0.1884,0.1874,0.1874,0.1864,0.1884,0.1874,0.1884,0.1874,0.1874,0.1874,0.1874,0.1874,0.1874,0.1874,0.1884,0.1874 cutlass=0.7916,0.7916,0.7916,0.7916,0.7915,0.7916,0.7905,0.7926,0.7916,0.7916,0.7906,0.7915,0.7916,0.7916,0.7907,0.7916,0.7905,0.7917,0.7908,0.7916,0.7916,0.7916,0.7916,0.7925,0.7916,0.7916,0.7916,0.7914,0.7916,0.7926
+# n=128x2048x7168 face=_c.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=1536 regs=167 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=7.153e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.6994 med_ms=0.7014 max_ms=0.7025 tflops_med=5.36
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1872 med_ms=0.1883 max_ms=0.1894 tflops_med=19.96
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.7916 max_ms=0.7926 tflops_med=4.75
+ratio mapal_vs_cublas=0.268 mapal_vs_cutlass=1.128 (>1 = mapal faster, medians)
+samples mapal=0.7024,0.7004,0.7014,0.7014,0.7004,0.7004,0.7004,0.7014,0.7004,0.7025,0.7014,0.7004,0.7004,0.7014,0.7014,0.7025,0.7014,0.7014,0.7004,0.7014,0.7004,0.6994,0.6994,0.7014,0.7025,0.7004,0.7004,0.6994,0.7014,0.7025 cublas=0.1884,0.1884,0.1884,0.1874,0.1884,0.1875,0.1874,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1884,0.1884,0.1872,0.1874,0.1874,0.1874,0.1874,0.1884,0.1883,0.1884,0.1874,0.1884,0.1874,0.1894,0.1874,0.1884,0.1874 cutlass=0.7916,0.7926,0.7916,0.7926,0.7916,0.7916,0.7916,0.7916,0.7916,0.7926,0.7916,0.7926,0.7916,0.7916,0.7905,0.7916,0.7916,0.7926,0.7916,0.7916,0.7916,0.7916,0.7914,0.7926,0.7916,0.7926,0.7916,0.7916,0.7916,0.7916
+# n=128x2048x7168 face=_c.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=7.153e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.7014 med_ms=0.7035 max_ms=0.7045 tflops_med=5.34
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1864 med_ms=0.1874 max_ms=0.1894 tflops_med=20.05
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.7916 max_ms=0.7926 tflops_med=4.75
+ratio mapal_vs_cublas=0.266 mapal_vs_cutlass=1.125 (>1 = mapal faster, medians)
+samples mapal=0.7025,0.7045,0.7025,0.7033,0.7045,0.7025,0.7035,0.7035,0.7025,0.7014,0.7014,0.7014,0.7035,0.7025,0.7025,0.7035,0.7025,0.7035,0.7035,0.7025,0.7025,0.7025,0.7035,0.7035,0.7014,0.7035,0.7035,0.7035,0.7035,0.7045 cublas=0.1884,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1884,0.1884,0.1875,0.1874,0.1874,0.1874,0.1864,0.1894,0.1864,0.1884,0.1874,0.1884,0.1864,0.1874,0.1874,0.1884,0.1864,0.1875,0.1874,0.1884,0.1874,0.1874,0.1864 cutlass=0.7916,0.7916,0.7916,0.7905,0.7906,0.7926,0.7916,0.7916,0.7905,0.7916,0.7915,0.7914,0.7916,0.7916,0.7905,0.7907,0.7905,0.7916,0.7916,0.7905,0.7905,0.7908,0.7905,0.7916,0.7905,0.7915,0.7916,0.7926,0.7916,0.7926
+# n=128x2048x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=12800 regs=255 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=7.153e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5212 med_ms=0.5263 max_ms=0.5315 tflops_med=7.14
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1864 med_ms=0.1883 max_ms=0.1894 tflops_med=19.96
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7905 med_ms=0.7916 max_ms=0.7926 tflops_med=4.75
+ratio mapal_vs_cublas=0.358 mapal_vs_cutlass=1.504 (>1 = mapal faster, medians)
+samples mapal=0.5284,0.5274,0.5263,0.5284,0.5222,0.5243,0.5243,0.5274,0.5243,0.5253,0.5294,0.5212,0.5263,0.5294,0.5243,0.5284,0.5315,0.5253,0.5284,0.5222,0.5294,0.5263,0.5233,0.5243,0.5263,0.5233,0.5243,0.5263,0.5251,0.5284 cublas=0.1884,0.1893,0.1894,0.1874,0.1884,0.1874,0.1884,0.1874,0.1894,0.1874,0.1894,0.1874,0.1893,0.1874,0.1874,0.1874,0.1883,0.1864,0.1884,0.1873,0.1874,0.1884,0.1884,0.1875,0.1884,0.1874,0.1884,0.1874,0.1884,0.1874 cutlass=0.7916,0.7916,0.7916,0.7926,0.7905,0.7926,0.7916,0.7916,0.7926,0.7926,0.7916,0.7926,0.7905,0.7917,0.7905,0.7926,0.7916,0.7916,0.7916,0.7916,0.7916,0.7916,0.7905,0.7916,0.7905,0.7916,0.7916,0.7916,0.7916,0.7917
+# n=128x2048x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=12800 regs=255 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.153e-05
+values leg=cublas cells=256 maxrel_vs_f64=4.378e-05
+values leg=mapal cells=256 maxrel_vs_f64=7.153e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=128 N=2048 K=7168 n=30 min_ms=0.5222 med_ms=0.5253 max_ms=0.5294 tflops_med=7.15
+time leg=cublas M=128 N=2048 K=7168 n=30 min_ms=0.1874 med_ms=0.1884 max_ms=0.1884 tflops_med=19.95
+time leg=cutlass M=128 N=2048 K=7168 n=30 min_ms=0.7916 med_ms=0.7916 max_ms=0.7926 tflops_med=4.75
+ratio mapal_vs_cublas=0.359 mapal_vs_cutlass=1.507 (>1 = mapal faster, medians)
+samples mapal=0.5243,0.5294,0.5253,0.5253,0.5274,0.5243,0.5274,0.5263,0.5243,0.5294,0.5274,0.5253,0.5284,0.5253,0.5243,0.5243,0.5284,0.5243,0.5263,0.5222,0.5253,0.5243,0.5294,0.5244,0.5284,0.5294,0.5253,0.5294,0.5243,0.5294 cublas=0.1884,0.1874,0.1884,0.1874,0.1884,0.1883,0.1884,0.1874,0.1884,0.1884,0.1884,0.1874,0.1884,0.1874,0.1874,0.1884,0.1884,0.1874,0.1884,0.1884,0.1884,0.1874,0.1884,0.1874,0.1884,0.1874,0.1884,0.1884,0.1884,0.1884 cutlass=0.7916,0.7926,0.7916,0.7916,0.7916,0.7916,0.7916,0.7926,0.7926,0.7926,0.7916,0.7916,0.7926,0.7926,0.7916,0.7926,0.7916,0.7916,0.7916,0.7926,0.7916,0.7926,0.7916,0.7926,0.7916,0.7926,0.7916,0.7926,0.7916,0.7916
+# n=16x1024x4096 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1669 med_ms=0.1679 max_ms=0.1691 tflops_med=0.80
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.213 mapal_vs_cutlass=2.689 (>1 = mapal faster, medians)
+samples mapal=0.1691,0.1669,0.1679,0.1679,0.1680,0.1690,0.1690,0.1679,0.1679,0.1679,0.1669,0.1679,0.1690,0.1669,0.1680,0.1690,0.1690,0.1679,0.1669,0.1669,0.1690,0.1679,0.1690,0.1690,0.1679,0.1690,0.1679,0.1679,0.1679,0.1690 cublas=0.0358,0.0348,0.0348,0.0358,0.0369,0.0358,0.0349,0.0358,0.0358,0.0358,0.0358,0.0358,0.0369,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348,0.0369,0.0369,0.0358,0.0358,0.0358,0.0369,0.0358,0.0358,0.0358,0.0358,0.0358 cutlass=0.4506,0.4516,0.4526,0.4516,0.4515,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4526,0.4516,0.4526,0.4516,0.4516,0.4516,0.4506,0.4516
+# n=16x1024x4096 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=1792 regs=66 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1065 med_ms=0.1075 max_ms=0.1085 tflops_med=1.25
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4516 tflops_med=0.30
+ratio mapal_vs_cublas=0.333 mapal_vs_cutlass=4.200 (>1 = mapal faster, medians)
+samples mapal=0.1085,0.1067,0.1075,0.1075,0.1075,0.1075,0.1075,0.1075,0.1085,0.1075,0.1075,0.1065,0.1075,0.1075,0.1075,0.1075,0.1075,0.1084,0.1075,0.1066,0.1075,0.1075,0.1075,0.1085,0.1075,0.1075,0.1065,0.1075,0.1085,0.1085 cublas=0.0369,0.0348,0.0358,0.0360,0.0369,0.0348,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0358,0.0348,0.0348,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0348,0.0357,0.0358,0.0360,0.0358,0.0358,0.0358,0.0358,0.0358 cutlass=0.4506,0.4516,0.4516,0.4506,0.4507,0.4516,0.4516,0.4506,0.4506,0.4516,0.4516,0.4506,0.4506,0.4506,0.4516,0.4506,0.4516,0.4506,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4506,0.4516,0.4516,0.4515,0.4516,0.4516
+# n=16x1024x4096 face=_exact.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=3584 regs=83 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.0942 med_ms=0.0963 max_ms=0.0973 tflops_med=1.39
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0360 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.372 mapal_vs_cutlass=4.691 (>1 = mapal faster, medians)
+samples mapal=0.0973,0.0963,0.0964,0.0952,0.0963,0.0963,0.0942,0.0973,0.0963,0.0963,0.0952,0.0952,0.0953,0.0942,0.0963,0.0963,0.0952,0.0963,0.0952,0.0963,0.0963,0.0942,0.0963,0.0963,0.0952,0.0942,0.0952,0.0963,0.0973,0.0973 cublas=0.0358,0.0348,0.0358,0.0358,0.0349,0.0358,0.0360,0.0358,0.0358,0.0348,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0348,0.0348,0.0358,0.0358,0.0348,0.0358,0.0358,0.0348,0.0348 cutlass=0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4506,0.4515,0.4526,0.4516,0.4506,0.4516,0.4515,0.4516,0.4507,0.4506,0.4526,0.4516,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516
+# n=16x1024x4096 face=_exact.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1669 med_ms=0.1679 max_ms=0.1700 tflops_med=0.80
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.213 mapal_vs_cutlass=2.689 (>1 = mapal faster, medians)
+samples mapal=0.1700,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1679,0.1669,0.1679,0.1690,0.1669,0.1679,0.1679,0.1679,0.1689,0.1679,0.1669,0.1690,0.1679,0.1700,0.1690,0.1679 cublas=0.0369,0.0348,0.0358,0.0369,0.0369,0.0359,0.0348,0.0369,0.0358,0.0348,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0369,0.0358,0.0348,0.0369,0.0369,0.0358,0.0358,0.0358,0.0369,0.0348,0.0358,0.0369,0.0358,0.0348 cutlass=0.4516,0.4516,0.4526,0.4516,0.4515,0.4516,0.4516,0.4506,0.4516,0.4515,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4526,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506
+# n=16x1024x4096 face=_exact.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=32x1 block=32 smem=13312 regs=164 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1362 med_ms=0.1372 max_ms=0.1393 tflops_med=0.98
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4516 tflops_med=0.30
+ratio mapal_vs_cublas=0.261 mapal_vs_cutlass=3.291 (>1 = mapal faster, medians)
+samples mapal=0.1393,0.1372,0.1362,0.1372,0.1362,0.1372,0.1372,0.1372,0.1372,0.1372,0.1371,0.1372,0.1372,0.1372,0.1382,0.1382,0.1372,0.1362,0.1372,0.1372,0.1382,0.1372,0.1382,0.1382,0.1372,0.1372,0.1382,0.1372,0.1382,0.1372 cublas=0.0369,0.0358,0.0348,0.0369,0.0369,0.0348,0.0348,0.0358,0.0358,0.0358,0.0358,0.0358,0.0369,0.0356,0.0348,0.0348,0.0348,0.0348,0.0348,0.0358,0.0358,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348,0.0358,0.0348,0.0348 cutlass=0.4515,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4506,0.4514,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4506,0.4516,0.4516,0.4506,0.4506
+# n=16x1024x4096 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=28672 regs=255 local_bytes=144
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.0655 med_ms=0.0666 max_ms=0.0686 tflops_med=2.02
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.538 mapal_vs_cutlass=6.785 (>1 = mapal faster, medians)
+samples mapal=0.0686,0.0666,0.0666,0.0668,0.0666,0.0666,0.0666,0.0666,0.0666,0.0655,0.0666,0.0666,0.0655,0.0666,0.0666,0.0666,0.0665,0.0666,0.0665,0.0666,0.0666,0.0666,0.0666,0.0666,0.0666,0.0676,0.0666,0.0666,0.0666,0.0676 cublas=0.0358,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348,0.0348,0.0358,0.0358,0.0348,0.0358,0.0369,0.0369,0.0358,0.0358,0.0369,0.0358,0.0358,0.0348,0.0358,0.0368,0.0357,0.0358,0.0358,0.0368,0.0358 cutlass=0.4516,0.4507,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4506,0.4516,0.4516,0.4506,0.4516,0.4525,0.4516,0.4506,0.4516,0.4526,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516
+# n=16x1024x4096 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=28672 regs=255 local_bytes=144
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.713e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.0655 med_ms=0.0666 max_ms=0.0686 tflops_med=2.02
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.538 mapal_vs_cutlass=6.785 (>1 = mapal faster, medians)
+samples mapal=0.0686,0.0666,0.0666,0.0676,0.0676,0.0666,0.0666,0.0666,0.0666,0.0666,0.0676,0.0666,0.0666,0.0655,0.0666,0.0666,0.0666,0.0666,0.0666,0.0666,0.0655,0.0655,0.0664,0.0666,0.0676,0.0666,0.0666,0.0666,0.0666,0.0666 cublas=0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0348,0.0348,0.0358,0.0369,0.0358,0.0348,0.0369,0.0358,0.0358,0.0358,0.0358,0.0369,0.0369,0.0358,0.0348,0.0348,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348 cutlass=0.4506,0.4516,0.4526,0.4516,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4526,0.4506,0.4514,0.4526,0.4524,0.4513,0.4516,0.4507,0.4516,0.4516,0.4506,0.4506,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4516,0.4506
+# n=16x1024x4096 face=_c.off-wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2d055d5fed4dabb1 grid=8x1 block=32 smem=9472 regs=227 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.010e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.3123 med_ms=0.3123 max_ms=0.3133 tflops_med=0.43
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.115 mapal_vs_cutlass=1.446 (>1 = mapal faster, medians)
+samples mapal=0.3133,0.3123,0.3123,0.3123,0.3123,0.3123,0.3133,0.3133,0.3123,0.3123,0.3123,0.3132,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3133,0.3123,0.3123,0.3123,0.3133 cublas=0.0369,0.0348,0.0348,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0369,0.0358,0.0358,0.0369,0.0348,0.0358,0.0358,0.0369,0.0358,0.0358,0.0358,0.0359,0.0358,0.0349,0.0368,0.0358,0.0348,0.0358,0.0358,0.0369,0.0348 cutlass=0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516
+# n=16x1024x4096 face=_c.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2d055d5fed4dabb1 grid=8x1 block=32 smem=9472 regs=227 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.010e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.3113 med_ms=0.3123 max_ms=0.3144 tflops_med=0.43
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.115 mapal_vs_cutlass=1.446 (>1 = mapal faster, medians)
+samples mapal=0.3144,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3123,0.3125,0.3123,0.3123,0.3123,0.3113,0.3123,0.3124,0.3113,0.3113,0.3113,0.3123,0.3113,0.3123,0.3122,0.3113,0.3123,0.3123 cublas=0.0369,0.0348,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348,0.0348,0.0358,0.0358,0.0348,0.0348,0.0369,0.0358,0.0348,0.0349,0.0358,0.0358,0.0358,0.0358,0.0348,0.0358,0.0358 cutlass=0.4516,0.4515,0.4526,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4506,0.4526,0.4516,0.4506,0.4506,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4525,0.4516,0.4506,0.4516
+# n=16x1024x4096 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2d055d5fed4dabb1 grid=64x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.010e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1577 med_ms=0.1587 max_ms=0.1596 tflops_med=0.85
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.226 mapal_vs_cutlass=2.845 (>1 = mapal faster, medians)
+samples mapal=0.1587,0.1577,0.1587,0.1577,0.1587,0.1577,0.1587,0.1587,0.1596,0.1587,0.1587,0.1587,0.1587,0.1577,0.1587,0.1587,0.1587,0.1587,0.1587,0.1577,0.1587,0.1587,0.1587,0.1577,0.1587,0.1587,0.1577,0.1577,0.1587,0.1587 cublas=0.0369,0.0348,0.0358,0.0358,0.0358,0.0358,0.0358,0.0369,0.0358,0.0348,0.0358,0.0358,0.0358,0.0348,0.0348,0.0358,0.0367,0.0348,0.0349,0.0358,0.0369,0.0358,0.0358,0.0358,0.0358,0.0348,0.0348,0.0369,0.0369,0.0348 cutlass=0.4516,0.4507,0.4516,0.4516,0.4516,0.4516,0.4526,0.4506,0.4506,0.4506,0.4516,0.4516,0.4506,0.4506,0.4516,0.4506,0.4506,0.4516,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4506,0.4515,0.4516,0.4507,0.4516,0.4516
+# n=16x1024x4096 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_2d055d5fed4dabb1 grid=64x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.010e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.178e-04
+values leg=mapal cells=256 maxrel_vs_f64=2.010e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=1024 K=4096 n=30 min_ms=0.1587 med_ms=0.1588 max_ms=0.1608 tflops_med=0.84
+time leg=cublas M=16 N=1024 K=4096 n=30 min_ms=0.0348 med_ms=0.0358 max_ms=0.0369 tflops_med=3.74
+time leg=cutlass M=16 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.30
+ratio mapal_vs_cublas=0.226 mapal_vs_cutlass=2.843 (>1 = mapal faster, medians)
+samples mapal=0.1608,0.1587,0.1597,0.1587,0.1597,0.1587,0.1587,0.1597,0.1608,0.1597,0.1587,0.1597,0.1587,0.1587,0.1597,0.1587,0.1597,0.1587,0.1588,0.1587,0.1597,0.1587,0.1587,0.1587,0.1597,0.1587,0.1597,0.1597,0.1587,0.1597 cublas=0.0359,0.0358,0.0348,0.0369,0.0358,0.0348,0.0358,0.0358,0.0358,0.0358,0.0348,0.0348,0.0369,0.0358,0.0358,0.0358,0.0369,0.0358,0.0358,0.0358,0.0358,0.0358,0.0358,0.0369,0.0369,0.0358,0.0358,0.0358,0.0358,0.0358 cutlass=0.4506,0.4516,0.4526,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4526,0.4515,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4506,0.4516,0.4526,0.4516,0.4506,0.4506
+# n=16x18432x7168 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=1152x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=8.4244 med_ms=8.6958 max_ms=8.8095 tflops_med=0.49
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6236 med_ms=0.7485 max_ms=0.8468 tflops_med=5.65
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5483 med_ms=2.3173 max_ms=2.6348 tflops_med=1.82
+ratio mapal_vs_cublas=0.086 mapal_vs_cutlass=0.266 (>1 = mapal faster, medians)
+samples mapal=8.4480,8.4244,8.5064,8.4838,8.4593,8.5125,8.6272,8.7255,8.7276,8.7624,8.6487,8.8095,8.7726,8.6548,8.6897,8.7327,8.6948,8.7644,8.6968,8.7480,8.6907,8.7747,8.7450,8.6958,8.7368,8.6907,8.7644,8.6804,8.6856,8.7439 cublas=0.6236,0.6236,0.6236,0.6717,0.6738,0.6994,0.7004,0.7055,0.6994,0.6994,0.7475,0.7209,0.7219,0.7772,0.7772,0.7567,0.7588,0.7567,0.7485,0.7209,0.7229,0.8212,0.8151,0.7670,0.8468,0.8028,0.7885,0.8325,0.8335,0.7782 cutlass=1.5483,1.5759,1.6169,1.9773,1.9773,2.1443,2.1473,2.1729,2.1494,2.1484,2.3173,2.2282,2.2272,2.4125,2.3603,2.3521,2.3501,2.3357,2.3163,2.2303,2.2272,2.5549,2.3818,2.3808,2.6348,2.4494,2.4484,2.5928,2.4136,2.4166
+# n=16x18432x7168 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=3328 regs=64 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6420 med_ms=0.7168 max_ms=0.7455 tflops_med=5.90
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6236 med_ms=0.6656 max_ms=0.6810 tflops_med=6.35
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5452 med_ms=1.9343 max_ms=2.0255 tflops_med=2.19
+ratio mapal_vs_cublas=0.929 mapal_vs_cutlass=2.699 (>1 = mapal faster, medians)
+samples mapal=0.6420,0.6502,0.6543,0.6461,0.6574,0.6810,0.6482,0.6646,0.6789,0.7168,0.7168,0.7168,0.7035,0.6789,0.6993,0.6861,0.6851,0.7229,0.7455,0.7444,0.7455,0.7455,0.7455,0.7455,0.7444,0.7444,0.7414,0.7383,0.7373,0.7393 cublas=0.6246,0.6257,0.6236,0.6267,0.6236,0.6246,0.6257,0.6246,0.6656,0.6656,0.6656,0.6666,0.6513,0.6502,0.6502,0.6513,0.6513,0.6799,0.6810,0.6789,0.6789,0.6799,0.6799,0.6799,0.6810,0.6799,0.6769,0.6769,0.6758,0.6748 cutlass=1.5452,1.5462,1.5493,1.5462,1.5462,1.5462,1.5462,1.5462,1.9323,1.9354,1.9333,1.9343,1.8371,1.8371,1.8350,1.8350,1.8371,2.0214,2.0214,2.0244,2.0234,2.0244,2.0204,2.0255,2.0214,2.0234,2.0009,2.0019,1.9999,1.9999
+# n=16x18432x7168 face=_exact.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=32 smem=6656 regs=116 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6308 med_ms=0.6431 max_ms=0.6636 tflops_med=6.57
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.7055 max_ms=0.7404 tflops_med=5.99
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3834 med_ms=2.1740 max_ms=2.2897 tflops_med=1.94
+ratio mapal_vs_cublas=1.097 mapal_vs_cutlass=3.381 (>1 = mapal faster, medians)
+samples mapal=0.6533,0.6410,0.6420,0.6328,0.6472,0.6308,0.6390,0.6328,0.6492,0.6574,0.6636,0.6554,0.6554,0.6554,0.6533,0.6492,0.6482,0.6513,0.6502,0.6420,0.6390,0.6400,0.6420,0.6451,0.6400,0.6380,0.6431,0.6431,0.6431,0.6410 cublas=0.6236,0.6226,0.6226,0.6216,0.6226,0.6246,0.6236,0.6226,0.6246,0.6226,0.7383,0.7404,0.7393,0.7404,0.7352,0.7301,0.7301,0.7311,0.7301,0.7055,0.7055,0.7055,0.7076,0.7055,0.7066,0.7055,0.7066,0.7055,0.7055,0.7055 cutlass=1.3834,1.3855,1.3875,1.3865,1.4633,1.4664,1.4664,1.4653,1.4653,1.4664,2.2876,2.2886,2.2856,2.2897,2.2569,2.2579,2.2600,2.2559,2.2026,2.1740,2.1709,2.1760,2.1729,2.1750,2.1729,2.1760,2.1770,2.1740,2.1699,2.0726
+# n=16x18432x7168 face=_exact.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=32 smem=6656 regs=116 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6339 med_ms=0.6636 max_ms=0.7506 tflops_med=6.37
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6205 med_ms=0.7301 max_ms=0.8468 tflops_med=5.79
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3834 med_ms=2.2559 max_ms=2.6378 tflops_med=1.87
+ratio mapal_vs_cublas=1.100 mapal_vs_cutlass=3.400 (>1 = mapal faster, medians)
+samples mapal=0.6451,0.6390,0.6503,0.6400,0.6451,0.6636,0.6492,0.6359,0.6472,0.6728,0.6789,0.6738,0.6738,0.7455,0.7434,0.7414,0.7465,0.7455,0.7475,0.7424,0.7506,0.7444,0.7393,0.6523,0.6502,0.6359,0.6339,0.6359,0.6339,0.6349 cublas=0.6216,0.6236,0.6216,0.6206,0.6226,0.6226,0.6205,0.6226,0.6205,0.7680,0.7670,0.7670,0.7670,0.8458,0.8458,0.8468,0.8458,0.8458,0.8448,0.8458,0.8458,0.8458,0.8458,0.7291,0.7301,0.6912,0.6912,0.6912,0.6912,0.6912 cutlass=1.3834,1.3864,1.3865,1.3865,1.3865,1.3875,1.3865,1.3885,1.6292,2.3788,2.3808,2.3808,2.3818,2.6327,2.6307,2.6378,2.6317,2.6307,2.6296,2.6317,2.6317,2.6358,2.5211,2.2559,2.2180,2.0982,2.0941,2.0941,2.0961,2.0224
+# n=16x18432x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=6656 regs=76 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6717 med_ms=0.7434 max_ms=0.8090 tflops_med=5.69
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.6799 max_ms=0.7137 tflops_med=6.22
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.4346 med_ms=2.0234 max_ms=2.2016 tflops_med=2.09
+ratio mapal_vs_cublas=0.915 mapal_vs_cutlass=2.722 (>1 = mapal faster, medians)
+samples mapal=0.6758,0.6903,0.6953,0.7055,0.6973,0.6717,0.7363,0.7424,0.7424,0.7424,0.7424,0.7444,0.8079,0.8090,0.8049,0.8079,0.7803,0.7803,0.7772,0.7803,0.7711,0.7434,0.7424,0.7434,0.7444,0.7424,0.7414,0.7434,0.7444,0.7434 cublas=0.6236,0.6216,0.6236,0.6216,0.6226,0.6246,0.6226,0.6810,0.6799,0.6799,0.6799,0.6799,0.7137,0.7137,0.7127,0.7137,0.6953,0.6963,0.6953,0.6963,0.6799,0.6810,0.6789,0.6789,0.6799,0.6799,0.6810,0.6799,0.6810,0.6758 cutlass=1.4356,1.4356,1.4356,1.4397,1.4346,1.4377,1.4387,2.0224,2.0224,2.0224,2.0234,2.1996,2.1996,2.2016,2.2006,2.1780,2.1207,2.1197,2.1197,2.1228,2.0244,2.0214,2.0234,2.0224,2.0265,2.0224,2.0234,2.0244,2.0224,2.0019
+# n=16x18432x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=6656 regs=76 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.407e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6861 med_ms=0.7363 max_ms=0.7700 tflops_med=5.74
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6226 med_ms=0.6758 max_ms=0.6912 tflops_med=6.26
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5462 med_ms=2.0009 max_ms=2.0961 tflops_med=2.11
+ratio mapal_vs_cublas=0.918 mapal_vs_cutlass=2.718 (>1 = mapal faster, medians)
+samples mapal=0.6953,0.7035,0.7025,0.6912,0.7066,0.6861,0.7004,0.7075,0.7025,0.7352,0.7332,0.7363,0.7352,0.7363,0.7690,0.7690,0.7700,0.7690,0.7444,0.7414,0.7414,0.7424,0.7516,0.7516,0.7516,0.7526,0.7526,0.7332,0.7332,0.7352 cublas=0.6236,0.6236,0.6236,0.6226,0.6226,0.6246,0.6236,0.6236,0.6697,0.6758,0.6758,0.6758,0.6758,0.6912,0.6912,0.6912,0.6902,0.6830,0.6799,0.6810,0.6789,0.6799,0.6840,0.6840,0.6840,0.6840,0.6840,0.6748,0.6758,0.6758 cutlass=1.5462,1.5473,1.5462,1.5473,1.5473,1.5473,1.5462,1.5493,1.9978,2.0009,1.9999,1.9999,1.9999,2.0961,2.0951,2.0931,2.0931,2.0255,2.0214,2.0265,2.0224,2.0234,2.0511,2.0470,2.0470,2.0470,2.0019,1.9988,1.9988,1.9999
+# n=16x18432x7168 face=_c.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=1152x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=7.7425 med_ms=8.7030 max_ms=8.8095 tflops_med=0.49
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.8335 max_ms=0.9144 tflops_med=5.07
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3875 med_ms=2.5559 max_ms=2.8477 tflops_med=1.65
+ratio mapal_vs_cublas=0.096 mapal_vs_cutlass=0.294 (>1 = mapal faster, medians)
+samples mapal=7.9729,7.7425,8.1091,8.3405,8.8095,8.6661,8.7603,8.7030,8.6395,8.6774,8.7214,8.7112,8.7828,8.7316,8.6221,8.7306,8.7030,8.7224,8.4941,8.7450,8.7347,8.6446,8.6313,8.7460,8.7204,8.7757,8.6825,8.6395,8.7132,8.5238 cublas=0.6216,0.6226,0.6246,0.8110,0.8110,0.8458,0.7895,0.7885,0.8980,0.8212,0.8212,0.9144,0.8335,0.8335,0.9144,0.7987,0.7987,0.9134,0.8335,0.8335,0.8991,0.8909,0.8212,0.8858,0.8714,0.8110,0.8714,0.8714,0.8223,0.8335 cutlass=1.3875,1.4815,1.4766,2.5170,2.5354,2.6348,2.4494,2.4463,2.8006,2.5559,2.5590,2.8457,2.5917,2.5938,2.8467,2.4801,2.4822,2.8477,2.5928,2.5928,2.8027,2.5528,2.5539,2.7587,2.5149,2.5149,2.7126,2.5539,2.5549,2.5928
+# n=16x18432x7168 face=_c.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6257 med_ms=0.6932 max_ms=0.7322 tflops_med=6.10
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6226 med_ms=0.6666 max_ms=0.6799 tflops_med=6.34
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5462 med_ms=1.9415 max_ms=2.0244 tflops_med=2.18
+ratio mapal_vs_cublas=0.962 mapal_vs_cutlass=2.801 (>1 = mapal faster, medians)
+samples mapal=0.6318,0.6339,0.6380,0.6339,0.6257,0.6277,0.6380,0.6257,0.6851,0.6892,0.6829,0.6902,0.6871,0.7322,0.7311,0.7311,0.7291,0.7291,0.7086,0.7117,0.7127,0.7096,0.6953,0.6953,0.6973,0.7004,0.6963,0.6892,0.6881,0.6932 cublas=0.6267,0.6257,0.6246,0.6246,0.6226,0.6236,0.6246,0.6257,0.6656,0.6666,0.6656,0.6666,0.6646,0.6789,0.6799,0.6799,0.6799,0.6748,0.6728,0.6728,0.6717,0.6728,0.6697,0.6687,0.6697,0.6697,0.6687,0.6656,0.6666,0.6656 cutlass=1.5462,1.5493,1.5483,1.5503,1.5462,1.5462,1.5503,1.5667,1.9323,1.9354,1.9323,1.9333,1.9927,2.0214,2.0224,2.0244,2.0244,1.9763,1.9763,1.9784,1.9784,1.9722,1.9558,1.9579,1.9558,1.9528,1.9415,1.9333,1.9343,1.9333
+# n=16x18432x7168 face=_c.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=32 smem=6656 regs=124 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6492 med_ms=0.6892 max_ms=0.7117 tflops_med=6.13
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.7045 max_ms=0.7588 tflops_med=6.00
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3834 med_ms=2.1248 max_ms=2.3491 tflops_med=1.99
+ratio mapal_vs_cublas=1.022 mapal_vs_cutlass=3.083 (>1 = mapal faster, medians)
+samples mapal=0.6595,0.6513,0.6656,0.6636,0.6636,0.6502,0.6758,0.6697,0.6492,0.6779,0.6758,0.6902,0.7055,0.6994,0.7117,0.6984,0.7055,0.6922,0.6912,0.6892,0.7004,0.6892,0.6902,0.6748,0.6892,0.6912,0.6871,0.7004,0.6861,0.6963 cublas=0.6216,0.6216,0.6216,0.6236,0.6216,0.6216,0.6257,0.6267,0.6236,0.6267,0.6236,0.7588,0.7578,0.7578,0.7588,0.7055,0.7076,0.7066,0.7055,0.7055,0.7055,0.7055,0.7045,0.7066,0.7055,0.7055,0.6871,0.6881,0.6881,0.6769 cutlass=1.3834,1.3855,1.3875,1.3875,1.3855,1.4541,1.6425,1.6435,1.6466,1.6445,1.6476,2.3480,2.3480,2.3491,2.3480,2.1719,2.1709,2.1740,2.1729,2.1729,2.1729,2.1719,2.1750,2.1740,2.1727,2.1248,2.0695,2.0716,2.0224,2.0019
+# n=16x18432x7168 face=_c.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=32 smem=6656 regs=124 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6492 med_ms=0.6861 max_ms=0.7219 tflops_med=6.16
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6205 med_ms=0.7004 max_ms=0.7588 tflops_med=6.04
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3852 med_ms=2.1463 max_ms=2.3511 tflops_med=1.97
+ratio mapal_vs_cublas=1.021 mapal_vs_cutlass=3.128 (>1 = mapal faster, medians)
+samples mapal=0.6492,0.6574,0.6605,0.6625,0.6622,0.6492,0.6687,0.6492,0.6574,0.6586,0.6799,0.6943,0.6973,0.7137,0.6840,0.6912,0.6912,0.6902,0.7219,0.6861,0.6912,0.6922,0.6861,0.6881,0.6779,0.6912,0.6861,0.6943,0.7117,0.6666 cublas=0.6216,0.6216,0.6216,0.6205,0.6216,0.6216,0.6216,0.6224,0.6216,0.7465,0.7578,0.7578,0.7567,0.7588,0.7578,0.7567,0.7567,0.7578,0.7004,0.7004,0.6994,0.7003,0.6994,0.6994,0.7003,0.7004,0.7004,0.7004,0.7004,0.6840 cutlass=1.3852,1.3885,1.3855,1.3937,1.3906,1.3937,1.3947,1.3937,1.3945,2.3480,2.3480,2.3480,2.3480,2.3491,2.3460,2.3491,2.3511,2.1811,2.1504,2.1494,2.1432,2.1473,2.1453,2.1484,2.1463,2.1453,2.1484,2.1443,2.0460,2.0470
+# n=16x18432x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=6656 regs=91 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6533 med_ms=0.7188 max_ms=0.8090 tflops_med=5.88
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.6769 max_ms=0.7496 tflops_med=6.25
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3906 med_ms=2.0685 max_ms=2.3183 tflops_med=2.04
+ratio mapal_vs_cublas=0.942 mapal_vs_cutlass=2.877 (>1 = mapal faster, medians)
+samples mapal=0.6564,0.6840,0.6728,0.6605,0.6533,0.6799,0.6820,0.6666,0.6595,0.6605,0.6697,0.8090,0.8090,0.8090,0.8069,0.7690,0.7700,0.7670,0.7690,0.7260,0.7240,0.7240,0.7240,0.7229,0.7086,0.7086,0.7035,0.7035,0.7188,0.7260 cublas=0.6216,0.6216,0.6216,0.6216,0.6246,0.6246,0.6246,0.6246,0.6216,0.6226,0.6287,0.7485,0.7485,0.7485,0.7496,0.7137,0.7137,0.7127,0.7137,0.6881,0.6871,0.6892,0.6871,0.6769,0.6769,0.6758,0.6758,0.6750,0.6871,0.6871 cutlass=1.3906,1.3926,1.3906,1.3926,1.3916,1.5585,1.5544,1.5544,1.5575,1.5576,2.3163,2.3183,2.3153,2.3163,2.2016,2.2016,2.1996,2.1996,2.1893,2.0726,2.0685,2.0726,2.0705,1.9988,2.0009,1.9988,1.9988,1.9988,2.0695,2.0705
+# n=16x18432x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=6656 regs=91 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+values leg=mapal cells=256 maxrel_vs_f64=1.082e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=18432 K=7168 n=30 min_ms=0.6584 med_ms=0.7168 max_ms=0.8325 tflops_med=5.90
+time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.6840 max_ms=0.7690 tflops_med=6.18
+time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.3906 med_ms=2.0449 max_ms=2.3839 tflops_med=2.07
+ratio mapal_vs_cublas=0.954 mapal_vs_cutlass=2.853 (>1 = mapal faster, medians)
+samples mapal=0.6728,0.6707,0.6871,0.6625,0.6697,0.6584,0.6625,0.7404,0.7414,0.7404,0.7404,0.7424,0.8305,0.8305,0.8325,0.8305,0.7496,0.7506,0.7496,0.7496,0.7178,0.7168,0.7158,0.7168,0.7168,0.7055,0.7045,0.7045,0.7014,0.7045 cublas=0.6216,0.6226,0.6246,0.6216,0.6216,0.6216,0.6227,0.6943,0.6963,0.6953,0.6953,0.6953,0.7690,0.7680,0.7680,0.7680,0.6994,0.6994,0.7014,0.7004,0.6840,0.6830,0.6830,0.6840,0.6840,0.6758,0.6758,0.6758,0.6769,0.6810 cutlass=1.3906,1.3916,1.3947,1.3947,1.3918,1.3957,1.3978,2.1197,2.1217,2.1217,2.1207,2.2139,2.3808,2.3839,2.3808,2.1514,2.1443,2.1453,2.1453,2.1443,2.0449,2.0449,2.0449,2.0470,2.0060,2.0040,1.9988,2.0009,2.0019,2.0234
+# n=16x2048x7168 face=_exact.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=128x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.4106 med_ms=0.4127 max_ms=0.4168 tflops_med=1.14
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.216 mapal_vs_cutlass=1.903 (>1 = mapal faster, medians)
+samples mapal=0.4147,0.4116,0.4127,0.4116,0.4127,0.4116,0.4116,0.4116,0.4116,0.4157,0.4127,0.4106,0.4157,0.4127,0.4167,0.4127,0.4168,0.4116,0.4127,0.4127,0.4106,0.4116,0.4127,0.4116,0.4137,0.4116,0.4168,0.4127,0.4127,0.4147 cublas=0.0901,0.0881,0.0891,0.0901,0.0891,0.0881,0.0881,0.0891,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901,0.0881,0.0911,0.0891,0.0891,0.0891,0.0901,0.0891,0.0891,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0891 cutlass=0.7844,0.7864,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7864,0.7854,0.7854,0.7854,0.7854,0.7844,0.7864,0.7854,0.7854,0.7844,0.7854,0.7854,0.7864,0.7854,0.7854,0.7844,0.7864,0.7854,0.7844
+# n=16x2048x7168 face=_exact.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=5632 regs=72 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1341 med_ms=0.1341 max_ms=0.1362 tflops_med=3.50
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0911 tflops_med=5.21
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.672 mapal_vs_cutlass=5.855 (>1 = mapal faster, medians)
+samples mapal=0.1362,0.1352,0.1341,0.1341,0.1352,0.1352,0.1341,0.1352,0.1352,0.1341,0.1341,0.1341,0.1352,0.1341,0.1341,0.1341,0.1341,0.1341,0.1362,0.1341,0.1341,0.1352,0.1341,0.1341,0.1352,0.1341,0.1341,0.1341,0.1352,0.1341 cublas=0.0881,0.0901,0.0901,0.0901,0.0911,0.0891,0.0881,0.0901,0.0892,0.0891,0.0891,0.0901,0.0901,0.0891,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0891,0.0891,0.0901,0.0891,0.0901,0.0891,0.0901,0.0901,0.0891 cutlass=0.7854,0.7855,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7853,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7864,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_exact.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=11264 regs=94 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1403 med_ms=0.1413 max_ms=0.1424 tflops_med=3.32
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7854 tflops_med=0.60
+ratio mapal_vs_cublas=0.630 mapal_vs_cutlass=5.558 (>1 = mapal faster, medians)
+samples mapal=0.1413,0.1413,0.1423,0.1424,0.1413,0.1403,0.1413,0.1403,0.1423,0.1403,0.1403,0.1403,0.1413,0.1423,0.1413,0.1413,0.1423,0.1403,0.1413,0.1403,0.1413,0.1413,0.1423,0.1413,0.1423,0.1423,0.1413,0.1403,0.1413,0.1423 cublas=0.0891,0.0891,0.0891,0.0891,0.0891,0.0881,0.0891,0.0881,0.0891,0.0881,0.0889,0.0881,0.0901,0.0890,0.0881,0.0881,0.0892,0.0891,0.0911,0.0891,0.0891,0.0891,0.0901,0.0901,0.0891,0.0891,0.0891,0.0891,0.0911,0.0901 cutlass=0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7852,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7854,0.7854,0.7844,0.7854,0.7853,0.7844,0.7854
+# n=16x2048x7168 face=_exact.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=128x1 block=256 smem=0 regs=40 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.4096 med_ms=0.4127 max_ms=0.4168 tflops_med=1.14
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0901 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7854 tflops_med=0.60
+ratio mapal_vs_cublas=0.216 mapal_vs_cutlass=1.903 (>1 = mapal faster, medians)
+samples mapal=0.4127,0.4116,0.4115,0.4137,0.4147,0.4137,0.4125,0.4116,0.4127,0.4116,0.4106,0.4168,0.4147,0.4137,0.4147,0.4137,0.4147,0.4147,0.4157,0.4137,0.4096,0.4157,0.4117,0.4106,0.4147,0.4116,0.4127,0.4127,0.4118,0.4116 cublas=0.0891,0.0881,0.0891,0.0882,0.0891,0.0891,0.0891,0.0881,0.0901,0.0891,0.0891,0.0889,0.0901,0.0891,0.0881,0.0891,0.0901,0.0881,0.0891,0.0891,0.0891,0.0881,0.0891,0.0881,0.0891,0.0881,0.0891,0.0891,0.0889,0.0891 cutlass=0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7852,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854
+# n=16x2048x7168 face=_exact.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=64x1 block=32 smem=13312 regs=162 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.2376 med_ms=0.2386 max_ms=0.2406 tflops_med=1.97
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.373 mapal_vs_cutlass=3.292 (>1 = mapal faster, medians)
+samples mapal=0.2406,0.2386,0.2396,0.2386,0.2396,0.2386,0.2396,0.2386,0.2386,0.2387,0.2396,0.2386,0.2386,0.2386,0.2386,0.2386,0.2386,0.2386,0.2396,0.2396,0.2376,0.2386,0.2386,0.2386,0.2386,0.2386,0.2396,0.2387,0.2386,0.2386 cublas=0.0902,0.0881,0.0911,0.0881,0.0901,0.0881,0.0901,0.0891,0.0901,0.0891,0.0911,0.0901,0.0891,0.0881,0.0891,0.0891,0.0901,0.0901,0.0901,0.0901,0.0891,0.0881,0.0891,0.0891,0.0910,0.0891,0.0891,0.0891,0.0901,0.0891 cutlass=0.7854,0.7854,0.7844,0.7864,0.7854,0.7864,0.7844,0.7854,0.7844,0.7864,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7864,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=45056 regs=213 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1524 med_ms=0.1526 max_ms=0.1567 tflops_med=3.08
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0922 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7853 max_ms=0.7854 tflops_med=0.60
+ratio mapal_vs_cublas=0.584 mapal_vs_cutlass=5.147 (>1 = mapal faster, medians)
+samples mapal=0.1567,0.1546,0.1536,0.1536,0.1526,0.1526,0.1536,0.1526,0.1526,0.1526,0.1536,0.1526,0.1526,0.1526,0.1536,0.1536,0.1536,0.1536,0.1536,0.1526,0.1526,0.1526,0.1524,0.1526,0.1526,0.1526,0.1536,0.1535,0.1526,0.1536 cublas=0.0891,0.0891,0.0891,0.0901,0.0881,0.0891,0.0891,0.0881,0.0891,0.0891,0.0922,0.0901,0.0881,0.0891,0.0891,0.0883,0.0891,0.0881,0.0881,0.0881,0.0881,0.0891,0.0890,0.0891,0.0881,0.0881,0.0901,0.0901,0.0881,0.0901 cutlass=0.7844,0.7854,0.7844,0.7852,0.7844,0.7854,0.7844,0.7854,0.7853,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7853,0.7844,0.7854,0.7845,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=45056 regs=213 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=1.546e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1516 med_ms=0.1536 max_ms=0.1556 tflops_med=3.06
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.580 mapal_vs_cutlass=5.113 (>1 = mapal faster, medians)
+samples mapal=0.1526,0.1526,0.1546,0.1546,0.1536,0.1536,0.1556,0.1546,0.1526,0.1526,0.1526,0.1536,0.1536,0.1526,0.1536,0.1526,0.1535,0.1526,0.1516,0.1526,0.1536,0.1526,0.1536,0.1526,0.1526,0.1546,0.1526,0.1536,0.1536,0.1546 cublas=0.0911,0.0891,0.0891,0.0901,0.0891,0.0901,0.0891,0.0901,0.0891,0.0881,0.0901,0.0891,0.0891,0.0891,0.0911,0.0891,0.0911,0.0881,0.0901,0.0901,0.0891,0.0881,0.0891,0.0911,0.0901,0.0901,0.0901,0.0901,0.0891,0.0891 cutlass=0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7864,0.7844,0.7854,0.7844,0.7864,0.7844,0.7864,0.7844,0.7854,0.7854,0.7854,0.7854,0.7864
+# n=16x2048x7168 face=_c.off-row-fit+wave-gate+grid-share+panel-regs+fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=128x1 block=256 smem=0 regs=24 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.6144 med_ms=0.6163 max_ms=0.6185 tflops_med=0.76
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0901 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7853 max_ms=0.7854 tflops_med=0.60
+ratio mapal_vs_cublas=0.145 mapal_vs_cutlass=1.274 (>1 = mapal faster, medians)
+samples mapal=0.6154,0.6185,0.6164,0.6154,0.6154,0.6164,0.6154,0.6154,0.6154,0.6154,0.6144,0.6154,0.6164,0.6185,0.6154,0.6175,0.6163,0.6154,0.6164,0.6164,0.6164,0.6154,0.6154,0.6154,0.6154,0.6164,0.6164,0.6164,0.6164,0.6164 cublas=0.0901,0.0881,0.0891,0.0891,0.0881,0.0881,0.0881,0.0891,0.0891,0.0891,0.0881,0.0891,0.0891,0.0891,0.0901,0.0901,0.0891,0.0881,0.0901,0.0891,0.0891,0.0891,0.0891,0.0881,0.0891,0.0901,0.0891,0.0892,0.0901,0.0881 cutlass=0.7853,0.7853,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7844,0.7854,0.7854,0.7844,0.7844,0.7854,0.7854,0.7854,0.7854,0.7844,0.7844,0.7854,0.7852,0.7852,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7852,0.7854
+# n=16x2048x7168 face=_c.off-panel-regs
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=5632 regs=96 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1321 med_ms=0.1331 max_ms=0.1382 tflops_med=3.53
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.669 mapal_vs_cutlass=5.900 (>1 = mapal faster, medians)
+samples mapal=0.1321,0.1331,0.1321,0.1321,0.1372,0.1341,0.1361,0.1321,0.1321,0.1331,0.1331,0.1341,0.1331,0.1362,0.1331,0.1341,0.1382,0.1331,0.1352,0.1331,0.1321,0.1331,0.1321,0.1331,0.1321,0.1331,0.1321,0.1331,0.1341,0.1331 cublas=0.0891,0.0881,0.0891,0.0891,0.0891,0.0891,0.0891,0.0891,0.0891,0.0891,0.0891,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891,0.0891,0.0901,0.0891,0.0891,0.0891,0.0901,0.0901,0.0901,0.0911,0.0911,0.0881,0.0891,0.0881 cutlass=0.7854,0.7854,0.7854,0.7854,0.7844,0.7864,0.7854,0.7854,0.7853,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_c.off-grid-share
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=11264 regs=118 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1288 med_ms=0.1290 max_ms=0.1300 tflops_med=3.64
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0870 med_ms=0.0891 max_ms=0.0901 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.690 mapal_vs_cutlass=6.087 (>1 = mapal faster, medians)
+samples mapal=0.1299,0.1292,0.1290,0.1291,0.1300,0.1300,0.1300,0.1292,0.1288,0.1290,0.1300,0.1290,0.1290,0.1290,0.1290,0.1300,0.1300,0.1291,0.1290,0.1290,0.1290,0.1292,0.1290,0.1290,0.1290,0.1290,0.1290,0.1300,0.1290,0.1290 cublas=0.0891,0.0881,0.0901,0.0891,0.0891,0.0881,0.0881,0.0881,0.0901,0.0891,0.0891,0.0890,0.0901,0.0891,0.0891,0.0881,0.0891,0.0881,0.0891,0.0891,0.0901,0.0881,0.0891,0.0870,0.0881,0.0881,0.0901,0.0891,0.0891,0.0891 cutlass=0.7854,0.7854,0.7844,0.7844,0.7844,0.7856,0.7844,0.7845,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7852,0.7854,0.7854,0.7844,0.7844,0.7844,0.7864,0.7854,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_c.off-fill-rows
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=128x1 block=256 smem=0 regs=24 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.6144 med_ms=0.6164 max_ms=0.6175 tflops_med=0.76
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0870 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.145 mapal_vs_cutlass=1.274 (>1 = mapal faster, medians)
+samples mapal=0.6164,0.6154,0.6154,0.6164,0.6164,0.6144,0.6144,0.6164,0.6154,0.6164,0.6164,0.6154,0.6154,0.6154,0.6144,0.6164,0.6154,0.6164,0.6164,0.6164,0.6175,0.6154,0.6164,0.6164,0.6155,0.6154,0.6154,0.6164,0.6164,0.6144 cublas=0.0901,0.0901,0.0891,0.0891,0.0901,0.0901,0.0901,0.0881,0.0901,0.0891,0.0901,0.0881,0.0881,0.0901,0.0891,0.0891,0.0901,0.0891,0.0891,0.0881,0.0911,0.0891,0.0911,0.0870,0.0901,0.0901,0.0891,0.0891,0.0901,0.0891 cutlass=0.7854,0.7854,0.7844,0.7864,0.7844,0.7854,0.7854,0.7854,0.7854,0.7864,0.7853,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7864,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7844,0.7845,0.7854
+# n=16x2048x7168 face=_c.off-fill-rows+wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=64x1 block=32 smem=13312 regs=184 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1782 med_ms=0.1821 max_ms=0.1833 tflops_med=2.58
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0870 med_ms=0.0891 max_ms=0.0901 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.489 mapal_vs_cutlass=4.314 (>1 = mapal faster, medians)
+samples mapal=0.1833,0.1802,0.1823,0.1782,0.1823,0.1823,0.1801,0.1833,0.1821,0.1812,0.1802,0.1802,0.1812,0.1833,0.1812,0.1833,0.1792,0.1823,0.1782,0.1823,0.1812,0.1825,0.1792,0.1833,0.1802,0.1833,0.1812,0.1802,0.1823,0.1823 cublas=0.0901,0.0899,0.0881,0.0891,0.0891,0.0891,0.0891,0.0881,0.0881,0.0891,0.0901,0.0891,0.0891,0.0870,0.0891,0.0899,0.0901,0.0891,0.0901,0.0891,0.0901,0.0881,0.0901,0.0901,0.0881,0.0891,0.0901,0.0881,0.0881,0.0881 cutlass=0.7852,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7854,0.7852,0.7844,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7864,0.7844,0.7854
+# n=16x2048x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=45056 regs=251 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1527 med_ms=0.1546 max_ms=0.1556 tflops_med=3.04
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0901 max_ms=0.0911 tflops_med=5.21
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.583 mapal_vs_cutlass=5.079 (>1 = mapal faster, medians)
+samples mapal=0.1556,0.1546,0.1547,0.1556,0.1536,0.1536,0.1556,0.1536,0.1546,0.1546,0.1556,0.1546,0.1546,0.1546,0.1546,0.1536,0.1556,0.1556,0.1546,0.1556,0.1536,0.1546,0.1546,0.1556,0.1546,0.1527,0.1536,0.1546,0.1546,0.1556 cublas=0.0901,0.0891,0.0901,0.0901,0.0901,0.0901,0.0901,0.0891,0.0901,0.0881,0.0891,0.0901,0.0901,0.0882,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901,0.0901,0.0881,0.0901,0.0901,0.0911,0.0901,0.0901,0.0891 cutlass=0.7853,0.7864,0.7854,0.7864,0.7854,0.7864,0.7854,0.7854,0.7854,0.7864,0.7854,0.7854,0.7854,0.7864,0.7854,0.7864,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7845,0.7854,0.7854,0.7854,0.7844,0.7854
+# n=16x2048x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=45056 regs=251 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cublas cells=256 maxrel_vs_f64=1.499e-03
+values leg=mapal cells=256 maxrel_vs_f64=7.511e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=16 N=2048 K=7168 n=30 min_ms=0.1536 med_ms=0.1546 max_ms=0.1556 tflops_med=3.04
+time leg=cublas M=16 N=2048 K=7168 n=30 min_ms=0.0881 med_ms=0.0891 max_ms=0.0911 tflops_med=5.27
+time leg=cutlass M=16 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.60
+ratio mapal_vs_cublas=0.576 mapal_vs_cutlass=5.079 (>1 = mapal faster, medians)
+samples mapal=0.1546,0.1546,0.1536,0.1546,0.1546,0.1536,0.1537,0.1556,0.1556,0.1546,0.1546,0.1536,0.1546,0.1546,0.1544,0.1536,0.1546,0.1536,0.1546,0.1556,0.1546,0.1536,0.1546,0.1536,0.1546,0.1546,0.1556,0.1536,0.1536,0.1546 cublas=0.0891,0.0881,0.0891,0.0891,0.0891,0.0891,0.0891,0.0881,0.0881,0.0891,0.0901,0.0891,0.0891,0.0891,0.0891,0.0891,0.0911,0.0891,0.0901,0.0891,0.0901,0.0881,0.0901,0.0901,0.0891,0.0891,0.0901,0.0881,0.0901,0.0881 cutlass=0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7864,0.7854,0.7854,0.7854,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7852,0.7844,0.7854
+# n=1x1024x4096 face=_exact.off-wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_4c785160ed51178e grid=8x1 block=32 smem=66048 regs=255 local_bytes=1384
+values leg=cutlass cells=256 maxrel_vs_f64=3.972e-05
+values leg=cublas cells=256 maxrel_vs_f64=1.185e-04
+values leg=mapal cells=256 maxrel_vs_f64=5.673e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=1024 K=4096 n=30 min_ms=0.1833 med_ms=0.1843 max_ms=0.1864 tflops_med=0.05
+time leg=cublas M=1 N=1024 K=4096 n=30 min_ms=0.0256 med_ms=0.0257 max_ms=0.0266 tflops_med=0.33
+time leg=cutlass M=1 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.02
+ratio mapal_vs_cublas=0.139 mapal_vs_cutlass=2.450 (>1 = mapal faster, medians)
+samples mapal=0.1864,0.1853,0.1852,0.1843,0.1833,0.1853,0.1843,0.1843,0.1843,0.1853,0.1853,0.1843,0.1853,0.1853,0.1843,0.1843,0.1843,0.1843,0.1853,0.1843,0.1853,0.1853,0.1843,0.1853,0.1843,0.1853,0.1843,0.1853,0.1843,0.1843 cublas=0.0256,0.0256,0.0266,0.0257,0.0256,0.0266,0.0256,0.0266,0.0266,0.0266,0.0266,0.0256,0.0256,0.0266,0.0266,0.0256,0.0266,0.0256,0.0256,0.0256,0.0266,0.0256,0.0266,0.0256,0.0266,0.0256,0.0256,0.0256,0.0266,0.0266 cutlass=0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4516,0.4525,0.4506,0.4526,0.4516,0.4516,0.4506,0.4526,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4526,0.4506,0.4526,0.4507,0.4526,0.4516,0.4526
+# n=1x1024x4096 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_4c785160ed51178e grid=4x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.972e-05
+values leg=cublas cells=256 maxrel_vs_f64=1.185e-04
+values leg=mapal cells=256 maxrel_vs_f64=5.673e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=1024 K=4096 n=30 min_ms=0.1505 med_ms=0.1516 max_ms=0.1526 tflops_med=0.06
+time leg=cublas M=1 N=1024 K=4096 n=30 min_ms=0.0256 med_ms=0.0256 max_ms=0.0266 tflops_med=0.33
+time leg=cutlass M=1 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4516 tflops_med=0.02
+ratio mapal_vs_cublas=0.169 mapal_vs_cutlass=2.980 (>1 = mapal faster, medians)
+samples mapal=0.1516,0.1516,0.1506,0.1516,0.1526,0.1516,0.1505,0.1505,0.1516,0.1505,0.1505,0.1516,0.1516,0.1505,0.1516,0.1505,0.1516,0.1516,0.1516,0.1505,0.1516,0.1505,0.1516,0.1505,0.1516,0.1516,0.1516,0.1505,0.1514,0.1505 cublas=0.0256,0.0256,0.0256,0.0256,0.0256,0.0266,0.0256,0.0256,0.0256,0.0266,0.0256,0.0257,0.0256,0.0256,0.0266,0.0266,0.0256,0.0256,0.0266,0.0266,0.0256,0.0256,0.0256,0.0266,0.0256,0.0256,0.0256,0.0256,0.0256,0.0266 cutlass=0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4515,0.4516,0.4515,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516
+# n=1x1024x4096 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_4c785160ed51178e grid=4x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.972e-05
+values leg=cublas cells=256 maxrel_vs_f64=1.185e-04
+values leg=mapal cells=256 maxrel_vs_f64=5.673e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=1024 K=4096 n=30 min_ms=0.1505 med_ms=0.1516 max_ms=0.1526 tflops_med=0.06
+time leg=cublas M=1 N=1024 K=4096 n=30 min_ms=0.0256 med_ms=0.0256 max_ms=0.0266 tflops_med=0.33
+time leg=cutlass M=1 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4526 tflops_med=0.02
+ratio mapal_vs_cublas=0.169 mapal_vs_cutlass=2.980 (>1 = mapal faster, medians)
+samples mapal=0.1516,0.1516,0.1505,0.1516,0.1505,0.1516,0.1516,0.1505,0.1516,0.1516,0.1516,0.1505,0.1505,0.1516,0.1506,0.1516,0.1515,0.1516,0.1516,0.1505,0.1516,0.1516,0.1505,0.1505,0.1526,0.1505,0.1505,0.1516,0.1516,0.1507 cublas=0.0256,0.0266,0.0266,0.0257,0.0256,0.0266,0.0266,0.0256,0.0256,0.0257,0.0256,0.0266,0.0256,0.0256,0.0256,0.0266,0.0266,0.0266,0.0256,0.0266,0.0256,0.0256,0.0266,0.0256,0.0256,0.0266,0.0256,0.0266,0.0256,0.0256 cutlass=0.4516,0.4526,0.4516,0.4526,0.4516,0.4516,0.4506,0.4526,0.4506,0.4516,0.4516,0.4516,0.4516,0.4526,0.4516,0.4516,0.4515,0.4526,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4506,0.4513,0.4507,0.4515
+# n=1x1024x4096 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_7ca8563cf588b15d grid=4x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.972e-05
+values leg=cublas cells=256 maxrel_vs_f64=1.185e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.972e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=1024 K=4096 n=30 min_ms=0.1413 med_ms=0.1423 max_ms=0.1434 tflops_med=0.06
+time leg=cublas M=1 N=1024 K=4096 n=30 min_ms=0.0246 med_ms=0.0256 max_ms=0.0266 tflops_med=0.33
+time leg=cutlass M=1 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4524 tflops_med=0.02
+ratio mapal_vs_cublas=0.180 mapal_vs_cutlass=3.173 (>1 = mapal faster, medians)
+samples mapal=0.1423,0.1413,0.1423,0.1423,0.1423,0.1413,0.1413,0.1413,0.1423,0.1413,0.1413,0.1413,0.1414,0.1413,0.1423,0.1413,0.1423,0.1423,0.1423,0.1423,0.1415,0.1423,0.1413,0.1423,0.1413,0.1434,0.1422,0.1423,0.1413,0.1423 cublas=0.0266,0.0256,0.0256,0.0266,0.0266,0.0256,0.0256,0.0256,0.0256,0.0246,0.0256,0.0256,0.0256,0.0256,0.0266,0.0246,0.0256,0.0256,0.0257,0.0266,0.0246,0.0266,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0266,0.0266 cutlass=0.4516,0.4524,0.4506,0.4516,0.4515,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4506,0.4516,0.4506,0.4516,0.4507,0.4516,0.4516,0.4518,0.4506,0.4516,0.4506,0.4516,0.4516,0.4508,0.4514,0.4516,0.4506,0.4516
+# n=1x1024x4096 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_7ca8563cf588b15d grid=4x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=3.972e-05
+values leg=cublas cells=256 maxrel_vs_f64=1.185e-04
+values leg=mapal cells=256 maxrel_vs_f64=3.972e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=1024 K=4096 n=30 min_ms=0.1403 med_ms=0.1423 max_ms=0.1444 tflops_med=0.06
+time leg=cublas M=1 N=1024 K=4096 n=30 min_ms=0.0256 med_ms=0.0256 max_ms=0.0266 tflops_med=0.33
+time leg=cutlass M=1 N=1024 K=4096 n=30 min_ms=0.4506 med_ms=0.4516 max_ms=0.4517 tflops_med=0.02
+ratio mapal_vs_cublas=0.180 mapal_vs_cutlass=3.173 (>1 = mapal faster, medians)
+samples mapal=0.1413,0.1423,0.1413,0.1415,0.1423,0.1413,0.1423,0.1413,0.1423,0.1423,0.1422,0.1413,0.1434,0.1413,0.1415,0.1423,0.1434,0.1423,0.1423,0.1444,0.1423,0.1413,0.1423,0.1423,0.1413,0.1413,0.1423,0.1423,0.1423,0.1403 cublas=0.0266,0.0266,0.0266,0.0256,0.0256,0.0256,0.0266,0.0266,0.0266,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0257,0.0256,0.0256,0.0256,0.0256,0.0256,0.0266,0.0256,0.0266,0.0257,0.0256,0.0265,0.0256,0.0256 cutlass=0.4508,0.4516,0.4516,0.4516,0.4506,0.4516,0.4516,0.4517,0.4506,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4508,0.4506,0.4516,0.4516,0.4516,0.4506,0.4516,0.4506,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516,0.4516
+# n=1x18432x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_4c6809713f5efbda grid=72x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.176e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.666e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.431e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=18432 K=7168 n=30 min_ms=0.6062 med_ms=0.6093 max_ms=0.6124 tflops_med=0.43
+time leg=cublas M=1 N=18432 K=7168 n=30 min_ms=0.6031 med_ms=0.6062 max_ms=0.6093 tflops_med=0.44
+time leg=cutlass M=1 N=18432 K=7168 n=30 min_ms=1.5493 med_ms=1.7306 max_ms=1.7377 tflops_med=0.15
+ratio mapal_vs_cublas=0.995 mapal_vs_cutlass=2.840 (>1 = mapal faster, medians)
+samples mapal=0.6083,0.6062,0.6072,0.6103,0.6093,0.6072,0.6062,0.6084,0.6093,0.6083,0.6062,0.6113,0.6093,0.6083,0.6103,0.6093,0.6093,0.6072,0.6103,0.6083,0.6124,0.6083,0.6103,0.6093,0.6083,0.6093,0.6083,0.6113,0.6103,0.6093 cublas=0.6062,0.6042,0.6064,0.6062,0.6062,0.6054,0.6062,0.6062,0.6072,0.6083,0.6093,0.6062,0.6062,0.6083,0.6072,0.6093,0.6052,0.6031,0.6093,0.6083,0.6042,0.6052,0.6042,0.6052,0.6062,0.6042,0.6093,0.6042,0.6052,0.6072 cutlass=1.5524,1.5503,1.5494,1.5524,1.5503,1.5503,1.5503,1.5503,1.5493,1.5502,1.6640,1.7183,1.7152,1.7160,1.7162,1.7316,1.7357,1.7306,1.7336,1.7326,1.7326,1.7326,1.7347,1.7367,1.7347,1.7377,1.7316,1.7367,1.7316,1.7367
+# n=1x18432x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_4c6809713f5efbda grid=72x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.176e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.666e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.431e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=18432 K=7168 n=30 min_ms=0.6042 med_ms=0.6093 max_ms=0.6134 tflops_med=0.43
+time leg=cublas M=1 N=18432 K=7168 n=30 min_ms=0.6042 med_ms=0.6062 max_ms=0.6135 tflops_med=0.44
+time leg=cutlass M=1 N=18432 K=7168 n=30 min_ms=1.3763 med_ms=1.7664 max_ms=1.8217 tflops_med=0.15
+ratio mapal_vs_cublas=0.995 mapal_vs_cutlass=2.899 (>1 = mapal faster, medians)
+samples mapal=0.6093,0.6052,0.6052,0.6052,0.6083,0.6062,0.6072,0.6052,0.6052,0.6042,0.6093,0.6083,0.6093,0.6113,0.6103,0.6124,0.6083,0.6093,0.6134,0.6062,0.6103,0.6083,0.6113,0.6093,0.6093,0.6093,0.6103,0.6072,0.6083,0.6113 cublas=0.6134,0.6134,0.6135,0.6124,0.6113,0.6113,0.6134,0.6134,0.6134,0.6103,0.6062,0.6052,0.6042,0.6062,0.6062,0.6042,0.6062,0.6062,0.6042,0.6072,0.6083,0.6042,0.6042,0.6062,0.6052,0.6062,0.6052,0.6052,0.6093,0.6062 cutlass=1.3763,1.3763,1.3763,1.3783,1.3782,1.3783,1.3783,1.3783,1.3814,1.7633,1.7674,1.7633,1.7654,1.7664,1.8084,1.8186,1.8196,1.8217,1.8166,1.7900,1.7859,1.7838,1.7828,1.7869,1.7787,1.7664,1.7644,1.7715,1.7674,1.7664
+# n=1x18432x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_e6298021f9817f21 grid=72x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.176e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.666e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.176e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=18432 K=7168 n=30 min_ms=0.6011 med_ms=0.6052 max_ms=0.6072 tflops_med=0.44
+time leg=cublas M=1 N=18432 K=7168 n=30 min_ms=0.6042 med_ms=0.6083 max_ms=0.6154 tflops_med=0.43
+time leg=cutlass M=1 N=18432 K=7168 n=30 min_ms=1.3763 med_ms=1.7664 max_ms=1.8033 tflops_med=0.15
+ratio mapal_vs_cublas=1.005 mapal_vs_cutlass=2.919 (>1 = mapal faster, medians)
+samples mapal=0.6042,0.6062,0.6031,0.6031,0.6042,0.6062,0.6021,0.6031,0.6011,0.6052,0.6031,0.6062,0.6052,0.6062,0.6052,0.6052,0.6072,0.6072,0.6042,0.6042,0.6062,0.6062,0.6062,0.6052,0.6072,0.6072,0.6062,0.6072,0.6052,0.6072 cublas=0.6093,0.6134,0.6113,0.6103,0.6103,0.6113,0.6154,0.6093,0.6124,0.6083,0.6124,0.6052,0.6052,0.6072,0.6093,0.6052,0.6083,0.6072,0.6042,0.6052,0.6062,0.6042,0.6083,0.6052,0.6062,0.6052,0.6083,0.6083,0.6072,0.6042 cutlass=1.3773,1.3763,1.3793,1.3773,1.3988,1.3978,1.3998,1.3998,1.3977,1.3998,1.7336,1.7674,1.7633,1.7684,1.7684,1.8002,1.8002,1.8033,1.8012,1.8033,1.7828,1.7848,1.7837,1.7848,1.7838,1.7644,1.7633,1.7664,1.7664,1.7654
+# n=1x18432x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_e6298021f9817f21 grid=72x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=2.176e-04
+values leg=cublas cells=256 maxrel_vs_f64=5.666e-05
+values leg=mapal cells=256 maxrel_vs_f64=2.176e-04 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=18432 K=7168 n=30 min_ms=0.6031 med_ms=0.6062 max_ms=0.6083 tflops_med=0.44
+time leg=cublas M=1 N=18432 K=7168 n=30 min_ms=0.6031 med_ms=0.6072 max_ms=0.6103 tflops_med=0.44
+time leg=cutlass M=1 N=18432 K=7168 n=30 min_ms=1.5473 med_ms=1.7142 max_ms=1.7193 tflops_med=0.15
+ratio mapal_vs_cublas=1.002 mapal_vs_cutlass=2.828 (>1 = mapal faster, medians)
+samples mapal=0.6062,0.6062,0.6072,0.6062,0.6051,0.6052,0.6052,0.6052,0.6062,0.6042,0.6042,0.6042,0.6062,0.6042,0.6031,0.6072,0.6062,0.6062,0.6062,0.6052,0.6062,0.6064,0.6083,0.6052,0.6052,0.6042,0.6062,0.6083,0.6052,0.6052 cublas=0.6062,0.6083,0.6062,0.6062,0.6083,0.6072,0.6072,0.6072,0.6103,0.6062,0.6072,0.6072,0.6083,0.6072,0.6093,0.6072,0.6062,0.6052,0.6062,0.6062,0.6083,0.6052,0.6072,0.6073,0.6062,0.6062,0.6053,0.6031,0.6062,0.6052 cutlass=1.5493,1.5514,1.5503,1.5473,1.5514,1.5493,1.5483,1.5484,1.5483,1.5503,1.6805,1.7152,1.7183,1.7193,1.7142,1.7142,1.7142,1.7162,1.7121,1.7183,1.7162,1.7162,1.7162,1.7142,1.7152,1.7152,1.7162,1.7183,1.7172,1.7192
+# n=1x2048x7168 face=_exact.off-wave-gate
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_81c198bb8cfbbd1c grid=16x1 block=32 smem=66048 regs=255 local_bytes=1384
+values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.073e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.460e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=2048 K=7168 n=30 min_ms=0.3062 med_ms=0.3062 max_ms=0.3082 tflops_med=0.10
+time leg=cublas M=1 N=2048 K=7168 n=30 min_ms=0.0891 med_ms=0.0901 max_ms=0.0911 tflops_med=0.33
+time leg=cutlass M=1 N=2048 K=7168 n=30 min_ms=0.7455 med_ms=0.7465 max_ms=0.7465 tflops_med=0.04
+ratio mapal_vs_cublas=0.294 mapal_vs_cutlass=2.438 (>1 = mapal faster, medians)
+samples mapal=0.3082,0.3072,0.3062,0.3062,0.3062,0.3062,0.3072,0.3062,0.3062,0.3072,0.3062,0.3062,0.3072,0.3072,0.3082,0.3062,0.3072,0.3072,0.3062,0.3072,0.3072,0.3082,0.3062,0.3062,0.3062,0.3062,0.3062,0.3072,0.3062,0.3062 cublas=0.0911,0.0901,0.0901,0.0901,0.0901,0.0891,0.0911,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901,0.0901,0.0901,0.0902,0.0901,0.0911,0.0891,0.0901,0.0891,0.0911,0.0901,0.0901,0.0901,0.0901,0.0901,0.0901,0.0891 cutlass=0.7465,0.7465,0.7455,0.7465,0.7455,0.7465,0.7464,0.7465,0.7455,0.7465,0.7465,0.7465,0.7455,0.7465,0.7455,0.7455,0.7455,0.7465,0.7455,0.7465,0.7455,0.7465,0.7455,0.7465,0.7455,0.7455,0.7455,0.7465,0.7455,0.7465
+# n=1x2048x7168 face=_exact.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_81c198bb8cfbbd1c grid=8x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.073e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.460e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=2048 K=7168 n=30 min_ms=0.2499 med_ms=0.2519 max_ms=0.2531 tflops_med=0.12
+time leg=cublas M=1 N=2048 K=7168 n=30 min_ms=0.0891 med_ms=0.0901 max_ms=0.0911 tflops_med=0.33
+time leg=cutlass M=1 N=2048 K=7168 n=30 min_ms=0.7444 med_ms=0.7455 max_ms=0.7465 tflops_med=0.04
+ratio mapal_vs_cublas=0.358 mapal_vs_cutlass=2.959 (>1 = mapal faster, medians)
+samples mapal=0.2519,0.2519,0.2519,0.2519,0.2519,0.2520,0.2509,0.2519,0.2519,0.2529,0.2509,0.2519,0.2529,0.2519,0.2531,0.2509,0.2519,0.2529,0.2509,0.2529,0.2519,0.2519,0.2508,0.2519,0.2499,0.2509,0.2521,0.2519,0.2529,0.2509 cublas=0.0901,0.0901,0.0901,0.0901,0.0911,0.0891,0.0901,0.0901,0.0901,0.0901,0.0901,0.0891,0.0899,0.0893,0.0910,0.0901,0.0901,0.0891,0.0891,0.0891,0.0901,0.0901,0.0901,0.0901,0.0891,0.0901,0.0901,0.0901,0.0891,0.0901 cutlass=0.7455,0.7455,0.7455,0.7465,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7455,0.7444,0.7455,0.7455,0.7455,0.7452,0.7455,0.7455,0.7464,0.7455,0.7465,0.7454,0.7465,0.7455,0.7462
+# n=1x2048x7168 face=_exact
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_81c198bb8cfbbd1c grid=8x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.073e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.460e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=2048 K=7168 n=30 min_ms=0.2580 med_ms=0.2601 max_ms=0.2621 tflops_med=0.11
+time leg=cublas M=1 N=2048 K=7168 n=30 min_ms=0.0901 med_ms=0.0911 max_ms=0.0922 tflops_med=0.32
+time leg=cutlass M=1 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7854 tflops_med=0.04
+ratio mapal_vs_cublas=0.350 mapal_vs_cutlass=3.020 (>1 = mapal faster, medians)
+samples mapal=0.2611,0.2621,0.2602,0.2621,0.2601,0.2591,0.2601,0.2580,0.2601,0.2601,0.2611,0.2621,0.2601,0.2601,0.2591,0.2611,0.2591,0.2611,0.2612,0.2601,0.2580,0.2611,0.2601,0.2611,0.2591,0.2601,0.2620,0.2591,0.2611,0.2601 cublas=0.0922,0.0922,0.0911,0.0911,0.0922,0.0901,0.0922,0.0901,0.0911,0.0901,0.0911,0.0911,0.0911,0.0911,0.0911,0.0901,0.0911,0.0911,0.0911,0.0911,0.0911,0.0901,0.0901,0.0911,0.0911,0.0911,0.0912,0.0911,0.0922,0.0901 cutlass=0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7844,0.7844,0.7844
+# n=1x2048x7168 face=_c.null
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c295c77587f63773 grid=8x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.073e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=2048 K=7168 n=30 min_ms=0.2417 med_ms=0.2437 max_ms=0.2447 tflops_med=0.12
+time leg=cublas M=1 N=2048 K=7168 n=30 min_ms=0.0901 med_ms=0.0911 max_ms=0.0922 tflops_med=0.32
+time leg=cutlass M=1 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7844 max_ms=0.7855 tflops_med=0.04
+ratio mapal_vs_cublas=0.374 mapal_vs_cutlass=3.218 (>1 = mapal faster, medians)
+samples mapal=0.2447,0.2437,0.2447,0.2437,0.2437,0.2447,0.2437,0.2437,0.2417,0.2447,0.2447,0.2447,0.2437,0.2437,0.2437,0.2437,0.2437,0.2447,0.2447,0.2438,0.2437,0.2437,0.2437,0.2447,0.2437,0.2437,0.2447,0.2427,0.2437,0.2437 cublas=0.0922,0.0911,0.0901,0.0901,0.0911,0.0911,0.0911,0.0901,0.0911,0.0901,0.0911,0.0901,0.0909,0.0911,0.0911,0.0902,0.0911,0.0911,0.0911,0.0911,0.0911,0.0911,0.0911,0.0911,0.0911,0.0901,0.0922,0.0911,0.0922,0.0911 cutlass=0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7844,0.7854,0.7854,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7844,0.7854,0.7844,0.7844,0.7844,0.7854,0.7854,0.7854,0.7854,0.7855
+# n=1x2048x7168 face=_c
+device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13000
+facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+mapal kernel=mapal_tile_c295c77587f63773 grid=8x1 block=256 smem=0 regs=39 local_bytes=0
+values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03
+values leg=cublas cells=256 maxrel_vs_f64=1.073e-04
+values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=1 N=2048 K=7168 n=30 min_ms=0.2427 med_ms=0.2437 max_ms=0.2458 tflops_med=0.12
+time leg=cublas M=1 N=2048 K=7168 n=30 min_ms=0.0901 med_ms=0.0911 max_ms=0.0922 tflops_med=0.32
+time leg=cutlass M=1 N=2048 K=7168 n=30 min_ms=0.7844 med_ms=0.7854 max_ms=0.7864 tflops_med=0.04
+ratio mapal_vs_cublas=0.374 mapal_vs_cutlass=3.222 (>1 = mapal faster, medians)
+samples mapal=0.2437,0.2437,0.2437,0.2427,0.2447,0.2447,0.2437,0.2437,0.2437,0.2447,0.2437,0.2447,0.2447,0.2437,0.2437,0.2437,0.2437,0.2447,0.2447,0.2447,0.2437,0.2447,0.2458,0.2447,0.2437,0.2437,0.2437,0.2428,0.2447,0.2447 cublas=0.0911,0.0911,0.0922,0.0911,0.0903,0.0901,0.0911,0.0911,0.0911,0.0911,0.0922,0.0911,0.0911,0.0901,0.0911,0.0910,0.0911,0.0911,0.0911,0.0901,0.0911,0.0911,0.0922,0.0911,0.0911,0.0911,0.0922,0.0911,0.0922,0.0922 cutlass=0.7844,0.7854,0.7844,0.7854,0.7844,0.7844,0.7844,0.7864,0.7854,0.7864,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7854,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854,0.7844,0.7854
