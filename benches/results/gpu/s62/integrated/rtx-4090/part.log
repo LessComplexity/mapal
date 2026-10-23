@@ -1,0 +1,32 @@
+[2026-10-23T01:45:20Z] start rtx-4090
+[21:45:26] try RTX_4090 offer=53867752 dph=0.508 pcie=17.5 cpu_ghz=2.6 cpu=AMD_EPYC_7K62_48-Core_Processor host=371998 machine=152108 geo=Zhejiang, CN
+[21:45:34 rtx-4090] instance 57304326 from offer 53867752
+[21:56:50 rtx-4090] ssh 46.224.213.21:40843 up
+ssh: connect to host 46.224.213.21 port 40843: Operation timed out
+tar: Write error
+kex_exchange_identification: read: Connection reset by peer
+Connection reset by 46.224.213.21 port 40843
+tar: Write error
+kex_exchange_identification: read: Connection reset by peer
+Connection reset by 46.224.213.21 port 40843
+tar: Write error
+kex_exchange_identification: read: Connection reset by peer
+Connection reset by 46.224.213.21 port 40843
+tar: Write error
+kex_exchange_identification: read: Connection reset by peer
+Connection reset by 46.224.213.21 port 40843
+tar: Write error
+[21:59:01 rtx-4090] bundle upload failed 5 times
+[21:59:02 rtx-4090] destroyed 57304326
+[21:59:02] no complete results from offer=53867752
+[21:59:02] try RTX_4090 offer=57284751 dph=0.533 pcie=24.9 cpu_ghz=3.0 cpu=AMD_EPYC_7302_16-Core_Processor host=55116 machine=9955 geo=Vietnam, VN
+[21:59:03 rtx-4090] instance 57305611 from offer 57284751
+[21:59:28 rtx-4090] ssh 115.75.223.236:57227 up
+Warning: Permanently added '[115.75.223.236]:57227' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[21:59:36 rtx-4090] bundle uploaded
+[22:04:12 rtx-4090] results fetched: 1363 lines
+[22:04:13 rtx-4090] destroyed 57305611
+[22:04:13] DONE RTX_4090 offer=57284751 host=55116 machine=9955
+[2026-10-23T02:04:13Z] exit 0 rtx-4090

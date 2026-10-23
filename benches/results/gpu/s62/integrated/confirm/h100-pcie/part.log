@@ -1,0 +1,12 @@
+[2026-10-23T02:09:54Z] start h100-pcie
+[22:09:55] try H100_PCIE offer=50562987 dph=2.001 pcie=53.1 cpu_ghz=2.5 cpu=eon_Processor_(SapphireRapids) host=683072 machine=150376 geo=France, FR
+[22:09:57 h100-pcie] instance 57306700 from offer 50562987
+[22:10:31 h100-pcie] ssh 146.183.13.86:61069 up
+Warning: Permanently added '[146.183.13.86]:61069' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[22:10:43 h100-pcie] bundle uploaded
+[22:15:58 h100-pcie] results fetched: 1754 lines
+[22:15:59 h100-pcie] destroyed 57306700
+[22:15:59] DONE H100_PCIE offer=50562987 host=683072 machine=150376
+[2026-10-23T02:15:59Z] exit 0 h100-pcie
