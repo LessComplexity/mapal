@@ -613,10 +613,14 @@ def diff(d, a, b):
             if fa.get(k) != fb.get(k):
                 out.append((f'{scope}.{k}', '-', fa.get(k), fb.get(k)))
     ka, kb = ea['kernels'], eb['kernels']
-    # kernels pair by role: same name, else in plan order of the same kind
-    pairs = [(k, k) for k in ka if k in kb]
-    rest_a = [k for k in ka if k not in kb]
-    rest_b = [k for k in kb if k not in ka]
+    # kernels pair by role: the launched kernel with the launched kernel (a module may carry an unlaunched
+    # twin under the shipped name), then same name, then in plan order
+    la, lb = ea['launch'].get('kernel'), eb['launch'].get('kernel')
+    first = [(la, lb)] if la in ka and lb in kb and la != lb else []
+    used_a, used_b = {x for x, _ in first}, {y for _, y in first}
+    pairs = first + [(k, k) for k in ka if k in kb and k not in used_a and k not in used_b]
+    rest_a = [k for k in ka if k not in kb and k not in used_a]
+    rest_b = [k for k in kb if k not in ka and k not in used_b]
     for x, y in zip(rest_a, rest_b):
         pairs.append((x, y))
     for x, y in pairs:
