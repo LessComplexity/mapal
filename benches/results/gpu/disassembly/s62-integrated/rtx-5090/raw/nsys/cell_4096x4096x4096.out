@@ -1,0 +1,48 @@
+device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+arm stem=mm_4096x4096x4096 face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+arm stem=mm_4096x4096x4096.null face=exact kernel=mapal_tile_44b89e2e8514dfc0 grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+arm stem=mm_4096x4096x4096_c face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+arm stem=mm_4096x4096x4096_c.null face=contract kernel=mapal_tile_359ebbfdb3fa2c9f grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+arm stem=mm_4096x4096x4096_r face=reassoc+exact kernel=mapal_tile_bdec7fdeee76aaed grid=32x32 block=256 smem=33792 regs=128 local_bytes=8 S=1
+arm stem=mm_4096x4096x4096_rc face=reassoc+contract kernel=mapal_tile_6d65558f22a4c664 grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1
+libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=32x32x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=256x64x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+values leg=mm_4096x4096x4096 cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+values leg=mm_4096x4096x4096.null cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=54485620f4ac4077
+values leg=mm_4096x4096x4096_c cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+values leg=mm_4096x4096x4096_c.null cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=0d8343251b74ad4d
+values leg=mm_4096x4096x4096_r cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=54485620f4ac4077
+values leg=mm_4096x4096x4096_rc cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes fnv=0d8343251b74ad4d
+values leg=cublas cells=256 maxrel_vs_f64=8.421e-04
+values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.735e-04
+time leg=mm_4096x4096x4096 M=4096 N=4096 K=4096 n=5 min_ms=4.0038 med_ms=4.1196 max_ms=4.1482
+time leg=mm_4096x4096x4096.null M=4096 N=4096 K=4096 n=5 min_ms=3.9854 med_ms=4.1318 max_ms=4.1421
+time leg=mm_4096x4096x4096_c M=4096 N=4096 K=4096 n=5 min_ms=2.5487 med_ms=2.6542 max_ms=2.6614
+time leg=mm_4096x4096x4096_c.null M=4096 N=4096 K=4096 n=5 min_ms=2.5620 med_ms=2.6604 max_ms=2.6870
+time leg=mm_4096x4096x4096_r M=4096 N=4096 K=4096 n=5 min_ms=3.9772 med_ms=4.1359 max_ms=4.1564
+time leg=mm_4096x4096x4096_rc M=4096 N=4096 K=4096 n=5 min_ms=2.5620 med_ms=2.6501 max_ms=2.6604
+time leg=cublas M=4096 N=4096 K=4096 n=5 min_ms=2.3372 med_ms=2.4089 max_ms=2.4191
+time leg=cutlass M=4096 N=4096 K=4096 n=5 min_ms=2.5436 med_ms=2.6348 max_ms=2.6515
+time leg=cutlass_tuned M=4096 N=4096 K=4096 n=5 min_ms=5.3545 med_ms=5.4344 max_ms=5.4589
+determinism leg=mm_4096x4096x4096 same_output=yes fnv=54485620f4ac4077
+determinism leg=mm_4096x4096x4096.null same_output=yes fnv=54485620f4ac4077
+determinism leg=mm_4096x4096x4096_c same_output=yes fnv=0d8343251b74ad4d
+determinism leg=mm_4096x4096x4096_c.null same_output=yes fnv=0d8343251b74ad4d
+determinism leg=mm_4096x4096x4096_r same_output=yes fnv=54485620f4ac4077
+determinism leg=mm_4096x4096x4096_rc same_output=yes fnv=0d8343251b74ad4d
+samples leg=mm_4096x4096x4096 4.0038,4.1196,4.1155,4.1421,4.1482
+samples leg=mm_4096x4096x4096.null 3.9854,4.1318,4.1126,4.1421,4.1400
+samples leg=mm_4096x4096x4096_c 2.5487,2.6555,2.6476,2.6542,2.6614
+samples leg=mm_4096x4096x4096_c.null 2.5620,2.6604,2.6624,2.6517,2.6870
+samples leg=mm_4096x4096x4096_r 3.9772,4.0095,4.1396,4.1359,4.1564
+samples leg=mm_4096x4096x4096_rc 2.5620,2.5620,2.6516,2.6501,2.6604
+samples leg=cublas 2.3372,2.3392,2.4171,2.4089,2.4191
+samples leg=cutlass 2.5436,2.5477,2.6445,2.6348,2.6515
+samples leg=cutlass_tuned 5.3770,5.3545,5.4385,5.4344,5.4589
+Collecting data...
+Generating '/tmp/nsys-report-e70d.qdstrm'
+[1/1] [0%                          ] cell_4096x4096x4096.nsys-rep[1/1] [0%                          ] cell_4096x4096x4096.nsys-rep[1/1] [======================91%   ] cell_4096x4096x4096.nsys-rep[1/1] [========================100%] cell_4096x4096x4096.nsys-rep[1/1] [========================100%] cell_4096x4096x4096.nsys-rep
+Generated:
+    /w/nsys/cell_4096x4096x4096.nsys-rep

@@ -1,0 +1,9 @@
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+578989505,1024,8,128,1,1,256,1,1,17,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_gen_2616cf5525c44123
+579030017,992,10,512,1,1,256,1,1,17,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_gen_ed5a8d29f15e627e
+579065282,992,12,512,1,1,256,1,1,17,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_gen_ac519ccb961b60d1
+579090050,800,14,2,1,1,256,1,1,17,0.000,0.000,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_gen_5781fae35061d7f6
+579203394,5056,17,32,4,1,32,1,1,194,0.000,0.013,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_tile_385f1ac282de6d85
+579257442,8448,19,16,4,1,32,1,1,194,0.000,0.013,,,,,NVIDIA GeForce RTX 5090 (0),1,,7,mapal_tile_7d8bf3206d8af181
+579324994,640,21,,,,,,,,,,0.000,6.250,Device,Pageable,NVIDIA GeForce RTX 5090 (0),1,,7,[CUDA memcpy Device-to-Host]
+579454979,352,22,,,,,,,,,,0.000,11.364,Device,Pageable,NVIDIA GeForce RTX 5090 (0),1,,7,[CUDA memcpy Device-to-Host]

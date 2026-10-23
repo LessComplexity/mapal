@@ -1,0 +1,8 @@
+-2342.9165
+-568.33
+iter ms=0.126714
+Collecting data...
+Generating '/tmp/nsys-report-74e3.qdstrm'
+[1/1] [0%                          ] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [0%                          ] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [5%                          ] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [===========51%              ] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [===========52%              ] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [========================100%] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep[1/1] [========================100%] prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep
+Generated:
+    /w/nsys/prog_pt_rm_m128_d1024_h2048_c.base.nsys-rep

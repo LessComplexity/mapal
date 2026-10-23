@@ -1,0 +1,20 @@
+device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13000
+facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2482000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+arm stem=mm_16x2048x7168 face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+arm stem=mm_16x2048x7168.null face=exact kernel=mapal_tile_7956f3ceef223e86 grid=128x2 block=32 smem=24576 regs=241 local_bytes=0 S=1
+arm stem=mm_16x2048x7168_c face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+arm stem=mm_16x2048x7168_c.null face=contract kernel=mapal_tile_37c5043169cbcc55 grid=128x2 block=32 smem=28672 regs=255 local_bytes=152 S=1
+arm stem=mm_16x2048x7168_r face=reassoc+exact kernel=mapal_tile_6b1000e757b04934 grid=128x4 block=32 smem=24576 regs=242 local_bytes=0 S=2 reduce=mapal_tile_d6b461744e263b83 rgrid=128x1 rblock=256 rregs=12
+arm stem=mm_16x2048x7168_rc face=reassoc+contract kernel=mapal_tile_5cf8d59c3be44fff grid=128x4 block=32 smem=28672 regs=255 local_bytes=152 S=2 reduce=mapal_tile_08328d061eed2d9c rgrid=128x1 rblock=256 rregs=12
+libfacts leg=cutlass tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=124 local_bytes=0 static_smem=0
+libfacts leg=cutlass_tuned tb=16x64x16 warp=8x32x16 threads=128 grid=1x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+values leg=mm_16x2048x7168 cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+values leg=mm_16x2048x7168.null cells=256 maxrel_vs_f64=1.546e-03 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=cbb4a51200bca5e2
+values leg=mm_16x2048x7168_c cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+values leg=mm_16x2048x7168_c.null cells=256 maxrel_vs_f64=7.511e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 fnv=bdb689b9fcb51801
+values leg=mm_16x2048x7168_r cells=256 maxrel_vs_f64=3.281e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=2.060e-04 within_adr0040_bound=yes fnv=10f53a47bfb8de27
+values leg=mm_16x2048x7168_rc cells=256 maxrel_vs_f64=4.413e-03 S=2 bit_exact_vs_reference=yes maxabs_vs_ordered=1.945e-04 within_adr0040_bound=yes fnv=dae272ba482aeb80
+values leg=cublas cells=256 maxrel_vs_f64=4.140e-03
+values leg=cutlass cells=256 maxrel_vs_f64=7.511e-04
+values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.511e-04
+profile_region legs=9 all_ok=1
