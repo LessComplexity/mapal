@@ -38,4 +38,6 @@ host access passes59/59, including those three:1,190 distinct tests pass across 
 No full unrestricted-workspace rerun is claimed.
 
 
+Latency, before/after on four parts: [allocation latency](allocation-latency.md).
+
 [Raw gate and integration evidence](../../../../benches/results/gpu/memory/allocation-elimination/validation/) · [All memory results](README.md)
