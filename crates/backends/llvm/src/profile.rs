@@ -1268,6 +1268,73 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                cell): ON 0.5458/0.5396 vs off-splitk 0.4813/0.4792 ms, ON/OFF 1.134/1.126 against a null of \
                0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789)",
     },
+    // S62 integration (`benches/results/gpu/s62/integrated/<part>/results-<part>.txt`: every S62
+    // item merged, each gate/partial rung left out one at a time, two tile_bench processes ABBA
+    // and 30 whole-program processes). A rung ships OFF in a (fill, face) class only where every
+    // cell it changes there ran faster without it, beyond that run's null; the reassociation
+    // arms (`_r`, `_rc`) count in their step face's class (`Face::of`).
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-fit",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096_c (with cell-fill merged the \
+               fitted 8-block grid now loses to the cell tile): ON 0.4332/0.4327 vs off-row-fit 0.1018/0.1011 ms \
+               (null 0.001); the class's other cells unchanged",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off \
+               0.0947/0.0944 ms, _r ON 0.0712/0.0703 vs off 0.0429/0.0420 ms (kernel null 0.010); \
+               pt_rm_m128_d1024_h2048 iter ON 0.4060 vs off 0.2940 ms, pt_rm_m128_d256_h512 0.2390 vs 0.1937 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "fill-rows",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off-fill-rows \
+               0.0907/0.0904 ms (null 0.010; the cell tile takes the site); the class's whole programs unchanged",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "panel-regs",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/confirm/h100-pcie/results-h100-pcie.txt (with the three rows above, the class's \
+               kernel cells take the cell tile, which panel-regs leaves unchanged): pt_rm_m128_d1024_h2048 iter ON \
+               0.1865 vs off 0.1783 ms, pt_rm_m128_d256_h512 0.1022 vs 0.0684 ms (30 processes each, null \
+               0.001/0.003)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt mm_16x1024x4096_r (the class's only split cell): ON \
+               0.0758/0.0676 vs off-splitk 0.0655/0.0594 ms, ON/OFF 1.157/1.138 (kernel null 0.016)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3701 \
+               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1591 ms (30 processes each, null 0.019/0.034); the class's \
+               kernel cells unchanged",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3668 \
+               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1574 ms (30 processes each, null 0.019/0.034); the class's \
+               kernel cells unchanged",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

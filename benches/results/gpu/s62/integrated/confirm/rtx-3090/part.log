@@ -1,0 +1,12 @@
+[2026-10-23T02:09:54Z] start rtx-3090
+[22:09:55] try RTX_3090 offer=54681929 dph=0.193 pcie=10.9 cpu_ghz=3.6 cpu=Xeon®_E5-2673_v4_ host=483833 machine=113571 geo=California, US
+[22:09:57 rtx-3090] instance 57306701 from offer 54681929
+[22:10:32 rtx-3090] ssh 104.233.209.157:12830 up
+Warning: Permanently added '[104.233.209.157]:12830' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[22:10:46 rtx-3090] bundle uploaded
+[22:18:07 rtx-3090] results fetched: 1719 lines
+[22:18:09 rtx-3090] destroyed 57306701
+[22:18:09] DONE RTX_3090 offer=54681929 host=483833 machine=113571
+[2026-10-23T02:18:09Z] exit 0 rtx-3090

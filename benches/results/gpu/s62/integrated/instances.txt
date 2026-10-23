@@ -1,0 +1,6 @@
+pre-existing vast instances at 2026-10-23T01:43:14Z: 57065574 57100404 57126023 57133432 57285249 (protected; untouched)
+created 2026-10-22 ~01:45Z (21:45 local): 57304329 rtx-5090, 57304326 rtx-4090, 57304327 h100-pcie, 57304328 rtx-3090
+rtx-4090 first box 57304326: bundle upload failed 5 times, destroyed; second box 57305611 (offer 57284751)
+confirm session (H100 PCIe and RTX 3090, after the cell-tile split fix and the first rung flips): 57306700 h100-pcie (offer 50562987), 57306701 rtx-3090 (offer 54681929)
+created by this session: 57304329 57304326 57304327 57304328 57305611 57306700 57306701 (7); each destroyed by vast_run.sh with -y
+2026-10-23T02:21:50Z vastai show instances: 57065574 57100404 57126023 57133432 57285249 only (none of the 7)

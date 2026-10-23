@@ -283,7 +283,9 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
     say "-- splitk: mm_MxNxK cells, every arm in one process, two processes ABBA (reps=$REPS)"
     for l in "$PROF"/mm_*x*x*_r.launch; do
         cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
-        arms=$(cd "$PROF" && ls "$cell".launch "${cell}"_c.launch "${cell}"_r*.launch | sed 's/\.launch$//' | tr '\n' ' ')
+        # S62 integration: every arm the bundle built for the cell (`.base`, `.off-<rung>`, `.null`).
+        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_c.launch "${cell}"_c.*.launch "${cell}"_r*.launch 2>/dev/null |
+            sed 's/\.launch$//' | tr '\n' ' ')
         say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
         for pass in 1 2; do
             order=$arms; [ $pass = 2 ] && order=$(tr ' ' '\n' <<< "$arms" | sed '/^$/d' | tac | tr '\n' ' ')
