@@ -389,11 +389,19 @@ pub(crate) fn launch(
             // Register staging: the prefetch panel takes what a whole-file tile
             // leaves of the file (`wide-fma`), else (S62 `panel-regs`) what the
             // derived residency leaves after the tile, else one fragment pair.
+            // `panel-regs` only on a grid that leaves a warp scheduler without a
+            // warp: there the panel's independent loads are the only latency
+            // hiding; with a warp per scheduler, warps hide it and the deeper
+            // panel costs registers (S62 v1, the 5090, 4090, H100 PCIe and 3090:
+            // 35 of 38 measured cells on this side of the line).
+            let grid = (site.rows / g.bm()) * (site.c / g.bn());
             let g = match rungs.prefetch {
                 true if g.held > 0 => {
                     prefetch_depth(g, e, gpu.regs_per_thread.saturating_sub(g.held))
                 }
-                true if rungs.panel_regs => prefetch_depth(g, e, panel_regs(gpu, &g, e)),
+                true if rungs.panel_regs && gpu.warps_per_scheduler(grid, g.threads()) == 0 => {
+                    prefetch_depth(g, e, panel_regs(gpu, &g, e))
+                }
                 true => prefetch_depth(g, e, g.tm + g.tn),
                 false => g,
             };
@@ -3399,10 +3407,12 @@ mod tests {
     /// 5090 — on S53 code both took the one-thread-per-cell kernel (`None`).
     /// 2048 columns: `fill-rows` 1×4 at 8 × 4 threads, 256 blocks; two per SM
     /// (`grid-share`) ⇒ bk 512; `panel-regs` (255 − 46 registers free for
-    /// the panel at ¾ register per `k`) ⇒ bk 256. 18432 columns: 16 × 64
-    /// blocks, 288 of them, `cp.async` on the filled exact face. The filled
-    /// contract face ships `warp-fill` OFF there: 8×8 row-fits to 144 blocks
-    /// < 170 SMs ⇒ gated (`wave-gate`).
+    /// the panel at ¾ register per `k`) ⇒ bk 256. 18432 columns: the vector
+    /// floor 4×4 row-fits to 16 × 32 (576 blocks), `cp.async` on the filled
+    /// exact face. The filled contract face ships `warp-fill` OFF there: 8×8
+    /// row-fits to 144 blocks < 170 SMs ⇒ gated (`wave-gate`). `panel-regs`
+    /// reads only grids that leave a scheduler without a warp: not 1024² or
+    /// 128 × 18432 (3 warps per scheduler), whose launch is its OFF arm's.
     #[test]
     fn skinny_projections_take_the_ordered_cooperative_tile() {
         let geo = |n, contract, arms| {
@@ -3418,7 +3428,7 @@ mod tests {
                 Some((1, 4, 8, 16, 32, 256, 1))
             );
         }
-        assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
+        assert_eq!(geo(18432, false, shipped), Some((4, 4, 16, 32, 32, 32, 3)));
         assert_eq!(geo(18432, true, shipped), None);
         let off = |r: &str| {
             let mut a = crate::GpuArms::default();
@@ -3433,6 +3443,21 @@ mod tests {
             geo(18432, true, off("wave-gate")),
             Some((8, 8, 16, 128, 32, 16, 1))
         );
+        for (m, n, k) in [(1024, 1024, 1024), (128, 18432, 7168)] {
+            for contract in [false, true] {
+                let at = |arms| {
+                    let l = launch(
+                        &site(m, n, k, true, true, Ty::f32()),
+                        &RTX_5090,
+                        contract,
+                        arms,
+                        None,
+                    );
+                    (l.tiled, l.smem)
+                };
+                assert_eq!(at(shipped), at(off("panel-regs")), "{m}x{n}x{k} {contract}");
+            }
+        }
     }
 
     /// Every staged copy of a skinny site's panels lands once, in the panel,
