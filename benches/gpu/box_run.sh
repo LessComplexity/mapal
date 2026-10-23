@@ -223,6 +223,12 @@ bench() { # <cell> <stem> <label> [--contract|--tf32]
     say "# n=$n face=$label pass=$pass"
     # shellcheck disable=SC2046  # M N K are three arguments
     ./tile_bench $(dims "$n") "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" 2>&1 | tee -a "$LOG"
+    # WARM=1 (S62): the same bench again with operands left in L2 (`tile_bench --warm`).
+    if [ "${WARM:-0}" = 1 ]; then
+        say "# n=$n face=$label pass=$pass l2=warm"
+        # shellcheck disable=SC2046
+        ./tile_bench $(dims "$n") "$stem.ptx" "$k" "$gx" "$gy" "$blk" "$sm" "$REPS" "$@" --warm 2>&1 | tee -a "$LOG"
+    fi
 }
 # S54 arch-select: the session's first bench ran 3.6% off its own repeat (the `null` arm,
 # arch-select-rtx-3090.txt _exact 1024): one discarded bench first.

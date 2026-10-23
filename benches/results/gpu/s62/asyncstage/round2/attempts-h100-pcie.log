@@ -1,0 +1,5 @@
+[19:21:59] try H100_PCIE offer=50562987 dph=2.001 pcie=53.1 cpu_ghz=2.5 host=683072 machine=150376 geo=France, FR
+[19:26:11] no complete results from offer=50562987
+[19:26:13] try H100_SXM offer=41555537 dph=6.671 pcie=47.3 cpu_ghz=4.0 host=214845 machine=140932 geo=Czechia, CZ
+[19:36:42] no complete results from offer=41555537
+[19:36:42] GAVE UP after 2 incomplete runs

@@ -19,9 +19,9 @@ def rows(path):
     """{(cell, face, arm, pass): {leg: med_ms}} plus the launch and value lines of each bench."""
     out, cur = defaultdict(dict), None
     for line in open(path):
-        m = re.match(r'# n=(\S+) face=(_exact|_c|_tf)(?:\.(\S+))? pass=(\d+)', line)
+        m = re.match(r'# n=(\S+) face=(_exact|_c|_tf)(?:\.(\S+))? pass=(\d+)( l2=warm)?', line)
         if m:
-            cur = (m[1], m[2], m[3] or 'shipped', int(m[4]))
+            cur = (m[1] + ('@warm' if m[5] else ''), m[2], m[3] or 'shipped', int(m[4]))
             continue
         m = re.match(r'time leg=(\w+) .* med_ms=([\d.]+)', line)
         if m and cur:
@@ -38,7 +38,8 @@ def rows(path):
 def main(path, arms):
     rs = rows(path)
     r = lambda key: rs[key]['mapal'] / rs[key]['cublas'] if key in rs and 'cublas' in rs[key] else None
-    cells = sorted({(c, f) for c, f, _, _ in rs}, key=lambda x: ([int(v) for v in x[0].split('x')], x[1]))
+    cells = sorted({(c, f) for c, f, _, _ in rs},
+                   key=lambda x: ([int(v) for v in x[0].split('@')[0].split('x')], x[0], x[1]))
     passes = sorted({p for *_, p in rs})
     nulls = []
     print(f"| cell | face | pass | shipped ms | cuBLAS ms | CUTLASS ms | shipped/cuBLAS | "
@@ -66,6 +67,54 @@ def main(path, arms):
     print(f"value gate: {'every Mapal leg bit-exact' if not bad else 'NOT EXACT ' + str(bad)}")
 
 
+def decide(path, fills_path, warm=False):
+    """The acceptance rule per (rung, fill, face): a cell is stable+ when s > 1 + t in both passes,
+    stable- when s < 1 - t in both, t = max(the cell's null in either pass, 0.01). A class ships ON
+    iff some cell is stable+ and none stable-. asyncstage: s = r(off-asyncstage) / r(shipped);
+    cell-fill: s = r(off-cell-fill+asyncstage) / r(off-asyncstage) (r(shipped) when asyncstage did
+    not fire). Fill = the cell's base-grid class (fill-classes.txt, the GPU_RUNGS_OFF key)."""
+    rs = rows(path)
+    prof = re.match(r'== (\S+)', open(path).readline())[1]
+    fill = {}
+    for line in open(fills_path):
+        f = line.split()
+        if len(f) == 4 and f[0] == prof:
+            fill[f[1]] = f[3]
+    r = lambda key: rs[key]['mapal'] / rs[key]['cublas'] if key in rs and 'cublas' in rs[key] else None
+    cls = defaultdict(list)
+    for c, f in sorted({(c, f) for c, f, _, _ in rs}):
+        if c.endswith('@warm') != warm:
+            continue
+        base = c.split('@')[0]
+        dims = base if 'x' in base else f"{base}x{base}x{base}"
+        ss = defaultdict(list)
+        t = 0.01
+        for p in (1, 2):
+            on, nl = r((c, f, 'shipped', p)), r((c, f, 'null', p))
+            if on is None:
+                continue
+            if nl is not None:
+                t = max(t, abs(nl / on - 1))
+            a, b = r((c, f, 'off-asyncstage', p)), r((c, f, 'off-cell-fill+asyncstage', p))
+            if a is not None:
+                ss['asyncstage'].append(a / on)
+            # cell-fill applies only where the two arms launch differently (M128: one text).
+            same = a is not None and rs[(c, f, 'off-asyncstage', p)].get('launch', '').split(' regs')[0] == \
+                rs.get((c, f, 'off-cell-fill+asyncstage', p), {}).get('launch', '').split(' regs')[0]
+            if b is not None and not same:
+                ss['cell-fill'].append(b / (a if a is not None else on))
+        for rung, v in ss.items():
+            sign = '+' if all(x > 1 + t for x in v) else '-' if all(x < 1 - t for x in v) else '~'
+            cls[(rung, fill.get(dims, '?'), {'_exact': 'Exact', '_c': 'Contract'}.get(f, f))].append(
+                f"{c}{sign}[{'/'.join(f'{x:.3f}' for x in v)} t={t:.3f}]")
+    print(f"\n{prof}{' (warm L2)' if warm else ''}: | rung | fill | face | ships | cells |")
+    for k, cells in sorted(cls.items()):
+        pos = any('+[' in x for x in cells)
+        neg = any('-[' in x for x in cells)
+        verdict = 'ON' if pos and not neg else ('OFF (mixed)' if pos and neg else 'OFF')
+        print(f"| {k[0]} | {k[1]} | {k[2]} | {verdict} | {'; '.join(cells)} |")
+
+
 def selftest():
     import os
     import tempfile
@@ -90,5 +139,7 @@ def selftest():
 if __name__ == '__main__':
     if sys.argv[1:] == ['--selftest']:
         selftest()
+    elif sys.argv[1] == '--decide':  # --decide <results> <fill-classes.txt> [--warm]
+        decide(sys.argv[2], sys.argv[3], sys.argv[4:] == ['--warm'])
     else:
         main(sys.argv[1], sys.argv[2:] or ['off-asyncstage', 'off-cell-fill+asyncstage'])

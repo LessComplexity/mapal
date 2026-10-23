@@ -1,0 +1,365 @@
+# final tree: ship = the measured --gpu-off=asyncstage arm (cell-fill ON, asyncstage OFF by GPU_RUNGS_OFF); 136/136 device+host units byte-identical, ship-equals-measured.txt
+# S62 asyncstage: emitted launch per profile x cell x face x arm (emit --target=<p> --device-out, branch s62/asyncstage @ 11c56ef).
+# launch = gx gy block smem; cp.async = lines naming cp.async.c* in the device unit (4 = declarations only, no copy);
+# wait.group(N) = stages-2; minctasm = blocks_per_sm under min-blocks; dev = md5 prefix of the device unit (equal = identical text).
+# ship = the profile's shipped table; --gpu-off=asyncstage = the tile register-staged; --gpu-off=cell-fill,asyncstage = the pre-S62 kernel.
+rtx-5090  cell_16x512x256  exact    ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=cfc25da3
+rtx-5090  cell_16x512x256  exact    --gpu-off=asyncstage         launch= 32 1 256 8192          cp.async=4                      maxntid=256  minctasm=6   dev=89b6f236
+rtx-5090  cell_16x512x256  exact    --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=bc6490b0
+rtx-5090  cell_16x512x256  contract ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=39b5fa41
+rtx-5090  cell_16x512x256  contract --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=931dee2b
+rtx-5090  cell_16x512x256  contract --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=88fe3d59
+rtx-5090  mm_1024          exact    ship                         launch= 16 16 256 8192         cp.async=4                      maxntid=256  minctasm=2   dev=f45e0597
+rtx-5090  mm_1024          exact    --gpu-off=asyncstage         launch= 16 16 256 8192         cp.async=4                      maxntid=256  minctasm=2   dev=f45e0597
+rtx-5090  mm_1024          exact    --gpu-off=cell-fill,asyncstage launch= 16 16 256 8192         cp.async=4                      maxntid=256  minctasm=2   dev=f45e0597
+rtx-5090  mm_1024          contract ship                         launch= 16 16 256 8448         cp.async=4                      maxntid=256  minctasm=2   dev=45112d60
+rtx-5090  mm_1024          contract --gpu-off=asyncstage         launch= 16 16 256 8448         cp.async=4                      maxntid=256  minctasm=2   dev=45112d60
+rtx-5090  mm_1024          contract --gpu-off=cell-fill,asyncstage launch= 16 16 256 8448         cp.async=4                      maxntid=256  minctasm=2   dev=45112d60
+rtx-5090  mm_128x1024x1024 exact    ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=0f28b736
+rtx-5090  mm_128x1024x1024 exact    --gpu-off=asyncstage         launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=76f0d6d4
+rtx-5090  mm_128x1024x1024 exact    --gpu-off=cell-fill,asyncstage launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=76f0d6d4
+rtx-5090  mm_128x1024x1024 contract ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=7354871f
+rtx-5090  mm_128x1024x1024 contract --gpu-off=asyncstage         launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=9406b494
+rtx-5090  mm_128x1024x1024 contract --gpu-off=cell-fill,asyncstage launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=9406b494
+rtx-5090  mm_128x1024x2048 exact    ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=be73a372
+rtx-5090  mm_128x1024x2048 exact    --gpu-off=asyncstage         launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=74aa1091
+rtx-5090  mm_128x1024x2048 exact    --gpu-off=cell-fill,asyncstage launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=74aa1091
+rtx-5090  mm_128x1024x2048 contract ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=6b57eb96
+rtx-5090  mm_128x1024x2048 contract --gpu-off=asyncstage         launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=092a36b6
+rtx-5090  mm_128x1024x2048 contract --gpu-off=cell-fill,asyncstage launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=092a36b6
+rtx-5090  mm_128x1024x4096 exact    ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=ed942958
+rtx-5090  mm_128x1024x4096 exact    --gpu-off=asyncstage         launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=8d50cd71
+rtx-5090  mm_128x1024x4096 exact    --gpu-off=cell-fill,asyncstage launch= 64 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=8d50cd71
+rtx-5090  mm_128x1024x4096 contract ship                         launch= 64 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=2c5ba410
+rtx-5090  mm_128x1024x4096 contract --gpu-off=asyncstage         launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=045848ad
+rtx-5090  mm_128x1024x4096 contract --gpu-off=cell-fill,asyncstage launch= 64 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=045848ad
+rtx-5090  mm_128x2048x1024 exact    ship                         launch= 64 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=1537326b
+rtx-5090  mm_128x2048x1024 exact    --gpu-off=asyncstage         launch= 64 4 64 2048           cp.async=4                      maxntid=64   minctasm=8   dev=c80b7c1d
+rtx-5090  mm_128x2048x1024 exact    --gpu-off=cell-fill,asyncstage launch= 64 4 64 2048           cp.async=4                      maxntid=64   minctasm=8   dev=c80b7c1d
+rtx-5090  mm_128x2048x1024 contract ship                         launch= 64 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=12ccbead
+rtx-5090  mm_128x2048x1024 contract --gpu-off=asyncstage         launch= 64 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=7b2ed319
+rtx-5090  mm_128x2048x1024 contract --gpu-off=cell-fill,asyncstage launch= 64 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=7b2ed319
+rtx-5090  mm_128x2048x7168 exact    ship                         launch= 64 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=45ea7381
+rtx-5090  mm_128x2048x7168 exact    --gpu-off=asyncstage         launch= 64 4 64 2048           cp.async=4                      maxntid=64   minctasm=8   dev=28bf1931
+rtx-5090  mm_128x2048x7168 exact    --gpu-off=cell-fill,asyncstage launch= 64 4 64 2048           cp.async=4                      maxntid=64   minctasm=8   dev=28bf1931
+rtx-5090  mm_128x2048x7168 contract ship                         launch= 64 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=a5f109a7
+rtx-5090  mm_128x2048x7168 contract --gpu-off=asyncstage         launch= 64 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=6c7ff8aa
+rtx-5090  mm_128x2048x7168 contract --gpu-off=cell-fill,asyncstage launch= 64 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=6c7ff8aa
+rtx-5090  mm_128x256x256   exact    ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=decc2c0e
+rtx-5090  mm_128x256x256   exact    --gpu-off=asyncstage         launch= 16 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=a357954b
+rtx-5090  mm_128x256x256   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=a357954b
+rtx-5090  mm_128x256x256   contract ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=4b7b6694
+rtx-5090  mm_128x256x256   contract --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=fbabc2ce
+rtx-5090  mm_128x256x256   contract --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=fbabc2ce
+rtx-5090  mm_128x256x512   exact    ship                         launch= 16 4 32 100352         cp.async=564 wait.group(i32 54) maxntid=32   minctasm=1   dev=72241b10
+rtx-5090  mm_128x256x512   exact    --gpu-off=asyncstage         launch= 16 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=60955d26
+rtx-5090  mm_128x256x512   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=60955d26
+rtx-5090  mm_128x256x512   contract ship                         launch= 16 4 32 100352         cp.async=564 wait.group(i32 54) maxntid=32   minctasm=1   dev=598a0ec6
+rtx-5090  mm_128x256x512   contract --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=a6964222
+rtx-5090  mm_128x256x512   contract --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=a6964222
+rtx-5090  mm_128x512x256   exact    ship                         launch= 32 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=a1bfef8a
+rtx-5090  mm_128x512x256   exact    --gpu-off=asyncstage         launch= 32 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=a06541cd
+rtx-5090  mm_128x512x256   exact    --gpu-off=cell-fill,asyncstage launch= 32 4 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=a06541cd
+rtx-5090  mm_128x512x256   contract ship                         launch= 32 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=0434ec11
+rtx-5090  mm_128x512x256   contract --gpu-off=asyncstage         launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=5a1f3614
+rtx-5090  mm_128x512x256   contract --gpu-off=cell-fill,asyncstage launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=5a1f3614
+rtx-5090  mm_16x1024x4096  exact    ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=0829281c
+rtx-5090  mm_16x1024x4096  exact    --gpu-off=asyncstage         launch= 64 1 256 8192          cp.async=4                      maxntid=256  minctasm=6   dev=8a12b69d
+rtx-5090  mm_16x1024x4096  exact    --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=41e1c698
+rtx-5090  mm_16x1024x4096  contract ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=a40760fd
+rtx-5090  mm_16x1024x4096  contract --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=e7a6829a
+rtx-5090  mm_16x1024x4096  contract --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=94c4d91d
+rtx-5090  mm_16x18432x7168 exact    ship                         launch= 1152 1 256 8192        cp.async=4                      maxntid=256  minctasm=6   dev=7dad53fe
+rtx-5090  mm_16x18432x7168 exact    --gpu-off=asyncstage         launch= 1152 1 256 8192        cp.async=4                      maxntid=256  minctasm=6   dev=7dad53fe
+rtx-5090  mm_16x18432x7168 exact    --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=cd9b33d9
+rtx-5090  mm_16x18432x7168 contract ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=96fab259
+rtx-5090  mm_16x18432x7168 contract --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=96fab259
+rtx-5090  mm_16x18432x7168 contract --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=21ac660d
+rtx-5090  mm_16x2048x7168  exact    ship                         launch= 128 1 256 92160        cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=217b9e10
+rtx-5090  mm_16x2048x7168  exact    --gpu-off=asyncstage         launch= 128 1 256 8192         cp.async=4                      maxntid=256  minctasm=6   dev=2ede36a5
+rtx-5090  mm_16x2048x7168  exact    --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=a13672d8
+rtx-5090  mm_16x2048x7168  contract ship                         launch= 128 1 256 92160        cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=0e2b41ae
+rtx-5090  mm_16x2048x7168  contract --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=6   dev=770a9590
+rtx-5090  mm_16x2048x7168  contract --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=606a4bc3
+rtx-5090  mm_1x2048x7168   exact    ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=3c0443b4
+rtx-5090  mm_1x2048x7168   exact    --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=3c0443b4
+rtx-5090  mm_1x2048x7168   exact    --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=3c0443b4
+rtx-5090  mm_1x2048x7168   contract ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=59946bdb
+rtx-5090  mm_1x2048x7168   contract --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=59946bdb
+rtx-5090  mm_1x2048x7168   contract --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=59946bdb
+rtx-5090  mm_4096          exact    ship                         launch= 32 32 256 33792        cp.async=26  wait.group(i32 0)  maxntid=256  minctasm=2   dev=123315f2
+rtx-5090  mm_4096          exact    --gpu-off=asyncstage         launch= 32 32 256 33792        cp.async=26  wait.group(i32 0)  maxntid=256  minctasm=2   dev=123315f2
+rtx-5090  mm_4096          exact    --gpu-off=cell-fill,asyncstage launch= 32 32 256 33792        cp.async=26  wait.group(i32 0)  maxntid=256  minctasm=2   dev=123315f2
+rtx-5090  mm_4096          contract ship                         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=1c45e4d1
+rtx-5090  mm_4096          contract --gpu-off=asyncstage         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=1c45e4d1
+rtx-5090  mm_4096          contract --gpu-off=cell-fill,asyncstage launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=1c45e4d1
+rtx-4090  cell_16x512x256  exact    ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=90fab487
+rtx-4090  cell_16x512x256  exact    --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=56c9c32b
+rtx-4090  cell_16x512x256  exact    --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=36549ef9
+rtx-4090  cell_16x512x256  contract ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=f7c00c26
+rtx-4090  cell_16x512x256  contract --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=66db27e3
+rtx-4090  cell_16x512x256  contract --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=433c1fbf
+rtx-4090  mm_1024          exact    ship                         launch= 16 8 256 89600         cp.async=74  wait.group(i32 5)  maxntid=256  minctasm=1   dev=3cb60c24
+rtx-4090  mm_1024          exact    --gpu-off=asyncstage         launch= 16 8 256 38400         cp.async=34  wait.group(i32 1)  maxntid=256  minctasm=2   dev=effd5c5b
+rtx-4090  mm_1024          exact    --gpu-off=cell-fill,asyncstage launch= 16 8 256 38400         cp.async=34  wait.group(i32 1)  maxntid=256  minctasm=2   dev=effd5c5b
+rtx-4090  mm_1024          contract ship                         launch= 16 8 256 89600         cp.async=74  wait.group(i32 5)  maxntid=256  minctasm=1   dev=b530aedc
+rtx-4090  mm_1024          contract --gpu-off=asyncstage         launch= 16 8 256 38400         cp.async=34  wait.group(i32 1)  maxntid=256  minctasm=2   dev=d5e09693
+rtx-4090  mm_1024          contract --gpu-off=cell-fill,asyncstage launch= 16 8 256 38400         cp.async=34  wait.group(i32 1)  maxntid=256  minctasm=2   dev=d5e09693
+rtx-4090  mm_128x1024x1024 exact    ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=5c498306
+rtx-4090  mm_128x1024x1024 exact    --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6fe0dc10
+rtx-4090  mm_128x1024x1024 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6fe0dc10
+rtx-4090  mm_128x1024x1024 contract ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=484c3e00
+rtx-4090  mm_128x1024x1024 contract --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=863d479d
+rtx-4090  mm_128x1024x1024 contract --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=863d479d
+rtx-4090  mm_128x1024x2048 exact    ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=584ea7dd
+rtx-4090  mm_128x1024x2048 exact    --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=a6dc3fe7
+rtx-4090  mm_128x1024x2048 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=a6dc3fe7
+rtx-4090  mm_128x1024x2048 contract ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=0715d1a9
+rtx-4090  mm_128x1024x2048 contract --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6776cbe0
+rtx-4090  mm_128x1024x2048 contract --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6776cbe0
+rtx-4090  mm_128x1024x4096 exact    ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=b9ca156b
+rtx-4090  mm_128x1024x4096 exact    --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6653e50b
+rtx-4090  mm_128x1024x4096 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=6653e50b
+rtx-4090  mm_128x1024x4096 contract ship                         launch= 32 4 64 101376         cp.async=246 wait.group(i32 20) maxntid=64   minctasm=1   dev=a9fb9b11
+rtx-4090  mm_128x1024x4096 contract --gpu-off=asyncstage         launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=cb6e7e8e
+rtx-4090  mm_128x1024x4096 contract --gpu-off=cell-fill,asyncstage launch= 32 4 64 9216           cp.async=26  wait.group(i32 0)  maxntid=64   minctasm=8   dev=cb6e7e8e
+rtx-4090  mm_128x2048x1024 exact    ship                         launch= 64 2 128 99840         cp.async=154 wait.group(i32 13) maxntid=128  minctasm=1   dev=7f27958e
+rtx-4090  mm_128x2048x1024 exact    --gpu-off=asyncstage         launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=f62c3934
+rtx-4090  mm_128x2048x1024 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=f62c3934
+rtx-4090  mm_128x2048x1024 contract ship                         launch= 64 2 128 99840         cp.async=154 wait.group(i32 13) maxntid=128  minctasm=1   dev=43ce9fae
+rtx-4090  mm_128x2048x1024 contract --gpu-off=asyncstage         launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=41651d8d
+rtx-4090  mm_128x2048x1024 contract --gpu-off=cell-fill,asyncstage launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=41651d8d
+rtx-4090  mm_128x2048x7168 exact    ship                         launch= 64 2 128 99840         cp.async=154 wait.group(i32 13) maxntid=128  minctasm=1   dev=d7a2b244
+rtx-4090  mm_128x2048x7168 exact    --gpu-off=asyncstage         launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=d514b744
+rtx-4090  mm_128x2048x7168 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=d514b744
+rtx-4090  mm_128x2048x7168 contract ship                         launch= 64 2 128 99840         cp.async=154 wait.group(i32 13) maxntid=128  minctasm=1   dev=3b27a94a
+rtx-4090  mm_128x2048x7168 contract --gpu-off=asyncstage         launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=c1b19646
+rtx-4090  mm_128x2048x7168 contract --gpu-off=cell-fill,asyncstage launch= 64 2 128 19968         cp.async=34  wait.group(i32 1)  maxntid=128  minctasm=4   dev=c1b19646
+rtx-4090  mm_128x256x256   exact    ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=23294ab6
+rtx-4090  mm_128x256x256   exact    --gpu-off=asyncstage         launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=1352b465
+rtx-4090  mm_128x256x256   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=1352b465
+rtx-4090  mm_128x256x256   contract ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=6bdb9b48
+rtx-4090  mm_128x256x256   contract --gpu-off=asyncstage         launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=3d2fed93
+rtx-4090  mm_128x256x256   contract --gpu-off=cell-fill,asyncstage launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=3d2fed93
+rtx-4090  mm_128x256x512   exact    ship                         launch= 16 4 32 100352         cp.async=564 wait.group(i32 54) maxntid=32   minctasm=1   dev=0ca8ec57
+rtx-4090  mm_128x256x512   exact    --gpu-off=asyncstage         launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=7232053a
+rtx-4090  mm_128x256x512   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=7232053a
+rtx-4090  mm_128x256x512   contract ship                         launch= 16 4 32 100352         cp.async=564 wait.group(i32 54) maxntid=32   minctasm=1   dev=d421b9db
+rtx-4090  mm_128x256x512   contract --gpu-off=asyncstage         launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=cf194b25
+rtx-4090  mm_128x256x512   contract --gpu-off=cell-fill,asyncstage launch= 16 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=cf194b25
+rtx-4090  mm_128x512x256   exact    ship                         launch= 32 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=73a1be94
+rtx-4090  mm_128x512x256   exact    --gpu-off=asyncstage         launch= 32 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=d2a17ef5
+rtx-4090  mm_128x512x256   exact    --gpu-off=cell-fill,asyncstage launch= 32 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=d2a17ef5
+rtx-4090  mm_128x512x256   contract ship                         launch= 32 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=7d0ca96a
+rtx-4090  mm_128x512x256   contract --gpu-off=asyncstage         launch= 32 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=91311f27
+rtx-4090  mm_128x512x256   contract --gpu-off=cell-fill,asyncstage launch= 32 4 32 5376           cp.async=34  wait.group(i32 1)  maxntid=32   minctasm=16  dev=91311f27
+rtx-4090  mm_16x1024x4096  exact    ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=e018c6b1
+rtx-4090  mm_16x1024x4096  exact    --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=4f294d30
+rtx-4090  mm_16x1024x4096  exact    --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=3c9a1130
+rtx-4090  mm_16x1024x4096  contract ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=c53e574a
+rtx-4090  mm_16x1024x4096  contract --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=cdac64ed
+rtx-4090  mm_16x1024x4096  contract --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=6bafb928
+rtx-4090  mm_16x18432x7168 exact    ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=76b10fbc
+rtx-4090  mm_16x18432x7168 exact    --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=76b10fbc
+rtx-4090  mm_16x18432x7168 exact    --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=490615bb
+rtx-4090  mm_16x18432x7168 contract ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=0c9f43e1
+rtx-4090  mm_16x18432x7168 contract --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=0c9f43e1
+rtx-4090  mm_16x18432x7168 contract --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=52457d32
+rtx-4090  mm_16x2048x7168  exact    ship                         launch= 128 1 256 92160        cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=0be1876d
+rtx-4090  mm_16x2048x7168  exact    --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=6   dev=b3d4ee62
+rtx-4090  mm_16x2048x7168  exact    --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=17312289
+rtx-4090  mm_16x2048x7168  contract ship                         launch= 128 1 256 92160        cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=1be3b60f
+rtx-4090  mm_16x2048x7168  contract --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=6   dev=f9580e5b
+rtx-4090  mm_16x2048x7168  contract --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=c8bde458
+rtx-4090  mm_1x2048x7168   exact    ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=5116aa3e
+rtx-4090  mm_1x2048x7168   exact    --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=5116aa3e
+rtx-4090  mm_1x2048x7168   exact    --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=5116aa3e
+rtx-4090  mm_1x2048x7168   contract ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=bc5ed921
+rtx-4090  mm_1x2048x7168   contract --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=bc5ed921
+rtx-4090  mm_1x2048x7168   contract --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=bc5ed921
+rtx-4090  mm_4096          exact    ship                         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=4290e726
+rtx-4090  mm_4096          exact    --gpu-off=asyncstage         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=4290e726
+rtx-4090  mm_4096          exact    --gpu-off=cell-fill,asyncstage launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=4290e726
+rtx-4090  mm_4096          contract ship                         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=b039daeb
+rtx-4090  mm_4096          contract --gpu-off=asyncstage         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=b039daeb
+rtx-4090  mm_4096          contract --gpu-off=cell-fill,asyncstage launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=b039daeb
+h100-pcie cell_16x512x256  exact    ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=b39034a0
+h100-pcie cell_16x512x256  exact    --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=1283cdea
+h100-pcie cell_16x512x256  exact    --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=7d835996
+h100-pcie cell_16x512x256  contract ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=    dev=a1794596
+h100-pcie cell_16x512x256  contract --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=    dev=0437ef24
+h100-pcie cell_16x512x256  contract --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=dbbeb97e
+h100-pcie mm_1024          exact    ship                         launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=26673b57
+h100-pcie mm_1024          exact    --gpu-off=asyncstage         launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=26673b57
+h100-pcie mm_1024          exact    --gpu-off=cell-fill,asyncstage launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=26673b57
+h100-pcie mm_1024          contract ship                         launch= 16 8 128 115200        cp.async=184 wait.group(i32 16) maxntid=128  minctasm=    dev=d1f53391
+h100-pcie mm_1024          contract --gpu-off=asyncstage         launch= 16 8 128 6272          cp.async=4                      maxntid=128  minctasm=    dev=acd4a63e
+h100-pcie mm_1024          contract --gpu-off=cell-fill,asyncstage launch= 16 8 128 6272          cp.async=4                      maxntid=128  minctasm=    dev=acd4a63e
+h100-pcie mm_128x1024x1024 exact    ship                         launch= 32 4 64 115200         cp.async=304 wait.group(i32 48) maxntid=64   minctasm=2   dev=26a630df
+h100-pcie mm_128x1024x1024 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=58d60edd
+h100-pcie mm_128x1024x1024 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=58d60edd
+h100-pcie mm_128x1024x1024 contract ship                         launch= 32 2 32 231296         cp.async=1394 wait.group(i32 137) maxntid=32   minctasm=    dev=068e5f47
+h100-pcie mm_128x1024x1024 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=bd717a7f
+h100-pcie mm_128x1024x1024 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=bd717a7f
+h100-pcie mm_128x1024x2048 exact    ship                         launch= 32 4 64 115200         cp.async=304 wait.group(i32 48) maxntid=64   minctasm=2   dev=0e377bf4
+h100-pcie mm_128x1024x2048 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=b299d8c3
+h100-pcie mm_128x1024x2048 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=b299d8c3
+h100-pcie mm_128x1024x2048 contract ship                         launch= 32 2 32 231296         cp.async=1394 wait.group(i32 137) maxntid=32   minctasm=    dev=ab6c914b
+h100-pcie mm_128x1024x2048 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=4e7fe02c
+h100-pcie mm_128x1024x2048 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=4e7fe02c
+h100-pcie mm_128x1024x4096 exact    ship                         launch= 32 4 64 115200         cp.async=304 wait.group(i32 48) maxntid=64   minctasm=2   dev=cbadc663
+h100-pcie mm_128x1024x4096 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=e279c662
+h100-pcie mm_128x1024x4096 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=e279c662
+h100-pcie mm_128x1024x4096 contract ship                         launch= 32 2 32 231296         cp.async=1394 wait.group(i32 137) maxntid=32   minctasm=    dev=7124017e
+h100-pcie mm_128x1024x4096 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=131973a3
+h100-pcie mm_128x1024x4096 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=131973a3
+h100-pcie mm_128x2048x1024 exact    ship                         launch= 64 2 128 113152        cp.async=174 wait.group(i32 15) maxntid=128  minctasm=2   dev=b552a911
+h100-pcie mm_128x2048x1024 exact    --gpu-off=asyncstage         launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=469fecea
+h100-pcie mm_128x2048x1024 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=469fecea
+h100-pcie mm_128x2048x1024 contract ship                         launch= 64 2 32 114816         cp.async=694 wait.group(i32 67) maxntid=32   minctasm=    dev=12facf08
+h100-pcie mm_128x2048x1024 contract --gpu-off=asyncstage         launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=ce7d34ce
+h100-pcie mm_128x2048x1024 contract --gpu-off=cell-fill,asyncstage launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=ce7d34ce
+h100-pcie mm_128x2048x7168 exact    ship                         launch= 64 2 128 113152        cp.async=174 wait.group(i32 15) maxntid=128  minctasm=2   dev=51d00796
+h100-pcie mm_128x2048x7168 exact    --gpu-off=asyncstage         launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=8249b3c6
+h100-pcie mm_128x2048x7168 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=8249b3c6
+h100-pcie mm_128x2048x7168 contract ship                         launch= 64 2 32 114816         cp.async=694 wait.group(i32 67) maxntid=32   minctasm=    dev=b3508e7e
+h100-pcie mm_128x2048x7168 contract --gpu-off=asyncstage         launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=cfcaccfe
+h100-pcie mm_128x2048x7168 contract --gpu-off=cell-fill,asyncstage launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=cfcaccfe
+h100-pcie mm_128x256x256   exact    ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=4e2c1ae6
+h100-pcie mm_128x256x256   exact    --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=063e78f9
+h100-pcie mm_128x256x256   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=063e78f9
+h100-pcie mm_128x256x256   contract ship                         launch= 8 2 32 106496          cp.async=644 wait.group(i32 62) maxntid=32   minctasm=    dev=7d97c2ab
+h100-pcie mm_128x256x256   contract --gpu-off=asyncstage         launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=    dev=74b78391
+h100-pcie mm_128x256x256   contract --gpu-off=cell-fill,asyncstage launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=    dev=74b78391
+h100-pcie mm_128x256x512   exact    ship                         launch= 16 4 32 114688         cp.async=644 wait.group(i32 62) maxntid=32   minctasm=1   dev=7f318643
+h100-pcie mm_128x256x512   exact    --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=933198fb
+h100-pcie mm_128x256x512   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=933198fb
+h100-pcie mm_128x256x512   contract ship                         launch= 8 2 32 212992          cp.async=1284 wait.group(i32 126) maxntid=32   minctasm=    dev=53c2b6a5
+h100-pcie mm_128x256x512   contract --gpu-off=asyncstage         launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=    dev=fa3ce7b7
+h100-pcie mm_128x256x512   contract --gpu-off=cell-fill,asyncstage launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=    dev=fa3ce7b7
+h100-pcie mm_128x512x256   exact    ship                         launch= 32 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=2   dev=36016b98
+h100-pcie mm_128x512x256   exact    --gpu-off=asyncstage         launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=76e17819
+h100-pcie mm_128x512x256   exact    --gpu-off=cell-fill,asyncstage launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=76e17819
+h100-pcie mm_128x512x256   contract ship                         launch= 16 2 32 106496         cp.async=644 wait.group(i32 62) maxntid=32   minctasm=    dev=6c153d75
+h100-pcie mm_128x512x256   contract --gpu-off=asyncstage         launch= 16 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=a34cf8a1
+h100-pcie mm_128x512x256   contract --gpu-off=cell-fill,asyncstage launch= 16 2 32 1536           cp.async=4                      maxntid=32   minctasm=    dev=a34cf8a1
+h100-pcie mm_16x1024x4096  exact    ship                         launch= 64 1 256 225280        cp.async=136 wait.group(i32 20) maxntid=256  minctasm=1   dev=5d05280e
+h100-pcie mm_16x1024x4096  exact    --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=a407941f
+h100-pcie mm_16x1024x4096  exact    --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=91561925
+h100-pcie mm_16x1024x4096  contract ship                         launch= 64 1 256 225280        cp.async=136 wait.group(i32 20) maxntid=256  minctasm=    dev=f507108a
+h100-pcie mm_16x1024x4096  contract --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=    dev=fe301239
+h100-pcie mm_16x1024x4096  contract --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=50f1829f
+h100-pcie mm_16x18432x7168 exact    ship                         launch= 1152 1 256 8192        cp.async=4                      maxntid=256  minctasm=    dev=7dc32fd8
+h100-pcie mm_16x18432x7168 exact    --gpu-off=asyncstage         launch= 1152 1 256 8192        cp.async=4                      maxntid=256  minctasm=    dev=7dc32fd8
+h100-pcie mm_16x18432x7168 exact    --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=917f2f06
+h100-pcie mm_16x18432x7168 contract ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=    dev=d8a1cae7
+h100-pcie mm_16x18432x7168 contract --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=    dev=d8a1cae7
+h100-pcie mm_16x18432x7168 contract --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=26bf9ced
+h100-pcie mm_16x2048x7168  exact    ship                         launch= 128 1 256 112640       cp.async=70  wait.group(i32 9)  maxntid=256  minctasm=    dev=971a26b7
+h100-pcie mm_16x2048x7168  exact    --gpu-off=asyncstage         launch= 128 1 256 8192         cp.async=4                      maxntid=256  minctasm=    dev=e2b46b11
+h100-pcie mm_16x2048x7168  exact    --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=b4952a2d
+h100-pcie mm_16x2048x7168  contract ship                         launch= 128 1 256 112640       cp.async=70  wait.group(i32 9)  maxntid=256  minctasm=    dev=0338a174
+h100-pcie mm_16x2048x7168  contract --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=    dev=fa01daee
+h100-pcie mm_16x2048x7168  contract --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=3cf02d2a
+h100-pcie mm_1x2048x7168   exact    ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=48ea9d40
+h100-pcie mm_1x2048x7168   exact    --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=48ea9d40
+h100-pcie mm_1x2048x7168   exact    --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=48ea9d40
+h100-pcie mm_1x2048x7168   contract ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=639ab414
+h100-pcie mm_1x2048x7168   contract --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=639ab414
+h100-pcie mm_1x2048x7168   contract --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=639ab414
+h100-pcie mm_4096          exact    ship                         launch= 32 32 256 16384        cp.async=4                      maxntid=256  minctasm=    dev=89b3a4ff
+h100-pcie mm_4096          exact    --gpu-off=asyncstage         launch= 32 32 256 16384        cp.async=4                      maxntid=256  minctasm=    dev=89b3a4ff
+h100-pcie mm_4096          exact    --gpu-off=cell-fill,asyncstage launch= 32 32 256 16384        cp.async=4                      maxntid=256  minctasm=    dev=89b3a4ff
+h100-pcie mm_4096          contract ship                         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=    dev=6ce6dffb
+h100-pcie mm_4096          contract --gpu-off=asyncstage         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=    dev=6ce6dffb
+h100-pcie mm_4096          contract --gpu-off=cell-fill,asyncstage launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=    dev=6ce6dffb
+rtx-3090  cell_16x512x256  exact    ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=a13408c0
+rtx-3090  cell_16x512x256  exact    --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=c5845d2d
+rtx-3090  cell_16x512x256  exact    --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=760c8185
+rtx-3090  cell_16x512x256  contract ship                         launch= 32 1 256 40960         cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=1   dev=ce4b679d
+rtx-3090  cell_16x512x256  contract --gpu-off=asyncstage         launch= 32 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=a333bdd3
+rtx-3090  cell_16x512x256  contract --gpu-off=cell-fill,asyncstage launch= 32 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=2e983fd8
+rtx-3090  mm_1024          exact    ship                         launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=b416bfb4
+rtx-3090  mm_1024          exact    --gpu-off=asyncstage         launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=b416bfb4
+rtx-3090  mm_1024          exact    --gpu-off=cell-fill,asyncstage launch= 16 8 256 12544         cp.async=4                      maxntid=256  minctasm=2   dev=b416bfb4
+rtx-3090  mm_1024          contract ship                         launch= 16 8 128 44800         cp.async=74  wait.group(i32 5)  maxntid=128  minctasm=2   dev=91a47365
+rtx-3090  mm_1024          contract --gpu-off=asyncstage         launch= 16 8 128 6272          cp.async=4                      maxntid=128  minctasm=4   dev=6921e1b5
+rtx-3090  mm_1024          contract --gpu-off=cell-fill,asyncstage launch= 16 8 128 6272          cp.async=4                      maxntid=128  minctasm=4   dev=6921e1b5
+rtx-3090  mm_128x1024x1024 exact    ship                         launch= 32 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=fd979425
+rtx-3090  mm_128x1024x1024 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=c7512e2c
+rtx-3090  mm_128x1024x1024 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=c7512e2c
+rtx-3090  mm_128x1024x1024 contract ship                         launch= 32 2 32 99840          cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=ab5c59f4
+rtx-3090  mm_128x1024x1024 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=13c6da0c
+rtx-3090  mm_128x1024x1024 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=13c6da0c
+rtx-3090  mm_128x1024x2048 exact    ship                         launch= 32 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=91812c17
+rtx-3090  mm_128x1024x2048 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=ffbdff48
+rtx-3090  mm_128x1024x2048 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=ffbdff48
+rtx-3090  mm_128x1024x2048 contract ship                         launch= 32 2 32 99840          cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=8087dbb9
+rtx-3090  mm_128x1024x2048 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=e5a481b5
+rtx-3090  mm_128x1024x2048 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=e5a481b5
+rtx-3090  mm_128x1024x4096 exact    ship                         launch= 32 4 64 48384          cp.async=130 wait.group(i32 19) maxntid=64   minctasm=2   dev=19b4ea55
+rtx-3090  mm_128x1024x4096 exact    --gpu-off=asyncstage         launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=9672ebf1
+rtx-3090  mm_128x1024x4096 exact    --gpu-off=cell-fill,asyncstage launch= 32 4 64 2176           cp.async=4                      maxntid=64   minctasm=8   dev=9672ebf1
+rtx-3090  mm_128x1024x4096 contract ship                         launch= 32 2 32 99840          cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=5feaea3c
+rtx-3090  mm_128x1024x4096 contract --gpu-off=asyncstage         launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=00861800
+rtx-3090  mm_128x1024x4096 contract --gpu-off=cell-fill,asyncstage launch= 32 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=00861800
+rtx-3090  mm_128x2048x1024 exact    ship                         launch= 64 2 128 46592         cp.async=74  wait.group(i32 5)  maxntid=128  minctasm=2   dev=40b8c0a4
+rtx-3090  mm_128x2048x1024 exact    --gpu-off=asyncstage         launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=aa68edaf
+rtx-3090  mm_128x2048x1024 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=aa68edaf
+rtx-3090  mm_128x2048x1024 contract ship                         launch= 64 2 32 49920          cp.async=304 wait.group(i32 28) maxntid=32   minctasm=2   dev=b10794b0
+rtx-3090  mm_128x2048x1024 contract --gpu-off=asyncstage         launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=36937edb
+rtx-3090  mm_128x2048x1024 contract --gpu-off=cell-fill,asyncstage launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=36937edb
+rtx-3090  mm_128x2048x7168 exact    ship                         launch= 64 2 128 46592         cp.async=74  wait.group(i32 5)  maxntid=128  minctasm=2   dev=bdc197a1
+rtx-3090  mm_128x2048x7168 exact    --gpu-off=asyncstage         launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=5c0c94b1
+rtx-3090  mm_128x2048x7168 exact    --gpu-off=cell-fill,asyncstage launch= 64 2 128 6400          cp.async=4                      maxntid=128  minctasm=4   dev=5c0c94b1
+rtx-3090  mm_128x2048x7168 contract ship                         launch= 64 2 32 49920          cp.async=304 wait.group(i32 28) maxntid=32   minctasm=2   dev=a84eb7fa
+rtx-3090  mm_128x2048x7168 contract --gpu-off=asyncstage         launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=75160846
+rtx-3090  mm_128x2048x7168 contract --gpu-off=cell-fill,asyncstage launch= 64 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=75160846
+rtx-3090  mm_128x256x256   exact    ship                         launch= 16 4 32 57344          cp.async=324 wait.group(i32 30) maxntid=32   minctasm=1   dev=d76c2a0c
+rtx-3090  mm_128x256x256   exact    --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=c2e0e766
+rtx-3090  mm_128x256x256   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=c2e0e766
+rtx-3090  mm_128x256x256   contract ship                         launch= 8 2 32 99840           cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=f5ac03df
+rtx-3090  mm_128x256x256   contract --gpu-off=asyncstage         launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=16  dev=2ccb3936
+rtx-3090  mm_128x256x256   contract --gpu-off=cell-fill,asyncstage launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=16  dev=2ccb3936
+rtx-3090  mm_128x256x512   exact    ship                         launch= 16 4 32 100352         cp.async=564 wait.group(i32 54) maxntid=32   minctasm=1   dev=ade78b21
+rtx-3090  mm_128x256x512   exact    --gpu-off=asyncstage         launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=64b16a63
+rtx-3090  mm_128x256x512   exact    --gpu-off=cell-fill,asyncstage launch= 16 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=64b16a63
+rtx-3090  mm_128x256x512   contract ship                         launch= 8 2 32 99840           cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=5c08ef9c
+rtx-3090  mm_128x256x512   contract --gpu-off=asyncstage         launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=16  dev=5b395dc0
+rtx-3090  mm_128x256x512   contract --gpu-off=cell-fill,asyncstage launch= 8 2 32 1536            cp.async=4                      maxntid=32   minctasm=16  dev=5b395dc0
+rtx-3090  mm_128x512x256   exact    ship                         launch= 32 4 32 50176          cp.async=284 wait.group(i32 26) maxntid=32   minctasm=2   dev=3829ad59
+rtx-3090  mm_128x512x256   exact    --gpu-off=asyncstage         launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=d5f31902
+rtx-3090  mm_128x512x256   exact    --gpu-off=cell-fill,asyncstage launch= 32 4 32 1664           cp.async=4                      maxntid=32   minctasm=16  dev=d5f31902
+rtx-3090  mm_128x512x256   contract ship                         launch= 16 2 32 99840          cp.async=604 wait.group(i32 58) maxntid=32   minctasm=1   dev=b6297ac2
+rtx-3090  mm_128x512x256   contract --gpu-off=asyncstage         launch= 16 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=e5a35c04
+rtx-3090  mm_128x512x256   contract --gpu-off=cell-fill,asyncstage launch= 16 2 32 1536           cp.async=4                      maxntid=32   minctasm=16  dev=e5a35c04
+rtx-3090  mm_16x1024x4096  exact    ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=01d32e51
+rtx-3090  mm_16x1024x4096  exact    --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=ef665770
+rtx-3090  mm_16x1024x4096  exact    --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=dfd1ee68
+rtx-3090  mm_16x1024x4096  contract ship                         launch= 64 1 256 92160         cp.async=58  wait.group(i32 7)  maxntid=256  minctasm=1   dev=98c206df
+rtx-3090  mm_16x1024x4096  contract --gpu-off=asyncstage         launch= 64 1 256 9216          cp.async=4                      maxntid=256  minctasm=6   dev=e5a3a01c
+rtx-3090  mm_16x1024x4096  contract --gpu-off=cell-fill,asyncstage launch= 64 1 256 0             cp.async=4                      maxntid=256  minctasm=    dev=02a33dcb
+rtx-3090  mm_16x18432x7168 exact    ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=4e9cbcb4
+rtx-3090  mm_16x18432x7168 exact    --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=4e9cbcb4
+rtx-3090  mm_16x18432x7168 exact    --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=0ca162b6
+rtx-3090  mm_16x18432x7168 contract ship                         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=618e332f
+rtx-3090  mm_16x18432x7168 contract --gpu-off=asyncstage         launch= 1152 1 256 9216        cp.async=4                      maxntid=256  minctasm=6   dev=618e332f
+rtx-3090  mm_16x18432x7168 contract --gpu-off=cell-fill,asyncstage launch= 1152 1 256 0           cp.async=4                      maxntid=256  minctasm=    dev=31ba9a22
+rtx-3090  mm_16x2048x7168  exact    ship                         launch= 128 1 256 40960        cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=2   dev=ecbaffa6
+rtx-3090  mm_16x2048x7168  exact    --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=6   dev=51be0058
+rtx-3090  mm_16x2048x7168  exact    --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=ea9bf93d
+rtx-3090  mm_16x2048x7168  contract ship                         launch= 128 1 256 40960        cp.async=28  wait.group(i32 2)  maxntid=256  minctasm=2   dev=8bf08cf5
+rtx-3090  mm_16x2048x7168  contract --gpu-off=asyncstage         launch= 128 1 256 9216         cp.async=4                      maxntid=256  minctasm=6   dev=b9ea0566
+rtx-3090  mm_16x2048x7168  contract --gpu-off=cell-fill,asyncstage launch= 128 1 256 0            cp.async=4                      maxntid=256  minctasm=    dev=651c2397
+rtx-3090  mm_1x2048x7168   exact    ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=c5845465
+rtx-3090  mm_1x2048x7168   exact    --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=c5845465
+rtx-3090  mm_1x2048x7168   exact    --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=c5845465
+rtx-3090  mm_1x2048x7168   contract ship                         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=98c14520
+rtx-3090  mm_1x2048x7168   contract --gpu-off=asyncstage         launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=98c14520
+rtx-3090  mm_1x2048x7168   contract --gpu-off=cell-fill,asyncstage launch= 8 1 256 0              cp.async=4                      maxntid=256  minctasm=    dev=98c14520
+rtx-3090  mm_4096          exact    ship                         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=c7a1d9c3
+rtx-3090  mm_4096          exact    --gpu-off=asyncstage         launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=c7a1d9c3
+rtx-3090  mm_4096          exact    --gpu-off=cell-fill,asyncstage launch= 32 32 256 16640        cp.async=4                      maxntid=256  minctasm=2   dev=c7a1d9c3
+rtx-3090  mm_4096          contract ship                         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=bc31852c
+rtx-3090  mm_4096          contract --gpu-off=asyncstage         launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=bc31852c
+rtx-3090  mm_4096          contract --gpu-off=cell-fill,asyncstage launch= 32 32 128 16640        cp.async=4                      maxntid=128  minctasm=2   dev=bc31852c

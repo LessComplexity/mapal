@@ -3705,8 +3705,9 @@ mod tests {
     /// S62: the M16 projection (16 × 2048 × 7168) was a one-thread-per-cell
     /// launch on every part (`gpu_tile` halves its thread grid past 16 rows).
     /// Now one output per thread in a 16 × 16 block of the same 128 × 256
-    /// grid, its panels streamed by `cp.async` through the stages the share
-    /// left by ≤ 2 blocks per SM holds — and each bound of that count pinned.
+    /// grid (`cell-fill`, shipped) — and, under `asyncstage` (an arm: its
+    /// table rows ship it OFF), its panels streamed by `cp.async` through the
+    /// stages the share left by ≤ 2 blocks per SM holds, each bound pinned.
     #[test]
     fn starved_m16_site_takes_the_cell_tile_and_streams() {
         use crate::profile::RTX_3090;
@@ -3714,7 +3715,19 @@ mod tests {
         for p in [&RTX_5090, &RTX_4090, &H100_PCIE, &RTX_3090] {
             let gpu = p.gpu().unwrap();
             for contract in [false, true] {
-                let arms = crate::GpuArms::default();
+                let shipped = launch(&s, p, contract, crate::GpuArms::default(), None);
+                let g = shipped
+                    .tiled
+                    .unwrap_or_else(|| panic!("{} cell tile", p.name));
+                assert_eq!(
+                    (g.tm, g.tn, g.threads(), g.stages),
+                    (1, 1, 256, 1),
+                    "{}",
+                    p.name
+                );
+                assert_eq!(shipped.gx * shipped.gy, 128);
+                let mut arms = crate::GpuArms::default();
+                arms.on.async_stage = true;
                 let l = launch(&s, p, contract, arms, None);
                 let g = l.tiled.unwrap_or_else(|| panic!("{} tiled", p.name));
                 assert_eq!(

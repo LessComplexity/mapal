@@ -1089,6 +1089,59 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
                6.119/5.545 vs 6.122/5.549 ms)",
     },
+    // S62 `asyncstage` (`benches/results/gpu/s62/asyncstage/`, r1 = round1/, r2 = round2/ on another
+    // box): its kernel gains are DRAM-latency hiding — with L2 flushed before every launch it wins on
+    // every part but the 3090, with operands left in L2 (`tile_bench --warm`) the signs split, and
+    // the composed residual MLP (operands device-produced, one iteration) is slower on all four. The
+    // fact that separates the cells (where an operand is read from: DRAM or L2) is not one the
+    // launch consumes yet, so the rung ships OFF in every class.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-5090.txt: flushed L2 wins (r1 _c 16x2048x7168 on 0.1065 vs off 0.1167 ms), \
+               warm L2 loses (r2 l2=warm _exact 128x1024x1024 on 0.0348 vs off 0.0287 ms); pt_rmlp256x512_128 \
+               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-4090.txt: flushed _c n=1024 on 0.0707 vs off 0.0666 ms (r1), warm L2 _c \
+               16x2048x7168 on 0.1208 vs off 0.1116 ms (r2); pt_rmlp256x512_128 _exact iter on 0.1179 vs off \
+               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-h100-pcie.txt (an H100 SXM box): flushed L2 wins 1.216-1.838 on every cell, but \
+               pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585 ms, _exact 0.2812 vs 0.1876 ms; \
+               pt_rmlp1024x2048_128 _exact 0.3402 vs 0.2914 ms; r2 results-h100-pcie.partial-50562987.txt (an \
+               H100 PCIe box): flushed _c n=1024 on 0.1724 vs off 0.1292 ms; r2 partial-41555537 (SXM) warm L2 \
+               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-rtx-3090.txt: flushed L2 _c 16x2048x7168 on 0.3328 vs off 0.3113 ms, _c n=1024 \
+               0.2028 vs 0.1567 ms, _exact 128x2048x7168 0.5396 vs 0.4055 ms; pt_rmlp256x512_128 _exact iter \
+               on 0.1421 vs off 0.0913 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "not measured on an A100: held OFF with the four measured parts, whose composed residual MLP is \
+               slower with it on every one (r1 results-rtx-4090.txt pt_rmlp256x512_128 _exact iter on 0.1179 vs \
+               off 0.0759 ms)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
