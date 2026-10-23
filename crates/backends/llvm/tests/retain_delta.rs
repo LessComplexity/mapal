@@ -303,10 +303,13 @@ fn delta_upload_is_stride_times_elem_bytes() {
     for (d, row, whole) in [(8u64, 32, 512), (4, 16, 256)] {
         let ir = lower(&decode(16, d, "f32", false));
         let (host, _) = emit_s54(&ir, &[], false);
+        // `x` and `q` are both one row: the written row of `x` and `q`'s
+        // whole map cross at `row` bytes, the first pass whole. (Since S65
+        // `by-ref` the carried `x` is reached through its pointer, so the host
+        // operand no longer tells the row from the whole.)
         let h2d = calls(&host, "h2d");
-        let partial: Vec<&&str> = h2d.iter().filter(|l| l.contains("ptr %t")).collect();
-        assert_eq!(partial.len(), 1, "{h2d:#?}");
-        assert!(partial[0].ends_with(&format!("i64 {row})")), "{partial:#?}");
+        let rows = |h: &[&str]| h.iter().filter(|l| l.ends_with(&format!("i64 {row})"))).count();
+        assert_eq!(rows(&h2d), 2, "{h2d:#?}");
         assert_eq!(
             h2d.iter()
                 .filter(|l| l.ends_with(&format!("i64 {whole})")))
@@ -314,7 +317,7 @@ fn delta_upload_is_stride_times_elem_bytes() {
             1
         );
         let (off_arm, _) = emit_s54(&ir, &["delta-h2d"], false);
-        assert!(calls(&off_arm, "h2d").iter().all(|l| !l.contains("ptr %t")));
+        assert_eq!(rows(&calls(&off_arm, "h2d")), 1, "q only");
         assert_eq!(
             off_arm.matches("store i1 true, ptr").count(),
             2,

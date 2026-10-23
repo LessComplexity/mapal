@@ -27,9 +27,9 @@ entry:
   %o3 = alloca [4096 x float]
   %o4 = alloca [4096 x float]
   %o5 = alloca [64 x i32]
-  %o6 = alloca { [4096 x float], i32 }
-  %o7 = alloca { [4096 x float], i32 }
-  %o8 = alloca [4096 x float]
+  %o6 = alloca { ptr, i32 }
+  %o7 = alloca { ptr, i32 }
+  %o8 = alloca ptr
   %o9 = alloca i32
   %o10 = alloca { i32, i32 }
   %o11 = alloca i1
@@ -37,9 +37,9 @@ entry:
   %o13 = alloca [4096 x float]
   %o14 = alloca { i32, i32 }
   %o15 = alloca i32
-  %o16 = alloca { [4096 x float], i32 }
-  %o17 = alloca { { [4096 x float], i32 }, i1 }
-  %o18 = alloca { [4096 x float], i1 }
+  %o16 = alloca { ptr, i32 }
+  %o17 = alloca { { ptr, i32 }, i1 }
+  %o18 = alloca { ptr, i1 }
   %o19 = alloca [4096 x float]
   %o20 = alloca { ptr, i32 }
   %o21 = alloca float
@@ -51,8 +51,8 @@ entry:
   store i64 0, ptr %d29
   %d35 = alloca i64
   store i64 0, ptr %d35
-  %d68 = alloca i64
-  store i64 0, ptr %d68
+  %d71 = alloca i64
+  store i64 0, ptr %d71
   store i64 0, ptr %s0
   br label %bb1
 bb1:
@@ -99,107 +99,110 @@ bb21:
 bb22:
   %t30 = call i64 @mapal_gpu_alloc(ptr %d29, i64 16384)
   call void @mapal_gpu_h2d(i64 %t30, ptr %o4, i64 16384)
-  %t31 = getelementptr { [4096 x float], i32 }, ptr %o6, i32 0, i32 0
-  call void @llvm.memcpy.p0.p0.i64(ptr %t31, ptr %o3, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
-  %t32 = getelementptr { [4096 x float], i32 }, ptr %o6, i32 0, i32 1
+  %t31 = getelementptr { ptr, i32 }, ptr %o6, i32 0, i32 0
+  store ptr %o3, ptr %t31
+  %t32 = getelementptr { ptr, i32 }, ptr %o6, i32 0, i32 1
   store i32 0, ptr %t32
   %t33 = getelementptr { ptr, i32 }, ptr %o20, i32 0, i32 1
   store i32 0, ptr %t33
-  %t34 = load { [4096 x float], i32 }, ptr %o6
-  store { [4096 x float], i32 } %t34, ptr %o7
+  %t34 = load { ptr, i32 }, ptr %o6
+  store { ptr, i32 } %t34, ptr %o7
   %t36 = call i64 @mapal_gpu_alloc(ptr %d35, i64 16384)
   call void @mapal_gpu_h2d(i64 %t36, ptr %o3, i64 16384)
   br label %bb37
 bb37:
+; mapal.move loop=bb37 carried=0:16384:device h2d=0 d2h=0 host_copy=0 alloc=0 retained=0
   %t41 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 1
   store i32 8, ptr %t41
-  %t42 = getelementptr { [4096 x float], i32 }, ptr %o7, i32 0, i32 0
-  call void @llvm.memcpy.p0.p0.i64(ptr %o8, ptr %t42, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
-  %t43 = getelementptr { [4096 x float], i32 }, ptr %o7, i32 0, i32 1
-  %t44 = load i32, ptr %t43
-  store i32 %t44, ptr %o9
-  %t45 = getelementptr { [4096 x float], i1 }, ptr %o18, i32 0, i32 0
-  call void @llvm.memcpy.p0.p0.i64(ptr %t45, ptr %o8, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
-  %t46 = load i32, ptr %o9
-  %t47 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 0
-  store i32 %t46, ptr %t47
-  %t48 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 0
-  %t49 = load i32, ptr %t48
-  %t50 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 1
+  %t42 = getelementptr { ptr, i32 }, ptr %o7, i32 0, i32 0
+  %t43 = load ptr, ptr %t42
+  store ptr %t43, ptr %o8
+  %t44 = getelementptr { ptr, i32 }, ptr %o7, i32 0, i32 1
+  %t45 = load i32, ptr %t44
+  store i32 %t45, ptr %o9
+  %t46 = load ptr, ptr %o8
+  %t47 = getelementptr { ptr, i1 }, ptr %o18, i32 0, i32 0
+  store ptr %t46, ptr %t47
+  %t48 = load i32, ptr %o9
+  %t49 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 0
+  store i32 %t48, ptr %t49
+  %t50 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 0
   %t51 = load i32, ptr %t50
-  %t52 = icmp slt i32 %t49, %t51
-  store i1 %t52, ptr %o11
-  %t53 = load i1, ptr %o11
-  %t54 = getelementptr { [4096 x float], i1 }, ptr %o18, i32 0, i32 1
-  store i1 %t53, ptr %t54
-  %t55 = getelementptr { [4096 x float], i1 }, ptr %o18, i32 0, i32 1
-  %t56 = load i1, ptr %t55
-  br i1 %t56, label %bb38, label %bb39
+  %t52 = getelementptr { i32, i32 }, ptr %o10, i32 0, i32 1
+  %t53 = load i32, ptr %t52
+  %t54 = icmp slt i32 %t51, %t53
+  store i1 %t54, ptr %o11
+  %t55 = load i1, ptr %o11
+  %t56 = getelementptr { ptr, i1 }, ptr %o18, i32 0, i32 1
+  store i1 %t55, ptr %t56
+  %t57 = getelementptr { ptr, i1 }, ptr %o18, i32 0, i32 1
+  %t58 = load i1, ptr %t57
+  br i1 %t58, label %bb38, label %bb39
 bb38:
-  %t57 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 3
-  store ptr %o2, ptr %t57
-  %t58 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 0
-  store ptr %o5, ptr %t58
-  %t59 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 2
-  store ptr %o4, ptr %t59
-  %t60 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 1
-  store i32 1, ptr %t60
-  %t61 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 1
-  store ptr %o8, ptr %t61
-  %t62 = load i32, ptr %o9
-  %t63 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0
-  store i32 %t62, ptr %t63
-  %t64 = load i1, ptr %o11
-  %t65 = getelementptr { { [4096 x float], i32 }, i1 }, ptr %o17, i32 0, i32 1
-  store i1 %t64, ptr %t65
-  %t66 = load i64, ptr %d35
-  %t67 = load i64, ptr %d29
-  %t69 = call i64 @mapal_gpu_alloc(ptr %d68, i64 16384)
-  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t66, i64 %t67, i64 %t69, i32 4, i32 2, i32 32, i32 1664)
-  %t70 = getelementptr { [4096 x float], i32 }, ptr %o16, i32 0, i32 0
-  call void @llvm.memcpy.p0.p0.i64(ptr %t70, ptr %o13, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
-  %t71 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0
-  %t72 = load i32, ptr %t71
-  %t73 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 1
-  %t74 = load i32, ptr %t73
-  %t75 = add i32 %t72, %t74
-  store i32 %t75, ptr %o15
-  %t76 = load i32, ptr %o15
-  %t77 = getelementptr { [4096 x float], i32 }, ptr %o16, i32 0, i32 1
-  store i32 %t76, ptr %t77
-  %t78 = load { [4096 x float], i32 }, ptr %o16
-  %t79 = getelementptr { { [4096 x float], i32 }, i1 }, ptr %o17, i32 0, i32 0
-  store { [4096 x float], i32 } %t78, ptr %t79
-  %t80 = getelementptr { { [4096 x float], i32 }, i1 }, ptr %o17, i32 0, i32 0
-  %t81 = load { [4096 x float], i32 }, ptr %t80
-  store { [4096 x float], i32 } %t81, ptr %o7
-  %t82 = load i64, ptr %d35
-  %t83 = load i64, ptr %d68
-  store i64 %t83, ptr %d35
-  store i64 %t82, ptr %d68
+  %t59 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 3
+  store ptr %o2, ptr %t59
+  %t60 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 0
+  store ptr %o5, ptr %t60
+  %t61 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 2
+  store ptr %o4, ptr %t61
+  %t62 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 1
+  store i32 1, ptr %t62
+  %t63 = load ptr, ptr %o8
+  %t64 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o12, i32 0, i32 1
+  store ptr %t63, ptr %t64
+  %t65 = load i32, ptr %o9
+  %t66 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0
+  store i32 %t65, ptr %t66
+  %t67 = load i1, ptr %o11
+  %t68 = getelementptr { { ptr, i32 }, i1 }, ptr %o17, i32 0, i32 1
+  store i1 %t67, ptr %t68
+  %t69 = load i64, ptr %d35
+  %t70 = load i64, ptr %d29
+  %t72 = call i64 @mapal_gpu_alloc(ptr %d71, i64 16384)
+  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t69, i64 %t70, i64 %t72, i32 4, i32 2, i32 32, i32 1664)
+  %t73 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 0
+  store ptr %o13, ptr %t73
+  %t74 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0
+  %t75 = load i32, ptr %t74
+  %t76 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 1
+  %t77 = load i32, ptr %t76
+  %t78 = add i32 %t75, %t77
+  store i32 %t78, ptr %o15
+  %t79 = load i32, ptr %o15
+  %t80 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 1
+  store i32 %t79, ptr %t80
+  %t81 = load { ptr, i32 }, ptr %o16
+  %t82 = getelementptr { { ptr, i32 }, i1 }, ptr %o17, i32 0, i32 0
+  store { ptr, i32 } %t81, ptr %t82
+  %t83 = getelementptr { { ptr, i32 }, i1 }, ptr %o17, i32 0, i32 0
+  %t84 = load { ptr, i32 }, ptr %t83
+  store { ptr, i32 } %t84, ptr %o7
+  %t85 = load i64, ptr %d35
+  %t86 = load i64, ptr %d71
+  store i64 %t86, ptr %d35
+  store i64 %t85, ptr %d71
   br label %bb37
 bb39:
-  call void @llvm.memcpy.p0.p0.i64(ptr %o19, ptr %o8, i64 ptrtoint (ptr getelementptr ([4096 x float], ptr null, i64 1) to i64), i1 false)
   br label %bb40
 bb40:
-  %t84 = getelementptr { ptr, i32 }, ptr %o20, i32 0, i32 0
-  store ptr %o19, ptr %t84
-  %t85 = getelementptr { ptr, i32 }, ptr %o20, i32 0, i32 1
-  %t86 = load i32, ptr %t85
-  %t87 = sext i32 %t86 to i64
-  %t88 = getelementptr [4096 x float], ptr %o19, i64 0, i64 %t87
-  %t89 = load i64, ptr %d35
-  %t90 = mul i64 %t87, 4
-  call void @mapal_gpu_d2h(ptr %t88, i64 %t89, i64 %t90, i64 4)
-  %t91 = load float, ptr %t88
-  store float %t91, ptr %o21
-  %t92 = load float, ptr %o21
-  store float %t92, ptr %o22
-  %t93 = load float, ptr %o22
-  call void @mapal_print_f32(float %t93, i1 zeroext true)
+  %t87 = getelementptr { ptr, i32 }, ptr %o20, i32 0, i32 0
+  store ptr %o19, ptr %t87
+  %t88 = getelementptr { ptr, i32 }, ptr %o20, i32 0, i32 1
+  %t89 = load i32, ptr %t88
+  %t90 = sext i32 %t89 to i64
+  %t91 = getelementptr [4096 x float], ptr %o19, i64 0, i64 %t90
+  %t92 = load i64, ptr %d35
+  %t93 = mul i64 %t90, 4
+  call void @mapal_gpu_d2h(ptr %t91, i64 %t92, i64 %t93, i64 4)
+  %t94 = load float, ptr %t91
+  store float %t94, ptr %o21
+  %t95 = load float, ptr %o21
+  store float %t95, ptr %o22
+  %t96 = load float, ptr %o22
+  call void @mapal_print_f32(float %t96, i1 zeroext true)
   call void @mapal_gpu_free(ptr %d29)
   call void @mapal_gpu_free(ptr %d35)
-  call void @mapal_gpu_free(ptr %d68)
+  call void @mapal_gpu_free(ptr %d71)
   ret void
 }
 

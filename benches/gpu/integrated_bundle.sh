@@ -44,6 +44,12 @@ for p in $PROGS $SUITE; do
         clang -O2 -Wno-override-module "$OUT/tiles/$p$face.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$OUT/tiles/$p$face.cpu"
         "$OUT/tiles/$p$face.cpu" | grep -v '^iter ms=' > "$OUT/tiles/$p$face.expect"
     done
+    # S65: ADR-0040 D2's M per printed value (gen_tiles.py `xabs`), where the program has one.
+    if [ -f "$OUT/tiles/${p}_xabs.mapal" ] && [ ! -s "$OUT/tiles/${p}_xabs.expect" ]; then
+        "$EMIT" "$OUT/tiles/${p}_xabs.mapal" - --rewrite --exact --target=apple-m > "$OUT/tiles/${p}_xabs.cpu.ll"
+        clang -O2 -Wno-override-module "$OUT/tiles/${p}_xabs.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$OUT/tiles/${p}_xabs.cpu"
+        "$OUT/tiles/${p}_xabs.cpu" | grep -v '^iter ms=' > "$OUT/tiles/${p}_xabs.expect"
+    fi
 done
 
 flags_of() { # <face>

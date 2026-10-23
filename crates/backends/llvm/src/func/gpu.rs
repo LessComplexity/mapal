@@ -1270,6 +1270,7 @@ pub(crate) fn device_module(
     epis: &[EpiSite],
     epi_bodies: &[(String, String)],
     cells: &[CellKernel],
+    folds: &[RowFoldSite],
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
@@ -1345,6 +1346,18 @@ pub(crate) fn device_module(
                 ) + &rowfold_kernel_text(&name, &r.site, profile)
             });
         }
+    }
+    // S65: the folds a function placed over a device output no tile site
+    // wrote (the host's plan names them).
+    for f in folds {
+        let name = kernel_name(rowfold_id(f, profile));
+        kernels.entry(name.clone()).or_insert_with(|| {
+            let (gx, block) = rowfold_grid(f, profile);
+            format!(
+                "; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}\n",
+                f.rows, f.k
+            ) + &rowfold_kernel_text(&name, f, profile)
+        });
     }
     for e in epis {
         let id = kernel_id_with(&e.site, profile, contract, reduced, Some(&e.k));

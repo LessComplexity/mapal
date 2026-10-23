@@ -62,7 +62,9 @@ impl<'a> FnEmit<'a> {
                 }
             }
             Operation::Proj { index } => {
-                if matches!(
+                if self.host_free(target) {
+                    // S65 `by-ref`: a device-carried view has no host bytes.
+                } else if matches!(
                     self.obj_ty(source).component_ty(index),
                     Some(Ty::Array { .. })
                 ) {
@@ -584,7 +586,9 @@ impl<'a> FnEmit<'a> {
             return None;
         }
         let arr = self.pair_source(morph.source, 0)?;
-        if self.ptr_resident.contains_key(arr)
+        // A pointer slot is caller memory — unless it is a view whose buffer
+        // the loop owns (S65 `by-ref`, `func/byref.rs`).
+        if (self.ptr_resident.contains_key(arr) && !self.loop_owned.contains_key(arr))
             || self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant
         {
             return None;
@@ -691,7 +695,14 @@ impl<'a> FnEmit<'a> {
             Some(arr) => {
                 let slot = self.slot(arr).expect("in-place update source slot");
                 self.slots.insert(target, slot.clone());
-                (slot, None)
+                if self.ptr_resident.contains_key(arr) {
+                    // A loop-owned view: the write lands through its pointer.
+                    let p = self.tmp();
+                    self.line(format!("{p} = load ptr, ptr {slot}"));
+                    (p, None)
+                } else {
+                    (slot, None)
+                }
             }
             None => (
                 self.slot(target).expect("update target slot"),

@@ -798,6 +798,21 @@ SUITE = {
 }
 for stem, (src, _) in SUITE.items():
     (out / f"{stem}.mapal").write_text(src)
+# S65 (ADR-0040 D2's M, absolute): `<stem>_xabs.mapal` is the program with every fold step's term replaced by
+# its magnitude, so its exact CPU build prints M = |seed| + Σ|terms| through the whole fold chain for every
+# printed value. Only programs whose printed values are fold chains of products and sums (a nonlinear map —
+# relu, exp, a quotient — does not carry an error bound through this transform): the relative gate stays
+# everywhere else (value_gate.py).
+def xabs(src):
+    step = re.compile(r'(fold \{ acc, (\w+) -> )acc \+ ([^{}]+?) \}')
+    out, n = step.subn(lambda m: f"{m.group(1)}{m.group(3)} -> xt; (xt > 0.0) -> {{ -true-> xt; -false-> 0.0 - xt; }}"
+                               f" -> xa; acc + xa }}", src)
+    assert n > 0, "no fold step"
+    return out
+
+
+for n in (2048, 4096):
+    (out / f"pt_rowsum_{n}_xabs.mapal").write_text(xabs((out / f"pt_rowsum_{n}.mapal").read_text()))
 for stem, kmax in [(s, k) for s, (_, k) in SUITE.items()] + [
         (f"pt_{p}_{n}", f * n) for n in (2048, 4096)
         for p, f in (('softmax_rows', 2), ('rowsum', 2), ('ew', 8), ('fanout', 2), ('diamond', 2), ('indep', 1),

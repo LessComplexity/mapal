@@ -667,6 +667,12 @@ fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
         },
     )
     .unwrap_or_else(|e| panic!("{tag}: emit: {e:?}"));
+    if let Ok(d) = std::env::var("S65_DUMP") {
+        let name = tag.replace(['#', '/'], "_");
+        std::fs::write(format!("{d}/{name}.ll"), &ll).unwrap();
+        std::fs::write(format!("{d}/{name}.ir"), format!("{ir:#?}")).unwrap();
+        std::fs::write(format!("{d}/{name}.want"), format!("{want_code}\n{}", want_out.clone().unwrap_or_default())).unwrap();
+    }
     Some(Job {
         tag,
         ll,

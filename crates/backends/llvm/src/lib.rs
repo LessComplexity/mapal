@@ -333,6 +333,13 @@ pub struct GpuRungs {
     /// ([`TargetProfile::device_pays`]), or where an operand is already
     /// device-produced (`func/gpu.rs:placement`). Off: every capable site.
     pub place: bool,
+    /// S65 `by-ref` (rule R, `func/byref.rs`): a loop's carried array is a
+    /// pointer in the loop's products (init, state, routes) and its `Proj`
+    /// views, so entering, advancing and leaving the loop forward a pointer;
+    /// the bytes live where their producer writes them, and a device-carried
+    /// state has no host bytes at all. Any profile, CPU builds included. Off:
+    /// the products hold the array inline (five whole copies per trip, S64).
+    pub by_ref: bool,
 }
 
 impl GpuRungs {
@@ -386,11 +393,12 @@ impl GpuRungs {
         streamk: true,
         hostopt: true,
         place: true,
+        by_ref: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 48] = [
+    pub const NAMES: [&'static str; 49] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -439,6 +447,7 @@ impl GpuRungs {
         "streamk",
         "hostopt",
         "place",
+        "by-ref",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -492,6 +501,7 @@ impl GpuRungs {
             "streamk" => &mut self.streamk,
             "hostopt" => &mut self.hostopt,
             "place" => &mut self.place,
+            "by-ref" => &mut self.by_ref,
             _ => return None,
         })
     }
@@ -926,6 +936,8 @@ fn emit_module(
     let mut epi_calls: Vec<(String, mapal_ir::FuncId, Vec<u32>)> = Vec::new();
     // `devmap` (S54): each function's cell kernels and the bodies they call.
     let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
+    // S65: the row folds each function runs on the device.
+    let mut folds: Vec<mapal_ir::RowFoldSite> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     let mut orders: Vec<FoldOrder> = Vec::new();
     for (id, _) in ir.funcs() {
@@ -945,6 +957,7 @@ fn emit_module(
                 opts.kc_nest,
                 opts.move_panel,
                 profile,
+                opts.gpu,
             ));
         } else {
             let mut fe = FnEmit::new(
@@ -976,6 +989,7 @@ fn emit_module(
             epis.extend(es);
             epi_calls.extend(cs);
             cells.extend(fe.cell_kernels());
+            folds.extend(fe.rowfold_kernels());
             let (text, os) = fe.emit_ordered();
             orders.extend(os);
             funcs.push_str(&text);
@@ -1145,6 +1159,7 @@ fn emit_module(
                 &epis,
                 &epi_bodies,
                 &cells,
+                &folds,
             )
         })
         .flatten();

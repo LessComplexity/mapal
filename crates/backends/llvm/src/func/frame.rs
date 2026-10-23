@@ -46,13 +46,9 @@ impl<'a> FnEmit<'a> {
             None => lower_ty(&in_ty),
         };
 
-        for &m in &fd.morphisms {
-            if let Some(source) = self.update_in_place_source(m) {
-                let target = self.ir.morphism(m).expect("morphism resolves").target;
-                self.elided_updates.insert(target, ());
-                self.update_aliases.insert(target, source);
-            }
-        }
+        // The in-place `Update`s, decided with the carried loop state (S65
+        // `by-ref`: a view the loop owns may be written in place).
+        self.plan_carry_refs(&fd.morphisms.clone());
         self.mark_elided_arrays(&fd.morphisms.clone());
         // S54 `arena`: a device-only array has no host bytes to hold.
         if let Some(a) = self.resident.as_ref().and_then(|p| p.arena.as_ref()) {
@@ -154,6 +150,18 @@ impl<'a> FnEmit<'a> {
                 self.entry_alloc(&name, &llt, None);
             }
             ord += 1;
+        }
+        // A storage alias no `Update` resolves at emission (S65 `by-ref`: a
+        // loop's next state written into its dead init's buffer) shares its
+        // root's slot from the start.
+        let shared: Vec<ObjectId> = self.update_aliases.keys().collect();
+        for t in shared {
+            let root = self.alias_root(t);
+            if !self.slots.contains_key(t)
+                && let Some(s) = self.slots.get(root).cloned()
+            {
+                self.slots.insert(t, s);
+            }
         }
     }
 

@@ -503,10 +503,19 @@ impl<'a> FnEmit<'a> {
     /// (exit payload → exit object). No-op if erased.
     pub(crate) fn copy_component(&mut self, route: ObjectId, k: u32, to: ObjectId) {
         if matches!(self.obj_ty(route).component_ty(k), Some(Ty::Array { .. })) {
+            // S65 `by-ref`: a device carry's exit is filled on the device, and
+            // a host-carried one takes the state's pointer.
+            if self.exit_by_device.contains_key(to) || self.host_free(to) {
+                return;
+            }
             let src = self
                 .array_operand_ptr(route, Some(k))
                 .expect("array route source ptr");
             let dst = self.slot(to).expect("array route target slot");
+            if self.ptr_resident.contains_key(to) {
+                self.line(format!("store ptr {src}, ptr {dst}"));
+                return;
+            }
             let llt = lower_ty(&self.obj_ty(to)).expect("array route lowers");
             self.emit_memcpy(&dst, &src, &llt);
         } else if let Some(llt) = self.big_aggregate(to)

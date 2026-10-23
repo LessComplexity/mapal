@@ -273,7 +273,9 @@ for o in "$PROF"/pt_*.host.o; do
         got=$(probe_out "$s"); got=${got%%iter ms=*}
         # S63: the default face answers to the exact face within D2's bound (value_gate.py).
         if [ -z "$face" ] && [ -s "tiles/${b}_x.expect" ] && [ -n "$kmax" ]; then
-            if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax"); then
+            # S65: against D2's M (absolute) where the bundle has the program's magnitude oracle.
+            xabs=(); [ -s "tiles/${b}_xabs.expect" ] && xabs=("tiles/${b}_xabs.expect")
+            if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax" ${xabs[@]+"${xabs[@]}"}); then
                 bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
             else
                 say "value-bound prog=$b face=_default arm=$arm K=$kmax $g got=[$got] exact=[$(tr '\n' ' ' < "tiles/${b}_x.expect")]"

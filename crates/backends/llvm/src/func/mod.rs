@@ -14,7 +14,8 @@ use crate::MovePanel;
 use crate::module::StrGlobal;
 use crate::profile::TargetProfile;
 use crate::ty::{
-    erased_index, lower_body_input_ty, lower_named_input_ty, lower_ty, residual_arity,
+    erased_index, lower_body_input_ty, lower_named_input_ty, lower_ptr_paths, lower_ty,
+    residual_arity, sub_paths,
 };
 
 /// Truthful fn attributes (trap-aware; suggestions #7): the conservative
@@ -401,6 +402,15 @@ pub(crate) struct FnEmit<'a> {
     /// S62 `splitk`: each split site's workspace slot (`alloca i64`), made on
     /// its first launch and freed at function exit (a loop reuses it).
     split_slots: Vec<String>,
+    /// S65 `by-ref` (`func/byref.rs`): the loop products' component paths
+    /// that hold a pointer instead of the array.
+    ref_paths: SecondaryMap<ObjectId, Vec<Vec<u32>>>,
+    /// Pointer slots whose bytes the loop owns (a view written in place).
+    loop_owned: SecondaryMap<ObjectId, ()>,
+    /// The carried components and how each is carried.
+    carry_refs: Vec<byref::CarryRef>,
+    /// Exit objects a device carry fills (no host copy at the exit).
+    exit_by_device: SecondaryMap<ObjectId, ()>,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -657,6 +667,7 @@ struct ConvTileCtx {
 // child of this module, so it reaches `FnEmit`'s private fields directly and
 // picks up the imports above through `use super::*`.
 mod bulk;
+mod byref;
 mod conv;
 mod core;
 mod drive;
