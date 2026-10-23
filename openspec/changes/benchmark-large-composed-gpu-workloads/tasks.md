@@ -67,3 +67,10 @@ native processes,770,816raw words,8selections and exact selected Lt configuratio
 independently checked; fused Lt leads Mapal2.24×/2.16×. The finite tuning, arithmetic,
 cache/reset, allocation and graph-mode limits are in the fused-library report. Broader
 recurrence, causal retention, graph-enabled and cross-host duties remain in the other tasks.
+
+S62 (6a0e3a0) measures, value-gated on RTX 5090/4090/H100 PCIe/3090, the M128 residual MLP
+(d256/h512, d1024/h2048; Exact/Contract; 30 processes) and the composed `pt_pm_2048_32`
+program against the 4e1102c base, plus projection cells up to 16x18432x7168 and 4096³ against
+cuBLAS and CUTLASS (MLP kernels also against cuBLASLt). No 16K square cell, recurrent decode or incremental reference was run,
+so 2.2, 3.1–3.5 and 4.1–4.3 stay open. Tables: `docs/performance/gpu/current-results.md`.
+

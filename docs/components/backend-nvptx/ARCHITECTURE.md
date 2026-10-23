@@ -252,7 +252,8 @@ and `rowfold-layout` (R0 for folds, the store order), `lane-stride` (R0 for stri
 sites), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
 policy from `l2_bytes`; `l2-gate` is `raster`'s measurement arm, the derivation without its L2
-gate). An OFF arm disables that rung while preserving the other selected rungs; it is not a
+gate). S62 adds `row-fit`, `wave-gate`, `grid-share`, `panel-regs`, `fill-rows`,
+`cell-fill`, `asyncstage`, `splitk`, `hostopt` and `place` (§10). An OFF arm disables that rung while preserving the other selected rungs; it is not a
 historical compiler baseline. Neither `raster` nor `l2-window` is a `Trn` or a `Trm`:
 the grid order is how one realization walks its blocks, the window a cache policy on a `launch`
 over `Gmem` the graph proves is read again — `l2-window`'s output case is R6's residency seen from
@@ -410,3 +411,33 @@ forced-arm precedence and conservative warp-fill register budget remain the
 existing policy. This connection is built and compile-time checked; it does not
 claim a globally optimal schedule or a measured speedup. The previously rejected
 blanket small-M geometry policy is not promoted.
+
+## 10. S62 morphisms
+
+Every row reads existing IR facts (`TileSite`/`TileRead` extents and coefficients, `TilePlan`
+output independence, `bounds_proof`, `elem_plan` face) and `TargetProfile` device facts. No new
+`Dat`, `Loc` or `Trm` enters the IR. Per-part ON/OFF rows: `profile.rs:GPU_RUNGS_OFF`;
+measurements: [current results](../../performance/gpu/current-results.md),
+[gap map](../../performance/gpu/disassembly/s62-gap-map.md).
+
+| `Trn` | domain → codomain | numerics | realization | rung |
+| --- | --- | --- | --- | --- |
+| ordered skinny geometry | TileSite + sms, regs/SM, smem/SM, schedulers → Launch (rows per block, grid, panel depth) | output partition only; each cell's k fold stays on one thread, bits unchanged | `gpu_tile_with`, `panel_regs`, `Launch::wave` | `row-fit`, `wave-gate`, `grid-share`, `panel-regs`, `fill-rows` |
+| cell-fill tile | starved TileSite (`tn < lanes`) + register budget → 1×1-cell Launch | as above | `gpu_cell_tile`, `block_threads` | `cell-fill` |
+| staged panels | Launch + `bounds_proof` + 16-B affine alignment → multi-stage cp.async panel loop | operand order unchanged | `gpu_tile_stages` | `asyncstage` (OFF on all four parts) |
+| split-K partition | TileSite under the opt-in reassoc face + resident slots → S partial folds, one workspace slab each (`z·rows·c` offset) | ADR-0040: partitioned order, deterministic; Exact/Contract never split | `gpu_splitk`, `kernel_id_split`, `Kernel::at_z` | `splitk` |
+| partition reduce | S slabs → out, s = 0..S−1 in order | fixed order | `reduce_kernel_text` | `splitk` |
+| device placement | site/cell roofline (flops, bytes) + `DeviceCost` → host or device | numerics-free (§3) | `placement`, `device_made`, `device_pays`, `cell_pays` | `place` |
+| host half | GPU profile × CPU profile → `<gpu>+<host>` profile | none | `with_host` | `hostopt` |
+
+`splitk` and `grid-share` interact: grid-share sizes residency before splitk multiplies the
+block count (gap map G6). `place` changes which `Loc` a `Trn` runs at, never its value.
+
+| FRAMEWORK §4.5 law | S62 review |
+| --- | --- |
+| 1 placement honesty | split partials materialize in their own `Gmem` workspace slab before the reduce reads them; 9a9cc20 fixed the one violation (cell-fill stores into slab 0); bit-exact/bound gates and `tests/splitk.rs` determinism pass on four parts |
+| 2 transmission typing | no new `Trm` |
+| 4 dependency mediation | a host-placed site (`place`) reads device producers through the existing R6 uses (`d2h`) |
+| 5 composition | six item rung sets compose; the all-rungs-off arm reproduces 4e1102c (test turns off all seven S62 tile rungs) |
+| 6 `runsAt` relation | `place` decides host or device per site; the same `Trn` keeps both `TrnLoc` rows |
+

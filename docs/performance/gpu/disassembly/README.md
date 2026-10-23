@@ -4,6 +4,7 @@
 
 | Report | Scope |
 | --- | --- |
+| [S62 integrated: standing, hardware use and gaps](s62-gap-map.md) | Build 6a0e3a0 on 5090/4090/H100 PCIe/3090 against cuBLAS, cuBLASLt and stock/tuned CUTLASS; nine ranked gaps G1–G9 with close/beyond designs and acceptance tests |
 | [Actually executed library kernels](executed-library-images.md) | Fresh Mapal1/cuBLAS2/CUTLASS1 selected entries, numerical gates, qualified SASS and grounded next experiments |
 | [Actually executed Mapal kernels](executed-mapal-images.md) | Four Contract launches bound to captured ELF/SASS; static instructions and resources, no profiling timing |
 | [Mapal, cuBLAS and CUTLASS gaps](cublas-cutlass-gap.md) | Earlier PTX/static SASS audit, preceding the fresh selected-library capture above |

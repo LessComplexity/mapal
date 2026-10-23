@@ -32,3 +32,6 @@
   staticlib only when it is built as a root (checked S62: as a dependency of
   mapal-cli it stays in `deps/` under a hash), so the build is
   `cargo build -p mapal-cli -p mapal-rt`.
+- A GPU build under `hostopt` carries the profile name `<gpu>+<host>`; `build` resolves the
+  device arch from the GPU half (`crates/mapal-cli/src/main.rs:build`, integration fix on
+  `s62-integrated`). The GPU test passes `--gpu-off=place` because `place` keeps the 64³ site on the host.
