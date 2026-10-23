@@ -1,0 +1,10 @@
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+260586585,2112,8,512,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_gen_fd9a2c6e2dfc5389
+260600313,10400,10,8192,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_gen_6856304228b2a52c
+260613977,10496,12,8192,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_gen_a36ceaab86e7c57d
+260627993,1504,14,8,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_gen_5a0054498e20362c
+260652185,97953,17,64,2,1,32,1,1,128,0.000,0.002,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_tile_c23775111f88d1b3
+260754042,191393,19,32,2,1,32,1,1,128,0.000,0.002,,,,,NVIDIA GeForce RTX 3090 (0),1,,7,mapal_tile_af3ed03a29cfbd57
+260965819,1216,21,,,,,,,,,,0.000,3.289,Device,Pageable,NVIDIA GeForce RTX 3090 (0),1,,7,[CUDA memcpy Device-to-Host]
+260993403,896,22,,,,,,,,,,0.000,4.464,Device,Pageable,NVIDIA GeForce RTX 3090 (0),1,,7,[CUDA memcpy Device-to-Host]
+
