@@ -166,7 +166,7 @@ def legs(lines):
     return out
 
 
-def time_table(raw):
+def time_table(raw, title='How each optimization turned out in time (arms timed this session: ON / OFF, median over processes)'):
     """Per rung x arch, every arm this session timed: ON / OFF per process (an `.off-<r>` arm: shipped / arm;
     an `.on-<r>` arm: arm / shipped), against the program's null."""
     agg = defaultdict(list)
@@ -179,16 +179,23 @@ def time_table(raw):
             base, d, rung = m[1], m[2], m[3].split('+')[-1]
             sh = lg[base]
             ks = [k for k in arm if k in sh]
+            if any(k.startswith('p') for k in ks):  # a kernel arm: its tile_bench / mlp_bench events
+                ks = [k for k in ks if k.startswith('p')]
             if not ks:
                 continue
             r = [(arm[k] / sh[k]) if d == 'on' else (sh[k] / arm[k]) for k in ks]
             root = re.sub(r'_(x|c|r|rc|tf)$', '', base)
-            nl, s0 = lg.get(root + '.null') or lg.get(root + '_c.null') or {}, lg.get(root) or lg.get(root + '_c') or {}
-            nul = max((abs(nl[k] / s0[k] - 1) for k in nl if k in s0), default=None)
+            kind, nul = ks[0].startswith('p'), None
+            for n0, s0 in ((root + '.null', root), (root + '_c.null', root + '_c')):
+                nl, sh0 = lg.get(n0, {}), lg.get(s0, {})
+                xs = [abs(nl[k] / sh0[k] - 1) for k in nl if k in sh0 and k.startswith('p') == kind]
+                if xs:
+                    nul = max(xs)
+                    break
             sign = ('ON slower' if nul is not None and all(x > 1 + nul for x in r) else
                     'ON faster' if nul is not None and all(x < 1 - nul for x in r) else 'inside')
             agg[(rung, a)].append((base, med(r), nul, sign, 'shipped ON' if d == 'off' else 'shipped OFF'))
-    print('### How each optimization turned out in time (arms timed this session: ON / OFF, median over processes)\n')
+    print(f'### {title}\n')
     print('| rung | arch | shipped | cells: ON/OFF (null) | ON faster / slower / inside null |')
     print('|---|---|---|---|---|')
     for (rung, a), xs in sorted(agg.items()):
@@ -218,6 +225,8 @@ if __name__ == '__main__':
     raw = sys.argv[1]
     intent_tables(raw)
     time_table(raw)
+    if os.path.isdir(os.path.join(raw, 'warp-fill')):
+        time_table(os.path.join(raw, 'warp-fill'), 'Follow-up: warp-fill ON on the MLP contract kernels (H100, 3090)')
     kernel_tables(raw)
     suite_tables(raw)
     judge_table(raw)

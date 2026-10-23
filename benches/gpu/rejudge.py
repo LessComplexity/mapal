@@ -89,6 +89,9 @@ COST = [  # (fact, sign): +1 = ON larger is a cost, -1 = ON smaller is a cost
     ('sass.hot.span', 1), ('sass.hot.bar', 1), ('sass.hot.ffma_per_lds', -1), ('sass.hot.ffma_per_ldg', -1),
     # S64 addition: an atomic combine's RED.ADD (an L2 read-modify-write per accumulator) for a plain store
     ('sass.red', 1),
+    # the grid's fill (the design's `occ.waves`, as warps): resident warps per SM, min(grid, residency).
+    # `waves` itself = grid / residency rises when residency falls, which puts no more of the part to work.
+    ('occ.resident_warps_per_sm', -1),
     ('host.calls.launch', 1), ('host.calls.launchv', 1), ('host.calls.launch_l2', 1), ('host.calls.h2d', 1),
     ('host.calls.d2h', 1), ('host.calls.alloc', 1), ('host.calls.tile', 1), ('host.calls.zero', 1),
     ('host.calls.event', 1), ('host.calls.pin', 1), ('launch.S', 1)]

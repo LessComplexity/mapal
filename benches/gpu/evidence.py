@@ -75,7 +75,8 @@ def table_rungs(rows, prof, wps, face, arm):
         r = set(KERNEL_RUNGS) | {n for p, n, *_ in rows}
     else:
         fill = 'Under' if wps < 2 else 'Filled'
-        dead = {n for p, n, fl, fa, _ in rows if p == prof and fl in ('Any', fill) and covers(fa, face)}
+        dead = {n for p, n, fl, fa, _ in rows if p == prof and covers(fa, face)
+                and (fl in ('Any', fill) or (fl == 'Partial' and 1 <= wps < 2))}
         r = (set(KERNEL_RUNGS) | {n for p, n, *_ in rows}) - dead
     return sorted((r | on) - off)
 
@@ -471,6 +472,8 @@ def facts(d, sm):
                 grid = (p.get('gx') or 0) * (p.get('gy') or 1)
                 if p.get('combine') == 'streamk':
                     grid = p.get('ctas', grid)
+                elif p.get('combine') in ('splitk', 'atomic'):  # the plan's grid is one partial fold's
+                    grid *= p.get('S', 1)
                 kf['occ'] = dict(blocks_per_sm=b, warps_per_sm=w, occupancy=round(o, 3), limiter=why,
                                  sms=part.get('sms', 0), blocks=grid,
                                  waves=round(grid / (b * part['sms']), 3) if b and part.get('sms') else 0,

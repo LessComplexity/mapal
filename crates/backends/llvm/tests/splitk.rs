@@ -340,8 +340,9 @@ fn mm_exact(m: u64, n: u64, k: u64) -> Vec<f32> {
 
 /// S63 the combines of the staged register tile, run by the threaded
 /// emulator (barriers, shared memory): the atomic split (RTX 5090, 32×64×256,
-/// S = 4) and stream-K (H100 PCIe, 64×512×1024: 16 tiles × 32 panels on 103
-/// blocks of 5 units) print the exact values; the fixed face's workspace
+/// S = 4) and stream-K (H100 PCIe, 64×512×1024: 32 tiles × 32 panels on 114
+/// blocks of 9 units since S64's `warp-fill` class split; S63: 16 tiles on 103
+/// blocks of 5) print the exact values; the fixed face's workspace
 /// split prints the oracle's replay of its compiled order, bit for bit.
 #[test]
 fn tiled_combines_emulated() {
@@ -351,7 +352,7 @@ fn tiled_combines_emulated() {
     };
     for (target, (m, n, k), tag, replay) in [
         ("rtx-5090", (32, 64, 256), "; splitk=4 atomic\n", true),
-        ("h100-pcie", (64, 512, 1024), "; streamk=103x5\n", false),
+        ("h100-pcie", (64, 512, 1024), "; streamk=114x9\n", false),
     ] {
         let ir = lower(&mm_src(m, n, k));
         let at = |base: EmitOpts| {
