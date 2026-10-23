@@ -1,0 +1,36 @@
+perflock: acquired (waited 0s lock / 0s quiet) — running: bash -c cargo build --release -p mapal-backend-llvm --example emit && cp target/release/examples/emit /private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/d48de64b-c24f-4f25-9674-928a7ce97ccb/scratchpad/s62/emit-pre && cargo test -p mapal-backend-llvm --release --test streams grouped_chains_allocate_only_materialized_raw_outputs
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/.claude/worktrees/wf_3402ad23-67f-9/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 6.61s
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/.claude/worktrees/wf_3402ad23-67f-9/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 0.69s
+     Running tests/streams.rs (target/release/deps/streams-65bd56ffb4529b4f)
+
+running 1 test
+test grouped_chains_allocate_only_materialized_raw_outputs ... FAILED
+
+failures:
+
+---- grouped_chains_allocate_only_materialized_raw_outputs stdout ----
+
+thread 'grouped_chains_allocate_only_materialized_raw_outputs' (15265686) panicked at crates/backends/llvm/tests/streams.rs:722:5:
+[
+    "independent contract=false: %t22 = call i64 @mapal_gpu_alloc(ptr %d21, i64 16384)",
+    "independent contract=true: %t22 = call i64 @mapal_gpu_alloc(ptr %d21, i64 16384)",
+    "diamond contract=false: %t26 = call i64 @mapal_gpu_alloc(ptr %d25, i64 16384)",
+    "diamond contract=true: %t26 = call i64 @mapal_gpu_alloc(ptr %d25, i64 16384)",
+    "mlp2 contract=false: %t29 = call i64 @mapal_gpu_alloc(ptr %d28, i64 16384)",
+    "mlp2 contract=false: %t33 = call i64 @mapal_gpu_alloc(ptr %d32, i64 16384)",
+    "mlp2 contract=true: %t29 = call i64 @mapal_gpu_alloc(ptr %d28, i64 16384)",
+    "mlp2 contract=true: %t33 = call i64 @mapal_gpu_alloc(ptr %d32, i64 16384)",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    grouped_chains_allocate_only_materialized_raw_outputs
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p mapal-backend-llvm --test streams`
+perflock: released (exit 101)
+exit 101

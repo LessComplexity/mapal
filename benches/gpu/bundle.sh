@@ -18,7 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 LLVM="${LLVM:-/opt/homebrew/opt/llvm/bin}"
-EMIT="$ROOT/target/release/examples/emit"
+EMIT="${EMIT:-$ROOT/target/release/examples/emit}"  # S62: another build's emitter (a before arm)
 RUN="$ROOT/target/release/examples/run"
 mkdir -p "$OUT/tiles"
 python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
@@ -218,6 +218,16 @@ for spec in "$@"; do
                     emit_one "$f" "$d/$b$face.off-retain-resident+delta-h2d+lane-stride" "$prof" "$sm" \
                         ${flags[@]+"${flags[@]}"} --gpu-off=retain-resident,delta-h2d,lane-stride ;;
                 esac
+                # S62: `fs` = streams forced open (gate off), the realization the
+                # allocation elimination changes (PREV copies an earlier emitter's
+                # `fs`); `null` = the shipped probe again, the session's noise floor.
+                case $b in pt_*|px_*)
+                    emit_one "$f" "$d/$b$face.fs" "$prof" "$sm" ${flags[@]+"${flags[@]}"} \
+                        --gpu-on=streams --gpu-off=stream-gate ;;
+                esac
+                case $b in pt_*)
+                    cp "$d/$b$face.host.o" "$d/$b$face.null.host.o"; cp "$d/$b$face.ptx" "$d/$b$face.null.ptx" ;;
+                esac
             done
             # S54 `epilogue` on the TF32 face (mma.sync, wgmma): no oracle there (a
             # bound), so the ON arm answers to the OFF arm, bit for bit — the same
@@ -246,6 +256,13 @@ for spec in "$@"; do
                     [ -f "$from/$prof/$v.host.o" ] || continue
                     cp "$from/$prof/$v.host.o" "$d/$v.$tag.host.o"
                     cp "$from/$prof/$v.ptx" "$d/$v.$tag.ptx"
+                done ;;
+            # S62: the earlier emitter's `fs` arm (its forced-stream realization).
+            pt_*|px_*)
+                for v in "$b" "${b}_c"; do
+                    [ -f "$from/$prof/$v.fs.host.o" ] || continue
+                    cp "$from/$prof/$v.fs.host.o" "$d/$v.$tag.host.o"
+                    cp "$from/$prof/$v.fs.ptx" "$d/$v.$tag.ptx"
                 done ;;
             esac
         done

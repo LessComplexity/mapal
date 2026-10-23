@@ -41,7 +41,15 @@ the no-clock correctness and synchronizing counter phases do not admit latency c
 
 - [x] 3.1 Run focused regressions and the required-clang workspace suite; retain failure output and final results.
 - [x] 3.2 Run ordinary GPU value/trap checks for affected stream placements and unchanged controls, including the adversarial no-clock fixtures; inspect emitted device code and dependency evidence for the actual launched binaries.
-- [ ] 3.3 Compare the same forced-stream realization before/after on affected hardware and representative sizes, with iteration and process-wall timing, allocation counts and static requested-live-byte accounting. Report losses and unchanged cases without attributing combined policy effects to this change.
+- [x] 3.3 Compare the same forced-stream realization before/after on affected hardware and representative sizes, with iteration and process-wall timing, allocation counts and static requested-live-byte accounting. Report losses and unchanged cases without attributing combined policy effects to this change.
+
+S62 measures 3.3 on RTX 3090, RTX 4090, H100 (PCIe and SXM) and RTX 5090, two sessions each:
+before/after the elimination under forced streams, identical PTX, iteration clock and a request
+clock with allocation and free inside. Affected cells stable+ on 12/7/5/11 of 14 (iteration) and
+9/3/9/11 of 14 (request), stable− on none; controls unchanged. Under shipped policy (streams OFF)
+the emitted text is unchanged and the arena still reserves the omitted bytes. See
+`docs/performance/gpu/memory/allocation-latency.md` and
+`benches/results/gpu/s62/runtime-measurements/` (`digest.md`, `cells.md`).
 
 ## 4. Reconcile and hand off
 

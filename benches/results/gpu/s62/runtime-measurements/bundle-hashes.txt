@@ -1,0 +1,487 @@
+# emitters: sha256
+d13d233e45545987dc2bbec021dd9d5d1c304f12acece0da3ec4464505e6877c  emit-head
+64e2dbddb10b3d55cd6046c30820a541393b10a4bf3af3e1240987b5f0de56db  emit-pre
+## rtx-4090
+pt_diamond_1024_c fs.ptx=3607f3d9ecff68f2 predce.ptx=3607f3d9ecff68f2 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_1024 fs.ptx=66d1e40ce6befdf4 predce.ptx=66d1e40ce6befdf4 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512_c fs.ptx=3c2a91ae7d90d053 predce.ptx=3c2a91ae7d90d053 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512 fs.ptx=05979765ef6f775b predce.ptx=05979765ef6f775b ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024_c fs.ptx=000f4aee71ed4a28 predce.ptx=000f4aee71ed4a28 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024 fs.ptx=8c5e7a76b7bf20f9 predce.ptx=8c5e7a76b7bf20f9 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512_c fs.ptx=9bbd27156237f79c predce.ptx=9bbd27156237f79c ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512 fs.ptx=b97293cdf774b57f predce.ptx=b97293cdf774b57f ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp_1024_c fs.ptx=a5f7dfabee907f72 predce.ptx=a5f7dfabee907f72 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp_1024 fs.ptx=ff83e888a2c153d0 predce.ptx=ff83e888a2c153d0 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp2_1024_c fs.ptx=6a55638bf2e1acae predce.ptx=6a55638bf2e1acae ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_1024 fs.ptx=2a9fca95a8b2445e predce.ptx=2a9fca95a8b2445e ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048_c fs.ptx=830a3f17b69f0dc7 predce.ptx=830a3f17b69f0dc7 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048 fs.ptx=188ff6ae073872b0 predce.ptx=188ff6ae073872b0 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512_c fs.ptx=5fd7b1134f159bcb predce.ptx=5fd7b1134f159bcb ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512 fs.ptx=35ad8a84e1eca5b7 predce.ptx=35ad8a84e1eca5b7 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_diamond_1024_c fs.ptx=3607f3d9ecff68f2 predce.ptx=3607f3d9ecff68f2 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_1024 fs.ptx=66d1e40ce6befdf4 predce.ptx=66d1e40ce6befdf4 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512_c fs.ptx=3c2a91ae7d90d053 predce.ptx=3c2a91ae7d90d053 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512 fs.ptx=05979765ef6f775b predce.ptx=05979765ef6f775b ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_indep_1024_c fs.ptx=000f4aee71ed4a28 predce.ptx=000f4aee71ed4a28 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_1024 fs.ptx=8c5e7a76b7bf20f9 predce.ptx=8c5e7a76b7bf20f9 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512_c fs.ptx=9bbd27156237f79c predce.ptx=9bbd27156237f79c ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512 fs.ptx=b97293cdf774b57f predce.ptx=b97293cdf774b57f ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp_1024_c fs.ptx=a5f7dfabee907f72 predce.ptx=a5f7dfabee907f72 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_1024 fs.ptx=ff83e888a2c153d0 predce.ptx=ff83e888a2c153d0 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512_c fs.ptx=9efe1ffe13deab47 predce.ptx=9efe1ffe13deab47 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512 fs.ptx=f741871b33b057d1 predce.ptx=f741871b33b057d1 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp2_1024_c fs.ptx=6a55638bf2e1acae predce.ptx=6a55638bf2e1acae ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_1024 fs.ptx=2a9fca95a8b2445e predce.ptx=2a9fca95a8b2445e ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048_c fs.ptx=830a3f17b69f0dc7 predce.ptx=830a3f17b69f0dc7 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048 fs.ptx=188ff6ae073872b0 predce.ptx=188ff6ae073872b0 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512_c fs.ptx=5fd7b1134f159bcb predce.ptx=5fd7b1134f159bcb ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512 fs.ptx=35ad8a84e1eca5b7 predce.ptx=35ad8a84e1eca5b7 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_twin_1024_c fs.ptx=fa4ed670e484de8a predce.ptx=fa4ed670e484de8a ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_1024 fs.ptx=b62046146f91680e predce.ptx=b62046146f91680e ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048_c fs.ptx=b7cda7a42e3c1625 predce.ptx=b7cda7a42e3c1625 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048 fs.ptx=3d0920bcee61ea04 predce.ptx=3d0920bcee61ea04 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512_c fs.ptx=61e9ba1173242be3 predce.ptx=61e9ba1173242be3 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512 fs.ptx=b65972427cce82af predce.ptx=b65972427cce82af ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024_c fs.ptx=fa4ed670e484de8a predce.ptx=fa4ed670e484de8a ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024 fs.ptx=b62046146f91680e predce.ptx=b62046146f91680e ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048_c fs.ptx=b7cda7a42e3c1625 predce.ptx=b7cda7a42e3c1625 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048 fs.ptx=3d0920bcee61ea04 predce.ptx=3d0920bcee61ea04 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512_c fs.ptx=61e9ba1173242be3 predce.ptx=61e9ba1173242be3 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512 fs.ptx=b65972427cce82af predce.ptx=b65972427cce82af ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_diamond_128_c fs.ptx=9bf449fb523bea37 predce.ptx=9bf449fb523bea37 ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_diamond_128 fs.ptx=3aec4dfdd1145210 predce.ptx=3aec4dfdd1145210 ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_fan_128_c fs.ptx=87835d5d351402a2 predce.ptx=87835d5d351402a2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_fan_128 fs.ptx=1ef6e038598f4570 predce.ptx=1ef6e038598f4570 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_indep_128_c fs.ptx=ced032c79e45f727 predce.ptx=ced032c79e45f727 ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_indep_128 fs.ptx=63207cc39e991a5c predce.ptx=63207cc39e991a5c ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_mlp_128_c fs.ptx=38387ad69f39be2f predce.ptx=38387ad69f39be2f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp_128 fs.ptx=053de5ed5bf121e7 predce.ptx=053de5ed5bf121e7 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128_c fs.ptx=98ff3ad762b3efa7 predce.ptx=98ff3ad762b3efa7 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128 fs.ptx=aa68f5018616b9e6 predce.ptx=aa68f5018616b9e6 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128_c fs.ptx=87835d5d351402a2 predce.ptx=87835d5d351402a2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128 fs.ptx=1ef6e038598f4570 predce.ptx=1ef6e038598f4570 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+shipped pt_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_diamond_1024 pre-vs-head host.ll identical
+shipped pt_diamond_512_c pre-vs-head host.ll identical
+shipped pt_diamond_512 pre-vs-head host.ll identical
+shipped pt_indep_1024_c pre-vs-head host.ll identical
+shipped pt_indep_1024 pre-vs-head host.ll identical
+shipped pt_indep_512_c pre-vs-head host.ll identical
+shipped pt_indep_512 pre-vs-head host.ll identical
+shipped pt_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_mlp_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024 pre-vs-head host.ll identical
+shipped pt_rq_diamond_512_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_512 pre-vs-head host.ll identical
+shipped pt_rq_indep_1024_c pre-vs-head host.ll identical
+shipped pt_rq_indep_1024 pre-vs-head host.ll identical
+shipped pt_rq_indep_512_c pre-vs-head host.ll identical
+shipped pt_rq_indep_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_twin_1024_c pre-vs-head host.ll identical
+shipped pt_rq_twin_1024 pre-vs-head host.ll identical
+shipped pt_rq_twin_2048_c pre-vs-head host.ll identical
+shipped pt_rq_twin_2048 pre-vs-head host.ll identical
+shipped pt_rq_twin_512_c pre-vs-head host.ll identical
+shipped pt_rq_twin_512 pre-vs-head host.ll identical
+shipped pt_twin_1024_c pre-vs-head host.ll identical
+shipped pt_twin_1024 pre-vs-head host.ll identical
+shipped pt_twin_2048_c pre-vs-head host.ll identical
+shipped pt_twin_2048 pre-vs-head host.ll identical
+shipped pt_twin_512_c pre-vs-head host.ll identical
+shipped pt_twin_512 pre-vs-head host.ll identical
+shipped px_diamond_128_c pre-vs-head host.ll identical
+shipped px_diamond_128_tf pre-vs-head host.ll identical
+shipped px_diamond_128 pre-vs-head host.ll identical
+shipped px_fan_128_c pre-vs-head host.ll identical
+shipped px_fan_128 pre-vs-head host.ll identical
+shipped px_indep_128_c pre-vs-head host.ll identical
+shipped px_indep_128_tf pre-vs-head host.ll identical
+shipped px_indep_128 pre-vs-head host.ll identical
+shipped px_mlp_128_c pre-vs-head host.ll identical
+shipped px_mlp_128_tf pre-vs-head host.ll identical
+shipped px_mlp_128 pre-vs-head host.ll identical
+shipped px_mlp2_128_c pre-vs-head host.ll identical
+shipped px_mlp2_128_tf pre-vs-head host.ll identical
+shipped px_mlp2_128 pre-vs-head host.ll identical
+shipped px_twin_128_c pre-vs-head host.ll identical
+shipped px_twin_128 pre-vs-head host.ll identical
+## rtx-5090
+pt_diamond_1024_c fs.ptx=66940aa6bdcebdbf predce.ptx=66940aa6bdcebdbf ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_1024 fs.ptx=c9e423a4203d3eea predce.ptx=c9e423a4203d3eea ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512_c fs.ptx=e1ba93997c62ed07 predce.ptx=e1ba93997c62ed07 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512 fs.ptx=2f8a47831d4472e9 predce.ptx=2f8a47831d4472e9 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024_c fs.ptx=7839ff368325fd21 predce.ptx=7839ff368325fd21 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024 fs.ptx=15ab6a2426e76aa7 predce.ptx=15ab6a2426e76aa7 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512_c fs.ptx=91f00b0ce212f136 predce.ptx=91f00b0ce212f136 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512 fs.ptx=3bf7f31442034fe8 predce.ptx=3bf7f31442034fe8 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp_1024_c fs.ptx=9257a82a2ed6fcad predce.ptx=9257a82a2ed6fcad ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp_1024 fs.ptx=93df14a039a7d20a predce.ptx=93df14a039a7d20a ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp2_1024_c fs.ptx=557acd170da5af09 predce.ptx=557acd170da5af09 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_1024 fs.ptx=69eb79a063f2bca1 predce.ptx=69eb79a063f2bca1 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048_c fs.ptx=ee1f4d911355d307 predce.ptx=ee1f4d911355d307 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048 fs.ptx=8c93e7c7a91bfac9 predce.ptx=8c93e7c7a91bfac9 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512_c fs.ptx=f250c141a6759a77 predce.ptx=f250c141a6759a77 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512 fs.ptx=d720c577f7ea999a predce.ptx=d720c577f7ea999a ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_diamond_1024_c fs.ptx=66940aa6bdcebdbf predce.ptx=66940aa6bdcebdbf ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_1024 fs.ptx=c9e423a4203d3eea predce.ptx=c9e423a4203d3eea ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512_c fs.ptx=e1ba93997c62ed07 predce.ptx=e1ba93997c62ed07 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512 fs.ptx=2f8a47831d4472e9 predce.ptx=2f8a47831d4472e9 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_indep_1024_c fs.ptx=7839ff368325fd21 predce.ptx=7839ff368325fd21 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_1024 fs.ptx=15ab6a2426e76aa7 predce.ptx=15ab6a2426e76aa7 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512_c fs.ptx=91f00b0ce212f136 predce.ptx=91f00b0ce212f136 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512 fs.ptx=3bf7f31442034fe8 predce.ptx=3bf7f31442034fe8 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp_1024_c fs.ptx=9257a82a2ed6fcad predce.ptx=9257a82a2ed6fcad ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_1024 fs.ptx=93df14a039a7d20a predce.ptx=93df14a039a7d20a ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512_c fs.ptx=9e9041c70198648f predce.ptx=9e9041c70198648f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512 fs.ptx=44324e2f548a18fe predce.ptx=44324e2f548a18fe ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp2_1024_c fs.ptx=557acd170da5af09 predce.ptx=557acd170da5af09 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_1024 fs.ptx=69eb79a063f2bca1 predce.ptx=69eb79a063f2bca1 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048_c fs.ptx=ee1f4d911355d307 predce.ptx=ee1f4d911355d307 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048 fs.ptx=8c93e7c7a91bfac9 predce.ptx=8c93e7c7a91bfac9 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512_c fs.ptx=f250c141a6759a77 predce.ptx=f250c141a6759a77 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512 fs.ptx=d720c577f7ea999a predce.ptx=d720c577f7ea999a ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_twin_1024_c fs.ptx=f3d4adb744344083 predce.ptx=f3d4adb744344083 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_1024 fs.ptx=ebdf1aaacdf18f67 predce.ptx=ebdf1aaacdf18f67 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048_c fs.ptx=d5ce8a8027ef3fa4 predce.ptx=d5ce8a8027ef3fa4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048 fs.ptx=3a057345b5ada2d4 predce.ptx=3a057345b5ada2d4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512_c fs.ptx=9ceb333ec69e47f5 predce.ptx=9ceb333ec69e47f5 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512 fs.ptx=9b7aa3d09ba0c66f predce.ptx=9b7aa3d09ba0c66f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024_c fs.ptx=f3d4adb744344083 predce.ptx=f3d4adb744344083 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024 fs.ptx=ebdf1aaacdf18f67 predce.ptx=ebdf1aaacdf18f67 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048_c fs.ptx=d5ce8a8027ef3fa4 predce.ptx=d5ce8a8027ef3fa4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048 fs.ptx=3a057345b5ada2d4 predce.ptx=3a057345b5ada2d4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512_c fs.ptx=9ceb333ec69e47f5 predce.ptx=9ceb333ec69e47f5 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512 fs.ptx=9b7aa3d09ba0c66f predce.ptx=9b7aa3d09ba0c66f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_diamond_128_c fs.ptx=61b07029b5ded64f predce.ptx=61b07029b5ded64f ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_diamond_128 fs.ptx=60d7e413ecc99224 predce.ptx=60d7e413ecc99224 ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_fan_128_c fs.ptx=8ac24d1d0dc0a9f1 predce.ptx=8ac24d1d0dc0a9f1 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_fan_128 fs.ptx=113d43dd80daedf4 predce.ptx=113d43dd80daedf4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_indep_128_c fs.ptx=3b3b792a1810b906 predce.ptx=3b3b792a1810b906 ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_indep_128 fs.ptx=1036c4cb4539a80c predce.ptx=1036c4cb4539a80c ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_mlp_128_c fs.ptx=1221e92e2d3f0ea4 predce.ptx=1221e92e2d3f0ea4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp_128 fs.ptx=c80d3917b344852c predce.ptx=c80d3917b344852c ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128_c fs.ptx=71cdc1637fee8ad5 predce.ptx=71cdc1637fee8ad5 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128 fs.ptx=82e17206fe8f2992 predce.ptx=82e17206fe8f2992 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128_c fs.ptx=8ac24d1d0dc0a9f1 predce.ptx=8ac24d1d0dc0a9f1 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128 fs.ptx=113d43dd80daedf4 predce.ptx=113d43dd80daedf4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+shipped pt_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_diamond_1024 pre-vs-head host.ll identical
+shipped pt_diamond_512_c pre-vs-head host.ll identical
+shipped pt_diamond_512 pre-vs-head host.ll identical
+shipped pt_indep_1024_c pre-vs-head host.ll identical
+shipped pt_indep_1024 pre-vs-head host.ll identical
+shipped pt_indep_512_c pre-vs-head host.ll identical
+shipped pt_indep_512 pre-vs-head host.ll identical
+shipped pt_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_mlp_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024 pre-vs-head host.ll identical
+shipped pt_rq_diamond_512_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_512 pre-vs-head host.ll identical
+shipped pt_rq_indep_1024_c pre-vs-head host.ll identical
+shipped pt_rq_indep_1024 pre-vs-head host.ll identical
+shipped pt_rq_indep_512_c pre-vs-head host.ll identical
+shipped pt_rq_indep_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_twin_1024_c pre-vs-head host.ll identical
+shipped pt_rq_twin_1024 pre-vs-head host.ll identical
+shipped pt_rq_twin_2048_c pre-vs-head host.ll identical
+shipped pt_rq_twin_2048 pre-vs-head host.ll identical
+shipped pt_rq_twin_512_c pre-vs-head host.ll identical
+shipped pt_rq_twin_512 pre-vs-head host.ll identical
+shipped pt_twin_1024_c pre-vs-head host.ll identical
+shipped pt_twin_1024 pre-vs-head host.ll identical
+shipped pt_twin_2048_c pre-vs-head host.ll identical
+shipped pt_twin_2048 pre-vs-head host.ll identical
+shipped pt_twin_512_c pre-vs-head host.ll identical
+shipped pt_twin_512 pre-vs-head host.ll identical
+shipped px_diamond_128_c pre-vs-head host.ll identical
+shipped px_diamond_128_tf pre-vs-head host.ll identical
+shipped px_diamond_128 pre-vs-head host.ll identical
+shipped px_fan_128_c pre-vs-head host.ll identical
+shipped px_fan_128 pre-vs-head host.ll identical
+shipped px_indep_128_c pre-vs-head host.ll identical
+shipped px_indep_128_tf pre-vs-head host.ll identical
+shipped px_indep_128 pre-vs-head host.ll identical
+shipped px_mlp_128_c pre-vs-head host.ll identical
+shipped px_mlp_128_tf pre-vs-head host.ll identical
+shipped px_mlp_128 pre-vs-head host.ll identical
+shipped px_mlp2_128_c pre-vs-head host.ll identical
+shipped px_mlp2_128_tf pre-vs-head host.ll identical
+shipped px_mlp2_128 pre-vs-head host.ll identical
+shipped px_twin_128_c pre-vs-head host.ll identical
+shipped px_twin_128 pre-vs-head host.ll identical
+## h100-pcie
+pt_diamond_1024_c fs.ptx=10e6ca5d56d4fcd7 predce.ptx=10e6ca5d56d4fcd7 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_1024 fs.ptx=7b92581f92acec63 predce.ptx=7b92581f92acec63 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512_c fs.ptx=89caff53180369b8 predce.ptx=89caff53180369b8 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512 fs.ptx=2c03b7f9d77f9add predce.ptx=2c03b7f9d77f9add ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024_c fs.ptx=57985403ba8736b6 predce.ptx=57985403ba8736b6 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024 fs.ptx=40675f88aa3b3986 predce.ptx=40675f88aa3b3986 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512_c fs.ptx=34e2212c1ef18cde predce.ptx=34e2212c1ef18cde ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512 fs.ptx=260c13cea3fc891b predce.ptx=260c13cea3fc891b ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp_1024_c fs.ptx=64b5a306a6080514 predce.ptx=64b5a306a6080514 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp_1024 fs.ptx=26480f641fcb9d33 predce.ptx=26480f641fcb9d33 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp2_1024_c fs.ptx=a82618850449a4cf predce.ptx=a82618850449a4cf ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_1024 fs.ptx=57fe409eb2bed198 predce.ptx=57fe409eb2bed198 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048_c fs.ptx=f91129dc6e015152 predce.ptx=f91129dc6e015152 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048 fs.ptx=da42071f6342cd21 predce.ptx=da42071f6342cd21 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512_c fs.ptx=80586b4624379635 predce.ptx=80586b4624379635 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512 fs.ptx=30811b869b27ae49 predce.ptx=30811b869b27ae49 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_diamond_1024_c fs.ptx=10e6ca5d56d4fcd7 predce.ptx=10e6ca5d56d4fcd7 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_1024 fs.ptx=7b92581f92acec63 predce.ptx=7b92581f92acec63 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512_c fs.ptx=89caff53180369b8 predce.ptx=89caff53180369b8 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512 fs.ptx=2c03b7f9d77f9add predce.ptx=2c03b7f9d77f9add ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_indep_1024_c fs.ptx=57985403ba8736b6 predce.ptx=57985403ba8736b6 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_1024 fs.ptx=40675f88aa3b3986 predce.ptx=40675f88aa3b3986 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512_c fs.ptx=34e2212c1ef18cde predce.ptx=34e2212c1ef18cde ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512 fs.ptx=260c13cea3fc891b predce.ptx=260c13cea3fc891b ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp_1024_c fs.ptx=64b5a306a6080514 predce.ptx=64b5a306a6080514 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_1024 fs.ptx=26480f641fcb9d33 predce.ptx=26480f641fcb9d33 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512_c fs.ptx=fb6a9545c8a65d40 predce.ptx=fb6a9545c8a65d40 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512 fs.ptx=98a1b329ec46d652 predce.ptx=98a1b329ec46d652 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp2_1024_c fs.ptx=a82618850449a4cf predce.ptx=a82618850449a4cf ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_1024 fs.ptx=57fe409eb2bed198 predce.ptx=57fe409eb2bed198 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048_c fs.ptx=f91129dc6e015152 predce.ptx=f91129dc6e015152 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048 fs.ptx=da42071f6342cd21 predce.ptx=da42071f6342cd21 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512_c fs.ptx=80586b4624379635 predce.ptx=80586b4624379635 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512 fs.ptx=30811b869b27ae49 predce.ptx=30811b869b27ae49 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_twin_1024_c fs.ptx=69443ee0f7689443 predce.ptx=69443ee0f7689443 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_1024 fs.ptx=b3ae44f2b8cf0516 predce.ptx=b3ae44f2b8cf0516 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048_c fs.ptx=09e89365628eda0f predce.ptx=09e89365628eda0f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048 fs.ptx=d39304da9c27f18f predce.ptx=d39304da9c27f18f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512_c fs.ptx=dad72dc521cee362 predce.ptx=dad72dc521cee362 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512 fs.ptx=65ef2d98276573b2 predce.ptx=65ef2d98276573b2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024_c fs.ptx=69443ee0f7689443 predce.ptx=69443ee0f7689443 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024 fs.ptx=b3ae44f2b8cf0516 predce.ptx=b3ae44f2b8cf0516 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048_c fs.ptx=09e89365628eda0f predce.ptx=09e89365628eda0f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048 fs.ptx=d39304da9c27f18f predce.ptx=d39304da9c27f18f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512_c fs.ptx=dad72dc521cee362 predce.ptx=dad72dc521cee362 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512 fs.ptx=65ef2d98276573b2 predce.ptx=65ef2d98276573b2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_diamond_128_c fs.ptx=5298a819c1954f18 predce.ptx=5298a819c1954f18 ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_diamond_128 fs.ptx=d8d9b68594a7d775 predce.ptx=d8d9b68594a7d775 ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_fan_128_c fs.ptx=176303899de23b83 predce.ptx=176303899de23b83 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_fan_128 fs.ptx=ea54074fbea88621 predce.ptx=ea54074fbea88621 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_indep_128_c fs.ptx=c337e831b3ea6936 predce.ptx=c337e831b3ea6936 ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_indep_128 fs.ptx=871487294c2fa146 predce.ptx=871487294c2fa146 ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_mlp_128_c fs.ptx=7a99303ab1625b34 predce.ptx=7a99303ab1625b34 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp_128 fs.ptx=037197a3969e4099 predce.ptx=037197a3969e4099 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128_c fs.ptx=d884db2ff4218a2c predce.ptx=d884db2ff4218a2c ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128 fs.ptx=9d22b93765adcfa2 predce.ptx=9d22b93765adcfa2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128_c fs.ptx=176303899de23b83 predce.ptx=176303899de23b83 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128 fs.ptx=ea54074fbea88621 predce.ptx=ea54074fbea88621 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+shipped pt_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_diamond_1024 pre-vs-head host.ll identical
+shipped pt_diamond_512_c pre-vs-head host.ll identical
+shipped pt_diamond_512 pre-vs-head host.ll identical
+shipped pt_indep_1024_c pre-vs-head host.ll identical
+shipped pt_indep_1024 pre-vs-head host.ll identical
+shipped pt_indep_512_c pre-vs-head host.ll identical
+shipped pt_indep_512 pre-vs-head host.ll identical
+shipped pt_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_mlp_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024 pre-vs-head host.ll identical
+shipped pt_rq_diamond_512_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_512 pre-vs-head host.ll identical
+shipped pt_rq_indep_1024_c pre-vs-head host.ll identical
+shipped pt_rq_indep_1024 pre-vs-head host.ll identical
+shipped pt_rq_indep_512_c pre-vs-head host.ll identical
+shipped pt_rq_indep_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_twin_1024_c pre-vs-head host.ll identical
+shipped pt_rq_twin_1024 pre-vs-head host.ll identical
+shipped pt_rq_twin_2048_c pre-vs-head host.ll identical
+shipped pt_rq_twin_2048 pre-vs-head host.ll identical
+shipped pt_rq_twin_512_c pre-vs-head host.ll identical
+shipped pt_rq_twin_512 pre-vs-head host.ll identical
+shipped pt_twin_1024_c pre-vs-head host.ll identical
+shipped pt_twin_1024 pre-vs-head host.ll identical
+shipped pt_twin_2048_c pre-vs-head host.ll identical
+shipped pt_twin_2048 pre-vs-head host.ll identical
+shipped pt_twin_512_c pre-vs-head host.ll identical
+shipped pt_twin_512 pre-vs-head host.ll identical
+shipped px_diamond_128_c pre-vs-head host.ll identical
+shipped px_diamond_128_tf pre-vs-head host.ll identical
+shipped px_diamond_128 pre-vs-head host.ll identical
+shipped px_fan_128_c pre-vs-head host.ll identical
+shipped px_fan_128 pre-vs-head host.ll identical
+shipped px_indep_128_c pre-vs-head host.ll identical
+shipped px_indep_128_tf pre-vs-head host.ll identical
+shipped px_indep_128 pre-vs-head host.ll identical
+shipped px_mlp_128_c pre-vs-head host.ll identical
+shipped px_mlp_128_tf pre-vs-head host.ll identical
+shipped px_mlp_128 pre-vs-head host.ll identical
+shipped px_mlp2_128_c pre-vs-head host.ll identical
+shipped px_mlp2_128_tf pre-vs-head host.ll identical
+shipped px_mlp2_128 pre-vs-head host.ll identical
+shipped px_twin_128_c pre-vs-head host.ll identical
+shipped px_twin_128 pre-vs-head host.ll identical
+## rtx-3090
+pt_diamond_1024_c fs.ptx=0818769a78cdd313 predce.ptx=0818769a78cdd313 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_1024 fs.ptx=cbee617438c6f35a predce.ptx=cbee617438c6f35a ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512_c fs.ptx=0359d399da77cf6c predce.ptx=0359d399da77cf6c ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_diamond_512 fs.ptx=7d1d812f0e1c0eac predce.ptx=7d1d812f0e1c0eac ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024_c fs.ptx=24bde0858046f0c8 predce.ptx=24bde0858046f0c8 ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_1024 fs.ptx=490e3d8f44a8fc2a predce.ptx=490e3d8f44a8fc2a ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512_c fs.ptx=d99c56ce320e912b predce.ptx=d99c56ce320e912b ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_indep_512 fs.ptx=0f939078f44db7cf predce.ptx=0f939078f44db7cf ptx-equal host.o=differ host.ll_diff_lines=181 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp_1024_c fs.ptx=4c465b47448125b4 predce.ptx=4c465b47448125b4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp_1024 fs.ptx=3ef5a694ce059380 predce.ptx=3ef5a694ce059380 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_mlp2_1024_c fs.ptx=22882ac637b95392 predce.ptx=22882ac637b95392 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_1024 fs.ptx=a77173f8509994dc predce.ptx=a77173f8509994dc ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048_c fs.ptx=241248b0a1ccfa36 predce.ptx=241248b0a1ccfa36 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_2048 fs.ptx=97168e4fc4b37d11 predce.ptx=97168e4fc4b37d11 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512_c fs.ptx=342c0d031e42e20a predce.ptx=342c0d031e42e20a ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_mlp2_512 fs.ptx=7f1aa8f1dca49f74 predce.ptx=7f1aa8f1dca49f74 ptx-equal host.o=differ host.ll_diff_lines=332 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 20 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_diamond_1024_c fs.ptx=0818769a78cdd313 predce.ptx=0818769a78cdd313 ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_1024 fs.ptx=cbee617438c6f35a predce.ptx=cbee617438c6f35a ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512_c fs.ptx=0359d399da77cf6c predce.ptx=0359d399da77cf6c ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_diamond_512 fs.ptx=7d1d812f0e1c0eac predce.ptx=7d1d812f0e1c0eac ptx-equal host.o=differ host.ll_diff_lines=207 calls: 7 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv; 2 @mapal_gpu_sync; 2 @mapal_time_ms;
+pt_rq_indep_1024_c fs.ptx=24bde0858046f0c8 predce.ptx=24bde0858046f0c8 ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_1024 fs.ptx=490e3d8f44a8fc2a predce.ptx=490e3d8f44a8fc2a ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512_c fs.ptx=d99c56ce320e912b predce.ptx=d99c56ce320e912b ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_indep_512 fs.ptx=0f939078f44db7cf predce.ptx=0f939078f44db7cf ptx-equal host.o=differ host.ll_diff_lines=175 calls: 5 @mapal_gpu_alloc; 4 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp_1024_c fs.ptx=4c465b47448125b4 predce.ptx=4c465b47448125b4 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_1024 fs.ptx=3ef5a694ce059380 predce.ptx=3ef5a694ce059380 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512_c fs.ptx=466ca52583b8bd00 predce.ptx=466ca52583b8bd00 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp_512 fs.ptx=1faddaea3d251d42 predce.ptx=1faddaea3d251d42 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_mlp2_1024_c fs.ptx=22882ac637b95392 predce.ptx=22882ac637b95392 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_1024 fs.ptx=a77173f8509994dc predce.ptx=a77173f8509994dc ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048_c fs.ptx=241248b0a1ccfa36 predce.ptx=241248b0a1ccfa36 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_2048 fs.ptx=97168e4fc4b37d11 predce.ptx=97168e4fc4b37d11 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512_c fs.ptx=342c0d031e42e20a predce.ptx=342c0d031e42e20a ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_mlp2_512 fs.ptx=7f1aa8f1dca49f74 predce.ptx=7f1aa8f1dca49f74 ptx-equal host.o=differ host.ll_diff_lines=330 calls: 10 @mapal_gpu_alloc; 8 @mapal_gpu_d2h_on; 18 @mapal_gpu_free; 8 @mapal_gpu_launchv; 2 @mapal_time_ms;
+pt_rq_twin_1024_c fs.ptx=20a409f232013d2c predce.ptx=20a409f232013d2c ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_1024 fs.ptx=e6b51e6af01e19a2 predce.ptx=e6b51e6af01e19a2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048_c fs.ptx=444312bdaddcf994 predce.ptx=444312bdaddcf994 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_2048 fs.ptx=7b523ea43ee35aef predce.ptx=7b523ea43ee35aef ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512_c fs.ptx=27cfc7260b2ead7f predce.ptx=27cfc7260b2ead7f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_rq_twin_512 fs.ptx=e714698bde09a089 predce.ptx=e714698bde09a089 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024_c fs.ptx=20a409f232013d2c predce.ptx=20a409f232013d2c ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_1024 fs.ptx=e6b51e6af01e19a2 predce.ptx=e6b51e6af01e19a2 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048_c fs.ptx=444312bdaddcf994 predce.ptx=444312bdaddcf994 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_2048 fs.ptx=7b523ea43ee35aef predce.ptx=7b523ea43ee35aef ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512_c fs.ptx=27cfc7260b2ead7f predce.ptx=27cfc7260b2ead7f ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+pt_twin_512 fs.ptx=e714698bde09a089 predce.ptx=e714698bde09a089 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_diamond_128_c fs.ptx=9d7d305d13e4ee5a predce.ptx=9d7d305d13e4ee5a ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_diamond_128 fs.ptx=6cfe9954fe51edaa predce.ptx=6cfe9954fe51edaa ptx-equal host.o=differ host.ll_diff_lines=221 calls: 7 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 6 @mapal_gpu_launchv;
+px_fan_128_c fs.ptx=1b871c139f90ce7e predce.ptx=1b871c139f90ce7e ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_fan_128 fs.ptx=3b2fdd637154dcb8 predce.ptx=3b2fdd637154dcb8 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_indep_128_c fs.ptx=fab3fa1d2260033b predce.ptx=fab3fa1d2260033b ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_indep_128 fs.ptx=3fc430145541ba41 predce.ptx=3fc430145541ba41 ptx-equal host.o=differ host.ll_diff_lines=195 calls: 5 @mapal_gpu_alloc; 2 @mapal_gpu_d2h_on; 8 @mapal_gpu_free; 4 @mapal_gpu_launchv;
+px_mlp_128_c fs.ptx=4c2d6e71868c8bcb predce.ptx=4c2d6e71868c8bcb ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp_128 fs.ptx=951381522c728c99 predce.ptx=951381522c728c99 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128_c fs.ptx=9a4b4df0c851e888 predce.ptx=9a4b4df0c851e888 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_mlp2_128 fs.ptx=df4be353c5c2e5bb predce.ptx=df4be353c5c2e5bb ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128_c fs.ptx=1b871c139f90ce7e predce.ptx=1b871c139f90ce7e ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+px_twin_128 fs.ptx=3b2fdd637154dcb8 predce.ptx=3b2fdd637154dcb8 ptx-equal host.o=same host.ll_diff_lines=0 calls:none
+shipped pt_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_diamond_1024 pre-vs-head host.ll identical
+shipped pt_diamond_512_c pre-vs-head host.ll identical
+shipped pt_diamond_512 pre-vs-head host.ll identical
+shipped pt_indep_1024_c pre-vs-head host.ll identical
+shipped pt_indep_1024 pre-vs-head host.ll identical
+shipped pt_indep_512_c pre-vs-head host.ll identical
+shipped pt_indep_512 pre-vs-head host.ll identical
+shipped pt_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_mlp_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_1024 pre-vs-head host.ll identical
+shipped pt_rq_diamond_512_c pre-vs-head host.ll identical
+shipped pt_rq_diamond_512 pre-vs-head host.ll identical
+shipped pt_rq_indep_1024_c pre-vs-head host.ll identical
+shipped pt_rq_indep_1024 pre-vs-head host.ll identical
+shipped pt_rq_indep_512_c pre-vs-head host.ll identical
+shipped pt_rq_indep_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp_512 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_1024 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_2048 pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512_c pre-vs-head host.ll identical
+shipped pt_rq_mlp2_512 pre-vs-head host.ll identical
+shipped pt_rq_twin_1024_c pre-vs-head host.ll identical
+shipped pt_rq_twin_1024 pre-vs-head host.ll identical
+shipped pt_rq_twin_2048_c pre-vs-head host.ll identical
+shipped pt_rq_twin_2048 pre-vs-head host.ll identical
+shipped pt_rq_twin_512_c pre-vs-head host.ll identical
+shipped pt_rq_twin_512 pre-vs-head host.ll identical
+shipped pt_twin_1024_c pre-vs-head host.ll identical
+shipped pt_twin_1024 pre-vs-head host.ll identical
+shipped pt_twin_2048_c pre-vs-head host.ll identical
+shipped pt_twin_2048 pre-vs-head host.ll identical
+shipped pt_twin_512_c pre-vs-head host.ll identical
+shipped pt_twin_512 pre-vs-head host.ll identical
+shipped px_diamond_128_c pre-vs-head host.ll identical
+shipped px_diamond_128_tf pre-vs-head host.ll identical
+shipped px_diamond_128 pre-vs-head host.ll identical
+shipped px_fan_128_c pre-vs-head host.ll identical
+shipped px_fan_128 pre-vs-head host.ll identical
+shipped px_indep_128_c pre-vs-head host.ll identical
+shipped px_indep_128_tf pre-vs-head host.ll identical
+shipped px_indep_128 pre-vs-head host.ll identical
+shipped px_mlp_128_c pre-vs-head host.ll identical
+shipped px_mlp_128_tf pre-vs-head host.ll identical
+shipped px_mlp_128 pre-vs-head host.ll identical
+shipped px_mlp2_128_c pre-vs-head host.ll identical
+shipped px_mlp2_128_tf pre-vs-head host.ll identical
+shipped px_mlp2_128 pre-vs-head host.ll identical
+shipped px_twin_128_c pre-vs-head host.ll identical
+shipped px_twin_128 pre-vs-head host.ll identical
