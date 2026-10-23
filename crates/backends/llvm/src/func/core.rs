@@ -53,6 +53,11 @@ impl<'a> FnEmit<'a> {
             runtime_write: false,
             perf_timing: false,
             tile_plan: tiling.then(|| ir.tile_plan(f)),
+            device: if tiling {
+                gpu::placement(ir, f, &ir.tile_plan(f), profile)
+            } else {
+                SecondaryMap::new()
+            },
             // Only `Deduce` consults it, so `Off` and `Force` do not pay for
             // the scan — and `Off` is provably the same work it was before S45.
             move_sites: matches!(move_panel, MovePanel::Deduce)
@@ -83,6 +88,14 @@ impl<'a> FnEmit<'a> {
         }
     }
 
+    /// The site writing `target` runs on the device (S62 `place`).
+    pub(super) fn on_device(&self, target: ObjectId) -> bool {
+        self.ir
+            .in_edges(target)
+            .first()
+            .is_some_and(|&m| self.device.contains_key(m))
+    }
+
     /// S54 `streams`: device sites read independence off the path plan; the
     /// host itself stays sequential on a GPU profile.
     pub(crate) fn set_path_plan(&mut self, plan: Option<&'a PathPlan>) {
@@ -94,7 +107,9 @@ impl<'a> FnEmit<'a> {
         self.reduced = reduced;
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
-            self.tile_plan = Some(super::gpu::tile_plan(self.ir, self.f, self.profile, rungs));
+            let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, rungs);
+            self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile);
+            self.tile_plan = Some(plan);
             self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
         }
         // A function with a retained site stays resident under

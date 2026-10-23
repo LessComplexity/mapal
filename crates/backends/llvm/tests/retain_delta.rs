@@ -120,6 +120,7 @@ fn lower(src: &str) -> CategoryIr {
 /// `lane-stride` off, so `s = q·Kᵀ` stays the host map S53 measured.
 fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<String>) {
     let mut opts = EmitOpts {
+        host: "generic",
         target,
         ..EmitOpts::default()
     };
@@ -127,6 +128,10 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
     opts.gpu.off.retain_delta = !on;
     opts.gpu.off.resident = true;
     opts.gpu.off.lane_stride = true;
+    // The S53 mechanism on the S52-S54 host: with S62 `hostopt`, a GPU build
+    // with no device site (the all-int decode) is the CPU build, which never
+    // retains.
+    opts.gpu.off.hostopt = true;
     let em = emit_detailed(ir, &opts).expect("emits");
     (em.text, em.device)
 }
@@ -136,6 +141,7 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
 /// off), then the measurement arms `off`, on `face`.
 fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     let mut opts = EmitOpts {
+        host: "generic",
         target: "rtx-4090",
         contract,
         ..EmitOpts::default()
@@ -235,6 +241,7 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
         emit_detailed(
             &ir,
             &EmitOpts {
+                host: "generic",
                 target: "rtx-4090",
                 gpu,
                 ..EmitOpts::default()
@@ -364,6 +371,7 @@ fn lane_stride_places_q_kt_on_the_device() {
     let int_ir = lower(&decode(16, 8, "i32", false));
     let int = |off: &[&str]| {
         let mut opts = EmitOpts {
+            host: "generic",
             target: "rtx-4090",
             ..EmitOpts::default()
         };
@@ -581,6 +589,7 @@ fn resident_path_matches_the_oracle_emulated() {
     let cpu = emit_detailed(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
             contract: true,
             ..EmitOpts::default()

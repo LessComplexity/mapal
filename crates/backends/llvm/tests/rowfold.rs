@@ -129,6 +129,7 @@ fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
         *gpu.off.rung(r).expect("a rung") = true;
     }
     let opts = EmitOpts {
+        host: "generic",
         target: "rtx-4090",
         gpu,
         contract,

@@ -28,6 +28,7 @@ fn device(target: &'static str, contract: bool, reduced: Option<Reduced>, gpu: G
     let ir = mapal_lower::lower(MM_1024, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}"));
     let ir = mapal_rewrite::rewrite(ir).ir;
     let opts = EmitOpts {
+        host: "generic",
         target,
         contract,
         reduced,

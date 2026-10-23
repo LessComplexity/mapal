@@ -1,0 +1,5 @@
+[18:19:40 h100-pcie] instance 57282035 from offer 36346709
+[18:20:25 h100-pcie] ssh <box> up
+[18:21:19 h100-pcie] bundle uploaded
+[19:12:53 h100-pcie] results fetched: 4271 lines
+[19:12:54 h100-pcie] destroyed 57282035

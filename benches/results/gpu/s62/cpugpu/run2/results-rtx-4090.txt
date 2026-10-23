@@ -1,0 +1,1175 @@
+== rtx-4090 sm_89 2026-10-22T23:16:00Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA GeForce RTX 4090, 580.159.03, 3105 MHz, 210 MHz, 350.00 W, 37, Enabled
+lscpu: CPU(s):                                  128
+lscpu: Model name:                              AMD EPYC 7452 32-Core Processor
+lscpu: Thread(s) per core:                      2
+lscpu: Core(s) per socket:                      32
+lscpu: Socket(s):                               2
+lscpu: CPU max MHz:                             2350.0000
+lscpu: L1d cache:                               2 MiB (64 instances)
+lscpu: L2 cache:                                32 MiB (64 instances)
+lscpu: L3 cache:                                256 MiB (16 instances)
+cpu_flags  128 avx2 128 fma  nproc=128
+cache index0 size=32K line=64 sets=64 shared=0,64
+cache index2 size=512K line=64 sets=1024 shared=0,64
+-- differential (GPU stdout vs oracle)
+PASS px_pm_128_32 10096.358 -11.958847 116.658714 -46.712894 
+PASS px_pm_128_32.off-hostopt 10096.358 -11.958847 116.658714 -46.712894 
+PASS px_pm_128_32.off-place 10096.358 -11.958847 116.658714 -46.712894 
+PASS px_pm_128_32_c 10096.356 -11.96004 116.65851 -46.713123 
+PASS px_pm_128_32_c.off-hostopt 10096.356 -11.96004 116.65851 -46.713123 
+PASS px_pm_128_32_c.off-place 10096.356 -11.96004 116.65851 -46.713123 
+PASS px_pm_128_32_tf 10092.595 -9.098267 116.506905 -46.675106 
+PASS px_pm_128_32_tf.off-epilogue 10092.595 -9.098267 116.506905 -46.675106 
+differential: 8 pass, 0 fail
+traps: 0 pass, 0 fail
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals
+copy_rate mb=64 reps=10 h2d_pageable_ms=7.109 h2d_pageable_gbps=9.44 h2d_pinned_ms=3.593 h2d_pinned_gbps=18.68 d2h_pageable_ms=8.592 d2h_pageable_gbps=7.81 d2h_pinned_ms=4.061 d2h_pinned_gbps=16.53
+-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)
+value-gate prog=pt_pc_32 arms=12 pass
+probe prog=pt_pc_32 face=_exact arm=on rep=1 wall_us=14002 out=[10096.358 -11.958847 iter ms=0.12228599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=1 wall_us=13441 out=[10096.358 -11.958847 iter ms=0.19212500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=1 wall_us=13772 out=[10096.358 -11.958847 iter ms=0.061778000000000007 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=1 wall_us=9199 out=[10096.358 -11.958847 iter ms=0.11060700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=1 wall_us=359301 out=[10096.358 -11.958847 iter ms=0.050709 ] mapal_gpu_trace_total flags=1 load_ms=238.616 lead_ms=0.130 init_ms=100.598 ctx_ms=137.504 module_ms=0.362 alloc_ms=0.502 h2d_ms=0.000 kernel_ms=0.031 gen_ms=0.101 d2h_ms=0.087 free_ms=0.243 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_exact arm=off-hostopt rep=1 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.010 e29a548c2f396acd ms=0.009 
+probe prog=pt_pc_32 face=_exact arm=off-place rep=1 wall_us=365920 out=[10096.358 -11.958847 iter ms=0.053299 ] mapal_gpu_trace_total flags=1 load_ms=242.239 lead_ms=0.135 init_ms=102.419 ctx_ms=139.312 module_ms=0.361 alloc_ms=0.383 h2d_ms=0.000 kernel_ms=0.028 gen_ms=0.097 d2h_ms=0.068 free_ms=0.193 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_exact arm=off-place rep=1 e29a548c2f396acd ms=0.010 e29a548c2f396acd ms=0.010 e29a548c2f396acd ms=0.008 
+probe prog=pt_pc_32 face=_c arm=on rep=1 wall_us=13510 out=[10096.356 -11.96004 iter ms=0.168985 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=1 wall_us=11658 out=[10096.356 -11.96004 iter ms=0.155156 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=1 wall_us=10885 out=[10096.356 -11.96004 iter ms=0.034699 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=1 wall_us=9179 out=[10096.356 -11.96004 iter ms=0.159745 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=1 wall_us=343294 out=[10096.356 -11.96004 iter ms=0.09309699999999999 ] mapal_gpu_trace_total flags=1 load_ms=236.784 lead_ms=0.122 init_ms=96.350 ctx_ms=139.928 module_ms=0.353 alloc_ms=0.519 h2d_ms=0.000 kernel_ms=0.028 gen_ms=0.099 d2h_ms=0.079 free_ms=0.243 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_c arm=off-hostopt rep=1 7dd4bd5ced3193a0 ms=0.011 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.009 
+probe prog=pt_pc_32 face=_c arm=off-place rep=1 wall_us=360536 out=[10096.356 -11.96004 iter ms=0.078867 ] mapal_gpu_trace_total flags=1 load_ms=240.954 lead_ms=0.137 init_ms=98.008 ctx_ms=142.478 module_ms=0.325 alloc_ms=0.402 h2d_ms=0.000 kernel_ms=0.029 gen_ms=0.098 d2h_ms=0.076 free_ms=0.254 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_c arm=off-place rep=1 7dd4bd5ced3193a0 ms=0.011 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.009 
+probe prog=pt_pc_32 face=_c arm=off-place rep=2 wall_us=365127 out=[10096.356 -11.96004 iter ms=0.090427 ] mapal_gpu_trace_total flags=1 load_ms=237.440 lead_ms=0.125 init_ms=99.017 ctx_ms=137.932 module_ms=0.344 alloc_ms=0.441 h2d_ms=0.000 kernel_ms=0.030 gen_ms=0.104 d2h_ms=0.079 free_ms=0.235 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_c arm=off-place rep=2 7dd4bd5ced3193a0 ms=0.012 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.009 
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=2 wall_us=359137 out=[10096.356 -11.96004 iter ms=0.09543700000000001 ] mapal_gpu_trace_total flags=1 load_ms=248.939 lead_ms=0.133 init_ms=104.230 ctx_ms=144.198 module_ms=0.358 alloc_ms=0.431 h2d_ms=0.000 kernel_ms=0.028 gen_ms=0.065 d2h_ms=0.065 free_ms=0.232 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_c arm=off-hostopt rep=2 7dd4bd5ced3193a0 ms=0.010 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.008 
+probe prog=pt_pc_32 face=_c arm=null rep=2 wall_us=11192 out=[10096.356 -11.96004 iter ms=0.13349599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=2 wall_us=13779 out=[10096.356 -11.96004 iter ms=0.047867999999999994 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=2 wall_us=10178 out=[10096.356 -11.96004 iter ms=0.117956 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=2 wall_us=12286 out=[10096.356 -11.96004 iter ms=0.139525 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=2 wall_us=356714 out=[10096.358 -11.958847 iter ms=0.05304899999999999 ] mapal_gpu_trace_total flags=1 load_ms=249.032 lead_ms=0.172 init_ms=101.044 ctx_ms=147.490 module_ms=0.338 alloc_ms=0.501 h2d_ms=0.000 kernel_ms=0.032 gen_ms=0.087 d2h_ms=0.095 free_ms=0.271 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_exact arm=off-place rep=2 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.010 
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=2 wall_us=367059 out=[10096.358 -11.958847 iter ms=0.061918 ] mapal_gpu_trace_total flags=1 load_ms=231.636 lead_ms=0.143 init_ms=91.541 ctx_ms=139.624 module_ms=0.325 alloc_ms=0.411 h2d_ms=0.000 kernel_ms=0.033 gen_ms=0.096 d2h_ms=0.086 free_ms=0.247 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_32 face=_exact arm=off-hostopt rep=2 e29a548c2f396acd ms=0.012 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.010 
+probe prog=pt_pc_32 face=_exact arm=null rep=2 wall_us=14775 out=[10096.358 -11.958847 iter ms=0.12007699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=2 wall_us=10658 out=[10096.358 -11.958847 iter ms=0.035989 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=2 wall_us=12022 out=[10096.358 -11.958847 iter ms=0.17998499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=2 wall_us=11951 out=[10096.358 -11.958847 iter ms=0.150746 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=3 wall_us=10182 out=[10096.358 -11.958847 iter ms=0.135396 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=3 wall_us=9887 out=[10096.358 -11.958847 iter ms=0.13116599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=3 wall_us=10472 out=[10096.358 -11.958847 iter ms=0.034609 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=3 wall_us=9372 out=[10096.358 -11.958847 iter ms=0.123656 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=3 wall_us=353774 out=[10096.358 -11.958847 iter ms=0.057358 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=3 wall_us=363187 out=[10096.358 -11.958847 iter ms=0.055118 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=3 wall_us=13413 out=[10096.356 -11.96004 iter ms=0.18710399999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=3 wall_us=9880 out=[10096.356 -11.96004 iter ms=0.138126 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=3 wall_us=12078 out=[10096.356 -11.96004 iter ms=0.054409 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=3 wall_us=10014 out=[10096.356 -11.96004 iter ms=0.146955 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=3 wall_us=362054 out=[10096.356 -11.96004 iter ms=0.091097 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=3 wall_us=360430 out=[10096.356 -11.96004 iter ms=0.082808 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=4 wall_us=369426 out=[10096.356 -11.96004 iter ms=0.080468 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=4 wall_us=362957 out=[10096.356 -11.96004 iter ms=0.09292700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=4 wall_us=14272 out=[10096.356 -11.96004 iter ms=0.205084 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=4 wall_us=14588 out=[10096.356 -11.96004 iter ms=0.049749 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=4 wall_us=12725 out=[10096.356 -11.96004 iter ms=0.156415 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=4 wall_us=13567 out=[10096.356 -11.96004 iter ms=0.175885 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=4 wall_us=364781 out=[10096.358 -11.958847 iter ms=0.053649 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=4 wall_us=363264 out=[10096.358 -11.958847 iter ms=0.054429000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=4 wall_us=13954 out=[10096.358 -11.958847 iter ms=0.146866 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=4 wall_us=10308 out=[10096.358 -11.958847 iter ms=0.036159000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=4 wall_us=13283 out=[10096.358 -11.958847 iter ms=0.151855 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=4 wall_us=13467 out=[10096.358 -11.958847 iter ms=0.153705 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=5 wall_us=11294 out=[10096.358 -11.958847 iter ms=0.180485 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=5 wall_us=12118 out=[10096.358 -11.958847 iter ms=0.147485 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=5 wall_us=12226 out=[10096.358 -11.958847 iter ms=0.063178 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=5 wall_us=10193 out=[10096.358 -11.958847 iter ms=0.136166 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=5 wall_us=362360 out=[10096.358 -11.958847 iter ms=0.049208999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=5 wall_us=361392 out=[10096.358 -11.958847 iter ms=0.053508 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=5 wall_us=13319 out=[10096.356 -11.96004 iter ms=0.195154 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=5 wall_us=10648 out=[10096.356 -11.96004 iter ms=0.128366 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=5 wall_us=14425 out=[10096.356 -11.96004 iter ms=0.054999000000000006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=5 wall_us=9955 out=[10096.356 -11.96004 iter ms=0.12659600000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=5 wall_us=360282 out=[10096.356 -11.96004 iter ms=0.097017 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=5 wall_us=370773 out=[10096.356 -11.96004 iter ms=0.083428 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=6 wall_us=364281 out=[10096.356 -11.96004 iter ms=0.084398 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=6 wall_us=371616 out=[10096.356 -11.96004 iter ms=0.085688 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=6 wall_us=15851 out=[10096.356 -11.96004 iter ms=0.154685 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=6 wall_us=14076 out=[10096.356 -11.96004 iter ms=0.052458000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=6 wall_us=13588 out=[10096.356 -11.96004 iter ms=0.150475 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=6 wall_us=13000 out=[10096.356 -11.96004 iter ms=0.14344500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=6 wall_us=362979 out=[10096.358 -11.958847 iter ms=0.052657999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=6 wall_us=366730 out=[10096.358 -11.958847 iter ms=0.057298 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=6 wall_us=13703 out=[10096.358 -11.958847 iter ms=0.17502399999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=6 wall_us=12888 out=[10096.358 -11.958847 iter ms=0.061189 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=6 wall_us=12816 out=[10096.358 -11.958847 iter ms=0.16888499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=6 wall_us=10995 out=[10096.358 -11.958847 iter ms=0.148195 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=7 wall_us=13010 out=[10096.358 -11.958847 iter ms=0.180935 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=7 wall_us=10747 out=[10096.358 -11.958847 iter ms=0.13930599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=7 wall_us=11774 out=[10096.358 -11.958847 iter ms=0.055148 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=7 wall_us=9766 out=[10096.358 -11.958847 iter ms=0.13121600000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=7 wall_us=359989 out=[10096.358 -11.958847 iter ms=0.05259899999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=7 wall_us=357407 out=[10096.358 -11.958847 iter ms=0.053368 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=7 wall_us=14714 out=[10096.356 -11.96004 iter ms=0.165525 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=7 wall_us=14562 out=[10096.356 -11.96004 iter ms=0.148536 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=7 wall_us=14617 out=[10096.356 -11.96004 iter ms=0.063438 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=7 wall_us=13940 out=[10096.356 -11.96004 iter ms=0.15259499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=7 wall_us=366125 out=[10096.356 -11.96004 iter ms=0.103107 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=7 wall_us=366536 out=[10096.356 -11.96004 iter ms=0.084847 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=8 wall_us=366232 out=[10096.356 -11.96004 iter ms=0.089437 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=8 wall_us=341628 out=[10096.356 -11.96004 iter ms=0.08615800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=8 wall_us=13767 out=[10096.356 -11.96004 iter ms=0.150026 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=8 wall_us=13540 out=[10096.356 -11.96004 iter ms=0.052648 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=8 wall_us=10308 out=[10096.356 -11.96004 iter ms=0.146916 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=8 wall_us=10263 out=[10096.356 -11.96004 iter ms=0.14372599999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=8 wall_us=363425 out=[10096.358 -11.958847 iter ms=0.046858000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=8 wall_us=358573 out=[10096.358 -11.958847 iter ms=0.062548 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=8 wall_us=12113 out=[10096.358 -11.958847 iter ms=0.14779599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=8 wall_us=14724 out=[10096.358 -11.958847 iter ms=0.049458 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=8 wall_us=10305 out=[10096.358 -11.958847 iter ms=0.15371600000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=8 wall_us=12093 out=[10096.358 -11.958847 iter ms=0.17480500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=9 wall_us=13224 out=[10096.358 -11.958847 iter ms=0.142016 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=9 wall_us=12584 out=[10096.358 -11.958847 iter ms=0.17080499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=9 wall_us=10149 out=[10096.358 -11.958847 iter ms=0.037108 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=9 wall_us=11238 out=[10096.358 -11.958847 iter ms=0.147486 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=9 wall_us=343116 out=[10096.358 -11.958847 iter ms=0.051478 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=9 wall_us=353468 out=[10096.358 -11.958847 iter ms=0.052938 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=9 wall_us=14289 out=[10096.356 -11.96004 iter ms=0.16599499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=9 wall_us=14087 out=[10096.356 -11.96004 iter ms=0.172845 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=9 wall_us=12748 out=[10096.356 -11.96004 iter ms=0.056878 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=9 wall_us=11645 out=[10096.356 -11.96004 iter ms=0.15651600000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=9 wall_us=363045 out=[10096.356 -11.96004 iter ms=0.08803699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=9 wall_us=365423 out=[10096.356 -11.96004 iter ms=0.082147 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=10 wall_us=363236 out=[10096.356 -11.96004 iter ms=0.09440699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=10 wall_us=365070 out=[10096.356 -11.96004 iter ms=0.10180600000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=10 wall_us=13734 out=[10096.356 -11.96004 iter ms=0.150006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=10 wall_us=10941 out=[10096.356 -11.96004 iter ms=0.035229 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=10 wall_us=10329 out=[10096.356 -11.96004 iter ms=0.212614 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=10 wall_us=12441 out=[10096.356 -11.96004 iter ms=0.172675 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=10 wall_us=324894 out=[10096.358 -11.958847 iter ms=0.038308999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=10 wall_us=344906 out=[10096.358 -11.958847 iter ms=0.055769 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=10 wall_us=13522 out=[10096.358 -11.958847 iter ms=0.14809599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=10 wall_us=12679 out=[10096.358 -11.958847 iter ms=0.053947999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=10 wall_us=11468 out=[10096.358 -11.958847 iter ms=0.18265499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=10 wall_us=12680 out=[10096.358 -11.958847 iter ms=0.18326499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=11 wall_us=10266 out=[10096.358 -11.958847 iter ms=0.112197 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=11 wall_us=9029 out=[10096.358 -11.958847 iter ms=0.159095 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=11 wall_us=10957 out=[10096.358 -11.958847 iter ms=0.035979000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=11 wall_us=10199 out=[10096.358 -11.958847 iter ms=0.12332699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=11 wall_us=352587 out=[10096.358 -11.958847 iter ms=0.051919 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=11 wall_us=367141 out=[10096.358 -11.958847 iter ms=0.053808 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=11 wall_us=13170 out=[10096.356 -11.96004 iter ms=0.22811299999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=11 wall_us=12294 out=[10096.356 -11.96004 iter ms=0.17291399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=11 wall_us=10536 out=[10096.356 -11.96004 iter ms=0.032829000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=11 wall_us=12889 out=[10096.356 -11.96004 iter ms=0.140806 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=11 wall_us=364271 out=[10096.356 -11.96004 iter ms=0.083027 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=11 wall_us=363916 out=[10096.356 -11.96004 iter ms=0.09461800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=12 wall_us=375277 out=[10096.356 -11.96004 iter ms=0.09930800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=12 wall_us=372248 out=[10096.356 -11.96004 iter ms=0.08116799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=12 wall_us=14230 out=[10096.356 -11.96004 iter ms=0.15630499999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=12 wall_us=14026 out=[10096.356 -11.96004 iter ms=0.054308 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=12 wall_us=10401 out=[10096.356 -11.96004 iter ms=0.136676 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=12 wall_us=11524 out=[10096.356 -11.96004 iter ms=0.16524599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=12 wall_us=355503 out=[10096.358 -11.958847 iter ms=0.050698999999999994 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=12 wall_us=370659 out=[10096.358 -11.958847 iter ms=0.050117999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=12 wall_us=13493 out=[10096.358 -11.958847 iter ms=0.150475 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=12 wall_us=14396 out=[10096.358 -11.958847 iter ms=0.049957999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=12 wall_us=13933 out=[10096.358 -11.958847 iter ms=0.175674 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=12 wall_us=12380 out=[10096.358 -11.958847 iter ms=0.142306 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=13 wall_us=13209 out=[10096.358 -11.958847 iter ms=0.188024 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=13 wall_us=12269 out=[10096.358 -11.958847 iter ms=0.189934 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=13 wall_us=13165 out=[10096.358 -11.958847 iter ms=0.071578 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=13 wall_us=13111 out=[10096.358 -11.958847 iter ms=0.140236 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=13 wall_us=367000 out=[10096.358 -11.958847 iter ms=0.057759 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=13 wall_us=414907 out=[10096.358 -11.958847 iter ms=0.054668999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=13 wall_us=13546 out=[10096.356 -11.96004 iter ms=0.152425 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=13 wall_us=10393 out=[10096.356 -11.96004 iter ms=0.151025 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=13 wall_us=9788 out=[10096.356 -11.96004 iter ms=0.037969 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=13 wall_us=9718 out=[10096.356 -11.96004 iter ms=0.123356 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=13 wall_us=373646 out=[10096.356 -11.96004 iter ms=0.114896 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=13 wall_us=363962 out=[10096.356 -11.96004 iter ms=0.08078800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=14 wall_us=368112 out=[10096.356 -11.96004 iter ms=0.08263799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=14 wall_us=365084 out=[10096.356 -11.96004 iter ms=0.091317 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=14 wall_us=13213 out=[10096.356 -11.96004 iter ms=0.178615 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=14 wall_us=12830 out=[10096.356 -11.96004 iter ms=0.045398999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=14 wall_us=12126 out=[10096.356 -11.96004 iter ms=0.154106 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=14 wall_us=13238 out=[10096.356 -11.96004 iter ms=0.181894 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=14 wall_us=360920 out=[10096.358 -11.958847 iter ms=0.048669 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=14 wall_us=367417 out=[10096.358 -11.958847 iter ms=0.047598 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=14 wall_us=13758 out=[10096.358 -11.958847 iter ms=0.156736 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=14 wall_us=10504 out=[10096.358 -11.958847 iter ms=0.038418999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=14 wall_us=13139 out=[10096.358 -11.958847 iter ms=0.144006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=14 wall_us=13684 out=[10096.358 -11.958847 iter ms=0.131606 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=15 wall_us=12425 out=[10096.358 -11.958847 iter ms=0.143436 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=15 wall_us=13820 out=[10096.358 -11.958847 iter ms=0.15129599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=15 wall_us=9952 out=[10096.358 -11.958847 iter ms=0.03610900000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=15 wall_us=12917 out=[10096.358 -11.958847 iter ms=0.172545 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=15 wall_us=364436 out=[10096.358 -11.958847 iter ms=0.056078 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=15 wall_us=373565 out=[10096.358 -11.958847 iter ms=0.050589 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=15 wall_us=13358 out=[10096.356 -11.96004 iter ms=0.173915 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=15 wall_us=14126 out=[10096.356 -11.96004 iter ms=0.209454 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=15 wall_us=14533 out=[10096.356 -11.96004 iter ms=0.067168 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=15 wall_us=11992 out=[10096.356 -11.96004 iter ms=0.164935 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=15 wall_us=363039 out=[10096.356 -11.96004 iter ms=0.081988 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=15 wall_us=344391 out=[10096.356 -11.96004 iter ms=0.10084699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=16 wall_us=365327 out=[10096.356 -11.96004 iter ms=0.082138 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=16 wall_us=368256 out=[10096.356 -11.96004 iter ms=0.086157 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=16 wall_us=13506 out=[10096.356 -11.96004 iter ms=0.166275 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=16 wall_us=11214 out=[10096.356 -11.96004 iter ms=0.040938 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=16 wall_us=13007 out=[10096.356 -11.96004 iter ms=0.14699500000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=16 wall_us=11121 out=[10096.356 -11.96004 iter ms=0.20627399999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=16 wall_us=354910 out=[10096.358 -11.958847 iter ms=0.051619 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=16 wall_us=375958 out=[10096.358 -11.958847 iter ms=0.055718 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=16 wall_us=12961 out=[10096.358 -11.958847 iter ms=0.17643500000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=16 wall_us=13284 out=[10096.358 -11.958847 iter ms=0.067408 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=16 wall_us=14010 out=[10096.358 -11.958847 iter ms=0.12880599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=16 wall_us=11694 out=[10096.358 -11.958847 iter ms=0.207474 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=17 wall_us=10259 out=[10096.358 -11.958847 iter ms=0.178105 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=17 wall_us=11421 out=[10096.358 -11.958847 iter ms=0.21326399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=17 wall_us=9619 out=[10096.358 -11.958847 iter ms=0.037229000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=17 wall_us=9518 out=[10096.358 -11.958847 iter ms=0.120727 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=17 wall_us=360759 out=[10096.358 -11.958847 iter ms=0.048589 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=17 wall_us=370493 out=[10096.358 -11.958847 iter ms=0.053238 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=17 wall_us=11869 out=[10096.356 -11.96004 iter ms=0.13538599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=17 wall_us=14410 out=[10096.356 -11.96004 iter ms=0.14889600000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=17 wall_us=14345 out=[10096.356 -11.96004 iter ms=0.047749 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=17 wall_us=12465 out=[10096.356 -11.96004 iter ms=0.177845 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=17 wall_us=368353 out=[10096.356 -11.96004 iter ms=0.080217 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=17 wall_us=368643 out=[10096.356 -11.96004 iter ms=0.086478 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=18 wall_us=369778 out=[10096.356 -11.96004 iter ms=0.08280699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=18 wall_us=367267 out=[10096.356 -11.96004 iter ms=0.096238 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=18 wall_us=12339 out=[10096.356 -11.96004 iter ms=0.181675 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=18 wall_us=13831 out=[10096.356 -11.96004 iter ms=0.051369000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=18 wall_us=11569 out=[10096.356 -11.96004 iter ms=0.136176 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=18 wall_us=9535 out=[10096.356 -11.96004 iter ms=0.133316 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=18 wall_us=364482 out=[10096.358 -11.958847 iter ms=0.051418 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=18 wall_us=359628 out=[10096.358 -11.958847 iter ms=0.05780799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=18 wall_us=13938 out=[10096.358 -11.958847 iter ms=0.151666 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=18 wall_us=14118 out=[10096.358 -11.958847 iter ms=0.056437999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=18 wall_us=12114 out=[10096.358 -11.958847 iter ms=0.196714 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=18 wall_us=13390 out=[10096.358 -11.958847 iter ms=0.144306 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=19 wall_us=13365 out=[10096.358 -11.958847 iter ms=0.16806500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=19 wall_us=9950 out=[10096.358 -11.958847 iter ms=0.112896 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=19 wall_us=11701 out=[10096.358 -11.958847 iter ms=0.035619000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=19 wall_us=10290 out=[10096.358 -11.958847 iter ms=0.136565 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=19 wall_us=360526 out=[10096.358 -11.958847 iter ms=0.047437999999999994 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=19 wall_us=359875 out=[10096.358 -11.958847 iter ms=0.05221800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=19 wall_us=12225 out=[10096.356 -11.96004 iter ms=0.18080500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=19 wall_us=10702 out=[10096.356 -11.96004 iter ms=0.13668600000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=19 wall_us=14535 out=[10096.356 -11.96004 iter ms=0.052728 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=19 wall_us=12835 out=[10096.356 -11.96004 iter ms=0.162395 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=19 wall_us=365509 out=[10096.356 -11.96004 iter ms=0.09164699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=19 wall_us=421093 out=[10096.356 -11.96004 iter ms=0.08428700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=20 wall_us=437918 out=[10096.356 -11.96004 iter ms=0.096017 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=20 wall_us=441848 out=[10096.356 -11.96004 iter ms=0.083788 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=20 wall_us=13576 out=[10096.356 -11.96004 iter ms=0.147886 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=20 wall_us=11798 out=[10096.356 -11.96004 iter ms=0.042658 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=20 wall_us=10468 out=[10096.356 -11.96004 iter ms=0.123246 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=20 wall_us=10959 out=[10096.356 -11.96004 iter ms=0.18132500000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=20 wall_us=362209 out=[10096.358 -11.958847 iter ms=0.055708 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=20 wall_us=365337 out=[10096.358 -11.958847 iter ms=0.054348 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=20 wall_us=14592 out=[10096.358 -11.958847 iter ms=0.21628399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=20 wall_us=11331 out=[10096.358 -11.958847 iter ms=0.03469 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=20 wall_us=12652 out=[10096.358 -11.958847 iter ms=0.15114600000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=20 wall_us=14074 out=[10096.358 -11.958847 iter ms=0.196094 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=21 wall_us=11331 out=[10096.358 -11.958847 iter ms=0.125117 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=21 wall_us=13062 out=[10096.358 -11.958847 iter ms=0.17958400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=21 wall_us=13602 out=[10096.358 -11.958847 iter ms=0.054759 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=21 wall_us=12429 out=[10096.358 -11.958847 iter ms=0.135065 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=21 wall_us=360924 out=[10096.358 -11.958847 iter ms=0.057538 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=21 wall_us=369117 out=[10096.358 -11.958847 iter ms=0.052629 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=21 wall_us=13085 out=[10096.356 -11.96004 iter ms=0.229383 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=21 wall_us=10250 out=[10096.356 -11.96004 iter ms=0.139866 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=21 wall_us=13377 out=[10096.356 -11.96004 iter ms=0.054848 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=21 wall_us=10991 out=[10096.356 -11.96004 iter ms=0.100657 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=21 wall_us=366029 out=[10096.356 -11.96004 iter ms=0.092037 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=21 wall_us=360102 out=[10096.356 -11.96004 iter ms=0.097427 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=22 wall_us=368791 out=[10096.356 -11.96004 iter ms=0.097458 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=22 wall_us=371181 out=[10096.356 -11.96004 iter ms=0.10201700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=22 wall_us=13274 out=[10096.356 -11.96004 iter ms=0.153695 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=22 wall_us=10202 out=[10096.356 -11.96004 iter ms=0.09780699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=22 wall_us=12468 out=[10096.356 -11.96004 iter ms=0.15693500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=22 wall_us=10680 out=[10096.356 -11.96004 iter ms=0.127727 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=22 wall_us=364798 out=[10096.358 -11.958847 iter ms=0.061048000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=22 wall_us=361862 out=[10096.358 -11.958847 iter ms=0.052678 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=22 wall_us=11077 out=[10096.358 -11.958847 iter ms=0.13594599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=22 wall_us=13270 out=[10096.358 -11.958847 iter ms=0.058108 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=22 wall_us=12909 out=[10096.358 -11.958847 iter ms=0.146035 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=22 wall_us=14273 out=[10096.358 -11.958847 iter ms=0.174845 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=23 wall_us=14174 out=[10096.358 -11.958847 iter ms=0.147506 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=23 wall_us=11788 out=[10096.358 -11.958847 iter ms=0.153366 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=23 wall_us=10731 out=[10096.358 -11.958847 iter ms=0.038628 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=23 wall_us=13204 out=[10096.358 -11.958847 iter ms=0.19133399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=23 wall_us=354918 out=[10096.358 -11.958847 iter ms=0.06634699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=23 wall_us=346850 out=[10096.358 -11.958847 iter ms=0.040979 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=23 wall_us=13961 out=[10096.356 -11.96004 iter ms=0.207514 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=23 wall_us=14925 out=[10096.356 -11.96004 iter ms=0.15230600000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=23 wall_us=10374 out=[10096.356 -11.96004 iter ms=0.04860799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=23 wall_us=13204 out=[10096.356 -11.96004 iter ms=0.15492599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=23 wall_us=363367 out=[10096.356 -11.96004 iter ms=0.090357 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=23 wall_us=370069 out=[10096.356 -11.96004 iter ms=0.097957 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=24 wall_us=371613 out=[10096.356 -11.96004 iter ms=0.08731799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=24 wall_us=370356 out=[10096.356 -11.96004 iter ms=0.096347 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=24 wall_us=14152 out=[10096.356 -11.96004 iter ms=0.18664499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=24 wall_us=11575 out=[10096.356 -11.96004 iter ms=0.034589 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=24 wall_us=13339 out=[10096.356 -11.96004 iter ms=0.20055399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=24 wall_us=9829 out=[10096.356 -11.96004 iter ms=0.165425 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=24 wall_us=346546 out=[10096.358 -11.958847 iter ms=0.06717799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=24 wall_us=373404 out=[10096.358 -11.958847 iter ms=0.052538999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=24 wall_us=10825 out=[10096.358 -11.958847 iter ms=0.17829499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=24 wall_us=14487 out=[10096.358 -11.958847 iter ms=0.053398 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=24 wall_us=11302 out=[10096.358 -11.958847 iter ms=0.142616 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=24 wall_us=11321 out=[10096.358 -11.958847 iter ms=0.11431600000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=25 wall_us=10313 out=[10096.358 -11.958847 iter ms=0.123236 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=25 wall_us=9432 out=[10096.358 -11.958847 iter ms=0.11024699999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=25 wall_us=10701 out=[10096.358 -11.958847 iter ms=0.037059 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=25 wall_us=9261 out=[10096.358 -11.958847 iter ms=0.13543599999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=25 wall_us=363394 out=[10096.358 -11.958847 iter ms=0.057479 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=25 wall_us=368816 out=[10096.358 -11.958847 iter ms=0.057207999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=25 wall_us=11600 out=[10096.356 -11.96004 iter ms=0.132487 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=25 wall_us=14661 out=[10096.356 -11.96004 iter ms=0.171015 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=25 wall_us=13956 out=[10096.356 -11.96004 iter ms=0.054218 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=25 wall_us=9655 out=[10096.356 -11.96004 iter ms=0.13847600000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=25 wall_us=367590 out=[10096.356 -11.96004 iter ms=0.084328 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=25 wall_us=369685 out=[10096.356 -11.96004 iter ms=0.08555700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=26 wall_us=363761 out=[10096.356 -11.96004 iter ms=0.085477 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=26 wall_us=366956 out=[10096.356 -11.96004 iter ms=0.08817699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=26 wall_us=12978 out=[10096.356 -11.96004 iter ms=0.140986 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=26 wall_us=13858 out=[10096.356 -11.96004 iter ms=0.050668000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=26 wall_us=11412 out=[10096.356 -11.96004 iter ms=0.122337 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=26 wall_us=9824 out=[10096.356 -11.96004 iter ms=0.160696 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=26 wall_us=357899 out=[10096.358 -11.958847 iter ms=0.056239000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=26 wall_us=364512 out=[10096.358 -11.958847 iter ms=0.047309000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=26 wall_us=12300 out=[10096.358 -11.958847 iter ms=0.19548500000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=26 wall_us=13710 out=[10096.358 -11.958847 iter ms=0.053979 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=26 wall_us=10793 out=[10096.358 -11.958847 iter ms=0.130756 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=26 wall_us=9332 out=[10096.358 -11.958847 iter ms=0.17829499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=27 wall_us=12799 out=[10096.358 -11.958847 iter ms=0.15491600000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=27 wall_us=12977 out=[10096.358 -11.958847 iter ms=0.149065 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=27 wall_us=9293 out=[10096.358 -11.958847 iter ms=0.039449 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=27 wall_us=12809 out=[10096.358 -11.958847 iter ms=0.173385 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=27 wall_us=360052 out=[10096.358 -11.958847 iter ms=0.06276799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=27 wall_us=359764 out=[10096.358 -11.958847 iter ms=0.051688000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=27 wall_us=14029 out=[10096.356 -11.96004 iter ms=0.19562400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=27 wall_us=13939 out=[10096.356 -11.96004 iter ms=0.203403 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=27 wall_us=12523 out=[10096.356 -11.96004 iter ms=0.054819 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=27 wall_us=11169 out=[10096.356 -11.96004 iter ms=0.12483599999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=27 wall_us=359177 out=[10096.356 -11.96004 iter ms=0.095697 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=27 wall_us=348345 out=[10096.356 -11.96004 iter ms=0.09007699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=28 wall_us=366380 out=[10096.356 -11.96004 iter ms=0.08298699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=28 wall_us=363441 out=[10096.356 -11.96004 iter ms=0.085698 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=28 wall_us=12290 out=[10096.356 -11.96004 iter ms=0.20021399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=28 wall_us=13056 out=[10096.356 -11.96004 iter ms=0.05477799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=28 wall_us=11789 out=[10096.356 -11.96004 iter ms=0.158286 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=28 wall_us=12990 out=[10096.356 -11.96004 iter ms=0.132065 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=28 wall_us=361809 out=[10096.358 -11.958847 iter ms=0.051639000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=28 wall_us=365996 out=[10096.358 -11.958847 iter ms=0.049379 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=28 wall_us=11128 out=[10096.358 -11.958847 iter ms=0.125066 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=28 wall_us=13732 out=[10096.358 -11.958847 iter ms=0.060629 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=28 wall_us=12018 out=[10096.358 -11.958847 iter ms=0.18279399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=28 wall_us=13355 out=[10096.358 -11.958847 iter ms=0.173635 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=29 wall_us=12836 out=[10096.358 -11.958847 iter ms=0.161445 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=29 wall_us=12015 out=[10096.358 -11.958847 iter ms=0.14318599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=29 wall_us=11868 out=[10096.358 -11.958847 iter ms=0.053158000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=29 wall_us=12102 out=[10096.358 -11.958847 iter ms=0.143966 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=29 wall_us=367786 out=[10096.358 -11.958847 iter ms=0.055268000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=29 wall_us=373956 out=[10096.358 -11.958847 iter ms=0.052768 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=29 wall_us=13091 out=[10096.356 -11.96004 iter ms=0.18595499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=29 wall_us=13482 out=[10096.356 -11.96004 iter ms=0.151506 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=29 wall_us=13258 out=[10096.356 -11.96004 iter ms=0.052389000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=29 wall_us=9587 out=[10096.356 -11.96004 iter ms=0.125946 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=29 wall_us=358794 out=[10096.356 -11.96004 iter ms=0.093997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=29 wall_us=372154 out=[10096.356 -11.96004 iter ms=0.080828 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-place rep=30 wall_us=372022 out=[10096.356 -11.96004 iter ms=0.08556700000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=off-hostopt rep=30 wall_us=370112 out=[10096.356 -11.96004 iter ms=0.095897 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=null rep=30 wall_us=14444 out=[10096.356 -11.96004 iter ms=0.187714 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu-inline rep=30 wall_us=11800 out=[10096.356 -11.96004 iter ms=0.046848 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=cpu rep=30 wall_us=12151 out=[10096.356 -11.96004 iter ms=0.20668399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_c arm=on rep=30 wall_us=11019 out=[10096.356 -11.96004 iter ms=0.176445 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-place rep=30 wall_us=363666 out=[10096.358 -11.958847 iter ms=0.05056800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=off-hostopt rep=30 wall_us=369156 out=[10096.358 -11.958847 iter ms=0.056038 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=null rep=30 wall_us=14238 out=[10096.358 -11.958847 iter ms=0.15145599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu-inline rep=30 wall_us=12023 out=[10096.358 -11.958847 iter ms=0.034089 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=cpu rep=30 wall_us=14480 out=[10096.358 -11.958847 iter ms=0.163635 ]  rc=0 trace_rc=0
+probe prog=pt_pc_32 face=_exact arm=on rep=30 wall_us=9923 out=[10096.358 -11.958847 iter ms=0.138456 ]  rc=0 trace_rc=0
+unknown probe pc
+device name="NVIDIA GeForce RTX 4090" cc=8.9
+value-gate prog=pt_pc_64 arms=8 pass
+probe prog=pt_pc_64 face=_exact arm=on rep=1 wall_us=372076 out=[150836.63 -6193.1846 iter ms=0.062598 ] mapal_gpu_trace_total flags=1 load_ms=241.562 lead_ms=0.094 init_ms=96.885 ctx_ms=144.194 module_ms=0.336 alloc_ms=0.510 h2d_ms=0.000 kernel_ms=0.033 gen_ms=0.102 d2h_ms=0.090 free_ms=0.197 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_exact arm=on rep=1 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.011 
+probe prog=pt_pc_64 face=_exact arm=cpu rep=1 wall_us=14622 out=[150836.63 -6193.1846 iter ms=0.374199 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=1 wall_us=13140 out=[150836.63 -6193.1846 iter ms=0.181204 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=1 wall_us=371194 out=[150836.63 -6193.1846 iter ms=0.054299 ] mapal_gpu_trace_total flags=1 load_ms=247.530 lead_ms=0.146 init_ms=101.853 ctx_ms=145.214 module_ms=0.322 alloc_ms=0.458 h2d_ms=0.000 kernel_ms=0.033 gen_ms=0.096 d2h_ms=0.101 free_ms=0.236 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_exact arm=null rep=1 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.011 
+probe prog=pt_pc_64 face=_c arm=on rep=1 wall_us=369937 out=[150836.63 -6193.181 iter ms=0.10043700000000001 ] mapal_gpu_trace_total flags=1 load_ms=244.609 lead_ms=0.133 init_ms=97.806 ctx_ms=146.250 module_ms=0.395 alloc_ms=0.436 h2d_ms=0.000 kernel_ms=0.031 gen_ms=0.099 d2h_ms=0.072 free_ms=0.255 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_c arm=on rep=1 f384338081ec23eb ms=0.011 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.010 
+probe prog=pt_pc_64 face=_c arm=cpu rep=1 wall_us=14720 out=[150836.63 -6193.181 iter ms=0.32193 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=1 wall_us=13316 out=[150836.63 -6193.181 iter ms=0.20724399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=1 wall_us=363838 out=[150836.63 -6193.181 iter ms=0.110337 ] mapal_gpu_trace_total flags=1 load_ms=243.447 lead_ms=0.123 init_ms=101.213 ctx_ms=141.725 module_ms=0.369 alloc_ms=0.465 h2d_ms=0.000 kernel_ms=0.032 gen_ms=0.092 d2h_ms=0.072 free_ms=0.242 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_c arm=null rep=1 f384338081ec23eb ms=0.012 f384338081ec23eb ms=0.010 f384338081ec23eb ms=0.010 
+probe prog=pt_pc_64 face=_c arm=null rep=2 wall_us=360892 out=[150836.63 -6193.181 iter ms=0.12118699999999999 ] mapal_gpu_trace_total flags=1 load_ms=246.211 lead_ms=0.132 init_ms=102.068 ctx_ms=143.623 module_ms=0.372 alloc_ms=0.436 h2d_ms=0.000 kernel_ms=0.030 gen_ms=0.098 d2h_ms=0.070 free_ms=0.237 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_c arm=null rep=2 f384338081ec23eb ms=0.011 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.010 
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=2 wall_us=13460 out=[150836.63 -6193.181 iter ms=0.277852 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=2 wall_us=13171 out=[150836.63 -6193.181 iter ms=0.384519 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=2 wall_us=353928 out=[150836.63 -6193.181 iter ms=0.111217 ] mapal_gpu_trace_total flags=1 load_ms=237.724 lead_ms=0.108 init_ms=96.395 ctx_ms=140.800 module_ms=0.409 alloc_ms=0.446 h2d_ms=0.000 kernel_ms=0.026 gen_ms=0.085 d2h_ms=0.057 free_ms=0.185 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_c arm=on rep=2 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.008 f384338081ec23eb ms=0.008 
+probe prog=pt_pc_64 face=_exact arm=null rep=2 wall_us=372251 out=[150836.63 -6193.1846 iter ms=0.048719 ] mapal_gpu_trace_total flags=1 load_ms=242.022 lead_ms=0.135 init_ms=99.121 ctx_ms=142.152 module_ms=0.370 alloc_ms=0.410 h2d_ms=0.000 kernel_ms=0.034 gen_ms=0.097 d2h_ms=0.078 free_ms=0.239 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_exact arm=null rep=2 740b670a8e31f514 ms=0.013 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.010 
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=2 wall_us=14487 out=[150836.63 -6193.1846 iter ms=0.19383499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=2 wall_us=12235 out=[150836.63 -6193.1846 iter ms=0.36812900000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=2 wall_us=359545 out=[150836.63 -6193.1846 iter ms=0.057018 ] mapal_gpu_trace_total flags=1 load_ms=251.123 lead_ms=0.133 init_ms=110.234 ctx_ms=140.371 module_ms=0.370 alloc_ms=0.492 h2d_ms=0.000 kernel_ms=0.034 gen_ms=0.079 d2h_ms=0.088 free_ms=0.236 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pc_64 face=_exact arm=on rep=2 740b670a8e31f514 ms=0.012 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.011 
+probe prog=pt_pc_64 face=_exact arm=on rep=3 wall_us=360271 out=[150836.63 -6193.1846 iter ms=0.057968 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=3 wall_us=14053 out=[150836.63 -6193.1846 iter ms=0.384908 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=3 wall_us=11603 out=[150836.63 -6193.1846 iter ms=0.12338700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=3 wall_us=353751 out=[150836.63 -6193.1846 iter ms=0.041478 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=3 wall_us=376481 out=[150836.63 -6193.181 iter ms=0.099047 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=3 wall_us=11212 out=[150836.63 -6193.181 iter ms=0.33352 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=3 wall_us=11662 out=[150836.63 -6193.181 iter ms=0.157195 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=3 wall_us=361624 out=[150836.63 -6193.181 iter ms=0.10079699999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=4 wall_us=368620 out=[150836.63 -6193.181 iter ms=0.097197 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=4 wall_us=13776 out=[150836.63 -6193.181 iter ms=0.19670400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=4 wall_us=11002 out=[150836.63 -6193.181 iter ms=0.315271 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=4 wall_us=355995 out=[150836.63 -6193.181 iter ms=0.102387 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=4 wall_us=370357 out=[150836.63 -6193.1846 iter ms=0.052498 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=4 wall_us=13522 out=[150836.63 -6193.1846 iter ms=0.18849400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=4 wall_us=12473 out=[150836.63 -6193.1846 iter ms=0.37659899999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=4 wall_us=373378 out=[150836.63 -6193.1846 iter ms=0.06454800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=5 wall_us=369527 out=[150836.63 -6193.1846 iter ms=0.055318000000000006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=5 wall_us=14341 out=[150836.63 -6193.1846 iter ms=0.407738 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=5 wall_us=13567 out=[150836.63 -6193.1846 iter ms=0.19118399999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=5 wall_us=369831 out=[150836.63 -6193.1846 iter ms=0.048098 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=5 wall_us=365922 out=[150836.63 -6193.181 iter ms=0.119986 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=5 wall_us=11880 out=[150836.63 -6193.181 iter ms=0.405108 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=5 wall_us=9653 out=[150836.63 -6193.181 iter ms=0.148816 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=5 wall_us=345581 out=[150836.63 -6193.181 iter ms=0.09919700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=6 wall_us=371007 out=[150836.63 -6193.181 iter ms=0.123176 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=6 wall_us=14401 out=[150836.63 -6193.181 iter ms=0.21566400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=6 wall_us=13217 out=[150836.63 -6193.181 iter ms=0.31615 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=6 wall_us=363699 out=[150836.63 -6193.181 iter ms=0.098137 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=6 wall_us=368084 out=[150836.63 -6193.1846 iter ms=0.058478 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=6 wall_us=14498 out=[150836.63 -6193.1846 iter ms=0.222963 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=6 wall_us=9496 out=[150836.63 -6193.1846 iter ms=0.34354 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=6 wall_us=363892 out=[150836.63 -6193.1846 iter ms=0.047899 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=7 wall_us=360979 out=[150836.63 -6193.1846 iter ms=0.051798000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=7 wall_us=13795 out=[150836.63 -6193.1846 iter ms=0.371789 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=7 wall_us=13787 out=[150836.63 -6193.1846 iter ms=0.19017399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=7 wall_us=372194 out=[150836.63 -6193.1846 iter ms=0.058488 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=7 wall_us=363799 out=[150836.63 -6193.181 iter ms=0.099417 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=7 wall_us=15208 out=[150836.63 -6193.181 iter ms=0.38160900000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=7 wall_us=12054 out=[150836.63 -6193.181 iter ms=0.18018399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=7 wall_us=361345 out=[150836.63 -6193.181 iter ms=0.10802800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=8 wall_us=369890 out=[150836.63 -6193.181 iter ms=0.11771599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=8 wall_us=12571 out=[150836.63 -6193.181 iter ms=0.115467 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=8 wall_us=13905 out=[150836.63 -6193.181 iter ms=0.366969 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=8 wall_us=370863 out=[150836.63 -6193.181 iter ms=0.118977 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=8 wall_us=354072 out=[150836.63 -6193.1846 iter ms=0.060638 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=8 wall_us=14966 out=[150836.63 -6193.1846 iter ms=0.206734 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=8 wall_us=14918 out=[150836.63 -6193.1846 iter ms=0.44102800000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=8 wall_us=367377 out=[150836.63 -6193.1846 iter ms=0.053778 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=9 wall_us=367322 out=[150836.63 -6193.1846 iter ms=0.060518 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=9 wall_us=14280 out=[150836.63 -6193.1846 iter ms=0.389789 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=9 wall_us=14558 out=[150836.63 -6193.1846 iter ms=0.203974 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=9 wall_us=362012 out=[150836.63 -6193.1846 iter ms=0.053478 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=9 wall_us=368463 out=[150836.63 -6193.181 iter ms=0.112336 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=9 wall_us=12975 out=[150836.63 -6193.181 iter ms=0.34795 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=9 wall_us=10519 out=[150836.63 -6193.181 iter ms=0.13706600000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=9 wall_us=367117 out=[150836.63 -6193.181 iter ms=0.105747 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=10 wall_us=366878 out=[150836.63 -6193.181 iter ms=0.105517 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=10 wall_us=14387 out=[150836.63 -6193.181 iter ms=0.182364 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=10 wall_us=14279 out=[150836.63 -6193.181 iter ms=0.34418 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=10 wall_us=374400 out=[150836.63 -6193.181 iter ms=0.103277 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=10 wall_us=367409 out=[150836.63 -6193.1846 iter ms=0.056859 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=10 wall_us=14188 out=[150836.63 -6193.1846 iter ms=0.200954 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=10 wall_us=13699 out=[150836.63 -6193.1846 iter ms=0.35259 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=10 wall_us=369488 out=[150836.63 -6193.1846 iter ms=0.058179 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=11 wall_us=366548 out=[150836.63 -6193.1846 iter ms=0.057558000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=11 wall_us=13938 out=[150836.63 -6193.1846 iter ms=0.37129900000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=11 wall_us=12921 out=[150836.63 -6193.1846 iter ms=0.181584 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=11 wall_us=367245 out=[150836.63 -6193.1846 iter ms=0.051479000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=11 wall_us=351447 out=[150836.63 -6193.181 iter ms=0.106177 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=11 wall_us=14251 out=[150836.63 -6193.181 iter ms=0.371549 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=11 wall_us=12435 out=[150836.63 -6193.181 iter ms=0.117527 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=11 wall_us=363171 out=[150836.63 -6193.181 iter ms=0.117146 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=12 wall_us=371146 out=[150836.63 -6193.181 iter ms=0.104147 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=12 wall_us=14331 out=[150836.63 -6193.181 iter ms=0.179815 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=12 wall_us=11732 out=[150836.63 -6193.181 iter ms=0.32936 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=12 wall_us=361802 out=[150836.63 -6193.181 iter ms=0.109497 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=12 wall_us=344307 out=[150836.63 -6193.1846 iter ms=0.055219 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=12 wall_us=15682 out=[150836.63 -6193.1846 iter ms=0.212564 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=12 wall_us=12057 out=[150836.63 -6193.1846 iter ms=0.325431 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=12 wall_us=364905 out=[150836.63 -6193.1846 iter ms=0.053259 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=13 wall_us=369833 out=[150836.63 -6193.1846 iter ms=0.05939799999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=13 wall_us=14252 out=[150836.63 -6193.1846 iter ms=0.35982000000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=13 wall_us=12591 out=[150836.63 -6193.1846 iter ms=0.214654 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=13 wall_us=362492 out=[150836.63 -6193.1846 iter ms=0.057297999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=13 wall_us=365041 out=[150836.63 -6193.181 iter ms=0.116037 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=13 wall_us=13817 out=[150836.63 -6193.181 iter ms=0.395349 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=13 wall_us=12936 out=[150836.63 -6193.181 iter ms=0.200704 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=13 wall_us=366077 out=[150836.63 -6193.181 iter ms=0.124506 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=14 wall_us=369205 out=[150836.63 -6193.181 iter ms=0.109497 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=14 wall_us=14041 out=[150836.63 -6193.181 iter ms=0.203734 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=14 wall_us=13232 out=[150836.63 -6193.181 iter ms=0.336 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=14 wall_us=371115 out=[150836.63 -6193.181 iter ms=0.132546 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=14 wall_us=366342 out=[150836.63 -6193.1846 iter ms=0.050149000000000006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=14 wall_us=13906 out=[150836.63 -6193.1846 iter ms=0.245312 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=14 wall_us=14145 out=[150836.63 -6193.1846 iter ms=0.416937 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=14 wall_us=358145 out=[150836.63 -6193.1846 iter ms=0.071658 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=15 wall_us=369201 out=[150836.63 -6193.1846 iter ms=0.048388999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=15 wall_us=12292 out=[150836.63 -6193.1846 iter ms=0.378759 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=15 wall_us=12140 out=[150836.63 -6193.1846 iter ms=0.128156 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=15 wall_us=415378 out=[150836.63 -6193.1846 iter ms=0.054388000000000006 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=15 wall_us=379086 out=[150836.63 -6193.181 iter ms=0.12090599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=15 wall_us=14244 out=[150836.63 -6193.181 iter ms=0.33933 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=15 wall_us=13912 out=[150836.63 -6193.181 iter ms=0.199284 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=15 wall_us=369800 out=[150836.63 -6193.181 iter ms=0.10595700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=16 wall_us=364989 out=[150836.63 -6193.181 iter ms=0.126826 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=16 wall_us=12120 out=[150836.63 -6193.181 iter ms=0.139216 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=16 wall_us=9732 out=[150836.63 -6193.181 iter ms=0.304891 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=16 wall_us=360452 out=[150836.63 -6193.181 iter ms=0.113817 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=16 wall_us=345204 out=[150836.63 -6193.1846 iter ms=0.055897999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=16 wall_us=13759 out=[150836.63 -6193.1846 iter ms=0.200263 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=16 wall_us=12459 out=[150836.63 -6193.1846 iter ms=0.34614 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=16 wall_us=409349 out=[150836.63 -6193.1846 iter ms=0.057858 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=17 wall_us=374460 out=[150836.63 -6193.1846 iter ms=0.048668 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=17 wall_us=14579 out=[150836.63 -6193.1846 iter ms=0.386329 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=17 wall_us=10607 out=[150836.63 -6193.1846 iter ms=0.195584 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=17 wall_us=369923 out=[150836.63 -6193.1846 iter ms=0.06230899999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=17 wall_us=370614 out=[150836.63 -6193.181 iter ms=0.09909699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=17 wall_us=14961 out=[150836.63 -6193.181 iter ms=0.33508 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=17 wall_us=13170 out=[150836.63 -6193.181 iter ms=0.225113 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=17 wall_us=367886 out=[150836.63 -6193.181 iter ms=0.12367700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=18 wall_us=364586 out=[150836.63 -6193.181 iter ms=0.10019700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=18 wall_us=13631 out=[150836.63 -6193.181 iter ms=0.202194 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=18 wall_us=14176 out=[150836.63 -6193.181 iter ms=0.309531 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=18 wall_us=357831 out=[150836.63 -6193.181 iter ms=0.111956 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=18 wall_us=375681 out=[150836.63 -6193.1846 iter ms=0.051399 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=18 wall_us=14914 out=[150836.63 -6193.1846 iter ms=0.230103 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=18 wall_us=10488 out=[150836.63 -6193.1846 iter ms=0.289951 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=18 wall_us=369587 out=[150836.63 -6193.1846 iter ms=0.057687999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=19 wall_us=378024 out=[150836.63 -6193.1846 iter ms=0.067318 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=19 wall_us=12809 out=[150836.63 -6193.1846 iter ms=0.382978 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=19 wall_us=13383 out=[150836.63 -6193.1846 iter ms=0.187614 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=19 wall_us=372691 out=[150836.63 -6193.1846 iter ms=0.059988 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=19 wall_us=392091 out=[150836.63 -6193.181 iter ms=0.112936 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=19 wall_us=15008 out=[150836.63 -6193.181 iter ms=0.31155 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=19 wall_us=13411 out=[150836.63 -6193.181 iter ms=0.17581500000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=19 wall_us=367949 out=[150836.63 -6193.181 iter ms=0.10660599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=20 wall_us=369921 out=[150836.63 -6193.181 iter ms=0.103737 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=20 wall_us=14669 out=[150836.63 -6193.181 iter ms=0.23104300000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=20 wall_us=10507 out=[150836.63 -6193.181 iter ms=0.286542 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=20 wall_us=385952 out=[150836.63 -6193.181 iter ms=0.10834699999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=20 wall_us=381414 out=[150836.63 -6193.1846 iter ms=0.051718 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=20 wall_us=14403 out=[150836.63 -6193.1846 iter ms=0.199944 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=20 wall_us=12171 out=[150836.63 -6193.1846 iter ms=0.40381799999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=20 wall_us=363667 out=[150836.63 -6193.1846 iter ms=0.050608 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=21 wall_us=370801 out=[150836.63 -6193.1846 iter ms=0.052459 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=21 wall_us=13021 out=[150836.63 -6193.1846 iter ms=0.469007 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=21 wall_us=15511 out=[150836.63 -6193.1846 iter ms=0.212473 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=21 wall_us=366240 out=[150836.63 -6193.1846 iter ms=0.052619 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=21 wall_us=374960 out=[150836.63 -6193.181 iter ms=0.12148700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=21 wall_us=14653 out=[150836.63 -6193.181 iter ms=0.39223800000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=21 wall_us=14270 out=[150836.63 -6193.181 iter ms=0.202234 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=21 wall_us=354912 out=[150836.63 -6193.181 iter ms=0.105597 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=22 wall_us=364115 out=[150836.63 -6193.181 iter ms=0.10714699999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=22 wall_us=16247 out=[150836.63 -6193.181 iter ms=0.197774 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=22 wall_us=14958 out=[150836.63 -6193.181 iter ms=0.368139 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=22 wall_us=377719 out=[150836.63 -6193.181 iter ms=0.11180599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=22 wall_us=360114 out=[150836.63 -6193.1846 iter ms=0.057358 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=22 wall_us=13329 out=[150836.63 -6193.1846 iter ms=0.189694 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=22 wall_us=14292 out=[150836.63 -6193.1846 iter ms=0.416088 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=22 wall_us=368727 out=[150836.63 -6193.1846 iter ms=0.063998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=23 wall_us=369195 out=[150836.63 -6193.1846 iter ms=0.052539 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=23 wall_us=13509 out=[150836.63 -6193.1846 iter ms=0.370949 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=23 wall_us=13933 out=[150836.63 -6193.1846 iter ms=0.22709400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=23 wall_us=363236 out=[150836.63 -6193.1846 iter ms=0.066627 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=23 wall_us=370816 out=[150836.63 -6193.181 iter ms=0.108817 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=23 wall_us=12889 out=[150836.63 -6193.181 iter ms=0.410148 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=23 wall_us=10924 out=[150836.63 -6193.181 iter ms=0.120806 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=23 wall_us=363954 out=[150836.63 -6193.181 iter ms=0.12181600000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=24 wall_us=349707 out=[150836.63 -6193.181 iter ms=0.115927 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=24 wall_us=14887 out=[150836.63 -6193.181 iter ms=0.191635 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=24 wall_us=12100 out=[150836.63 -6193.181 iter ms=0.40561800000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=24 wall_us=364282 out=[150836.63 -6193.181 iter ms=0.111257 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=24 wall_us=374297 out=[150836.63 -6193.1846 iter ms=0.053338 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=24 wall_us=15522 out=[150836.63 -6193.1846 iter ms=0.18763499999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=24 wall_us=13536 out=[150836.63 -6193.1846 iter ms=0.38468899999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=24 wall_us=365105 out=[150836.63 -6193.1846 iter ms=0.056577999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=25 wall_us=344494 out=[150836.63 -6193.1846 iter ms=0.060388000000000004 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=25 wall_us=15121 out=[150836.63 -6193.1846 iter ms=0.366269 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=25 wall_us=12156 out=[150836.63 -6193.1846 iter ms=0.19035400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=25 wall_us=370154 out=[150836.63 -6193.1846 iter ms=0.051418000000000005 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=25 wall_us=367038 out=[150836.63 -6193.181 iter ms=0.09929700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=25 wall_us=14748 out=[150836.63 -6193.181 iter ms=0.33398 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=25 wall_us=11366 out=[150836.63 -6193.181 iter ms=0.16336499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=25 wall_us=371622 out=[150836.63 -6193.181 iter ms=0.097507 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=26 wall_us=370046 out=[150836.63 -6193.181 iter ms=0.10511700000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=26 wall_us=14153 out=[150836.63 -6193.181 iter ms=0.181144 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=26 wall_us=15485 out=[150836.63 -6193.181 iter ms=0.381079 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=26 wall_us=371601 out=[150836.63 -6193.181 iter ms=0.099707 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=26 wall_us=367493 out=[150836.63 -6193.1846 iter ms=0.053448 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=26 wall_us=13973 out=[150836.63 -6193.1846 iter ms=0.21152400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=26 wall_us=14057 out=[150836.63 -6193.1846 iter ms=0.391669 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=26 wall_us=366898 out=[150836.63 -6193.1846 iter ms=0.056028 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=27 wall_us=368906 out=[150836.63 -6193.1846 iter ms=0.056968 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=27 wall_us=13678 out=[150836.63 -6193.1846 iter ms=0.35625999999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=27 wall_us=12489 out=[150836.63 -6193.1846 iter ms=0.23055399999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=27 wall_us=363031 out=[150836.63 -6193.1846 iter ms=0.05654800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=27 wall_us=366762 out=[150836.63 -6193.181 iter ms=0.105327 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=27 wall_us=13189 out=[150836.63 -6193.181 iter ms=0.34449 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=27 wall_us=11396 out=[150836.63 -6193.181 iter ms=0.120436 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=27 wall_us=352809 out=[150836.63 -6193.181 iter ms=0.110867 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=28 wall_us=370830 out=[150836.63 -6193.181 iter ms=0.119456 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=28 wall_us=15174 out=[150836.63 -6193.181 iter ms=0.176565 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=28 wall_us=12294 out=[150836.63 -6193.181 iter ms=0.33802 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=28 wall_us=373206 out=[150836.63 -6193.181 iter ms=0.116047 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=28 wall_us=368132 out=[150836.63 -6193.1846 iter ms=0.057838999999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=28 wall_us=14652 out=[150836.63 -6193.1846 iter ms=0.21449400000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=28 wall_us=13745 out=[150836.63 -6193.1846 iter ms=0.38457800000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=28 wall_us=369555 out=[150836.63 -6193.1846 iter ms=0.066547 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=29 wall_us=350205 out=[150836.63 -6193.1846 iter ms=0.043389 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=29 wall_us=14866 out=[150836.63 -6193.1846 iter ms=0.401648 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=29 wall_us=12002 out=[150836.63 -6193.1846 iter ms=0.15526500000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=29 wall_us=365704 out=[150836.63 -6193.1846 iter ms=0.057878 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=29 wall_us=369775 out=[150836.63 -6193.181 iter ms=0.12739599999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=29 wall_us=14174 out=[150836.63 -6193.181 iter ms=0.408028 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=29 wall_us=15074 out=[150836.63 -6193.181 iter ms=0.196364 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=29 wall_us=367731 out=[150836.63 -6193.181 iter ms=0.12258599999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=null rep=30 wall_us=359983 out=[150836.63 -6193.181 iter ms=0.09914700000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu-inline rep=30 wall_us=14910 out=[150836.63 -6193.181 iter ms=0.18806499999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=cpu rep=30 wall_us=11985 out=[150836.63 -6193.181 iter ms=0.40316799999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_c arm=on rep=30 wall_us=366423 out=[150836.63 -6193.181 iter ms=0.10076800000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=null rep=30 wall_us=353675 out=[150836.63 -6193.1846 iter ms=0.043749 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu-inline rep=30 wall_us=14248 out=[150836.63 -6193.1846 iter ms=0.211354 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=cpu rep=30 wall_us=10969 out=[150836.63 -6193.1846 iter ms=0.338531 ]  rc=0 trace_rc=0
+probe prog=pt_pc_64 face=_exact arm=on rep=30 wall_us=366158 out=[150836.63 -6193.1846 iter ms=0.051648 ]  rc=0 trace_rc=0
+unknown probe pc
+device name="NVIDIA GeForce RTX 4090" cc=8.9
+value-gate prog=pt_pm_2048_32 arms=10 pass
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=1 wall_us=373477 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2120449999999998 ] mapal_gpu_trace_total flags=1 load_ms=242.697 lead_ms=0.139 init_ms=98.520 ctx_ms=142.323 module_ms=1.712 alloc_ms=0.551 h2d_ms=0.000 kernel_ms=1.054 gen_ms=0.110 d2h_ms=0.099 free_ms=0.345 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=on rep=1 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.512 
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=1 wall_us=206830 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.787276 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=1 wall_us=365907 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2461239999999998 ] mapal_gpu_trace_total flags=1 load_ms=245.498 lead_ms=0.180 init_ms=104.629 ctx_ms=138.948 module_ms=1.792 alloc_ms=0.593 h2d_ms=0.000 kernel_ms=1.047 gen_ms=0.112 d2h_ms=0.081 free_ms=0.360 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=null rep=1 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.505 
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=1 wall_us=373338 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2323439999999999 ] mapal_gpu_trace_total flags=1 load_ms=233.253 lead_ms=0.131 init_ms=89.425 ctx_ms=141.756 module_ms=1.947 alloc_ms=0.471 h2d_ms=0.000 kernel_ms=1.079 gen_ms=0.147 d2h_ms=0.094 free_ms=0.345 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=1 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.010 e29a548c2f396acd ms=0.010 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.507 
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=1 wall_us=352085 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.183095 ] mapal_gpu_trace_total flags=1 load_ms=250.889 lead_ms=0.111 init_ms=97.962 ctx_ms=150.930 module_ms=1.875 alloc_ms=0.665 h2d_ms=0.000 kernel_ms=1.078 gen_ms=0.143 d2h_ms=0.097 free_ms=0.381 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=off-place rep=1 e29a548c2f396acd ms=0.009 e29a548c2f396acd ms=0.008 e29a548c2f396acd ms=0.008 209e0eb63d89af3c ms=0.541 04187107f6853118 ms=0.511 
+probe prog=pt_pm_2048_32 face=_c arm=on rep=1 wall_us=382045 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.734609 ] mapal_gpu_trace_total flags=1 load_ms=245.915 lead_ms=0.162 init_ms=90.463 ctx_ms=154.015 module_ms=1.300 alloc_ms=0.648 h2d_ms=0.000 kernel_ms=0.653 gen_ms=0.093 d2h_ms=0.084 free_ms=0.378 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=on rep=1 948a49efa5e16883 ms=0.332 59027ed417ac8177 ms=0.321 
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=1 wall_us=201690 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=72.862181 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=1 wall_us=365801 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7104189999999999 ] mapal_gpu_trace_total flags=1 load_ms=229.598 lead_ms=0.148 init_ms=75.937 ctx_ms=152.286 module_ms=1.240 alloc_ms=0.485 h2d_ms=0.000 kernel_ms=0.652 gen_ms=0.107 d2h_ms=0.085 free_ms=0.355 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=null rep=1 948a49efa5e16883 ms=0.332 59027ed417ac8177 ms=0.320 
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=1 wall_us=368353 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.806316 ] mapal_gpu_trace_total flags=1 load_ms=251.225 lead_ms=0.149 init_ms=98.775 ctx_ms=150.965 module_ms=1.336 alloc_ms=0.576 h2d_ms=0.000 kernel_ms=0.695 gen_ms=0.161 d2h_ms=0.093 free_ms=0.358 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=1 7dd4bd5ced3193a0 ms=0.010 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.009 948a49efa5e16883 ms=0.347 59027ed417ac8177 ms=0.320 
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=1 wall_us=393247 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.798027 ] mapal_gpu_trace_total flags=1 load_ms=253.117 lead_ms=0.144 init_ms=99.044 ctx_ms=152.406 module_ms=1.518 alloc_ms=0.515 h2d_ms=0.000 kernel_ms=0.679 gen_ms=0.154 d2h_ms=0.082 free_ms=0.357 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=off-place rep=1 7dd4bd5ced3193a0 ms=0.010 7dd4bd5ced3193a0 ms=0.008 7dd4bd5ced3193a0 ms=0.008 948a49efa5e16883 ms=0.334 59027ed417ac8177 ms=0.319 
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=2 wall_us=395953 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.837785 ] mapal_gpu_trace_total flags=1 load_ms=251.501 lead_ms=0.130 init_ms=98.446 ctx_ms=151.461 module_ms=1.436 alloc_ms=0.491 h2d_ms=0.000 kernel_ms=0.684 gen_ms=0.136 d2h_ms=0.090 free_ms=0.357 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=off-place rep=2 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.008 7dd4bd5ced3193a0 ms=0.008 948a49efa5e16883 ms=0.333 59027ed417ac8177 ms=0.325 
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=2 wall_us=389471 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8031169999999999 ] mapal_gpu_trace_total flags=1 load_ms=255.344 lead_ms=0.174 init_ms=102.963 ctx_ms=150.816 module_ms=1.408 alloc_ms=0.541 h2d_ms=0.000 kernel_ms=0.687 gen_ms=0.149 d2h_ms=0.101 free_ms=0.357 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=2 7dd4bd5ced3193a0 ms=0.011 7dd4bd5ced3193a0 ms=0.009 7dd4bd5ced3193a0 ms=0.009 948a49efa5e16883 ms=0.336 59027ed417ac8177 ms=0.321 
+probe prog=pt_pm_2048_32 face=_c arm=null rep=2 wall_us=393074 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.753068 ] mapal_gpu_trace_total flags=1 load_ms=227.126 lead_ms=0.146 init_ms=75.707 ctx_ms=150.102 module_ms=1.216 alloc_ms=0.565 h2d_ms=0.000 kernel_ms=0.652 gen_ms=0.108 d2h_ms=0.085 free_ms=0.359 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=null rep=2 948a49efa5e16883 ms=0.328 59027ed417ac8177 ms=0.324 
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=2 wall_us=202360 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=69.016054 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=2 wall_us=376109 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7462580000000001 ] mapal_gpu_trace_total flags=1 load_ms=249.846 lead_ms=0.165 init_ms=97.648 ctx_ms=150.730 module_ms=1.328 alloc_ms=0.573 h2d_ms=0.000 kernel_ms=0.652 gen_ms=0.121 d2h_ms=0.099 free_ms=0.431 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_c arm=on rep=2 948a49efa5e16883 ms=0.330 59027ed417ac8177 ms=0.323 
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=2 wall_us=364056 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.247153 ] mapal_gpu_trace_total flags=1 load_ms=254.478 lead_ms=0.120 init_ms=100.409 ctx_ms=152.063 module_ms=1.860 alloc_ms=0.414 h2d_ms=0.000 kernel_ms=1.078 gen_ms=0.148 d2h_ms=0.097 free_ms=0.362 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=off-place rep=2 e29a548c2f396acd ms=0.011 e29a548c2f396acd ms=0.008 e29a548c2f396acd ms=0.009 209e0eb63d89af3c ms=0.539 04187107f6853118 ms=0.511 
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=2 wall_us=387469 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2590139999999999 ] mapal_gpu_trace_total flags=1 load_ms=252.788 lead_ms=0.139 init_ms=99.536 ctx_ms=151.138 module_ms=1.969 alloc_ms=0.475 h2d_ms=0.000 kernel_ms=1.071 gen_ms=0.119 d2h_ms=0.089 free_ms=0.360 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=2 e29a548c2f396acd ms=0.010 e29a548c2f396acd ms=0.008 e29a548c2f396acd ms=0.008 209e0eb63d89af3c ms=0.540 04187107f6853118 ms=0.505 
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=2 wall_us=385942 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.247433 ] mapal_gpu_trace_total flags=1 load_ms=249.458 lead_ms=0.152 init_ms=96.680 ctx_ms=150.467 module_ms=1.928 alloc_ms=0.550 h2d_ms=0.000 kernel_ms=1.047 gen_ms=0.098 d2h_ms=0.057 free_ms=0.270 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=null rep=2 209e0eb63d89af3c ms=0.538 04187107f6853118 ms=0.509 
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=2 wall_us=209329 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.29389 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=2 wall_us=373959 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.213625 ] mapal_gpu_trace_total flags=1 load_ms=257.425 lead_ms=0.194 init_ms=103.419 ctx_ms=151.905 module_ms=1.960 alloc_ms=0.476 h2d_ms=0.000 kernel_ms=1.044 gen_ms=0.098 d2h_ms=0.076 free_ms=0.359 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=3 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_32 face=_exact arm=on rep=2 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.503 
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=3 wall_us=390705 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.221894 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=3 wall_us=218564 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=77.18049400000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=3 wall_us=362759 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.169506 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=3 wall_us=397357 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.278692 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=3 wall_us=386281 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.239733 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=3 wall_us=365137 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.736119 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=3 wall_us=209273 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=72.453393 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=3 wall_us=378266 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.751408 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=3 wall_us=386477 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.792957 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=3 wall_us=391168 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7967270000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=4 wall_us=390502 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8298760000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=4 wall_us=373453 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.754288 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=4 wall_us=388422 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.756047 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=4 wall_us=206486 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=67.98800500000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=4 wall_us=372181 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.739508 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=4 wall_us=379757 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.252063 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=4 wall_us=384197 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.229084 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=4 wall_us=379557 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.202925 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=4 wall_us=207134 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=67.17873800000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=4 wall_us=379782 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2185840000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=5 wall_us=386840 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.257614 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=5 wall_us=216924 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.232872 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=5 wall_us=374430 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.231093 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=5 wall_us=386833 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.237004 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=5 wall_us=389498 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2363140000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=5 wall_us=385319 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.733578 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=5 wall_us=208295 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=67.99559500000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=5 wall_us=382867 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7430670000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=5 wall_us=390748 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8063170000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=5 wall_us=367472 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.803367 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=6 wall_us=388349 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8374950000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=6 wall_us=385489 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8271160000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=6 wall_us=439831 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7382179999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=6 wall_us=216538 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=77.140866 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=6 wall_us=364592 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7419079999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=6 wall_us=389021 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.244634 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=6 wall_us=391855 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.269203 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=6 wall_us=387075 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2112640000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=6 wall_us=223925 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=75.13481399999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=6 wall_us=370944 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.231654 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=7 wall_us=386135 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.216904 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=7 wall_us=228963 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=77.776927 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=7 wall_us=373798 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2013550000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=7 wall_us=386575 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.236744 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=7 wall_us=386728 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2306540000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=7 wall_us=360522 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.745838 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=7 wall_us=220945 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=72.44396400000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=7 wall_us=376577 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7351179999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=7 wall_us=394153 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.799136 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=7 wall_us=378468 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8038259999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=8 wall_us=384192 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.790547 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=8 wall_us=372317 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8019959999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=8 wall_us=382676 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7472280000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=8 wall_us=219151 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=74.96509 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=8 wall_us=367561 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.740029 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=8 wall_us=379171 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.233883 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=8 wall_us=382263 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.235323 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=8 wall_us=375730 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.160257 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=8 wall_us=226696 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=80.169877 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=8 wall_us=380053 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2193440000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=9 wall_us=390598 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.207175 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=9 wall_us=220137 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=74.084685 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=9 wall_us=364935 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.214184 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=9 wall_us=390219 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2392640000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=9 wall_us=388628 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.254003 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=9 wall_us=386682 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.757848 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=9 wall_us=219997 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=72.341157 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=9 wall_us=385951 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.735858 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=9 wall_us=386388 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8110560000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=9 wall_us=372318 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.797577 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=10 wall_us=390581 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.811926 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=10 wall_us=384157 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.805416 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=10 wall_us=385990 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.759167 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=10 wall_us=203375 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=72.48576200000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=10 wall_us=378567 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7578570000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=10 wall_us=386316 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.245753 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=10 wall_us=371541 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2440440000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=10 wall_us=383892 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.207035 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=10 wall_us=225032 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=79.38202 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=10 wall_us=369974 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.172426 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=11 wall_us=385676 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.214045 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=11 wall_us=219496 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.293931 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=11 wall_us=380312 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.226734 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=11 wall_us=377642 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.232313 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=11 wall_us=367810 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.227804 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=11 wall_us=379149 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7428279999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=11 wall_us=204337 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=64.264043 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=11 wall_us=373682 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7539669999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=11 wall_us=386477 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8098259999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=11 wall_us=383844 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8011159999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=12 wall_us=384771 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.795577 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=12 wall_us=386854 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.809046 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=12 wall_us=393858 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.747388 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=12 wall_us=211307 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=71.343966 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=12 wall_us=375857 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7413190000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=12 wall_us=387609 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1849950000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=12 wall_us=394043 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2349629999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=12 wall_us=385344 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2102849999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=12 wall_us=214457 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=71.35733599999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=12 wall_us=364119 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.232914 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=13 wall_us=385244 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.217325 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=13 wall_us=231530 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=79.851426 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=13 wall_us=378409 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1953749999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=13 wall_us=387408 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.242984 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=13 wall_us=382401 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.236454 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=13 wall_us=383650 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.739978 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=13 wall_us=231870 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=85.573218 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=13 wall_us=380909 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.754388 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=13 wall_us=370017 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7705069999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=13 wall_us=363674 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.819396 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=14 wall_us=389185 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8115659999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=14 wall_us=384134 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.806376 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=14 wall_us=383367 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.756328 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=14 wall_us=217974 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=69.83779 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=14 wall_us=381679 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.749138 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=14 wall_us=390308 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2427640000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=14 wall_us=440241 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.228864 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=14 wall_us=384614 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.206704 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=14 wall_us=215351 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=69.921208 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=14 wall_us=382346 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.226874 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=15 wall_us=395380 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.198444 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=15 wall_us=211732 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=73.42286500000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=15 wall_us=354589 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1738350000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=15 wall_us=390323 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2398740000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=15 wall_us=381182 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2410629999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=15 wall_us=386088 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.761087 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=15 wall_us=216128 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=70.19276 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=15 wall_us=379580 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.757688 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=15 wall_us=409291 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.832516 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=15 wall_us=387415 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.829846 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=16 wall_us=390858 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.799856 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=16 wall_us=388070 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.823686 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=16 wall_us=390027 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.761927 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=16 wall_us=209146 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=65.769889 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=16 wall_us=378491 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.753278 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=16 wall_us=392354 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.230664 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=16 wall_us=388588 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2443829999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=16 wall_us=386700 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.210275 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=16 wall_us=220067 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=74.85483299999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=16 wall_us=394354 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2374230000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=17 wall_us=391899 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.202905 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=17 wall_us=218890 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=74.457385 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=17 wall_us=373217 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.233114 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=17 wall_us=373890 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2479829999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=17 wall_us=362800 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.240444 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=17 wall_us=380836 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7480880000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=17 wall_us=219837 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=74.25245100000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=17 wall_us=370016 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7383780000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=17 wall_us=394450 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.794776 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=17 wall_us=358965 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.820986 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=18 wall_us=388913 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.803797 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=18 wall_us=377117 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.794637 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=18 wall_us=390066 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.740869 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=18 wall_us=196395 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=63.784327999999995 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=18 wall_us=447931 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.748448 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=18 wall_us=456032 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.240734 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=18 wall_us=434633 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.242804 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=18 wall_us=389486 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.218494 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=18 wall_us=221244 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=78.180696 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=18 wall_us=376762 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.227404 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=19 wall_us=385330 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.256572 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=19 wall_us=217019 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=71.706705 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=19 wall_us=373283 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.230275 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=19 wall_us=370937 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2397639999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=19 wall_us=384827 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2497639999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=19 wall_us=368381 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.756108 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=19 wall_us=205383 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=74.658258 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=19 wall_us=368348 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.765118 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=19 wall_us=368529 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.808986 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=19 wall_us=352347 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.814037 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=20 wall_us=376701 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8102360000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=20 wall_us=367160 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8355950000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=20 wall_us=370191 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.740759 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=20 wall_us=204177 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=68.187009 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=20 wall_us=383460 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.768928 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=20 wall_us=372422 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2506329999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=20 wall_us=368205 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2429839999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=20 wall_us=364962 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.235354 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=20 wall_us=211451 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.94602200000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=20 wall_us=372692 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.261573 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=21 wall_us=380188 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.233264 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=21 wall_us=216765 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=77.300442 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=21 wall_us=360647 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.210005 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=21 wall_us=391277 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2281039999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=21 wall_us=367747 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2199650000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=21 wall_us=381543 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.738368 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=21 wall_us=206439 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=70.49243 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=21 wall_us=381724 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.749458 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=21 wall_us=382246 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.820956 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=21 wall_us=386412 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.801447 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=22 wall_us=376852 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7923169999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=22 wall_us=389047 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.796377 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=22 wall_us=401298 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.739059 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=22 wall_us=207099 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=66.822068 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=22 wall_us=370073 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.722589 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=22 wall_us=360939 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.169886 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=22 wall_us=382836 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.262763 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=22 wall_us=384205 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.228184 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=22 wall_us=211674 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=66.30797400000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=22 wall_us=378524 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2261440000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=23 wall_us=420539 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2222439999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=23 wall_us=227902 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=71.831021 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=23 wall_us=353732 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2023540000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=23 wall_us=368850 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1976149999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=23 wall_us=386825 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.230424 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=23 wall_us=389690 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.736079 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=23 wall_us=236047 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=74.71843700000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=23 wall_us=381307 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.740638 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=23 wall_us=373913 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8097960000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=23 wall_us=387929 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7954869999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=24 wall_us=389333 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.844175 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=24 wall_us=386325 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.805406 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=24 wall_us=385927 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7414480000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=24 wall_us=218592 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=69.25065700000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=24 wall_us=379590 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7378790000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=24 wall_us=382196 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2830419999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=24 wall_us=368192 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2307939999999997 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=24 wall_us=385294 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.252993 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=24 wall_us=226521 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=77.295591 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=24 wall_us=382508 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.207475 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=25 wall_us=385164 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.230823 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=25 wall_us=222725 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=71.752513 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=25 wall_us=379321 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.201644 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=25 wall_us=389310 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.251083 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=25 wall_us=384408 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.240104 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=25 wall_us=390732 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.756417 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=25 wall_us=212879 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=73.490642 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=25 wall_us=368814 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.741809 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=25 wall_us=388120 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8352459999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=25 wall_us=392886 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.822706 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=26 wall_us=391042 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.795667 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=26 wall_us=387371 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.805837 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=26 wall_us=383728 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.767618 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=26 wall_us=218260 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=70.084914 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=26 wall_us=379578 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7551269999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=26 wall_us=384982 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.223924 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=26 wall_us=385995 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.227744 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=26 wall_us=391274 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.206644 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=26 wall_us=204219 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=68.78894100000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=26 wall_us=370410 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2089649999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=27 wall_us=386865 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1987050000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=27 wall_us=227030 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=76.954901 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=27 wall_us=376686 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2049349999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=27 wall_us=388782 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.255334 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=27 wall_us=390122 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.228924 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=27 wall_us=388116 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.738839 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=27 wall_us=212591 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=66.462829 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=27 wall_us=373830 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7474379999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=27 wall_us=404881 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.819466 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=27 wall_us=385224 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.812036 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=28 wall_us=384968 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7997159999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=28 wall_us=387767 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.8108859999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=28 wall_us=362372 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.751828 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=28 wall_us=220147 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=74.73044599999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=28 wall_us=385564 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.780877 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=28 wall_us=391941 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.246304 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=28 wall_us=392015 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2263339999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=28 wall_us=374955 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.200784 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=28 wall_us=232069 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=83.30270399999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=28 wall_us=379516 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.224154 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=29 wall_us=388171 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1940439999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=29 wall_us=208334 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=73.69198700000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=29 wall_us=376311 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.227554 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=29 wall_us=375500 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.260123 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=29 wall_us=388844 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.227184 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=29 wall_us=385424 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7484780000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=29 wall_us=220174 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=78.403369 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=29 wall_us=378944 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.739638 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=29 wall_us=385951 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.822136 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=29 wall_us=385168 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.798157 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-place rep=30 wall_us=387964 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.7973669999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=off-hostopt rep=30 wall_us=376092 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.803366 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=null rep=30 wall_us=366870 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.707909 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=cpu rep=30 wall_us=218558 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=68.670055 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_c arm=on rep=30 wall_us=381876 out=[10096.356 -11.96004 1620.2026 538.1848 iter ms=0.767867 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-place rep=30 wall_us=380633 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.2355239999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=off-hostopt rep=30 wall_us=392122 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.235994 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=null rep=30 wall_us=381667 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.207774 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=cpu rep=30 wall_us=226530 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=82.214047 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_32 face=_exact arm=on rep=30 wall_us=378690 out=[10096.358 -11.958847 1620.1987 538.179 iter ms=1.1994549999999997 ]  rc=0 trace_rc=0
+unknown probe pm_2048
+device name="NVIDIA GeForce RTX 4090" cc=8.9
+value-gate prog=pt_pm_2048_64 arms=6 pass
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=1 wall_us=371065 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.248454 ] mapal_gpu_trace_total flags=1 load_ms=254.264 lead_ms=0.139 init_ms=99.125 ctx_ms=153.051 module_ms=1.936 alloc_ms=0.459 h2d_ms=0.000 kernel_ms=1.078 gen_ms=0.142 d2h_ms=0.090 free_ms=0.358 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_exact arm=on rep=1 740b670a8e31f514 ms=0.013 740b670a8e31f514 ms=0.010 740b670a8e31f514 ms=0.010 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.503 
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=1 wall_us=213259 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=68.995245 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=1 wall_us=392487 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.266762 ] mapal_gpu_trace_total flags=1 load_ms=257.760 lead_ms=0.134 init_ms=98.453 ctx_ms=157.203 module_ms=1.956 alloc_ms=0.671 h2d_ms=0.000 kernel_ms=1.083 gen_ms=0.163 d2h_ms=0.092 free_ms=0.372 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_exact arm=null rep=1 740b670a8e31f514 ms=0.012 740b670a8e31f514 ms=0.010 740b670a8e31f514 ms=0.011 209e0eb63d89af3c ms=0.542 04187107f6853118 ms=0.508 
+probe prog=pt_pm_2048_64 face=_c arm=on rep=1 wall_us=383920 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.843656 ] mapal_gpu_trace_total flags=1 load_ms=259.719 lead_ms=0.138 init_ms=102.867 ctx_ms=155.311 module_ms=1.402 alloc_ms=0.631 h2d_ms=0.000 kernel_ms=0.683 gen_ms=0.170 d2h_ms=0.092 free_ms=0.368 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_c arm=on rep=1 f384338081ec23eb ms=0.012 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.009 948a49efa5e16883 ms=0.333 59027ed417ac8177 ms=0.320 
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=1 wall_us=224146 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=66.936785 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=1 wall_us=375757 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.841046 ] mapal_gpu_trace_total flags=1 load_ms=253.597 lead_ms=0.143 init_ms=98.999 ctx_ms=152.912 module_ms=1.499 alloc_ms=0.672 h2d_ms=0.000 kernel_ms=0.684 gen_ms=0.170 d2h_ms=0.086 free_ms=0.386 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_c arm=null rep=1 f384338081ec23eb ms=0.012 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.009 948a49efa5e16883 ms=0.333 59027ed417ac8177 ms=0.322 
+probe prog=pt_pm_2048_64 face=_c arm=null rep=2 wall_us=375754 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8255359999999999 ] mapal_gpu_trace_total flags=1 load_ms=257.233 lead_ms=0.138 init_ms=100.547 ctx_ms=155.205 module_ms=1.338 alloc_ms=0.551 h2d_ms=0.000 kernel_ms=0.682 gen_ms=0.132 d2h_ms=0.085 free_ms=0.357 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_c arm=null rep=2 f384338081ec23eb ms=0.011 f384338081ec23eb ms=0.010 f384338081ec23eb ms=0.010 948a49efa5e16883 ms=0.331 59027ed417ac8177 ms=0.321 
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=2 wall_us=231794 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=72.799153 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=2 wall_us=378865 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.802507 ] mapal_gpu_trace_total flags=1 load_ms=255.158 lead_ms=0.135 init_ms=99.910 ctx_ms=153.688 module_ms=1.409 alloc_ms=0.583 h2d_ms=0.000 kernel_ms=0.682 gen_ms=0.160 d2h_ms=0.081 free_ms=0.367 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_c arm=on rep=2 f384338081ec23eb ms=0.011 f384338081ec23eb ms=0.009 f384338081ec23eb ms=0.009 948a49efa5e16883 ms=0.331 59027ed417ac8177 ms=0.322 
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=2 wall_us=383299 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.244634 ] mapal_gpu_trace_total flags=1 load_ms=254.130 lead_ms=0.161 init_ms=99.544 ctx_ms=152.522 module_ms=1.912 alloc_ms=0.562 h2d_ms=0.000 kernel_ms=1.072 gen_ms=0.154 d2h_ms=0.093 free_ms=0.367 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_exact arm=null rep=2 740b670a8e31f514 ms=0.011 740b670a8e31f514 ms=0.010 740b670a8e31f514 ms=0.010 209e0eb63d89af3c ms=0.539 04187107f6853118 ms=0.504 
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=2 wall_us=224628 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=77.307501 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=2 wall_us=373548 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2371839999999998 ] mapal_gpu_trace_total flags=1 load_ms=253.071 lead_ms=0.138 init_ms=99.645 ctx_ms=151.374 module_ms=1.902 alloc_ms=0.606 h2d_ms=0.000 kernel_ms=1.090 gen_ms=0.159 d2h_ms=0.095 free_ms=0.380 bytes_in=0 bytes_out=16 h2d=0 d2h=4 launches=5 gens=7 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_pm_2048_64 face=_exact arm=on rep=2 740b670a8e31f514 ms=0.013 740b670a8e31f514 ms=0.009 740b670a8e31f514 ms=0.009 209e0eb63d89af3c ms=0.540 04187107f6853118 ms=0.519 
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=3 wall_us=393237 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.264413 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=3 wall_us=230398 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=77.585852 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=3 wall_us=364956 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.1894850000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=3 wall_us=383272 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8193360000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=3 wall_us=218621 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=71.127052 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=3 wall_us=383539 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.823946 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=4 wall_us=383361 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.843025 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=4 wall_us=215556 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=69.023484 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=4 wall_us=368114 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.800397 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=4 wall_us=388948 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2490629999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=4 wall_us=213601 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=71.257358 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=4 wall_us=372478 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.228363 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=5 wall_us=386112 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.237414 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=5 wall_us=214656 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=75.813004 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=5 wall_us=378962 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.259032 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=5 wall_us=378830 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.798556 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=5 wall_us=210917 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=63.935883 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=5 wall_us=375779 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.807246 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=6 wall_us=377966 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8055559999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=6 wall_us=212164 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=66.75480100000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=6 wall_us=374025 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.819296 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=6 wall_us=388608 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.221724 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=6 wall_us=222141 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=76.86357299999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=6 wall_us=377499 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2353640000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=7 wall_us=375442 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.258143 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=7 wall_us=220038 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=75.164644 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=7 wall_us=356898 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.244824 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=7 wall_us=389391 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.7995169999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=7 wall_us=210598 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=72.25717900000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=7 wall_us=376420 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.819286 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=8 wall_us=386262 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.810496 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=8 wall_us=215075 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=67.90953600000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=8 wall_us=372323 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.805276 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=8 wall_us=383854 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2150850000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=8 wall_us=219196 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=74.03711600000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=8 wall_us=362707 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2257149999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=9 wall_us=374948 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.178886 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=9 wall_us=222062 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=79.25880400000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=9 wall_us=382246 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.241914 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=9 wall_us=379600 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8425759999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=9 wall_us=216210 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=68.89261800000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=9 wall_us=354951 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.808226 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=10 wall_us=386668 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.823766 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=10 wall_us=217754 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=68.96899499999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=10 wall_us=377194 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.818916 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=10 wall_us=405041 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2274639999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=10 wall_us=224059 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=76.86961399999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=10 wall_us=367352 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2288839999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=11 wall_us=393978 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.230364 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=11 wall_us=225647 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=78.70979000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=11 wall_us=360575 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2322739999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=11 wall_us=414123 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.822396 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=11 wall_us=208746 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=72.840072 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=11 wall_us=524002 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8106959999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=12 wall_us=443605 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.813197 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=12 wall_us=213117 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=64.015121 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=12 wall_us=380433 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.801026 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=12 wall_us=384568 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2301339999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=12 wall_us=222182 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=72.57035 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=12 wall_us=371484 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2347440000000003 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=13 wall_us=385488 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2195939999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=13 wall_us=237786 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=82.08904 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=13 wall_us=374504 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.226884 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=13 wall_us=385860 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.810556 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=13 wall_us=225352 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=66.842838 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=13 wall_us=354153 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.832776 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=14 wall_us=386363 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.839945 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=14 wall_us=227525 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=72.273898 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=14 wall_us=372082 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.819696 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=14 wall_us=386469 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2403229999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=14 wall_us=226143 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=70.767873 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=14 wall_us=360635 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.1679160000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=15 wall_us=391138 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.234004 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=15 wall_us=224582 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=72.634988 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=15 wall_us=381544 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.223455 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=15 wall_us=382082 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8490850000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=15 wall_us=213240 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=62.996191 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=15 wall_us=384870 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8282660000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=16 wall_us=342447 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.7798769999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=16 wall_us=206030 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=68.034003 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=16 wall_us=383782 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8456250000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=16 wall_us=380878 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.239714 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=16 wall_us=235847 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=80.373441 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=16 wall_us=383896 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.229864 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=17 wall_us=388197 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2301730000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=17 wall_us=227499 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=80.49673700000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=17 wall_us=381910 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2399740000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=17 wall_us=382517 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.826106 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=17 wall_us=231466 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=72.71632600000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=17 wall_us=378653 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.829326 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=18 wall_us=386324 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8293550000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=18 wall_us=228666 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=73.499992 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=18 wall_us=379706 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.815727 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=18 wall_us=406270 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.277782 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=18 wall_us=225343 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=74.567651 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=18 wall_us=343155 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.1769850000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=19 wall_us=388657 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2351640000000002 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=19 wall_us=223598 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=72.04510499999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=19 wall_us=381357 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2356239999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=19 wall_us=377778 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8232959999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=19 wall_us=225286 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=74.139244 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=19 wall_us=377373 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.814467 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=20 wall_us=389943 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8080060000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=20 wall_us=228944 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=74.844153 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=20 wall_us=366810 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.775637 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=20 wall_us=385969 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.220554 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=20 wall_us=223259 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=70.800221 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=20 wall_us=376590 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2660429999999998 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=21 wall_us=379360 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2536829999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=21 wall_us=233407 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=78.34379100000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=21 wall_us=379014 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.222534 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=21 wall_us=402764 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.856195 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=21 wall_us=220519 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=70.30076700000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=21 wall_us=370499 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8365360000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=22 wall_us=376493 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.762248 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=22 wall_us=221331 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=82.198677 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=22 wall_us=374690 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.851455 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=22 wall_us=403952 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.240124 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=22 wall_us=230246 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=72.636547 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=22 wall_us=378804 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.217004 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=23 wall_us=393382 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.254283 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=23 wall_us=229575 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=77.794096 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=23 wall_us=374552 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2681230000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=23 wall_us=390888 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.815287 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=23 wall_us=226164 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=69.094082 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=23 wall_us=377812 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.823686 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=24 wall_us=383938 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8360759999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=24 wall_us=216591 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=67.125019 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=24 wall_us=371142 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.767487 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=24 wall_us=389978 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.224924 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=24 wall_us=224480 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=70.968077 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=24 wall_us=367788 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.172015 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=25 wall_us=386583 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.251164 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=25 wall_us=229488 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=76.10949500000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=25 wall_us=381197 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.236834 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=25 wall_us=388219 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.820195 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=25 wall_us=205842 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=65.523137 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=25 wall_us=369511 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.808667 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=26 wall_us=379331 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.819227 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=26 wall_us=217431 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=71.11794199999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=26 wall_us=367844 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.825546 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=26 wall_us=426929 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.2610029999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=26 wall_us=223027 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=73.103804 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=26 wall_us=374563 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.246544 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=27 wall_us=351266 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.173276 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=27 wall_us=220333 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=70.66551500000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=27 wall_us=381483 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.238883 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=27 wall_us=392358 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8495149999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=27 wall_us=212809 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=69.479021 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=27 wall_us=361886 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8315250000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=28 wall_us=388332 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8265060000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=28 wall_us=210991 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=64.986172 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=28 wall_us=377375 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.833105 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=28 wall_us=392039 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.225314 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=28 wall_us=225172 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=78.749158 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=28 wall_us=381753 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.222924 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=29 wall_us=384880 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.254413 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=29 wall_us=226607 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=72.92494 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=29 wall_us=360095 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.247514 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=29 wall_us=385464 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8303159999999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=29 wall_us=221246 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=71.56778899999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=29 wall_us=382988 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.822076 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=null rep=30 wall_us=392160 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.820247 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=cpu rep=30 wall_us=220018 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=69.93927699999999 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_c arm=on rep=30 wall_us=385770 out=[150836.63 -6193.181 1620.2026 538.1848 iter ms=0.8155660000000001 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=null rep=30 wall_us=383426 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.251054 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=cpu rep=30 wall_us=228199 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=79.454738 ]  rc=0 trace_rc=0
+probe prog=pt_pm_2048_64 face=_exact arm=on rep=30 wall_us=364221 out=[150836.63 -6193.1846 1620.1987 538.179 iter ms=1.189605 ]  rc=0 trace_rc=0
+unknown probe pm_2048
+device name="NVIDIA GeForce RTX 4090" cc=8.9
+probe value gate: 0 program(s) failed
+-- timing vs cuBLAS / CUTLASS (f32, reps=30)
+== done

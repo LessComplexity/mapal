@@ -1,0 +1,6 @@
+[18:19:07] try RTX_3090 offer=55676185 dph=0.193 pcie=12.8 cpu_ghz=2.6 cpu=AMD_EPYC_7K62_48-Core_Processor host=443829 machine=84216 geo=California, US
+[18:32:15] try RTX_3090 offer=51025609 dph=0.261 pcie=12.7 cpu_ghz=2.25 cpu=AMD_EPYC_7B12_64-Core_Processor host=116365 machine=33953 geo=Taiwan, TW
+[19:26:04] no complete results from offer=51025609
+[19:26:04] try RTX_3090 offer=41997153 dph=0.319 pcie=12.3 cpu_ghz=2.4 cpu=AMD_EPYC_7532_32-Core_Processor host=79869 machine=56698 geo=Ontario, CA
+[19:26:15] no complete results from offer=41997153
+[19:26:15] try RTX_3090 offer=55925294 dph=0.468 pcie=25.0 cpu_ghz=2.6 cpu=AMD_EPYC_7K62_48-Core_Processor host=282177 machine=153039 geo=Latvia, LV
