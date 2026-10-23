@@ -1069,6 +1069,90 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
                6.119/5.545 vs 6.122/5.549 ms)",
     },
+    // S62 ordered tile geometry: benches/results/gpu/s62/geometry/v2/<part>/results-<part>.txt and
+    // -pass2.txt (ABBA), OFF/ON per pass, each bench normalized by its own cuBLAS leg; no effect
+    // within max(1%, that session's largest null-arm deviation).
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wave-gate",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _c 16x18432x7168 OFF/ON 0.223/0.225: on 2.0659 ms (the \
+               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _exact 16x18432x7168 OFF/ON 0.988/0.994, no effect within \
+               the session null 7.9%: on 0.3420 vs off 0.3420 ms",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
+               128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
+               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 iter ms OFF/ON 0.438 / 0.253",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.965/0.963, _exact 0.963/0.965 \
+               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x2048x7168 OFF/ON 1.013/1.014, no effect within the \
+               session null 2.6% (ms in the files)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 \
+               (disjoint; ms in the files)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "wave-gate",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint; ms in the \
+               files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935; \
+               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 \
+               (ms in the files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
+               no stable gain (null 4.3%; ms in the files)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
