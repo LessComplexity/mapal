@@ -35,7 +35,8 @@ ulimit -s 65520 2>/dev/null || true
 # one within ADR-0040 D2's bound (value_gate.py).
 for p in $PROGS $SUITE; do
     # The suite runs the default face alone: its gate is the exact face's oracle.
-    faces=(_x _c); [[ " $SUITE " == *" $p "* ]] && faces=(_x)
+    # (and the contract face where a re-judge arm runs on it).
+    faces=(_x _c); [[ " $SUITE " == *" $p "* ]] && [[ " $ARMS " != *":$p:_c:"* ]] && faces=(_x)
     for face in "${faces[@]}"; do
         [ -s "$OUT/tiles/$p$face.expect" ] && continue
         fl=(--exact); [ "$face" = _c ] && fl=(--order=sequential)
@@ -152,7 +153,7 @@ for spec in "$@"; do
         emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") "--gpu-$dir=$rung"
         if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $dir-$rung = shipped"; continue; fi
         echo "rejudge $prof $stem$face $dir-$rung $(cat "$s.launch" 2>/dev/null)"
-        case $stem in pt_rm_*) [ "$face" = _c ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
+        case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
     done
     # S64: the evidence — ptxas -v / SASS of every distinct PTX (cudatool.sh), the facts, the intent check.
     python3 "$ROOT/benches/gpu/evidence.py" static "$d" "$sm"

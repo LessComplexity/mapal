@@ -35,6 +35,8 @@ INTENT = {
     'exec': dict(applies=ANY + " and exec.regs >= 0", on=[
         ('JIT image registers == ptxas -v', 'exec.regs == ptxas.regs'),
         ('JIT image local bytes == ptxas stack frame', 'exec.local == ptxas.stack')]),
+    'module': dict(applies="plan.kind != 'gen'", on=[
+        ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
     'arch-rungs': dict(applies=ANY, on=[
         ("the kernel's rungs are the part's measured table at its fill and face", 'set(plan.rungs_on) == set(table.rungs_on)')],
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
@@ -50,7 +52,8 @@ INTENT = {
     'async': dict(applies_on=TILE + ' and plan.stages >= 2', on=[
         ('cp.async + wait_group in PTX', 'ptx.cp_async > 0 and ptx.cp_async_wait > 0'),
         ('LDGSTS in the hot loop, no register-staged STS', 'sass.hot.ldgsts > 0 and sass.hot.sts == 0')],
-        applies_off=TILE, off=[('register staging: no cp.async', 'ptx.cp_async == 0 and sass.ldgsts == 0')]),
+        # asyncstage streams through cp.async whatever `async` says (stages > 2 implies it).
+        applies_off=TILE + ' and plan.stages < 2', off=[('register staging: no cp.async', 'ptx.cp_async == 0 and sass.ldgsts == 0')]),
     'asyncstage': dict(applies_on=TILE + ' and plan.stages > 2', on=[
         ('stages-2 groups left in flight at the wait', 'ptx.wait_n_max == plan.stages - 2'),
         ('LDGSTS', 'sass.ldgsts > 0')]),
@@ -61,16 +64,19 @@ INTENT = {
         ('ptxas met it without spilling', 'ptxas.spill_st == 0')],
         off=[('no .minnctapersm', 'ptx.minnctapersm == 0')]),
     'warp': dict(applies=TILE, note='lane-to-thread map only: no static SASS signature (diff the arm)'),
+    # `fill` (profile.rs gpu_tile_with): shrink the tile until the grid gives every scheduler two warps,
+    # down to the floor (tn = one vector, tm = one vector or, under fill-rows, one row).
     'warp-fill': dict(applies_on=TILE, on=[
-        ('every warp scheduler holds two warps', 'occ.resident_warps_per_sm >= 8')]),
-    'fill-rows': dict(applies_on=TILE, on=[
-        ('every warp scheduler holds two warps', 'occ.resident_warps_per_sm >= 8')]),
+        ('every warp scheduler holds two warps, or the tile is at the fill floor',
+         'occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)')]),
+    'fill-rows': dict(applies=TILE, note='the fill floor one row lower; fires only where the vector floor fails (diff the arm)'),
+    # PTX keeps shared addresses 64-bit (ptxas narrows them): the realized index width is SASS's.
     'idx32': dict(applies_on=SCALAR + " and plan.idx == 'i32'", on=[
-        ('hot loop: at most one 64-bit integer op per global access (the address)',
-         'ptx.hot.i64_arith <= ptx.hot.ld_global + ptx.hot.ld_global_v2 + ptx.hot.ld_global_v4 + ptx.hot.cp_async + ptx.hot.st_global')]),
-    'affine': dict(applies_on=TILE, on=[
-        ('one base register per operand in the hot loop', 'ptx.hot.distinct_load_bases <= 2')],
-        applies_off=TILE, off=[('several base registers', 'ptx.hot.distinct_load_bases > 2')]),
+        ('hot loop: at most one 64-bit address IMAD.WIDE per global access',
+         'sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts')]),
+    # NVPTX re-bases a long run of immediate offsets (`[%rd84]`, then `[%rd86+…]`), so a PTX base count
+    # does not separate the rung (S64 c/: 3 bases with it ON, 2 with it OFF on the same kernels).
+    'affine': dict(applies=TILE, note='one base register per operand: PTX base counts do not separate it (diff the arm)'),
     'pad': dict(applies=TILE, note='bank geometry: no static SASS signature (diff the arm)'),
     'wide-fma': dict(applies_on=TILE + ' and plan.held > 0', on=[
         ('the whole-file tile: its accumulators live in the hot loop', 'sass.hot.acc >= plan.tm * plan.tn'),
@@ -81,7 +87,8 @@ INTENT = {
     'row-fit': dict(applies_on=TILE, on=[('the block rows fit the site', 'plan.ty * plan.tm <= plan.rows')]),
     'wave-gate': dict(applies=TILE, note='chooses the kernel kind: no static SASS signature (diff the arm)'),
     'grid-share': dict(applies_on=TILE, on=[
-        ('residency sized to the grid share', 'plan.blocks_per_sm <= max(1, ceil(plan.gx * plan.gy / occ.sms))')]),
+        ('residency sized to the grid share', 'plan.blocks_per_sm <= max(1, ceil((plan.ctas if plan.combine == "streamk" '
+         'else plan.gx * plan.gy) / occ.sms))')]),
     'panel-regs': dict(applies_on=TILE + ' and plan.stages == 1 and plan.held == 0', on=[
         ('the prefetch panel fits the register file: no spill', 'ptxas.spill_st == 0')]),
     'cell-fill': dict(applies_on=TILE + ' and plan.tm * plan.tn == 1', on=[
@@ -115,8 +122,9 @@ INTENT = {
         off=[('every site a round trip', 'host.calls.tile > 0')]),
     'devgen': dict(host=True, applies='dev.gen > 0', on=[
         ('the host launches every closed-form producer on the device', 'host.calls.gen >= dev.gen')]),
-    'arena': dict(host=True, applies='host.calls.alloc + host.calls.arena > 0', on=[
-        ('one arena per function, no per-object cuMemAlloc', 'host.calls.alloc == 0')],
+    # Loop-carried objects keep their own allocations (`arena` lays out straight-line objects only).
+    'arena': dict(host=True, applies='host.loop == 0 and host.calls.alloc + host.calls.arena > 0', on=[
+        ('straight-line objects in one per-function arena', 'host.calls.arena > 0')],
         off=[('per-object allocations', 'host.calls.arena == 0')]),
     'eager-init': dict(host=True, applies='host.device_sites > 0', on=[
         ("one init, main's first call", 'host.calls.init == 1')]),
@@ -127,7 +135,8 @@ INTENT = {
     'streams': dict(host=True, note='stream ids in launchv: diff the arm (`.fs`)'),
     'splitk-atomic-zero': dict(host=True, applies="launch.combine in ('atomic', 'streamk')", on=[
         ('the output is zeroed before its partials add', 'host.calls.zero >= 1')]),
-    'hostopt': dict(host=True, applies='host.obj.insns > 0', on=[
+    # Only where LLVM vectorized host code at all (a program whose every site is on the device has none).
+    'hostopt': dict(host=True, applies='host.remarks.vectorized + host.remarks.slp > 0', on=[
         ('the host object uses 256-bit AVX2 vectors (the x86-64-v3 profile)', 'host.obj.ymm_ops > 0')],
         off=[('generic x86-64: no 256-bit vectors', 'host.obj.ymm_ops == 0')]),
     'place': dict(host=True, note='site placement: diff the `.off-place` arm (device_sites, launches)'),

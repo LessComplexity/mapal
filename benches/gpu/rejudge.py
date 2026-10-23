@@ -81,10 +81,11 @@ def arms(profiles):
     return sorted(set(out))
 
 
+# The plan's pre-registered list (S64 design C.2): registers count only through the warps they cost,
+# instruction counts only per k-step (`span`); a whole-function count is not an explanation.
 COST = [  # (fact, sign): +1 = ON larger is a cost, -1 = ON smaller is a cost
-    ('ptxas.spill_st', 1), ('ptxas.stack', 1), ('occ.warps_per_sm', -1), ('occ.blocks_per_sm', -1),
+    ('ptxas.spill_st', 1), ('occ.warps_per_sm', -1),
     ('sass.hot.span', 1), ('sass.hot.bar', 1), ('sass.hot.ffma_per_lds', -1), ('sass.hot.ffma_per_ldg', -1),
-    ('sass.hot.insns', 1), ('sass.insns', 1), ('ptxas.regs', 1),
     ('host.calls.launch', 1), ('host.calls.launchv', 1), ('host.calls.launch_l2', 1), ('host.calls.h2d', 1),
     ('host.calls.d2h', 1), ('host.calls.alloc', 1), ('host.calls.tile', 1), ('host.calls.zero', 1),
     ('host.calls.event', 1), ('host.calls.pin', 1), ('launch.S', 1)]
