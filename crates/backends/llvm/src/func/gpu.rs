@@ -414,15 +414,7 @@ pub(crate) fn launch(
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let shaped = site.a.clane == 0 && site.b.ci == 0;
-    // The fill key reads the S52 geometry (no S53 geometry rung): the table's
-    // rows were measured on grids classified by it.
-    let base = shaped
-        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false, false))
-        .flatten();
-    let (blocks, threads) = match base {
-        Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
-        None => ((site.rows * site.c).div_ceil(NAIVE_THREADS), NAIVE_THREADS),
-    };
+    let (blocks, threads) = fill_grid(site, profile);
     let wps = gpu.warps_per_scheduler(blocks, threads);
     let raster = |rungs: crate::GpuRungs, bm: u64, bn: u64, per_sm: u64| match rungs.raster {
         true => gpu.raster(
@@ -573,6 +565,128 @@ pub(crate) fn launch(
         },
     }
 }
+
+/// The grid a site's fill is keyed by (`launch`'s `wps`): the S52 geometry
+/// (no S53 geometry rung) — the table's rows were measured on grids
+/// classified by it — or the one-thread-per-cell grid.
+fn fill_grid(site: &TileSite, profile: &TargetProfile) -> (u64, u64) {
+    let shaped = site.a.clane == 0 && site.b.ci == 0;
+    let base = shaped
+        .then(|| profile.gpu_tile(site.rows, site.c, site.k, &site.elem, false, false))
+        .flatten();
+    match base {
+        Some(g) => ((site.rows / g.bm()) * (site.c / g.bn()), g.threads()),
+        None => ((site.rows * site.c).div_ceil(NAIVE_THREADS), NAIVE_THREADS),
+    }
+}
+
+/// S64 evidence pass: one `; mapal.plan` comment line per kernel — what the
+/// emitter derived for it (geometry, fill key, face, index width, the
+/// kernel's rungs), the intent `benches/gpu/evidence.py` checks the PTX and
+/// SASS against. A comment: `llc` drops it, the kernel is unchanged. Only the
+/// kernel rungs are listed, so a host rung's arm leaves the device text alone.
+#[allow(clippy::too_many_arguments)]
+fn plan_line(
+    name: &str,
+    site: &TileSite,
+    profile: &TargetProfile,
+    l: &Launch,
+    idx: &str,
+    combine: Combine,
+    col: bool,
+    epi: bool,
+) -> String {
+    let gpu = profile.gpu().expect("a GPU site has a GPU profile");
+    let (blocks, threads) = fill_grid(site, profile);
+    let kind = match (l.wgmma, l.mma, l.tiled) {
+        (Some(_), _, _) => "wgmma",
+        (None, Some(_), _) => "mma",
+        (None, None, Some(_)) => "tile",
+        _ => "naive",
+    };
+    let mut f = format!(
+        "; mapal.plan kernel={name} kind={kind} face={:?} idx={idx} rows={} c={} k={} wps={} \
+         gx={} gy={} block={} smem={} raster={}",
+        l.arithmetic,
+        site.rows,
+        site.c,
+        site.k,
+        gpu.warps_per_scheduler(blocks, threads),
+        l.gx,
+        l.gy,
+        l.block,
+        l.smem,
+        l.raster
+    );
+    if let Some(g) = l.tiled {
+        f += &format!(
+            " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={}",
+            g.tm, g.tn, g.tx, g.ty, g.bk, g.stages, g.pad_a, g.held, g.blocks_per_sm
+        );
+    }
+    if let Some(m) = l.mma {
+        f += &format!(
+            " mt={} nt={} warps_x={} warps_y={} bk={} stages={} blocks_per_sm={}",
+            m.mt, m.nt, m.warps_x, m.warps_y, m.bk, m.stages, m.blocks_per_sm
+        );
+    }
+    if let Some(w) = l.wgmma {
+        f += &format!(
+            " n={} groups={} bk={} stages={} blocks_per_sm={}",
+            w.n, w.groups, w.bk, w.stages, w.blocks_per_sm
+        );
+    }
+    let (c, s, ctas, iters) = match combine {
+        Combine::None => ("none", 1, 0, 0),
+        Combine::Workspace { s } => ("splitk", s, 0, 0),
+        Combine::Atomic { s } => ("atomic", s, 0, 0),
+        Combine::StreamK { ctas, iters } => ("streamk", 1, ctas, iters),
+    };
+    let on: Vec<&str> = KERNEL_RUNGS
+        .iter()
+        .copied()
+        .filter(|n| l.rungs.get(n))
+        .collect();
+    format!(
+        "{f} combine={c} S={s} ctas={ctas} iters={iters} col={} epi={} rungs_on={}\n",
+        u8::from(col),
+        u8::from(epi),
+        on.join(",")
+    )
+}
+
+/// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
+const KERNEL_RUNGS: [&str; 29] = [
+    "arch-rungs",
+    "interleave",
+    "unroll",
+    "min-blocks",
+    "warp",
+    "prefetch",
+    "mma",
+    "async",
+    "wide",
+    "ldmatrix",
+    "warp-fill",
+    "idx32",
+    "affine",
+    "pad",
+    "wide-fma",
+    "wgmma-hopper",
+    "raster",
+    "l2-gate",
+    "pdl",
+    "row-fit",
+    "wave-gate",
+    "grid-share",
+    "panel-regs",
+    "fill-rows",
+    "cell-fill",
+    "asyncstage",
+    "splitk",
+    "splitk-atomic",
+    "streamk",
+];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
 pub(crate) fn launch_in(
@@ -1215,16 +1329,21 @@ pub(crate) fn device_module(
                 if let Combine::Workspace { s } = c {
                     let red = id("reduce");
                     kernels.entry(red.clone()).or_insert_with(|| {
-                        reduce_kernel_text(&red, site, profile, contract, arms, reduced, s)
+                        format!("; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n", site.rows, site.c)
+                            + &reduce_kernel_text(&red, site, profile, contract, arms, reduced, s)
                     });
                 }
             }
         }
         for r in folds.values() {
             let name = kernel_name(rowfold_id(&r.site, profile));
-            kernels
-                .entry(name.clone())
-                .or_insert_with(|| rowfold_kernel_text(&name, &r.site, profile));
+            kernels.entry(name.clone()).or_insert_with(|| {
+                let (gx, block) = rowfold_grid(&r.site, profile);
+                format!(
+                    "; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}\n",
+                    r.site.rows, r.site.k
+                ) + &rowfold_kernel_text(&name, &r.site, profile)
+            });
         }
     }
     for e in epis {
@@ -1248,6 +1367,12 @@ pub(crate) fn device_module(
         return None;
     }
     let mut out = String::from("; mapal-backend-llvm device module\n");
+    // S64 evidence: the module's face (each kernel's facts: `; mapal.plan`).
+    out.push_str(&format!(
+        "; mapal.device target={} fma={} order={order:?} reduced={reduced:?}\n",
+        profile.name,
+        u8::from(contract)
+    ));
     out.push_str(DEVICE_PREAMBLE);
     let mut md = String::new();
     for (i, k) in kernels.values().enumerate() {
@@ -1278,6 +1403,7 @@ pub(crate) fn device_module(
             out.push_str(text);
         }
         out.push('\n');
+        out.push_str(&format!("; mapal.plan kernel=mapal_gen_{id:016x} kind=gen\n"));
         out.push_str(&gen_kernel_text(*id, callee, elem));
     }
     // The bodies an epilogue calls (S54): the host's text, or its device
@@ -1306,6 +1432,11 @@ pub(crate) fn device_module(
             }
         }
         out.push_str("\n; cell\n");
+        let name = kernel
+            .split_once("void @")
+            .and_then(|(_, r)| r.split_once('('))
+            .map_or("?", |(n, _)| n);
+        out.push_str(&format!("; mapal.plan kernel={name} kind=cell\n"));
         out.push_str(kernel);
     }
     out.push('\n');
@@ -1335,6 +1466,7 @@ fn kernel_text(
         "a column-major store this kernel has"
     );
     debug_assert!(combine == Combine::None || (!col && epi.is_none()));
+    k.out = plan_line(name, site, profile, &l, k.idx, combine, col, epi.is_some());
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
         (None, Some(m), _) => k.mma(name, m),
@@ -4543,6 +4675,49 @@ mod tests {
         assert_eq!(l.combine, Combine::None);
         let l = launch_in(&s16, r3090, true, pre, None, Order::Fixed);
         assert!(matches!(l.combine, Combine::Workspace { .. }));
+    }
+
+    /// S64 evidence pass: each kernel's `; mapal.plan` line reads back as the
+    /// launch it was emitted from (the chooser's cells and parts, both step
+    /// faces, every realization) — the intent `benches/gpu/evidence.py` checks.
+    #[test]
+    fn plan_line_reads_back_as_its_launch() {
+        let cells = [(16, 2048, 7168), (16, 18432, 7168), (128, 2048, 7168), (4096, 4096, 4096)];
+        let parts = [&RTX_5090, &RTX_4090, &H100_PCIE, &crate::profile::RTX_3090];
+        let arms = crate::GpuArms::default();
+        for p in parts {
+            for (m, n, k) in cells {
+                let s = site(m, n, k, true, true, Ty::f32());
+                for (contract, order) in [(false, Order::Sequential), (true, Order::Free), (false, Order::Fixed)] {
+                    let l = launch_in(&s, p, contract, arms, None, order);
+                    let text = kernel_text("k", &s, p, contract, arms, None, false, None, l.combine);
+                    let line = text.lines().next().expect("a plan line");
+                    let f: std::collections::HashMap<&str, &str> = line
+                        .strip_prefix("; mapal.plan ")
+                        .expect("the first line")
+                        .split(' ')
+                        .filter_map(|kv| kv.split_once('='))
+                        .collect();
+                    let n = |key: &str| f[key].parse::<u64>().expect(key);
+                    assert_eq!(
+                        (n("gx"), n("gy"), n("block"), n("smem"), n("raster")),
+                        (l.gx, l.gy, l.block, l.smem, l.raster),
+                        "{line}"
+                    );
+                    let g = l.tiled.expect("the FMA tile");
+                    assert_eq!(
+                        (n("tm"), n("tn"), n("tx"), n("ty"), n("bk"), n("stages"), n("blocks_per_sm")),
+                        (g.tm, g.tn, g.tx, g.ty, g.bk, g.stages, g.blocks_per_sm)
+                    );
+                    assert_eq!(n("S"), l.combine.splits());
+                    let on: Vec<&str> = f["rungs_on"].split(',').collect();
+                    for r in KERNEL_RUNGS {
+                        assert_eq!(on.contains(&r), l.rungs.get(r), "{r} in {line}");
+                    }
+                    assert_eq!(f["face"], format!("{:?}", l.arithmetic));
+                }
+            }
+        }
     }
 
     /// S63 `streamk`: the kernel walks its share of the `tiles × panels`

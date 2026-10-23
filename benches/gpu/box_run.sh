@@ -12,6 +12,9 @@
 # `cpu` arm) before any timing, the arm order is reversed on even repetitions (ABBA),
 # and PROBE_TRACE_REPS (default 2) repetitions also run a traced process.
 # DIFFERENTIAL_ONLY=1 stops after value and trap checks, without compiling harnesses.
+# S64 order: differential, splitk cells, mlp, e2e, probes, decode, the evidence check
+# (evidence-<profile>.tsv: the bundle's facts + this box's JIT image registers), the PyTorch legs
+# (torch_bench.py, installed in the background from the start; TORCH=0 skips them), timing.
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
@@ -19,6 +22,8 @@ set -uo pipefail
 PROF=$1; SM=$2; REPS=${3:-30}
 CUDA=${CUDA:-/usr/local/cuda}
 LOG=results-$PROF.txt
+# S64: a looped program's CPU build (pt_rt_mlp2_1024 `.cpu`) overflows the default 8 MB stack.
+ulimit -s unlimited 2>/dev/null || ulimit -s 65536 2>/dev/null || true
 say() { echo "$@" | tee -a "$LOG"; }
 link() { cc "$1" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "$2" 2>&1 | tail -3; }
 : > "$LOG"
@@ -94,6 +99,14 @@ if [ "${DIFFERENTIAL_ONLY:-0}" = 1 ]; then
     exit 0
 fi
 
+# S64: the PyTorch legs (torch_bench.py) run last; their install overlaps the Mapal sections.
+if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
+    ( python3 -m pip --version >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq python3-pip; }
+      for idx in https://download.pytorch.org/whl/cu128 https://download.pytorch.org/whl/cu129 ""; do
+          python3 -m pip install -q "torch==${TORCH_VERSION:-2.14.1}" ${idx:+--index-url "$idx"} && break
+      done ) > torch-install.log 2>&1 &
+    TORCH_PID=$!
+fi
 nvcc --version | tail -1 | tee -a "$LOG"
 # The harness is built for the plain arch (sm_90a -> sm_90): the Mapal leg is
 # PTX the driver JITs for the device, and the library legs stay as measured before.
@@ -110,6 +123,67 @@ if [ -f mlp_bench.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
         mlp_bench.cu -lcublasLt -lcublas -lcuda -o mlp_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
     [ -x mlp_bench ] || say "MLP HARNESS BUILD FAILED"
+fi
+
+# S62 `splitk` (ADR-0040): per `mm_MxNxK` cell, every arm (exact, contract, the
+# reassociation face on both step faces, its OFF / null / forced-S arms) with
+# cuBLAS and CUTLASS in ONE process (tile_bench --splitk: value gates first,
+# round-robin, ABBA inside), twice, the second in reversed arm order. Then the
+# whole programs of the split arms on this driver (workspace + two launches):
+# each must exit 0 and print the two cells its OFF arm prints within 1e-3
+# relative (the first line, a sum over every cell, cancels: not compared).
+if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
+    say "-- splitk: mm_MxNxK cells, every arm in one process, two processes ABBA (reps=$REPS)"
+    for l in "$PROF"/mm_*x*x*_r.launch; do
+        cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
+        # S62 integration: every arm the bundle built for the cell (`.base`, `.off-<rung>`, `.null`).
+        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_x.launch "${cell}"_c.launch "${cell}"_c.*.launch \
+            "${cell}"_r*.launch 2>/dev/null | sed 's/\.launch$//' | tr '\n' ' ')
+        say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
+        for pass in 1 2; do
+            order=$arms; [ $pass = 2 ] && order=$(tr ' ' '\n' <<< "$arms" | sed '/^$/d' | tac | tr '\n' ' ')
+            # shellcheck disable=SC2086  # the arms are separate arguments
+            ./tile_bench --splitk "$M" "$N" "$K" "$REPS" "$PROF" $order 2>&1 | sed "s/^/pass=$pass cell=$cell /" | tee -a "$LOG"
+            [ "${PIPESTATUS[0]}" -eq 0 ] || say "SPLITK GATE FAILED cell=$cell pass=$pass"
+        done
+        # S63: the whole program of every arm through mapal_gpu.c (the output's
+        # `mapal_gpu_zero` + the atomic launch on the default face, the workspace +
+        # reduce on the fixed one) prints the exact face's value within D2's bound.
+        [ -f "$PROF/${cell}_x.host.o" ] && link "$PROF/${cell}_x.host.o" "prog_${cell}_x"
+        # A three-line program's first line is a host sum over every cell, which cancels
+        # (S62): the cells it prints after it are compared.
+        cells_of() { local x; read -r -a x <<< "$1"; if [ ${#x[@]} -eq 3 ]; then echo "${x[@]:1}"; else echo "${x[@]}"; fi; }
+        ref=$(MAPAL_PTX="$PROF/${cell}_x.ptx" "./prog_${cell}_x" 2>&1 | tr '\n' ' ')
+        cells_of "$ref" > "prog_${cell}_x.out"
+        for l2 in "$PROF/$cell".launch "$PROF/$cell".off-*.launch "$PROF/${cell}"_c.launch "$PROF/${cell}"_r.launch "$PROF/${cell}"_rc.launch; do
+            [ -f "$l2" ] || continue
+            s=$(basename "$l2" .launch)
+            [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
+            on=$(MAPAL_PTX="$PROF/$s.ptx" "./prog_$s" 2>&1 | tr '\n' ' '); rc=$?
+            g=$(python3 value_gate.py "prog_${cell}_x.out" "$(cells_of "$on")" "$K")
+            say "splitk_program prog=$s rc=$rc out=[$on] exact=[$ref] launch=[$(cat "$l2")] $g"
+            [ "$rc" -eq 0 ] && [ "${g%% *}" = within ] || say "SPLITK PROGRAM FAILED prog=$s"
+        done
+    done
+fi
+
+# S63: the residual MLP's kernels in one process with cuBLAS, cuBLASLt, stock and tuned CUTLASS
+# (mlp_bench.cu: Mapal arms bit-exact vs their face's ordered fold, then 30 iterations ABBA),
+# twice, the second with the legs reversed. The default face's MLP is its contract face (both
+# sites are epilogue groups: no combine), so the `_c` stems stand for it (bundle: `same`).
+if [ -x mlp_bench ]; then
+    say "-- mlp: residual MLP kernels vs cuBLAS / cuBLASLt / CUTLASS (mlp_bench, reps=$REPS)"
+    for k in "$PROF"/pt_rm_m*_d*_h*_c.k; do
+        [ -f "$k" ] || continue
+        p=$(basename "$k" _c.k); dims=$(sed -nE 's/^pt_rm_m([0-9]+)_d([0-9]+)_h([0-9]+)$/\1 \2 \3/p' <<< "$p")
+        [ -n "$dims" ] || continue
+        legs=$(cd "$PROF" && ls "${p}"_c.k "${p}"_c.*.k "${p}"_x.k 2>/dev/null | sed 's/\.k$//' | tr '\n' ' ')
+        for pass in 1 2; do
+            rev=; [ $pass = 2 ] && rev=1
+            # shellcheck disable=SC2086  # dims and legs are separate arguments
+            DIS_REVERSE=$rev ./mlp_bench $dims "$REPS" "$PROF" $legs 2>&1 | sed "s/^/pass=$pass mlp=$p /" | tee -a "$LOG"
+        done
+    done
 fi
 
 # Whole programs, both faces: the shipped emission, each host rung off, and
@@ -165,7 +239,8 @@ say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chai
 # S54 arch-select: by default every OFF arm the bundle built for the probe —
 # bundle.sh drops an arm equal to the shipped text, so these are exactly the
 # rungs this part ships ON there.
-off_arms() { local o; for o in "$PROF/$1".off-*.host.o; do [ -f "$o" ] && { o=${o%.host.o}; echo "${o##*.}"; }; done; }
+# S64: and every `.on-<rung>` arm (the re-judged rows' flipped arms).
+off_arms() { local o; for o in "$PROF/$1".off-*.host.o "$PROF/$1".on-*.host.o; do [ -f "$o" ] && { o=${o%.host.o}; echo "${o##*.}"; }; done; }
 # S62: the CPU-only build and the null copy, where the bundle built them.
 xtra_arms() { local x; for x in cpu cpu-inline null; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
 # probe_out <stem>: one untraced process's stdout, one line (`iter ms` included).
@@ -178,7 +253,8 @@ for o in "$PROF"/pt_*.host.o; do
     pa=$( (off_arms "$b"; off_arms "${b}_c"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
     probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
     # S63 (ADR-0040 D2): the program's longest fold, off the stem (`_d<d>_h<h>`).
-    kmax=$(sed -nE 's/.*_d([0-9]+)_h([0-9]+).*/\1 \2/p' <<< "$b" | awk '{ print ($1 > $2) ? $1 : $2 }')
+    # S64: `tiles/<stem>.kmax` (gen_tiles.py) first.
+    kmax=$(cat "tiles/$b.kmax" 2>/dev/null || { sed -nE 's/.*_d([0-9]+)_h([0-9]+).*/\1 \2/p' <<< "$b" | awk '{ print ($1 > $2) ? $1 : $2 }'; })
     faces=("" _c); [ -f "$PROF/${b}_x.host.o" ] && faces=("" _x _c)
     runs=()
     for face in "${faces[@]}"; do
@@ -210,6 +286,7 @@ for o in "$PROF"/pt_*.host.o; do
     done
     [ "$bad" = 0 ] || { val_fail=$((val_fail + 1)); continue; }
     say "value-gate prog=$b arms=${#runs[@]} pass"
+    mkdir -p vals
     vals=""
     for r in $(seq "${PROBE_REPS:-5}"); do
         order=("${runs[@]}")
@@ -230,6 +307,7 @@ for o in "$PROF"/pt_*.host.o; do
             [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_default} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
             [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
             [ -z "$vals" ] && [ "$face$arm" = on ] && vals=${got%%iter ms=*}
+            [ "$face$arm" = on ] && echo "$vals" > "vals/$b.txt"
             # S62 SUBMIT="<arm>...": a third process under MAPAL_GPU_TRACE=2 (no
             # post-launch synchronize), so each launch's ms is its CPU enqueue.
             case " ${SUBMIT:-} " in *" $arm "*)
@@ -251,28 +329,11 @@ for o in "$PROF"/pt_*.host.o; do
     esac
     # shellcheck disable=SC2086  # the values are separate arguments
     case $n in *[!0-9]*) continue ;; esac  # S62 `rmlp_<M>x<d>x<h>`: no library leg
+    # S64: only the probes chain_bench.cu builds (the suite's fir / conv / loopmm / rt legs are torch_bench.py's).
+    case $probe in epi|bias|ew|pro|indep|mlp|fanout|diamond|residual|rowsum|softmax_rows|mlp2|loop|decode_*) ;; *) continue ;; esac
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 say "probe value gate: $val_fail program(s) failed"
-
-# S63: the residual MLP's kernels in one process with cuBLAS, cuBLASLt, stock and tuned CUTLASS
-# (mlp_bench.cu: Mapal arms bit-exact vs their face's ordered fold, then 30 iterations ABBA),
-# twice, the second with the legs reversed. The default face's MLP is its contract face (both
-# sites are epilogue groups: no combine), so the `_c` stems stand for it (bundle: `same`).
-if [ -x mlp_bench ]; then
-    say "-- mlp: residual MLP kernels vs cuBLAS / cuBLASLt / CUTLASS (mlp_bench, reps=$REPS)"
-    for k in "$PROF"/pt_rm_m*_d*_h*_c.k; do
-        [ -f "$k" ] || continue
-        p=$(basename "$k" _c.k); dims=$(sed -nE 's/^pt_rm_m([0-9]+)_d([0-9]+)_h([0-9]+)$/\1 \2 \3/p' <<< "$p")
-        [ -n "$dims" ] || continue
-        legs=$(cd "$PROF" && ls "${p}"_c.k "${p}"_c.*.k "${p}"_x.k 2>/dev/null | sed 's/\.k$//' | tr '\n' ' ')
-        for pass in 1 2; do
-            rev=; [ $pass = 2 ] && rev=1
-            # shellcheck disable=SC2086  # dims and legs are separate arguments
-            DIS_REVERSE=$rev ./mlp_bench $dims "$REPS" "$PROF" $legs 2>&1 | sed "s/^/pass=$pass mlp=$p /" | tee -a "$LOG"
-        done
-    done
-fi
 
 # The decode loop end to end, both faces, interleaved: shipped vs each R5 rung
 # off (S54 `retain-resident`, `delta-h2d`, `lane-stride`), the s54-base placement
@@ -309,48 +370,20 @@ if [ -x prog_decode_1024_256 ]; then
     [ -x chain_bench ] && ./chain_bench decode_1024 256 "$REPS" $vals 2>&1 | tee -a "$LOG"
 fi
 
-# S62 `splitk` (ADR-0040): per `mm_MxNxK` cell, every arm (exact, contract, the
-# reassociation face on both step faces, its OFF / null / forced-S arms) with
-# cuBLAS and CUTLASS in ONE process (tile_bench --splitk: value gates first,
-# round-robin, ABBA inside), twice, the second in reversed arm order. Then the
-# whole programs of the split arms on this driver (workspace + two launches):
-# each must exit 0 and print the two cells its OFF arm prints within 1e-3
-# relative (the first line, a sum over every cell, cancels: not compared).
-if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
-    say "-- splitk: mm_MxNxK cells, every arm in one process, two processes ABBA (reps=$REPS)"
-    for l in "$PROF"/mm_*x*x*_r.launch; do
-        cell=$(basename "$l" _r.launch); d=${cell#mm_}; M=${d%%x*}; d=${d#*x}; N=${d%%x*}; K=${d#*x}
-        # S62 integration: every arm the bundle built for the cell (`.base`, `.off-<rung>`, `.null`).
-        arms=$(cd "$PROF" && ls "$cell".launch "$cell".*.launch "${cell}"_x.launch "${cell}"_c.launch "${cell}"_c.*.launch \
-            "${cell}"_r*.launch 2>/dev/null | sed 's/\.launch$//' | tr '\n' ' ')
-        say "# splitk cell=$cell M=$M N=$N K=$K arms=$arms"
-        for pass in 1 2; do
-            order=$arms; [ $pass = 2 ] && order=$(tr ' ' '\n' <<< "$arms" | sed '/^$/d' | tac | tr '\n' ' ')
-            # shellcheck disable=SC2086  # the arms are separate arguments
-            ./tile_bench --splitk "$M" "$N" "$K" "$REPS" "$PROF" $order 2>&1 | sed "s/^/pass=$pass cell=$cell /" | tee -a "$LOG"
-            [ "${PIPESTATUS[0]}" -eq 0 ] || say "SPLITK GATE FAILED cell=$cell pass=$pass"
-        done
-        # S63: the whole program of every arm through mapal_gpu.c (the output's
-        # `mapal_gpu_zero` + the atomic launch on the default face, the workspace +
-        # reduce on the fixed one) prints the exact face's value within D2's bound.
-        [ -f "$PROF/${cell}_x.host.o" ] && link "$PROF/${cell}_x.host.o" "prog_${cell}_x"
-        # A three-line program's first line is a host sum over every cell, which cancels
-        # (S62): the cells it prints after it are compared.
-        cells_of() { local x; read -r -a x <<< "$1"; if [ ${#x[@]} -eq 3 ]; then echo "${x[@]:1}"; else echo "${x[@]}"; fi; }
-        ref=$(MAPAL_PTX="$PROF/${cell}_x.ptx" "./prog_${cell}_x" 2>&1 | tr '\n' ' ')
-        cells_of "$ref" > "prog_${cell}_x.out"
-        for l2 in "$PROF/$cell".launch "$PROF/$cell".off-*.launch "$PROF/${cell}"_c.launch "$PROF/${cell}"_r.launch "$PROF/${cell}"_rc.launch; do
-            [ -f "$l2" ] || continue
-            s=$(basename "$l2" .launch)
-            [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
-            on=$(MAPAL_PTX="$PROF/$s.ptx" "./prog_$s" 2>&1 | tr '\n' ' '); rc=$?
-            g=$(python3 value_gate.py "prog_${cell}_x.out" "$(cells_of "$on")" "$K")
-            say "splitk_program prog=$s rc=$rc out=[$on] exact=[$ref] launch=[$(cat "$l2")] $g"
-            [ "$rc" -eq 0 ] && [ "${g%% *}" = within ] || say "SPLITK PROGRAM FAILED prog=$s"
-        done
-    done
+# S64: the intent check over this run (evidence.py: the bundle's static facts + this box's JIT
+# images, `exec`), then the PyTorch legs of every timed probe that printed values.
+if [ -f evidence.py ] && [ -f "$PROF/evidence/facts.json" ]; then
+    python3 evidence.py check "$PROF" "$LOG" > "evidence-$PROF.tsv" 2> evidence-check.err
+    say "evidence: $(tail -1 "evidence-$PROF.tsv") $(head -c 300 evidence-check.err)"
 fi
-
+if [ -n "${TORCH_PID:-}" ]; then
+    say "-- torch: PyTorch eager + torch.compile legs (torch_bench.py, reps=$REPS)"
+    wait "$TORCH_PID"; say "torch install: $(tail -2 torch-install.log | tr '\n' ' ')"
+    tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | tr '\n' ' ')
+    # shellcheck disable=SC2086  # the stems are separate arguments
+    [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" python3 torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"
+    say "torch exit=${PIPESTATUS[0]} $(tail -c 300 torch.err | tr '\n' ' ')"
+fi
 # TIMING=0 (S63): skip the single-arm square-cell section (a cell session runs tile_bench --splitk).
 if [ "${TIMING:-1}" = 1 ]; then
 say "-- timing vs cuBLAS / CUTLASS (f32, reps=$REPS, passes=${PASSES:-1})"

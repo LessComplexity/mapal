@@ -199,6 +199,27 @@ fn side(exe: &Path, ext: &str) -> PathBuf {
     s.into()
 }
 
+/// S64 evidence pass (`MAPAL_EVIDENCE=1`): the step's LLVM optimization
+/// remarks beside `exe` — `<exe>.host.remarks.yaml` (clang),
+/// `<exe>.dev.{opt,llc}.remarks.yaml` — for `benches/gpu/evidence.py`.
+fn remarks(cmd: &mut Command, exe: &Path, tool: &str) {
+    if env("MAPAL_EVIDENCE").as_deref() != Some("1") {
+        return;
+    }
+    if tool == "clang" {
+        let f = side(exe, ".host.remarks.yaml");
+        cmd.arg("-fsave-optimization-record=yaml")
+            .arg(format!("-foptimization-record-file={}", f.display()))
+            .arg("-foptimization-record-passes=loop-vectorize|loop-unroll|slp-vectorizer|inline|sroa|licm");
+    } else {
+        let f = side(exe, &format!(".dev.{tool}.remarks.yaml"));
+        cmd.arg(format!("-pass-remarks-output={}", f.display()));
+        if tool == "opt" {
+            cmd.arg("-pass-remarks-filter=loop-unroll|sroa|licm|gvn|instcombine|loop-vectorize");
+        }
+    }
+}
+
 fn write(p: &Path, text: &str) -> Res<()> {
     std::fs::write(p, text).map_err(|e| {
         eprintln!("mapal: write {}: {e}", p.display());
@@ -286,12 +307,14 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
             write(&dll, dev)?;
             let mut opt = llvm_tool("opt");
             opt.arg("-O3").arg(&dll).arg("-S").arg("-o").arg(&oll);
+            remarks(&mut opt, exe, "opt");
             sh(a, opt, "set LLVM=<dir with opt/llc>")?;
             let mut llc = llvm_tool("llc");
             llc.args(["-O3", &format!("-mcpu={arch}"), "-nvptx-fma-level=0"])
                 .arg(&oll)
                 .arg("-o")
                 .arg(&ptx);
+            remarks(&mut llc, exe, "llc");
             sh(a, llc, "set LLVM=<dir with opt/llc>")?;
             wrote.extend([dll, ptx.clone()]);
             Some(ptx)
@@ -327,6 +350,7 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
         let (obj, gpu_c) = (side(exe, ".o"), side(exe, ".mapal_gpu.c"));
         let mut c = cc();
         c.args(["-O2", "-c", quiet]).arg(&host).arg("-o").arg(&obj);
+        remarks(&mut c, exe, "clang");
         sh(a, c, "set CC=<clang>")?;
         write(&gpu_c, include_str!("../../mapal-rt/gpu/mapal_gpu.c"))?;
         link.arg(&obj).arg(&gpu_c).arg(&rt);
@@ -335,6 +359,7 @@ fn build(a: &Args, ir: &CategoryIr, exe: &Path) -> Res<(&'static str, Option<Pat
         link.args(["-lcuda", "-lpthread", "-ldl", "-lm"]);
     } else {
         link.args(["-O2", quiet]).arg(&host).arg(&rt);
+        remarks(&mut link, exe, "clang");
     }
     if let Some(ld) = env("MAPAL_LD") {
         link.arg(format!("-fuse-ld={ld}"));

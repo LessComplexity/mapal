@@ -759,7 +759,7 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     // host's CPU facts; off, against `generic`'s — the S52–S54 GPU build.
     let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
     if !rungs.hostopt {
-        return emit_module(ir, opts, profile);
+        return emit_module(ir, opts, profile).map(|em| host_line(ir, opts, profile, em));
     }
     let host = profile::resolve(opts.host).ok_or_else(|| unknown(opts.host))?;
     if host.gpu().is_some() {
@@ -789,10 +789,54 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     } else {
         em
     };
-    Ok(Emission {
-        profile: name,
-        ..em
-    })
+    Ok(host_line(
+        ir,
+        opts,
+        both,
+        Emission {
+            profile: name,
+            ..em
+        },
+    ))
+}
+
+/// S64 evidence pass: a GPU build's host module ends with one `; mapal.host`
+/// comment — the profiles it was emitted against, its face, and how many
+/// capable tile sites `place` put on the device and kept on the host
+/// (`func/gpu.rs:placement`, the walk's own answer). `benches/gpu/evidence.py`
+/// reads it; a comment, so the object is unchanged.
+fn host_line(
+    ir: &CategoryIr,
+    opts: &EmitOpts,
+    profile: &'static TargetProfile,
+    mut em: Emission,
+) -> Emission {
+    // A build with no device unit IS the host's CPU build, byte for byte.
+    if em.device.is_none() {
+        return em;
+    }
+    let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
+    let (mut dev, mut host) = (0, 0);
+    for (f, _) in ir.funcs() {
+        let plan = crate::func::gpu::tile_plan(ir, f, profile, rungs);
+        let placed = crate::func::gpu::placement(ir, f, &plan, profile);
+        for (m, s) in plan.sites.iter() {
+            if crate::func::gpu::gpu_site(s, profile) {
+                if placed.contains_key(m) {
+                    dev += 1;
+                } else {
+                    host += 1;
+                }
+            }
+        }
+    }
+    em.text.push_str(&format!(
+        "; mapal.host profile={} fma={} order={:?} device_sites={dev} host_sites={host}\n",
+        em.profile,
+        u8::from(opts.contract),
+        opts.order
+    ));
+    em
 }
 
 /// One module against one resolved profile — a CPU profile, or a GPU profile
