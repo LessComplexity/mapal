@@ -1,0 +1,4 @@
+rtx-5090 {'arms': 70, 'within_yes': 70, 'failed': 0} free arms 10 fnv differ 8; deterministic arms 25 differ 0
+rtx-4090 {'arms': 62, 'within_yes': 62, 'failed': 0} free arms 2 fnv differ 2; deterministic arms 29 differ 0
+h100-pcie {'arms': 76, 'within_yes': 76, 'failed': 0} free arms 11 fnv differ 9; deterministic arms 27 differ 0
+rtx-3090 {'arms': 82, 'within_yes': 82, 'failed': 0} free arms 13 fnv differ 11; deterministic arms 28 differ 0

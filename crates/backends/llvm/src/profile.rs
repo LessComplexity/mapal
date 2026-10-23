@@ -1334,6 +1334,73 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1574 ms (30 processes each, null 0.019/0.034); the class's \
                kernel cells unchanged",
     },
+    // S63 (ADR-0040 D5) the default face's realizations, `benches/results/gpu/s63/default-float/<part>/
+    // results-<part>.txt`: per cell the ON arm against the next realization down (`.off-<rung>`), two
+    // tile_bench processes ABBA, L2 flushed, every arm inside ADR-0040 D2's bound first. A rung stays
+    // ON in a (fill, Contract) class only where no cell it changes there is slower than its OFF arm
+    // beyond that run's null and one is faster beyond it (the pre-registered rule): one loss, or no
+    // win, is a row — the class's wins it forgoes are cited with it.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "streamk",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-5090/results-rtx-5090.txt mm_16x2048x7168: ON 0.0860/0.0860 vs off-streamk \
+               0.0819/0.0819 ms, ON/OFF 1.050/1.050, null 0.012; forgone 128x2048x7168 0.851/0.863; \
+               16x1024x4096 inside null (0.958/1.000)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-4090/results-rtx-4090.txt mm_16x18432x7168 (the only cell it changes): ON \
+               0.6537/0.6543 vs off-streamk 0.6185/0.6176 ms, ON/OFF 1.057/1.059, null 0.002",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt mm_4096x4096x4096: ON 5.0664/5.0721 vs \
+               off-streamk 4.4731/4.4743 ms, ON/OFF 1.133/1.134, null 0.000; forgone 16x18432x7168 0.748/0.748",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "splitk-atomic",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt against the workspace split, no win in either \
+               class: mm_16x1024x4096 (under) 0.0506/0.0508 vs 0.0510/0.0508 ms (0.992/1.000, null 0.004), \
+               mm_16x2048x7168 (filled) 0.0977/0.0978 vs 0.0981/0.0980 ms (0.996/0.998, null 0.002)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streamk",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_128x2048x7168 against the atomic split: ON \
+               0.3338/0.3328 vs 0.3205/0.3185 ms, ON/OFF 1.041/1.045, null 0.003; forgone 16x1024x4096 \
+               0.880/0.863",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 against the atomic split: ON \
+               0.1495/0.1485 vs 0.1198/0.1178 ms (1.248/1.261, null 0.007); mm_4096x4096x4096 7.1977/7.3185 vs \
+               7.0277/7.1127 ms (1.024/1.029, null 0.014); forgone 16x18432x7168 0.924/0.928",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk-atomic",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 (the only cell it changes) \
+               against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
+               win",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

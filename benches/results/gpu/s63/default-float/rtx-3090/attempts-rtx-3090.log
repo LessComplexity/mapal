@@ -1,0 +1,2 @@
+[01:05:31] try RTX_3090 offer=56692203 dph=0.193 pcie=12.8 cpu_ghz=2.35 cpu=AMD_EPYC_7452_32-Core_Processor host=483833 machine=150616 geo=California, US
+[01:10:22] DONE RTX_3090 offer=56692203 host=483833 machine=150616

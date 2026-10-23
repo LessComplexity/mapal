@@ -396,7 +396,7 @@ static int splitk_main(int argc, char **argv) {
     int regs = 0, spill = 0, rregs = 0;
     cuFuncGetAttribute(&regs, CU_FUNC_ATTRIBUTE_NUM_REGS, a.fn);
     cuFuncGetAttribute(&spill, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, a.fn);
-    if (a.s > 1) {
+    if (a.s > 1 && !a.atomic) {
       CU(cuModuleGetFunction(&a.red, mod, rname));
       cuFuncGetAttribute(&rregs, CU_FUNC_ATTRIBUTE_NUM_REGS, a.red);
       CUDA(cudaMalloc(&a.ws, (size_t)a.s * M * N * 4));
@@ -406,7 +406,7 @@ static int splitk_main(int argc, char **argv) {
            a.stem.c_str(), a.free ? "default+" : a.reassoc ? "fixed+" : "", a.contract ? "fma" : "separate", kname,
            a.gx, a.gy, a.block, a.smem, regs, spill, a.s,
            a.atomic ? rname : a.s > 1 ? "workspace" : "none");
-    if (a.s > 1) printf(" reduce=%s rgrid=%ux%u rblock=%u rregs=%d", rname, a.rgx, a.rgy, a.rblock, rregs);
+    if (a.s > 1 && !a.atomic) printf(" reduce=%s rgrid=%ux%u rblock=%u rregs=%d", rname, a.rgx, a.rgy, a.rblock, rregs);
     printf("\n");
     arms.push_back(a);
   }

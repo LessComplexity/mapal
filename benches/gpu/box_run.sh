@@ -334,14 +334,17 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
         # `mapal_gpu_zero` + the atomic launch on the default face, the workspace +
         # reduce on the fixed one) prints the exact face's value within D2's bound.
         [ -f "$PROF/${cell}_x.host.o" ] && link "$PROF/${cell}_x.host.o" "prog_${cell}_x"
+        # A three-line program's first line is a host sum over every cell, which cancels
+        # (S62): the cells it prints after it are compared.
+        cells_of() { local x; read -r -a x <<< "$1"; if [ ${#x[@]} -eq 3 ]; then echo "${x[@]:1}"; else echo "${x[@]}"; fi; }
         ref=$(MAPAL_PTX="$PROF/${cell}_x.ptx" "./prog_${cell}_x" 2>&1 | tr '\n' ' ')
-        echo "$ref" > "prog_${cell}_x.out"
+        cells_of "$ref" > "prog_${cell}_x.out"
         for l2 in "$PROF/$cell".launch "$PROF/$cell".off-*.launch "$PROF/${cell}"_c.launch "$PROF/${cell}"_r.launch "$PROF/${cell}"_rc.launch; do
             [ -f "$l2" ] || continue
             s=$(basename "$l2" .launch)
             [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
             on=$(MAPAL_PTX="$PROF/$s.ptx" "./prog_$s" 2>&1 | tr '\n' ' '); rc=$?
-            g=$(python3 value_gate.py "prog_${cell}_x.out" "$on" "$K")
+            g=$(python3 value_gate.py "prog_${cell}_x.out" "$(cells_of "$on")" "$K")
             say "splitk_program prog=$s rc=$rc out=[$on] exact=[$ref] launch=[$(cat "$l2")] $g"
             [ "$rc" -eq 0 ] && [ "${g%% *}" = within ] || say "SPLITK PROGRAM FAILED prog=$s"
         done
