@@ -466,3 +466,74 @@ fan_body = twin(128)[1] + site('g', 'c', 'd', 128)
     probe_program(128, ('abef', fan_body, [('c', 128 * 128), ('d', 128 * 128), ('g', 128 * 128)]), True)
     .replace('    () -> time -> t0;\n', '').replace('    () -> time -> t1;\n', '')
     .replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))
+
+
+# --- S62 `hostopt` / `place`: composed programs whose sites differ in size, so
+# a per-site placement has something to decide. `pt_*`: timed like the probes
+# (`time` around the computations, then the corners of every output); their
+# oracle is the CPU build (bundle.sh), both faces.
+def law(name, length, key):
+    mul, add, mod, off, div = OPS[key]
+    return (f"    {length} -> iota -> i_{name};\n"
+            f"    i_{name} -> map {{ t -> (t * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; "
+            f"v / {div} }} -> {name};\n")
+
+
+def gsite(out, a, b, M, N, K):
+    """`out = a·b`, a M×K and b K×N row-major: one tile site of any shape."""
+    return (f"    {M * N} -> iota -> o_{out};\n    {K} -> iota -> k_{out};\n"
+            f"    o_{out} -> map {{ t ->\n        t / {N} -> i;\n        t % {N} -> j;\n"
+            f"        (0.0, k_{out}) -> fold {{ acc, k -> acc + {a}[i * {K} + k] * {b}[k * {N} + j] }}\n"
+            f"    }} -> {out};\n")
+
+
+def composed(ops, body, outs):
+    s = "fn main() {\n" + "".join(law(*o) for o in ops) + "    () -> time -> t0;\n" + body
+    s += "    () -> time -> t1;\n"
+    for o, length in outs:
+        s += f"    {o}[0] -> println;\n    {o}[{length - 1}] -> println;\n"
+    return s + '    "iter ms=" -> print;\n    t1 - t0 -> println;\n}\n'
+
+
+def small_chain(s, x=""):
+    """Three dependent s³ sites (`c3{x} = ((a·b)·e)·f`)."""
+    ops = [(f"sa{x}", s * s, 'a'), (f"sb{x}", s * s, 'b'), (f"se{x}", s * s, 'e'), (f"sf{x}", s * s, 'f')]
+    body = (gsite(f"c1{x}", f"sa{x}", f"sb{x}", s, s, s) + gsite(f"c2{x}", f"c1{x}", f"se{x}", s, s, s)
+            + gsite(f"c3{x}", f"c2{x}", f"sf{x}", s, s, s))
+    return ops, body, [(f"c3{x}", s * s)]
+
+
+# The projection families of the S56 composed cells (M rows of activations
+# times a K×N weight): DeepSeek expert / dense, Qwen expert.
+for M in (1, 16, 128):
+    for N, K in ((2048, 7168), (1024, 4096), (18432, 7168)):
+        (out / f"pt_pj_m{M}_n{N}_k{K}.mapal").write_text(
+            composed([("a", M * K, 'a'), ("b", K * N, 'b')], gsite("c", "a", "b", M, N, K), [("c", M * N)]))
+# The residual MLP chains: y = relu(x·W1 + bias)·W2 + x.
+for M, d, h in ((128, 256, 512), (128, 1024, 2048)):
+    body = (gsite("s1", "x", "w1", M, h, d)
+            + f"    o_s1 -> map {{ t -> {relu(f's1[t] + bias[t % {h}]')} }} -> hh;\n"
+            + gsite("s2", "hh", "w2", M, d, h)
+            + "    o_s2 -> map { t -> s2[t] + x[t] } -> y;\n")
+    bias_law = (f"    {h} -> iota -> i_bias;\n"
+                f"    i_bias -> map {{ t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 }} -> bias;\n")
+    src = composed([("x", M * d, 'a'), ("w1", d * h, 'b'), ("w2", h * d, 'e')], body, [("y", M * d)])
+    (out / f"pt_rm_m{M}_d{d}_h{h}.mapal").write_text(src.replace("    () -> time -> t0;\n", bias_law + "    () -> time -> t0;\n"))
+def mixed(n, s):
+    """The small chain written first, then an independent `mlp` chain at n
+    (c = a·b; h = c·0.5; d = h·e)."""
+    ops, body, outs = small_chain(s)
+    ops += [("a", n * n, 'a'), ("b", n * n, 'b'), ("e", n * n, 'e')]
+    body += gsite("c", "a", "b", n, n, n) + "    c -> map { v -> v * 0.5 } -> h;\n" + gsite("d", "h", "e", n, n, n)
+    return ops, body, outs + [("d", n * n)]
+
+
+# The small chain alone (every site small: the whole program's placement), and
+# mixed with a large chain — the cell where per-site placement differs.
+for s in (32, 64, 128):
+    (out / f"pt_pc_{s}.mapal").write_text(composed(*small_chain(s)))
+    for n in (2048, 4096) if s > 32 else (2048,):
+        (out / f"pt_pm_{n}_{s}.mapal").write_text(composed(*mixed(n, s)))
+# The mixed cell's differential (oracle: the interpreter; 128 keeps it ~1 min).
+(out / "px_pm_128_32.mapal").write_text(
+    composed(*mixed(128, 32)).replace('    "iter ms=" -> print;\n    t1 - t0 -> println;\n', ''))

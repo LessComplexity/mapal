@@ -42,15 +42,11 @@ impl<'a> FnEmit<'a> {
         let Some(record) = self.tile_plan.as_ref().and_then(|p| p.sites.get(*site)) else {
             return false;
         };
-        let width = crate::profile::elem_bytes(&record.elem);
         // `k` multiply-adds per output element; each operand panel and the
-        // output walked once.
+        // output walked once (the roofline S62 `place` reads too).
         let flops = 2u64.saturating_mul(n).saturating_mul(record.k);
-        let bytes = (record.rows.saturating_mul(record.k)
-            + record.k.saturating_mul(record.c)
-            + record.rows.saturating_mul(record.c))
-        .saturating_mul(width);
-        let ns = (flops / cost.flops_per_ns.max(1)).max(bytes / cost.bytes_per_ns.max(1));
+        let bytes = crate::profile::tile_bytes(record.rows, record.c, record.k, &record.elem);
+        let ns = crate::profile::roofline_ns(flops, bytes, cost.flops_per_ns, cost.bytes_per_ns);
         ns < cost.dispatch_ns
     }
 

@@ -23,6 +23,7 @@ fn emit_on(src: &str, target: &'static str, contract: bool, mut gpu: GpuArms) ->
     emit_detailed(
         &lower_src(src),
         &EmitOpts {
+            host: "generic",
             target,
             contract,
             gpu,
@@ -426,6 +427,7 @@ fn every_kernel_takes_the_epilogue() {
         let e = emit_detailed(
             &lower_src(&bias()),
             &EmitOpts {
+                host: "generic",
                 target,
                 contract: true,
                 reduced: Some(Reduced::Tf32),

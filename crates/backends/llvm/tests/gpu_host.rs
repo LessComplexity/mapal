@@ -38,6 +38,7 @@ fn lower_src(src: &str) -> CategoryIr {
 
 fn host(src: &str, target: &'static str, gpu: GpuArms) -> String {
     let opts = EmitOpts {
+        host: "generic",
         target,
         gpu,
         ..EmitOpts::default()
@@ -103,6 +104,7 @@ fn the_host_rung_moves_nothing_but_the_flag() {
     );
     let dev = |gpu| {
         let opts = EmitOpts {
+            host: "generic",
             target: "rtx-5090",
             gpu,
             ..EmitOpts::default()

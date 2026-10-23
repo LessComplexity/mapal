@@ -23,6 +23,7 @@ fn emit(src: &str, target: &'static str, mut gpu: GpuArms) -> Emission {
     emit_detailed(
         &lower_src(src),
         &EmitOpts {
+            host: "generic",
             target,
             gpu,
             ..EmitOpts::default()
@@ -422,6 +423,7 @@ fn grouped(src: &str, contract: bool) -> Emission {
     emit_detailed(
         &lower_src(src),
         &EmitOpts {
+            host: "generic",
             target: "rtx-5090",
             contract,
             gpu,
