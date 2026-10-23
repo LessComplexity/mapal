@@ -141,15 +141,19 @@ fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
 fn off(rung: &str) -> GpuArms {
     let mut a = GpuArms::default();
     *a.off.rung(rung).expect("a rung") = true;
+    a.off.fill_rows = true; // as in `forced`
     a
 }
 
 /// Both rungs forced on: the placement under test, whatever the part's
 /// measured table ships (`rowfold-layout` ships OFF where it was measured).
+/// S62 `fill-rows` held off: it gives this site a one-row register tile, and
+/// a column-major store needs whole vectors of rows (`col_store`).
 fn forced() -> GpuArms {
     let mut a = GpuArms::default();
     a.on.rowfold = true;
     a.on.rowfold_layout = true;
+    a.off.fill_rows = true;
     a
 }
 

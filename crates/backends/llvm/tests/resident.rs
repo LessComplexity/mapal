@@ -448,11 +448,13 @@ fn golden_arena_host_modules() {
 /// the last site's output goes to the host, so its window is the operand the
 /// most blocks read: `a` (each row-panel read by the grid's 4 columns) over
 /// `b` (2 rows) on this 64×64 site's 4×2 grid. Off: no window, the S53 text.
-/// Forced on: S56's H100 PCIe table leaves it off on both faces.
+/// Forced on: S56's H100 PCIe table leaves it off on both faces. S62
+/// `fill-rows` held off: it is what keeps this site's grid 4×2.
 #[test]
 fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
     let mut forced = on();
     *forced.on.rung("l2-window").expect("a rung") = true;
+    forced.off.fill_rows = true;
     let ll = emit(&chain_src(), forced);
     for contract in [false, true] {
         let shipped = emit_with_opts(

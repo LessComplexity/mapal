@@ -1069,6 +1069,90 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
                6.119/5.545 vs 6.122/5.549 ms)",
     },
+    // S62 ordered tile geometry: benches/results/gpu/s62/geometry/v2/<part>/results-<part>.txt and
+    // -pass2.txt (ABBA), OFF/ON per pass, each bench normalized by its own cuBLAS leg; no effect
+    // within max(1%, that session's largest null-arm deviation).
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wave-gate",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _c 16x18432x7168 OFF/ON 0.223/0.225: on 2.0659 ms (the \
+               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _exact 16x18432x7168 OFF/ON 0.988/0.994, no effect within \
+               the session null 7.9%: on 0.3420 vs off 0.3420 ms",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
+               128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
+               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.965/0.963, _exact 0.963/0.965 \
+               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x2048x7168 OFF/ON 1.013/1.014, no effect within the \
+               session null 2.6% (ms in the files)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 \
+               (disjoint; ms in the files)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "wave-gate",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint; ms in the \
+               files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935; \
+               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 \
+               (ms in the files)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
+               no stable gain (null 4.3%; ms in the files)",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -2126,6 +2210,9 @@ impl TargetProfile {
     /// a site with fewer such blocks than SMs — or, under `fill`, fewer warps
     /// than [`Gpu::fill_warps`] — takes the S52 geometry instead, which they
     /// then fill.
+    ///
+    /// The S62 geometry rungs ([`Self::gpu_tile_with`]) are all off here: this
+    /// is the geometry the rung table's fill key reads (`gpu.rs:launch`).
     pub fn gpu_tile(
         &self,
         rows: u64,
@@ -2135,6 +2222,53 @@ impl TargetProfile {
         wide: bool,
         fill: bool,
     ) -> Option<GpuTile> {
+        let r = crate::GpuRungs {
+            fill,
+            ..crate::GpuRungs::default()
+        };
+        self.gpu_tile_with(rows, c, k, elem, wide, r)
+    }
+
+    /// [`Self::gpu_tile`] under the rungs `r` reads: `fill` (`warp-fill`) and
+    /// the S62 ordered-geometry rungs. Each re-partitions the independent
+    /// output domain (`rows × c`, every cell's `k` fold kept whole and in
+    /// order on one thread, `TilePlan`) or moves a panel boundary — never the
+    /// order a cell folds:
+    ///
+    /// - `fill-rows` (step 3): the fill rule may shrink `tm` to 1, not one
+    ///   vector — the vector floor was the emitter's `<lanes x t>` fragment
+    ///   load, not a fact. `tn` keeps it (the output's vector store). Only
+    ///   where the vector-floor tile has no geometry on these rows: a scalar
+    ///   `a` row costs a shared load per FMA row, which pays against the
+    ///   one-thread-per-cell kernel, not against a vector tile (S62 v1 on the
+    ///   5090, 4090, H100 PCIe and 3090: 1.15–5.7× over the former in every
+    ///   cell; against the latter 0.53–0.96× in 12 cells, ±2% in 5, 1.18–1.40× in 2).
+    /// - `row-fit` (after step 4): a thread grid taller than the site
+    ///   (`ty·tm > rows`) halves `ty` and doubles `tx`, thread count kept.
+    /// - `wave-gate`: a row-fitted grid with fewer blocks than SMs is `None` —
+    ///   an SM without a block is idle for the whole launch (S59: 64 and 32
+    ///   blocks on 170 SMs measured 1.37–1.47× the one-thread-per-cell time).
+    /// - `grid-share` (step 5): one SM holds at most `⌈blocks / sms⌉` of this
+    ///   grid's blocks, so the panel share is sized against that residency.
+    pub fn gpu_tile_with(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+    ) -> Option<GpuTile> {
+        let fill = r.fill;
+        if r.fill_rows && fill && !wide {
+            let floor = crate::GpuRungs {
+                fill_rows: false,
+                ..r
+            };
+            if let Some(t) = self.gpu_tile_with(rows, c, k, elem, wide, floor) {
+                return Some(t);
+            }
+        }
         let g = self.gpu()?;
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
@@ -2160,10 +2294,11 @@ impl TargetProfile {
         };
         let under_warps =
             |tm: u64, tn: u64| fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
+        let tm_floor = if r.fill_rows { 1 } else { lanes };
         while !wide && under_warps(tm, tn) {
             if tn >= tm && tn > lanes {
                 tn /= 2;
-            } else if tm > lanes {
+            } else if tm > tm_floor {
                 tm /= 2;
             } else {
                 break;
@@ -2197,7 +2332,7 @@ impl TargetProfile {
         // fills (S53: halving the wide grid at 1024² measured 0.70× on Ada and
         // Blackwell — half the warps per block over the same tiles).
         if wide && ((rows / (ty * tm)) * (c / (tx * tn)) < g.sms || under_warps(tm, tn)) {
-            return self.gpu_tile(rows, c, k, elem, false, fill);
+            return self.gpu_tile_with(rows, c, k, elem, false, r);
         }
         let mut halve_x = true;
         while (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
@@ -2207,6 +2342,17 @@ impl TargetProfile {
                 ty /= 2;
             }
             halve_x = !halve_x;
+        }
+        // S62 `row-fit`: a successful geometry already has `bm ≤ rows`, so
+        // this moves only a grid that would otherwise be rejected below.
+        let fit = r.row_fit && rows > 0 && ty > 1 && ty * tm > rows;
+        while fit && ty > 1 && ty * tm > rows {
+            ty /= 2;
+            tx *= 2;
+        }
+        let blocks = (rows / (ty * tm)) * (c / (tx * tn));
+        if fit && r.wave_gate && blocks < g.sms {
+            return None;
         }
 
         let geom = |bk| GpuTile {
@@ -2225,9 +2371,15 @@ impl TargetProfile {
         if rows % bm != 0 || c % bn != 0 {
             return None;
         }
+        let grid = if r.grid_share {
+            blocks.div_ceil(g.sms)
+        } else {
+            u64::MAX
+        };
         let blocks_per_sm = (resident_threads / threads)
             .min(g.max_threads_per_sm / threads)
             .min(g.max_blocks_per_sm)
+            .min(grid)
             .max(1);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
@@ -4105,6 +4257,131 @@ mod tests {
             (w.wm(), w.wn(), w.bm(), w.bn(), w.bk, w.stages),
             (64, 64, 128, 128, 16, 2)
         );
+    }
+
+    /// S62: the skinny geometries the ordered-geometry rungs derive, worked
+    /// from the device facts; and the squares they leave alone.
+    #[test]
+    fn ordered_skinny_geometry_is_derived_from_shape_and_device_facts() {
+        let f32 = Ty::f32();
+        let on = crate::GpuRungs::ALL;
+        let without = |names: &[&str]| {
+            let mut r = on;
+            for n in names {
+                *r.rung(n).expect("a rung") = false;
+            }
+            r
+        };
+        let geo = |p: &TargetProfile, m, n, k, r| {
+            p.gpu_tile_with(m, n, k, &f32, false, r).map(|x| {
+                (
+                    x.tm,
+                    x.tn,
+                    x.bm(),
+                    x.bn(),
+                    x.threads(),
+                    x.bk,
+                    x.blocks_per_sm,
+                )
+            })
+        };
+        // 5090 16×2048×7168: 8×8 ⇒ fill (1360 warps) ⇒ 4×4 ⇒ `fill-rows` 1×4
+        // (256 warps: tn keeps its vector); 256 threads halve to 8 × 4 ⇒ 8 × 16
+        // blocks, 256 ≥ 170 SMs. `grid-share`: ⌈256 / 170⌉ = 2 per SM ⇒ 49 KB
+        // ⇒ bk 512 (24 · 512 · 4 B); without it 16 per SM ⇒ 5.2 KB ⇒ bk 32.
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, on),
+            Some((1, 4, 8, 16, 32, 512, 2))
+        );
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, without(&["grid-share"])),
+            Some((1, 4, 8, 16, 32, 32, 16))
+        );
+        // Wide: the vector floor has a geometry — 4×4 at 32 threads row-fits to
+        // 16 × 32, 576 blocks ≥ 170 SMs — so `fill-rows` keeps it; ⌈576 / 170⌉ =
+        // 4 per SM ⇒ bk 128. Likewise M128: a vector tile exists, no scalar rows.
+        assert_eq!(
+            geo(&RTX_5090, 16, 18432, 7168, on),
+            Some((4, 4, 16, 32, 32, 128, 4))
+        );
+        for (m, n, k) in [(16, 18432, 7168), (128, 2048, 7168), (128, 1024, 4096)] {
+            assert_eq!(
+                geo(&RTX_5090, m, n, k, on),
+                geo(&RTX_5090, m, n, k, without(&["fill-rows"])),
+                "{m}x{n}x{k}"
+            );
+        }
+        // `fill-rows` off: 4×4 at 32 threads is 32 rows tall ⇒ `row-fit` 16 × 32,
+        // 64 blocks < 170 SMs ⇒ `wave-gate` ⇒ the one-thread-per-cell kernel;
+        // with the gate off too, the S59 geometry — one SM's share, bk 512.
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, without(&["fill-rows"])),
+            None
+        );
+        assert_eq!(
+            geo(
+                &RTX_5090,
+                16,
+                2048,
+                7168,
+                without(&["fill-rows", "wave-gate"])
+            ),
+            Some((4, 4, 16, 32, 32, 512, 1))
+        );
+        // Every new rung off is the S53 geometry: no tile fits 16 rows.
+        let old = without(&["row-fit", "wave-gate", "grid-share", "fill-rows"]);
+        assert_eq!(geo(&RTX_5090, 16, 2048, 7168, old), None);
+        assert_eq!(
+            RTX_5090.gpu_tile(16, 2048, 7168, &f32, false, true),
+            RTX_5090.gpu_tile_with(16, 2048, 7168, &f32, false, old)
+        );
+        // M1: one row of 32 threads, 1 × 128 blocks. 2048 columns are 16
+        // blocks < 170 SMs: gated. 18432 columns are 144 blocks: gated on the
+        // 5090; on 128- and 82-SM parts no whole-copy panel fits a 100 KB SM
+        // (bk ≥ 128 for whole A vectors, 129 · 128 · 4 B > its share); the
+        // A100's and H100's 164/228 KB hold it.
+        assert_eq!(geo(&RTX_5090, 1, 2048, 7168, on), None);
+        assert_eq!(geo(&RTX_5090, 1, 18432, 7168, on), None);
+        for p in [&RTX_4090, &RTX_3090] {
+            assert_eq!(geo(p, 1, 18432, 7168, on), None, "{}", p.name);
+        }
+        for p in [&A100, &H100_PCIE] {
+            assert_eq!(
+                geo(p, 1, 18432, 7168, on),
+                Some((1, 4, 1, 128, 32, 128, 2)),
+                "{}",
+                p.name
+            );
+        }
+        // The squares: every subset of the new rungs, `fill` and `wide` both
+        // ways, is the old geometry at 2048² and 4096² on every part; at 1024²
+        // only `grid-share` moves anything (the 4090's 128 blocks: one per SM).
+        let new = ["row-fit", "wave-gate", "grid-share", "fill-rows"];
+        for p in GPU_MEASURED {
+            for n in [1024, 2048, 4096] {
+                for mask in 0..16u32 {
+                    let names: Vec<&str> = (0..4)
+                        .filter(|b| mask >> b & 1 == 0)
+                        .map(|b| new[b])
+                        .collect();
+                    for (wide, fill) in [(false, false), (false, true), (true, false), (true, true)]
+                    {
+                        let r = crate::GpuRungs {
+                            fill,
+                            ..without(&names)
+                        };
+                        let got = p.gpu_tile_with(n, n, n, &f32, wide, r);
+                        let want = p.gpu_tile(n, n, n, &f32, wide, fill);
+                        if n > 1024 || !r.grid_share {
+                            assert_eq!(got, want, "{} {n} {names:?}", p.name);
+                        } else {
+                            let (g, w) = (got.expect("tile"), want.expect("tile"));
+                            assert_eq!((g.tm, g.tn, g.tx, g.ty), (w.tm, w.tn, w.tx, w.ty));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// `warp-fill` (S53): the tile shrinks until the grid holds

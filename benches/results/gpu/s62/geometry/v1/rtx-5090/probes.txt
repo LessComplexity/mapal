@@ -1,0 +1,25 @@
+prog face arm | kernel-sum ms med (min-max) | iter ms med | kernel-sum arm/on
+pt_rmlp_128x1024x2048 _c off-fill-rows | 0.0700 (0.069-0.074) | 0.1221 | 0.707
+pt_rmlp_128x1024x2048 _c off-fill-rows+row-fit | 0.0720 (0.070-0.073) | 0.1399 | 0.727
+pt_rmlp_128x1024x2048 _c off-fill-rows+wave-gate | 0.0730 (0.068-0.074) | 0.1572 | 0.737
+pt_rmlp_128x1024x2048 _c off-grid-share | 0.1030 (0.099-0.105) | 0.1251 | 1.040
+pt_rmlp_128x1024x2048 _c off-panel-regs | 0.0930 (0.090-0.095) | 0.1078 | 0.939
+pt_rmlp_128x1024x2048 _c on | 0.0990 (0.099-0.102) | 0.1233 | 1.000
+pt_rmlp_128x1024x2048 _exact off-fill-rows | 0.1250 (0.124-0.125) | 0.2456 | 1.000
+pt_rmlp_128x1024x2048 _exact off-fill-rows+row-fit | 0.1240 (0.124-0.128) | 0.2090 | 0.992
+pt_rmlp_128x1024x2048 _exact off-fill-rows+wave-gate | 0.1240 (0.124-0.128) | 0.2018 | 0.992
+pt_rmlp_128x1024x2048 _exact off-grid-share | 0.1220 (0.122-0.127) | 0.1540 | 0.976
+pt_rmlp_128x1024x2048 _exact off-panel-regs | 0.0970 (0.096-0.098) | 0.1183 | 0.776
+pt_rmlp_128x1024x2048 _exact on | 0.1250 (0.123-0.127) | 0.1545 | 1.000
+pt_rmlp_128x256x512 _c off-fill-rows | 0.0280 (0.027-0.031) | 0.0876 | 1.000
+pt_rmlp_128x256x512 _c off-fill-rows+row-fit | 0.0280 (0.028-0.031) | 0.1114 | 1.000
+pt_rmlp_128x256x512 _c off-fill-rows+wave-gate | 0.0290 (0.027-0.030) | 0.1098 | 1.036
+pt_rmlp_128x256x512 _c off-grid-share | 0.0280 (0.023-0.031) | 0.0508 | 1.000
+pt_rmlp_128x256x512 _c off-panel-regs | 0.0260 (0.026-0.030) | 0.0615 | 0.929
+pt_rmlp_128x256x512 _c on | 0.0280 (0.027-0.029) | 0.1342 | 1.000
+pt_rmlp_128x256x512 _exact off-fill-rows | 0.0410 (0.039-0.044) | 0.1271 | 1.464
+pt_rmlp_128x256x512 _exact off-fill-rows+row-fit | 0.0400 (0.039-0.043) | 0.1235 | 1.429
+pt_rmlp_128x256x512 _exact off-fill-rows+wave-gate | 0.0400 (0.039-0.044) | 0.1282 | 1.429
+pt_rmlp_128x256x512 _exact off-grid-share | 0.0260 (0.025-0.027) | 0.0608 | 0.929
+pt_rmlp_128x256x512 _exact off-panel-regs | 0.0260 (0.025-0.030) | 0.0506 | 0.929
+pt_rmlp_128x256x512 _exact on | 0.0280 (0.027-0.031) | 0.1306 | 1.000
