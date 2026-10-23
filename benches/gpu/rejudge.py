@@ -87,6 +87,8 @@ def arms(profiles):
 COST = [  # (fact, sign): +1 = ON larger is a cost, -1 = ON smaller is a cost
     ('ptxas.spill_st', 1), ('occ.warps_per_sm', -1),
     ('sass.hot.span', 1), ('sass.hot.bar', 1), ('sass.hot.ffma_per_lds', -1), ('sass.hot.ffma_per_ldg', -1),
+    # S64 addition: an atomic combine's RED.ADD (an L2 read-modify-write per accumulator) for a plain store
+    ('sass.red', 1),
     ('host.calls.launch', 1), ('host.calls.launchv', 1), ('host.calls.launch_l2', 1), ('host.calls.h2d', 1),
     ('host.calls.d2h', 1), ('host.calls.alloc', 1), ('host.calls.tile', 1), ('host.calls.zero', 1),
     ('host.calls.event', 1), ('host.calls.pin', 1), ('launch.S', 1)]
@@ -99,6 +101,9 @@ def classify(delta):
         for name, sign in COST:
             if fact == name or fact.endswith('.' + name) or fact == name.split('.', 1)[1] and name.startswith('host'):
                 if isinstance(off, (int, float)) and isinstance(on, (int, float)) and off != on:
+                    # a ratio fact (instructions per k-step, FFMA per load) moves by >= 2% to count
+                    if name.startswith('sass.hot.') and name != 'sass.hot.bar' and abs(on - off) < 0.02 * abs(off):
+                        continue
                     (cost if (on - off) * sign > 0 else gain).append(f'{fact} {off}->{on}')
     return cost, gain
 
@@ -155,6 +160,12 @@ def judge(bundle, results):
         # re-measured cell AND a static gain that explains it; otherwise the row stands.
         change = ('remove: ON faster, static gain ' + '; '.join(gains[:2])
                   if mine and gains and all(v['sign'] == 'faster' for v in mine.values()) else 'no')
+        # The re-measurement against the static status: a cost that the clock contradicts is not an explanation.
+        signs = {v['sign'] for v in mine.values()}
+        if mine and 'faster' in signs:
+            st = f'open (ON faster at {" ".join(b for b, v in sorted(mine.items()) if v["sign"] == "faster")})'
+        elif mine and signs == {'slower'}:
+            st += ', ON slower re-measured' if st == 'explained' else ' (ON slower, no static cost)'
         print(f'{i}\t{p}\t{rung}\t{fill}\t{face}\t{" ".join(s + f for s, f in cells(cite, face))}\t{st}\t{ev}\t{rm}'
               f'\t{change}')
 

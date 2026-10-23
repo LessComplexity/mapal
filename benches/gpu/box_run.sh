@@ -252,7 +252,7 @@ for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     case $b in *.*|*_c|*_x) continue ;; esac
-    pa=$( (off_arms "$b"; off_arms "${b}_c"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
+    pa=$( (off_arms "$b"; off_arms "${b}_c"; off_arms "${b}_x"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
     probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
     # S63 (ADR-0040 D2): the program's longest fold, off the stem (`_d<d>_h<h>`).
     # S64: `tiles/<stem>.kmax` (gen_tiles.py) first.
