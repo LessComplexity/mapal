@@ -1,0 +1,1802 @@
+[
+ {
+  "kernel": "mapal_tile_3c3c24dceacda626",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-362.cubin",
+  "module_sha256": "4b3d803c218aba40f0aa8f846374611ea6a1cf996060de08652d565adb6ec8ca",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 40960,
+  "join": "function-activity",
+  "sass": "mapal_tile_3c3c24dceacda626.4b3d803c.sass"
+ },
+ {
+  "kernel": "mapal_tile_c376f8270e0c7175",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-378.cubin",
+  "module_sha256": "7f3a93ad35cfe11761b16397d4ffd8a34d9954b14ed60de93550df25acf1aa7e",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 22528,
+  "join": "function-activity",
+  "sass": "mapal_tile_c376f8270e0c7175.7f3a93ad.sass"
+ },
+ {
+  "kernel": "mapal_tile_c5e7174132413f14",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "6fcd66d807c5d143dcc70d08093702d963f708b8776f7d3847b12331b7ed7bbe",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   4,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 40960,
+  "join": "function-activity",
+  "sass": "mapal_tile_c5e7174132413f14.6fcd66d8.sass"
+ },
+ {
+  "kernel": "mapal_tile_82a84d50d94cce63",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "6fcd66d807c5d143dcc70d08093702d963f708b8776f7d3847b12331b7ed7bbe",
+  "in_region_launches": 1,
+  "grid": [
+   128,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_82a84d50d94cce63.6fcd66d8.sass"
+ },
+ {
+  "kernel": "mapal_tile_959628ba0998835f",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "da36b637486e956ffe4d5008b66a269ecabc832897e5b81af0eba643706a649a",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   16,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 22528,
+  "join": "function-activity",
+  "sass": "mapal_tile_959628ba0998835f.da36b637.sass"
+ },
+ {
+  "kernel": "mapal_tile_40cee023ec9fadfc",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "da36b637486e956ffe4d5008b66a269ecabc832897e5b81af0eba643706a649a",
+  "in_region_launches": 1,
+  "grid": [
+   128,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_40cee023ec9fadfc.da36b637.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-3394.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   32,
+   16
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 9600,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_.c69c4891.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_split_k_kernel__5x_cublas",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-3394.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   32,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 8704,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_.c69c4891.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   16,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x2048x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   32,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.afd0a56e.sass"
+ },
+ {
+  "kernel": "mapal_tile_70d02db2b300c1d0",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-362.cubin",
+  "module_sha256": "c7542dda3e33cf08673e11cb2cda8f9200ea741ff1053b1b28d63cfd78c68630",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 9216,
+  "join": "function-activity",
+  "sass": "mapal_tile_70d02db2b300c1d0.c7542dda.sass"
+ },
+ {
+  "kernel": "mapal_tile_29d163e8903c830f",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-378.cubin",
+  "module_sha256": "c8fbf9fa5f5f9023dcfa51ea6ebb4b0b010a85ce59d3b63086e5c0294c4bf412",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 9216,
+  "join": "function-activity",
+  "sass": "mapal_tile_29d163e8903c830f.c8fbf9fa.sass"
+ },
+ {
+  "kernel": "mapal_tile_4ed0d957892c5646",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-394.cubin",
+  "module_sha256": "7c80dab627afdae492c8c9bdf2a95c07be9b68c58d397db751ee5c4061299086",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   16,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 9216,
+  "join": "function-activity",
+  "sass": "mapal_tile_4ed0d957892c5646.7c80dab6.sass"
+ },
+ {
+  "kernel": "mapal_tile_aecc199541e72775",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-394.cubin",
+  "module_sha256": "7c80dab627afdae492c8c9bdf2a95c07be9b68c58d397db751ee5c4061299086",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_aecc199541e72775.7c80dab6.sass"
+ },
+ {
+  "kernel": "mapal_tile_7876955f9b6e0079",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-419.cubin",
+  "module_sha256": "ba676cfad2fd0d5cda0ebbba1de2ee61da77f45754265f645a2df214ae773d94",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   16,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 9216,
+  "join": "function-activity",
+  "sass": "mapal_tile_7876955f9b6e0079.ba676cfa.sass"
+ },
+ {
+  "kernel": "mapal_tile_2d7912d102d5f3a6",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-419.cubin",
+  "module_sha256": "ba676cfad2fd0d5cda0ebbba1de2ee61da77f45754265f645a2df214ae773d94",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_2d7912d102d5f3a6.ba676cfa.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-3271.cubin",
+  "module_sha256": "21acbe2c1fabbe96910b4fcee9d750f6c71f7705e9c08113bc0bc43ed7aae71a",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   1,
+   43
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 25600,
+  "join": "function-activity",
+  "sass": "cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE.21acbe2c.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-3296.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   1,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   8,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x1024x4096",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   16,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.afd0a56e.sass"
+ },
+ {
+  "kernel": "mapal_tile_94186117afc3ee24",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-362.cubin",
+  "module_sha256": "15428f3a0e65173d8cad6fa177372a4c768d8cd9054dfab23334258bb0115389",
+  "in_region_launches": 1,
+  "grid": [
+   576,
+   1,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 3072,
+  "join": "function-activity",
+  "sass": "mapal_tile_94186117afc3ee24.15428f3a.sass"
+ },
+ {
+  "kernel": "mapal_tile_e6e4dac2c61db4db",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-378.cubin",
+  "module_sha256": "00afef7e4d1fc7758683822556b3c6ad400595ecf28f86ba44f7f486321ca943",
+  "in_region_launches": 1,
+  "grid": [
+   576,
+   1,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 3328,
+  "join": "function-activity",
+  "sass": "mapal_tile_e6e4dac2c61db4db.00afef7e.sass"
+ },
+ {
+  "kernel": "mapal_tile_fe52e56dae35e1ca",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "3907bd107e2c83fc6a8664718321b54b0976b4c5aa05159ec2cb6460cb1b0a94",
+  "in_region_launches": 1,
+  "grid": [
+   576,
+   2,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 3072,
+  "join": "function-activity",
+  "sass": "mapal_tile_fe52e56dae35e1ca.3907bd10.sass"
+ },
+ {
+  "kernel": "mapal_tile_65cb1e6e69f7b2c9",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "3907bd107e2c83fc6a8664718321b54b0976b4c5aa05159ec2cb6460cb1b0a94",
+  "in_region_launches": 1,
+  "grid": [
+   1152,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_65cb1e6e69f7b2c9.3907bd10.sass"
+ },
+ {
+  "kernel": "mapal_tile_781334f9c1b81995",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "4ecd83412d9d9ca3442fa8d61e468f8cdf82bdf9f64414f879b0003b3363f01b",
+  "in_region_launches": 1,
+  "grid": [
+   576,
+   2,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 3328,
+  "join": "function-activity",
+  "sass": "mapal_tile_781334f9c1b81995.4ecd8341.sass"
+ },
+ {
+  "kernel": "mapal_tile_02b89e3d0f1dac12",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "4ecd83412d9d9ca3442fa8d61e468f8cdf82bdf9f64414f879b0003b3363f01b",
+  "in_region_launches": 1,
+  "grid": [
+   1152,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_02b89e3d0f1dac12.4ecd8341.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-3394.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   288,
+   10
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 9600,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize32x64x8_stage3_warpsize1x2x1_ffma_.c69c4891.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   144,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_16x18432x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   288,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.afd0a56e.sass"
+ },
+ {
+  "kernel": "mapal_tile_c0ff0ecadea49d14",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-362.cubin",
+  "module_sha256": "1ad5e40a5477921275d277152d5d70fff7bb7b1b075b8db2ba362837b1bcc4b0",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 6400,
+  "join": "function-activity",
+  "sass": "mapal_tile_c0ff0ecadea49d14.1ad5e40a.sass"
+ },
+ {
+  "kernel": "mapal_tile_027b82bf54cadbeb",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-378.cubin",
+  "module_sha256": "d58e5d79f7caae3d80f01fe9f848856dc8d261e8b7d2a32a7473b5a94c7fe026",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_027b82bf54cadbeb.d58e5d79.sass"
+ },
+ {
+  "kernel": "mapal_tile_b136eef1adcbeb3a",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "a4cbbac6df177eaa0a5411be8f404f4a129da5c255821fa0d9e009c14fe9460e",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   8,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 6400,
+  "join": "function-activity",
+  "sass": "mapal_tile_b136eef1adcbeb3a.a4cbbac6.sass"
+ },
+ {
+  "kernel": "mapal_tile_99970d1bc0cb9599",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-394.cubin",
+  "module_sha256": "a4cbbac6df177eaa0a5411be8f404f4a129da5c255821fa0d9e009c14fe9460e",
+  "in_region_launches": 1,
+  "grid": [
+   1024,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_99970d1bc0cb9599.a4cbbac6.sass"
+ },
+ {
+  "kernel": "mapal_tile_21efd0b7c60303e5",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "3a6721e45acf86f695e58a32c7fbae1b233dfb84dac605da820a903495346226",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   4,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_21efd0b7c60303e5.3a6721e4.sass"
+ },
+ {
+  "kernel": "mapal_tile_036e3b1dc9aafa02",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-419.cubin",
+  "module_sha256": "3a6721e45acf86f695e58a32c7fbae1b233dfb84dac605da820a903495346226",
+  "in_region_launches": 1,
+  "grid": [
+   1024,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_tile_036e3b1dc9aafa02.3a6721e4.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass7Kernel2I43cutlass_80_simt_sgemm_256x128_8x4_nn_align1EEvNT_6ParamsE",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-3271.cubin",
+  "module_sha256": "21acbe2c1fabbe96910b4fcee9d750f6c71f7705e9c08113bc0bc43ed7aae71a",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   1,
+   14
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 49152,
+  "join": "function-activity",
+  "sass": "cutlass7Kernel2I43cutlass_80_simt_sgemm_256x128_8x4_nn_align1EEvNT_6ParamsE.21acbe2c.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-3298.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   8,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   16,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_128x2048x7168",
+  "module": "module-2931.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   32,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.afd0a56e.sass"
+ },
+ {
+  "kernel": "mapal_tile_d7d2247fbbd9f82c",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-362.cubin",
+  "module_sha256": "5899d9328ce575fa4ffe04aaf6485807f2f06d2fdcd8783b824d53bd86dd5ea8",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16384,
+  "join": "function-activity",
+  "sass": "mapal_tile_d7d2247fbbd9f82c.5899d932.sass"
+ },
+ {
+  "kernel": "mapal_tile_eb50b87a44f46aa3",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-378.cubin",
+  "module_sha256": "dc699e4eecbe667ff98aec05f0aae9e94e320a7d26c8fad630256e47ec22dc9f",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "mapal_tile_eb50b87a44f46aa3.dc699e4e.sass"
+ },
+ {
+  "kernel": "mapal_tile_a7deb55e4087e889",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-394.cubin",
+  "module_sha256": "0dc2f2a6fc528700443e5d7e152f6482d8f93bc876e958fd2473e1f8fb5740e2",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16384,
+  "join": "function-activity",
+  "sass": "mapal_tile_a7deb55e4087e889.0dc2f2a6.sass"
+ },
+ {
+  "kernel": "mapal_tile_01281d6ce8b573a8",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-410.cubin",
+  "module_sha256": "103c3a19d5eef5a55f8b1241a8547a5feff971ad7f05d2b89ec33044a62c6dff",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "mapal_tile_01281d6ce8b573a8.103c3a19.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-3346.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 33792,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffm.c69c4891.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-2913.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   32,
+   32,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_cell_4096x4096x4096",
+  "module": "module-2913.cubin",
+  "module_sha256": "afd0a56eeae4e03f4f0139a1613763dd9717b6978a724a2a4d0b51063707e5ac",
+  "in_region_launches": 1,
+  "grid": [
+   256,
+   64,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.afd0a56e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass7Kernel2I41cutlass_80_simt_sgemm_64x64_8x5_nn_align1EEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-3166.cubin",
+  "module_sha256": "21acbe2c1fabbe96910b4fcee9d750f6c71f7705e9c08113bc0bc43ed7aae71a",
+  "in_region_launches": 4,
+  "grid": [
+   16,
+   1,
+   4
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 20480,
+  "join": "function-activity",
+  "sass": "cutlass7Kernel2I41cutlass_80_simt_sgemm_64x64_8x5_nn_align1EEvNT_6ParamsE.21acbe2c.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-3191.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 3,
+  "grid": [
+   16,
+   8,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_Z9bias_reluPfPKfS1_xi",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   256,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "bias_reluPfPKfS1_xi.c1bd904e.sass"
+ },
+ {
+  "kernel": "_Z7res_addPfPKfS1_x",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   128,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "res_addPfPKfS1_x.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb1ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-3191.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 1,
+  "grid": [
+   16,
+   8,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb1ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   4,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   2,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   8,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d256_h512",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   4,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x64_8x5_nn_align1EEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-3344.cubin",
+  "module_sha256": "21acbe2c1fabbe96910b4fcee9d750f6c71f7705e9c08113bc0bc43ed7aae71a",
+  "in_region_launches": 2,
+  "grid": [
+   16,
+   2,
+   7
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 30720,
+  "join": "function-activity",
+  "sass": "cutlass7Kernel2I42cutlass_80_simt_sgemm_128x64_8x5_nn_align1EEvNT_6ParamsE.21acbe2c.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-3369.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   8,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_Z9bias_reluPfPKfS1_xi",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   1024,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "bias_reluPfPKfS1_xi.c1bd904e.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-3127.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 2,
+  "grid": [
+   2,
+   16,
+   7
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 12672,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_.c69c4891.sass"
+ },
+ {
+  "kernel": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_aligna4_alignc4_execute_split_k_kernel__5x_cublas",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-3127.cubin",
+  "module_sha256": "c69c48915bc16f26d6390c092606bcf3a37c77d3b5c7d9deb7a5e3f9d0d5973b",
+  "in_region_launches": 2,
+  "grid": [
+   2,
+   16,
+   2
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 8704,
+  "join": "function-activity",
+  "sass": "sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_.c69c4891.sass"
+ },
+ {
+  "kernel": "_Z7res_addPfPKfS1_x",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "res_addPfPKfS1_x.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb1ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-3369.cubin",
+  "module_sha256": "b69b84883f19db09b1c1392a175cc175977a7a54690a2c1dc537af413fbdf4e7",
+  "in_region_launches": 1,
+  "grid": [
+   64,
+   8,
+   1
+  ],
+  "block": [
+   32,
+   16,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb1ELb0EEEvNS_18cublasSp.b69b8488.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   16,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   1,
+   8,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 16640,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_128_128_8.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   32,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.c1bd904e.sass"
+ },
+ {
+  "kernel": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+  "capture": "cap_rmlib_pt_rm_m128_d1024_h2048",
+  "module": "module-300.cubin",
+  "module_sha256": "c1bd904e5f4aa16c592b201971e7f6b3401b9375ab2d37bff4613128c4f605b2",
+  "in_region_launches": 1,
+  "grid": [
+   8,
+   16,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 10496,
+  "join": "function-activity",
+  "sass": "cutlass_Gemm_16_64_16.c1bd904e.sass"
+ },
+ {
+  "kernel": "mapal_gen_2b98ef88b8cfe803",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   128,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_2b98ef88b8cfe803.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_gen_5e4543ad7f49b930",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_5e4543ad7f49b930.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_gen_40b04f89824d809d",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_40b04f89824d809d.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_gen_92e197e9ff987e18",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   2,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_92e197e9ff987e18.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_tile_17731d10dba54322",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   32,
+   4,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 1664,
+  "join": "function-activity",
+  "sass": "mapal_tile_17731d10dba54322.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_tile_ee0c0bef47d0faac",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512",
+  "module": "module-10.cubin",
+  "module_sha256": "832aeec62deb509d6f994c81ecfae4acc12747f83049f618c3af7d9f764e8b30",
+  "in_region_launches": 0,
+  "grid": [
+   16,
+   4,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 1664,
+  "join": "function-activity",
+  "sass": "mapal_tile_ee0c0bef47d0faac.832aeec6.sass"
+ },
+ {
+  "kernel": "mapal_gen_2b98ef88b8cfe803",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   128,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_2b98ef88b8cfe803.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_gen_5e4543ad7f49b930",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_5e4543ad7f49b930.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_gen_40b04f89824d809d",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_40b04f89824d809d.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_gen_92e197e9ff987e18",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   2,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_92e197e9ff987e18.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_tile_017469b6ab50d4b9",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   16,
+   2,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_017469b6ab50d4b9.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_tile_22b3c21d9dcd3431",
+  "capture": "cap_mlp_pt_rm_m128_d256_h512_c",
+  "module": "module-10.cubin",
+  "module_sha256": "4d29b6ed889148b2566011419eb62b1e97c7792d02c97f68eded226b9e50c917",
+  "in_region_launches": 0,
+  "grid": [
+   8,
+   2,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_22b3c21d9dcd3431.4d29b6ed.sass"
+ },
+ {
+  "kernel": "mapal_gen_fa76757b0e84736f",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_fa76757b0e84736f.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_gen_67d3accb7a932f1c",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   8192,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_67d3accb7a932f1c.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_gen_c4b249198db842cb",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   8192,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_c4b249198db842cb.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_gen_797fe55cd3c0921c",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   8,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_797fe55cd3c0921c.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_tile_244395d2da7522a2",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   128,
+   1,
+   1
+  ],
+  "dyn_smem": 6400,
+  "join": "function-activity",
+  "sass": "mapal_tile_244395d2da7522a2.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_tile_d9dfe1223bcd2b98",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048",
+  "module": "module-10.cubin",
+  "module_sha256": "8be9c2dde4c0a2ea0bc2d5cf75378f87f2e87342f1bb81dcff26759b876dbddc",
+  "in_region_launches": 0,
+  "grid": [
+   32,
+   4,
+   1
+  ],
+  "block": [
+   64,
+   1,
+   1
+  ],
+  "dyn_smem": 2176,
+  "join": "function-activity",
+  "sass": "mapal_tile_d9dfe1223bcd2b98.8be9c2dd.sass"
+ },
+ {
+  "kernel": "mapal_gen_fa76757b0e84736f",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   512,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_fa76757b0e84736f.d53ea4f1.sass"
+ },
+ {
+  "kernel": "mapal_gen_67d3accb7a932f1c",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   8192,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_67d3accb7a932f1c.d53ea4f1.sass"
+ },
+ {
+  "kernel": "mapal_gen_c4b249198db842cb",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   8192,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_c4b249198db842cb.d53ea4f1.sass"
+ },
+ {
+  "kernel": "mapal_gen_797fe55cd3c0921c",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   8,
+   1,
+   1
+  ],
+  "block": [
+   256,
+   1,
+   1
+  ],
+  "dyn_smem": 0,
+  "join": "function-activity",
+  "sass": "mapal_gen_797fe55cd3c0921c.d53ea4f1.sass"
+ },
+ {
+  "kernel": "mapal_tile_aaff42445b46b739",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   64,
+   2,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_aaff42445b46b739.d53ea4f1.sass"
+ },
+ {
+  "kernel": "mapal_tile_282c99e11550b735",
+  "capture": "cap_mlp_pt_rm_m128_d1024_h2048_c",
+  "module": "module-10.cubin",
+  "module_sha256": "d53ea4f1fac715264ecd2ea32a12873f4cdd259c4fdd11ce60d582bf5c9a9ca7",
+  "in_region_launches": 0,
+  "grid": [
+   32,
+   2,
+   1
+  ],
+  "block": [
+   32,
+   1,
+   1
+  ],
+  "dyn_smem": 12800,
+  "join": "function-activity",
+  "sass": "mapal_tile_282c99e11550b735.d53ea4f1.sass"
+ }
+]

@@ -1,0 +1,26 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_f51b15635cf3d84d' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_f51b15635cf3d84d
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 120.933 ms
+ptxas info    : Compiling entry function 'mapal_gen_5cc7bcb43291cee1' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_5cc7bcb43291cee1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.382 ms
+ptxas info    : Compiling entry function 'mapal_tile_b136eef1adcbeb3a' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_b136eef1adcbeb3a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 37.662 ms
+ptxas info    : Compiling entry function 'mapal_tile_99970d1bc0cb9599' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_99970d1bc0cb9599
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 2.134 ms
+ptxas info    : Compiling entry function 'mapal_tile_64e2cdc60422cd81' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_64e2cdc60422cd81
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 79 registers, used 1 barriers
+ptxas info    : Compile time = 16.935 ms

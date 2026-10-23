@@ -1,0 +1,1 @@
+mapal kernels: 36 identical opcode sequences, 0 differ
