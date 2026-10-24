@@ -28,6 +28,10 @@ off = the merged build with `fuse`, `window`, `range-map` off; shipped = every r
 | decode, CPU-only | - | - | - | - | 0 / 0 / 0 = facts | host insns 18205 → 1619 |
 | FIR → ew → rowsum, MLP (smlp, rm, rt_mlp2), rowsum, FIR, ew, fan-out, diamond, indep, loop, loopmm | unchanged | unchanged | - | unchanged | unchanged | host IR, PTX, CPU host IR identical to base up to kernel names, all four parts (`base/identity.txt`) |
 
+CPU-only builds (x86-64-v3, apple-m): host IR byte-identical to natural-forms' emitter on all 25 programs, and
+to generic-fusion's on all but decode (its range map) (`cpu_identity.txt`): both parts' CPU A/B timings stand, no
+re-run.
+
 Unit kernels (shipped, all four parts): `mx:rowfold;ex:cell;den:rowfold;y|p:cell`, one thread per row, kept members
 in registers, `smem=0`; ptxas: no spill, no call left, pointers = stored + operands (`fuse` row); device buffers
 off-fuse − shipped = the 3 kept members on every fused program and part.
