@@ -284,6 +284,12 @@ for o in "$PROF"/pt_*.host.o; do
             continue
         fi
         exp="tiles/$b$face.expect"
+        # flow: a default face without its bound is a gate failure, never a bit comparison against
+        # another order-free build (the facts-on-graph sweep failed split-K / stream-K that way).
+        if [ -z "$face" ] && [ ! -s "$exp" ]; then
+            bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] no bound (tiles/${b}_x.expect, K)"
+            continue
+        fi
         if [ -s "$exp" ]; then want=$(tr '\n' ' ' < "$exp"); else want=$(probe_out "$b$face.cpu"); want=${want%%iter ms=*}; fi
         if [ "$got" != "$want" ]; then
             bad=1; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
