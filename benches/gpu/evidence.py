@@ -581,7 +581,10 @@ def fuse_facts(f, dev):
     d = re.search(r'^define ptx_kernel void @' + re.escape(f['kernel']) + r'\((.*)\)', dev, re.M)
     return dict(n_members=n('members'), n_keep=n('keep'), n_store=n('store'), n_gmem=n('gmem'),
                 n_law=n('law'), n_halo=str(f.get('members', '')).count('+halo'), rows=f.get('rows', 0),
-                smem=f.get('smem', 0), ll_params=d.group(1).count('ptr addrspace(1)') if d else -1)
+                smem=f.get('smem', 0), ll_params=d.group(1).count('ptr addrspace(1)') if d else -1,
+                members=str(f.get('members', '')),
+                keep=[x.split(':')[0] for x in str(f.get('keep', '')).split(';') if x],
+                store=[x for x in str(f.get('store', '')).split(';') if x])
 
 
 # ---- static: ptxas / cuobjdump / objdump ------------------------------------------------------------

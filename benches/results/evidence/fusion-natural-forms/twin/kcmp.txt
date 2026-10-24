@@ -1,0 +1,20 @@
+rtx-4090 pt_attn_1024_64: kernels 7->7 identical 7 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile'] move same host.obj.insns 122->122
+rtx-4090 pt_attn_2048_128: kernels 6->6 identical 6 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile'] move same host.obj.insns 119->119
+rtx-4090 pt_decode_1024_256: kernels 8->8 identical 8 kinds ['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile']->['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile'] move same host.obj.insns 6432->503
+rtx-4090 pt_softmax_rows_2048: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
+rtx-4090 pt_softmax_rows_4096: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
+rtx-5090 pt_attn_1024_64: kernels 6->6 identical 6 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile'] move same host.obj.insns 119->119
+rtx-5090 pt_attn_2048_128: kernels 6->6 identical 6 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile'] move same host.obj.insns 119->119
+rtx-5090 pt_decode_1024_256: kernels 8->8 identical 8 kinds ['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile']->['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile'] move same host.obj.insns 6432->503
+rtx-5090 pt_softmax_rows_2048: kernels 5->5 identical 5 kinds ['fuse', 'gen', 'gen', 'tile', 'tile']->['fuse', 'gen', 'gen', 'tile', 'tile'] move same host.obj.insns 98->98
+rtx-5090 pt_softmax_rows_4096: kernels 5->5 identical 5 kinds ['fuse', 'gen', 'gen', 'tile', 'tile']->['fuse', 'gen', 'gen', 'tile', 'tile'] move same host.obj.insns 98->98
+h100-pcie pt_attn_1024_64: kernels 7->7 identical 7 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile'] move same host.obj.insns 122->122
+h100-pcie pt_attn_2048_128: kernels 8->8 identical 8 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile', 'tile'] move same host.obj.insns 125->125
+h100-pcie pt_decode_1024_256: kernels 9->9 identical 9 kinds ['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'reduce', 'tile', 'tile']->['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'reduce', 'tile', 'tile'] move same host.obj.insns 6430->500
+h100-pcie pt_softmax_rows_2048: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
+h100-pcie pt_softmax_rows_4096: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
+rtx-3090 pt_attn_1024_64: kernels 7->7 identical 7 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile'] move same host.obj.insns 122->122
+rtx-3090 pt_attn_2048_128: kernels 8->8 identical 8 kinds ['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile', 'tile']->['fuse', 'gen', 'gen', 'gen', 'tile', 'tile', 'tile', 'tile'] move same host.obj.insns 125->125
+rtx-3090 pt_decode_1024_256: kernels 9->9 identical 9 kinds ['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile', 'tile']->['gen', 'gen', 'naive', 'naive', 'naive', 'naive', 'naive', 'tile', 'tile'] move same host.obj.insns 6440->510
+rtx-3090 pt_softmax_rows_2048: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
+rtx-3090 pt_softmax_rows_4096: kernels 4->4 identical 4 kinds ['fuse', 'gen', 'gen', 'tile']->['fuse', 'gen', 'gen', 'tile'] move same host.obj.insns 95->95
