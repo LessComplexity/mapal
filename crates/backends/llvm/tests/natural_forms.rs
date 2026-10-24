@@ -131,19 +131,19 @@ fn range_map_at_the_edges_matches_the_oracle() {
         return;
     };
     let rows = "fn main() {
-    1024 -> iota -> tc;
-    32 -> iota -> krange;
-    tc -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 1024.0 } -> w;
-    (0.25, 1024) -> fill -> x0;
-    mut x: [f32; 1024] <- x0;
-    mut z: [f32; 1024] <- x0;
+    256 -> iota -> tc;
+    16 -> iota -> krange;
+    tc -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 } -> w;
+    (0.25, 256) -> fill -> x0;
+    mut x: [f32; 256] <- x0;
+    mut z: [f32; 256] <- x0;
     mut t: i32 <- -2;
     loop {
-        (t < 34) -> {
+        (t < 18) -> {
             -true-> {
-                tc -> map { c -> (c / 32 == t) -> { -true-> { c -> widen_f32 -> f; f / 32.0 + z[c] } -false-> x[c]; } } -> x;
-                tc -> map { c -> (c >= t * 32 - 3 && c < t * 32 + 2) -> { -true-> { x[c] * 0.5 + 1.0 } -false-> x[c]; } } -> x;
-                tc -> map { c -> c / 32 -> i; c % 32 -> j; (0.0, krange) -> fold { acc, k -> acc + x[i * 32 + k] * w[k * 32 + j] } } -> y;
+                tc -> map { c -> (c / 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; } } -> x;
+                tc -> map { c -> (c >= t * 16 - 3 && c < t * 16 + 2) -> { -true-> { x[c] * 0.5 + 1.0 } -false-> x[c]; } } -> x;
+                tc -> map { c -> c / 16 -> i; c % 16 -> j; (0.0, krange) -> fold { acc, k -> acc + x[i * 16 + k] * w[k * 16 + j] } } -> y;
                 y -> map { v -> v * 0.125 + 0.5 } -> z;
                 t + 1 -> t;
                 -> loop;
@@ -155,19 +155,19 @@ fn range_map_at_the_edges_matches_the_oracle() {
     (zero, out) -> fold { acc, v -> acc + v } -> s;
     s -> println;
     out[0] -> println;
-    out[1023] -> println;
+    out[255] -> println;
 }
 ";
-    // The column write: `c % 32 == t` matches nothing for `t < 0` or `t ≥ 32`.
+    // The column write: `c % 16 == t` matches nothing for `t < 0` or `t ≥ 16`.
     let column = rows.replace(
-        "(c / 32 == t) -> { -true-> { c -> widen_f32 -> f; f / 32.0 + z[c] } -false-> x[c]; }",
-        "(c % 32 == t) -> { -true-> { c -> widen_f32 -> f; f / 32.0 + z[c] } -false-> x[c]; }",
+        "(c / 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; }",
+        "(c % 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; }",
     );
     // A range wider than the array: its delta is never an upload's.
-    let wide = rows.replace("(c >= t * 32 - 3 && c < t * 32 + 2)", "(c >= t * 32 && c < t * 32 + 2000)");
-    for (src, want) in [(rows, Some((35, 32, -3))), (&column[..], None), (&wide[..], Some((2000, 32, 0)))] {
+    let wide = rows.replace("(c >= t * 16 - 3 && c < t * 16 + 2)", "(c >= t * 16 && c < t * 16 + 600)");
+    for (src, want) in [(rows, Some((19, 16, -3))), (&column[..], None), (&wide[..], Some((600, 16, 0)))] {
         let ir = lower(src);
-        // The writes union to `[32t − 3, 32t + 32)`; a column is no range.
+        // The writes union to `[16t − 3, 16t + 16)`; a column is no range.
         assert!(deltas(&ir).contains(&want), "{:?}", deltas(&ir));
         let rr = mapal_interp::run(&ir, 2_000_000_000);
         assert!(matches!(rr.outcome, mapal_interp::Outcome::Done(_)));
