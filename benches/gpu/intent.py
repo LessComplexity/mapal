@@ -161,7 +161,9 @@ INTENT = {
          'ptx.params == flow.n_store + flow.n_gmem and flow.ll_params == ptx.params'),
         ('a stored member is stored, a kept one is not: st.global iff something is stored',
          '(ptx.st_global > 0) == (flow.n_store > 0)'),
-        ('no shared memory beyond the plan (the members run in registers)', 'ptxas.static_smem == flow.smem'),
+        ('shared memory is the launch\'s (tree partials, on-chip rows): none static', 'ptxas.static_smem == 0'),
+        ('a row of more than one cell or fold step is a block of its lanes', 'flow.lanes == 1 or plan.block == flow.lanes'),
+        ('a tree fold or an on-chip row synchronizes the block: BAR iff shared memory', '(sass.bar > 0) == (flow.smem > 0)'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0'),
         ('every member body inlined: no call left in PTX', 'ptx.call == 0')]),
     'flow-host': dict(host=True, applies='host.flow.units > 0', on=[
