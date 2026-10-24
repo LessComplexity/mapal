@@ -819,7 +819,8 @@ def runtime_moves(prof, fx, results):
     no instruction in the host IR states — a finding."""
     rows = []
     for stem, t in sorted(traces(results).items()):
-        mv = fx.get(stem, {}).get('host', {}).get('move', {})
+        # The null arm is the shipped build's object copied: the shipped stem's facts predict it.
+        mv = fx.get(stem.removesuffix('.null'), {}).get('host', {}).get('move', {})
         if 'runtime_h2d_n' not in mv:
             continue
         for tk, mk in TRACE_KEYS:
