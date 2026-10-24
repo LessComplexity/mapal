@@ -265,19 +265,20 @@ def decode(T, d, rewrite=False, scaled=False):
     (row-mixing). The compiler is never told any of that; the rule has to
     find that only row t of K and V changed.
 
-    `rewrite=True` is the negative control: the iteration writes column t
-    (`x[j·d + t]`) instead, so the written cells are not one contiguous range
-    and nothing is retained.
+    `rewrite=True` is the negative control: the iteration writes column
+    `t % d` of every row instead, so the written cells are not one contiguous
+    range and nothing is retained.
 
     `scaled=True` (S54): `K` and `V` read `xh = x·0.5`, a per-cell map of the
     written `x` — the row delta has to pass through it (`write_delta`'s Same
     consumers), so `xh` uploads its written row and `K`, `V` are retained."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
     if rewrite:
-        # Cell c = j·d + t: u = c − t ≥ 0, u % d == 0, j = u ÷ d < d.
-        new = (f"(u >= 0 && u % {d} == 0 && u < {d * d}) -> {{ -true-> {{ "
-               f"((t * {d} + u / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[u / {d}] }} ")
-        row = [f"                tc -> map {{ c -> c - t -> u; {new}-false-> x[c]; }} }} -> x;\n"]
+        # Row j's cell of column t % d: the new value of row j.
+        new = (f"(c % {d} == col) -> {{ -true-> {{ "
+               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c / {d} % {d}] }} ")
+        row = [f"                t % {d} -> col;\n"
+               f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     else:
         new = (f"(c / {d} == t) -> {{ -true-> {{ "
                f"(c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % {d}] }} ")
