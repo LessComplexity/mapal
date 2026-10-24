@@ -185,27 +185,139 @@ def prev_ratios(readme, heading='### Workload suite: iter ms (median of 30 reps)
     return out
 
 
+def boxes(raw):
+    """Every box under <raw> (main, confirm/, attn-confirm/, confirm-throttled/): host, GPU limit, instance, value
+    gates, the box's intent check, gated library / torch legs, and the clock check — the largest max/min of one
+    kernel's traced ms over the run (a box that loses clock mid-run shows it on every later program)."""
+    import glob
+    import re
+    from collections import defaultdict
+    print('\n### Boxes\n')
+    print('| arch | box | host CPU | GPU power limit, driver | instance | value gates pass / fail | intent checks '
+          '(checks / mismatch) | library legs pass / FAIL | torch legs within / run | clock: worst kernel max/min (programs) |')
+    print('|---|---|---|---|---|---|---|---|---|---|')
+    for p in sorted(glob.glob(os.path.join(raw, '**', 'results-*.txt'), recursive=True)):
+        if p.endswith('-pass2.txt') or '.partial-' in p:
+            continue
+        arch = os.path.basename(os.path.dirname(p))
+        box = os.path.dirname(os.path.dirname(os.path.relpath(p, raw))) or 'main'
+        t = open(p, errors='replace').read()
+        cpu = re.search(r'lscpu: Model name:\s*(.*)', t)
+        smi = re.search(r'^NVIDIA[^,]*, ([\d.]+), [^,]*, [^,]*, ([\d.]+) W', t, re.M)
+        ip = os.path.join(os.path.dirname(p), f'instance-{arch}')
+        ev = re.search(r'^evidence: evidence: (\d+) checks, (\d+) mismatch', t, re.M)
+        vf = re.search(r'probe value gate: (\d+) program', t)
+        seen = defaultdict(list)
+        for m in re.finditer(r'^probe_kernels prog=(\S+) face=_default arm=(?:on|null) rep=\d+ (.*)$', t, re.M):
+            for k, ms in re.findall(r'([0-9a-f]{16}) ms=([\d.]+)', m[2]):
+                seen[k].append((m[1], float(ms)))
+        # kernels shared by several programs (a tile root): a clock change shows across programs
+        clk = max(((max(x for _, x in v) / min(x for _, x in v), len({q for q, _ in v})) for v in seen.values()
+                   if len({q for q, _ in v}) > 2 and min(x for _, x in v) > 0.05), default=None)
+        print(f'| {arch} | {box} | {cpu[1].strip() if cpu else "-"} | {smi[2] + " W, " + smi[1] if smi else "-"} | '
+              f'{open(ip).read().strip() if os.path.exists(ip) else "-"} | '
+              f'{len(re.findall(r"^value-gate prog=", t, re.M))} / {vf[1] if vf else "-"} | '
+              f'{ev[1] + " / " + ev[2] if ev else "-"} | {len(re.findall(r"^chain_values .* gate=pass", t, re.M))} / '
+              f'{len(re.findall(r"^chain_values .* gate=FAIL", t, re.M))} | '
+              f'{len(re.findall(r"^torch prog=.*within=yes", t, re.M))} / {len(re.findall(r"^torch prog=", t, re.M))} | '
+              f'{f"{clk[0]:.2f} ({clk[1]})" if clk else "-"} |')
+
+
+def unit_table(raw):
+    """Per fused program and arch (main boxes): the unit kernel (grid, threads, traced ms) against the kernels the
+    off-fuse arm launches in its place; the tile roots both arms launch are left out."""
+    import re
+    from collections import defaultdict
+    med = lambda xs: sorted(xs)[len(xs) // 2]
+    print('\n### The unit kernel against the kernels it replaces (traced ms, median of the traced reps)\n')
+    print('| program | arch | unit kernel: blocks × threads = rows, ms | off-fuse kernels in its place, ms | unit / those |')
+    print('|---|---|---|---|---|')
+    rows = []
+    for a in ARCHS:
+        fx = load(raw, 'static', a)
+        p = os.path.join(raw, a, f'results-{a}.txt')
+        if not os.path.exists(p):
+            continue
+        per = defaultdict(lambda: defaultdict(list))
+        for l in open(p, errors='replace'):
+            m = re.match(r'probe_kernels prog=(\S+) face=_default arm=(on|off-fuse) rep=\d+ (.*)', l)
+            if m:
+                for i, (k, ms) in enumerate(re.findall(r'([0-9a-f]{16}) ms=([\d.]+)', m[3])):
+                    per[(m[1], m[2])][(i, k)].append(float(ms))
+        for prog in sorted({q for q, _ in per}):
+            on, off = per.get((prog, 'on')), per.get((prog, 'off-fuse'))
+            if not on or not off:
+                continue
+            plan = {k[-16:]: v.get('plan', {}) for s in (prog, prog + '.off-fuse') for k, v in fx[s]['kernels'].items()}
+            roots = {k for _, k in on} & {k for _, k in off}
+            u = [(k, med(v)) for (_, k), v in sorted(on.items()) if k not in roots]
+            o = [(k, med(v)) for (_, k), v in sorted(off.items()) if k not in roots]
+            g = plan.get(u[0][0], {})
+            us, os_ = sum(x for _, x in u), sum(x for _, x in o)
+            rows.append((prog, ARCHS.index(a), f'| {prog.removeprefix("pt_")} | {a} | {g.get("gx")} × {g.get("block")} = '
+                         f'{g.get("rows")}, {us:.3f} | ' + ', '.join(f'{plan.get(k, {}).get("kind", "?")} {x:.3f}' for k, x in o)
+                         + f' (Σ {os_:.3f}) | {us / os_:.2f} |'))
+    for _, _, r in sorted(rows):
+        print(r)
+
+
+def attn_table(raw, er):
+    """Attention, same box: Mapal fuse ON / OFF iter ms against chain_bench's cuBLAS legs and torch (main boxes and
+    `attn-confirm/`, the re-take with the fixed chain_bench buffer)."""
+    import re
+    print('\n### Attention: Mapal against the library and torch legs on the same box (iter / event ms, medians)\n')
+    print('| program | arch | box | Mapal fuse ON | Mapal fuse OFF (ships) | cuBLAS eager (6 launches) | cuBLAS + warp-per-row '
+          'softmax (3) | torch eager | torch compile | OFF / best other |')
+    print('|---|---|---|---|---|---|---|---|---|---|')
+    for box, rr in (('main', raw), ('attn-confirm', os.path.join(raw, 'attn-confirm'))):
+        for a in ARCHS:
+            lines = er.results(rr, a)
+            lg, ch, to, bad = er.legs(lines), {}, {}, set()
+            for l in lines:
+                if m := re.match(r'chain_values probe=attn_(\d+) n=(\d+) leg=(\S+) .* gate=FAIL', l):
+                    bad.add((f'pt_attn_{m[1]}_{m[2]}', m[3]))
+                if m := re.match(r'chain probe=attn_(\d+) n=(\d+) leg=(\S+) .*med_ms=([\d.]+)', l):
+                    if (f'pt_attn_{m[1]}_{m[2]}', m[3]) not in bad:
+                        ch[(f'pt_attn_{m[1]}_{m[2]}', m[3])] = float(m[4])
+                if m := re.match(r'torch prog=(\S+) mode=(\w+) .*med_ms=([\d.]+) .*within=yes', l):
+                    to[(m[1], m[2])] = float(m[3])
+            for p in sorted(k for k in lg if re.fullmatch(r'pt_attn_\d+_\d+', k)):
+                on, off = er.med(list(lg[p].values())), er.med(list(lg[p + '.off-fuse'].values()))
+                legs = [ch.get((p, 'eager')), ch.get((p, 'fused')), to.get((p, 'eager')), to.get((p, 'compile'))]
+                best = min((x for x in legs if x), default=None)
+                print(f'| {p.removeprefix("pt_")} | {a} | {box} | {on:.4f} | {off:.4f} | '
+                      + ' | '.join(f'{x:.4f}' if x else '-' for x in legs) + f' | {er.f3(off / best if best else None)} |')
+
+
 def timing(raw):
     """The box runs (<raw>/<arch>/results-<arch>.txt): the suite against the best other leg, S65's ratio beside
     it; then each new rung's OFF arm against shipped per program — traced launches, kernel ms, iter ms."""
     import re
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import evidence_report as er
+    boxes(raw)
+    unit_table(raw)
+    attn_table(raw, er)
     readme = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../docs/performance/evidence/README.md')
     prev = prev_ratios(readme)
     # `<raw>/confirm/<arch>`: a second box of the arch (another host); its own ratio beside the first's.
     conf = {(r['key'], r['arch']): r for r in er.suite_rows(os.path.join(raw, 'confirm'))}
+    # The build as it ships after the sweep's fuse rows: a fused program's off-fuse arm (the end check's equality).
+    now = {(p.removeprefix('pt_').removesuffix('.off-fuse'), a): er.med(list(v.values()))
+           for a in ARCHS for p, v in er.legs(er.results(raw, a)).items() if p.endswith('.off-fuse')}
     print('\n### Suite: iter ms (median of the reps), Mapal vs the best other leg on the same box\n')
-    print('| workload | arch | CPU-only | CPU+GPU | null | best other (ms) | Mapal / best other | confirm box: '
-          'CPU+GPU, best other, ratio | S65 ratio |')
-    print('|---|---|---|---|---|---|---|---|---|')
+    print('| workload | arch | CPU-only | CPU+GPU (measured) | null | best other (ms) | Mapal / best other | '
+          'shipped after the fuse rows: ms, ratio | confirm box: CPU+GPU, best other, ratio | S65 ratio |')
+    print('|---|---|---|---|---|---|---|---|---|---|')
     for r in sorted(er.suite_rows(raw), key=lambda r: (r['key'], ARCHS.index(r['arch']))):
         b = f'{r["best"][0]} {r["best"][1]:.4f}' if r['best'] else '-'
         c = conf.get((r['key'], r['arch']))
         cb = (f'{er.f4(c["on"])}, {c["best"][0] + " " + er.f4(c["best"][1]) if c["best"] else "-"}, '
               f'{er.f3(c["ratio"])}') if c else '-'
+        n = now.get((r['key'], r['arch']))
+        nb = (f'{er.f4(n)}, {er.f3(n / r["best"][1]) if r["best"] else "-"}') if n else '='
         print(f'| {r["key"]} | {r["arch"]} | {er.f4(r["cpu"])} | {er.f4(r["on"])} | {er.f3(r["null"])} | {b} | '
-              f'{er.f3(r["ratio"])} | {cb} | {prev.get((r["key"], r["arch"]), "-")} |')
+              f'{er.f3(r["ratio"])} | {nb} | {cb} | {prev.get((r["key"], r["arch"]), "-")} |')
     print('\n### Each new rung ON vs its OFF arm (traced rep 1; iter ms median of the reps; OFF/ON per rep, '
           'median; null = |null/shipped − 1| max)\n')
     print('| program | arch | box | arm | launches ON / OFF | device buffers ON / OFF | kernel ms ON / OFF | '
@@ -238,8 +350,10 @@ def timing(raw):
                     'ON slower' if nul is not None and all(x < 1 - nul for x in rs) else 'inside null')
             t_on, t_off = tr.get((p, 'on')), tr.get((p, arm_))
             e_on, e_off = fx.get(p), fx.get(f'{p}.{arm_}')
-            lb = f'{t_on[0]} / {t_off[0]}' if t_on and t_off else '-'
-            kb = f'{t_on[1]:.3f} / {t_off[1]:.3f}' if t_on and t_off else '-'
+            # an arm with no device work prints no trace line: 0 launches, 0 kernel ms
+            t_on, t_off = t_on or (0, 0.0), t_off or (0, 0.0)
+            lb = f'{t_on[0]} / {t_off[0]}'
+            kb = f'{t_on[1]:.3f} / {t_off[1]:.3f}'
             bb = f'{bufs(e_on)} / {bufs(e_off)}' if e_on and e_off else '-'
             print(f'| {p.removeprefix("pt_")} | {a} | {box} | {arm_} | {lb} | {bb} | {kb} | {er.f4(er.med(list(on.values())))} / '
                   f'{er.f4(er.med(list(off.values())))} | {ratio:.3f} | {er.f3(nul)} | {sign} |')
