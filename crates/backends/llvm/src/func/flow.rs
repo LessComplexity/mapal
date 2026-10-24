@@ -104,18 +104,88 @@ enum Cand {
     Cell(Cell),
 }
 
-/// The rows a unit kernel's grid covers: one thread per row; with a fold the
-/// rows spread over every SM (`gpu::rowfold_grid`'s rule), else 256 a block
-/// (`gpu::cell_grid`).
-pub(crate) fn unit_grid(u: &Unit, profile: &TargetProfile) -> (u64, u64) {
-    let fold = u.members.iter().find_map(|mb| match &mb.kind {
-        UKind::Fold { site, .. } => Some(site),
-        _ => None,
-    });
-    match fold {
-        Some(site) => gpu::rowfold_grid(site, profile),
-        None => gpu::cell_grid(u.rows),
+/// A unit kernel's geometry. The row's cells are independent (`cell_plan`), so
+/// a row is a block of `lanes` threads — its widest extent (a fold's `k`, a
+/// cell member's `w`) to a power of two in `[warp, 256]` — each lane taking
+/// every `lanes`-th cell; a unit of one value per row keeps one thread a row,
+/// 256 rows a block. Where the order is free a fold of an associative step is
+/// a tree across the lanes (its partials in shared memory); a cell row with
+/// several readers in the unit is computed once into shared memory and read
+/// there (`last_use_plan`'s uses inside the unit), within the profile's
+/// per-block shared memory. Elsewhere a fold walks in order, every lane alike.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Geo {
+    pub lanes: u64,
+    pub gx: u64,
+    pub block: u64,
+    /// Dynamic shared memory bytes of the launch.
+    pub smem: u64,
+    /// Per member: a tree fold's partials' offset.
+    pub tree: Vec<Option<u64>>,
+    /// Per member: a cell row kept on chip — its offset.
+    pub kept: Vec<Option<u64>>,
+}
+
+/// A fold step the lanes may reassociate: `+`, `×`, or a running max/min.
+fn tree_step(op: &RowFoldOp) -> bool {
+    match op {
+        RowFoldOp::Arith { op, .. } => matches!(op, Operation::Add | Operation::Mul),
+        RowFoldOp::Select { .. } => true,
     }
+}
+
+pub(crate) fn unit_geo(
+    u: &Unit,
+    profile: &TargetProfile,
+    free: bool,
+    bytes: impl Fn(&UMember) -> u64,
+) -> Geo {
+    let g = profile.gpu().expect("a unit has a GPU profile");
+    let n = u.members.len();
+    let extent = u
+        .members
+        .iter()
+        .map(|mb| match &mb.kind {
+            UKind::Fold { site, .. } => site.k,
+            UKind::Cell { .. } => mb.w,
+        })
+        .max()
+        .unwrap_or(1);
+    if extent <= 1 {
+        let (gx, block) = gpu::cell_grid(u.rows);
+        return Geo { lanes: 1, gx, block, smem: 0, tree: vec![None; n], kept: vec![None; n] };
+    }
+    let lanes = extent.next_power_of_two().clamp(g.warp, 256);
+    // ponytail: the static-launch limit; a larger row needs the opt-in attribute.
+    let budget = g.smem_per_block.min(48 * 1024);
+    let mut smem = 0u64;
+    let mut take = |b: u64| {
+        let off = smem.next_multiple_of(16);
+        (off + b <= budget).then(|| {
+            smem = off + b;
+            off
+        })
+    };
+    let (mut tree, mut kept) = (vec![None; n], vec![None; n]);
+    for (k, mb) in u.members.iter().enumerate() {
+        match &mb.kind {
+            UKind::Fold { site, .. } if free && tree_step(&site.op) => {
+                tree[k] = take(lanes * bytes(mb));
+            }
+            UKind::Cell { .. } if !mb.per_row() => {
+                let reads = u.members[k + 1..]
+                    .iter()
+                    .flat_map(|r| &r.srcs)
+                    .filter(|s| matches!(s, USrc::Member { k: j, row: true, .. } if *j == k))
+                    .count();
+                if reads >= 2 || (mb.store && reads >= 1) {
+                    kept[k] = take(mb.w * bytes(mb));
+                }
+            }
+            _ => {}
+        }
+    }
+    Geo { lanes, gx: u.rows, block: lanes, smem, tree, kept }
 }
 
 /// `consumer cells` → the producer address hull a tap-carrying affine reach
@@ -238,7 +308,15 @@ impl<'a> FnEmit<'a> {
                         break;
                     }
                 }
-                if g.len() >= 2 {
+                // A lone fold is a unit of one where its lanes may be a tree:
+                // the row's steps across a block, not one thread's walk.
+                let tree = |m: MorphismId| {
+                    self.order == crate::Order::Free
+                        && matches!(cand.get(m), Some(Cand::Fold(r)) if tree_step(&r.site.op) && r.site.k > 1)
+                };
+                if g.len() >= 2
+                    || (tree(seed) && self.unit_of(&g, &cand, &fp, &region, plan).is_ok())
+                {
                     for &m in &g {
                         taken.insert(m, ());
                     }
@@ -560,7 +638,7 @@ impl<'a> FnEmit<'a> {
         let bytes: u64 = members
             .iter()
             .zip(&evals)
-            .map(|(mb, &n)| n * gmem_reads(mb) * e + if mb.store { steps(mb) * e } else { 0 })
+            .map(|(mb, &n)| n * gmem_reads(mb) * e + if mb.store { rows * mb.w * e } else { 0 })
             .sum();
         let own = members
             .iter()
@@ -624,9 +702,9 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let (gx, block) = unit_grid(u, self.profile);
+        let Geo { gx, block, smem, .. } = self.geo(u);
         self.line(format!(
-            "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0) ; unit",
+            "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
             u.id as i64
         ));
         for t in temps {
@@ -644,6 +722,16 @@ impl<'a> FnEmit<'a> {
                 self.d2h(0, &format!("nocapture {h}"), &d, "0", bytes);
             }
         }
+    }
+
+    /// The unit's geometry on this face ([`unit_geo`]).
+    pub(crate) fn geo(&self, u: &Unit) -> Geo {
+        unit_geo(u, self.profile, self.order == crate::Order::Free, |mb| match &mb.kind {
+            UKind::Fold { site, .. } => crate::profile::elem_bytes(&site.elem),
+            UKind::Cell { .. } => {
+                crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)))
+            }
+        })
     }
 
     /// This function's unit kernels for the device module.
@@ -696,7 +784,8 @@ impl<'a> FnEmit<'a> {
     /// `; mapal.flow` and `; mapal.plan` intent lines).
     fn unit_kernel(&self, u: &Unit) -> (Vec<(String, String)>, String) {
         let name = gpu::kernel_name(u.id);
-        let (blocks, threads) = unit_grid(u, self.profile);
+        let geo = self.geo(u);
+        let (blocks, threads) = (geo.gx, geo.block);
         let lt = |o: ObjectId| array_parts(&self.obj_ty(o)).0;
         let mut fns: Vec<(String, String)> = Vec::new();
         let mut g = UnitGen {
@@ -708,6 +797,9 @@ impl<'a> FnEmit<'a> {
             calls: Vec::new(),
             ys: Vec::new(),
             gmem_ty: u.gmem.iter().map(|&o| lt(o)).collect(),
+            lanes: geo.lanes,
+            tree: geo.tree.clone(),
+            kept: geo.kept.clone(),
             u,
         };
         // Each member's callee, argument type, result type and buffer types.
@@ -861,7 +953,7 @@ impl<'a> FnEmit<'a> {
             .unwrap_or(&u.members[0]);
         let w = u.members.iter().map(|mb| mb.w).max().unwrap_or(1);
         let mut text = format!(
-            "; mapal.flow kernel={name} unit=1x{w} rows={} root={} members={} keep={} store={} gmem={} law={} smem=0\n",
+            "; mapal.flow kernel={name} unit=1x{w} rows={} root={} members={} keep={} store={} gmem={} law={} smem={} lanes={} tree={} onchip={}\n",
             u.rows,
             label(root.out),
             members.join(";"),
@@ -869,6 +961,10 @@ impl<'a> FnEmit<'a> {
             store.join(";"),
             gm.join(";"),
             laws.join(";"),
+            geo.smem,
+            geo.lanes,
+            geo.tree.iter().flatten().count(),
+            geo.kept.iter().flatten().count(),
         );
         text += &format!(
             "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow\n",
@@ -882,8 +978,7 @@ impl<'a> FnEmit<'a> {
              \x20 %bid = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()\n\
              \x20 %t64 = zext i32 %tid to i64\n\
              \x20 %b64 = zext i32 %bid to i64\n\
-             \x20 %row0 = mul i64 %b64, {threads}\n\
-             \x20 %i = add i64 %row0, %t64\n\
+             {}\
              \x20 %in = icmp ult i64 %i, {}\n\
              \x20 br i1 %in, label %body, label %done\n\
              body:\n{}\
@@ -893,6 +988,12 @@ impl<'a> FnEmit<'a> {
              }}\n",
             params.join(", "),
             g.entry,
+            // One row a block (`lanes` threads), or one thread a row.
+            if geo.lanes > 1 {
+                "  %i = add i64 %b64, 0\n  %l = add i64 %t64, 0\n".to_string()
+            } else {
+                format!("  %row0 = mul i64 %b64, {threads}\n  %i = add i64 %row0, %t64\n  %l = add i64 0, 0\n")
+            },
             u.rows,
             g.out,
         );
@@ -926,6 +1027,10 @@ struct UnitGen<'u> {
     /// Each stored member's output parameter `%y<j>`.
     ys: Vec<Option<usize>>,
     gmem_ty: Vec<String>,
+    /// [`Geo`]'s lanes a row, tree partials and on-chip rows.
+    lanes: u64,
+    tree: Vec<Option<u64>>,
+    kept: Vec<Option<u64>>,
     u: &'u Unit,
 }
 
@@ -1009,6 +1114,16 @@ impl UnitGen<'_> {
                         .expect("a per-row value is read after its phase");
                 }
                 let a = self.addr(reach, t, taps);
+                if let (true, Some(off)) = (*row, self.kept[*k]) {
+                    let w = self.u.members[*k].w;
+                    let r = self.op("mul", "%i", w);
+                    let j = self.op("sub", &a, &r);
+                    let ty = self.calls[*k].as_ref().expect("a cell").ret.clone();
+                    let p = self.smem(off, &ty, &j);
+                    let v = self.tmp();
+                    self.line(format!("{v} = load {ty}, ptr addrspace(3) {p}"));
+                    return v;
+                }
                 self.cell(*k, &a)
             }
             USrc::Gmem(g) => self.load(*g, t),
@@ -1089,129 +1204,226 @@ impl UnitGen<'_> {
         }
     }
 
-    /// Member `k`'s phase in row `%i`.
+    /// `out = acc ⊕ v`: the fold's own step, in the source's operand order.
+    fn step(&mut self, op: &RowFoldOp, t: &str, acc: &str, v: &str, out: &str) {
+        match *op {
+            RowFoldOp::Arith { op, acc_first } => {
+                let code = match op {
+                    Operation::Add => "fadd",
+                    Operation::Sub => "fsub",
+                    _ => "fmul",
+                };
+                let (x, y) = if acc_first { (acc, v) } else { (v, acc) };
+                self.line(format!("{out} = {code} {t} {x}, {y}"));
+            }
+            RowFoldOp::Select {
+                cmp,
+                acc_lhs,
+                acc_if_true,
+            } => {
+                let pred = match cmp {
+                    Operation::Lt => "olt",
+                    Operation::Gt => "ogt",
+                    Operation::Le => "ole",
+                    _ => "oge",
+                };
+                let (x, y) = if acc_lhs { (acc, v) } else { (v, acc) };
+                let (p, q) = if acc_if_true { (acc, v) } else { (v, acc) };
+                let c = self.tmp();
+                self.line(format!("{c} = fcmp {pred} {t} {x}, {y}"));
+                self.line(format!("{out} = select i1 {c}, {t} {p}, {t} {q}"));
+            }
+        }
+    }
+
+    /// A pointer to element `idx` (of `ty`) at byte `off` of the launch's
+    /// shared memory.
+    fn smem(&mut self, off: u64, ty: &str, idx: &str) -> String {
+        let q = self.tmp();
+        self.line(format!(
+            "{q} = getelementptr inbounds i8, ptr addrspace(3) @mapal_smem, i64 {off}"
+        ));
+        let p = self.tmp();
+        self.line(format!(
+            "{p} = getelementptr inbounds {ty}, ptr addrspace(3) {q}, i64 {idx}"
+        ));
+        p
+    }
+
+    fn barrier(&mut self) {
+        self.line("call void @llvm.nvvm.barrier0()");
+    }
+
+    /// `body` by lane 0 of the row alone (every lane holds the value).
+    fn lane0(&mut self, tag: &str, body: impl FnOnce(&mut Self)) {
+        if self.lanes == 1 {
+            return body(self);
+        }
+        let c = self.tmp();
+        self.line(format!("{c} = icmp eq i64 %l, 0"));
+        let (yes, end) = (format!("{tag}z"), format!("{tag}ze"));
+        self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
+        self.label(&yes);
+        body(self);
+        self.line(format!("br label %{end}"));
+        self.label(&end);
+    }
+
+    /// The counted loop `%<tag>x = start, start + stride, … < n` around one
+    /// block `body(x, acc)`, entered only when `start < n`. With `carry`
+    /// (type, init) the body defines `<acc>n`, the next value; the loop's exit
+    /// value is returned.
+    fn counted(
+        &mut self,
+        tag: &str,
+        (start, stride, n): (&str, u64, u64),
+        carry: Option<(&str, &str)>,
+        body: &mut dyn FnMut(&mut Self, &str, &str),
+    ) -> Option<String> {
+        let pre = self.cur.clone();
+        let (lp, end) = (tag.to_string(), format!("{tag}e"));
+        let c0 = self.tmp();
+        self.line(format!("{c0} = icmp ult i64 {start}, {n}"));
+        self.line(format!("br i1 {c0}, label %{lp}, label %{end}"));
+        self.label(&lp);
+        let x = format!("%{tag}x");
+        self.line(format!("{x} = phi i64 [{start}, %{pre}], [{x}n, %{lp}]"));
+        let a = format!("%{tag}a");
+        if let Some((t, init)) = carry {
+            self.line(format!("{a} = phi {t} [{init}, %{pre}], [{a}n, %{lp}]"));
+        }
+        body(self, &x, &a);
+        assert_eq!(self.cur, lp, "a counted body is one block");
+        self.line(format!("{x}n = add i64 {x}, {stride}"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp ult i64 {x}n, {n}"));
+        self.line(format!("br i1 {fin}, label %{lp}, label %{end}"));
+        self.label(&end);
+        carry.map(|(t, init)| {
+            let r = self.tmp();
+            self.line(format!("{r} = phi {t} [{init}, %{pre}], [{a}n, %{lp}]"));
+            r
+        })
+    }
+
+    /// Member `k`'s phase in row `%i`, lane `%l` of [`Geo`]'s `lanes`.
     fn phase(&mut self, k: usize) {
         let u = self.u;
         let mb = &u.members[k];
+        let lanes = self.lanes;
         match &mb.kind {
             UKind::Fold { site, .. } => {
                 let t = lower_ty(&site.elem).expect("float elem lowers");
                 let seed = const_literal(&site.seed);
-                let pre = self.cur.clone();
-                let (lp, end) = (format!("f{k}"), format!("f{k}e"));
-                self.line(format!("br label %{lp}"));
-                self.label(&lp);
-                let (kv, acc) = (format!("%k{k}"), format!("%a{k}"));
-                self.line(format!("{kv} = phi i64 [0, %{pre}], [{kv}n, %{lp}]"));
-                self.line(format!("{acc} = phi {t} [{seed}, %{pre}], [{acc}n, %{lp}]"));
-                // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
-                let taps: Vec<String> = match site.a.ksplit {
-                    Some(ks) => vec![self.op("udiv", &kv, ks.div), self.op("urem", &kv, ks.div)],
-                    None => vec![kv.clone()],
+                let tree = self.tree[k];
+                // A tree's lanes start from the step's identity (a max/min's
+                // seed: that step is idempotent); an in-order fold from the seed.
+                let init = match (tree, site.op) {
+                    (None, _) | (_, RowFoldOp::Select { .. }) => seed.clone(),
+                    (_, RowFoldOp::Arith { op: Operation::Mul, .. }) => "1.0".to_string(),
+                    _ => "-0.0".to_string(),
                 };
-                let v = match &mb.srcs[0] {
-                    USrc::Gmem(g) => {
-                        // The site's own addressing (re-addressed when its
-                        // producer stores column-major).
-                        let ri = if site.w > 1 {
-                            let q = self.op("udiv", "%i", site.w);
-                            let l = self.op("urem", "%i", site.w);
-                            let a = self.op("mul", &q, site.a.ci);
-                            let b = self.op("mul", &l, site.a.clane);
-                            self.op("add", &a, &b)
-                        } else {
-                            self.op("mul", "%i", site.a.ci)
+                let walk = if tree.is_some() { ("%l", lanes, site.k) } else { ("0", 1, site.k) };
+                let (site, src0, op) = (site.clone(), mb.srcs[0].clone(), site.op);
+                let tt = t.clone();
+                let p = self
+                    .counted(&format!("f{k}"), walk, Some((&t, &init)), &mut |g, kv, acc| {
+                        // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
+                        let taps: Vec<String> = match site.a.ksplit {
+                            Some(ks) => vec![g.op("udiv", kv, ks.div), g.op("urem", kv, ks.div)],
+                            None => vec![kv.to_string()],
                         };
-                        let rk = match site.a.ksplit {
-                            Some(ks) => {
-                                let a = self.op("mul", &taps[0], ks.cq);
-                                let b = self.op("mul", &taps[1], ks.cr);
-                                self.op("add", &a, &b)
+                        let v = match &src0 {
+                            USrc::Gmem(gm) => {
+                                // The site's own addressing (re-addressed when its
+                                // producer stores column-major).
+                                let ri = if site.w > 1 {
+                                    let q = g.op("udiv", "%i", site.w);
+                                    let l = g.op("urem", "%i", site.w);
+                                    let a = g.op("mul", &q, site.a.ci);
+                                    let b = g.op("mul", &l, site.a.clane);
+                                    g.op("add", &a, &b)
+                                } else {
+                                    g.op("mul", "%i", site.a.ci)
+                                };
+                                let rk = match site.a.ksplit {
+                                    Some(ks) => {
+                                        let a = g.op("mul", &taps[0], ks.cq);
+                                        let b = g.op("mul", &taps[1], ks.cr);
+                                        g.op("add", &a, &b)
+                                    }
+                                    None => g.op("mul", kv, site.a.ck),
+                                };
+                                let x = g.op("add", &ri, &rk);
+                                let x = g.op("add", &x, site.a.base);
+                                g.load(*gm, &x)
                             }
-                            None => self.op("mul", &kv, site.a.ck),
+                            src => {
+                                let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
+                                g.read(src, "%i", &taps)
+                            }
                         };
-                        let x = self.op("add", &ri, &rk);
-                        let x = self.op("add", &x, site.a.base);
-                        self.load(*g, &x)
-                    }
-                    src => {
-                        let src = src.clone();
-                        let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
-                        self.read(&src, "%i", &taps)
-                    }
-                };
-                let step = match site.op {
-                    RowFoldOp::Arith { op, acc_first } => {
-                        let code = match op {
-                            Operation::Add => "fadd",
-                            Operation::Sub => "fsub",
-                            _ => "fmul",
-                        };
-                        let (x, y) = if acc_first {
-                            (acc.clone(), v)
-                        } else {
-                            (v, acc.clone())
-                        };
-                        format!("{acc}n = {code} {t} {x}, {y}")
-                    }
-                    RowFoldOp::Select {
-                        cmp,
-                        acc_lhs,
-                        acc_if_true,
-                    } => {
-                        let pred = match cmp {
-                            Operation::Lt => "olt",
-                            Operation::Gt => "ogt",
-                            Operation::Le => "ole",
-                            _ => "oge",
-                        };
-                        let (x, y) = if acc_lhs {
-                            (acc.clone(), v.clone())
-                        } else {
-                            (v.clone(), acc.clone())
-                        };
-                        let (p, q) = if acc_if_true {
-                            (acc.clone(), v)
-                        } else {
-                            (v, acc.clone())
-                        };
-                        let c = self.tmp();
-                        self.line(format!("{c} = fcmp {pred} {t} {x}, {y}"));
-                        format!("{acc}n = select i1 {c}, {t} {p}, {t} {q}")
+                        g.step(&op, &tt, acc, &v, &format!("{acc}n"));
+                    })
+                    .expect("a fold carries");
+                let res = match tree {
+                    None => p,
+                    Some(off) => {
+                        // The lanes' partials in shared memory, halved per
+                        // step, then the seed once: every lane reads one total.
+                        let mine = self.smem(off, &t, "%l");
+                        self.line(format!("store {t} {p}, ptr addrspace(3) {mine}"));
+                        self.barrier();
+                        let mut s = lanes / 2;
+                        while s >= 1 {
+                            let c = self.tmp();
+                            self.line(format!("{c} = icmp ult i64 %l, {s}"));
+                            let (yes, end) = (format!("r{k}_{s}"), format!("r{k}_{s}e"));
+                            self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
+                            self.label(&yes);
+                            let o = self.op("add", "%l", s);
+                            let po = self.smem(off, &t, &o);
+                            let (x, y, z) = (self.tmp(), self.tmp(), self.tmp());
+                            self.line(format!("{x} = load {t}, ptr addrspace(3) {mine}"));
+                            self.line(format!("{y} = load {t}, ptr addrspace(3) {po}"));
+                            self.step(&op, &t, &x, &y, &z);
+                            self.line(format!("store {t} {z}, ptr addrspace(3) {mine}"));
+                            self.line(format!("br label %{end}"));
+                            self.label(&end);
+                            self.barrier();
+                            s /= 2;
+                        }
+                        let p0 = self.smem(off, &t, "0");
+                        let (tot, r) = (self.tmp(), self.tmp());
+                        self.line(format!("{tot} = load {t}, ptr addrspace(3) {p0}"));
+                        self.step(&op, &t, &seed, &tot, &r);
+                        r
                     }
                 };
-                self.line(step);
-                self.line(format!("{kv}n = add i64 {kv}, 1"));
-                let fin = self.tmp();
-                self.line(format!("{fin} = icmp eq i64 {kv}n, {}", site.k));
-                self.line(format!("br i1 {fin}, label %{end}, label %{lp}"));
-                self.label(&end);
-                let acc_n = format!("{acc}n");
-                self.store(k, &acc_n, "%i");
-                self.vals[k] = Some(acc_n);
+                self.lane0(&format!("f{k}s"), |g| g.store(k, &res, "%i"));
+                self.vals[k] = Some(res);
             }
             UKind::Cell { .. } if mb.per_row() => {
                 let v = self.cell(k, "%i");
-                self.store(k, &v, "%i");
+                self.lane0(&format!("c{k}s"), |g| g.store(k, &v, "%i"));
                 self.vals[k] = Some(v);
             }
-            UKind::Cell { .. } if mb.store => {
-                let w = mb.w;
-                let pre = self.cur.clone();
-                let (lp, end) = (format!("s{k}"), format!("s{k}e"));
-                self.line(format!("br label %{lp}"));
-                self.label(&lp);
-                let j = format!("%j{k}");
-                self.line(format!("{j} = phi i64 [0, %{pre}], [{j}n, %{lp}]"));
-                let r = self.op("mul", "%i", w);
-                let t = self.op("add", &r, &j);
-                let v = self.cell(k, &t);
-                self.store(k, &v, &t);
-                self.line(format!("{j}n = add i64 {j}, 1"));
-                let fin = self.tmp();
-                self.line(format!("{fin} = icmp eq i64 {j}n, {w}"));
-                self.line(format!("br i1 {fin}, label %{end}, label %{lp}"));
-                self.label(&end);
+            UKind::Cell { .. } if mb.store || self.kept[k].is_some() => {
+                let (w, kept) = (mb.w, self.kept[k]);
+                self.counted(&format!("s{k}"), ("%l", lanes, w), None, &mut |g, j, _| {
+                    let r = g.op("mul", "%i", w);
+                    let t = g.op("add", &r, j);
+                    let v = g.cell(k, &t);
+                    g.store(k, &v, &t);
+                    if let Some(off) = kept {
+                        let ty = g.calls[k].as_ref().expect("a cell").ret.clone();
+                        let p = g.smem(off, &ty, j);
+                        g.line(format!("store {ty} {v}, ptr addrspace(3) {p}"));
+                    }
+                });
+                if kept.is_some() {
+                    self.barrier();
+                }
             }
             // Evaluated at its reads.
             UKind::Cell { .. } => {}

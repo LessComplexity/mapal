@@ -468,7 +468,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
     let strat = testgen::chain_strategy();
     let mut findings = Vec::new();
     let (mut device, mut units, mut members, mut kept, mut halos, mut saved) = (0, 0, 0, 0, 0, 0);
-    let mut defaults = 0;
+    let (mut defaults, mut trees, mut onchip) = (0, 0, 0);
     let lines_of = |d: &str| -> Vec<String> {
         d.lines()
             .filter(|l| l.starts_with("; mapal.flow kernel="))
@@ -509,9 +509,9 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 ));
             }
         }
-        // 1b. The default face (fma steps, order free): a unit evaluates each
-        // member as its own launch does — the same body text, the same
-        // in-order fold — so on equals off bit for bit (every 4th program).
+        // 1b. The default face (fma steps, order free): a unit's folds are
+        // trees across the row's lanes, so on answers to the interpreter
+        // within the bound, not bit for bit (every 4th program).
         if z % 4 == 0 && !lines_of(don).is_empty() {
             let base = EmitOpts::default();
             let (a, b) = (
@@ -524,10 +524,26 @@ fn generic_fusion_chains_values_launches_and_stores() {
                     emu::run_emulated(&clang, &a.text, da),
                     emu::run_emulated(&clang, &b.text, db),
                 );
-                if ga != gb {
+                if !within(&ga, &rr.output) || !within(&gb, &rr.output) {
                     findings.push(format!(
-                        "chain#{z} {target} default face: on {ga:?} != off {gb:?}\n{src}"
+                        "chain#{z} {target} default face: on {ga:?} off {gb:?} vs {:?}\n{src}",
+                        rr.output
                     ));
+                }
+                // The geometry: a row of more than one cell or fold step is a
+                // block of lanes, and every associative fold of a unit is a tree.
+                for l in lines_of(da) {
+                    let w: u64 = field(&l, "unit").trim_start_matches("1x").parse().unwrap_or(1);
+                    let lanes: u64 = field(&l, "lanes").parse().unwrap_or(0);
+                    let folds = labels(field(&l, "members"))
+                        .iter()
+                        .filter(|m| m.contains(":rowfold:"))
+                        .count();
+                    if (w > 1 || folds > 0) && lanes < 32 {
+                        findings.push(format!("chain#{z}: a unit row of {w} on {lanes} lanes: {l}\n{src}"));
+                    }
+                    trees += field(&l, "tree").parse::<usize>().unwrap_or(0);
+                    onchip += field(&l, "onchip").parse::<usize>().unwrap_or(0);
                 }
             }
         }
@@ -634,7 +650,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
     eprintln!(
         "generic_fusion_chains: {n} programs, {device} with a device unit; {units} units of {members} members \
          ({kept} kept, {halos} with a halo); {saved} launches removed; refusals {reasons:?}; \
-         {defaults} default-face programs on == off"
+         {defaults} default-face programs within the bound ({trees} tree folds, {onchip} rows on chip)"
     );
     assert!(
         n < 256 || (device >= 128 && units >= 32 && kept > 0),
@@ -716,4 +732,16 @@ fn every_device_kernel_has_a_launch_site() {
         units >= 64 && kernels >= units,
         "too few device units: {units} units, {kernels} kernels"
     );
+}
+
+/// The default face's values against the interpreter's: every numeric token
+/// within a relative 1e-4 of the larger magnitude (or 1e-4 absolute below 1),
+/// the rest equal.
+fn within(got: &str, want: &str) -> bool {
+    let (g, w): (Vec<&str>, Vec<&str>) = (got.split_whitespace().collect(), want.split_whitespace().collect());
+    g.len() == w.len()
+        && g.iter().zip(&w).all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
+            (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0),
+            _ => a == b,
+        })
 }
