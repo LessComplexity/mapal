@@ -33,10 +33,10 @@ mod ty;
 mod validate;
 
 pub use algo::{
-    Affine, BoundsProof, CellRead, CellSite, Checkpoint, Delta, ElemPlan, ElemSrc, EmissionClass,
-    EmissionPlan, Footprint, GuardArm, GuardSite, LastUsePlan, LoopPlan, LoopScc, MovePlan,
-    MoveSite, PathPlan, RowFoldOp, RowFoldSite, Task, TaskId, TaskKind, TileKSplit, TilePlan,
-    TileRead, TileSite, WaitEntry,
+    Affine, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Edge, ElemPlan, ElemSrc,
+    EmissionClass, EmissionPlan, Footprint, FootprintPlan, GuardArm, GuardSite, LastUsePlan,
+    LoopPlan, LoopScc, MovePlan, MoveSite, PathPlan, Reach, RowFoldOp, RowFoldSite, Tap, Task,
+    TaskId, TaskKind, TileKSplit, TilePlan, TileRead, TileSite, WaitEntry,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use graph::{

@@ -314,6 +314,51 @@ impl TileAffine {
     }
 }
 
+/// A cell address over the map index `t`: `base + cq·(t÷w) + cr·(t%w)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CellAff {
+    w: u64,
+    base: u64,
+    cq: u64,
+    cr: u64,
+}
+
+/// [`CellAff`] mid-walk: raw `t` (`ct`) apart, the divisor once one is seen.
+#[derive(Clone, Copy, Default)]
+struct CellAffRaw {
+    w: Option<u64>,
+    base: u64,
+    ct: u64,
+    cq: u64,
+    cr: u64,
+}
+
+impl CellAffRaw {
+    fn add(self, o: Self) -> Option<Self> {
+        let w = match (self.w, o.w) {
+            (Some(a), Some(b)) if a != b => return None,
+            (a, b) => a.or(b),
+        };
+        Some(Self {
+            w,
+            base: self.base.checked_add(o.base)?,
+            ct: self.ct.checked_add(o.ct)?,
+            cq: self.cq.checked_add(o.cq)?,
+            cr: self.cr.checked_add(o.cr)?,
+        })
+    }
+
+    fn scale(self, by: u64) -> Option<Self> {
+        Some(Self {
+            w: self.w,
+            base: self.base.checked_mul(by)?,
+            ct: self.ct.checked_mul(by)?,
+            cq: self.cq.checked_mul(by)?,
+            cr: self.cr.checked_mul(by)?,
+        })
+    }
+}
+
 /// **A fold-less move site (S45): a `map` that only MOVES data.** Its body is a
 /// single proven `Index` whose address is affine in the derived axes
 /// `(t÷C, t%C)` — a transpose, a gather-by-formula, any permutation-shaped read.
@@ -396,6 +441,139 @@ pub struct CellSite {
     pub extent: u64,
     pub reads: Vec<CellRead>,
     pub body: FuncId,
+}
+
+/// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
+/// [`CategoryIr::footprint_plan`]): the read footprint of every recognized
+/// consumer in one form, translated from the recognizers' own records
+/// ([`TileRead`], [`RowFoldSite`], [`MoveSite`], [`CellRead`]) — nothing new
+/// is derived here. Geometry only (ADR-0032).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// `base + cq·(t÷w) + cr·(t%w) + Σ coef·k`, each tap's `k ∈ [0, ext)`.
+    Affine {
+        w: u64,
+        base: u64,
+        cq: u64,
+        cr: u64,
+        taps: Vec<Tap>,
+    },
+    /// A proven address in `[lo, hi)` that is not affine in `t`.
+    Range { lo: u64, hi: u64 },
+    /// The producer's element is a closed form rooted at the index
+    /// ([`ElemSrc`] over [`ElemSrc::Index`]): evaluated at the read, no bytes.
+    Law,
+    /// Unproven or data-dependent: any cell.
+    Whole,
+}
+
+/// One counted axis of a read: `coef·k`, `k ∈ [0, ext)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tap {
+    pub coef: u64,
+    pub ext: u64,
+}
+
+/// One read edge: slot `slot` of `consumer`'s source reads `producer` at `reach`.
+/// `law` is set when the edge sees through a capture-free classifiable map
+/// (`producer` is that map's input, `law` its output: the read is
+/// `body(producer[addr])`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub consumer: MorphismId,
+    pub slot: u32,
+    pub producer: ObjectId,
+    pub reach: Reach,
+    pub law: Option<ObjectId>,
+}
+
+/// Every consumer's read edges in one function.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FootprintPlan {
+    pub edges: SecondaryMap<MorphismId, Vec<Edge>>,
+}
+
+impl FootprintPlan {
+    /// The edges of `consumer` (empty: nothing recognized, read it whole).
+    pub fn of(&self, consumer: MorphismId) -> &[Edge] {
+        self.edges.get(consumer).map_or(&[], Vec::as_slice)
+    }
+}
+
+impl Reach {
+    /// The producer rectangle `[rows, cols]` (the producer laid out `pw`
+    /// wide) that the consumer cells `t` with `t÷w ∈ rows`, `t%w ∈ cols`
+    /// read — the tight hull of the addresses. `None` when the column terms
+    /// are not confined within one producer row (a coefficient neither a
+    /// multiple of `pw` nor small enough), or the reach is [`Reach::Whole`].
+    /// A law reads no bytes: the empty rectangle. Proven reads lie in
+    /// `[0, len)` already, so the hull needs no clipping.
+    pub fn rect(
+        &self,
+        pw: u64,
+        rows: std::ops::Range<u64>,
+        cols: std::ops::Range<u64>,
+    ) -> Option<[std::ops::Range<u64>; 2]> {
+        let empty = Some([0..0, 0..0]);
+        if pw == 0 {
+            return None;
+        }
+        match self {
+            Reach::Whole => None,
+            Reach::Law => empty,
+            Reach::Range { lo, hi } => {
+                if lo >= hi {
+                    return empty;
+                }
+                let (r0, r1) = (lo / pw, (hi - 1) / pw);
+                Some(if r0 == r1 {
+                    [r0..r0 + 1, lo % pw..(hi - 1) % pw + 1]
+                } else {
+                    [r0..r1 + 1, 0..pw]
+                })
+            }
+            Reach::Affine {
+                base, cq, cr, taps, ..
+            } => {
+                if rows.is_empty() || cols.is_empty() || taps.iter().any(|t| t.ext == 0) {
+                    return empty;
+                }
+                let terms = [
+                    (*cq, rows.start, rows.end - 1),
+                    (*cr, cols.start, cols.end - 1),
+                ]
+                .into_iter()
+                .chain(taps.iter().map(|t| (t.coef, 0, t.ext - 1)));
+                let (mut r0, mut r1) = (base / pw, base / pw);
+                let (mut c0, mut c1) = (base % pw, base % pw);
+                for (coef, lo, hi) in terms {
+                    if coef % pw == 0 {
+                        r0 = r0.checked_add((coef / pw).checked_mul(lo)?)?;
+                        r1 = r1.checked_add((coef / pw).checked_mul(hi)?)?;
+                    } else {
+                        c0 = c0.checked_add(coef.checked_mul(lo)?)?;
+                        c1 = c1.checked_add(coef.checked_mul(hi)?)?;
+                    }
+                }
+                (c1 < pw).then_some([r0..r1 + 1, c0..c1 + 1])
+            }
+        }
+    }
+
+    /// The single address the consumer cell `t` reads, for a tap-free affine
+    /// reach (`None` otherwise).
+    pub fn at(&self, t: u64) -> Option<u64> {
+        match self {
+            Reach::Affine {
+                w,
+                base,
+                cq,
+                cr,
+                taps,
+            } if taps.is_empty() && *w > 0 => Some(base + cq * (t / w) + cr * (t % w)),
+            _ => None,
+        }
+    }
 }
 
 /// Everything a backend needs to emit one recognized tiled map site.
@@ -1382,25 +1560,377 @@ impl CategoryIr {
     /// `addr` over the map index `t` (`Proj{captures}` of the body input):
     /// `t`, `t ÷ c`, `t % c` (literal `c`), a literal, or anything else.
     fn cell_footprint(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Footprint {
-        if self.tile_input_proj_index(addr, input) == Some(captures) {
-            return Footprint::Same;
+        match self.cell_affine(addr, input, captures) {
+            Some(a) if a.cq == 0 && a.cr == 0 => Footprint::Const(a.base),
+            // `t` itself: `1·(t÷1)`, or `w·(t÷w) + t%w`.
+            Some(a) if a.base == 0 && (a.cq, a.cr) == (a.w, u64::from(a.w > 1)) => Footprint::Same,
+            Some(a) if a.base == 0 && a.w > 1 && (a.cq, a.cr) == (1, 0) => {
+                Footprint::Row { c: a.w }
+            }
+            Some(a) if a.base == 0 && a.w > 1 && (a.cq, a.cr) == (0, 1) => {
+                Footprint::Col { c: a.w }
+            }
+            _ => Footprint::Other,
         }
-        if let Some(k) = self.tile_literal_u64(addr) {
-            return Footprint::Const(k);
+    }
+
+    /// `addr` over the map index `t` (`Proj{captures}` of the body input) as
+    /// `base + cq·(t÷w) + cr·(t%w)`: the [`Self::move_affine`] walk (Add,
+    /// Mul by a literal, a literal) over the leaves `t`, `t÷c`, `t%c` with
+    /// one literal divisor `c` (`w = c`; `w = 1` without one, `t = t÷1`).
+    fn cell_affine(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Option<CellAff> {
+        let raw = self.cell_affine_walk(addr, input, captures, 0)?;
+        let w = raw.w.unwrap_or(1);
+        Some(CellAff {
+            w,
+            base: raw.base,
+            cq: raw.cq.checked_add(raw.ct.checked_mul(w)?)?,
+            cr: raw.cr.checked_add(if w > 1 { raw.ct } else { 0 })?,
+        })
+    }
+
+    fn cell_affine_walk(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        depth: u32,
+    ) -> Option<CellAffRaw> {
+        if depth >= 16 {
+            return None;
         }
-        let split = |op| {
-            let [g] = self.in_edges(addr) else {
-                return None;
-            };
-            self.tile_split(*g, input, captures, op).map(|(_, c)| c)
+        if self.tile_input_proj_index(o, input) == Some(captures) {
+            return Some(CellAffRaw {
+                ct: 1,
+                ..CellAffRaw::default()
+            });
+        }
+        if let Some(base) = self.tile_literal_u64(o) {
+            return Some(CellAffRaw {
+                base,
+                ..CellAffRaw::default()
+            });
+        }
+        let [m] = self.in_edges(o) else {
+            return None;
         };
-        if let Some(c) = split(Operation::Div) {
-            return Footprint::Row { c };
+        for (op, quot) in [(Operation::Div, true), (Operation::Mod, false)] {
+            if let Some((_, c)) = self.tile_split(*m, input, captures, op) {
+                return Some(CellAffRaw {
+                    w: Some(c),
+                    cq: u64::from(quot),
+                    cr: u64::from(!quot),
+                    ..CellAffRaw::default()
+                });
+            }
         }
-        if let Some(c) = split(Operation::Mod) {
-            return Footprint::Col { c };
+        let morph = self.morphisms.get(*m)?;
+        let lhs = self.pair_slot_source(morph.source, 0)?;
+        let rhs = self.pair_slot_source(morph.source, 1)?;
+        match morph.op {
+            Operation::Add => self
+                .cell_affine_walk(lhs, input, captures, depth + 1)?
+                .add(self.cell_affine_walk(rhs, input, captures, depth + 1)?),
+            Operation::Mul => {
+                let (scale, value) = match self.tile_literal_u64(lhs) {
+                    Some(s) => (s, rhs),
+                    None => (self.tile_literal_u64(rhs)?, lhs),
+                };
+                self.cell_affine_walk(value, input, captures, depth + 1)?
+                    .scale(scale)
+            }
+            _ => None,
         }
-        Footprint::Other
+    }
+
+    /// **`footprint_plan` (generic-fusion): every consumer's read edges** —
+    /// the one query a fusion rule asks "which producer cells does this
+    /// consumer's cell `t` read". A translation of what the recognizers
+    /// already found ([`Self::tile_plan_strided`], [`Self::row_fold`],
+    /// [`Self::move_plan`], [`Self::cell_plan`], [`Self::bounds_proof`],
+    /// [`Self::elem_plan`]); a consumer none of them recognizes reads its
+    /// captured arrays [`Reach::Whole`]. Only proven reads are affine or a
+    /// range. A producer whose element law is rooted at the index is read as
+    /// [`Reach::Law`]; a capture-free classifiable map over a loaded array
+    /// adds a second edge onto that array with the same reach (`law` set).
+    pub fn footprint_plan(&self, f: FuncId) -> FootprintPlan {
+        let mut plan = FootprintPlan::default();
+        let Some(fd) = self.func(f) else {
+            return plan;
+        };
+        let tiles = self.tile_plan_strided(f);
+        let folds = self.row_fold(f);
+        let moves = self.move_plan(f);
+        let cells = self.cell_plan(f);
+        let elem = self.elem_plan(f);
+        let bounds = self.bounds_proof(f);
+        let rooted = |o: ObjectId| {
+            let mut s = elem.src(o);
+            while let Some(ElemSrc::Apply { inner, .. }) = s {
+                s = Some(inner);
+            }
+            matches!(s, Some(ElemSrc::Index))
+        };
+        let len = |o: ObjectId| match self.objects.get(o).map(|x| &x.ty) {
+            Some(Ty::Array { size, .. }) => *size,
+            _ => 0,
+        };
+        let read = |src: ObjectId, slot: Option<u32>| match slot {
+            Some(s) => self.pair_slot_source(src, s),
+            None => Some(src),
+        };
+        let tile_reach = |r: &TileRead, c: u64, k: u64| {
+            let taps = match r.ksplit {
+                Some(ks) => vec![
+                    Tap {
+                        coef: ks.cq,
+                        ext: k / ks.div,
+                    },
+                    Tap {
+                        coef: ks.cr,
+                        ext: ks.div,
+                    },
+                ],
+                None => vec![Tap { coef: r.ck, ext: k }],
+            };
+            Reach::Affine {
+                w: c,
+                base: r.base,
+                cq: r.ci,
+                cr: r.clane,
+                taps,
+            }
+        };
+        for &m in &fd.morphisms {
+            let Some(morph) = self.morphisms.get(m) else {
+                continue;
+            };
+            let mut edges: Vec<(u32, Option<u32>, Reach)> = Vec::new();
+            match morph.op {
+                Operation::Map { captures, .. } => {
+                    if let Some(s) = tiles.sites.get(m) {
+                        for r in [&s.a, &s.b] {
+                            edges.push((r.slot, Some(r.slot), tile_reach(r, s.c, s.k)));
+                        }
+                    } else if let Some(s) = folds.get(m) {
+                        edges.push((
+                            s.a.slot,
+                            Some(s.a.slot),
+                            Reach::Affine {
+                                w: 1,
+                                base: s.a.base,
+                                cq: s.a.ci,
+                                cr: 0,
+                                taps: vec![Tap {
+                                    coef: s.a.ck,
+                                    ext: s.k,
+                                }],
+                            },
+                        ));
+                    } else if let Some(s) = moves.sites.get(m) {
+                        let slot = self.move_read_slot(m);
+                        if let Some((slot, base)) = slot {
+                            edges.push((
+                                slot,
+                                Some(slot),
+                                Reach::Affine {
+                                    w: s.width,
+                                    base,
+                                    cq: s.cq,
+                                    cr: s.cr,
+                                    taps: Vec::new(),
+                                },
+                            ));
+                        }
+                    } else if let Some(s) = cells.get(m) {
+                        for r in &s.reads {
+                            let slot = (captures > 0).then_some(r.slot);
+                            let reach = self.cell_read_reach(m, r, captures, &bounds, len);
+                            edges.push((r.slot, slot, reach));
+                        }
+                    } else {
+                        for s in 0..captures {
+                            edges.push((s, Some(s), Reach::Whole));
+                        }
+                        let mapped = (captures > 0).then_some(captures);
+                        let same = Reach::Affine {
+                            w: 1,
+                            base: 0,
+                            cq: 1,
+                            cr: 0,
+                            taps: Vec::new(),
+                        };
+                        if let Some(a) = read(morph.source, mapped)
+                            && self.tile_iota_size(a).is_none()
+                        {
+                            edges.push((captures, mapped, same));
+                        }
+                    }
+                }
+                Operation::Fold { captures, .. } => {
+                    let slot = captures + 1;
+                    if let Some(a) = self.pair_slot_source(morph.source, slot) {
+                        edges.push((
+                            slot,
+                            Some(slot),
+                            Reach::Affine {
+                                w: 1,
+                                base: 0,
+                                cq: 0,
+                                cr: 0,
+                                taps: vec![Tap {
+                                    coef: 1,
+                                    ext: len(a),
+                                }],
+                            },
+                        ));
+                    }
+                    for s in 0..captures {
+                        edges.push((s, Some(s), Reach::Whole));
+                    }
+                }
+                Operation::Index => {
+                    let a = self.pair_slot_source(morph.source, 0);
+                    let addr = self.pair_slot_source(morph.source, 1);
+                    let reach = match (a, addr.and_then(|x| self.tile_literal_u64(x))) {
+                        (Some(a), Some(k)) if k < len(a) => Reach::Affine {
+                            w: 1,
+                            base: k,
+                            cq: 0,
+                            cr: 0,
+                            taps: Vec::new(),
+                        },
+                        (Some(a), _) if bounds.proven(m) => Reach::Range { lo: 0, hi: len(a) },
+                        _ => Reach::Whole,
+                    };
+                    edges.push((0, Some(0), reach));
+                }
+                _ => {}
+            }
+            let mut out = Vec::new();
+            for (slot, at, reach) in edges {
+                let Some(producer) = read(morph.source, at) else {
+                    continue;
+                };
+                let reach = if rooted(producer) { Reach::Law } else { reach };
+                // See through a capture-free classifiable map over a loaded
+                // array: `producer[a]` is `body(x[a])`.
+                if reach != Reach::Law
+                    && let Some(ElemSrc::Apply {
+                        captures: 0, inner, ..
+                    }) = elem.src(producer)
+                    && let ElemSrc::Load { source, slot: None } = **inner
+                {
+                    out.push(Edge {
+                        consumer: m,
+                        slot,
+                        producer: source,
+                        reach: reach.clone(),
+                        law: Some(producer),
+                    });
+                }
+                out.push(Edge {
+                    consumer: m,
+                    slot,
+                    producer,
+                    reach,
+                    law: None,
+                });
+            }
+            if !out.is_empty() {
+                plan.edges.insert(m, out);
+            }
+        }
+        plan
+    }
+
+    /// A [`CellRead`]'s reach: the affine walk of its address over the map
+    /// index (every cell read is proven, `cell_plan`), else the proven range.
+    fn cell_read_reach(
+        &self,
+        m: MorphismId,
+        r: &CellRead,
+        captures: u32,
+        bounds: &BoundsProof,
+        len: impl Fn(ObjectId) -> u64,
+    ) -> Reach {
+        let affine = |a: CellAff| Reach::Affine {
+            w: a.w,
+            base: a.base,
+            cq: a.cq,
+            cr: a.cr,
+            taps: Vec::new(),
+        };
+        let morph = &self.morphisms[m];
+        let arr = if captures == 0 {
+            Some(morph.source)
+        } else {
+            self.pair_slot_source(morph.source, r.slot)
+        };
+        let whole = arr.map_or(Reach::Whole, |a| Reach::Range { lo: 0, hi: len(a) });
+        if r.slot == captures {
+            // The mapped element, read at `t`.
+            return affine(CellAff {
+                w: 1,
+                base: 0,
+                cq: 1,
+                cr: 0,
+            });
+        }
+        let Operation::Map { body, .. } = morph.op else {
+            return whole;
+        };
+        let Some(bd) = self.func(body) else {
+            return whole;
+        };
+        // Every Index of this slot: one reach when they agree, else the range.
+        let mut found: Option<Reach> = None;
+        for &g in &bd.morphisms {
+            let Some(x) = self.morphisms.get(g) else {
+                continue;
+            };
+            if x.op != Operation::Index
+                || self
+                    .pair_slot_source(x.source, 0)
+                    .and_then(|a| self.tile_input_proj_index(a, bd.input))
+                    != Some(r.slot)
+            {
+                continue;
+            }
+            let reach = self
+                .pair_slot_source(x.source, 1)
+                .and_then(|a| self.cell_affine(a, bd.input, captures))
+                .map_or_else(|| whole.clone(), affine);
+            match &found {
+                None => found = Some(reach),
+                Some(f) if *f == reach => {}
+                Some(_) => return whole,
+            }
+        }
+        let _ = bounds;
+        found.unwrap_or(whole)
+    }
+
+    /// A move site's read slot and base (the [`MoveSite`] record keeps the
+    /// coefficients only).
+    fn move_read_slot(&self, site: MorphismId) -> Option<(u32, u64)> {
+        let map = self.morphisms.get(site)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        let bd = self.func(body)?;
+        let (q, _) = bd
+            .morphisms
+            .iter()
+            .find_map(|&m| self.tile_split(m, bd.input, captures, Operation::Div))?;
+        let (r, _) = bd
+            .morphisms
+            .iter()
+            .find_map(|&m| self.tile_split(m, bd.input, captures, Operation::Mod))?;
+        let index = self.tile_definer(bd.output, Operation::Index)?;
+        let slot = self.tile_input_proj_index(self.pair_slot_source(index.source, 0)?, bd.input)?;
+        let aff = self.move_affine(self.pair_slot_source(index.source, 1)?, q, r, 0)?;
+        Some((slot, aff.base))
     }
 
     fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
