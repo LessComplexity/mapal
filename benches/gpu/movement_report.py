@@ -17,9 +17,7 @@ mb = lambda b: f'{b / 2 ** 20:.3f}' if b >= 2 ** 20 else f'{b / 2 ** 10:.1f} K' 
 
 
 def main(raw):
-    print('| program | arch | build | state (position:bytes:carried) | host copy / trip: facts → realized | '
-          'h2d / trip: facts → realized | d2h / trip: facts → realized | MB copied per trip, S64 arm → this |')
-    print('|---|---|---|---|---|---|---|---|')
+    rows = {}  # (prog, build, cells) -> archs: one row where the archs agree
     for a in ARCHS:
         p = os.path.join(raw, 'static', a, 'facts.json')
         if os.path.exists(p + '.gz'):
@@ -38,9 +36,15 @@ def main(raw):
                     off = facts.get(prog + ('.cpu-off-by-ref' if 'cpu' in suffix else '.off-by-ref'), {})
                     off_b = sum(x['copy_b'] for x in off.get('host', {}).get('move', {}).get('per_loop', []))
                     cmp = f'{mb(off_b)} → {mb(lp["copy_b"])}' if 'off' not in suffix else '-'
-                    print(f'| {prog} | {a} | {build} | {it.get("carried")} | {mb(int(it.get("host_copy", 0)))} → '
-                          f'{mb(lp["copy_b"])} ({lp["copy_n"]}) | {mb(int(it.get("h2d", 0)))} → {mb(lp["h2d_b"])} | '
-                          f'{mb(int(it.get("d2h", 0)))} → {mb(lp["d2h_b"])} | {cmp} |')
+                    cells = (f'{it.get("carried")} | {mb(int(it.get("host_copy", 0)))} → {mb(lp["copy_b"])} '
+                             f'({lp["copy_n"]}) | {mb(int(it.get("h2d", 0)))} → {mb(lp["h2d_b"])} | '
+                             f'{mb(int(it.get("d2h", 0)))} → {mb(lp["d2h_b"])} | {cmp}')
+                    rows.setdefault((prog, build, cells), []).append(a)
+    print('| program | build | archs | state (position:bytes:carried) | host copy / trip: facts → realized (calls) | '
+          'h2d / trip: facts → realized | d2h / trip: facts → realized | MB copied per trip, S64 arm → this |')
+    print('|---|---|---|---|---|---|---|---|')
+    for (prog, build, cells), archs in rows.items():
+        print(f'| {prog} | {build} | {"all four" if len(archs) == len(ARCHS) else " ".join(archs)} | {cells} |')
 
 
 if __name__ == '__main__':
