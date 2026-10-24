@@ -177,14 +177,14 @@ const GEN_THREADS: u64 = NAIVE_THREADS;
 /// it when an untiled site turns out to matter for speed.
 const NAIVE_THREADS: u64 = 256;
 
-/// Can this site run on the GPU at all? Any float site whose reads are plain
-/// affine in `(i, lane, k)`. The `k÷div` decomposition (conv taps) has no
-/// device encoding yet and stays on the host.
-pub(crate) fn gpu_site(site: &TileSite, profile: &TargetProfile) -> bool {
+/// Can this site run on the GPU at all? Any float site whose reads are affine
+/// in `(i, lane, k)`, or (generic-fusion `window`) in the fold's derived axes
+/// `(k÷div, k%div)` — conv taps, which the one-thread-per-cell kernel
+/// addresses. `window` off: those stay on the host.
+pub(crate) fn gpu_site(site: &TileSite, profile: &TargetProfile, window: bool) -> bool {
     profile.gpu().is_some()
         && is_float(&site.elem)
-        && site.a.ksplit.is_none()
-        && site.b.ksplit.is_none()
+        && (window || (site.a.ksplit.is_none() && site.b.ksplit.is_none()))
         && site.k > 0
         && site.rows * site.c > 0
 }
@@ -206,13 +206,14 @@ pub(crate) fn placement(
     f: FuncId,
     plan: &TilePlan,
     profile: &TargetProfile,
+    window: bool,
 ) -> SecondaryMap<MorphismId, ()> {
     let mut dev = SecondaryMap::new();
     if profile.gpu().is_none() {
         return dev;
     }
     for m in ir.topo_order(f) {
-        let Some(site) = plan.sites.get(m).filter(|s| gpu_site(s, profile)) else {
+        let Some(site) = plan.sites.get(m).filter(|s| gpu_site(s, profile, window)) else {
             continue;
         };
         let src = ir.morphism(m).expect("site resolves").source;
@@ -282,7 +283,7 @@ pub(crate) fn tile_plan(
     let strict = ir.tile_plan(f);
     let mut plan = ir.tile_plan_strided(f);
     // S62: an extra is a site only where it is placed on the device.
-    let dev = placement(ir, f, &plan, profile);
+    let dev = placement(ir, f, &plan, profile, rungs.window);
     let extra: Vec<MorphismId> = plan
         .sites
         .iter()
@@ -726,7 +727,9 @@ fn combine(
     order: Order,
     arms: crate::GpuArms,
 ) -> Combine {
-    if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() {
+    // A window's taps (`window`) are walked in order: its `k` is not cut.
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some();
+    if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() || window {
         return Combine::None;
     }
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
@@ -1271,12 +1274,13 @@ pub(crate) fn device_module(
     epi_bodies: &[(String, String)],
     cells: &[CellKernel],
     folds: &[RowFoldSite],
+    units: &[super::fuse::UnitKernel],
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
         let rungs = host_rungs(profile, contract, arms);
         let plan = tile_plan(ir, f, profile, rungs);
-        let dev = placement(ir, f, &plan, profile);
+        let dev = placement(ir, f, &plan, profile, rungs.window);
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);
         // S54 `rowfold`: the device folds, and the sites that store for them.
@@ -1295,7 +1299,7 @@ pub(crate) fn device_module(
             .filter(|&(y, _)| ir.in_edges(y).first().is_some_and(|&m| dev.contains_key(m)))
             .map(|(_, r)| (&r.row, false, false));
         for (site, col, whole) in sites.chain(rows) {
-            if gpu_site(site, profile) {
+            if gpu_site(site, profile, rungs.window) {
                 let name = kernel_name(kernel_id_col(site, profile, contract, reduced, col));
                 kernels.entry(name.clone()).or_insert_with(|| {
                     kernel_text(
@@ -1336,7 +1340,9 @@ pub(crate) fn device_module(
                 }
             }
         }
-        for r in folds.values() {
+        // generic-fusion: a fold a unit holds launches inside the unit.
+        let fused = |m: MorphismId| units.iter().any(|u| u.f == f && u.members.contains(&m));
+        for (_, r) in folds.iter().filter(|&(m, _)| !fused(m)) {
             let name = kernel_name(rowfold_id(&r.site, profile));
             kernels.entry(name.clone()).or_insert_with(|| {
                 let (gx, block) = rowfold_grid(&r.site, profile);
@@ -1376,7 +1382,7 @@ pub(crate) fn device_module(
             )
         });
     }
-    if kernels.is_empty() && gens.is_empty() && cells.is_empty() {
+    if kernels.is_empty() && gens.is_empty() && cells.is_empty() && units.is_empty() {
         return None;
     }
     let mut out = String::from("; mapal-backend-llvm device module\n");
@@ -1451,6 +1457,22 @@ pub(crate) fn device_module(
             .map_or("?", |(n, _)| n);
         out.push_str(&format!("; mapal.plan kernel={name} kind=cell\n"));
         out.push_str(kernel);
+    }
+    // generic-fusion: each unit's bodies once (shared with the others'), then
+    // its kernel.
+    for u in units {
+        for (callee, text) in &u.fns {
+            assert!(
+                !text.contains("@mapal_"),
+                "unit body {callee} names a host runtime symbol"
+            );
+            if bodies.insert(callee.clone()) {
+                out.push('\n');
+                out.push_str(text);
+            }
+        }
+        out.push('\n');
+        out.push_str(&u.text);
     }
     out.push('\n');
     out.push_str(&md);
@@ -1608,7 +1630,10 @@ fn kernel<'s>(
 /// its iteration space up to `ctas·iters` (`tiles × panels`, rounded up).
 fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
     let last = |r: &mapal_ir::TileRead| {
-        r.base + r.ci * (site.rows - 1) + r.clane * (site.c - 1) + r.ck * (site.k - 1)
+        let taps = r.ksplit.map_or(r.ck * (site.k - 1), |ks| {
+            ks.cq * (site.k / ks.div - 1) + ks.cr * (ks.div - 1)
+        });
+        r.base + r.ci * (site.rows - 1) + r.clane * (site.c - 1) + taps
     };
     let slabs = match combine {
         Combine::Workspace { s } => s,
@@ -2313,16 +2338,28 @@ impl Kernel<'_> {
         self.line(format!(
             "{acc} = phi {t} [{seed}, %body], [@ACC_NEXT@, %kloop]"
         ));
-        let load = |k: &mut Self, arr: &str, base: &str, ck: u64| {
-            let off = k.op("mul", &kv, ck);
+        // generic-fusion `window`: a read affine in `(k÷div, k%div)` (conv
+        // taps) addresses `cq·(k÷div) + cr·(k%div)`; constant divisors, a
+        // constant trip count — LLVM folds the division away.
+        let load = |k: &mut Self, arr: &str, base: &str, r: &mapal_ir::TileRead| {
+            let off = match r.ksplit {
+                Some(ks) => {
+                    let q = k.op("udiv", &kv, ks.div);
+                    let m = k.op("urem", &kv, ks.div);
+                    let x = k.op("mul", &q, ks.cq);
+                    let y = k.op("mul", &m, ks.cr);
+                    k.op("add", &x, &y)
+                }
+                None => k.op("mul", &kv, r.ck),
+            };
             let idx = k.op("add", base, &off);
             let p = k.gep(1, arr, &idx);
             let v = k.tmp();
             k.line(format!("{v} = load {t}, ptr addrspace(1) {p}, align {e}"));
             v
         };
-        let av = load(self, "%a", &abase, s.a.ck);
-        let bv = load(self, "%b", &bbase, s.b.ck);
+        let av = load(self, "%a", &abase, &s.a);
+        let bv = load(self, "%b", &bbase, &s.b);
         let accn = self.step(&acc, &av, &bv);
         self.out = self.out.replace("@ACC_NEXT@", &accn);
         self.line(format!("{kn} = add {ix} {kv}, 1"));
@@ -3606,7 +3643,10 @@ impl<'a> FnEmit<'a> {
         if let Some(plan) = &self.resident {
             // S54 `rowfold-layout`: stored in the order its only reader reads.
             let m = *self.ir.in_edges(target).first().expect("site morphism");
-            let col = plan.rowfold.values().any(|r| r.colmajor == Some(m));
+            let col = plan.rowfold.values().any(|r| r.colmajor == Some(m))
+                || plan.units.values().flat_map(|u| &u.members).any(|mb| {
+                    matches!(mb.kind, super::fuse::UKind::Fold { colmajor: Some(c), .. } if c == m)
+                });
             let streams = !plan.chain.is_empty();
             // S54 `epilogue`: the per-cell consumers this site's store evaluates
             // (none when a fold is its only reader: `col` and a group exclude).

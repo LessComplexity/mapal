@@ -154,6 +154,21 @@ INTENT = {
     # S65 rule R for folds: a row fold over any device output is a device site (no whole copy-out to fold it).
     'rowfold': dict(host=True, applies='dev.rowfold > 0', on=[
         ('each placed row fold is launched', 'host.calls.launch >= dev.rowfold')]),
+    # generic-fusion `fuse` (func/fuse.rs): a unit kernel holds placed folds and cells whose footprints stay in
+    # one row of its unit; `; mapal.fuse` says what it keeps (no store, no pointer), stores and reads.
+    'fuse': dict(applies="plan.kind == 'fuse'", on=[
+        ('kept members are not kernel parameters: the pointers are the stored members and the operands',
+         'ptx.params == fuse.n_store + fuse.n_gmem and fuse.ll_params == ptx.params'),
+        ('a stored member is stored, a kept one is not: st.global iff something is stored',
+         '(ptx.st_global > 0) == (fuse.n_store > 0)'),
+        ('no shared memory beyond the plan (the members run in registers)', 'ptxas.static_smem == fuse.smem'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0'),
+        ('every member body inlined: no call left in PTX', 'ptx.call == 0')]),
+    'fuse-host': dict(host=True, applies='host.fuse.units > 0', on=[
+        ('one launch per unit (its members launch nothing of their own)', 'host.fuse.unit_calls == host.fuse.units'),
+        ('every unit kernel in the device module', 'dev.fuse == host.fuse.units'),
+        ("per-trip copy-outs are the facts' (a kept member never crosses)", 'host.move.d2h_b == host.move.intent_d2h')],
+        applies_off='dev.cell + dev.rowfold > 0', off=[('no unit kernel', 'dev.fuse == 0')]),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

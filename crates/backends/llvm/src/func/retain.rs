@@ -235,7 +235,7 @@ impl<'a> FnEmit<'a> {
         self.line(format!("br label %{done}"));
 
         self.label_line(&one);
-        if self.on_device(target) && gpu::gpu_site(&r.row, self.profile) {
+        if self.on_device(target) && gpu::gpu_site(&r.row, self.profile, true) {
             self.emit_tiled_map_gpu_row(source, target, site, &r.row, &row);
         } else {
             let lo = self.tmp();

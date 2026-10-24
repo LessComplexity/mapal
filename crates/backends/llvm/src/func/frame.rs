@@ -722,7 +722,8 @@ impl<'a> FnEmit<'a> {
                 }
                 done.push(r);
                 let at: Vec<Vec<u32>> = paths.iter().filter(|q| next(q).contains(&Root::Obj(r))).cloned().collect();
-                let w = self.ir.in_edges(r).iter().copied().chain(resident::grouped_writer(&self.groups, r));
+                let unit = self.resident.as_ref().and_then(|p| p.unit_writer(r));
+                let w = self.ir.in_edges(r).iter().copied().chain(resident::grouped_writer(&self.groups, r)).chain(unit);
                 let w = w.filter_map(|m| self.lup.position(m)).min().unwrap_or(0);
                 if at.iter().map(|q| self.state_death(lp, q, None)).max().unwrap_or(0) < w {
                     continue; // one buffer: the state is dead before r is written
