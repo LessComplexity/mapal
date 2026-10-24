@@ -889,10 +889,12 @@ def xabs(src):
 
 for n in (2048, 4096):
     (out / f"pt_rowsum_{n}_xabs.mapal").write_text(xabs((out / f"pt_rowsum_{n}.mapal").read_text()))
+stated = set()  # the stems whose K is written where the program is
 for stem, kmax in [(s, k) for s, (_, k) in SUITE.items()] + [
         (f"pt_{p}_{n}", f * n) for n in (2048, 4096)
         for p, f in (('softmax_rows', 2), ('rowsum', 2), ('ew', 8), ('fanout', 2), ('diamond', 2), ('indep', 1),
                      ('loop', 8), ('mlp', 2))] + [("pt_rt_mlp2_1024", 2 * 1024), ("pt_rt_mlp2_2048", 2 * 2048)]:
+    stated.add(stem)
     (out / f"{stem}.kmax").write_text(f"{kmax}\n")
 
 
@@ -975,4 +977,41 @@ CHAINS = {
 }
 for stem, (src, kmax) in CHAINS.items():
     (out / f"{stem}.mapal").write_text(src)
+    stated.add(stem)
     (out / f"{stem}.kmax").write_text(f"{kmax}\n")
+
+
+# flow: every timed program carries its gate's K (box_run.sh fails a default face without one — the
+# facts-on-graph sweep bit-compared split-K / stream-K builds of pt_mlp2, pt_twin, pt_pj, pt_epi instead).
+def fold_chain(src):
+    """An upper bound on the rounded steps any value of a loop-free program passes through: per top-level
+    statement, its folds' extents plus its arithmetic operators, plus the longest chain it reads."""
+    assert "loop {" not in src, "a loop's K is stated where it is written"
+    lens, chain, stmt = {}, {}, ""
+    for line in src.splitlines():
+        stmt += line + "\n"
+        if not re.fullmatch(r"    \S.*;", line):
+            continue
+        it, m = re.fullmatch(r"    (\d+) -> iota -> (\w+);", line), re.search(r"-> (\w+)(?:: \w+)?;$", line)
+        if it:
+            lens[it.group(2)] = int(it.group(1))
+        elif m:
+            w = sum(lens[r] for r in re.findall(r", (\w+)\) -> fold", stmt)) + len(re.findall(r" [-+*/] ", stmt))
+            reads = set(re.findall(r"\w+", stmt)) - {m.group(1)}
+            chain[m.group(1)] = w + max((chain[x] for x in reads if x in chain), default=0)
+        stmt = ""
+    return max(chain.values())
+
+
+assert fold_chain(probe_program(64, probes(64)['mlp2'], True)) >= 2 * 64
+assert fold_chain(probe_program(64, twin(64), True)) < 2 * 64  # two independent sites: one chain each
+for n in (1024, 2048):  # one request's chain: the requests are independent (+ the outputs' join)
+    for tag in ('rt', 'rg'):
+        for name in ('mlp2', 'indep'):
+            stem = f"pt_{tag}_{name}_{n}"
+            if stem not in stated:
+                stated.add(stem)
+                (out / f"{stem}.kmax").write_text(f"{fold_chain(probe_program(n, probes(n)[name], True)) + 1}\n")
+for f in sorted(out.glob("pt_*.mapal")):
+    if f.stem not in stated:
+        (out / f"{f.stem}.kmax").write_text(f"{fold_chain(f.read_text())}\n")
