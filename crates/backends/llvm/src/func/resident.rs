@@ -2495,7 +2495,14 @@ impl<'a> FnEmit<'a> {
                 }
                 for o in outs {
                     if !p.keep.contains_key(o) && !p.is_carry_next(o) {
-                        d2h += bytes(o);
+                        // A retained output (`retain.rs`) rebuilds whole once
+                        // per loop entry; a trip copies out its one new row.
+                        d2h += match self.retain.get(o) {
+                            Some(r) => {
+                                r.stride * crate::profile::elem_bytes(array_elem(&self.obj_ty(o)))
+                            }
+                            None => bytes(o),
+                        };
                     }
                 }
                 retained += self.retain.contains_key(t) as usize;
