@@ -257,7 +257,7 @@ print("chain_256\nshare_256\nloop_128_8")
 (out / "loop_mm_1024_8.mapal").write_text(loop_mm(1024, 8))
 (out / "e2e_chain_4096.mapal").write_text(chain(4096, timed=True))
 
-def decode(T, d, rewrite=False, scaled=False):
+def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0):
     """S53 `retain-delta`: a decode loop. Iteration t writes row t of the
     carried `x` — one map over its cells: row t gets the new row, fed by the
     previous output, every other cell keeps its value — then `K = x·Wk`,
@@ -271,8 +271,28 @@ def decode(T, d, rewrite=False, scaled=False):
 
     `scaled=True` (S54): `K` and `V` read `xh = x·0.5`, a per-cell map of the
     written `x` — the row delta has to pass through it (`write_delta`'s Same
-    consumers), so `xh` uploads its written row and `K`, `V` are retained."""
+    consumers), so `xh` uploads its written row and `K`, `V` are retained.
+
+    `causal=True`: a real attention decode. Step t's scores cover rows
+    `r <= t` only; softmax (max-subtracted, `expo`, over the masked sum) over
+    them; `o = p·V / Σp`.
+
+    `prefill=P` (implies causal): rows < P are a prompt. Before the loop, the
+    prompt's K/V and its causal attention (every prompt row's output `po`,
+    P x T scores at static max length T) are computed; the loop then decodes
+    rows P..T-1 from the last prompt output. The loop still writes `K`, `V` as
+    `x·W` over all T rows: that rows < P carry over from the prefill and only
+    row t changes per step is the compiler's to find."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
+    causal = causal or prefill > 0
+    scale, ninf = repr(d ** 0.5), "-1000000000.0"
+
+    def ex(e):  # `expo`, with names that do not shadow the loop's `x`
+        return (f"{e} -> ez; ez / 256.0 + 1.0 -> eu; (eu > 0.0) -> {{ -true-> eu; -false-> 0.0; }} -> ev; "
+                f"8 -> iota -> esq; (ev, esq) -> fold {{ acc, k -> acc * acc }}")
+
+    def rmax(row):  # the max of one row's T scores
+        return f"({ninf}, rrange) -> fold {{ acc, r -> {row} -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }}"
     if rewrite:
         # Row j's cell of column t % d: the new value of row j (the fed-back
         # output damped: every row takes it, every trip).
@@ -286,12 +306,45 @@ def decode(T, d, rewrite=False, scaled=False):
         row = [f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     xs = "xh" if scaled else "x"
     half = "                x -> map { v -> v * 0.5 } -> xh;\n" if scaled else ""
-    proj = lambda w_: (
+    proj = lambda w_, xs=xs: (
         f"tc -> map {{ c ->\n"
         f"                    c / {d} -> i;\n"
         f"                    c % {d} -> j;\n"
         f"                    (0.0, krange) -> fold {{ acc, k -> acc + {xs}[i * {d} + k] * {w_}[k * {d} + j] }}\n"
         f"                }}")
+    if causal:
+        attend = (
+            f"                rrange -> map {{ r -> (r <= t) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -false-> {ninf}; }} }} -> s;\n"
+            f"                {rmax('s[r]')} -> mx;\n"
+            f"                rrange -> map {{ r -> (r <= t) -> {{ -true-> {{ {ex(f'(s[r] - mx) / {scale}')} }} -false-> 0.0; }} }} -> p;\n"
+            f"                (0.0, rrange) -> fold {{ acc, r -> acc + p[r] }} -> den;\n"
+            f"                krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + p[r] * vv[r * {d} + j] }} -> a; a / den }} -> o;\n")
+    else:
+        attend = (
+            f"                rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;\n"
+            f"                krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + s[r] * vv[r * {d} + j] }} }} -> o;\n")
+    P = prefill
+    if P:
+        # The prompt: row r < P holds the decode's row law (`f / 64.0`, no fed-back `o`).
+        init = (
+            f"    tc -> map {{ c -> (c / {d} < {P}) -> {{ -true-> {{ (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 }} -false-> 0.0; }} }} -> x0;\n"
+            f"    () -> time -> pf0;\n"
+            f"    {proj('wk', 'x0')} -> k0;\n"
+            f"    {proj('wv', 'x0')} -> v0;\n"
+            f"    {P * d} -> iota -> pq;\n"
+            f"    pq -> map {{ e -> (e * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> qp;\n"
+            f"    {P * T} -> iota -> ps_i;\n"
+            f"    {P} -> iota -> prange;\n"
+            f"    ps_i -> map {{ e -> e / {T} -> i; e % {T} -> r; (r <= i) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + qp[i * {d} + k] * k0[r * {d} + k] }} }} -false-> {ninf}; }} }} -> ps;\n"
+            f"    prange -> map {{ i -> {rmax(f'ps[i * {T} + r]')} }} -> pmx;\n"
+            f"    ps_i -> map {{ e -> e / {T} -> i; e % {T} -> r; (r <= i) -> {{ -true-> {{ {ex(f'(ps[e] - pmx[i]) / {scale}')} }} -false-> 0.0; }} }} -> pp;\n"
+            f"    prange -> map {{ i -> (0.0, rrange) -> fold {{ acc, r -> acc + pp[i * {T} + r] }} }} -> pden;\n"
+            f"    pq -> map {{ e -> e / {d} -> i; e % {d} -> j; (0.0, rrange) -> fold {{ acc, r -> acc + pp[i * {T} + r] * v0[r * {d} + j] }} -> a; a / pden[i] }} -> po;\n"
+            f"    krange -> map {{ j -> po[{(P - 1) * d} + j] }} -> o0;\n")
+        tail = "    (zero, po) -> fold { acc, v -> acc + v } -> ptotal;\n    ptotal -> println;\n"
+    else:
+        init = f"    (0.0, {T * d}) -> fill -> x0;\n    (0.0, {d}) -> fill -> o0;\n"
+        tail = ""
     # The loop lives in `main`: the entry fn is the one whose big blocks go to
     # the arena, and a 1024x256 decode carries ~10 MB of arrays.
     return f"""fn main() {{
@@ -301,20 +354,16 @@ def decode(T, d, rewrite=False, scaled=False):
     {T * d} -> iota -> tc;
     {d} -> iota -> krange;
     {T} -> iota -> rrange;
-    (0.0, {T * d}) -> fill -> x0;
-    (0.0, {d}) -> fill -> o0;
-    mut x: [f32; {T * d}] <- x0;
+{init}    mut x: [f32; {T * d}] <- x0;
     mut o: [f32; {d}] <- o0;
-    mut t: i32 <- 0;
+    mut t: i32 <- {P};
     loop {{
         (t < {T}) -> {{
             -true-> {{
 {''.join(row)}{half}                {proj('wk')} -> kk;
                 {proj('wv')} -> vv;
                 krange -> map {{ k -> ((t * {d} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {w}.0 }} -> q;
-                rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;
-                krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + s[r] * vv[r * {d} + j] }} }} -> o;
-                t + 1 -> t;
+{attend}                t + 1 -> t;
                 -> loop;
             }}
             -false-> o -> out;
@@ -325,12 +374,14 @@ def decode(T, d, rewrite=False, scaled=False):
     0.0 -> zero: f32;
     (zero, out) -> fold {{ acc, v -> acc + v }} -> total;
     total -> println;
-}}
+{tail}}}
 """
 
 
 for T, d in ((16, 8), (1024, 256)):
     (out / f"decode_{T}_{d}.mapal").write_text(decode(T, d))
+(out / "causal_16_8.mapal").write_text(decode(16, 8, causal=True))
+(out / "prefill_16_8_8.mapal").write_text(decode(16, 8, prefill=8))
 (out / "loop_rewrite_16_8.mapal").write_text(decode(16, 8, rewrite=True))
 (out / "decode_scaled_16_8.mapal").write_text(decode(16, 8, scaled=True))
 
@@ -787,6 +838,20 @@ def conv(n, kk):
     return composed([("w", kk * kk, 'e'), ("img", w * w, 'a')], body, [("y", n * n)])
 
 
+def conv_mc(N, C, n, kk):
+    """A multi-channel 2-D convolution, NCHW, C -> C channels, valid padding:
+    y[b][co][i][j] = fold_{ci,dy,dx} w[co][ci][dy][dx]·img[b][ci][i+dy][j+dx]
+    (torch conv2d's layouts)."""
+    w, taps = n + kk - 1, C * kk * kk
+    body = (f"    {N * C * n * n} -> iota -> o_y;\n    {taps} -> iota -> k_y;\n"
+            f"    o_y -> map {{ t ->\n        t / {C * n * n} -> b;\n        t / {n * n} % {C} -> co;\n"
+            f"        t / {n} % {n} -> i;\n        t % {n} -> j;\n"
+            f"        (0.0, k_y) -> fold {{ acc, k -> k / {kk * kk} -> ci; k % {kk * kk} -> q; "
+            f"acc + w[co * {taps} + k] * img[((b * {C} + ci) * {w} + i + q / {kk}) * {w} + j + q % {kk}] }}\n"
+            f"    }} -> y;\n")
+    return composed([("w", C * taps, 'e'), ("img", N * C * w * w, 'a')], body, [("y", N * C * n * n)])
+
+
 def timed_loop(src):
     """`time` around a program's top-level loop (its `mut` state is declared before it)."""
     src = src.replace("    loop {\n", "    () -> time -> t0;\n    loop {\n", 1)
@@ -798,7 +863,13 @@ def timed_loop(src):
 SUITE = {
     "pt_fir_4194304_16": (fir(1 << 22, 16), 16),
     "pt_conv_2048_5": (conv(2048, 5), 25),
+    # N8, 64 -> 64 channels, 3x3, 56x56 outputs (a ResNet stage); px_ is its interpreter-sized check.
+    "pt_convmc_8_64_56_3": (conv_mc(8, 64, 56, 3), 64 * 9),
+    "px_convmc_2_4_6_3": (conv_mc(2, 4, 6, 3), 4 * 9),
     "pt_decode_1024_256": (timed_loop(decode(1024, 256)), 1024 * 256),
+    "pt_causal_1024_256": (timed_loop(decode(1024, 256, causal=True)), 1024 * 256),
+    # Timed from the prefill's first op (`pf0`): prefill + decode is the workload.
+    "pt_prefill_1024_512_256": (timed_loop(decode(1024, 256, prefill=512)).replace("t1 - t0", "t1 - pf0"), 1024 * 256),
     "pt_loopmm_1024_8": (timed_loop(loop_mm(1024, 8)), 8 * 1024),
 }
 for stem, (src, _) in SUITE.items():
