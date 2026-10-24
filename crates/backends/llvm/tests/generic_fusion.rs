@@ -641,3 +641,79 @@ fn generic_fusion_chains_values_launches_and_stores() {
         "too few fused programs"
     );
 }
+
+/// The symbols `define … void @mapal_(tile|gen)_<id>(` in a device unit.
+fn defined_kernels(dev: &str) -> std::collections::BTreeSet<String> {
+    dev.lines()
+        .filter(|l| l.starts_with("define "))
+        .filter_map(|l| l.split_once(" void @").map(|(_, r)| r))
+        .filter_map(|r| r.split_once('(').map(|(n, _)| n.to_owned()))
+        .filter(|n| n.starts_with("mapal_tile_") || n.starts_with("mapal_gen_"))
+        .collect()
+}
+
+/// The kernels the host's launch sites load (`mapal_gpu.c`'s naming).
+fn launched_kernels(host: &str) -> std::collections::BTreeSet<String> {
+    let mut live = std::collections::BTreeSet::new();
+    for l in host.lines() {
+        let Some((_, r)) = l.split_once("call void @mapal_gpu_") else {
+            continue;
+        };
+        let Some((entry, args)) = r.split_once("(i64 ") else {
+            continue;
+        };
+        let prefix = match entry {
+            "tile" | "launch" | "launch_l2" | "launchv" => "mapal_tile",
+            "gen" => "mapal_gen",
+            _ => continue,
+        };
+        let lit: String = args.chars().take_while(|c| *c == '-' || c.is_ascii_digit()).collect();
+        let id = lit
+            .parse::<u64>()
+            .unwrap_or_else(|_| lit.parse::<i64>().expect("launch id") as u64);
+        live.insert(format!("{prefix}_{id:016x}"));
+    }
+    live
+}
+
+/// Dead kernels (launch-site use counts): over unseen programs from the
+/// generator (device loops, chains) on every GPU profile, default face and the
+/// exact all-on-device face, the device unit defines exactly the kernels some
+/// host launch site loads — none unlaunched, none missing.
+#[test]
+fn every_device_kernel_has_a_launch_site() {
+    let mut runner = TestRunner::deterministic();
+    let (dev_s, chain_s) = (testgen::device_prog_strategy(), testgen::chain_strategy());
+    let (mut units, mut kernels) = (0usize, 0usize);
+    for z in 0..48 {
+        let src = if z % 2 == 0 {
+            testgen::device_src(&dev_s.new_tree(&mut runner).unwrap().current())
+        } else {
+            chain_s.new_tree(&mut runner).unwrap().current().source()
+        };
+        let ir = lower(&src);
+        for target in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"] {
+            let default = EmitOpts {
+                host: "generic",
+                target,
+                ..EmitOpts::default()
+            };
+            for em in [
+                emit_detailed(&ir, &default).expect("emits"),
+                emission(&ir, target, &[]),
+            ] {
+                let Some(dev) = em.device.as_deref() else {
+                    continue;
+                };
+                let (def, live) = (defined_kernels(dev), launched_kernels(&em.text));
+                assert_eq!(def, live, "#{z} {target}: defined vs launched\n{src}");
+                units += 1;
+                kernels += def.len();
+            }
+        }
+    }
+    assert!(
+        units >= 64 && kernels >= units,
+        "too few device units: {units} units, {kernels} kernels"
+    );
+}

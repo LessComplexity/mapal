@@ -1221,6 +1221,7 @@ fn emit_module(
                 &cells,
                 &folds,
                 &units,
+                &crate::func::gpu::launched_kernels(&out),
             )
         })
         .flatten();
