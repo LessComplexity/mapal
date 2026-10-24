@@ -172,7 +172,76 @@ def intents(raw):
     return out
 
 
+def prev_ratios(readme, heading='### Workload suite: iter ms (median of 30 reps), Mapal vs the best library'):
+    """(workload, arch) -> `Mapal / best other` of the README's S65 suite table."""
+    out, on = {}, False
+    for line in open(readme):
+        if line.startswith('###'):
+            on = line.startswith(heading)
+        elif on and line.startswith('| ') and not line.startswith('| workload'):
+            c = [x.strip() for x in line.strip().strip('|').split('|')]
+            if len(c) >= 8:
+                out[(c[0], c[1])] = c[7]
+    return out
+
+
+def timing(raw):
+    """The box runs (<raw>/<arch>/results-<arch>.txt): the suite against the best other leg, S65's ratio beside
+    it; then each new rung's OFF arm against shipped per program — traced launches, kernel ms, iter ms."""
+    import re
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import evidence_report as er
+    readme = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../docs/performance/evidence/README.md')
+    prev = prev_ratios(readme)
+    print('\n### Suite: iter ms (median of the reps), Mapal vs the best other leg on the same box\n')
+    print('| workload | arch | CPU-only | CPU+GPU | null | best other (ms) | Mapal / best other | S65 ratio |')
+    print('|---|---|---|---|---|---|---|---|')
+    for r in sorted(er.suite_rows(raw), key=lambda r: (r['key'], ARCHS.index(r['arch']))):
+        b = f'{r["best"][0]} {r["best"][1]:.4f}' if r['best'] else '-'
+        print(f'| {r["key"]} | {r["arch"]} | {er.f4(r["cpu"])} | {er.f4(r["on"])} | {er.f3(r["null"])} | {b} | '
+              f'{er.f3(r["ratio"])} | {prev.get((r["key"], r["arch"]), "-")} |')
+    print('\n### Each new rung ON vs its OFF arm (traced rep 1; iter ms median of the reps; OFF/ON per rep, '
+          'median; null = |null/shipped − 1| max)\n')
+    print('| program | arch | arm | launches ON / OFF | device buffers ON / OFF | kernel ms ON / OFF | '
+          'iter ms ON / OFF | OFF/ON | null | sign |')
+    print('|---|---|---|---|---|---|---|---|---|---|')
+    for a in ARCHS:
+        lines = er.results(raw, a)
+        lg = er.legs(lines)
+        tr = {}
+        for l in lines:
+            if l.startswith('probe prog=') and 'mapal_gpu_trace_total' in l and ' face=_default ' in l:
+                f = dict(re.findall(r'(\w+)=([^\s\[\]]+)', l))
+                tr.setdefault((f['prog'], f['arm']), (int(f.get('launches', 0)), float(f.get('kernel_ms', 0))))
+        fx = load(raw, 'static', a)
+        for leg in sorted(lg):
+            m = re.match(r'(pt_\w+)\.(off-(?:fuse|window|range-map|lane-stride)[\w+-]*)$', leg)
+            if not m or m[1] not in lg:
+                continue
+            p, arm_ = m[1], m[2]
+            on, off = lg[p], lg[leg]
+            ks = [k for k in off if k in on]
+            if not ks:
+                continue
+            ratio = er.med([off[k] / on[k] for k in ks])
+            nl = lg.get(p + '.null', {})
+            xs = [abs(nl[k] / on[k] - 1) for k in nl if k in on]
+            nul = max(xs) if xs else None
+            rs = [off[k] / on[k] for k in ks]
+            sign = ('ON faster' if nul is not None and all(x > 1 + nul for x in rs) else
+                    'ON slower' if nul is not None and all(x < 1 - nul for x in rs) else 'inside null')
+            t_on, t_off = tr.get((p, 'on')), tr.get((p, arm_))
+            e_on, e_off = fx.get(p), fx.get(f'{p}.{arm_}')
+            lb = f'{t_on[0]} / {t_off[0]}' if t_on and t_off else '-'
+            kb = f'{t_on[1]:.3f} / {t_off[1]:.3f}' if t_on and t_off else '-'
+            bb = f'{bufs(e_on)} / {bufs(e_off)}' if e_on and e_off else '-'
+            print(f'| {p.removeprefix("pt_")} | {a} | {arm_} | {lb} | {bb} | {kb} | {er.f4(er.med(list(on.values())))} / '
+                  f'{er.f4(er.med(list(off.values())))} | {ratio:.3f} | {er.f3(nul)} | {sign} |')
+
+
 def main(raw):
+    if any(os.path.exists(os.path.join(raw, a, f'results-{a}.txt')) for a in ARCHS):
+        timing(raw)
     rows = program_rows(raw)
     print('| program | archs | launches: base → new rungs off → shipped | launches: `fuse.host` intent = realized | '
           'kernels (shipped) | device buffers: base → off → shipped | kept (never stored) | stored fuse members | '

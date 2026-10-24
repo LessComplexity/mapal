@@ -181,11 +181,21 @@ static const size_t WS = 32u << 20;
 static int launches;
 static bool lt_unavailable;
 
+static std::map<std::string, long long> bufn;
+// A name asked for again with more elements than it holds is a harness bug (a probe's buffer named like an
+// operand): stop instead of writing past it.
 static float *B(const std::string &k, long long cnt = 0) {
   auto it = buf.find(k);
-  if (it != buf.end()) return it->second;
+  if (it != buf.end()) {
+    if (cnt > bufn[k]) {
+      fprintf(stderr, "chain_bench: buffer %s holds %lld < %lld\n", k.c_str(), bufn[k], cnt);
+      exit(102);
+    }
+    return it->second;
+  }
   float *p;
-  CUDA(cudaMalloc(&p, (cnt ? cnt : nn) * 4));
+  bufn[k] = cnt ? cnt : nn;
+  CUDA(cudaMalloc(&p, bufn[k] * 4));
   return buf[k] = p;
 }
 
@@ -609,7 +619,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3; ++i)
       gen_op<<<(unsigned)((Td + 255) / 256), 256>>>(B(names[i], Td), Td, law[i]->mul, law[i]->add, law[i]->mod,
                                                     law[i]->off, law[i]->div);
-    for (const char *k : {"s", "ex", "p"}) B(k, TT);
+    for (const char *k : {"s", "ex", "pr"}) B(k, TT);
     B("mx", T);
     B("den", T);
     B("o", Td);
@@ -620,15 +630,15 @@ int main(int argc, char **argv) {
                row_max<<<(T + 7) / 8, 256, 0, st[0]>>>(B("mx"), B("s"), T);
                sm_exp<<<(unsigned)((TT + 255) / 256), 256, 0, st[0]>>>(B("ex"), B("s"), B("mx"), TT, T, sd);
                row_sum<<<(T + 7) / 8, 256, 0, st[0]>>>(B("den"), B("ex"), T);
-               sm_div<<<(unsigned)((TT + 255) / 256), 256, 0, st[0]>>>(B("p"), B("ex"), B("den"), TT, T);
+               sm_div<<<(unsigned)((TT + 255) / 256), 256, 0, st[0]>>>(B("pr"), B("ex"), B("den"), TT, T);
                launches += 4;
-               gemm(0, "o", "p", "vv", T, d, T);
+               gemm(0, "o", "pr", "vv", T, d, T);
              }},
             {"fused", [=] {
                gemm(0, "s", "q", "kk", T, T, d, true);
-               softmax_row<<<(T + 7) / 8, 256, 0, st[0]>>>(B("p"), B("s"), T, sd);
+               softmax_row<<<(T + 7) / 8, 256, 0, st[0]>>>(B("pr"), B("s"), T, sd);
                ++launches;
-               gemm(0, "o", "p", "vv", T, d, T);
+               gemm(0, "o", "pr", "vv", T, d, T);
              }}};
   } else if (!probe.compare(0, 5, "smlp_")) {
     // generic-fusion `smlp` (gen_tiles.py): s2 = relu(x·w1 + b1)·w2, x M×d, w1 d×h, w2 h×d (laws a b e), b1 the
