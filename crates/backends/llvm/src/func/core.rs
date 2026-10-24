@@ -91,6 +91,7 @@ impl<'a> FnEmit<'a> {
             split_slots: Vec::new(),
             views: SecondaryMap::new(),
             views_done: false,
+            outside_memo: Default::default(),
             by_ref: false,
             bufs: Vec::new(),
             loops: Vec::new(),
@@ -480,6 +481,7 @@ impl<'a> FnEmit<'a> {
                 captures,
                 inner,
                 array: _,
+                outside: _,
             } => {
                 let src_ty = self.obj_ty(*source);
                 let inner_arr_ty = if *captures == 0 {

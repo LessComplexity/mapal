@@ -590,12 +590,18 @@ impl<'a> FnEmit<'a> {
     /// never eligible — the store would land in caller memory (the plan's
     /// rule 2 already marks borrowed inputs escaping; this check is the
     /// emitted-text-level second line). `None` keeps the fresh-alloca copy.
-    pub(super) fn update_in_place_source(&self, m: MorphismId) -> Option<ObjectId> {
+    ///
+    /// A piecewise map (generic-fusion natural forms, [`mapal_ir::Outside`]:
+    /// outside an index interval each cell is its capture's own, which the
+    /// body reads at that cell only) is the same write at a range: under the
+    /// same legality it runs in place over the interval ([`Self::range_map`]).
+    pub(super) fn in_place_source(&self, m: MorphismId) -> Option<ObjectId> {
         let morph = self.ir.morphism(m).expect("morphism resolves");
-        if morph.op != Operation::Update {
-            return None;
-        }
-        let arr = self.pair_source(morph.source, 0)?;
+        let arr = match morph.op {
+            Operation::Update => self.pair_source(morph.source, 0)?,
+            Operation::Map { .. } => self.pair_source(morph.source, self.range_map(m)?.slot)?,
+            _ => return None,
+        };
         if self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant {
             return None;
         }

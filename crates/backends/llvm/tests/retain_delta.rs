@@ -22,28 +22,62 @@ use mapal_ir::{CategoryIr, Delta};
 mod emu;
 use emu::{clang, rt_lib, run_emulated};
 
-/// The decode loop over `elem` (`f32` or `i32`), `T` steps of width `d`; with
-/// `column`, the iteration writes `x[j·d + t]` instead of row `t` (`Top`).
+/// The decode loop over `elem` (`f32` or `i32`), `T` steps of width `d`, in
+/// its natural form (`benches/gpu/gen_tiles.py`): the row write is one map
+/// over the cells; with `column`, the iteration writes column `t % d` of
+/// every row instead of row `t` (`Top`).
 fn decode(t_steps: u64, d: u64, elem: &str, column: bool) -> String {
+    decode_form(t_steps, d, elem, column, false)
+}
+
+/// [`decode`] with the write as unrolled `Update`s (`unrolled`: `d` cells of
+/// row `t`, or `T` of the column) — the shape the suite used before its
+/// generators were made idiomatic; the facts must give both the same code.
+fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -> String {
     let float = elem == "f32";
     let (zero, w) = if float {
         ("0.0", "x / 128.0")
     } else {
         ("0", "x % 7")
     };
-    let mut row = String::new();
-    for j in 0..d {
-        let idx = if column {
-            format!("{j} * {d} + t")
+    // The new cell `v` of row `j` and column `c`: `(t·d + j)`'s formula plus
+    // the previous output's element `j % d`.
+    let cell = |j: &str, k: &str| {
+        let f = format!("(({j}) * 7 + 13) % 101 - 50");
+        if float {
+            format!("{f} -> widen_f32 -> f{k}; f{k} / 64.0")
         } else {
-            format!("t * {d} + {j}")
-        };
-        let v = if float {
-            format!("((t * {d} + {j}) * 7 + 13) % 101 - 50 -> widen_f32 -> f{j}; f{j} / 64.0")
+            f
+        }
+    };
+    let mut row = if column { format!("t % {d} -> col;\n") } else { String::new() };
+    // The column takes the fed-back output in every row, every trip: damped.
+    let damp = match (column, float) {
+        (false, _) => "",
+        (true, true) => " / 4.0",
+        (true, false) => " / 4",
+    };
+    if !unrolled {
+        row += &if column {
+            format!(
+                "tc -> map {{ c -> (c % {d} == col) -> {{ -true-> {{ {v} + o[c / {d} % {d}]{damp} }} -false-> x[c]; }} }} -> x;\n",
+                v = cell(&format!("t * {d} + c / {d}"), ""),
+            )
         } else {
-            format!("((t * {d} + {j}) * 7 + 13) % 101 - 50")
+            format!(
+                "tc -> map {{ c -> (c / {d} == t) -> {{ -true-> {{ {v} + o[c % {d}] }} -false-> x[c]; }} }} -> x;\n",
+                v = cell("c", "")
+            )
         };
-        row.push_str(&format!("{v} + o[{j}] -> v{j}; x[{idx}] <- v{j};\n"));
+    }
+    let cells = if column { t_steps } else { d };
+    for j in (0..cells).filter(|_| unrolled) {
+        let (idx, v) = if column {
+            (format!("{j} * {d} + col"), cell(&format!("t * {d} + {j}"), &j.to_string()))
+        } else {
+            (format!("t * {d} + {j}"), cell(&format!("t * {d} + {j}"), &j.to_string()))
+        };
+        row.push_str(&format!("{v} + o[{}]{damp} -> v{j}; x[{idx}] <- v{j};\n", j % d));
     }
     let wf = |m: u64, a: u64| {
         let x = format!("(t * {m} + {a}) % 101 - 50");
@@ -197,6 +231,58 @@ fn write_delta_on_sources() {
     let ir = lower(&decode(16, 8, "f32", true));
     let wd: Vec<Delta> = ir.write_delta(ir.entry()).values().copied().collect();
     assert_eq!(wd, [Delta::Top, Delta::Top]);
+}
+
+/// generic-fusion natural forms: the decode with its write as one map gets
+/// the unrolled `Update`s' facts and code — the same `Δ` (row `t`; the column
+/// `Top`), the same per-trip movement and storage (`; mapal.move`: the state
+/// written in place) and launches on every profile — and its row write runs
+/// in place over the row: `max(8t, 0) .. min(8t + 8, 128)`.
+#[test]
+fn natural_decode_moves_what_the_unrolled_one_moves() {
+    let deltas = |ir: &CategoryIr| -> Vec<Option<(u64, i64, i64)>> {
+        ir.write_delta(ir.entry())
+            .values()
+            .map(|d| match *d {
+                Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
+                Delta::Top => None,
+            })
+            .collect()
+    };
+    let emit_on = |ir: &CategoryIr, target: &'static str| {
+        let mut opts = EmitOpts {
+            host: "generic",
+            target,
+            ..EmitOpts::exact()
+        };
+        for r in ["async", "streams", "pinned", "pdl"] {
+            *opts.gpu.off.rung(r).expect("rung") = true;
+        }
+        emit_detailed(ir, &opts).expect("emits").text
+    };
+    let moves = |t: &str| -> Vec<String> {
+        t.lines()
+            .filter(|l| l.starts_with("; mapal.move"))
+            .map(|l| l.split_once(" carried=").map_or(l, |(_, r)| r).to_string())
+            .collect()
+    };
+    let launches = |t: &str| t.matches("call void @mapal_gpu_launch").count() + tile_calls(t).len();
+    for (elem, column) in [("f32", false), ("i32", false), ("f32", true)] {
+        let nat = lower(&decode_form(16, 8, elem, column, false));
+        let unr = lower(&decode_form(16, 8, elem, column, true));
+        assert_eq!(deltas(&nat), deltas(&unr), "{elem} column={column}");
+        for target in ["rtx-4090", "h100-pcie", "rtx-3090", "rtx-5090", "generic"] {
+            let (a, b) = (emit_on(&nat, target), emit_on(&unr, target));
+            assert_eq!(moves(&a), moves(&b), "{elem} column={column} {target}");
+            assert_eq!(launches(&a), launches(&b), "{elem} column={column} {target}");
+        }
+    }
+    let nat = lower(&decode(16, 8, "f32", false));
+    assert!(deltas(&nat).contains(&Some((8, 8, 0))), "{:?}", deltas(&nat));
+    let host = emit_on(&nat, "generic");
+    assert!(moves(&host).iter().all(|l| l.starts_with("0:512:inplace")), "{:?}", moves(&host));
+    let clipped = host.lines().filter(|l| l.contains(" = select i1 ") && l.ends_with(", i64 128")).count();
+    assert_eq!(clipped, 1, "one row-write loop clipped to the array");
 }
 
 #[test]

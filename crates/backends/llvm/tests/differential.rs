@@ -200,7 +200,12 @@ fn wait_boxed(mut command: Command, secs: u64) -> Option<(Vec<u8>, i32)> {
         if let Some(status) = child.try_wait().unwrap() {
             let mut buf = Vec::new();
             child.stdout.take().unwrap().read_to_end(&mut buf).unwrap();
-            return Some((buf, status.code().unwrap_or(-1)));
+            // Killed by a signal: the shell's `128 + signal`.
+            let code = status.code().unwrap_or_else(|| {
+                use std::os::unix::process::ExitStatusExt;
+                128 + status.signal().unwrap_or(0)
+            });
+            return Some((buf, code));
         }
         if start.elapsed() > Duration::from_secs(secs) {
             let _ = child.kill();
@@ -3425,5 +3430,208 @@ fn differential_device_loops_values_and_movement() {
     eprintln!(
         "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states; \
          values OK on and off, movement = the plan's"
+    );
+}
+
+/// **generic-fusion natural forms, on unseen programs.** ≥ 256 generated
+/// device-sized loops in twin forms (testgen `twin_prog_strategy`: sites,
+/// per-cell maps, guards, row folds, a clamped power, and writes into the
+/// state — a row, a column, a range of a row, one cell): the **natural** form
+/// (a guarded map over the cells, a power as a fold over a range) against the
+/// **unrolled** one (`Update`s, a chain of squarings), the same values by
+/// construction. The natural form must compile as well:
+/// - the same `write_delta` (and a `Rows` claim holds: per trip the
+///   interpreter sees no cell of the state change outside it);
+/// - per GPU profile (`h100-pcie` and `rtx-4090` alternating, every capable
+///   site on the device) and on the CPU (`generic`): per trip no more bytes
+///   moved, copied or allocated and no less retained (`; mapal.move`), no more
+///   launches (the same kernel kinds at as many), and the realized movement
+///   equals the plan's (`gpu_trip_moves`, plus the host copies the facts
+///   require);
+/// - values: the exact face equals the interpreter with `range-map` on and
+///   off (the emulated device, or the CPU build).
+#[test]
+fn differential_natural_twins_values_and_movement() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP differential_natural_twins: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let cases: usize = std::env::var("MAPAL_TWINS").ok().and_then(|v| v.parse().ok()).unwrap_or(256);
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::twin_prog_strategy();
+    let deltas = |ir: &CategoryIr| -> Vec<Option<(u64, i64, i64)>> {
+        let mut v: Vec<_> = ir
+            .write_delta(ir.entry())
+            .values()
+            .map(|d| match *d {
+                mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
+                mapal_ir::Delta::Top => None,
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    let emit = |ir: &CategoryIr, target: &'static str, range: bool| {
+        let mut gpu = mapal_backend_llvm::GpuArms::default();
+        let off = ["streams", "pinned", "pdl", "async", "place"].into_iter().chain((!range).then_some("range-map"));
+        for r in off {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        let opts = mapal_backend_llvm::EmitOpts { host: "generic", target, gpu, ..mapal_backend_llvm::EmitOpts::exact() };
+        mapal_backend_llvm::emit_detailed(ir, &opts).expect("emits")
+    };
+    let moves = |t: &str| -> Vec<String> {
+        t.lines()
+            .filter(|l| l.starts_with("; mapal.move"))
+            .map(|l| l.split_once(" carried=").map_or(l, |(_, r)| r).to_string())
+            .collect()
+    };
+    let launches = |t: &str| t.matches("call void @mapal_gpu_launch").count() + t.matches("call void @mapal_gpu_tile(").count();
+    let kinds = |d: &Option<String>| -> Vec<String> {
+        let mut k: Vec<String> = d
+            .iter()
+            .flat_map(|d| d.lines())
+            .filter_map(|l| l.strip_prefix("; mapal.plan kernel="))
+            .filter_map(|l| l.split(" kind=").nth(1))
+            .map(|k| k.split(' ').next().unwrap_or("").to_string())
+            .collect();
+        k.sort();
+        k
+    };
+    let run_on = |em: &mapal_backend_llvm::Emission| -> String {
+        match &em.device {
+            Some(dev) => emu::run_emulated(&clang, &em.text, dev),
+            None => compile_run(&clang, &em.text, "twin", "-O1").map_or_else(
+                || "timeout".into(),
+                |(o, c)| format!("{}{}", String::from_utf8_lossy(&o), if c == 0 { String::new() } else { format!("[exit {c}]") }),
+            ),
+        }
+    };
+    let progs: Vec<testgen::TwinProg> = (0..cases).map(|_| strat.new_tree(&mut runner).unwrap().current()).collect();
+    // One program's checks: its findings, and `[Rows claims, probed, device
+    // builds, in-place states, better builds]`.
+    let work = |case: usize, p: &testgen::TwinProg| -> (Vec<String>, [usize; 5]) {
+        let mut findings = Vec::new();
+        let (mut rows, mut probed, mut devices, mut inplace, mut better) = (0usize, 0usize, 0usize, 0usize, 0usize);
+        let (ns, us) = (testgen::twin_src(&p, true, None), testgen::twin_src(&p, false, None));
+        let tag = format!("twin#{case}");
+        let (ni, ui) = (rewrite(lower_src(&ns)).ir, rewrite(lower_src(&us)).ir);
+        let oracle = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (run(&ni, 400_000_000), run(&ui, 400_000_000))));
+        let Ok((rr, ru)) = oracle else {
+            findings.push(format!("{tag}: the interpreter panicked\n{ns}"));
+            return (findings, [0; 5]);
+        };
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{ns}");
+        assert_eq!(ru.output, rr.output, "the twins' values\n{ns}\n{us}");
+        let dn = deltas(&ni);
+        if dn != deltas(&ui) {
+            findings.push(format!("{tag}: Δ {dn:?} != the unrolled {:?}\n{ns}", deltas(&ui)));
+        }
+        // The `Rows` claim, probed: the state's cells outside it never change.
+        if let Some(&Some((stride, a, b))) = dn.iter().find(|d| d.is_some()) {
+            rows += 1;
+            let cs = testgen::twin_src(&p, true, Some((a, b, stride)));
+            let ci = rewrite(lower_src(&cs)).ir;
+            if deltas(&ci) != dn {
+                findings.push(format!("{tag}: the probe changed Δ: {:?}\n{cs}", deltas(&ci)));
+            }
+            let rc = run(&ci, 400_000_000);
+            let bad: Vec<&str> = rc.output.lines().filter(|l| l.starts_with("dz=") && *l != "dz=0").collect();
+            if !matches!(rc.outcome, Outcome::Done(_)) || !bad.is_empty() {
+                findings.push(format!("{tag}: Δ Rows {stride} at {a}·it + {b} is unsound: {bad:?}\n{cs}"));
+            }
+            probed += 1;
+        }
+        for target in [["h100-pcie", "rtx-4090"][case % 2], "generic"] {
+            let (on, off, un) = (emit(&ni, target, true), emit(&ni, target, false), emit(&ui, target, true));
+            let (mn, mu) = (moves(&on.text), moves(&un.text));
+            if mn != mu {
+                // As well or better: per loop, no more bytes moved, copied or
+                // allocated per trip, no less retained.
+                let costs = |l: &str| -> Vec<i64> {
+                    let kv: std::collections::HashMap<&str, i64> =
+                        l.split_whitespace().filter_map(|x| x.split_once('=')).filter_map(|(k, v)| Some((k, v.parse().ok()?))).collect();
+                    ["h2d", "d2h", "host_copy", "alloc"].iter().map(|k| kv[k]).chain([-kv["retained"]]).collect()
+                };
+                let worse = mn.len() != mu.len()
+                    || mn.iter().zip(&mu).any(|(a, b)| costs(a).iter().zip(costs(b)).any(|(x, y)| *x > y));
+                if worse {
+                    findings.push(format!("{tag} {target}: movement {mn:?} worse than the unrolled {mu:?}\n{ns}"));
+                } else {
+                    better += 1;
+                }
+            }
+            if launches(&on.text) > launches(&un.text)
+                || (launches(&on.text) == launches(&un.text) && kinds(&on.device) != kinds(&un.device))
+            {
+                findings.push(format!(
+                    "{tag} {target}: launches {} kinds {:?} != the unrolled {} {:?}\n{ns}",
+                    launches(&on.text),
+                    kinds(&on.device),
+                    launches(&un.text),
+                    kinds(&un.device)
+                ));
+            }
+            inplace += moves(&on.text).iter().filter(|l| l.starts_with("0:") && l.contains(":inplace")).count();
+            devices += on.device.is_some() as usize;
+            // Realized movement = the plan's, and the host copies the facts require.
+            let loops = gpu_trip_moves(&on.text);
+            let copies: u64 = loops.iter().map(|(_, m)| m[0]).sum();
+            for (kv, [_, copy_b, h2d, d2h]) in &loops {
+                let want = |k: &str| kv[k].parse::<u64>().expect("intent field");
+                if (*copy_b, *h2d, *d2h) != (want("host_copy"), want("h2d"), want("d2h")) {
+                    findings.push(format!("{tag} {target}: per trip copy {copy_b} B h2d {h2d} B d2h {d2h} B; the plan: {kv:?}\n{ns}"));
+                }
+            }
+            let need = required_trip_copies(&ni, ni.entry()) as u64;
+            if copies != need {
+                findings.push(format!("{tag} {target}: {copies} host copies per trip, the facts require {need}\n{ns}"));
+            }
+            for (arm, em) in [("on", &on), ("off", &off)] {
+                // (The CPU build's OFF arm: every other program, for time.)
+                if target == "generic" && arm == "off" && case % 2 == 1 {
+                    continue;
+                }
+                let got = run_on(em);
+                if got != rr.output {
+                    findings.push(format!("{tag} {target} range-map {arm}: {got:?} != {:?}\n{ns}", rr.output));
+                }
+            }
+        }
+        (findings, [rows, probed, devices, inplace, better])
+    };
+    // The programs over the cores (each is interpreter-, clang- and
+    // emulator-bound and independent of the others).
+    let next = AtomicUsize::new(0);
+    let all = Mutex::new((Vec::new(), [0usize; 5]));
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
+    std::thread::scope(|sc| {
+        for _ in 0..workers {
+            sc.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= cases {
+                        break;
+                    }
+                    let (f, st) = work(i, &progs[i]);
+                    let mut a = all.lock().unwrap();
+                    a.0.extend(f);
+                    for (x, y) in a.1.iter_mut().zip(st) {
+                        *x += y;
+                    }
+                }
+            });
+        }
+    });
+    let (mut findings, [rows, probed, devices, inplace, better]) = all.into_inner().unwrap();
+    findings.sort();
+    assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
+    // (The sweep's reach, at the default size: a small MAPAL_TWINS is a smoke run.)
+    assert!(cases < 64 || (rows > cases / 8 && devices > cases / 2), "{rows} Rows claims, {devices} device units");
+    eprintln!(
+        "differential_natural_twins: {cases} twin programs, {rows} Δ Rows claims ({probed} probed sound), \
+         {devices} device builds, {inplace} in-place states; movement, launches, kernels = the unrolled twins' \
+         ({better} builds better); values OK with range-map on and off"
     );
 }

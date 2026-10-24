@@ -2084,3 +2084,197 @@ impl Chain {
         x.s + "}\n"
     }
 }
+
+// --- generic-fusion natural forms: twin programs, as Mapal source -----------
+
+/// A device-sized loop like [`DeviceProg`] whose writes into the state `x`
+/// and whose cell exponents come in two forms with the same values — the
+/// **natural** one a person writes (a guarded map over the cells: a row
+/// `t ÷ n == it`, a column `t % n == c`, a range `L ≤ t < L + w`, one cell
+/// `t == L`; a power as a fold over a range) and the **unrolled** one the
+/// compiler used to need (`Update`s at each cell, a chain of squarings).
+/// Per trip `ops` over sites, per-cell maps (relu, scale, a two-array sum, a
+/// clamped power), guards choosing between arrays, row folds, and those
+/// writes; one or two carried arrays, an element or whole exit read.
+#[derive(Clone, Debug)]
+pub struct TwinProg {
+    pub big: bool,
+    pub trips: u8,
+    pub two: bool,
+    pub ops: Vec<[u8; 3]>,
+    pub next: u8,
+    pub exit: bool,
+    pub whole: bool,
+}
+
+pub fn twin_prog_strategy() -> impl Strategy<Value = TwinProg> {
+    (
+        prop::bool::weighted(0.25),
+        1u8..5,
+        any::<bool>(),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 1..6),
+        any::<u8>(),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(big, trips, two, ops, next, exit, whole)| TwinProg {
+            big,
+            trips,
+            two,
+            ops,
+            next,
+            exit,
+            whole,
+        })
+}
+
+/// [`TwinProg`]'s source text, `natural` or unrolled. `check = (a, b, len)`
+/// instruments the trip (the write-delta soundness probe): it prints
+/// `dz=<k>`, the number of cells of the state `x` that changed in the trip
+/// outside `[a·it + b, a·it + b + len)`.
+pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> String {
+    let n: u32 = if p.big { 32 } else { 16 };
+    let nn = n * n;
+    let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
+        format!("    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n", h = m / 2)
+    };
+    let mut s = format!("fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n");
+    s += &law("a0", 7, 13, 101, 8 * n);
+    s += &law("a1", 5, 3, 97, 8 * n);
+    s += &law("w", 11, 57, 103, 4 * n);
+    s += &format!("    mut x: [f32; {nn}] <- a0;\n");
+    if p.two {
+        s += &format!("    mut y: [f32; {nn}] <- a1;\n");
+    }
+    s += &format!("    mut it: i32 <- 0;\n    loop {{\n        (it < {}) -> {{\n            -true-> {{\n", p.trips);
+    let ind = "                ";
+    if check.is_some() {
+        s += &format!("{ind}x -> xp;\n");
+    }
+    let mut arrs: Vec<String> = vec!["x".into()];
+    if p.two {
+        arrs.push("y".into());
+    }
+    arrs.push("w".into());
+    let pick = |v: &[String], k: u8| v[k as usize % v.len()].clone();
+    // A write into `x`: the natural guarded map over the cells, or one
+    // `Update` per cell of `cells` (the new value of cell `c` is `val(c)`,
+    // an expression of the index text `c`).
+    let write = |z: &str, guard: String, cells: Vec<String>, val: &dyn Fn(&str) -> String| -> String {
+        if natural {
+            format!("{ind}ta -> map {{ t -> {guard} -> {{ -true-> {{ {} }} -false-> x[t]; }} }} -> x;\n", val("t"))
+        } else {
+            cells
+                .iter()
+                .enumerate()
+                .map(|(k, c)| format!("{ind}{} -> {z}v{k};\n{ind}x[{c}] <- {z}v{k};\n", val(c)))
+                .collect()
+        }
+    };
+    let mut cur = "x".to_string();
+    for (z, &[op, a, b]) in p.ops.iter().enumerate() {
+        // (Most chains start at a site: a device unit to place.)
+        let op = if z == 0 && op % 4 != 3 { 0 } else { op % 10 };
+        let (x, y) = (cur.clone(), pick(&arrs, b));
+        let z = format!("z{z}");
+        // A row fold of the chain so far: one value per row (the vector a row
+        // or column write reads).
+        let rows = format!("{ind}krange -> map {{ j -> (0.0, krange) -> fold {{ acc, k -> acc + {x}[j * {n} + k] }} }} -> {z}r;\n");
+        let made = match op {
+            0 => Some(format!(
+                "{ind}ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {y}[k * {n} + j] }} }} -> {z};\n"
+            )),
+            1 => Some(format!("{ind}{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n")),
+            2 => Some(format!("{ind}{x} -> map {{ v -> v * 0.5 }} -> {z};\n")),
+            3 => Some(format!("{ind}ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n")),
+            4 => Some(format!("{ind}(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n", b % (p.trips + 1))),
+            9 => {
+                // A power of the clamped cell: `2^k` by `k` squarings.
+                let k = 1 + a % 4;
+                let pow = if natural {
+                    format!("{k} -> iota -> sq; (v0, sq) -> fold {{ acc, q -> acc * acc }}")
+                } else {
+                    (0..k).map(|i| format!("v{i} * v{i} -> v{};", i + 1)).collect::<String>() + &format!(" v{k}")
+                };
+                Some(format!(
+                    "{ind}{x} -> map {{ v -> v * 0.125 + 0.5 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> c; \
+                     (c < 1.0) -> {{ -true-> c; -false-> 1.0; }} -> v0; {pow} }} -> {z};\n"
+                ))
+            }
+            _ => None,
+        };
+        if let Some(text) = made {
+            s += &text;
+            arrs.push(z.clone());
+            cur = z;
+            continue;
+        }
+        // The writes into the state `x`, row `it` (`it < trips ≤ 4 < n`).
+        s += &match op {
+            5 => {
+                // Row `it`, each cell fed by its column's row sum.
+                let val = |c: &str| {
+                    let j = if c == "t" { format!("t % {n}") } else { c.rsplit(" + ").next().unwrap().to_string() };
+                    format!("x[{c}] * 0.5 + {z}r[{j}] / {n}.0")
+                };
+                let cells = (0..n).map(|j| format!("it * {n} + {j}")).collect();
+                rows.clone() + &write(&z, format!("(t / {n} == it)"), cells, &val)
+            }
+            6 => {
+                // Column `(it + a) % n`, each cell fed by its row's sum.
+                let val = |c: &str| {
+                    let i = if c == "t" { format!("t / {n}") } else { c.split(" * ").next().unwrap().to_string() };
+                    format!("x[{c}] * 0.5 + {z}r[{i}] / {n}.0")
+                };
+                let cells = (0..n).map(|i| format!("{i} * {n} + {z}c")).collect();
+                rows.clone()
+                    + &format!("{ind}(it + {a}) % {n} -> {z}c;\n")
+                    + &write(&z, format!("(t % {n} == {z}c)"), cells, &val)
+            }
+            7 => {
+                // A range from row `it`: cells `[o, o + w)` of it, into the
+                // next row when `o + w > n` (`it·n + 2n < n²`: in bounds).
+                let o = u32::from(a) % (n / 2);
+                let w = 1 + u32::from(b) % (2 * n - o);
+                let val = |c: &str| format!("x[{c}] * 0.5 + 0.25");
+                let cells = (o..o + w).map(|j| format!("it * {n} + {j}")).collect();
+                write(&z, format!("(t >= it * {n} + {o} && t < it * {n} + {})", o + w), cells, &val)
+            }
+            _ => {
+                // One cell of row `it`.
+                let j = u32::from(a) % n;
+                let val = |c: &str| format!("x[{c}] * 0.75 + 0.125");
+                write(&z, format!("(t == it * {n} + {j})"), vec![format!("it * {n} + {j}")], &val)
+            }
+        };
+        cur = "x".into();
+    }
+    if cur != "x" {
+        s += &format!("{ind}{cur} -> x;\n");
+    }
+    if p.two {
+        // `y`'s next: itself, `w`, `x`'s new value or the trip's first array.
+        let first = arrs[3.min(arrs.len() - 1)].clone();
+        let ny = pick(&["y".to_string(), "w".to_string(), "x".to_string(), first], p.next);
+        if ny != "y" {
+            s += &format!("{ind}{ny} -> y;\n");
+        }
+    }
+    if let Some((a, b, len)) = check {
+        let at = |c: i64| if c < 0 { format!("it * {a} - {}", -c) } else { format!("it * {a} + {c}") };
+        s += &format!(
+            "{ind}ta -> map {{ t -> (x[t] == xp[t]) -> {{ -true-> 0; -false-> 1; }} -> ch; \
+             (t >= {} && t < {}) -> {{ -true-> 0; -false-> ch; }} }} -> dz;\n\
+             {ind}(0, dz) -> fold {{ acc, v -> acc + v }} -> nd;\n{ind}\"dz=\" -> print;\n{ind}nd -> println;\n",
+            at(b),
+            at(b + len as i64)
+        );
+    }
+    let out = if p.exit && p.two { "y" } else { "x" };
+    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n");
+    s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", nn - 1);
+    if p.whole {
+        s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
+    }
+    s + "}\n"
+}

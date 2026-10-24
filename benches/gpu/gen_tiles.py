@@ -259,26 +259,31 @@ print("chain_256\nshare_256\nloop_128_8")
 
 def decode(T, d, rewrite=False, scaled=False):
     """S53 `retain-delta`: a decode loop. Iteration t writes row t of the
-    carried `x` (d unrolled `Update`s at `t*d + j`, the new row fed by the
-    previous output), then `K = x·Wk`, `V = x·Wv` (row-local, invariant
-    weights), `s = q_t·Kᵀ` and `o = s·V` (row-mixing). The compiler is never
-    told any of that; the rule has to find that only row t of K and V changed.
+    carried `x` — one map over its cells: row t gets the new row, fed by the
+    previous output, every other cell keeps its value — then `K = x·Wk`,
+    `V = x·Wv` (row-local, invariant weights), `s = q_t·Kᵀ` and `o = s·V`
+    (row-mixing). The compiler is never told any of that; the rule has to
+    find that only row t of K and V changed.
 
-    `rewrite=True` is the negative control: the iteration writes x[j·d + t]
-    instead (a column, not a row), so the written cells are not one
-    contiguous range and nothing is retained.
+    `rewrite=True` is the negative control: the iteration writes column
+    `t % d` of every row instead, so the written cells are not one contiguous
+    range and nothing is retained.
 
     `scaled=True` (S54): `K` and `V` read `xh = x·0.5`, a per-cell map of the
     written `x` — the row delta has to pass through it (`write_delta`'s Same
     consumers), so `xh` uploads its written row and `K`, `V` are retained."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
-    row = []
-    for j in range(d):
-        idx = f"{j} * {d} + t" if rewrite else f"t * {d} + {j}"
-        row.append(
-            f"                ((t * {d} + {j}) * 7 + 13) % 101 - 50 -> widen_f32 -> f{j};\n"
-            f"                f{j} / 64.0 + o[{j}] -> v{j};\n"
-            f"                x[{idx}] <- v{j};\n")
+    if rewrite:
+        # Row j's cell of column t % d: the new value of row j (the fed-back
+        # output damped: every row takes it, every trip).
+        new = (f"(c % {d} == col) -> {{ -true-> {{ "
+               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c / {d} % {d}] / 4.0 }} ")
+        row = [f"                t % {d} -> col;\n"
+               f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
+    else:
+        new = (f"(c / {d} == t) -> {{ -true-> {{ "
+               f"(c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % {d}] }} ")
+        row = [f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     xs = "xh" if scaled else "x"
     half = "                x -> map { v -> v * 0.5 } -> xh;\n" if scaled else ""
     proj = lambda w_: (
@@ -363,11 +368,11 @@ def relu(e):
 
 
 def expo(e):
-    """exp(x) for x <= 0 as its limit form (1 + x/256)^256 — 8 squarings, the
-    base clamped at 0. `exp` is not in the Core op set; chain_bench.cu's `expo`
-    is the same function."""
-    sq = "".join(f" v{i} * v{i} -> v{i + 1};" for i in range(8))
-    return f"{e} -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0;{sq} v8"
+    """exp(x) for x <= 0 as its limit form (1 + x/256)^256: the base clamped
+    at 0, squared once per step of an 8-step range. `exp` is not in the Core
+    op set; chain_bench.cu's `expo` is the same function."""
+    return (f"{e} -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> v0; "
+            f"8 -> iota -> sq; (v0, sq) -> fold {{ acc, k -> acc * acc }}")
 
 
 def row_fold(o, src, n, seed, step):
