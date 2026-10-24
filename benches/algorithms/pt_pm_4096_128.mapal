@@ -1,0 +1,60 @@
+fn main() {
+    16384 -> iota -> i_sa;
+    i_sa -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> sa;
+    16384 -> iota -> i_sb;
+    i_sb -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> sb;
+    16384 -> iota -> i_se;
+    i_se -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> se;
+    16384 -> iota -> i_sf;
+    i_sf -> map { t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v; v / 13.0 } -> sf;
+    16777216 -> iota -> i_a;
+    i_a -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    16777216 -> iota -> i_b;
+    i_b -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    16777216 -> iota -> i_e;
+    i_e -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> e;
+    () -> time -> t0;
+    16384 -> iota -> o_c1;
+    128 -> iota -> k_c1;
+    o_c1 -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, k_c1) -> fold { acc, k -> acc + sa[i * 128 + k] * sb[k * 128 + j] }
+    } -> c1;
+    16384 -> iota -> o_c2;
+    128 -> iota -> k_c2;
+    o_c2 -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, k_c2) -> fold { acc, k -> acc + c1[i * 128 + k] * se[k * 128 + j] }
+    } -> c2;
+    16384 -> iota -> o_c3;
+    128 -> iota -> k_c3;
+    o_c3 -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, k_c3) -> fold { acc, k -> acc + c2[i * 128 + k] * sf[k * 128 + j] }
+    } -> c3;
+    16777216 -> iota -> o_c;
+    4096 -> iota -> k_c;
+    o_c -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, k_c) -> fold { acc, k -> acc + a[i * 4096 + k] * b[k * 4096 + j] }
+    } -> c;
+    c -> map { v -> v * 0.5 } -> h;
+    16777216 -> iota -> o_d;
+    4096 -> iota -> k_d;
+    o_d -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, k_d) -> fold { acc, k -> acc + h[i * 4096 + k] * e[k * 4096 + j] }
+    } -> d;
+    () -> time -> t1;
+    c3[0] -> println;
+    c3[16383] -> println;
+    d[0] -> println;
+    d[16777215] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

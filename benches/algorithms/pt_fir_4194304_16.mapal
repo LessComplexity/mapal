@@ -1,0 +1,15 @@
+fn main() {
+    16 -> iota -> i_c;
+    i_c -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> c;
+    4194320 -> iota -> i_s;
+    i_s -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> s;
+    () -> time -> t0;
+    4194304 -> iota -> o_y;
+    16 -> iota -> k_y;
+    o_y -> map { t -> (0.0, k_y) -> fold { acc, k -> acc + c[k] * s[t + k] } } -> y;
+    () -> time -> t1;
+    y[0] -> println;
+    y[4194303] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}
