@@ -637,6 +637,11 @@ fn plan_line(
             w.n, w.groups, w.bk, w.stages, w.blocks_per_sm
         );
     }
+    // generic-fusion `window`: a window site's tap grid, `(k÷div) × div`
+    // (intent.py `window`); no other kernel's line changes.
+    if let Some(ks) = site.a.ksplit.as_ref().or(site.b.ksplit.as_ref()) {
+        f += &format!(" taps={}x{}", site.k / ks.div, ks.div);
+    }
     let (c, s, ctas, iters) = match combine {
         Combine::None => ("none", 1, 0, 0),
         Combine::Workspace { s } => ("splitk", s, 0, 0),

@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 LLVM="${LLVM:-/opt/homebrew/opt/llvm/bin}"
-EMIT="$ROOT/target/release/examples/emit"
+EMIT="${EMIT:-$ROOT/target/release/examples/emit}"
 CELLS=${CELLS-"16x2048x7168 16x1024x4096 16x18432x7168 128x2048x7168 4096x4096x4096"}
 PROGS=${PROGS-"pt_rm_m128_d256_h512 pt_rm_m128_d1024_h2048"}
 SUITE=${SUITE-""}
