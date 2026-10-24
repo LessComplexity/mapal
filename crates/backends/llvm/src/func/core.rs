@@ -90,6 +90,7 @@ impl<'a> FnEmit<'a> {
             split_slots: Vec::new(),
             views: SecondaryMap::new(),
             views_done: false,
+            outside_memo: Default::default(),
             by_ref: false,
             bufs: Vec::new(),
             loops: Vec::new(),
