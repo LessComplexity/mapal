@@ -166,6 +166,35 @@ fn softmax_rows_is_one_unit_below_the_tile() {
     }
 }
 
+/// flow on the default face: softmax's and attention's rows are blocks of
+/// lanes — `mx` and `den` trees, `ex` (read by `den` and the output) computed
+/// once into shared memory — and the values answer to the interpreter within
+/// the bound; on the exact face the folds walk in order (no tree).
+#[test]
+fn default_face_rows_are_lanes_with_tree_folds() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    for (src, target) in [(softmax(N), "rtx-4090"), (attention(64, 16), "h100-pcie")] {
+        let ir = lower(&src);
+        let rr = run(&ir, 2_000_000_000);
+        let on = emission_on(&ir, target, &[], EmitOpts::default());
+        let dev = on.device.as_ref().expect("a device unit");
+        let line = dev
+            .lines()
+            .find(|l| l.starts_with("; mapal.flow kernel="))
+            .expect("a flow intent");
+        assert!(field(line, "lanes").parse::<u64>().unwrap() >= 32, "{line}");
+        assert_eq!((field(line, "tree"), field(line, "onchip")), ("2", "1"), "{line}");
+        assert!(dev.contains("@llvm.nvvm.barrier0()"), "{target}");
+        let got = emu::run_emulated(&clang, &on.text, dev);
+        assert!(within(&got, &rr.output), "{target}: {got:?} vs {:?}", rr.output);
+        let exact = emission(&ir, target, &[]);
+        let line = exact.device.as_ref().unwrap().lines().find(|l| l.starts_with("; mapal.flow kernel="));
+        assert_eq!(line.map(|l| field(l, "tree")), Some("0"), "{target}");
+    }
+}
+
 /// An element-wise chain over a tile site's output and an operand.
 #[test]
 fn ew_chain_is_one_unit() {
