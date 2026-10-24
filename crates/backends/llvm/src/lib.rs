@@ -176,10 +176,10 @@ pub struct GpuRungs {
     /// loop entry's first pass, the written row into it after — and the
     /// function stays resident. Off: a function with a retained site takes the
     /// S52 round trips (`retain-delta` on) or retains nothing. Measured on
-    /// decode_1024_256 (`retain-resident-*.txt`, two boxes per part): the loop
-    /// 3–9% faster where the whole K/V site costs more than its row (3090,
-    /// A100, H100); no effect on the 4090 and the 5090 (rows in
-    /// `GPU_RUNGS_OFF`).
+    /// decode_1024_256 (`retain-resident-*.txt`, two boxes per part): ON where
+    /// the whole K/V site costs more than its row (3090, A100; 4090 and 5090
+    /// since S65's by-ref removed the loop residue); the H100 row stays in
+    /// `GPU_RUNGS_OFF`.
     pub retain_resident: bool,
     /// S54 R5's transmission: a host-written carried array with
     /// [`mapal_ir::Delta::Rows`] that a device site reads is uploaded as the
