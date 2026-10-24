@@ -113,5 +113,59 @@ if [ -f capture.cpp ] && [ -f evidence.py ] && [ -f "$PROF/mm_$JIT_CELL.launch" 
             tee -a "results-$PROF.txt"
     done
 fi
+# flow-sweep (SWEEP_PROF=1): for every gated suite program, the nsys trace of Mapal's process, of the
+# chain_bench library legs and of the PyTorch legs (kernel names, grid, block, registers, smem, durations,
+# gaps), the torch-compiled cubins, and the top library kernel's SASS (time-capped). Counters are refused
+# in vast containers, so achieved GB/s and FP32 % are derived from these times and the program's bytes.
+if [ "${SWEEP_PROF:-0}" = 1 ] && command -v nsys >/dev/null && [ -d vals ]; then
+    mkdir -p prof/sweep
+    nst() { # <tag> <cmd...>
+        local t=$1; shift
+        timeout 400 nsys profile -o "prof/sweep/$t" --force-overwrite true -t cuda "$@" > "prof/sweep/$t.out" 2>&1
+        nsys stats -q --format csv -r cuda_gpu_trace "prof/sweep/$t.nsys-rep" 2>/dev/null | gzip > "prof/sweep/$t.trace.csv.gz"
+        rm -f "prof/sweep/$t.nsys-rep" "prof/sweep/$t.sqlite"
+    }
+    for v in vals/*.txt; do
+        b=$(basename "$v" .txt)
+        [ -x "pt_$b" ] || continue
+        MAPAL_PTX="$PROF/$b.ptx" nst "mapal_$b" "./pt_$b"
+        probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
+        case $n in *[!0-9]*) ;; *)
+            case $probe in epi|bias|ew|pro|indep|mlp|fanout|diamond|residual|rowsum|softmax_rows|mlp2|loop|decode_*|attn_*|smlp_*)
+                # shellcheck disable=SC2046  # the values are separate arguments
+                [ -x chain_bench ] && nst "lib_$b" ./chain_bench "$probe" "$n" 3 $(cat "$v") ;; esac ;;
+        esac
+        if python3 -c 'import torch' 2>/dev/null; then nst "torch_$b" python3 torch_bench.py 3 vals "$b"; fi
+    done
+    for d in ~/.triton/cache /tmp/torchinductor_*; do
+        [ -d "$d" ] && find "$d" \( -name '*.cubin' -o -name '*.ptx' \) -size -4M -print0 | tar --null -T - -czf "prof/sweep/torch-kernels-$(basename "$d").tgz" 2>/dev/null
+    done
+    # the top library kernels of every leg: SASS from the library that holds them (SASS_MIN minutes in all)
+    end=$(( $(date +%s) + ${SASS_MIN:-12} * 60 ))
+    for t in prof/sweep/lib_*.trace.csv.gz prof/sweep/torch_*.trace.csv.gz; do
+        [ -f "$t" ] || continue
+        zcat "$t" | python3 -c '
+import csv, sys
+k = {}
+for x in csv.DictReader(sys.stdin):
+    n = x.get("Name") or ""
+    if n and x.get("Grd X"):
+        k[n] = k.get(n, 0) + float(x["Duration (ns)"])
+for n, _ in sorted(k.items(), key=lambda a: -a[1])[:2]:
+    print(n)' 2>/dev/null
+    done | sort -u > prof/sweep/top_kernels.txt
+    libs=$( { ldd chain_bench 2>/dev/null | awk '/cublas/ {print $3}'; ls "$(python3 -c 'import site;print(site.getsitepackages()[0])' 2>/dev/null)"/nvidia/cublas/lib/libcublas*.so* 2>/dev/null; } )
+    while read -r k; do
+        [ "$(date +%s)" -ge "$end" ] && break
+        [ -n "$k" ] || continue
+        f=$(printf '%s' "$k" | md5sum | cut -c1-12)
+        for l in $libs; do
+            if timeout 120 cuobjdump -sass -fun "$k" "$l" > "prof/sweep/sass_$f.txt" 2>/dev/null && [ "$(grep -c . "prof/sweep/sass_$f.txt")" -gt 10 ]; then
+                printf '%s\t%s\t%s\n' "$f" "$l" "$k" >> prof/sweep/sass_index.tsv; break
+            fi
+            rm -f "prof/sweep/sass_$f.txt"
+        done
+    done < prof/sweep/top_kernels.txt
+fi
 tar czf "prof-$PROF.tgz" prof
 echo "profile done: $(ls prof | wc -l) files"
