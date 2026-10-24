@@ -71,8 +71,8 @@ off-fuse − shipped = the 3 kept members on every fused program and part.
 |---|---|
 | `generic_fusion_chains_values_launches_and_stores` (256 chains, emulated 4090 / H100) | 244 with a device unit; 96 units of 202 members, 126 kept, 33 with a halo; 106 launches removed; refusals footprint 6, phase 7; exact face = interpreter ON and OFF, default face ON = OFF (16) |
 | `differential_natural_twins_values_and_movement` (256 twins) | 51 `Rows` claims, all probed sound; 209 device builds, 181 in-place states; movement, launches, kernels = the unrolled twins' (62 better); values ok with `range-map` on and off |
-| `cargo test -p mapal-ir` / `-p mapal-backend-llvm` / `-p mapal-cli` | TESTS_DEBUG |
-| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | TESTS_RELEASE |
+| `cargo test -p mapal-ir` / `-p mapal-backend-llvm` / `-p mapal-cli` (debug, `6a3ee1d`) | 226 / 283 (3 ignored) / 5 passed, 0 failed |
+| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | 1254 passed, 0 failed, 3 ignored (93 binaries) at `6a3ee1d`; at `815c3c3` 1253 / 1: `natural_forms::a_fold_over_a_range_stays_in_the_cell` asked for a cell kernel, `fuse` makes `ex` a unit member (check widened in `6a3ee1d`) |
 
 ## S65: loop state by reference (rule R)
 
