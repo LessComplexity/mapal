@@ -274,9 +274,10 @@ def decode(T, d, rewrite=False, scaled=False):
     consumers), so `xh` uploads its written row and `K`, `V` are retained."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
     if rewrite:
-        # Row j's cell of column t % d: the new value of row j.
+        # Row j's cell of column t % d: the new value of row j (the fed-back
+        # output damped: every row takes it, every trip).
         new = (f"(c % {d} == col) -> {{ -true-> {{ "
-               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c / {d} % {d}] }} ")
+               f"((t * {d} + c / {d}) * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c / {d} % {d}] / 4.0 }} ")
         row = [f"                t % {d} -> col;\n"
                f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     else:

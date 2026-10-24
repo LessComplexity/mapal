@@ -51,11 +51,17 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
         }
     };
     let mut row = if column { format!("t % {d} -> col;\n") } else { String::new() };
+    // The column takes the fed-back output in every row, every trip: damped.
+    let damp = match (column, float) {
+        (false, _) => "",
+        (true, true) => " / 4.0",
+        (true, false) => " / 4",
+    };
     if !unrolled {
         row += &if column {
             format!(
-                "tc -> map {{ c -> (c % {d} == col) -> {{ -true-> {{ {v} + o[c / {d} % {d}] }} -false-> x[c]; }} }} -> x;\n",
-                v = cell(&format!("t * {d} + c / {d}"), "")
+                "tc -> map {{ c -> (c % {d} == col) -> {{ -true-> {{ {v} + o[c / {d} % {d}]{damp} }} -false-> x[c]; }} }} -> x;\n",
+                v = cell(&format!("t * {d} + c / {d}"), ""),
             )
         } else {
             format!(
@@ -71,7 +77,7 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
         } else {
             (format!("t * {d} + {j}"), cell(&format!("t * {d} + {j}"), &j.to_string()))
         };
-        row.push_str(&format!("{v} + o[{}] -> v{j}; x[{idx}] <- v{j};\n", j % d));
+        row.push_str(&format!("{v} + o[{}]{damp} -> v{j}; x[{idx}] <- v{j};\n", j % d));
     }
     let wf = |m: u64, a: u64| {
         let x = format!("(t * {m} + {a}) % 101 - 50");
