@@ -1877,9 +1877,10 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
                     + &write(&z, format!("(t % {n} == {z}c)"), cells, &val)
             }
             7 => {
-                // A range of row `it`: cells `[o, o + w)`.
+                // A range from row `it`: cells `[o, o + w)` of it, into the
+                // next row when `o + w > n` (`it·n + 2n < n²`: in bounds).
                 let o = u32::from(a) % (n / 2);
-                let w = 1 + u32::from(b) % (n - o);
+                let w = 1 + u32::from(b) % (2 * n - o);
                 let val = |c: &str| format!("x[{c}] * 0.5 + 0.25");
                 let cells = (o..o + w).map(|j| format!("it * {n} + {j}")).collect();
                 write(&z, format!("(t >= it * {n} + {o} && t < it * {n} + {})", o + w), cells, &val)
