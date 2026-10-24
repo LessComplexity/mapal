@@ -14,12 +14,12 @@ reps of |null / shipped − 1|; default face, value-gated first.
 
 | rung | rtx-4090 | rtx-5090 | h100-pcie | rtx-3090 | evidence: OFF/ON iter, main box (confirm box) | explained by |
 |---|---|---|---|---|---|---|
-| `fuse` | **OFF** (row) | **OFF** (row) | **OFF** (row) | **OFF** (row) | ON slower outside null on 4 / 5 / 4 / 6 of 6 programs (second host 6 / 4 / 6 / 6), faster on none; softmax_rows_4096 0.884 / 0.861 / 0.849 / 0.914, attn_2048_128 0.409 / 0.410 / 0.412 / 0.480 | the unit kernel is 1.79–4.82× the four kernels it replaces: one thread per row (1024–4096 threads) walks the T-cell members serially and evaluates `ex` twice; the OFF arm's cell kernels run T² threads |
+| `flow` | **OFF** (row) | **OFF** (row) | **OFF** (row) | **OFF** (row) | ON slower outside null on 4 / 5 / 4 / 6 of 6 programs (second host 6 / 4 / 6 / 6), faster on none; softmax_rows_4096 0.884 / 0.861 / 0.849 / 0.914, attn_2048_128 0.409 / 0.410 / 0.412 / 0.480 | the unit kernel is 1.79–4.82× the four kernels it replaces: one thread per row (1024–4096 threads) walks the T-cell members serially and evaluates `ex` twice; the OFF arm's cell kernels run T² threads |
 | `window` | ON | ON | ON | ON | conv_2048_5 23.2 / 31.6 / 9.7 / 11.8 (31.5 / 42.0 / 17.7 / 11.5), ewconvew_2048_5 34.4 / 34.2 / 13.0 / 14.2 (47.9 / 44.3 / 19.9 / 17.8) | OFF runs the 5×5 conv on the host (0 launches); ON one naive kernel, 25 FFMA, 0 div/rem |
 | `range-map` | ON | ON | ON | ON | decode_1024_256 3.96 / 4.39 / 2.50 / 4.15 (4.24 / 4.04 / 2.35 / 4.11) | the traced kernel ms within 8 % ON / OFF (4090 44.6 / 42.2); OFF's host map writes 262144 cells per trip, ON one 256-cell row |
 | `lane-stride` (2-D `q·Kᵀ`) | ON | ON | ON | ON | attention 106–693 on every part (110–436) | OFF computes `q·Kᵀ` on the host behind 4 / 16 MB copies |
 
-`GPU_RUNGS_OFF` rows: `crates/backends/llvm/src/profile.rs` (fuse × 4). End check: the build with the rows emits, for all
+`GPU_RUNGS_OFF` rows: `crates/backends/llvm/src/profile.rs` (flow × 4). End check: the build with the rows emits, for all
 25 suite programs on all four parts, exactly the measured build — fused programs = their `.off-fuse` arm, the rest =
 shipped (host IR, PTX; [`endcheck-fuse-off.txt`](../../../benches/results/evidence/fusion-natural-forms/endcheck-fuse-off.txt)).
 
@@ -220,7 +220,7 @@ shipped (host IR, PTX; [`endcheck-fuse-off.txt`](../../../benches/results/eviden
 | softmax_rows_2048 | rtx-3090 | confirm | off-fuse+window+range-map | 2 / 5 | 4 / 7 | 1.415 / 1.058 | 1.4590 / 1.1016 | 0.756 | 0.009 | ON slower |
 | softmax_rows_4096 | rtx-3090 | confirm | off-fuse | 2 / 5 | 4 / 7 | 6.928 / 6.330 | 6.9703 / 6.3708 | 0.914 | 0.001 | ON slower |
 | softmax_rows_4096 | rtx-3090 | confirm | off-fuse+window+range-map | 2 / 5 | 4 / 7 | 6.928 / 6.331 | 6.9703 / 6.3692 | 0.914 | 0.001 | ON slower |
-| program | archs | launches: base → new rungs off → shipped | launches: `fuse.host` intent = realized | kernels (shipped) | device buffers: base → off → shipped | kept (never stored) | stored fuse members | kept: buffers(off-fuse) − buffers = kept | h2d / d2h bytes, whole program: base → shipped | per trip h2d / d2h / host copy, facts→realized: base ⇒ shipped |
+| program | archs | launches: base → new rungs off → shipped | launches: `fuse.host` intent = realized | kernels (shipped) | device buffers: base → off → shipped | kept (never stored) | stored flow members | kept: buffers(off-fuse) − buffers = kept | h2d / d2h bytes, whole program: base → shipped | per trip h2d / d2h / host copy, facts→realized: base ⇒ shipped |
 |---|---|---|---|---|---|---|---|---|---|---|
 | pt_attn_1024_128 | rtx-5090 | 1 → 6 → 3 | ok | fuse tile×2 | 3 → 9 → 6 | den,ex,mx | p | ok | 4.0 M / 8 → 0 / 8 | - ⇒ - |
 | pt_attn_1024_128 | rtx-4090 rtx-3090 | 1 → 6 → 3 | ok | fuse tile×3 | 3 → 9 → 6 | den,ex,mx | p | ok | 4.0 M / 8 → 0 / 8 | - ⇒ - |
@@ -297,7 +297,7 @@ shipped (host IR, PTX; [`endcheck-fuse-off.txt`](../../../benches/results/eviden
 
 ### Attention: Mapal against the library and torch legs, same box
 
-| program | arch | box | Mapal fuse ON | Mapal fuse OFF (ships) | cuBLAS eager (6 launches) | cuBLAS + warp-per-row softmax (3) | torch eager | torch compile | OFF / best other |
+| program | arch | box | Mapal flow ON | Mapal flow OFF (ships) | cuBLAS eager (6 launches) | cuBLAS + warp-per-row softmax (3) | torch eager | torch compile | OFF / best other |
 |---|---|---|---|---|---|---|---|---|---|
 | attn_1024_128 | rtx-4090 | main | 0.4452 | 0.2648 | 0.0512 | 0.0471 | 0.0983 | 0.0440 | 6.018 |
 | attn_1024_64 | rtx-4090 | main | 0.2952 | 0.2839 | 0.0430 | 0.0379 | 0.0891 | 0.0328 | 8.656 |
@@ -324,9 +324,9 @@ shipped (host IR, PTX; [`endcheck-fuse-off.txt`](../../../benches/results/eviden
 | attn_2048_128 | h100-pcie | attn-confirm | 1.0252 | 0.4245 | 0.1488 | 0.1392 | 0.2761 | 0.1178 | 3.604 |
 | attn_2048_64 | h100-pcie | attn-confirm | 0.6905 | 0.3761 | 0.1095 | 0.1001 | 0.2360 | 0.0780 | 4.822 |
 
-### Suite: iter ms, Mapal vs the best other leg on the same box (CPU+GPU measured = fuse ON; the column after the ratio = the build as it ships now)
+### Suite: iter ms, Mapal vs the best other leg on the same box (CPU+GPU measured = flow ON; the column after the ratio = the build as it ships now)
 
-| workload | arch | CPU-only | CPU+GPU (measured) | null | best other (ms) | Mapal / best other | shipped after the fuse rows: ms, ratio | confirm box: CPU+GPU, best other, ratio | S65 ratio |
+| workload | arch | CPU-only | CPU+GPU (measured) | null | best other (ms) | Mapal / best other | shipped after the flow rows: ms, ratio | confirm box: CPU+GPU, best other, ratio | S65 ratio |
 |---|---|---|---|---|---|---|---|---|---|
 | attn_1024_128 | rtx-4090 | 26.51 | 0.4452 | 0.028 | compile 0.0440 | 10.118 | 0.2648, 6.018 | 0.3927, compile 0.0440, 8.924 | - |
 | attn_1024_128 | rtx-5090 | 16.75 | 0.3497 | 0.011 | compile 0.0328 | 10.662 | 0.1977, 6.028 | 0.3358, compile 0.0307, 10.939 | - |
@@ -549,15 +549,15 @@ shipped (host IR, PTX; [`endcheck-fuse-off.txt`](../../../benches/results/eviden
 | 4 | ew_2048, ew_4096 | 1.7, 1.6 | 6.7–15.3, 2.3–5.0 (fused kernel) | traced host 0.35–0.66 ms of the run on EPYC hosts; 0.22 ms runs on the Ryzen 9 hosts |
 | 5 | softmax_rows_4096 / 2048 | 1.7, 0.9 | 1.07–1.18, 1.37–1.60 (compile) | two thread-per-row rowfold kernels, 0.08–0.22 ms each at 4096 rows |
 | 6 | attention, 4 sizes | 0.7–1.1 each | 2.85–8.66 (compile) | at 2048 × 128 the kernels take 0.21–0.54 ms (strided `q·Kᵀ` tile, two rowfolds, two cells, `p·V`); compile 0.08–0.12 ms on the 4090 / 5090 / H100 |
-| - | `fuse` unit | (shipped OFF) | unit kernel 1.79–4.82× the kernels it replaces | one thread per row; d = 128: 6 `div.rn.f32` in the unit against 2 at d = 64 (÷11.3 vs ÷8.0 → × 0.125) |
+| - | `flow` unit | (shipped OFF) | unit kernel 1.79–4.82× the kernels it replaces | one thread per row; d = 128: 6 `div.rn.f32` in the unit against 2 at d = 64 (÷11.3 vs ÷8.0 → × 0.125) |
 | - | boxes | - | 3090 main 220 W (cuBLAS 4096³ 10.06 vs 5.93 ms at 350 W); a 3090 at ~27 % speed and a 5090 that lost clock mid-run (`confirm-throttled/`) | same-box ratios only; S65's own hosts re-rented for the 3090 and H100 second boxes |
 
 ### Tests
 
 | test | result |
 |---|---|
-| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` (with the fuse rows) | 1254 passed, 0 failed, 3 ignored (93 binaries) |
-| `generic_fusion.rs` (`fuse` forced on: the rung's proof of values, launches, stores) | 8 passed, 2 ignored |
+| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` (with the flow rows) | 1254 passed, 0 failed, 3 ignored (93 binaries) |
+| `generic_fusion.rs` (`flow` forced on: the rung's proof of values, launches, stores) | 8 passed, 2 ignored |
 | value gates (default face within ADR-0040 D2's bound, every arm, before timing) | every box: 25 / 25 programs; attention re-take 4 / 4 |
 | chain_bench attention legs on the first H100 / 5090 boxes | gate FAIL: the T×T `p` buffer was main()'s d×d operand `p` (fixed `233c49d`, re-taken in `attn-confirm/`) |
 
@@ -567,13 +567,13 @@ Raw: [`benches/results/evidence/fusion-natural-forms/`](../../../benches/results
 tables: `python3 benches/gpu/fusion_natural_report.py benches/results/evidence/fusion-natural-forms` · branch
 `fusion-natural-forms` (generic-fusion + natural-forms). No GPU was rented: ptxas 12.8 / cuobjdump through
 `cudatool.sh`, LLVM 22 remarks, values through the emulator. base = 27b4f99 (s65/residency) on its own programs;
-off = the merged build with `fuse`, `window`, `range-map` off; shipped = every rung on.
+off = the merged build with `flow`, `window`, `range-map` off; shipped = every rung on.
 
 ### Decisions as merged (static); measured in the sweep above
 
 | rung | OFF arm | static, OFF → shipped | intent checks, ok / mismatch (4090 / 5090 / H100 / 3090) | time |
 |---|---|---|---|---|
-| `fuse` | `--gpu-off=fuse` | softmax_rows: 5 → 2 launches, 7 → 4 device buffers; attention: 6 → 3, 9 → 6; mx, ex, den never stored | `fuse` 50/0, 40/0, 50/0, 75/0; `fuse-host` 30/0, 24/0, 30/0, 45/0 | OFF on all four (sweep) |
+| `flow` | `--gpu-off=fuse` | softmax_rows: 5 → 2 launches, 7 → 4 device buffers; attention: 6 → 3, 9 → 6; mx, ex, den never stored | `flow` 50/0, 40/0, 50/0, 75/0; `fuse-host` 30/0, 24/0, 30/0, 45/0 | OFF on all four (sweep) |
 | `window` | `--gpu-off=window` | conv, ewconvew: the 5×5 conv leaves the host: 0 → 1 launch (`taps=5x5`), host insns 4567 → 78 | `window` 4/2 on every part (finding 3) | ON on all four (sweep) |
 | `range-map` | `--gpu-off=range-map` | decode: launches, buffers, per-trip bytes equal; the row write runs over `[256t, min(256t+256, 262144))`, not `[0, 262144)` | no static predicate (host loop bound, by inspection); `by-ref` 61/0, 61/0, 73/0, 69/0 | ON on all four (sweep) |
 | `lane-stride` (S54, now also 2-D `q·Kᵀ`) | `--gpu-off=lane-stride` | attention: 1 → 3 launches, whole-program h2d 4 / 16 MB → 0, host insns ~590 → ~120 | its kernels carry the new mismatches (finding 4) | ON on all four (sweep) |
@@ -594,7 +594,7 @@ to generic-fusion's on all but decode (its range map) (`cpu_identity.txt`): both
 re-run.
 
 Unit kernels (shipped, all four parts): `mx:rowfold;ex:cell;den:rowfold;y|p:cell`, one thread per row, kept members
-in registers, `smem=0`; ptxas: no spill, no call left, pointers = stored + operands (`fuse` row); device buffers
+in registers, `smem=0`; ptxas: no spill, no call left, pointers = stored + operands (`flow` row); device buffers
 off-fuse − shipped = the 3 kept members on every fused program and part.
 
 ### Natural vs unrolled on the merged build (`twin/kcmp.txt`)
@@ -618,13 +618,13 @@ off-fuse − shipped = the 3 kept members on every fused program and part.
 
 | # | finding | evidence | status |
 |---|---|---|---|
-| 1 | an in-place range map over an init another loop still reads wrote that init (`roots()` saw the in-place map as unowned, so no entry copy) | chain property test #158, #182, both `fuse` arms; n3[0] −13.44 vs −7.22; the `Update` twin right | fixed `815c3c3`, `natural_forms.rs` regression test |
+| 1 | an in-place range map over an init another loop still reads wrote that init (`roots()` saw the in-place map as unowned, so no entry copy) | chain property test #158, #182, both `flow` arms; n3[0] −13.44 vs −7.22; the `Update` twin right | fixed `815c3c3`, `natural_forms.rs` regression test |
 | 2 | a unit kernel called the nested fold body of a natural-form cell without carrying it | pt_attn_1024_64: `opt` "use of undefined value @fn8" | fixed `e8b45d8`; the fusion fixtures now use the natural exp |
 | 3 | `window`: LLVM only partially unrolls the 25-tap walk; ptxas completes it (25 FFMA, 0 div/rem) | `remarks.opt.full_unroll=0`, `PartialUnrolled`; SASS ffma 25, ldg 50 | open: two counted loops (design §4) |
 | 4 | strided 2-D `q·Kᵀ` tiles keep `SeparateMulAdd` on the default face (`Arithmetic::scalar`: `b.clane != 1`), and at 8 × 8 spill (5090 12 B, 3090 8 B), miss occupancy (H100 1 < 2) and prefetch cover (H100, 3090) | `newmm` rows in `static/<arch>/evidence.tsv` | open: judge with the `.off-lane-stride` arm on the boxes |
 | 5 | a sub-row range write that reads another device array copies all of it out per trip | Part A's gap program: d2h 128 B vs 16 B for the `Update`s | open: `footprint_plan`'s rect gives the 16 B |
 | 6 | the unit evaluates `ex` once per reader (den's phase, then p's / y's) | attention unit kernel: two calls of ex's body (`@fn9_u1`), one of p's | open: shared-memory staging in units |
-| 7 | `fuse-tile` (tile member, root re-derived) not built: FIR → ew → rowsum, MLP keep their launches | 2 → 2 | open |
+| 7 | `flow-tile` (tile member, root re-derived) not built: FIR → ew → rowsum, MLP keep their launches | 2 → 2 | open |
 
 ### Tests
 
@@ -633,7 +633,7 @@ off-fuse − shipped = the 3 kept members on every fused program and part.
 | `generic_fusion_chains_values_launches_and_stores` (256 chains, emulated 4090 / H100) | 244 with a device unit; 96 units of 202 members, 126 kept, 33 with a halo; 106 launches removed; refusals footprint 6, phase 7; exact face = interpreter ON and OFF, default face ON = OFF (16) |
 | `differential_natural_twins_values_and_movement` (256 twins) | 51 `Rows` claims, all probed sound; 209 device builds, 181 in-place states; movement, launches, kernels = the unrolled twins' (62 better); values ok with `range-map` on and off |
 | `cargo test -p mapal-ir` / `-p mapal-backend-llvm` / `-p mapal-cli` (debug, `6a3ee1d`) | 226 / 283 (3 ignored) / 5 passed, 0 failed |
-| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | 1254 passed, 0 failed, 3 ignored (93 binaries) at `6a3ee1d`; at `815c3c3` 1253 / 1: `natural_forms::a_fold_over_a_range_stays_in_the_cell` asked for a cell kernel, `fuse` makes `ex` a unit member (check widened in `6a3ee1d`) |
+| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | 1254 passed, 0 failed, 3 ignored (93 binaries) at `6a3ee1d`; at `815c3c3` 1253 / 1: `natural_forms::a_fold_over_a_range_stays_in_the_cell` asked for a cell kernel, `flow` makes `ex` a unit member (check widened in `6a3ee1d`) |
 
 ## S65: loop state by reference (rule R)
 

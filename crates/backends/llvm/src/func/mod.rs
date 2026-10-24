@@ -397,7 +397,7 @@ pub(crate) struct FnEmit<'a> {
     /// `Index` on them reads element 0 (`emit_index`).
     cell_slots: Vec<u32>,
     /// The name suffix of that variant: `_cell` (an epilogue's), `_u<slots>`
-    /// (a unit's, `func/fuse.rs`).
+    /// (a unit's, `func/flow.rs`).
     cell_suffix: String,
     /// S54 `streams`: the function's path plan (the entry's, from `lib.rs`),
     /// which says which device sites are independent.
@@ -686,7 +686,7 @@ mod conv;
 mod core;
 mod drive;
 mod frame;
-pub(crate) mod fuse;
+pub(crate) mod flow;
 pub(crate) mod gpu;
 mod ops;
 mod packed;

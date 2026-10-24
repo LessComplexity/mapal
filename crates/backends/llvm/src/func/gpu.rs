@@ -1336,7 +1336,7 @@ pub(crate) fn device_module(
     epi_bodies: &[(String, String)],
     cells: &[CellKernel],
     folds: &[RowFoldSite],
-    units: &[super::fuse::UnitKernel],
+    units: &[super::flow::UnitKernel],
     live: &std::collections::BTreeSet<String>,
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
@@ -3716,7 +3716,7 @@ impl<'a> FnEmit<'a> {
             let m = *self.ir.in_edges(target).first().expect("site morphism");
             let col = plan.rowfold.values().any(|r| r.colmajor == Some(m))
                 || plan.units.values().flat_map(|u| &u.members).any(|mb| {
-                    matches!(mb.kind, super::fuse::UKind::Fold { colmajor: Some(c), .. } if c == m)
+                    matches!(mb.kind, super::flow::UKind::Fold { colmajor: Some(c), .. } if c == m)
                 });
             let streams = !plan.chain.is_empty();
             // S54 `epilogue`: the per-cell consumers this site's store evaluates

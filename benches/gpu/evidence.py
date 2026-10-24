@@ -291,15 +291,15 @@ def host_facts(ll, asm):
         f['calls'] = {s: len(re.findall(r'call [^@\n]*@mapal_gpu_' + s + r'\(', ll)) for s in GPU_SYMS}
         f['par'] = len(re.findall(r'@mapal_par_begin\(', ll))
         f['sme'] = len(re.findall(r'@mapal_sme_panel', ll))
-        # generic-fusion: every function's `; mapal.fuse.host` line, summed, and the unit launches.
+        # generic-fusion: every function's `; mapal.flow.host` line, summed, and the unit launches.
         fu = Counter()
-        for m in re.finditer(r'; mapal\.fuse\.host (.*)$', ll, re.M):
+        for m in re.finditer(r'; mapal\.flow\.host (.*)$', ll, re.M):
             k = kv(m.group(1))
             for x in ('groups', 'units', 'launches'):
                 fu[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
             fu['refused'] += len([r for r in str(k.get('refused', '')).split(';') if r])
         fu['unit_calls'] = len(re.findall(r'@mapal_gpu_launchv\([^\n]*; unit$', ll, re.M))
-        f['fuse'] = dict(fu)
+        f['flow'] = dict(fu)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),
@@ -574,8 +574,8 @@ def launch_facts(path):
     return f
 
 
-def fuse_facts(f, dev):
-    """A unit kernel's `; mapal.fuse` line (func/fuse.rs): how many members it holds, keeps (no store, no
+def flow_facts(f, dev):
+    """A unit kernel's `; mapal.flow` line (func/flow.rs): how many members it holds, keeps (no store, no
     pointer), stores and reads from Gmem, and its `define`'s pointer parameters in the device unit."""
     n = lambda key: len([x for x in str(f.get(key, '')).split(';') if x])
     d = re.search(r'^define ptx_kernel void @' + re.escape(f['kernel']) + r'\((.*)\)', dev, re.M)
@@ -649,7 +649,7 @@ def facts(d, sm):
             src = json.load(open(al))['same_as']
         dev = read(base + '.dev.ll') or read(os.path.join(d, src + '.dev.ll')) or ''
         plans = {p['kernel']: p for p in (kv(m) for m in re.findall(r'^; mapal\.plan (.*)$', dev, re.M))}
-        fuses = {f['kernel']: fuse_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.fuse (.*)$', dev, re.M))}
+        flows = {f['kernel']: flow_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.flow (.*)$', dev, re.M))}
         devm = re.search(r'^; mapal\.device (.*)$', dev, re.M)
         ptx = read(os.path.join(d, src + '.ptx'))
         pf = ptx_facts(ptx) if ptx else {}
@@ -677,7 +677,7 @@ def facts(d, sm):
         lau = launches(hll)
         for k in sorted(set(plans) | set(pf)):
             p = plans.get(k, {})
-            kf = dict(plan=p, fuse=fuses.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
+            kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
                       mod=dict(launched=launched(k, hll)),
                       launch=lau.get(kid(k), {}),
                       sass=sass_facts(sf[k]) if k in sf else {},
@@ -729,7 +729,7 @@ class Scope(dict):
 
 
 SAFE = dict(ceil=math.ceil, set=set, max=max, min=min, len=len, sum=sum, any=any, all=all, abs=abs)
-NAMES = re.compile(r'\b(plan|fuse|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod|dev)(\.\w+)+')
+NAMES = re.compile(r'\b(plan|flow|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod|dev)(\.\w+)+')
 
 
 def ev(expr, ns):
@@ -772,7 +772,7 @@ def run_intent(it, state, ns):
     return out
 
 
-KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'fuse')
+KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow')
 
 
 def check(d, results=None, out=sys.stdout):
@@ -786,7 +786,7 @@ def check(d, results=None, out=sys.stdout):
             continue
         on, off = (set(x) for x in e['arm'])
         for k, kf in sorted(e['kernels'].items()):
-            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'fuse', 'ptx', 'ptxas', 'sass', 'occ', 'table',
+            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'flow', 'ptx', 'ptxas', 'sass', 'occ', 'table',
                                                        'mod')})
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),

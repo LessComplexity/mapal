@@ -231,7 +231,7 @@ fn range_map_over_a_shared_init_copies_it_at_the_entry() {
 }
 
 /// softmax's `ex` with the exponent as a fold over a range: a device cell
-/// (its own kernel, or with `fuse` a member of the row unit, whose kernel
+/// (its own kernel, or with `flow` a member of the row unit, whose kernel
 /// carries the fold's body), as with the 8 squarings unrolled, the same host
 /// launches, and the oracle's values.
 #[test]
@@ -277,10 +277,10 @@ fn a_fold_over_a_range_stays_in_the_cell() {
     for target in ["rtx-4090", "h100-pcie"] {
         let (a, b) = (emit_detailed(&nat, &opts(target, false)).unwrap(), emit_detailed(&unr, &opts(target, false)).unwrap());
         assert_eq!(kinds(&a.device), kinds(&b.device), "{target}");
-        // A device cell: its own kernel, or (`fuse`) a cell member of a unit.
+        // A device cell: its own kernel, or (`flow`) a cell member of a unit.
         let dev = a.device.as_ref().unwrap();
         let unit_cell = dev.lines().any(|l| {
-            l.starts_with("; mapal.fuse kernel=") && (l.contains(";ex:cell:") || l.contains("=ex:cell:"))
+            l.starts_with("; mapal.flow kernel=") && (l.contains(";ex:cell:") || l.contains("=ex:cell:"))
         });
         assert!(kinds(&a.device).iter().any(|k| k == "cell") || unit_cell, "{:?}", kinds(&a.device));
         assert_eq!(host_calls(&a.text), host_calls(&b.text), "{target}");
