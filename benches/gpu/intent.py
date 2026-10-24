@@ -169,6 +169,16 @@ INTENT = {
         ('every unit kernel in the device module', 'dev.fuse == host.fuse.units'),
         ("per-trip copy-outs are the facts' (a kept member never crosses)", 'host.move.d2h_b == host.move.intent_d2h')],
         applies_off='dev.cell + dev.rowfold > 0', off=[('no unit kernel', 'dev.fuse == 0')]),
+    # generic-fusion `window` (design §4/§7): a site whose reads are affine in the fold's derived axes (k÷div, k%div:
+    # a 2-D convolution's taps) is a device site; the naive kernel walks k in order with constant divisors. Only a
+    # window site's plan line carries `taps=` (the kernel exists only with the rung on: `.off-window` keeps it host).
+    'window': dict(applies="plan.kind == 'naive' and plan.taps != ''", on=[
+        ('no integer divide or remainder left: k÷div, k%div fold to induction variables', 'ptx.div_rem == 0'),
+        ('LLVM fully unrolled the constant-trip tap walk (loop-unroll FullyUnrolled)', 'remarks.opt.full_unroll >= 1'),
+        ('straight-line taps in SASS: one FFMA (or FMUL) per tap', 'sass.ffma + sass.fmul >= plan.k')]),
+    # generic-fusion natural forms `range-map`: a map whose cells off a row / range / column / cell are a capture's
+    # own runs in place over that set (`in_place_source`); its movement is the by-ref rows' (`host.move`).
+    'range-map': dict(host=True, note='work per trip, not bytes: diff the `.off-range-map` arm (host insns, loops)'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),
