@@ -1,0 +1,18 @@
+fn main() {
+    16 -> iota -> i_c;
+    i_c -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> c;
+    1039 -> iota -> i_s;
+    i_s -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> s;
+    1024 -> iota -> o_y;
+    16 -> iota -> k_y;
+    o_y -> map { t -> (0.0, k_y) -> fold { acc, k -> acc + c[k] * s[t + k] } } -> y;
+    y -> map { v -> v * 0.5 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> h;
+    32 -> iota -> r_i;
+    32 -> iota -> r_j;
+    r_i -> map { i -> (0.0, r_j) -> fold { acc, j -> acc + h[i * 32 + j] } } -> r;
+    0.0 -> zero: f32;
+    (zero, r) -> fold { acc, v -> acc + v } -> s_r;
+    s_r -> println;
+    r[0] -> println;
+    r[31] -> println;
+}
