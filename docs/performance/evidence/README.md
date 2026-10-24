@@ -1,5 +1,75 @@
 # Evidence pass
 
+## fusion-natural-forms: generic fusion and natural forms, integrated (static; GPU timing deferred)
+
+Raw: [`benches/results/evidence/fusion-natural-forms/`](../../../benches/results/evidence/fusion-natural-forms/) ·
+tables: `python3 benches/gpu/fusion_natural_report.py benches/results/evidence/fusion-natural-forms` · branch
+`fusion-natural-forms` (generic-fusion + natural-forms). No GPU was rented: ptxas 12.8 / cuobjdump through
+`cudatool.sh`, LLVM 22 remarks, values through the emulator. base = 27b4f99 (s65/residency) on its own programs;
+off = the merged build with `fuse`, `window`, `range-map` off; shipped = every rung on.
+
+### Decisions (ship ON, unmeasured on hardware)
+
+| rung | OFF arm | static, OFF → shipped | intent checks, ok / mismatch (4090 / 5090 / H100 / 3090) | time |
+|---|---|---|---|---|
+| `fuse` | `--gpu-off=fuse` | softmax_rows: 5 → 2 launches, 7 → 4 device buffers; attention: 6 → 3, 9 → 6; mx, ex, den never stored | `fuse` 50/0, 40/0, 50/0, 75/0; `fuse-host` 30/0, 24/0, 30/0, 45/0 | deferred |
+| `window` | `--gpu-off=window` | conv, ewconvew: the 5×5 conv leaves the host: 0 → 1 launch (`taps=5x5`), host insns 4567 → 78 | `window` 4/2 on every part (finding 3) | deferred |
+| `range-map` | `--gpu-off=range-map` | decode: launches, buffers, per-trip bytes equal; the row write runs over `[256t, min(256t+256, 262144))`, not `[0, 262144)` | no static predicate (host loop bound, by inspection); `by-ref` 61/0, 61/0, 73/0, 69/0 | deferred |
+| `lane-stride` (S54, now also 2-D `q·Kᵀ`) | `--gpu-off=lane-stride` | attention: 1 → 3 launches, whole-program h2d 4 / 16 MB → 0, host insns ~590 → ~120 | its kernels carry the new mismatches (finding 4) | deferred |
+
+### Per program class: base → off → shipped
+
+| class (programs) | launches | device buffers | kept (never stored) / stored unit members | h2d / d2h, whole program | per trip h2d / d2h / host copy, facts = realized | `fuse.host` launches intent = realized |
+|---|---|---|---|---|---|---|
+| softmax rows (2048, 4096) | 5 → 5 → 2 | 7 → 7 → 4 | mx, ex, den / y | 0 / 8 B → 0 / 8 B | - | ok, all four |
+| attention (1024, 2048 × 64, 128) | 1 → 6 → 3 | 3 → 9 → 6 | mx, ex, den / p | 4 or 16 MB / 8 B → 0 / 8 B | - | ok, all four |
+| conv, ew → conv → ew | 0 → 0 → 1 | 0 → 0 → 3 | - | 0 / 0 → 0 / 8 B | - | ok |
+| decode 1024 × 256 | 6 → 6 → 6 (H100 5) | 8 → 8 → 8 (H100 9) | - | 3 MB / 1 MB, equal | 2 KB / 1 KB / 0 = facts, equal | ok |
+| decode, CPU-only | - | - | - | - | 0 / 0 / 0 = facts | host insns 18205 → 1619 |
+| FIR → ew → rowsum, MLP (smlp, rm, rt_mlp2), rowsum, FIR, ew, fan-out, diamond, indep, loop, loopmm | unchanged | unchanged | - | unchanged | unchanged | host IR, PTX, CPU host IR identical to base up to kernel names, all four parts (`base/identity.txt`) |
+
+Unit kernels (shipped, all four parts): `mx:rowfold;ex:cell;den:rowfold;y|p:cell`, one thread per row, kept members
+in registers, `smem=0`; ptxas: no spill, no call left, pointers = stored + operands (`fuse` row); device buffers
+off-fuse − shipped = the 3 kept members on every fused program and part.
+
+### Natural vs unrolled on the merged build (`twin/kcmp.txt`)
+
+| program | kernels identical by content | per-trip movement | host object insns, unrolled → natural |
+|---|---|---|---|
+| decode 1024 × 256 | 8 / 8 / 9 / 9 of 8 / 8 / 9 / 9 | same | 6432 → 503 (4090), 6430 → 500 (H100), 6440 → 510 (3090) |
+| softmax_rows 2048, 4096 (unit kernel with the exp fold inside) | all, all four parts | same | 95 → 95 |
+| attention 1024 × 64, 2048 × 128 | all, all four parts | same | 122 → 122, 119 → 119, 125 → 125 |
+
+### Intent check totals (`static/<arch>/evidence.tsv`)
+
+| | rtx-4090 | rtx-5090 | h100-pcie | rtx-3090 |
+|---|---|---|---|---|
+| checks / mismatch (every arm) | 2223 / 24 | 2444 / 35 | 2883 / 90 | 2737 / 100 |
+| mismatches on shipped programs | 9 | 17 | 31 | 30 |
+| of those on kernels new this sprint (strided 2-D tiles, window) | 5 | 6 | 11 | 10 |
+| the rest: classes present in the base build (unlaunched twin kernels, FIR epilogue mul, prefetch cover, 3090 spills) | 4 | 11 | 20 | 20 |
+
+### Findings
+
+| # | finding | evidence | status |
+|---|---|---|---|
+| 1 | an in-place range map over an init another loop still reads wrote that init (`roots()` saw the in-place map as unowned, so no entry copy) | chain property test #158, #182, both `fuse` arms; n3[0] −13.44 vs −7.22; the `Update` twin right | fixed `815c3c3`, `natural_forms.rs` regression test |
+| 2 | a unit kernel called the nested fold body of a natural-form cell without carrying it | pt_attn_1024_64: `opt` "use of undefined value @fn8" | fixed `e8b45d8`; the fusion fixtures now use the natural exp |
+| 3 | `window`: LLVM only partially unrolls the 25-tap walk; ptxas completes it (25 FFMA, 0 div/rem) | `remarks.opt.full_unroll=0`, `PartialUnrolled`; SASS ffma 25, ldg 50 | open: two counted loops (design §4) |
+| 4 | strided 2-D `q·Kᵀ` tiles keep `SeparateMulAdd` on the default face (`Arithmetic::scalar`: `b.clane != 1`), and at 8 × 8 spill (5090 12 B, 3090 8 B), miss occupancy (H100 1 < 2) and prefetch cover (H100, 3090) | `newmm` rows in `static/<arch>/evidence.tsv` | open: judge with the `.off-lane-stride` arm on the boxes |
+| 5 | a sub-row range write that reads another device array copies all of it out per trip | Part A's gap program: d2h 128 B vs 16 B for the `Update`s | open: `footprint_plan`'s rect gives the 16 B |
+| 6 | the unit evaluates `ex` once per reader (den's phase, then p's / y's) | attention unit kernel: two calls of ex's body (`@fn9_u1`), one of p's | open: shared-memory staging in units |
+| 7 | `fuse-tile` (tile member, root re-derived) not built: FIR → ew → rowsum, MLP keep their launches | 2 → 2 | open |
+
+### Tests
+
+| test | result |
+|---|---|
+| `generic_fusion_chains_values_launches_and_stores` (256 chains, emulated 4090 / H100) | 244 with a device unit; 96 units of 202 members, 126 kept, 33 with a halo; 106 launches removed; refusals footprint 6, phase 7; exact face = interpreter ON and OFF, default face ON = OFF (16) |
+| `differential_natural_twins_values_and_movement` (256 twins) | 51 `Rows` claims, all probed sound; 209 device builds, 181 in-place states; movement, launches, kernels = the unrolled twins' (62 better); values ok with `range-map` on and off |
+| `cargo test -p mapal-ir` / `-p mapal-backend-llvm` / `-p mapal-cli` | TESTS_DEBUG |
+| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | TESTS_RELEASE |
+
 ## S65: loop state by reference (rule R)
 
 Raw: [`benches/results/evidence/s65/`](../../../benches/results/evidence/s65/) · tables:
