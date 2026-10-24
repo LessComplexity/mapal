@@ -71,6 +71,31 @@ def workload(stem):
         w = n + kk - 1
         wt, img = op('e', kk * kk).view(1, 1, kk, kk), op('a', w * w).view(1, 1, w, w)
         return (lambda img, wt: corners(torch.nn.functional.conv2d(img, wt))), (img, wt)
+    # generic-fusion chains (gen_tiles.py `attention`, `smlp`, `firew_rowsum`, `ewconvew`).
+    if stem.startswith('pt_attn_'):
+        T, d = map(int, stem.split('_')[2:])
+        q, kk, vv = (op(k, T * d).view(T, d) for k in 'abe')
+        sd = float(f'{d ** 0.5:.1f}')  # the program's literal
+
+        def attn(q, kk, vv):
+            s = q @ kk.T
+            ex = expo((s - s.max(dim=1, keepdim=True).values) / sd)
+            return corners((ex / ex.sum(dim=1, keepdim=True)) @ vv)
+        return attn, (q, kk, vv)
+    if stem.startswith('pt_smlp_'):
+        M, d, h = map(int, stem.split('_')[2:])
+        x, w1, w2 = op('a', M * d).view(M, d), op('b', d * h).view(d, h), op('e', h * d).view(h, d)
+        b1 = bias(h, 13, 6, 5.0)
+        return (lambda x, w1, w2, b1: corners(torch.relu(x @ w1 + b1) @ w2)), (x, w1, w2, b1)
+    if stem.startswith('pt_firew_rowsum_'):
+        R, C, taps = map(int, re.findall(r'\d+', stem))
+        c, s = op('e', taps).view(1, 1, taps), op('a', R * C + taps - 1).view(1, 1, R * C + taps - 1)
+        return (lambda s, c: corners(torch.relu(torch.nn.functional.conv1d(s, c) * 0.5).view(R, C).sum(dim=1))), (s, c)
+    if stem.startswith('pt_ewconvew_'):
+        n, kk = map(int, stem.split('_')[2:])
+        w = n + kk - 1
+        wt, img = op('e', kk * kk).view(1, 1, kk, kk), op('a', w * w).view(1, 1, w, w)
+        return (lambda img, wt: corners(torch.relu(torch.nn.functional.conv2d(img * 0.5 + 0.25, wt)))), (img, wt)
     if stem.startswith('pt_decode_'):
         T, d = map(int, stem.split('_')[2:])
         w = 16 * d

@@ -333,8 +333,9 @@ for o in "$PROF"/pt_*.host.o; do
     esac
     # shellcheck disable=SC2086  # the values are separate arguments
     case $n in *[!0-9]*) continue ;; esac  # S62 `rmlp_<M>x<d>x<h>`: no library leg
-    # S64: only the probes chain_bench.cu builds (the suite's fir / conv / loopmm / rt legs are torch_bench.py's).
-    case $probe in epi|bias|ew|pro|indep|mlp|fanout|diamond|residual|rowsum|softmax_rows|mlp2|loop|decode_*) ;; *) continue ;; esac
+    # S64: only the probes chain_bench.cu builds (the suite's fir / conv / loopmm / rt legs are torch_bench.py's;
+    # of the generic-fusion chains, firew_rowsum / ewconvew too).
+    case $probe in epi|bias|ew|pro|indep|mlp|fanout|diamond|residual|rowsum|softmax_rows|mlp2|loop|decode_*|attn_*|smlp_*) ;; *) continue ;; esac
     [ -x chain_bench ] && ./chain_bench "$probe" "$n" "$REPS" $vals 2>&1 | tee -a "$LOG"
 done
 say "probe value gate: $val_fail program(s) failed"
