@@ -986,6 +986,10 @@ fn holds_array(ty: &Ty) -> bool {
 impl CategoryIr {
     /// The objects owned by function `f`, in deterministic order.
     fn func_objects(&self, f: FuncId) -> Vec<ObjectId> {
+        self.fact(f, |s| &s.func_objects, || self.func_objects_compute(f))
+    }
+
+    fn func_objects_compute(&self, f: FuncId) -> Vec<ObjectId> {
         self.objects
             .iter()
             .filter(|(id, _)| self.owner.get(*id) == Some(&f))
@@ -1001,6 +1005,10 @@ impl CategoryIr {
     /// those transparent products, so a field used by two consumers is named
     /// once rather than duplicated when its product wrapper disappears.
     pub fn emission_plan(&self, f: FuncId) -> EmissionPlan {
+        self.fact(f, |s| &s.emission_plan, || self.emission_plan_compute(f))
+    }
+
+    fn emission_plan_compute(&self, f: FuncId) -> EmissionPlan {
         let bounds = self.bounds_proof(f);
         let mut boundary: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
 
@@ -1169,6 +1177,10 @@ impl CategoryIr {
     /// Recognize affine map/fold sites whose cell chains may be interleaved
     /// without changing their operation or operand order.
     pub fn tile_plan(&self, f: FuncId) -> TilePlan {
+        self.fact(f, |s| &s.tile_plan, || self.tile_plan_compute(f))
+    }
+
+    fn tile_plan_compute(&self, f: FuncId) -> TilePlan {
         self.tile_plan_with(f, false)
     }
 
@@ -1180,6 +1192,10 @@ impl CategoryIr {
     /// addresses any affine read (the GPU's one-thread-per-cell kernel) asks
     /// for this plan instead.
     pub fn tile_plan_strided(&self, f: FuncId) -> TilePlan {
+        self.fact(f, |s| &s.tile_plan_strided, || self.tile_plan_strided_compute(f))
+    }
+
+    fn tile_plan_strided_compute(&self, f: FuncId) -> TilePlan {
         self.tile_plan_with(f, true)
     }
 
@@ -1201,6 +1217,10 @@ impl CategoryIr {
     /// disjoint from it by construction: this arm requires the body to hold **no**
     /// fold, that one requires exactly one.
     pub fn move_plan(&self, f: FuncId) -> MovePlan {
+        self.fact(f, |s| &s.move_plan, || self.move_plan_compute(f))
+    }
+
+    fn move_plan_compute(&self, f: FuncId) -> MovePlan {
         let mut sites = SecondaryMap::new();
         let Some(fd) = self.func(f) else {
             return MovePlan { sites };
@@ -1218,6 +1238,10 @@ impl CategoryIr {
     /// of two reads, this one the read itself) and from [`Self::move_plan`] (no
     /// fold there).
     pub fn row_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        self.fact(f, |s| &s.row_fold, || self.row_fold_compute(f))
+    }
+
+    fn row_fold_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
         let mut sites = SecondaryMap::new();
         if let Some(fd) = self.func(f) {
             for &m in &fd.morphisms {
@@ -1587,6 +1611,10 @@ impl CategoryIr {
     /// `iota`; over any other mapped array the element is a value and an
     /// address built from it is [`Footprint::Other`].
     pub fn cell_plan(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
+        self.fact(f, |s| &s.cell_plan, || self.cell_plan_compute(f))
+    }
+
+    fn cell_plan_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
         let mut out = SecondaryMap::new();
         let Some(fd) = self.func(f) else {
             return out;
@@ -1798,6 +1826,10 @@ impl CategoryIr {
     /// [`Reach::Law`]; a capture-free classifiable map over a loaded array
     /// adds a second edge onto that array with the same reach (`law` set).
     pub fn footprint_plan(&self, f: FuncId) -> FootprintPlan {
+        self.fact(f, |s| &s.footprint_plan, || self.footprint_plan_compute(f))
+    }
+
+    fn footprint_plan_compute(&self, f: FuncId) -> FootprintPlan {
         let mut plan = FootprintPlan::default();
         let Some(fd) = self.func(f) else {
             return plan;
@@ -2557,6 +2589,10 @@ impl CategoryIr {
     /// tags specifically (`graph.rs`) — a future bodyless-looking op, or a
     /// `Call` whose totality is underivable, must not be admitted by shape.
     pub fn elem_plan(&self, f: FuncId) -> ElemPlan {
+        self.fact(f, |s| &s.elem_plan, || self.elem_plan_compute(f))
+    }
+
+    fn elem_plan_compute(&self, f: FuncId) -> ElemPlan {
         let mut plan = ElemPlan::default();
         let Some(def) = self.func(f) else {
             return plan;
@@ -3012,6 +3048,10 @@ impl CategoryIr {
     /// Checkpoint trap guards use the last earlier site as their watermark
     /// threshold; consumed-value producers require completion.
     pub fn path_plan(&self, f: FuncId) -> PathPlan {
+        self.fact(f, |s| &s.path_plan, || self.path_plan_compute(f))
+    }
+
+    fn path_plan_compute(&self, f: FuncId) -> PathPlan {
         let topo = self.topo_order(f);
         let bounds = self.bounds_proof(f);
         let trap_capable = self.fn_trap_capabilities();
@@ -3562,6 +3602,10 @@ impl CategoryIr {
     /// objects are in the order Tarjan pops them. Deterministic given the
     /// insertion-ordered adjacency.
     pub fn sccs(&self, f: FuncId) -> Vec<Vec<ObjectId>> {
+        self.fact(f, |s| &s.sccs, || self.sccs_compute(f))
+    }
+
+    fn sccs_compute(&self, f: FuncId) -> Vec<Vec<ObjectId>> {
         let nodes = self.func_objects(f);
 
         // Tarjan bookkeeping in SecondaryMaps (no HashMap; I12).
@@ -3707,6 +3751,10 @@ impl CategoryIr {
     /// work written before a `time` precedes it and the work written after it
     /// follows. A function without one keeps the order above byte for byte.
     pub fn topo_order(&self, f: FuncId) -> Vec<MorphismId> {
+        self.fact(f, |s| &s.topo_order, || self.topo_order_compute(f))
+    }
+
+    fn topo_order_compute(&self, f: FuncId) -> Vec<MorphismId> {
         let nodes = self.func_objects(f);
 
         // For each object, how many in-edges must fire before it "completes".
@@ -3926,6 +3974,10 @@ impl CategoryIr {
     ///
     /// A trivial SCC (one object, no self-loop) is not a loop and is excluded.
     pub fn loop_structure(&self, f: FuncId) -> Vec<LoopScc> {
+        self.fact(f, |s| &s.loop_structure, || self.loop_structure_compute(f))
+    }
+
+    fn loop_structure_compute(&self, f: FuncId) -> Vec<LoopScc> {
         let mut out = Vec::new();
         for comp in self.sccs(f) {
             let nontrivial = comp.len() > 1 || self.has_self_loop(comp[0]);
@@ -3962,6 +4014,26 @@ impl CategoryIr {
     /// exit-route feeders, incl. exit-feeding effects); the advance cone is the
     /// rest (next-state), unreachable on the exit step.
     pub fn loop_plan(&self, f: FuncId, merge: ObjectId) -> Option<LoopPlan> {
+        let plans = |s: &crate::facts::FuncFacts| -> Option<LoopPlan> {
+            s.loop_plans
+                .get_or_init(|| {
+                    self.loop_structure(f)
+                        .iter()
+                        .flat_map(|scc| scc.merges.iter())
+                        .map(|&m| (m, self.loop_plan_compute(f, m)))
+                        .collect()
+                })
+                .iter()
+                .find(|(m, _)| *m == merge)
+                .and_then(|(_, p)| p.clone())
+        };
+        match self.facts_of(f) {
+            Some(s) => plans(s),
+            None => self.loop_plan_compute(f, merge),
+        }
+    }
+
+    fn loop_plan_compute(&self, f: FuncId, merge: ObjectId) -> Option<LoopPlan> {
         // Single-merge SCC (M1 canonical shape) — THIS merge's SCC only, never
         // the per-function union.
         let scc = self
@@ -4160,6 +4232,10 @@ impl CategoryIr {
     /// recursion-free (J1), total on any sealed fn: non-canonical loops
     /// contribute no carried set and no re-ranking, so consumers fall back.
     pub fn last_use_plan(&self, f: FuncId) -> LastUsePlan {
+        self.fact(f, |s| &s.last_use_plan, || self.last_use_plan_compute(f))
+    }
+
+    fn last_use_plan_compute(&self, f: FuncId) -> LastUsePlan {
         let topo = self.topo_order(f);
         let mut position: SecondaryMap<MorphismId, u32> = SecondaryMap::new();
         for (i, &m) in topo.iter().enumerate() {
@@ -4462,6 +4538,10 @@ impl CategoryIr {
     /// One `topo_order` pass; anything unknown/wrapping/loop-carried is NOT
     /// proven (consumers keep today's guards there — zero behavior change).
     pub fn bounds_proof(&self, f: FuncId) -> BoundsProof {
+        self.fact(f, |s| &s.bounds_proof, || self.bounds_proof_compute(f))
+    }
+
+    fn bounds_proof_compute(&self, f: FuncId) -> BoundsProof {
         let mut visited: Vec<FuncId> = Vec::new();
         self.bounds_proof_inner(f, &mut visited).0
     }
@@ -4497,6 +4577,10 @@ impl CategoryIr {
     /// view), and so on down a chain of such maps. Never the other way: a
     /// back-edge value that is a map's output is rewritten whole (`Top`).
     pub fn write_delta(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
+        self.fact(f, |s| &s.write_delta, || self.write_delta_compute(f))
+    }
+
+    fn write_delta_compute(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
         let mut out = SecondaryMap::new();
         let gated: Vec<MorphismId> = self
             .guard_plan(f)
@@ -5022,6 +5106,13 @@ impl CategoryIr {
     /// Per-function trap-capability fixpoint. Trap-free leaves flow backward
     /// through Call/Map/Fold references; unresolved cycles remain capable.
     fn fn_trap_capabilities(&self) -> SecondaryMap<FuncId, bool> {
+        self.facts
+            .trap_capabilities
+            .get_or_init(|| self.fn_trap_capabilities_compute())
+            .clone()
+    }
+
+    fn fn_trap_capabilities_compute(&self) -> SecondaryMap<FuncId, bool> {
         let mut capable = SecondaryMap::new();
         let mut remaining = SecondaryMap::new();
         let mut dependents: SecondaryMap<FuncId, Vec<FuncId>> = SecondaryMap::new();
@@ -5117,6 +5208,10 @@ impl CategoryIr {
     /// shape, or whose arm reaches loop machinery, is skipped — consumers keep
     /// strict semantics for it.
     pub fn guard_plan(&self, f: FuncId) -> Vec<GuardSite> {
+        self.fact(f, |s| &s.guard_plan, || self.guard_plan_compute(f))
+    }
+
+    fn guard_plan_compute(&self, f: FuncId) -> Vec<GuardSite> {
         let topo = self.topo_order(f);
 
         // No Phi ⇒ no sites. Skip the unit construction, bounds proof and

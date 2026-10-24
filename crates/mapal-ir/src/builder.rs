@@ -266,13 +266,15 @@ impl IrBuilder {
         // Materialize the CategoryIr so the SCC/topo algorithms can run; the
         // global checks read it, then we hand it back if clean. The func map is
         // converted FuncUnderConstruction → FuncDef preserving every FuncId key.
+        let funcs = Self::into_func_defs(self.funcs);
         let ir = CategoryIr {
             objects: self.objects,
             morphisms: self.morphisms,
             out_edges: self.out_edges,
             in_edges: self.in_edges,
             owner: self.owner,
-            funcs: Self::into_func_defs(self.funcs),
+            facts: crate::facts::Facts::new(funcs.keys()),
+            funcs,
             entry,
         };
 
