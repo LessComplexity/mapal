@@ -25,7 +25,9 @@ fn lower(src: &str) -> CategoryIr {
 
 /// The exact-face emission on `target` with `off` rungs off (and the ones the
 /// emulator cannot run: `async`, `pdl`, `streams`; `place` so every capable
-/// site is on the device).
+/// site is on the device). `fuse` is forced on: it ships OFF on every measured
+/// part (`GPU_RUNGS_OFF`, the fusion-natural-forms sweep), and these tests are
+/// its proof of values, launches and stores.
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str]) -> mapal_backend_llvm::Emission {
     emission_on(ir, target, off, EmitOpts::exact())
 }
@@ -38,6 +40,7 @@ fn emission_on(
     base: EmitOpts,
 ) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
+    gpu.on.fuse = true;
     for r in off
         .iter()
         .chain(&["place", "async", "pdl", "streams", "pinned"])

@@ -104,7 +104,8 @@ if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
     # The pin: the newest cu128 wheel for the image's Python 3.10 (2026-10-23: 2.11.0). torch.compile's
     # Triton builds a C launcher against Python.h: python3-dev.
     ( { apt-get update -qq && apt-get install -y -qq python3-pip python3-dev; } || true
-      python3 -m pip install -q "torch==${TORCH_VERSION:-2.11.0}" --index-url https://download.pytorch.org/whl/cu128
+      # fusion-natural-forms: a 3090 box's download timed out once (no torch legs): retry the wheel.
+      python3 -m pip install -q --timeout 120 --retries 10 "torch==${TORCH_VERSION:-2.11.0}" --index-url https://download.pytorch.org/whl/cu128
     ) > torch-install.log 2>&1 &
     TORCH_PID=$!
 fi
