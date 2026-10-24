@@ -69,7 +69,7 @@ impl<'a> FnEmit<'a> {
                 if self.update_aliases.contains_key(t) {
                     continue;
                 }
-                if let Some(s) = self.update_in_place_source(m) {
+                if let Some(s) = self.in_place_source(m) {
                     self.elided_updates.insert(t, ());
                     self.update_aliases.insert(t, s);
                     if self.ptr_resident.contains_key(s) {

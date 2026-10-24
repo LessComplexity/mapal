@@ -83,6 +83,89 @@ impl<'a> FnEmit<'a> {
         out
     }
 
+    /// The set of a host map whose law is piecewise ([`mapal_ir::Outside`]):
+    /// the plain body-call loop (no tile site, no device unit), under the
+    /// `range-map` rung.
+    pub(super) fn range_map(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
+        if !super::gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_map {
+            return None;
+        }
+        let tiled = self.tile_plan.as_ref().is_some_and(|p| p.sites.contains_key(m));
+        let cell = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.cells.contains_key(m) || p.devgen.contains_key(m));
+        if tiled || cell || self.device.contains_key(m) || self.member_src(m, 0).is_some() {
+            return None;
+        }
+        if let Some(&ou) = self.outside_memo.borrow().get(m) {
+            return ou;
+        }
+        let ou = match self.ir.map_law(m) {
+            Some(ElemSrc::Apply { outside, .. }) => outside,
+            _ => None,
+        };
+        self.outside_memo.borrow_mut().insert(m, ou);
+        ou
+    }
+
+    /// The cells `lo + step·k` met with the loop's own bounds `[l, h)`: the
+    /// first at or past `l`, up to `min(lo + step·len, h)` — `lo = d·(a·e +
+    /// b)`, `a·e + b` in `e`'s wrapping width (the program's value), then
+    /// exact in `i64`. A step of 1 is the interval `[max(lo, l), …)`.
+    fn range_bounds(&mut self, ou: &mapal_ir::Outside, n: u64) -> (String, String) {
+        let (l, h) = self.bulk_bounds(n);
+        let x = match ou.e.and_then(|e| self.load_whole(e)) {
+            Some((wllt, ev)) => self.affine_cell(
+                &wllt,
+                &ev,
+                &mapal_ir::Affine {
+                    var: ou.e.expect("e"),
+                    a: ou.a,
+                    b: ou.b,
+                },
+            ),
+            None if ou.e.is_none() => ou.b.to_string(),
+            // Unloadable: the whole map, in place (outside cells are their own).
+            None => return (l, h),
+        };
+        let lo = self.tmp();
+        self.line(format!("{lo} = mul i64 {x}, {}", ou.d));
+        let pick = |s: &mut Self, cmp: &str, p: &str, q: &str| {
+            let (c, t) = (s.tmp(), s.tmp());
+            s.line(format!("{c} = icmp {cmp} i64 {p}, {q}"));
+            s.line(format!("{t} = select i1 {c}, i64 {p}, i64 {q}"));
+            t
+        };
+        let start = if ou.step == 1 {
+            pick(self, "sgt", &lo, &l)
+        } else {
+            // `lo + step·⌈(l − lo) / step⌉` when `lo < l` (`l − lo > 0`).
+            let s = ou.step;
+            let (gap, up, k, off, at) = (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{gap} = sub i64 {l}, {lo}"));
+            self.line(format!("{up} = add i64 {gap}, {}", s - 1));
+            self.line(format!("{k} = udiv i64 {up}, {s}"));
+            self.line(format!("{off} = mul i64 {k}, {s}"));
+            self.line(format!("{at} = add i64 {lo}, {off}"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp slt i64 {lo}, {l}"));
+            let t = self.tmp();
+            self.line(format!("{t} = select i1 {c}, i64 {at}, i64 {lo}"));
+            t
+        };
+        let end = match ou.step.checked_mul(ou.len).filter(|&w| w <= n) {
+            Some(w) => {
+                let hi = self.tmp();
+                self.line(format!("{hi} = add i64 {lo}, {w}"));
+                pick(self, "slt", &hi, &h)
+            }
+            None => h,
+        };
+        let end = pick(self, "sgt", &end, &start);
+        (start, end)
+    }
+
     pub(super) fn emit_map(
         &mut self,
         m: MorphismId,
@@ -141,10 +224,34 @@ impl<'a> FnEmit<'a> {
         let tgt_ty = self.obj_ty(target);
         let (ullt, _) = array_parts(&tgt_ty);
         let tgt_arr_llt = lower_ty(&tgt_ty).expect("map tgt lowers");
-        let tgt_slot = self.slot(target).expect("map tgt slot");
+        // A piecewise map written in place (`in_place_source`): the capture's
+        // buffer is the output's, and only the interval is computed — every
+        // other cell already holds its value.
+        let range = self
+            .update_aliases
+            .get(target)
+            .copied()
+            .zip(self.range_map(m));
+        let tgt_slot = match range {
+            Some((arr, _)) => {
+                let slot = self.slot(arr).expect("in-place map source slot");
+                self.slots.insert(target, slot.clone());
+                if self.ptr_resident.contains_key(arr) {
+                    let p = self.tmp();
+                    self.line(format!("{p} = load ptr, ptr {slot}"));
+                    p
+                } else {
+                    slot
+                }
+            }
+            None => self.slot(target).expect("map tgt slot"),
+        };
         let callee = self.fnames[body].clone();
         let ctr = self.scratch("i64");
-        let (lo, hi) = self.bulk_bounds(n);
+        let (lo, hi) = match range {
+            Some((_, ou)) => self.range_bounds(&ou, n),
+            None => self.bulk_bounds(n),
+        };
 
         let (lh, lb, ld) = (self.label(), self.label(), self.label());
         self.line(format!("store i64 {lo}, ptr {ctr}"));
@@ -159,7 +266,7 @@ impl<'a> FnEmit<'a> {
         // S44/S45: the index this trip stands for. A declined site — no record,
         // or a profile that prices it as no win — returns `iv` itself, so the
         // text below is character-identical to what it has always been.
-        let ix = match self.move_panel_of(m) {
+        let ix = match self.move_panel_of(m).filter(|_| range.is_none()) {
             Some((w, b)) => self.move_panel_index(&iv, n, w, b),
             None => iv.clone(),
         };
@@ -212,7 +319,8 @@ impl<'a> FnEmit<'a> {
         ));
         self.line(format!("store {ullt} {r}, ptr {dp}"));
         let iv1 = self.tmp();
-        self.line(format!("{iv1} = add i64 {iv}, 1"));
+        let step = range.map_or(1, |(_, ou)| ou.step);
+        self.line(format!("{iv1} = add i64 {iv}, {step}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
         self.line(format!("br label %{lh}"));
         self.label_line(&ld);
