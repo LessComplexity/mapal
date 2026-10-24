@@ -181,6 +181,55 @@ fn range_map_at_the_edges_matches_the_oracle() {
     }
 }
 
+/// Two loops whose states start from one array, each writing a row of it in
+/// place (the integration's chain property test, chains #158 and #182): the
+/// first loop's in-place range map must write the loop's own copy — the init
+/// is read again by the second loop — as its `Update` twin does.
+#[test]
+fn range_map_over_a_shared_init_copies_it_at_the_entry() {
+    let Some(clang) = clang() else {
+        eprintln!("skip: clang not found");
+        return;
+    };
+    let src = "fn main() {
+    65 -> iota -> ix;
+    ix -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 9.0 } -> n0;
+    mut s1: [f32; 65] <- n0;
+    mut i1: i32 <- 0;
+    loop {
+        (i1 < 4) -> {
+            -true-> {
+                ix -> map { e -> (e / 5 == i1) -> { -true-> s1[e] * 2.0 + 1.0; -false-> s1[e]; } } -> s1;
+                i1 + 1 -> i1;
+                -> loop;
+            }
+            -false-> s1 -> n1;
+        }
+    }
+    n1[0] -> println;
+    mut s3: [f32; 65] <- n0;
+    mut i3: i32 <- 0;
+    loop {
+        (i3 < 1) -> {
+            -true-> {
+                ix -> map { e -> (e / 5 == i3) -> { -true-> s3[e] * 2.0 + 1.0; -false-> s3[e]; } } -> s3;
+                i3 + 1 -> i3;
+                -> loop;
+            }
+            -false-> s3 -> n3;
+        }
+    }
+    n3[0] -> println;
+    n0[0] -> println;
+}
+";
+    let ir = lower(src);
+    let rr = mapal_interp::run(&ir, 2_000_000_000);
+    assert!(matches!(rr.outcome, mapal_interp::Outcome::Done(_)));
+    let host = emit_detailed(&ir, &opts("generic", true)).unwrap().text;
+    assert_eq!(native(&clang, &host), rr.output, "{host}");
+}
+
 /// softmax's `ex` with the exponent as a fold over a range: one cell kernel,
 /// as with the 8 squarings unrolled, the same host launches, and the
 /// oracle's values.
