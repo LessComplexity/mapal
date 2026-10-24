@@ -82,7 +82,10 @@ pub enum Delta {
     /// Only cells `[start, start + stride)` can differ. `next` is the object
     /// whose value crosses the back edge into this carried slot (the last
     /// write of the chain) — it differs from its own previous-iteration value
-    /// only there too.
+    /// only there too. A claim about cells: an interval a piecewise map
+    /// writes ([`Outside`]) may reach past `[0, n)` (on a trip that writes
+    /// nothing, anywhere), so a consumer moves or recomputes `[start, start +
+    /// stride)` only when it lies inside the array (else the whole array).
     Rows {
         stride: u64,
         start: Affine,
@@ -374,7 +377,10 @@ pub enum Footprint {
     Col { c: u64 },
     /// `x[k]`, one fixed cell.
     Const(u64),
-    /// Any other address (data-dependent, or not one of the above forms).
+    /// `x[base + cq·(t ÷ w) + cr·(t % w)]` — any other address affine in the
+    /// cell's derived axes (`x[t + 1]`, `x[2t]`, a transpose; generic-fusion).
+    Affine { w: u64, base: u64, cq: u64, cr: u64 },
+    /// Any other address (data-dependent, or not affine in `t`).
     Other,
 }
 
@@ -396,6 +402,108 @@ pub struct CellSite {
     pub extent: u64,
     pub reads: Vec<CellRead>,
     pub body: FuncId,
+}
+
+/// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
+/// [`CategoryIr::footprint_plan`]): the read footprint of one producer →
+/// consumer edge, translated from the facts the recognizers already hold.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// `base + cq·(t ÷ w) + cr·(t % w) + Σ coef·kᵢ`, every `kᵢ ∈ [0, ext)`.
+    Affine {
+        w: u64,
+        base: u64,
+        cq: u64,
+        cr: u64,
+        taps: Vec<Tap>,
+    },
+    /// Some cell of `[lo, hi)`: a proven address not affine in `t`.
+    Range { lo: u64, hi: u64 },
+    /// Nothing is read: the producer's element law is closed-form over the
+    /// index (`elem_plan`), so a reader evaluates it.
+    Law,
+    /// Any cell (unproven or data-dependent).
+    Whole,
+}
+
+/// One reduction axis of an [`Reach::Affine`] read: `coef·k`, `k ∈ [0, ext)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tap {
+    pub coef: u64,
+    pub ext: u64,
+}
+
+/// One producer → consumer edge: `consumer`'s source slot `slot` is
+/// `producer`, read at `reach`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub consumer: MorphismId,
+    pub slot: u32,
+    pub producer: ObjectId,
+    pub reach: Reach,
+}
+
+/// Every array read of a function's per-cell, tile, row-fold, move, fold and
+/// `Index` morphisms, by consumer.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FootprintPlan {
+    pub edges: SecondaryMap<MorphismId, Vec<Edge>>,
+}
+
+impl Reach {
+    /// The producer `(rows, cols)` rectangle a consumer block reads — consumer
+    /// cells `t = i·w + j`, `i ∈ rows`, `j ∈ cols` — for a producer laid out
+    /// `pw` wide (`len` cells; the rectangle is clipped to it). Each term moves
+    /// whole producer rows (its coefficient a multiple of `pw`) or columns; a
+    /// block whose columns would wrap into the next row is `None`, as is
+    /// [`Reach::Whole`]. [`Reach::Law`] reads nothing: an empty rectangle.
+    pub fn rect(
+        &self,
+        pw: u64,
+        len: u64,
+        rows: std::ops::Range<u64>,
+        cols: std::ops::Range<u64>,
+    ) -> Option<[std::ops::Range<u64>; 2]> {
+        if pw == 0 || rows.is_empty() || cols.is_empty() {
+            return None;
+        }
+        let prow = len.div_ceil(pw);
+        let (mut r, mut c) = match self {
+            Reach::Law => return Some([0..0, 0..0]),
+            Reach::Whole => return None,
+            Reach::Range { lo, hi } => {
+                let (a, b) = (lo / pw, hi.checked_sub(1)? / pw);
+                let cols = if a == b { lo % pw..(hi - 1) % pw + 1 } else { 0..pw };
+                return Some([a..b + 1, cols]);
+            }
+            Reach::Affine { base, .. } => ((base / pw, base / pw), (base % pw, base % pw)),
+        };
+        let Reach::Affine { w, cq, cr, taps, .. } = self else {
+            unreachable!()
+        };
+        if *w == 0 || cols.end > *w {
+            return None;
+        }
+        let terms = [(*cq, rows.start, rows.end - 1), (*cr, cols.start, cols.end - 1)]
+            .into_iter()
+            .chain(taps.iter().map(|t| (t.coef, 0, t.ext.saturating_sub(1))));
+        for (coef, lo, hi) in terms {
+            if coef == 0 || hi < lo {
+                continue;
+            }
+            if coef % pw == 0 {
+                let s = coef / pw;
+                r = (r.0.checked_add(s.checked_mul(lo)?)?, r.1.checked_add(s.checked_mul(hi)?)?);
+            } else {
+                c = (c.0.checked_add(coef.checked_mul(lo)?)?, c.1.checked_add(coef.checked_mul(hi)?)?);
+            }
+        }
+        if c.1 >= pw {
+            return None;
+        }
+        let rows = r.0.min(prow)..(r.1 + 1).min(prow);
+        Some([rows, c.0..c.1 + 1])
+    }
 }
 
 /// Everything a backend needs to emit one recognized tiled map site.
@@ -507,6 +615,24 @@ impl EmissionPlan {
     }
 }
 
+/// An index interval `[d·(a·e + b), … + len)` over a map body's captured
+/// scalar `e` (its capture slot) — [`Outside`] before `e` is resolved.
+#[derive(Clone, Copy, Debug)]
+struct Interval {
+    d: u64,
+    a: i64,
+    e: Option<u32>,
+    b: i64,
+    len: u64,
+}
+
+/// One side of an index interval: `t ≥ a·e + b` or `t < a·e + b`.
+#[derive(Clone, Copy, Debug)]
+enum Bound {
+    Lo(Option<u32>, i64, i64),
+    Hi(Option<u32>, i64, i64),
+}
+
 /// A value range in the unsigned lattice (negative-capable shapes bail to
 /// unknown — wrapping ints mean a `Sub` past zero invalidates intervals).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -576,7 +702,33 @@ pub enum ElemSrc {
         /// nested inside a `Pair` would collapse the whole pair back to an
         /// array-of-structs read, silently undoing the `Zip` win.
         array: ObjectId,
+        /// The law is piecewise: outside an index interval the cell is a
+        /// captured array's own cell ([`Outside`]).
+        outside: Option<Outside>,
     },
+}
+
+/// **The piece of a `Map`'s law outside an index interval** (generic-fusion
+/// natural forms): `out[t] = x[t]` for every `t ∉ [lo, lo + len)`, `x` the
+/// map's capture `slot`, which the body reads at `t` and nowhere else; inside
+/// the interval the body's other arm. `lo = d·(a·e + b)`, `a·e + b` in `e`'s
+/// own wrapping int arithmetic (the program's value; `e` a captured int
+/// scalar of the map, `None`: `lo = d·b`), the product exact.
+///
+/// A row write `(t ÷ d == r) ? new(t) : x[t]` is one (`[d·r, d·r + d)`), and
+/// so is `(lo ≤ t ∧ t < lo + len) ? new(t) : x[t]` (`d = 1`; `n − 1 + len`
+/// fits the index type, so `lo + len` never wraps where the interval meets
+/// `[0, n)`). Only `[lo, lo + len) ∩ [0, n)` is computed; every other cell
+/// is the capture's — which is what lets a row write run in place over its
+/// row ([`CategoryIr::write_delta`]'s map step, the emitter's range map).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Outside {
+    pub slot: u32,
+    pub d: u64,
+    pub a: i64,
+    pub e: Option<ObjectId>,
+    pub b: i64,
+    pub len: u64,
 }
 
 /// The per-fn element-law plan — the deduced query
@@ -1329,11 +1481,10 @@ impl CategoryIr {
             return None;
         };
         let bd = self.func(body)?;
-        let leaf = bd.morphisms.iter().all(|&g| {
-            !matches!(
-                self.morphisms.get(g).map(|x| x.op),
-                Some(Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. }) | None
-            )
+        let leaf = bd.morphisms.iter().all(|&g| match self.morphisms.get(g).map(|x| x.op) {
+            Some(Operation::Map { .. } | Operation::Fold { .. }) => self.local_nest(g, bd.input, 0),
+            Some(Operation::Call(_)) | None => false,
+            Some(_) => true,
         });
         if !leaf || !self.body_is_classifiable(body) {
             return None;
@@ -1379,6 +1530,162 @@ impl CategoryIr {
         })
     }
 
+    /// **The read footprint of every producer → consumer edge of `f`**
+    /// (generic-fusion, [`Reach`]): for each consumer's cell `t`, the producer
+    /// cells it reads — translated from the facts the recognizers already
+    /// hold, nothing derived anew: a tile site's [`TileRead`]s
+    /// (`tile_plan_strided`: `w = c`, `cq = ci`, `cr = clane`, the fold's taps,
+    /// a `ksplit`'s two), a row fold's read (`w = 1`), a move site's, a cell's
+    /// [`CellRead`]s, a whole fold (`[1, len]`), a host `Index` (the address's
+    /// proven range), and [`Reach::Law`] wherever `elem_plan` rebuilds the
+    /// producer from the index. Absent consumers read through no fact here
+    /// (a `Call`, a loop's machinery): a reader of the plan treats them as
+    /// [`Reach::Whole`].
+    pub fn footprint_plan(&self, f: FuncId) -> FootprintPlan {
+        let mut out = FootprintPlan::default();
+        let Some(fd) = self.func(f) else {
+            return out;
+        };
+        let tiles = self.tile_plan_strided(f);
+        let folds = self.row_fold(f);
+        let moves = self.move_plan(f);
+        let cells = self.cell_plan(f);
+        let elem = self.elem_plan(f);
+        let (_, ranges) = self.bounds_proof_inner(f, &mut Vec::new());
+        let law = |o: ObjectId| {
+            fn rooted(s: &ElemSrc) -> bool {
+                match s {
+                    ElemSrc::Index => true,
+                    ElemSrc::Apply { inner, .. } => rooted(inner),
+                    _ => false,
+                }
+            }
+            elem.src(o).is_some_and(rooted)
+        };
+        let read = |r: &TileRead, c: u64, k: u64| {
+            let taps = match r.ksplit {
+                Some(s) => vec![Tap { coef: s.cq, ext: k / s.div }, Tap { coef: s.cr, ext: s.div }],
+                None => vec![Tap { coef: r.ck, ext: k }],
+            };
+            Reach::Affine { w: c, base: r.base, cq: r.ci, cr: r.clane, taps }
+        };
+        let affine = |w, base, cq, cr| Reach::Affine { w, base, cq, cr, taps: Vec::new() };
+        for &m in &fd.morphisms {
+            let Some(mm) = self.morphisms.get(m) else {
+                continue;
+            };
+            let src = |k: u32| match mm.op {
+                Operation::Map { captures: 0, .. } => Some(mm.source),
+                _ => self.pair_slot_source(mm.source, k),
+            };
+            let mut edges: Vec<(u32, Reach)> = Vec::new();
+            if let Some(s) = tiles.sites.get(m) {
+                edges.push((s.a.slot, read(&s.a, s.c, s.k)));
+                edges.push((s.b.slot, read(&s.b, s.c, s.k)));
+            } else if let Some(s) = folds.get(m) {
+                edges.push((s.a.slot, read(&s.a, 1, s.k)));
+            } else if let Some(s) = moves.sites.get(m) {
+                edges.push((s.slot, affine(s.width, s.base, s.cq, s.cr)));
+            } else if let Some(s) = cells.get(m) {
+                for r in &s.reads {
+                    let reach = match r.foot {
+                        Footprint::Same => affine(1, 0, 1, 0),
+                        Footprint::Row { c } => affine(c, 0, 1, 0),
+                        Footprint::Col { c } => affine(c, 0, 0, 1),
+                        Footprint::Const(k) => affine(1, k, 0, 0),
+                        Footprint::Affine { w, base, cq, cr } => affine(w, base, cq, cr),
+                        Footprint::Other => Reach::Whole,
+                    };
+                    edges.push((r.slot, reach));
+                }
+            } else {
+                match mm.op {
+                    Operation::Fold { captures, .. } => {
+                        let len = self
+                            .pair_slot_source(mm.source, captures + 1)
+                            .and_then(|o| self.objects.get(o))
+                            .and_then(|o| match o.ty {
+                                Ty::Array { size, .. } => Some(size),
+                                _ => None,
+                            });
+                        if let Some(len) = len {
+                            let whole = Reach::Affine {
+                                w: 1,
+                                base: 0,
+                                cq: 0,
+                                cr: 0,
+                                taps: vec![Tap { coef: 1, ext: len }],
+                            };
+                            edges.push((captures + 1, whole));
+                        }
+                    }
+                    Operation::Index => {
+                        let reach = match self.pair_slot_source(mm.source, 1).and_then(|a| ranges.get(a)) {
+                            Some(&Rng::Int(lo, hi)) if lo == hi => affine(1, lo, 0, 0),
+                            Some(&Rng::Int(lo, hi)) if self.bounds_proof(f).proven(m) => {
+                                Reach::Range { lo, hi: hi.saturating_add(1) }
+                            }
+                            _ => Reach::Whole,
+                        };
+                        edges.push((0, reach));
+                    }
+                    _ => {}
+                }
+            }
+            let edges: Vec<Edge> = edges
+                .into_iter()
+                .filter_map(|(slot, reach)| {
+                    let producer = src(slot)?;
+                    let reach = if law(producer) { Reach::Law } else { reach };
+                    Some(Edge { consumer: m, slot, producer, reach })
+                })
+                .collect();
+            if !edges.is_empty() {
+                out.edges.insert(m, edges);
+            }
+        }
+        out
+    }
+
+    /// A nested `Map`/`Fold` `g` of a cell body with input `input` that reads
+    /// nothing of the cell's inputs but scalars: no array operand is one of
+    /// `input`'s components, and its body (and theirs) holds no `Index` — so
+    /// the cell's reads are exactly its own `Index`es (generic-fusion natural
+    /// forms: a fold over a range the body makes). Depth-guarded (J1).
+    fn local_nest(&self, g: MorphismId, input: ObjectId, depth: u32) -> bool {
+        let Some(x) = self.morphisms.get(g) else {
+            return false;
+        };
+        let (Operation::Map { body, .. } | Operation::Fold { body, .. }) = x.op else {
+            return false;
+        };
+        let Some(src) = self.objects.get(x.source) else {
+            return false;
+        };
+        let parts: Vec<ObjectId> = match &src.ty {
+            Ty::Tuple(ts) => (0..ts.len() as u32)
+                .filter_map(|k| self.pair_slot_source(x.source, k))
+                .collect(),
+            _ => vec![x.source],
+        };
+        let captured = parts.iter().any(|&o| {
+            matches!(self.objects.get(o).map(|o| &o.ty), Some(Ty::Array { .. }))
+                && self.tile_input_proj_index(o, input).is_some()
+        });
+        let Some(nb) = self.func(body) else {
+            return false;
+        };
+        depth < 8
+            && !captured
+            && nb.morphisms.iter().all(|&h| match self.morphisms.get(h).map(|y| y.op) {
+                Some(Operation::Index | Operation::Call(_)) | None => false,
+                Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                    self.local_nest(h, nb.input, depth + 1)
+                }
+                Some(_) => true,
+            })
+    }
+
     /// `addr` over the map index `t` (`Proj{captures}` of the body input):
     /// `t`, `t ÷ c`, `t % c` (literal `c`), a literal, or anything else.
     fn cell_footprint(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Footprint {
@@ -1400,7 +1707,84 @@ impl CategoryIr {
         if let Some(c) = split(Operation::Mod) {
             return Footprint::Col { c };
         }
-        Footprint::Other
+        match self.cell_affine(addr, input, captures, &mut None, 0) {
+            // `t = c·(t ÷ c) + t % c`: one width for every term.
+            Some((base, at, aq, ar, w)) => {
+                let w = w.unwrap_or(1);
+                // (`t ÷ 1 = t`, `t % 1 = 0`.)
+                let (cq, cr) = if w == 1 {
+                    (at.saturating_add(aq), 0)
+                } else {
+                    (w.saturating_mul(at).saturating_add(aq), at.saturating_add(ar))
+                };
+                Footprint::Affine { w, base, cq, cr }
+            }
+            None => Footprint::Other,
+        }
+    }
+
+    /// `addr` as `base + at·t + aq·(t ÷ w) + ar·(t % w)` over the map index `t`,
+    /// literals, `Add` and `Mul` by a literal; one literal `w` for every
+    /// `÷`/`%` (recorded in `w`). Depth-guarded (J1).
+    fn cell_affine(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        w: &mut Option<u64>,
+        depth: u32,
+    ) -> Option<(u64, u64, u64, u64, Option<u64>)> {
+        if depth > 16 {
+            return None;
+        }
+        if self.tile_input_proj_index(o, input) == Some(captures) {
+            return Some((0, 1, 0, 0, *w));
+        }
+        if let Some(b) = self.tile_literal_u64(o) {
+            return Some((b, 0, 0, 0, *w));
+        }
+        let [g] = self.in_edges(o) else {
+            return None;
+        };
+        for (op, q) in [(Operation::Div, true), (Operation::Mod, false)] {
+            if let Some((_, c)) = self.tile_split(*g, input, captures, op) {
+                if *w.get_or_insert(c) != c {
+                    return None;
+                }
+                return Some(if q { (0, 0, 1, 0, *w) } else { (0, 0, 0, 1, *w) });
+            }
+        }
+        let mm = self.morphisms.get(*g)?;
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        match mm.op {
+            Operation::Add => {
+                let a = self.cell_affine(x, input, captures, w, depth + 1)?;
+                let b = self.cell_affine(y, input, captures, w, depth + 1)?;
+                Some((
+                    a.0.checked_add(b.0)?,
+                    a.1.checked_add(b.1)?,
+                    a.2.checked_add(b.2)?,
+                    a.3.checked_add(b.3)?,
+                    *w,
+                ))
+            }
+            Operation::Mul => {
+                let (s, v) = match self.tile_literal_u64(x) {
+                    Some(s) => (s, y),
+                    None => (self.tile_literal_u64(y)?, x),
+                };
+                let a = self.cell_affine(v, input, captures, w, depth + 1)?;
+                Some((
+                    a.0.checked_mul(s)?,
+                    a.1.checked_mul(s)?,
+                    a.2.checked_mul(s)?,
+                    a.3.checked_mul(s)?,
+                    *w,
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
@@ -1964,27 +2348,237 @@ impl CategoryIr {
             )),
             // `Map` joins only when its body is classifiable — see the
             // `ElemSrc::Apply` doc for why it is not a peer of the other four.
-            Operation::Map { body, captures } if self.body_is_classifiable(body) => {
-                let arr_out = arr;
-                let arr = if captures == 0 {
+            Operation::Map { captures, .. } => {
+                let mapped = if captures == 0 {
                     morph.source
                 } else {
                     self.pair_slot_source(morph.source, captures)?
                 };
-                let inner = self
-                    .elem_law(arr, in_loop, depth + 1)
-                    .unwrap_or(ElemSrc::Load {
-                        source: morph.source,
-                        slot: (captures > 0).then_some(captures),
-                    });
-                Some(ElemSrc::Apply {
-                    body,
-                    source: morph.source,
-                    captures,
-                    inner: Box::new(inner),
-                    array: arr_out,
-                })
+                let inner = self.elem_law(mapped, in_loop, depth + 1);
+                self.map_apply(*definer, inner)
             }
+            _ => None,
+        }
+    }
+
+    /// **One `Map`'s element law, its input cut** (generic-fusion): what
+    /// `out[t]` is in terms of the mapped element as loaded — `elem_plan`'s
+    /// `Map` arm without the loop-residence guard, so a map inside a loop
+    /// (a row write into a carried state) has one too. `None` unless `m` is a
+    /// `Map` whose body is classifiable.
+    pub fn map_law(&self, m: MorphismId) -> Option<ElemSrc> {
+        self.map_apply(m, None)
+    }
+
+    /// The `Apply` of map `m` over `inner` (`None`: the mapped element loaded).
+    fn map_apply(&self, m: MorphismId, inner: Option<ElemSrc>) -> Option<ElemSrc> {
+        let morph = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        if !self.body_is_classifiable(body) {
+            return None;
+        }
+        let inner = inner.unwrap_or(ElemSrc::Load {
+            source: morph.source,
+            slot: (captures > 0).then_some(captures),
+        });
+        Some(ElemSrc::Apply {
+            body,
+            source: morph.source,
+            captures,
+            inner: Box::new(inner),
+            array: morph.target,
+            outside: self.map_outside(m),
+        })
+    }
+
+    /// [`Outside`] of map `m`: its mapped array is an `iota` of the output's
+    /// length (the element is the index `t`), its body's output a `Phi` on an
+    /// index interval of `t` whose other arm is `x[t]`, `x` a captured array
+    /// of the output's type read at `t` only.
+    fn map_outside(&self, m: MorphismId) -> Option<Outside> {
+        let morph = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        if captures == 0 {
+            return None;
+        }
+        let out_ty = &self.objects.get(morph.target)?.ty;
+        let Ty::Array { size: n, .. } = *out_ty else {
+            return None;
+        };
+        if self.tile_iota_size(self.pair_slot_source(morph.source, captures)?) != Some(n) {
+            return None;
+        }
+        let bd = self.func(body)?;
+        let input = bd.input;
+        let phi = self.tile_definer(bd.output, Operation::Phi)?;
+        let arm = |k| self.pair_slot_source(phi.source, k);
+        let (iv, inside_true) = self.index_interval(arm(2)?, input, captures)?;
+        let outer = arm(if inside_true { 1 } else { 0 })?;
+        let ix = self.tile_definer(outer, Operation::Index)?;
+        let slot = self
+            .tile_input_proj_index(self.pair_slot_source(ix.source, 0)?, input)
+            .filter(|&s| s < captures)?;
+        let x = self.pair_slot_source(morph.source, slot)?;
+        if self.objects.get(x)?.ty != *out_ty || !self.reads_only_at_t(bd, slot, captures) {
+            return None;
+        }
+        // `lo + len` must not wrap where the interval meets `[0, n)`.
+        if iv.d == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64 {
+            return None;
+        }
+        let e = match iv.e {
+            Some(k) => Some(self.pair_slot_source(morph.source, k)?),
+            None => None,
+        };
+        Some(Outside {
+            slot,
+            d: iv.d,
+            a: iv.a,
+            e,
+            b: iv.b,
+            len: iv.len,
+        })
+    }
+
+    /// Every use of capture `slot` in `bd` is an `Index` at the element `t`.
+    fn reads_only_at_t(&self, bd: &crate::graph::FuncDef, slot: u32, captures: u32) -> bool {
+        self.out_edges(bd.input).iter().all(|&p| {
+            let x = &self.morphisms[p];
+            x.op != (Operation::Proj { index: slot })
+                || self.out_edges(x.target).iter().all(|&q| {
+                    let y = &self.morphisms[q];
+                    matches!(y.op, Operation::Pair { slot: 0, .. })
+                        && self.out_edges(y.target).iter().all(|&r| {
+                            let z = &self.morphisms[r];
+                            z.op == Operation::Index
+                                && self
+                                    .pair_slot_source(z.source, 1)
+                                    .and_then(|a| self.tile_input_proj_index(a, bd.input))
+                                    == Some(captures)
+                        })
+                })
+        })
+    }
+
+    /// `cond` over the map element `t` (`Proj{captures}` of `input`) as an
+    /// index interval, and whether `t` is inside it when `cond` holds:
+    /// `t ÷ d == X` / `!=` (`[d·X, d·X + d)`), or `L ≤ t ∧ t < L + len` in
+    /// either operand order (`t ≥ L`, `L ≤ t`, `t > L − 1`; `t < H`, `H > t`,
+    /// `t ≤ H − 1`), `X`, `L` affine in one captured int scalar.
+    fn index_interval(&self, cond: ObjectId, input: ObjectId, captures: u32) -> Option<(Interval, bool)> {
+        let c = self.morphisms.get(*self.in_edges(cond).first()?)?;
+        let (x, y) = (self.pair_slot_source(c.source, 0)?, self.pair_slot_source(c.source, 1)?);
+        let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
+        match c.op {
+            Operation::Eq | Operation::Neq => {
+                let div_of_t = |o: ObjectId| {
+                    let g = self.tile_definer(o, Operation::Div)?;
+                    if !is_t(self.pair_slot_source(g.source, 0)?) {
+                        return None;
+                    }
+                    self.tile_literal_u64(self.pair_slot_source(g.source, 1)?).filter(|&d| d > 0)
+                };
+                let (d, other) = match div_of_t(x) {
+                    Some(d) => (d, y),
+                    None => (div_of_t(y)?, x),
+                };
+                let mut e = None;
+                let (a, b) = self.capture_affine(other, input, captures, &mut e, 0)?;
+                Some((Interval { d, a, e, b, len: d }, c.op == Operation::Eq))
+            }
+            Operation::And => {
+                let (bx, by) = (self.t_bound(x, input, captures)?, self.t_bound(y, input, captures)?);
+                let ((e1, a1, b1), (e2, a2, b2)) = match (bx, by) {
+                    (Bound::Lo(e1, a1, b1), Bound::Hi(e2, a2, b2))
+                    | (Bound::Hi(e2, a2, b2), Bound::Lo(e1, a1, b1)) => ((e1, a1, b1), (e2, a2, b2)),
+                    _ => return None,
+                };
+                let len = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
+                (a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
+                    Interval { d: 1, a: a1, e: e1.or(e2), b: b1, len },
+                    true,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// One comparison of `t` against an affine bound: `t ≥ a·e + b` as
+    /// `Lo(e, a, b)`, `t < a·e + b` as `Hi(e, a, b)`.
+    fn t_bound(&self, cmp: ObjectId, input: ObjectId, captures: u32) -> Option<Bound> {
+        let c = self.morphisms.get(*self.in_edges(cmp).first()?)?;
+        let (x, y) = (self.pair_slot_source(c.source, 0)?, self.pair_slot_source(c.source, 1)?);
+        let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
+        // Normalize to `t op bound`.
+        let (op, bound) = if is_t(x) {
+            (c.op, y)
+        } else if is_t(y) {
+            let flipped = match c.op {
+                Operation::Lt => Operation::Gt,
+                Operation::Gt => Operation::Lt,
+                Operation::Le => Operation::Ge,
+                Operation::Ge => Operation::Le,
+                _ => return None,
+            };
+            (flipped, x)
+        } else {
+            return None;
+        };
+        let mut e = None;
+        let (a, b) = self.capture_affine(bound, input, captures, &mut e, 0)?;
+        match op {
+            Operation::Ge => Some(Bound::Lo(e, a, b)),
+            Operation::Gt => Some(Bound::Lo(e, a, b.checked_add(1)?)),
+            Operation::Lt => Some(Bound::Hi(e, a, b)),
+            Operation::Le => Some(Bound::Hi(e, a, b.checked_add(1)?)),
+            _ => None,
+        }
+    }
+
+    /// `o` as `a·e + b` over one captured int scalar `e` (`Proj{k}` of the
+    /// body input, `k < captures`; the capture slot is recorded in `e`) and
+    /// literals: `Add`, `Sub`, `Mul` by a literal. Depth-guarded (J1).
+    fn capture_affine(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        e: &mut Option<u32>,
+        depth: u32,
+    ) -> Option<(i64, i64)> {
+        if depth > 16 {
+            return None;
+        }
+        let obj = self.objects.get(o)?;
+        if obj.kind == ObjectKind::Constant {
+            return match obj.value {
+                Some(Value::I32(v)) => Some((0, v.into())),
+                _ => None,
+            };
+        }
+        if let Some(k) = self.tile_input_proj_index(o, input) {
+            return (k < captures
+                && obj.ty == Ty::i32()
+                && *e.get_or_insert(k) == k)
+                .then_some((1, 0));
+        }
+        let mm = self.morphisms.get(*self.in_edges(o).first()?)?;
+        if !matches!(mm.op, Operation::Add | Operation::Sub | Operation::Mul) {
+            return None;
+        }
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        let (xa, xb) = self.capture_affine(x, input, captures, e, depth + 1)?;
+        let (ya, yb) = self.capture_affine(y, input, captures, e, depth + 1)?;
+        match mm.op {
+            Operation::Add => Some((xa.checked_add(ya)?, xb.checked_add(yb)?)),
+            Operation::Sub => Some((xa.checked_sub(ya)?, xb.checked_sub(yb)?)),
+            _ if xa == 0 => Some((ya.checked_mul(xb)?, yb.checked_mul(xb)?)),
+            _ if ya == 0 => Some((xa.checked_mul(yb)?, xb.checked_mul(yb)?)),
             _ => None,
         }
     }
@@ -2002,10 +2596,22 @@ impl CategoryIr {
     /// - **effect-free**: `tile_trap_free`'s catch-all arm answers `true` for
     ///   `Print`/`TimeMs`. Its existing callers are covered by token threading;
     ///   this one is not, so the check is made here rather than inherited.
+    ///
+    /// A nested `Map`/`Fold` whose own body is classifiable is too (a fixed
+    /// array is a finite trip; generic-fusion natural forms: an exponent as a
+    /// fold over a range): it can neither trap nor diverge nor print.
+    /// Depth-guarded (J1).
     fn body_is_classifiable(&self, body: FuncId) -> bool {
+        self.classifiable_at(body, 0)
+    }
+
+    fn classifiable_at(&self, body: FuncId, depth: u32) -> bool {
         let Some(def) = self.func(body) else {
             return false;
         };
+        if depth > 8 {
+            return false;
+        }
         let effectful = def.morphisms.iter().any(|m| {
             matches!(
                 self.morphisms.get(*m).map(|x| x.op),
@@ -2014,7 +2620,7 @@ impl CategoryIr {
         });
         !effectful
             && self.loop_structure(body).is_empty()
-            && self.tile_trap_free(body, &self.bounds_proof(body), None)
+            && self.trap_free_at(body, &self.bounds_proof(body), None, depth)
     }
 
     /// The law of component `slot` of `product`, cutting to a `Load` addressed
@@ -2053,13 +2659,25 @@ impl CategoryIr {
     /// emits only the recognized chain, so anything it would skip must be
     /// provably unobservable — pure, trap-free, and with no nested body it
     /// cannot see into. `Call` and any Map/Fold other than the recognized fold
-    /// (`allow_fold`) are rejected outright: their subgraphs could trap while
-    /// the tiled form skips them (an R1 divergence, not just a missed proof).
+    /// (`allow_fold`) are rejected unless their own body is classifiable
+    /// (pure, trap-free, loop-free — then skipping it is unobservable); any
+    /// other subgraph could trap while the tiled form skips it (an R1
+    /// divergence, not just a missed proof). `Call` is rejected outright.
     fn tile_trap_free(
         &self,
         f: FuncId,
         bounds: &BoundsProof,
         allow_fold: Option<MorphismId>,
+    ) -> bool {
+        self.trap_free_at(f, bounds, allow_fold, 0)
+    }
+
+    fn trap_free_at(
+        &self,
+        f: FuncId,
+        bounds: &BoundsProof,
+        allow_fold: Option<MorphismId>,
+        depth: u32,
     ) -> bool {
         self.func(f).is_some_and(|fd| {
             fd.morphisms.iter().all(|m| {
@@ -2079,8 +2697,9 @@ impl CategoryIr {
                     Operation::Index => bounds.proven(*m),
                     Operation::Update => false,
                     Operation::Call { .. } => false,
-                    Operation::Fold { .. } => allow_fold == Some(*m),
-                    Operation::Map { .. } => false,
+                    Operation::Fold { body, .. } | Operation::Map { body, .. } => {
+                        allow_fold == Some(*m) || self.classifiable_at(body, depth + 1)
+                    }
                     _ => true,
                 }
             })
@@ -3555,10 +4174,17 @@ impl CategoryIr {
     /// `Proj{k}` otherwise.
     ///
     /// [`Delta::Rows`] when the value crossing the back edge is reached from
-    /// that view through `Update`s only (`Proj`-of-`Pair` hops are transparent)
-    /// whose indices are all `a·t + b_j` — one int merge view `t`, one `a`, in
-    /// `t`'s wrapping arithmetic — and the `b_j` cover one contiguous range.
-    /// [`Delta::Top`] for every other carried array. Canonical loops only.
+    /// that view through `Update`s and piecewise maps only (`Proj`-of-`Pair`
+    /// hops are transparent; a map whose [`Outside`] slot is the walked array
+    /// writes its interval) whose cells are all `a·t + b_j` (+ the interval)
+    /// — one int merge view `t`, one `a`, in `t`'s wrapping arithmetic — and
+    /// together cover one contiguous range. [`Delta::Top`] for every other
+    /// carried array. Canonical loops only.
+    ///
+    /// A map's interval holds every cell it writes in `[0, n)` (the body
+    /// computes nothing else), and the trip's cells there are its interval's
+    /// — so the union is sound for maps too; where the interval misses the
+    /// array the claim is vacuous (see [`Delta::Rows`]).
     ///
     /// Why wrapping is enough: every index is `X + b_j` for the same wrapped
     /// `X = a·t`, and an executed `Update` traps unless its index is in
@@ -3621,10 +4247,29 @@ impl CategoryIr {
                     let mm = &self.morphisms[m];
                     let step = match mm.op {
                         Operation::Update => self.pair_slot_source(mm.source, 1).and_then(|i| {
-                            idxs.push(i);
+                            idxs.push(Outside {
+                                slot: 0,
+                                d: 1,
+                                a: 1,
+                                e: Some(i),
+                                b: 0,
+                                len: 1,
+                            });
                             self.pair_slot_source(mm.source, 0)
                         }),
                         Operation::Proj { .. } => self.proj_of_pair(o),
+                        // A piecewise map: only its interval is not the walked array's.
+                        Operation::Map { .. } => match self.map_law(m) {
+                            Some(ElemSrc::Apply {
+                                outside: Some(ou),
+                                source,
+                                ..
+                            }) => {
+                                idxs.push(ou);
+                                self.pair_slot_source(source, ou.slot)
+                            }
+                            _ => None,
+                        },
                         _ => None,
                     };
                     let Some(prev) = step else { break };
@@ -3677,15 +4322,23 @@ impl CategoryIr {
         out
     }
 
-    /// The [`Delta::Rows`] of one iteration's `Update` indices, or `None`.
-    fn rows_of(&self, idxs: &[ObjectId], merge: ObjectId, next: ObjectId) -> Option<Delta> {
+    /// The [`Delta::Rows`] of one iteration's writes, or `None`: each the
+    /// cells `[d·(a·e + b), … + len)` of an [`Outside`] piece (an `Update` at
+    /// `i` is `d = a = len = 1, b = 0, e = i`), `e` affine in the counter.
+    fn rows_of(&self, idxs: &[Outside], merge: ObjectId, next: ObjectId) -> Option<Delta> {
         let (mut var, mut a, mut bs) = (None, None, Vec::new());
-        for &i in idxs {
-            let (ai, bi) = self.affine_in(i, merge, &mut var, 0)?;
+        for p in idxs {
+            let (ae, be) = match p.e {
+                Some(e) => self.affine_in(e, merge, &mut var, 0)?,
+                None => (0, 0),
+            };
+            let d = i128::from(p.d);
+            let ai = d.checked_mul(i128::from(p.a).checked_mul(ae)?)?;
+            let bi = d.checked_mul(i128::from(p.a).checked_mul(be)?.checked_add(p.b.into())?)?;
             if *a.get_or_insert(ai) != ai {
                 return None;
             }
-            bs.push(bi);
+            bs.push((bi, i128::from(p.len)));
         }
         let var = var?;
         let bits = match self.objects[var].ty {
@@ -3698,12 +4351,20 @@ impl CategoryIr {
             let r = x.rem_euclid(m);
             (if r >= m / 2 { r - m } else { r }) as i64
         };
-        let mut bs: Vec<i64> = bs.into_iter().map(wrap).collect();
+        let mut bs: Vec<(i128, i128)> = bs.into_iter().map(|(b, l)| (i128::from(wrap(b)), l)).collect();
         bs.sort_unstable();
-        bs.dedup();
-        let (&lo, &hi) = (bs.first()?, bs.last()?);
-        let stride = u64::try_from(i128::from(hi) - i128::from(lo) + 1).ok()?;
-        (stride == bs.len() as u64).then_some(Delta::Rows {
+        // One contiguous union.
+        let lo = bs.first()?.0;
+        let mut end = lo;
+        for &(b, l) in &bs {
+            if b > end {
+                return None;
+            }
+            end = end.max(b + l);
+        }
+        let lo = i64::try_from(lo).ok()?;
+        let stride = u64::try_from(end - i128::from(lo)).ok()?;
+        Some(Delta::Rows {
             stride,
             start: Affine {
                 var,

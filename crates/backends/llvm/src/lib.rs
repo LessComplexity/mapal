@@ -1114,6 +1114,14 @@ fn emit_module(
         String::new()
     };
     out.push_str(&emit_main_wrapper(ir, &prologue));
+    // A device body's nested bodies are the host's text (generic-fusion
+    // natural forms: a fold inside a cell), carried with the epilogues'.
+    let nested: Vec<mapal_ir::FuncId> = gens
+        .iter()
+        .map(|g| g.1)
+        .chain(epi_calls.iter().map(|e| e.1))
+        .flat_map(|b| crate::func::resident::nested_bodies(ir, b))
+        .collect();
     let gens: Vec<crate::func::gpu::GenKernel> = gens
         .into_iter()
         .map(|(gid, body, elem)| (gid, fnames[body].clone(), elem, texts[body].clone()))
@@ -1121,6 +1129,11 @@ fn emit_module(
     // An epilogue calls the host's body text, or its device variant: the
     // same emitter with the cell-read slots as one-cell buffers.
     let mut epi_bodies: Vec<(String, String)> = Vec::new();
+    for nb in nested {
+        if !epi_bodies.iter().any(|(c, _)| *c == fnames[nb]) {
+            epi_bodies.push((fnames[nb].clone(), texts[nb].clone()));
+        }
+    }
     for (callee, body, slots) in epi_calls {
         if epi_bodies.iter().any(|(c, _)| *c == callee) {
             continue;

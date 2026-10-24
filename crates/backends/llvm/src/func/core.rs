@@ -475,6 +475,7 @@ impl<'a> FnEmit<'a> {
                 captures,
                 inner,
                 array: _,
+                outside: _,
             } => {
                 let src_ty = self.obj_ty(*source);
                 let inner_arr_ty = if *captures == 0 {

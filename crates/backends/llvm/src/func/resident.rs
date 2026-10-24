@@ -175,6 +175,25 @@ impl Epi {
     }
 }
 
+/// The `Map`/`Fold` bodies nested in `f`, transitively, in first-met order:
+/// the functions a device body calls, which the device unit carries too.
+pub(crate) fn nested_bodies(ir: &CategoryIr, f: FuncId) -> Vec<FuncId> {
+    let mut out: Vec<FuncId> = Vec::new();
+    let mut stack = vec![f];
+    while let Some(g) = stack.pop() {
+        for &m in ir.func(g).map_or(&[][..], |d| &d.morphisms[..]) {
+            if let Some(Operation::Map { body, .. } | Operation::Fold { body, .. }) =
+                ir.morphism(m).map(|x| x.op)
+                && !out.contains(&body)
+            {
+                out.push(body);
+                stack.push(body);
+            }
+        }
+    }
+    out
+}
+
 /// The base launch that writes an epilogue member's physical bytes.
 pub(super) fn grouped_writer(groups: &SecondaryMap<MorphismId, Epi>, o: ObjectId) -> Option<MorphismId> {
     groups
@@ -605,7 +624,15 @@ impl<'a> FnEmit<'a> {
     /// the same bits on the device as on the host. A float `%` does not: the
     /// host calls `fmodf`, NVPTX expands `frem` to `fma(-y, trunc(x / y), x)`
     /// (S53 review: 2051 of 4096 elements differ).
-    fn device_leaf(&self, body: FuncId) -> bool {
+    ///
+    /// A nested `Map`/`Fold` is one more body of the same kind (generic-fusion
+    /// natural forms): the device unit carries its text too
+    /// ([`nested_bodies`]). Depth-guarded (J1).
+    pub(super) fn device_leaf(&self, body: FuncId) -> bool {
+        self.device_leaf_at(body, 0)
+    }
+
+    fn device_leaf_at(&self, body: FuncId, depth: u32) -> bool {
         let Some(fd) = self.ir.func(body) else {
             return false;
         };
@@ -620,10 +647,13 @@ impl<'a> FnEmit<'a> {
                     .and_then(|o| o.ty.component_ty(0).cloned())
                     .is_some_and(|t| is_float(&t));
             !float_mod
-                && !matches!(
-                    x.op,
-                    Operation::Call(_) | Operation::Map { .. } | Operation::Fold { .. }
-                )
+                && match x.op {
+                    Operation::Call(_) => false,
+                    Operation::Map { body, .. } | Operation::Fold { body, .. } => {
+                        depth < 8 && self.device_leaf_at(body, depth + 1)
+                    }
+                    _ => true,
+                }
         });
         self.attrs.clean(body) && leaf
     }
@@ -1963,6 +1993,10 @@ impl<'a> FnEmit<'a> {
                         Some((self.fnames[law].clone(), t))
                     })
                     .collect();
+                let laws = c.laws.iter().map(|&(_, l)| l);
+                for nb in std::iter::once(c.body).chain(laws).flat_map(|b| nested_bodies(self.ir, b)) {
+                    fns.push((self.fnames[nb].clone(), self.body_text(nb, Vec::new())));
+                }
                 let kernel =
                     gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps);
                 (fns, kernel)
@@ -2042,8 +2076,15 @@ impl<'a> FnEmit<'a> {
         let valid = self.tmp();
         self.line(format!("{valid} = load i1, ptr {flag}"));
         let start = self.affine_cell(&wllt, &tv, &du.start);
+        // `Δ` is a claim about cells: rows past the array (a trip that writes
+        // nothing) cross whole. Unsigned: a start below zero fails too.
+        let fits = self.tmp();
+        let n = array_len(&self.obj_ty(t));
+        self.line(format!("{fits} = icmp ule i64 {start}, {}", n.saturating_sub(du.stride)));
+        let go = self.tmp();
+        self.line(format!("{go} = and i1 {valid}, {fits}"));
         let (rows, first, done) = (self.label(), self.label(), self.label());
-        self.line(format!("br i1 {valid}, label %{rows}, label %{first}"));
+        self.line(format!("br i1 {go}, label %{rows}, label %{first}"));
         self.label_line(&first);
         self.line(whole);
         self.line(format!("store i1 true, ptr {flag}"));
