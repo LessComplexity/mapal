@@ -21,5 +21,9 @@ python3 benches/gpu/gen_tiles.py /tmp/algos && cp /tmp/algos/*.mapal benches/alg
 | MLP in a loop | `pt_rt_mlp2_1024.mapal` |
 | residual MLP | `pt_rm_m128_d256_h512.mapal`, `pt_rm_m128_d1024_h2048.mapal` |
 | matmul cells | `mm_16x2048x7168.mapal`, `mm_16x1024x4096.mapal`, `mm_16x18432x7168.mapal`, `mm_128x2048x7168.mapal`, `mm_4096x4096x4096.mapal` |
+| FIR → ew → row sum | `pt_firew_rowsum_2048x2048_16.mapal`, `px_firew_rowsum_32x32_16.mapal` |
+| attention (matmul → softmax → matmul) | `pt_attn_{1024,2048}_{64,128}.mapal`, `px_attn_64_16.mapal` |
+| ew → conv → ew | `pt_ewconvew_2048_5.mapal`, `px_ewconvew_32_5.mapal` |
+| MLP | `pt_smlp_4096_256_1024.mapal`, `px_smlp_64_32_64.mapal` |
 
 `pt_*` are the timed suite programs; `px_*` are their small value-checked twins; `mm_*` the matmul cells.
