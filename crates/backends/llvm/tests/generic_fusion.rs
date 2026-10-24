@@ -14,7 +14,11 @@ mod testgen;
 
 fn lower(src: &str) -> CategoryIr {
     let po = mapal_syntax::parse(src);
-    assert!(po.diagnostics.is_empty(), "parse: {:?}\n{src}", po.diagnostics);
+    assert!(
+        po.diagnostics.is_empty(),
+        "parse: {:?}\n{src}",
+        po.diagnostics
+    );
     let ir = mapal_lower::lower(src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}\n{src}"));
     mapal_rewrite::rewrite(ir).ir
 }
@@ -23,15 +27,28 @@ fn lower(src: &str) -> CategoryIr {
 /// emulator cannot run: `async`, `pdl`, `streams`; `place` so every capable
 /// site is on the device).
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str]) -> mapal_backend_llvm::Emission {
+    emission_on(ir, target, off, EmitOpts::exact())
+}
+
+/// [`emission`] on the face `base` gives.
+fn emission_on(
+    ir: &CategoryIr,
+    target: &'static str,
+    off: &[&str],
+    base: EmitOpts,
+) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
-    for r in off.iter().chain(&["place", "async", "pdl", "streams", "pinned"]) {
+    for r in off
+        .iter()
+        .chain(&["place", "async", "pdl", "streams", "pinned"])
+    {
         *gpu.off.rung(r).expect("rung") = true;
     }
     let opts = EmitOpts {
         host: "generic",
         target,
         gpu,
-        ..EmitOpts::exact()
+        ..base
     };
     emit_detailed(ir, &opts).expect("emits")
 }
@@ -96,7 +113,9 @@ fn tail(o: &str, len: u64) -> String {
 }
 
 fn row_fold(o: &str, src: &str, n: u64, seed: &str, step: &str) -> String {
-    format!("    krange -> map {{ i -> ({seed}, krange) -> fold {{ acc, j -> {src}[i * {n} + j] -> e; {step} }} }} -> {o};\n")
+    format!(
+        "    krange -> map {{ i -> ({seed}, krange) -> fold {{ acc, j -> {src}[i * {n} + j] -> e; {step} }} }} -> {o};\n"
+    )
 }
 
 /// softmax over the rows of a tile site's output (the `softmax_rows` probe's
@@ -106,7 +125,13 @@ fn row_fold(o: &str, src: &str, n: u64, seed: &str, step: &str) -> String {
 fn softmax(n: u64) -> String {
     let expo = "x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; v0 * v0 -> v1; v1 * v1 -> v2; v2 * v2 -> v3; v3 * v3 -> v4; v4 * v4 -> v5; v5 * v5 -> v6; v6 * v6 -> v7; v7 * v7 -> v8; v8";
     head(n)
-        + &row_fold("mx", "c", n, "-1000000000.0", "(e > acc) -> { -true-> e; -false-> acc; }")
+        + &row_fold(
+            "mx",
+            "c",
+            n,
+            "-1000000000.0",
+            "(e > acc) -> { -true-> e; -false-> acc; }",
+        )
         + &format!("    ta -> map {{ t -> (c[t] - mx[t / {n}]) / {n}.0 -> x; {expo} }} -> ex;\n")
         + &row_fold("den", "ex", n, "0.0", "acc + e")
         + &format!("    ta -> map {{ t -> ex[t] / den[t / {n}] }} -> y;\n")
@@ -122,8 +147,14 @@ fn softmax_rows_is_one_unit_below_the_tile() {
         let (on, l_on, l_off) = check(&softmax(N), target);
         assert_eq!((l_on, l_off), (2, 5), "{target}");
         let dev = on.device.as_ref().unwrap();
-        let line = dev.lines().find(|l| l.starts_with("; mapal.fuse kernel=")).expect("a fuse intent");
-        assert!(line.contains("store=y ") && line.contains("keep=mx:reg:4;ex:reg:0;den:reg:4"), "{line}");
+        let line = dev
+            .lines()
+            .find(|l| l.starts_with("; mapal.fuse kernel="))
+            .expect("a fuse intent");
+        assert!(
+            line.contains("store=y ") && line.contains("keep=mx:reg:4;ex:reg:0;den:reg:4"),
+            "{line}"
+        );
     }
 }
 
@@ -172,8 +203,14 @@ fn halo_of_a_free_cell_is_recomputed() {
     let (on, l_on, l_off) = check(&src, "h100-pcie");
     assert_eq!((l_on, l_off), (3, 4));
     let dev = on.device.unwrap();
-    let line = dev.lines().find(|l| l.starts_with("; mapal.fuse kernel=")).expect("a unit");
-    assert!(line.contains("q:cell:1x1+halo") && line.contains("keep=x:reg:4"), "{line}");
+    let line = dev
+        .lines()
+        .find(|l| l.starts_with("; mapal.fuse kernel="))
+        .expect("a unit");
+    assert!(
+        line.contains("q:cell:1x1+halo") && line.contains("keep=x:reg:4"),
+        "{line}"
+    );
 }
 
 /// `window`: a 2-D convolution (`k÷3`, `k%3` taps) runs on the device; OFF it
@@ -210,7 +247,10 @@ fn window_conv_runs_on_the_device() {
     assert!(dev.contains("kind=naive") && dev.contains("epi=1"), "{dev}");
     assert_eq!(emu::run_emulated(&clang, &on.text, dev), rr.output);
     let off = emission(&ir, "rtx-4090", &["window"]);
-    assert!(off.device.is_none(), "window off: the conv stays on the host");
+    assert!(
+        off.device.is_none(),
+        "window off: the conv stays on the host"
+    );
 }
 
 /// `window`: a weightless 2-D window (a 2×2 box filter) over the conv's device
@@ -325,13 +365,23 @@ fn check_program_file() {
 #[test]
 #[ignore]
 fn dump_intents() {
-    let src = std::env::var("FUSE_SRC").map_or_else(|_| softmax(N), |p| std::fs::read_to_string(p).unwrap());
+    let src = std::env::var("FUSE_SRC")
+        .map_or_else(|_| softmax(N), |p| std::fs::read_to_string(p).unwrap());
     let ir = lower(&src);
     let on = emission(&ir, "rtx-4090", &[]);
-    for l in on.text.lines().filter(|l| l.contains("mapal.fuse") || l.contains("launch")) {
+    for l in on
+        .text
+        .lines()
+        .filter(|l| l.contains("mapal.fuse") || l.contains("launch"))
+    {
         eprintln!("{l}");
     }
-    for l in on.device.unwrap().lines().filter(|l| l.contains("mapal.fuse") || l.contains("mapal.plan")) {
+    for l in on
+        .device
+        .unwrap()
+        .lines()
+        .filter(|l| l.contains("mapal.fuse") || l.contains("mapal.plan"))
+    {
         eprintln!("{l}");
     }
 }
@@ -410,15 +460,27 @@ fn generic_fusion_chains_values_launches_and_stores() {
     let strat = testgen::chain_strategy();
     let mut findings = Vec::new();
     let (mut device, mut units, mut members, mut kept, mut halos, mut saved) = (0, 0, 0, 0, 0, 0);
+    let mut defaults = 0;
+    let lines_of = |d: &str| -> Vec<String> {
+        d.lines()
+            .filter(|l| l.starts_with("; mapal.fuse kernel="))
+            .map(String::from)
+            .collect()
+    };
     let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     for z in 0..n {
         let ch = strat.new_tree(&mut runner).unwrap().current();
         let src = ch.source();
         let ir = lower(&src);
         let rr = run(&ir, 400_000_000);
-        assert!(matches!(rr.outcome, Outcome::Done(_)), "chain#{z} does not finish\n{src}");
+        assert!(
+            matches!(rr.outcome, Outcome::Done(_)),
+            "chain#{z} does not finish\n{src}"
+        );
         let target = if z % 2 == 0 { "rtx-4090" } else { "h100-pcie" };
-        let ems = std::panic::catch_unwind(|| (emission(&ir, target, &[]), emission(&ir, target, &["fuse"])));
+        let ems = std::panic::catch_unwind(|| {
+            (emission(&ir, target, &[]), emission(&ir, target, &["fuse"]))
+        });
         let Ok((on, off)) = ems else {
             findings.push(format!("chain#{z} {target}: the emitter panicked\n{src}"));
             continue;
@@ -433,17 +495,56 @@ fn generic_fusion_chains_values_launches_and_stores() {
         for (arm, em, dev) in [("on", &on, don), ("off", &off, doff)] {
             let got = emu::run_emulated(&clang, &em.text, dev);
             if got != rr.output {
-                findings.push(format!("chain#{z} {target} fuse {arm}: {got:?} != {:?}\n{src}", rr.output));
+                findings.push(format!(
+                    "chain#{z} {target} fuse {arm}: {got:?} != {:?}\n{src}",
+                    rr.output
+                ));
+            }
+        }
+        // 1b. The default face (fma steps, order free): a unit evaluates each
+        // member as its own launch does — the same body text, the same
+        // in-order fold — so on equals off bit for bit (every 4th program).
+        if z % 4 == 0 && !lines_of(don).is_empty() {
+            let base = EmitOpts::default();
+            let (a, b) = (
+                emission_on(&ir, target, &[], base),
+                emission_on(&ir, target, &["fuse"], base),
+            );
+            if let (Some(da), Some(db)) = (&a.device, &b.device) {
+                defaults += 1;
+                let (ga, gb) = (
+                    emu::run_emulated(&clang, &a.text, da),
+                    emu::run_emulated(&clang, &b.text, db),
+                );
+                if ga != gb {
+                    findings.push(format!(
+                        "chain#{z} {target} default face: on {ga:?} != off {gb:?}\n{src}"
+                    ));
+                }
             }
         }
         // 2. Tile roots unchanged.
-        let epi = |d: &str| d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" epi=1 ")).count();
+        let epi = |d: &str| {
+            d.lines()
+                .filter(|l| l.starts_with("; mapal.plan") && l.contains(" epi=1 "))
+                .count()
+        };
         if epi(don) != epi(doff) {
-            findings.push(format!("chain#{z}: tile roots {} on, {} off\n{src}", epi(don), epi(doff)));
+            findings.push(format!(
+                "chain#{z}: tile roots {} on, {} off\n{src}",
+                epi(don),
+                epi(doff)
+            ));
         }
         // 3. Launches.
-        let lines: Vec<&str> = don.lines().filter(|l| l.starts_with("; mapal.fuse kernel=")).collect();
-        let unit_members: usize = lines.iter().map(|l| labels(field(l, "members")).len()).sum();
+        let lines: Vec<&str> = don
+            .lines()
+            .filter(|l| l.starts_with("; mapal.fuse kernel="))
+            .collect();
+        let unit_members: usize = lines
+            .iter()
+            .map(|l| labels(field(l, "members")).len())
+            .sum();
         let (l_on, u_on) = launches(&on.text);
         let (l_off, _) = launches(&off.text);
         if u_on != lines.len() || l_on + unit_members != l_off + lines.len() {
@@ -461,15 +562,20 @@ fn generic_fusion_chains_values_launches_and_stores() {
             let keep = labels(field(l, "keep"));
             kept += keep.len();
             halos += usize::from(field(l, "members").contains("+halo"));
-            let objs: Vec<(String, Option<ObjectId>)> =
-                store.iter().chain(&keep).map(|x| (x.clone(), named(&ir, x))).collect();
+            let objs: Vec<(String, Option<ObjectId>)> = store
+                .iter()
+                .chain(&keep)
+                .map(|x| (x.clone(), named(&ir, x)))
+                .collect();
             let ms: Vec<MorphismId> = objs
                 .iter()
                 .filter_map(|(_, o)| o.and_then(|o| ir.in_edges(o).first().copied()))
                 .collect();
             for (label, o) in &objs {
                 let Some(o) = *o else {
-                    findings.push(format!("chain#{z}: unit member {label} names no object\n{l}"));
+                    findings.push(format!(
+                        "chain#{z}: unit member {label} names no object\n{l}"
+                    ));
                     continue;
                 };
                 let outside = lup.escapes(o) || readers(&ir, o).iter().any(|r| !ms.contains(r));
@@ -481,27 +587,49 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 }
             }
             let name = field(l, "kernel");
-            let def = don.lines().find(|d| d.contains(&format!("void @{name}("))).unwrap_or("");
+            let def = don
+                .lines()
+                .find(|d| d.contains(&format!("void @{name}(")))
+                .unwrap_or("");
             let params = def.matches("ptr addrspace(1)").count();
             if params != store.len() + labels(field(l, "gmem")).len() {
-                findings.push(format!("chain#{z}: {name} has {params} pointers\n{l}\n{def}"));
+                findings.push(format!(
+                    "chain#{z}: {name} has {params} pointers\n{l}\n{def}"
+                ));
             }
         }
-        for l in on.text.lines().filter_map(|l| l.trim().strip_prefix("; mapal.fuse.host ")) {
+        for l in on
+            .text
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("; mapal.fuse.host "))
+        {
             for r in field(l, "refused").split(';').filter(|x| !x.is_empty()) {
-                *reasons.entry(r.rsplit(':').next().unwrap().to_string()).or_default() += 1;
+                *reasons
+                    .entry(r.rsplit(':').next().unwrap().to_string())
+                    .or_default() += 1;
             }
         }
         // 5. Movement per trip.
         let (pon, poff) = (planned_moves(&on.text), planned_moves(&off.text));
         if pon.len() != poff.len() || pon.iter().zip(&poff).any(|(a, b)| a.0 > b.0 || a.1 > b.1) {
-            findings.push(format!("chain#{z}: per-trip moves on {pon:?} off {poff:?}\n{src}"));
+            findings.push(format!(
+                "chain#{z}: per-trip moves on {pon:?} off {poff:?}\n{src}"
+            ));
         }
     }
-    assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
+    assert!(
+        findings.is_empty(),
+        "{} findings:\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
     eprintln!(
         "generic_fusion_chains: {n} programs, {device} with a device unit; {units} units of {members} members \
-         ({kept} kept, {halos} with a halo); {saved} launches removed; refusals {reasons:?}"
+         ({kept} kept, {halos} with a halo); {saved} launches removed; refusals {reasons:?}; \
+         {defaults} default-face programs on == off"
     );
-    assert!(n < 256 || (device >= 128 && units >= 32 && kept > 0), "too few fused programs");
+    assert!(
+        n < 256 || (device >= 128 && units >= 32 && kept > 0),
+        "too few fused programs"
+    );
 }

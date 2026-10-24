@@ -108,13 +108,10 @@ enum Cand {
 /// rows spread over every SM (`gpu::rowfold_grid`'s rule), else 256 a block
 /// (`gpu::cell_grid`).
 pub(crate) fn unit_grid(u: &Unit, profile: &TargetProfile) -> (u64, u64) {
-    let fold = u
-        .members
-        .iter()
-        .find_map(|mb| match &mb.kind {
-            UKind::Fold { site, .. } => Some(site),
-            _ => None,
-        });
+    let fold = u.members.iter().find_map(|mb| match &mb.kind {
+        UKind::Fold { site, .. } => Some(site),
+        _ => None,
+    });
     match fold {
         Some(site) => gpu::rowfold_grid(site, profile),
         None => gpu::cell_grid(u.rows),
@@ -151,7 +148,8 @@ fn rowwise(reach: &Reach, cw: u64, pw: u64, rows: u64) -> bool {
         return false;
     };
     let inside = |i: u64| {
-        span(reach, i * cw..(i + 1) * cw).is_some_and(|s| s.start >= i * pw && s.end <= (i + 1) * pw)
+        span(reach, i * cw..(i + 1) * cw)
+            .is_some_and(|s| s.start >= i * pw && s.end <= (i + 1) * pw)
     };
     if *w > 0 && cw % w == 0 {
         return [0, 1.min(rows - 1), rows - 1].into_iter().all(inside);
@@ -208,7 +206,11 @@ impl<'a> FnEmit<'a> {
                 loop {
                     let mut next: Vec<(MorphismId, MorphismId)> = g
                         .iter()
-                        .flat_map(|&x| self.cell_readers(target(x)).into_iter().map(move |r| (x, r)))
+                        .flat_map(|&x| {
+                            self.cell_readers(target(x))
+                                .into_iter()
+                                .map(move |r| (x, r))
+                        })
                         .filter(|&(_, r)| {
                             cand.contains_key(r) && !taken.contains_key(r) && !g.contains(&r)
                         })
@@ -390,10 +392,13 @@ impl<'a> FnEmit<'a> {
         for &m in ms {
             let morph = self.ir.morphism(m).expect("member");
             let w = extent(m) / rows;
-            let member = |o: ObjectId, members: &[UMember]| members.iter().position(|mb| mb.out == o);
+            let member =
+                |o: ObjectId, members: &[UMember]| members.iter().position(|mb| mb.out == o);
             let mb = match &cand[m] {
                 Cand::Fold(r) => {
-                    let a = self.pair_source(morph.source, r.site.a.slot).ok_or("footprint")?;
+                    let a = self
+                        .pair_source(morph.source, r.site.a.slot)
+                        .ok_or("footprint")?;
                     let src = match member(a, &members) {
                         Some(k) => {
                             let reach = reach_of(m, r.site.a.slot).ok_or("footprint")?;
@@ -466,7 +471,9 @@ impl<'a> FnEmit<'a> {
             members.push(mb);
         }
         for mb in &mut members {
-            mb.store = self.lup.escapes(mb.out) || plan.is_carry_next(mb.out) || self.read_outside(mb.out, ms);
+            mb.store = self.lup.escapes(mb.out)
+                || plan.is_carry_next(mb.out)
+                || self.read_outside(mb.out, ms);
         }
         // Budget: one pointer per operand and stored value; per-row values
         // held in registers beside the address state.
@@ -475,7 +482,8 @@ impl<'a> FnEmit<'a> {
         if gmem.len() + stored > gpu::LAUNCHV_MAX {
             return Err("pointers");
         }
-        let elem = |o: ObjectId| crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(o)));
+        let elem =
+            |o: ObjectId| crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(o)));
         let held: u64 = members
             .iter()
             .filter(|mb| mb.per_row())
@@ -487,7 +495,9 @@ impl<'a> FnEmit<'a> {
         }
         if let Some(d) = gpu.cost {
             let (fused, unfused) = self.unit_roofline(&members, rows, &gmem, elem);
-            let ns = |(f, b): (u64, u64)| crate::profile::roofline_ns(f, b, d.flops_per_ns, d.bytes_per_ns);
+            let ns = |(f, b): (u64, u64)| {
+                crate::profile::roofline_ns(f, b, d.flops_per_ns, d.bytes_per_ns)
+            };
             let unfused: u64 = unfused.into_iter().map(|x| d.launch_ns + ns(x)).sum();
             if d.launch_ns + ns(fused) > unfused {
                 return Err("cost");
@@ -539,7 +549,12 @@ impl<'a> FnEmit<'a> {
                 }
             }
         }
-        let gmem_reads = |mb: &UMember| mb.srcs.iter().filter(|s| matches!(s, USrc::Gmem(_))).count() as u64;
+        let gmem_reads = |mb: &UMember| {
+            mb.srcs
+                .iter()
+                .filter(|s| matches!(s, USrc::Gmem(_)))
+                .count() as u64
+        };
         let e = gmem.first().map_or(4, |&o| elem(o));
         let flops: u64 = evals.iter().sum();
         let bytes: u64 = members
@@ -589,17 +604,24 @@ impl<'a> FnEmit<'a> {
             self.allocas
                 .push_str(&format!("  {s} = alloca i64\n  store i64 0, ptr {s}\n"));
             let d = self.tmp();
-            self.line(format!("{d} = call i64 @mapal_gpu_alloc(ptr {s}, i64 {ob})"));
-            self.line(format!("call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {ob})"));
+            self.line(format!(
+                "{d} = call i64 @mapal_gpu_alloc(ptr {s}, i64 {ob})"
+            ));
+            self.line(format!(
+                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {ob})"
+            ));
             temps.push(s);
             ptrs.push(d);
         }
         let args = format!("%dv{}", self.fresh());
         let np = ptrs.len();
-        self.allocas.push_str(&format!("  {args} = alloca [{np} x i64]\n"));
+        self.allocas
+            .push_str(&format!("  {args} = alloca [{np} x i64]\n"));
         for (i, p) in ptrs.iter().enumerate() {
             let g = self.tmp();
-            self.line(format!("{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"));
+            self.line(format!(
+                "{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"
+            ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
         let (gx, block) = unit_grid(u, self.profile);
@@ -756,14 +778,17 @@ impl<'a> FnEmit<'a> {
         }
         for i in 0..u.gmem.len() {
             params.push(format!("ptr addrspace(1) readonly %x{i}"));
-            g.entry
-                .push_str(&format!("  %xg{i} = addrspacecast ptr addrspace(1) %x{i} to ptr\n"));
+            g.entry.push_str(&format!(
+                "  %xg{i} = addrspacecast ptr addrspace(1) %x{i} to ptr\n"
+            ));
         }
         for (k, c) in g.calls.iter().enumerate() {
             if let Some(c) = c {
                 for &s in &c.slots {
-                    g.entry
-                        .push_str(&format!("  %b{k}_{s} = alloca {}\n", c.field_ty[s as usize]));
+                    g.entry.push_str(&format!(
+                        "  %b{k}_{s} = alloca {}\n",
+                        c.field_ty[s as usize]
+                    ));
                 }
             }
         }
@@ -781,8 +806,17 @@ impl<'a> FnEmit<'a> {
             .members
             .iter()
             .map(|mb| {
-                let halo = mb.srcs.iter().any(|s| matches!(s, USrc::Member { row: false, .. }));
-                format!("{}:{}:1x{}{}", label(mb.out), kind(mb), mb.w, if halo { "+halo" } else { "" })
+                let halo = mb
+                    .srcs
+                    .iter()
+                    .any(|s| matches!(s, USrc::Member { row: false, .. }));
+                format!(
+                    "{}:{}:1x{}{}",
+                    label(mb.out),
+                    kind(mb),
+                    mb.w,
+                    if halo { "+halo" } else { "" }
+                )
             })
             .collect();
         let keep: Vec<String> = u
@@ -790,7 +824,8 @@ impl<'a> FnEmit<'a> {
             .iter()
             .filter(|mb| !mb.store)
             .map(|mb| {
-                let e = crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)));
+                let e =
+                    crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)));
                 format!("{}:reg:{}", label(mb.out), if mb.per_row() { e } else { 0 })
             })
             .collect();
@@ -947,7 +982,9 @@ impl UnitGen<'_> {
     fn load(&mut self, g: usize, at: &str) -> String {
         let ty = self.gmem_ty[g].clone();
         let p = self.tmp();
-        self.line(format!("{p} = getelementptr inbounds {ty}, ptr addrspace(1) %x{g}, i64 {at}"));
+        self.line(format!(
+            "{p} = getelementptr inbounds {ty}, ptr addrspace(1) %x{g}, i64 {at}"
+        ));
         let v = self.tmp();
         self.line(format!("{v} = load {ty}, ptr addrspace(1) {p}"));
         v
@@ -958,7 +995,9 @@ impl UnitGen<'_> {
         match s {
             USrc::Member { k, reach, row } => {
                 if self.u.members[*k].per_row() && *row {
-                    return self.vals[*k].clone().expect("a per-row value is read after its phase");
+                    return self.vals[*k]
+                        .clone()
+                        .expect("a per-row value is read after its phase");
                 }
                 let a = self.addr(reach, t, taps);
                 self.cell(*k, &a)
@@ -974,7 +1013,8 @@ impl UnitGen<'_> {
         let u = self.u;
         let mb = &u.members[k];
         let c = self.calls[k].as_ref().expect("a cell member");
-        let (callee, arg, ret, captures) = (c.callee.clone(), c.arg.clone(), c.ret.clone(), c.captures);
+        let (callee, arg, ret, captures) =
+            (c.callee.clone(), c.arg.clone(), c.ret.clone(), c.captures);
         let field_ty = c.field_ty.clone();
         let laws = c.laws.clone();
         let mut fields: Vec<(String, String)> = Vec::new();
@@ -1033,7 +1073,9 @@ impl UnitGen<'_> {
                 },
             };
             let p = self.tmp();
-            self.line(format!("{p} = getelementptr inbounds {ty}, ptr addrspace(1) %y{j}, i64 {at}"));
+            self.line(format!(
+                "{p} = getelementptr inbounds {ty}, ptr addrspace(1) %y{j}, i64 {at}"
+            ));
             self.line(format!("store {ty} {v}, ptr addrspace(1) {p}"));
         }
     }
@@ -1096,7 +1138,11 @@ impl UnitGen<'_> {
                             Operation::Sub => "fsub",
                             _ => "fmul",
                         };
-                        let (x, y) = if acc_first { (acc.clone(), v) } else { (v, acc.clone()) };
+                        let (x, y) = if acc_first {
+                            (acc.clone(), v)
+                        } else {
+                            (v, acc.clone())
+                        };
                         format!("{acc}n = {code} {t} {x}, {y}")
                     }
                     RowFoldOp::Select {
@@ -1110,8 +1156,16 @@ impl UnitGen<'_> {
                             Operation::Le => "ole",
                             _ => "oge",
                         };
-                        let (x, y) = if acc_lhs { (acc.clone(), v.clone()) } else { (v.clone(), acc.clone()) };
-                        let (p, q) = if acc_if_true { (acc.clone(), v) } else { (v, acc.clone()) };
+                        let (x, y) = if acc_lhs {
+                            (acc.clone(), v.clone())
+                        } else {
+                            (v.clone(), acc.clone())
+                        };
+                        let (p, q) = if acc_if_true {
+                            (acc.clone(), v)
+                        } else {
+                            (v, acc.clone())
+                        };
                         let c = self.tmp();
                         self.line(format!("{c} = fcmp {pred} {t} {x}, {y}"));
                         format!("{acc}n = select i1 {c}, {t} {p}, {t} {q}")
