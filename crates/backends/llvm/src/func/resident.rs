@@ -935,8 +935,10 @@ impl<'a> FnEmit<'a> {
             };
             // The counter is a `Proj` of the loop's merge.
             let merge = self.ir.in_edges(start.var).first();
+            // (A range wider than the array is the whole upload.)
             if let Some(merge) = merge.and_then(|&m| self.ir.morphism(m)).map(|m| m.source)
                 && upload.contains_key(next)
+                && stride <= array_len(&self.obj_ty(next))
             {
                 out.insert(
                     next,
@@ -2077,10 +2079,11 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{valid} = load i1, ptr {flag}"));
         let start = self.affine_cell(&wllt, &tv, &du.start);
         // `Δ` is a claim about cells: rows past the array (a trip that writes
-        // nothing) cross whole. Unsigned: a start below zero fails too.
+        // nothing) cross whole. Unsigned: a start below zero fails too. (A
+        // delta upload is never wider than its array: `delta_uploads`.)
         let fits = self.tmp();
-        let n = array_len(&self.obj_ty(t));
-        self.line(format!("{fits} = icmp ule i64 {start}, {}", n.saturating_sub(du.stride)));
+        let last = array_len(&self.obj_ty(t)) - du.stride;
+        self.line(format!("{fits} = icmp ule i64 {start}, {last}"));
         let go = self.tmp();
         self.line(format!("{go} = and i1 {valid}, {fits}"));
         let (rows, first, done) = (self.label(), self.label(), self.label());

@@ -120,9 +120,10 @@ fn deltas(ir: &CategoryIr) -> Vec<Option<(u64, i64, i64)>> {
 
 /// The range map at the array's edges: a row below zero (empty), a range
 /// reaching past either end, two writes whose union is one range, a column
-/// past the row width (empty), and a device site over the written state
-/// (retained: its delta upload falls back to whole where the rows miss the
-/// array) — in place on the host, on the device with every site placed there.
+/// past the row width (empty), a range wider than the array, and a device
+/// site over the written state (retained: its delta upload falls back to
+/// whole where the rows miss the array) — in place on the host, on the device
+/// with every site placed there.
 #[test]
 fn range_map_at_the_edges_matches_the_oracle() {
     let Some(clang) = clang() else {
@@ -162,7 +163,9 @@ fn range_map_at_the_edges_matches_the_oracle() {
         "(c / 32 == t) -> { -true-> { c -> widen_f32 -> f; f / 32.0 + z[c] } -false-> x[c]; }",
         "(c % 32 == t) -> { -true-> { c -> widen_f32 -> f; f / 32.0 + z[c] } -false-> x[c]; }",
     );
-    for (src, want) in [(rows, Some((35, 32, -3))), (&column[..], None)] {
+    // A range wider than the array: its delta is never an upload's.
+    let wide = rows.replace("(c >= t * 32 - 3 && c < t * 32 + 2)", "(c >= t * 32 && c < t * 32 + 2000)");
+    for (src, want) in [(rows, Some((35, 32, -3))), (&column[..], None), (&wide[..], Some((2000, 32, 0)))] {
         let ir = lower(src);
         // The writes union to `[32t − 3, 32t + 32)`; a column is no range.
         assert!(deltas(&ir).contains(&want), "{:?}", deltas(&ir));
