@@ -244,7 +244,7 @@ say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chai
 # S64: and every `.on-<rung>` arm (the re-judged rows' flipped arms).
 off_arms() { local o; for o in "$PROF/$1".off-*.host.o "$PROF/$1".on-*.host.o; do [ -f "$o" ] && { o=${o%.host.o}; echo "${o##*.}"; }; done; }
 # S62: the CPU-only build and the null copy, where the bundle built them.
-xtra_arms() { local x; for x in cpu cpu-inline null; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
+xtra_arms() { local x; for x in cpu cpu-inline cpu-off-by-ref null; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
 # probe_out <stem>: one untraced process's stdout, one line (`iter ms` included).
 probe_out() { MAPAL_PTX="$PROF/$1.ptx" "./pt_$1" 2>/dev/null | tr '\n' ' '; }
 val_fail=0

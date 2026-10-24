@@ -1611,3 +1611,121 @@ fn build_lift_map(
 fn pair_ty() -> Ty {
     Ty::Tuple(vec![Ty::i32(), Ty::i32()])
 }
+
+// --- S65: device-sized loops, as Mapal source --------------------------------
+
+/// A loop over `[f32; n·n]` arrays sized for a device (`n` 32 or 64): one or
+/// two carried arrays (`x`, `y`) from closed-form inits and a loop-invariant
+/// `w`; per trip `ops` over them — affine sites (`Σ_k A[i·n+k]·B[k·n+j]`),
+/// per-cell maps (relu, scale, a two-array sum), guards choosing between
+/// arrays, row writes into the state (`x[it·n + j] <- v`, the value one
+/// element of another array); each state's next value picked from what the
+/// trip made, the state itself or `w`; the exit forwards a state, read by one
+/// element or whole. Built as source text (no parser dependency here).
+#[derive(Clone, Debug)]
+pub struct DeviceProg {
+    pub big: bool,
+    pub trips: u8,
+    pub two: bool,
+    pub ops: Vec<[u8; 3]>,
+    pub next: [u8; 2],
+    pub exit: bool,
+    pub whole: bool,
+}
+
+pub fn device_prog_strategy() -> impl Strategy<Value = DeviceProg> {
+    (
+        prop::bool::weighted(0.25),
+        1u8..5,
+        any::<bool>(),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 1..5),
+        prop::array::uniform2(any::<u8>()),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(big, trips, two, ops, next, exit, whole)| DeviceProg {
+            big,
+            trips,
+            two,
+            ops,
+            next,
+            exit,
+            whole,
+        })
+}
+
+/// [`DeviceProg`]'s source text.
+pub fn device_src(p: &DeviceProg) -> String {
+    let n = if p.big { 64 } else { 32 };
+    let nn = n * n;
+    let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
+        format!("    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n", h = m / 2)
+    };
+    let mut s = format!("fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n");
+    s += &law("a0", 7, 13, 101, 8 * n);
+    s += &law("a1", 5, 3, 97, 8 * n);
+    s += &law("w", 11, 57, 103, 4 * n);
+    s += &format!("    mut x: [f32; {nn}] <- a0;\n");
+    if p.two {
+        s += &format!("    mut y: [f32; {nn}] <- a1;\n");
+    }
+    s += "    mut it: i32 <- 0;\n    loop {\n        (it < ";
+    s += &format!("{}) -> {{\n            -true-> {{\n", p.trips);
+    let ind = "                ";
+    let mut arrs: Vec<String> = vec!["x".into()];
+    if p.two {
+        arrs.push("y".into());
+    }
+    arrs.push("w".into());
+    let pick = |v: &[String], k: u8| v[k as usize % v.len()].clone();
+    // The ops chain: each reads the one before (so every value the trip makes
+    // is live — a loop runs only what feeds its next state or its exit), and
+    // a second operand from anything made so far; the last is `x`'s next.
+    let mut cur = "x".to_string();
+    for (z, &[op, _, b]) in p.ops.iter().enumerate() {
+        // (Most chains start at a site: a device unit to place.)
+        let op = if z == 0 && op % 4 != 3 { 0 } else { op % 6 };
+        let (x, y) = (cur.clone(), pick(&arrs, b));
+        let z = format!("z{z}");
+        s += ind;
+        s += &match op {
+            0 => format!(
+                "ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {y}[k * {n} + j] }} }} -> {z};\n"
+            ),
+            1 => format!("{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n"),
+            2 => format!("{x} -> map {{ v -> v * 0.5 }} -> {z};\n"),
+            3 => format!("ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n"),
+            4 => format!("(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n", b % (p.trips + 1)),
+            _ => {
+                // A row write into the state `x`: the trip's row, its cell `j`
+                // one element of the chain (a copy-out when that one lives on
+                // the device).
+                let j = u32::from(b) % n;
+                cur = "x".into();
+                format!("{x}[it * {n} + {j}] * 0.5 + 0.25 -> {z}v;\n{ind}x[it * {n} + {j}] <- {z}v;\n")
+            }
+        };
+        if op != 5 {
+            arrs.push(z.clone());
+            cur = z;
+        }
+    }
+    if cur != "x" {
+        s += &format!("{ind}{cur} -> x;\n");
+    }
+    if p.two {
+        // `y`'s next: itself, `w`, `x`'s new value or the trip's first array.
+        let first = arrs[3.min(arrs.len() - 1)].clone();
+        let ny = pick(&["y".to_string(), "w".to_string(), "x".to_string(), first], p.next[1]);
+        if ny != "y" {
+            s += &format!("{ind}{ny} -> y;\n");
+        }
+    }
+    let out = if p.exit && p.two { "y" } else { "x" };
+    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n");
+    s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", nn - 1);
+    if p.whole {
+        s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
+    }
+    s + "}\n"
+}

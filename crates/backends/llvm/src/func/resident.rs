@@ -69,6 +69,14 @@ pub(crate) struct Carry {
     pub exit: Option<ObjectId>,
 }
 
+impl Carry {
+    /// The object whose device slot is this component's buffer: its first
+    /// view (one per component — a state may carry several arrays).
+    pub(crate) fn key(&self) -> ObjectId {
+        self.views[0]
+    }
+}
+
 /// The buffer of a resident launch an L2 access-policy window covers (S54
 /// `l2-window`, [`FnEmit::l2_window`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -304,7 +312,9 @@ impl ResidentPlan {
         groups: &SecondaryMap<MorphismId, Epi>,
         o: ObjectId,
     ) -> u32 {
-        let o = self.alias(o);
+        // A carry's views and exit are its state's: the merge's writers.
+        let state = self.carries.iter().find(|c| c.views.contains(&o) || c.exit == Some(o));
+        let o = state.map_or(o, |c| c.merge);
         if let Some(m) = grouped_writer(groups, o) {
             return self.chain.get(m).copied().unwrap_or(0);
         }
@@ -315,12 +325,12 @@ impl ResidentPlan {
     }
 
     /// The object whose device slot `o` shares: a carry's views and exit share
-    /// the merge's slot.
+    /// the component's slot (its key).
     pub(crate) fn alias(&self, o: ObjectId) -> ObjectId {
         self.carries
             .iter()
             .find(|c| c.views.contains(&o) || c.exit == Some(o))
-            .map_or(o, |c| c.merge)
+            .map_or(o, Carry::key)
     }
 }
 
@@ -546,6 +556,7 @@ impl<'a> FnEmit<'a> {
                             self.uses(sites, cells, v, &fwd).iter().all(|u| *u == Use::Fwd)
                         });
                     if (read || unread)
+                        && !views.is_empty()
                         && device_only(next)
                         && views.iter().all(|&v| device_only(v))
                     {
@@ -2203,7 +2214,7 @@ impl<'a> FnEmit<'a> {
             (Some((_, g)), _) => {
                 let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout.clone()];
                 for o in g.caps() {
-                    debug_assert!(self.dvalid.contains_key(o), "epilogue operand in Gmem");
+                    debug_assert!(self.dvalid.contains_key(plan.alias(o)), "epilogue operand in Gmem");
                     ptrs.push(self.dload(o));
                 }
                 for mb in g.chain.iter().filter(|mb| mb.store) {
@@ -2376,10 +2387,8 @@ impl<'a> FnEmit<'a> {
             .map(|mo| bytes(mo.target))
             .sum();
         if let Some(p) = &self.resident {
+            // (A guard arm's work counts: the arm may run on every trip.)
             for &m in plan.decide_order.iter().chain(&plan.advance_order) {
-                if self.gated.contains_key(m) {
-                    continue;
-                }
                 let t = self.ir.morphism(m).expect("morphism resolves").target;
                 if p.upload.contains_key(t) && !p.devgen.contains_key(m) {
                     h2d += match p.delta.get(t) {
@@ -2432,13 +2441,13 @@ impl<'a> FnEmit<'a> {
                 && self.host_free(a)
                 && self.dvalid.contains_key(a)
             {
-                let (sa, sm) = (self.dslot(a), self.dslot(merge));
+                let (sa, sm) = (self.dslot(a), self.dslot(c.key()));
                 let d = self.tmp();
                 self.line(format!("{d} = load i64, ptr {sa}"));
                 self.line(format!("store i64 {d}, ptr {sm}"));
                 self.line(format!("store i64 0, ptr {sa}"));
                 self.dvalid.remove(a);
-                self.dvalid.insert(merge, ());
+                self.dvalid.insert(c.key(), ());
                 continue;
             }
             let ty = self
@@ -2448,11 +2457,11 @@ impl<'a> FnEmit<'a> {
                 .expect("carry ty");
             let bytes = self.array_bytes(&ty);
             let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
-            let d = self.dalloc(merge, bytes);
+            let d = self.dalloc(c.key(), bytes);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
-            self.dvalid.insert(merge, ());
+            self.dvalid.insert(c.key(), ());
         }
     }
 
@@ -2460,7 +2469,7 @@ impl<'a> FnEmit<'a> {
     /// state's buffer (dead past the back edge) is the next launch's output.
     pub(crate) fn resident_loop_back(&mut self, merge: ObjectId) {
         for c in self.carries_of(merge) {
-            let (cs, ns) = (self.dslot(merge), self.dslot(c.next));
+            let (cs, ns) = (self.dslot(c.key()), self.dslot(c.next));
             let (old, new) = (self.tmp(), self.tmp());
             self.line(format!("{old} = load i64, ptr {cs}"));
             self.line(format!("{new} = load i64, ptr {ns}"));
@@ -2477,7 +2486,7 @@ impl<'a> FnEmit<'a> {
                 continue;
             }
             let bytes = self.array_bytes(&self.obj_ty(exit));
-            self.dvalid.insert(merge, ());
+            self.dvalid.insert(c.key(), ());
             if !self
                 .resident
                 .as_ref()

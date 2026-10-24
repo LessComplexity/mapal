@@ -85,6 +85,8 @@ def arm_of(stem):
     """`.off-a+b` / `.on-a`: the forced rungs of a bundle arm."""
     on, off = set(), set()
     for part in stem.split('.')[1:]:
+        # S65: `cpu-off-<rung>`: the CPU-only build's arm.
+        part = part[4:] if part.startswith('cpu-') else part
         if part.startswith('off-'):
             off |= set(part[4:].split('+'))
         elif part.startswith('on-'):

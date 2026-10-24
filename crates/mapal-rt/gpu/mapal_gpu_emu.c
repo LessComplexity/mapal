@@ -132,6 +132,8 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
 typedef void (*kv_t)();
 static void call_v(kv_t k, uint32_t n, void **p) {
   switch (n) {
+  case 1: ((void (*)(void *))k)(p[0]); break;
+  case 2: ((void (*)(void *, void *))k)(p[0], p[1]); break;
   case 3: ((void (*)(void *, void *, void *))k)(p[0], p[1], p[2]); break;
   case 4: ((void (*)(void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3]); break;
   case 5: ((void (*)(void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4]); break;
