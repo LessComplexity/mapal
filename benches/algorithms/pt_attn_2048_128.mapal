@@ -15,7 +15,7 @@ fn main() {
         (0.0, k_d) -> fold { acc, k -> acc + q[i * 128 + k] * kk[j * 128 + k] }
     } -> s;
     k_t -> map { i -> (-1000000000.0, k_t) -> fold { acc, j -> s[i * 2048 + j] -> e; (e > acc) -> { -true-> e; -false-> acc; } } } -> mx;
-    o_s -> map { t -> (s[t] - mx[t / 2048]) / 11.3 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; v0 * v0 -> v1; v1 * v1 -> v2; v2 * v2 -> v3; v3 * v3 -> v4; v4 * v4 -> v5; v5 * v5 -> v6; v6 * v6 -> v7; v7 * v7 -> v8; v8 } -> ex;
+    o_s -> map { t -> (s[t] - mx[t / 2048]) / 11.3 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; 8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc } } -> ex;
     k_t -> map { i -> (0.0, k_t) -> fold { acc, j -> acc + ex[i * 2048 + j] } } -> den;
     o_s -> map { t -> ex[t] / den[t / 2048] } -> p;
     262144 -> iota -> o_o;
