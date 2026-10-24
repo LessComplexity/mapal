@@ -1,0 +1,65 @@
+fn main() {
+    64 -> iota -> tw;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 128.0 } -> wk;
+    tw -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 128.0 } -> wv;
+    128 -> iota -> tc;
+    8 -> iota -> krange;
+    16 -> iota -> rrange;
+    (0.0, 128) -> fill -> x0;
+    (0.0, 8) -> fill -> o0;
+    mut x: [f32; 128] <- x0;
+    mut o: [f32; 8] <- o0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 16) -> {
+            -true-> {
+                ((t * 8 + 0) * 7 + 13) % 101 - 50 -> widen_f32 -> f0;
+                f0 / 64.0 + o[0] -> v0;
+                x[t * 8 + 0] <- v0;
+                ((t * 8 + 1) * 7 + 13) % 101 - 50 -> widen_f32 -> f1;
+                f1 / 64.0 + o[1] -> v1;
+                x[t * 8 + 1] <- v1;
+                ((t * 8 + 2) * 7 + 13) % 101 - 50 -> widen_f32 -> f2;
+                f2 / 64.0 + o[2] -> v2;
+                x[t * 8 + 2] <- v2;
+                ((t * 8 + 3) * 7 + 13) % 101 - 50 -> widen_f32 -> f3;
+                f3 / 64.0 + o[3] -> v3;
+                x[t * 8 + 3] <- v3;
+                ((t * 8 + 4) * 7 + 13) % 101 - 50 -> widen_f32 -> f4;
+                f4 / 64.0 + o[4] -> v4;
+                x[t * 8 + 4] <- v4;
+                ((t * 8 + 5) * 7 + 13) % 101 - 50 -> widen_f32 -> f5;
+                f5 / 64.0 + o[5] -> v5;
+                x[t * 8 + 5] <- v5;
+                ((t * 8 + 6) * 7 + 13) % 101 - 50 -> widen_f32 -> f6;
+                f6 / 64.0 + o[6] -> v6;
+                x[t * 8 + 6] <- v6;
+                ((t * 8 + 7) * 7 + 13) % 101 - 50 -> widen_f32 -> f7;
+                f7 / 64.0 + o[7] -> v7;
+                x[t * 8 + 7] <- v7;
+                x -> map { v -> v * 0.5 } -> xh;
+                tc -> map { c ->
+                    c / 8 -> i;
+                    c % 8 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + xh[i * 8 + k] * wk[k * 8 + j] }
+                } -> kk;
+                tc -> map { c ->
+                    c / 8 -> i;
+                    c % 8 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + xh[i * 8 + k] * wv[k * 8 + j] }
+                } -> vv;
+                krange -> map { k -> ((t * 8 + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 128.0 } -> q;
+                rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 8 + k] } } -> s;
+                krange -> map { j -> (0.0, rrange) -> fold { acc, r -> acc + s[r] * vv[r * 8 + j] } } -> o;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> o -> out;
+        }
+    }
+    out[0] -> println;
+    out[7] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold { acc, v -> acc + v } -> total;
+    total -> println;
+}
