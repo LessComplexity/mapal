@@ -343,6 +343,12 @@ pub struct GpuRungs {
     /// profile, CPU builds included. Off: products hold arrays inline (S64:
     /// five whole copies of the state per trip).
     pub by_ref: bool,
+    /// generic-fusion natural forms: a map whose cells outside a set are a
+    /// capture's own ([`mapal_ir::Outside`]: a row, a range, a column) runs in
+    /// place over that set, under an `Update`'s legality (`in_place_source`).
+    /// Any profile, CPU builds included. Off: the map runs over every cell
+    /// into its own buffer.
+    pub range_map: bool,
 }
 
 impl GpuRungs {
@@ -397,11 +403,12 @@ impl GpuRungs {
         hostopt: true,
         place: true,
         by_ref: true,
+        range_map: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 49] = [
+    pub const NAMES: [&'static str; 50] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -451,6 +458,7 @@ impl GpuRungs {
         "hostopt",
         "place",
         "by-ref",
+        "range-map",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -505,6 +513,7 @@ impl GpuRungs {
             "hostopt" => &mut self.hostopt,
             "place" => &mut self.place,
             "by-ref" => &mut self.by_ref,
+            "range-map" => &mut self.range_map,
             _ => return None,
         })
     }
