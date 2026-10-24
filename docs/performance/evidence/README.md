@@ -1,4 +1,324 @@
-# Evidence pass (S64)
+# Evidence pass
+
+## S65: loop state by reference (rule R)
+
+Raw: [`benches/results/evidence/s65/`](../../../benches/results/evidence/s65/) · tables:
+`python3 benches/gpu/evidence_report.py benches/results/evidence/s65`,
+`python3 benches/gpu/movement_report.py benches/results/evidence/s65`,
+`python3 benches/gpu/s65_arms.py benches/results/evidence/s65/<arch>/results-<arch>.txt`.
+S64 arm = `--gpu-off=by-ref` (the S64 build). Boxes: 30 interleaved reps per arm, one process each, null = max over reps
+of |null / shipped − 1|. Every value gate passed (default face within its bound) on all four parts.
+
+### Decisions
+
+| GPU_RUNGS_OFF row | part | rung | change | evidence (static) | measured (ON / OFF, null) |
+|---|---|---|---|---|---|
+| new | all four | by-ref | **ON** | host memcpy 7–11 → 0 per program; by-ref checks 302 / 337 / 329 / 320 ok, 0 mismatch (4090 / 5090 / H100 / 3090) | below: 26 of 28 GPU cells ON faster outside null; rt_mlp2 inside null on 5090 (0.791) and H100 (0.812) |
+| 4090 retain-resident | rtx-4090 | retain-resident | **removed: ON** | retained 0 → 2, + one-row kernel `mapal_tile_fee5d054184d5db4` (1×256×256), launch sites 4 → 6 | decode 40.58 vs 33.05 ms, 1.214 (per rep 1.192..1.252), null 0.050; traced K/V site 2048 × 22.34 ms → 2046 × 14.94 ms |
+| 5090 retain-resident | rtx-5090 | retain-resident | **removed: ON** | retained 0 → 2, + `mapal_tile_e2f8ae468c059815`, launch sites 4 → 6 | decode 42.71 vs 36.69 ms, 1.167 (1.122..1.191), null 0.037; 2048 × 23.69 → 2046 × 17.49 ms |
+| H100 retain-resident | h100-pcie | retain-resident | none | retained 0 → 2, + `mapal_tile_3881eb4bbf2d9cb5`, launch sites 5 → 7 | decode 87.42 vs 86.14 ms, 1.008 (0.946..1.139) inside null 0.094; 2048 × 45.83 → 2046 × 45.18 ms |
+| (ships ON) | rtx-3090 | retain-resident | none | OFF arm: retained 2 → 0 | decode 54.05 vs 149.24 ms OFF, 2.747 (2.525..2.915), null 0.088; OFF 2048 × 99.89 ms → ON 2046 × 23.24 ms |
+
+End check: the new shipped decode build on the 4090 / 5090 is byte-identical (host.ll, dev.ll) to the measured
+`on-retain-resident` arm; H100 / 3090 unchanged.
+
+### Rule R: facts → decisions
+
+| fact (mapal-ir) | decision (existing storage layer: `frame.rs` host, `resident.rs` device) | state mode |
+|---|---|---|
+| `LastUsePlan::view_pos` / `view_death` / `view_dead_after` (new: the use positions with `Pair` / `Phi` / `Proj` / loop-enter pins; `algos.rs`) | a value only forwarded (`Pair`, `Proj`, `Phi`, loop enter / back / exit) is a view: its address moves, not its bytes | all |
+| `loop_plan` (merge, init, back route, exits) + `view_last_use` over every buffer the state may be | interval coloring across the back edge: next state first written at W, old state last read at D — D < W one buffer, else ping-pong (one more per extra position) | `one`, `two` |
+| `Update` + `view_dead_after` + parallel-entry task order (every old-value read before the write) | the row write lands in the state's own buffer: the init's when the init dies at the entry, else one entry copy | `inplace` |
+| resident carries (`loop_plan`, `escapes`, `death`, `write_delta`) | a device-carried state has no host bytes; its init is made on the device | `device` |
+| a consumer that reads the product whole (`Output`, a by-value body input) | bytes | `value` (S64 arm) |
+
+### Movement: intended (facts, `; mapal.move`) vs realized (host IR), per trip
+
+| program | build | archs | state (position:bytes:carried) | host copy / trip: facts → realized (calls) | h2d / trip: facts → realized | d2h / trip: facts → realized | MB copied per trip, S64 arm → this |
+|---|---|---|---|---|---|---|---|
+| pt_loop_2048 | CPU+GPU | all four | 0:16777216:device | 0 → 0 (0) | 0 → 0 | 0 → 0 | 80.000 → 0 |
+| pt_loop_2048 | CPU+GPU, S64 arm | all four | 0:16777216:device | 0 → 80.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_loop_2048 | CPU-only | all four | 0:16777216:one | 0 → 0 (0) | 0 → 0 | 0 → 0 | 80.000 → 0 |
+| pt_loop_2048 | CPU-only, S64 arm | all four | 0:16777216:value | 0 → 80.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_loop_4096 | CPU+GPU | all four | 0:67108864:device | 0 → 0 (0) | 0 → 0 | 0 → 0 | 320.000 → 0 |
+| pt_loop_4096 | CPU+GPU, S64 arm | all four | 0:67108864:device | 0 → 320.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_loop_4096 | CPU-only | all four | 0:67108864:one | 0 → 0 (0) | 0 → 0 | 0 → 0 | 320.000 → 0 |
+| pt_loop_4096 | CPU-only, S64 arm | all four | 0:67108864:value | 0 → 320.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_loopmm_1024_8 | CPU+GPU | all four | 0:4194304:device | 0 → 0 (0) | 0 → 0 | 0 → 0 | 20.000 → 0 |
+| pt_loopmm_1024_8 | CPU+GPU, S64 arm | all four | 0:4194304:device | 0 → 20.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_loopmm_1024_8 | CPU-only | all four | 0:4194304:two | 0 → 0 (0) | 0 → 0 | 0 → 0 | 20.000 → 0 |
+| pt_loopmm_1024_8 | CPU-only, S64 arm | all four | 0:4194304:value | 0 → 20.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_rt_mlp2_1024 | CPU+GPU | all four | 0:4194304:device | 0 → 0 (0) | 8.000 → 8.000 | 0 → 0 | 20.000 → 0 |
+| pt_rt_mlp2_1024 | CPU+GPU, S64 arm | all four | 0:4194304:value | 0 → 20.000 (5) | 8.000 → 8.000 | 4.000 → 4.000 | - |
+| pt_rt_mlp2_1024 | CPU-only | all four | 0:4194304:one | 0 → 0 (0) | 0 → 0 | 0 → 0 | 20.000 → 0 |
+| pt_rt_mlp2_1024 | CPU-only, S64 arm | all four | 0:4194304:value | 0 → 20.000 (5) | 0 → 0 | 0 → 0 | - |
+| pt_decode_1024_256 | CPU+GPU | all four | 0:1048576:inplace,1:1024:one | 0 → 0 (0) | 2.0 K → 2.0 K | 1.0 K → 1.0 K | 4.005 → 0 |
+| pt_decode_1024_256 | CPU+GPU, S64 arm | all four | 0:1048576:value,1:1024:value | 0 → 4.005 (7) | 2.0 K → 2.0 K | 1.0 K → 1.0 K | - |
+| pt_decode_1024_256 | CPU-only | all four | 0:1048576:inplace,1:1024:one | 0 → 0 (0) | 0 → 0 | 0 → 0 | 4.005 → 0 |
+| pt_decode_1024_256 | CPU-only, S64 arm | all four | 0:1048576:value,1:1024:value | 0 → 4.005 (7) | 0 → 0 | 0 → 0 | - |
+
+Host IR `llvm.memcpy` call sites, S64 arm → shipped:
+
+| program | build | rtx-4090 | rtx-5090 | h100-pcie | rtx-3090 |
+|---|---|---|---|---|---|
+| pt_loop_2048 | CPU+GPU | 8 → 0 | 8 → 0 | 8 → 0 | 8 → 0 |
+| pt_loop_2048 | CPU-only | 7 → 0 | 7 → 0 | 7 → 0 | 7 → 0 |
+| pt_loop_4096 | CPU+GPU | 8 → 0 | 8 → 0 | 8 → 0 | 8 → 0 |
+| pt_loop_4096 | CPU-only | 7 → 0 | 7 → 0 | 7 → 0 | 7 → 0 |
+| pt_loopmm_1024_8 | CPU+GPU | 8 → 0 | 8 → 0 | 8 → 0 | 8 → 0 |
+| pt_loopmm_1024_8 | CPU-only | 7 → 0 | 7 → 0 | 7 → 0 | 7 → 0 |
+| pt_decode_1024_256 | CPU+GPU | 11 → 0 | 11 → 0 | 11 → 0 | 11 → 0 |
+| pt_decode_1024_256 | CPU-only | 10 → 0 | 10 → 0 | 10 → 0 | 10 → 0 |
+| pt_rt_mlp2_1024 | CPU+GPU | 8 → 0 | 8 → 0 | 8 → 0 | 8 → 0 |
+| pt_rt_mlp2_1024 | CPU-only | 7 → 0 | 7 → 0 | 7 → 0 | 7 → 0 |
+
+### by-ref in time: S65 vs its S64 arm, same box
+
+| program | arch | build | S64 arm ms | S65 ms | S65 / S64 arm per rep: median (min..max) | null | traced residue ms, S64 arm → S65 | MB copied, S64 arm → S65 |
+|---|---|---|---|---|---|---|---|---|
+| pt_loop_2048 | rtx-4090 | CPU+GPU | 39.6508 | 2.5753 | 0.065 (0.061..0.104) | 0.333 | 35.34 → 0.00 | 16.0 → 0.0 |
+| pt_loop_2048 | rtx-4090 | CPU-only | 1042.8764 | 941.8409 | 0.904 (0.901..0.911) | - | - | - |
+| pt_loop_4096 | rtx-4090 | CPU+GPU | 179.6650 | 19.6459 | 0.110 (0.107..0.144) | 0.312 | 157.88 → 0.00 | 64.0 → 0.0 |
+| pt_loop_4096 | rtx-4090 | CPU-only | 8722.8409 | 8417.0680 | 0.966 (0.957..0.971) | - | - | - |
+| pt_loopmm_1024_8 | rtx-4090 | CPU+GPU | 7.4878 | 0.5312 | 0.071 (0.067..0.074) | 0.092 | 6.78 → 0.01 | 4.0 → 0.0 |
+| pt_loopmm_1024_8 | rtx-4090 | CPU-only | 142.2432 | 119.0220 | 0.832 (0.806..0.847) | - | - | - |
+| pt_rt_mlp2_1024 | rtx-4090 | CPU+GPU | 21.9560 | 8.7197 | 0.399 (0.367..0.405) | 0.041 | 14.17 → 1.77 | 96.0 → 68.0 |
+| pt_rt_mlp2_1024 | rtx-4090 | CPU-only | 532.4533 | 510.9250 | 0.962 (0.937..0.972) | - | - | - |
+| pt_decode_1024_256 | rtx-4090 | CPU+GPU | 247.6295 | 40.5796 | 0.161 (0.155..0.176) | 0.050 | 209.85 → 0.00 | 4.0 → 4.0 |
+| pt_decode_1024_256 | rtx-4090 | CPU-only | 2135.4831 | 1916.3378 | 0.900 (0.895..0.906) | - | - | - |
+| pt_softmax_rows_2048 | rtx-4090 | CPU+GPU | 4.9775 | 0.5157 | 0.103 (0.098..0.108) | 0.034 | 3.48 → 0.00 | 16.0 → 0.0 |
+| pt_softmax_rows_4096 | rtx-4090 | CPU+GPU | 21.8570 | 3.5187 | 0.161 (0.153..0.163) | 0.004 | 12.99 → 0.00 | 64.0 → 0.0 |
+| pt_loop_2048 | rtx-5090 | CPU+GPU | 38.4585 | 2.1838 | 0.057 (0.051..0.059) | 0.034 | 35.11 → 0.00 | 16.0 → 0.0 |
+| pt_loop_2048 | rtx-5090 | CPU-only | 1103.6484 | 1050.2771 | 0.947 (0.933..0.958) | - | - | - |
+| pt_loop_4096 | rtx-5090 | CPU+GPU | 155.0005 | 15.8282 | 0.102 (0.099..0.104) | 0.038 | 134.81 → 0.00 | 64.0 → 0.0 |
+| pt_loop_4096 | rtx-5090 | CPU-only | 8833.3068 | 8553.2154 | 0.970 (0.951..0.984) | - | - | - |
+| pt_loopmm_1024_8 | rtx-5090 | CPU+GPU | 8.9816 | 0.4818 | 0.055 (0.035..0.063) | 0.147 | 9.08 → 0.00 | 4.0 → 0.0 |
+| pt_loopmm_1024_8 | rtx-5090 | CPU-only | 137.4616 | 129.0076 | 0.953 (0.911..1.002) | - | - | - |
+| pt_rt_mlp2_1024 | rtx-5090 | CPU+GPU | 20.7864 | 7.5898 | 0.370 (0.337..0.393) | 0.791 | 12.14 → 1.45 | 96.0 → 68.0 |
+| pt_rt_mlp2_1024 | rtx-5090 | CPU-only | 563.1604 | 555.0901 | 0.986 (0.964..1.017) | - | - | - |
+| pt_decode_1024_256 | rtx-5090 | CPU+GPU | 249.0487 | 42.7149 | 0.172 (0.157..0.178) | 0.037 | 211.16 → 0.00 | 4.0 → 4.0 |
+| pt_decode_1024_256 | rtx-5090 | CPU-only | 2361.2873 | 2171.9823 | 0.918 (0.912..0.929) | - | - | - |
+| pt_softmax_rows_2048 | rtx-5090 | CPU+GPU | 5.1143 | 0.3732 | 0.073 (0.054..0.079) | 0.039 | 5.52 → 0.00 | 16.0 → 0.0 |
+| pt_softmax_rows_4096 | rtx-5090 | CPU+GPU | 20.9195 | 2.3396 | 0.112 (0.107..0.119) | 0.081 | 13.52 → 0.00 | 64.0 → 0.0 |
+| pt_loop_2048 | h100-pcie | CPU+GPU | 35.6640 | 6.4506 | 0.180 (0.161..0.188) | 0.019 | 25.95 → 0.02 | 16.0 → 0.0 |
+| pt_loop_2048 | h100-pcie | CPU-only | 1645.9832 | 1520.3636 | 0.927 (0.646..1.095) | - | - | - |
+| pt_loop_4096 | h100-pcie | CPU+GPU | 143.5566 | 36.2815 | 0.253 (0.233..0.265) | 0.006 | 103.51 → 0.05 | 64.0 → 0.0 |
+| pt_loop_4096 | h100-pcie | CPU-only | 15432.5961 | 14689.9527 | 0.969 (0.900..1.080) | - | - | - |
+| pt_loopmm_1024_8 | h100-pcie | CPU+GPU | 7.9867 | 1.0944 | 0.139 (0.122..0.213) | 0.333 | 6.28 → 0.59 | 4.0 → 0.0 |
+| pt_loopmm_1024_8 | h100-pcie | CPU-only | 212.0991 | 179.6344 | 0.847 (0.814..0.926) | - | - | - |
+| pt_rt_mlp2_1024 | h100-pcie | CPU+GPU | 24.9280 | 20.5389 | 0.819 (0.400..0.860) | 0.812 | 13.34 → 3.30 | 96.0 → 68.0 |
+| pt_rt_mlp2_1024 | h100-pcie | CPU-only | 787.6105 | 767.1414 | 0.962 (0.939..1.025) | - | - | - |
+| pt_decode_1024_256 | h100-pcie | CPU+GPU | 275.9214 | 87.4242 | 0.316 (0.291..0.330) | 0.094 | 186.91 → 0.00 | 4.0 → 4.0 |
+| pt_decode_1024_256 | h100-pcie | CPU-only | 3114.7613 | 2932.3586 | 0.950 (0.805..0.988) | - | - | - |
+| pt_softmax_rows_2048 | h100-pcie | CPU+GPU | 16.1430 | 1.0563 | 0.066 (0.052..0.103) | 0.057 | 4.18 → 0.00 | 16.0 → 0.0 |
+| pt_softmax_rows_4096 | h100-pcie | CPU+GPU | 57.2642 | 5.1955 | 0.091 (0.076..0.108) | 0.009 | 23.98 → 0.00 | 64.0 → 0.0 |
+| pt_loop_2048 | rtx-3090 | CPU+GPU | 51.9696 | 7.0657 | 0.136 (0.131..0.153) | 0.011 | 44.41 → 0.11 | 16.0 → 0.0 |
+| pt_loop_2048 | rtx-3090 | CPU-only | 2031.1519 | 1997.4528 | 0.973 (0.963..1.030) | - | - | - |
+| pt_loop_4096 | rtx-3090 | CPU+GPU | 193.6354 | 46.0564 | 0.240 (0.228..0.245) | 0.039 | 142.87 → 0.30 | 64.0 → 0.0 |
+| pt_loop_4096 | rtx-3090 | CPU-only | 18030.4508 | 17627.4130 | 0.980 (0.961..0.987) | - | - | - |
+| pt_loopmm_1024_8 | rtx-3090 | CPU+GPU | 16.1796 | 1.6191 | 0.100 (0.094..0.104) | 0.059 | 14.35 → 0.06 | 4.0 → 0.0 |
+| pt_loopmm_1024_8 | rtx-3090 | CPU-only | 264.0542 | 238.1217 | 0.902 (0.895..0.912) | - | - | - |
+| pt_rt_mlp2_1024 | rtx-3090 | CPU+GPU | 39.5315 | 14.4858 | 0.360 (0.334..0.375) | 0.024 | 28.68 → 3.98 | 96.0 → 68.0 |
+| pt_rt_mlp2_1024 | rtx-3090 | CPU-only | 1051.3420 | 1028.2151 | 0.979 (0.975..0.998) | - | - | - |
+| pt_decode_1024_256 | rtx-3090 | CPU+GPU | 165.3107 | 54.0491 | 0.325 (0.311..0.330) | 0.088 | 103.10 → 0.00 | 4.0 → 4.0 |
+| pt_decode_1024_256 | rtx-3090 | CPU-only | 4119.9114 | 3890.9013 | 0.948 (0.939..1.028) | - | - | - |
+| pt_softmax_rows_2048 | rtx-3090 | CPU+GPU | 8.4470 | 1.1036 | 0.131 (0.127..0.133) | 0.009 | 5.74 → 0.00 | 16.0 → 0.0 |
+| pt_softmax_rows_4096 | rtx-3090 | CPU+GPU | 36.4531 | 6.3963 | 0.176 (0.172..0.180) | 0.005 | 24.02 → 0.00 | 64.0 → 0.0 |
+
+Per rung (evidence_report):
+
+| rung | arch | shipped | cells: ON/OFF (null) | ON faster / slower / inside null |
+|---|---|---|---|---|
+| by-ref | h100-pcie | shipped ON | pt_decode_1024_256 0.316 (0.094); pt_loop_2048 0.180 (0.019); pt_loop_4096 0.253 (0.006); pt_loopmm_1024_8 0.139 (0.333); pt_rt_mlp2_1024 0.819 (0.812); pt_softmax_rows_2048 0.066 (0.057); pt_softmax_rows_4096 0.091 (0.009) | 6 / 0 / 1 |
+| by-ref | rtx-3090 | shipped ON | pt_decode_1024_256 0.325 (0.088); pt_loop_2048 0.136 (0.011); pt_loop_4096 0.240 (0.039); pt_loopmm_1024_8 0.100 (0.059); pt_rt_mlp2_1024 0.360 (0.024); pt_softmax_rows_2048 0.131 (0.009); pt_softmax_rows_4096 0.176 (0.005) | 7 / 0 / 0 |
+| by-ref | rtx-4090 | shipped ON | pt_decode_1024_256 0.161 (0.050); pt_loop_2048 0.065 (0.333); pt_loop_4096 0.110 (0.312); pt_loopmm_1024_8 0.071 (0.092); pt_rt_mlp2_1024 0.399 (0.041); pt_softmax_rows_2048 0.103 (0.034); pt_softmax_rows_4096 0.161 (0.004) | 7 / 0 / 0 |
+| by-ref | rtx-5090 | shipped ON | pt_decode_1024_256 0.172 (0.037); pt_loop_2048 0.057 (0.034); pt_loop_4096 0.102 (0.038); pt_loopmm_1024_8 0.055 (0.147); pt_rt_mlp2_1024 0.370 (0.791); pt_softmax_rows_2048 0.073 (0.039); pt_softmax_rows_4096 0.112 (0.081) | 6 / 0 / 1 |
+| by-ref/cpu | h100-pcie | shipped ON | pt_decode_1024_256.cpu 0.950 (-); pt_loop_2048.cpu 0.927 (-); pt_loop_4096.cpu 0.969 (-); pt_loopmm_1024_8.cpu 0.847 (-); pt_rt_mlp2_1024.cpu 0.962 (-) | 0 / 0 / 5 |
+| by-ref/cpu | rtx-3090 | shipped ON | pt_decode_1024_256.cpu 0.948 (-); pt_loop_2048.cpu 0.973 (-); pt_loop_4096.cpu 0.980 (-); pt_loopmm_1024_8.cpu 0.902 (-); pt_rt_mlp2_1024.cpu 0.979 (-) | 0 / 0 / 5 |
+| by-ref/cpu | rtx-4090 | shipped ON | pt_decode_1024_256.cpu 0.900 (-); pt_loop_2048.cpu 0.904 (-); pt_loop_4096.cpu 0.966 (-); pt_loopmm_1024_8.cpu 0.832 (-); pt_rt_mlp2_1024.cpu 0.962 (-) | 0 / 0 / 5 |
+| by-ref/cpu | rtx-5090 | shipped ON | pt_decode_1024_256.cpu 0.918 (-); pt_loop_2048.cpu 0.947 (-); pt_loop_4096.cpu 0.970 (-); pt_loopmm_1024_8.cpu 0.953 (-); pt_rt_mlp2_1024.cpu 0.986 (-) | 0 / 0 / 5 |
+| retain-resident | h100-pcie | shipped OFF | pt_decode_1024_256 0.992 (0.094) | 0 / 0 / 1 |
+| retain-resident | rtx-3090 | shipped ON | pt_decode_1024_256 0.364 (0.088) | 1 / 0 / 0 |
+| retain-resident | rtx-4090 | shipped OFF | pt_decode_1024_256 0.824 (0.050) | 1 / 0 / 0 |
+| retain-resident | rtx-5090 | shipped OFF | pt_decode_1024_256 0.857 (0.037) | 1 / 0 / 0 |
+| splitk | h100-pcie | shipped ON | mm_16x1024x4096 0.462 (0.009); mm_16x2048x7168 0.624 (0.013); pt_decode_1024_256 0.475 (0.094) | 3 / 0 / 0 |
+| splitk | rtx-3090 | shipped ON | mm_128x2048x7168 0.441 (0.003); mm_16x1024x4096 1.000 (0.000); mm_16x2048x7168 0.905 (0.000); pt_decode_1024_256 0.557 (0.088) | 3 / 0 / 1 |
+| splitk | rtx-4090 | shipped ON | pt_decode_1024_256 0.568 (0.050) | 1 / 0 / 0 |
+| splitk | rtx-5090 | shipped ON | pt_decode_1024_256 0.617 (0.037) | 1 / 0 / 0 |
+| splitk-atomic | h100-pcie | shipped ON | pt_decode_1024_256 0.957 (0.094) | 0 / 0 / 1 |
+| splitk-atomic | rtx-3090 | shipped ON | mm_128x2048x7168 0.907 (0.003); mm_16x1024x4096 1.000 (0.000); pt_decode_1024_256 0.640 (0.088); pt_loopmm_1024_8 1.144 (0.059); pt_rt_mlp2_1024 1.011 (0.024) | 2 / 1 / 2 |
+| splitk-atomic | rtx-4090 | shipped ON | pt_decode_1024_256 0.835 (0.050) | 1 / 0 / 0 |
+| splitk-atomic | rtx-5090 | shipped ON | pt_decode_1024_256 0.960 (0.037) | 0 / 0 / 1 |
+| streamk | h100-pcie | shipped ON | mm_128x2048x7168 0.653 (0.004); mm_16x1024x4096 0.927 (0.009); pt_decode_1024_256 0.982 (0.094); pt_loopmm_1024_8 0.674 (0.333); pt_rt_mlp2_1024 1.648 (0.812) | 2 / 0 / 3 |
+| streamk | rtx-5090 | shipped ON | mm_16x18432x7168 0.897 (0.005); mm_4096x4096x4096 0.991 (0.005); pt_diamond_4096 0.989 (0.277); pt_fanout_4096 0.995 (0.006); pt_indep_4096 0.993 (0.025); pt_rowsum_2048 0.941 (0.051); pt_rowsum_4096 0.995 (0.003); pt_softmax_rows_2048 0.953 (0.039); pt_softmax_rows_4096 0.995 (0.081) | 3 / 0 / 6 |
+
+### Kernel and movement findings
+
+| finding | evidence | status |
+|---|---|---|
+| softmax_rows: by-ref lets both row folds run on the device: launches 3 → 5, copy-out 16 / 64 MB → 0 | `rowfold:on` 4 / 0 / 0 on every part; 4090 n=2048 traced kernel 0.47 → 0.52 ms, host residue 3.48 → 0.00 ms | intended (closes S64's "normalize on the host") |
+| loop programs: the carried init is made on the device (+1 gen kernel); h2d 1 → 0 per run | 4090 PTX entries + `mapal_gen_0c2c9285a1cff51b` (loop_2048), `mapal_gen_7a2ade86c804ef09` (loopmm) | intended |
+| programs without a loop (conv, diamond, ew, fanout, fir, indep, rowsum, rm) | host.ll, cpu.host.ll, PTX byte-identical to S64's bundles on all four parts (H100 rm / decode PTX: S64's warp-fill change) | their S64 → S65 time differences are the boxes (4090 diamond_4096 7.44 → 9.35 ms with identical IR) |
+| rt_mlp2: 8 MB h2d per trip remains | the facts require it (host-made request inputs, a device reader): `h2d=8388608` intended = realized on every part | required |
+| decode: 2 KB h2d + 1 KB d2h per trip remain | intended `h2d=2048 d2h=1024` bytes = realized; traced 2048 uploads / 1024 copy-outs over 1024 trips | required |
+| 3090 loopmm: splitk-atomic ON slower | 1.6191 vs 1.4133 ms OFF, 1.144 (1.124..1.186), null 0.059; ON: atomic S=2, 12.49 warps / SM, 64 `atom.add`, a zero-fill call; OFF: S=1, 6.24 warps, 8 B spill | open (same row: decode 0.640, 128×2048×7168 0.907 ON faster) |
+| H100 rt_mlp2 time not stable | shipped 20.54 vs null 12.93 ms (same build), null 0.812; traced copies 9.89 vs 3.87 ms | open (box) |
+| every mismatch on a shipped program is an S64 class | table below; `by-ref:on` / `by-ref:runtime` 0 mismatch on all four parts | S64 open items |
+
+Every mismatch on a shipped program (S65 build):
+
+| arch | rung | check | programs | realized (first) |
+|---|---|---|---|---|
+| rtx-5090 | exec:on | JIT image local bytes == ptxas stack frame | mm_16x1024x4096 mm_16x1024x4096_c mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_c mm_16x2048x7168_rc mm_4096x4096x4096_r mm_4096x4096x4096_x | exec.local=152 ptxas.stack=208 |
+| rtx-5090 | exec:on | JIT image registers == ptxas -v | mm_16x18432x7168 mm_16x18432x7168_r mm_16x18432x7168_x mm_4096x4096x4096 pt_rm_m128_d1024_h2048_c pt_rm_m128_d1024_h2048_x pt_rm_m128_d256_h512_x | exec.regs=225 ptxas.regs=227 |
+| rtx-3090 | face-registers:on | no spill | mm_128x2048x7168_rc mm_16x1024x4096_r mm_16x1024x4096_x pt_loopmm_1024_8 pt_rt_mlp2_1024 | ptxas.spill_st=24 ptxas.spill_ld=24 |
+| rtx-5090 | face-registers:on | no spill | mm_16x1024x4096 mm_16x1024x4096_c mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_c mm_16x2048x7168_rc mm_4096x4096x4096_r mm_4096x4096x4096_x | ptxas.spill_st=208 ptxas.spill_ld=208 |
+| h100-pcie | grid-share:on | residency sized to the grid share | mm_16x1024x4096 mm_16x1024x4096_c mm_16x1024x4096_rc | plan.blocks_per_sm=6 plan.ctas=0 plan.combine=none plan.gx=64 plan.gy=1 occ.sms=114 |
+| rtx-3090 | min-blocks:on | ptxas met it without spilling | mm_128x2048x7168_rc mm_16x1024x4096_r mm_16x1024x4096_x pt_loopmm_1024_8 pt_rt_mlp2_1024 | ptxas.spill_st=24 |
+| rtx-5090 | min-blocks:on | ptxas met it without spilling | mm_16x1024x4096 mm_16x1024x4096_c mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_c mm_16x2048x7168_rc mm_4096x4096x4096_r mm_4096x4096x4096_x | ptxas.spill_st=208 |
+| h100-pcie | module:on | every kernel in the device module is launched by the host | mm_128x2048x7168 mm_128x2048x7168_r mm_16x1024x4096 mm_16x1024x4096_r mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_rc pt_decode_1024_256 pt_loopmm_1024_8 pt_rt_mlp2_1024 | mod.launched=0 |
+| rtx-3090 | module:on | every kernel in the device module is launched by the host | mm_128x2048x7168 mm_128x2048x7168_rc mm_16x1024x4096 mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_rc pt_decode_1024_256 pt_loopmm_1024_8 pt_rt_mlp2_1024 | mod.launched=0 |
+| rtx-4090 | module:on | every kernel in the device module is launched by the host | mm_128x2048x7168_r mm_16x1024x4096_r pt_decode_1024_256 | mod.launched=0 |
+| rtx-5090 | module:on | every kernel in the device module is launched by the host | mm_16x18432x7168 mm_4096x4096x4096 pt_decode_1024_256 pt_diamond_4096 pt_fanout_4096 pt_indep_4096 pt_rowsum_2048 pt_rowsum_4096 pt_softmax_rows_2048 pt_softmax_rows_4096 | mod.launched=0 |
+| rtx-3090 | panel-regs:on | the prefetch panel fits the register file: no spill | mm_16x1024x4096_r mm_16x1024x4096_x | ptxas.spill_st=140 |
+| rtx-5090 | panel-regs:on | the prefetch panel fits the register file: no spill | mm_16x1024x4096 mm_16x1024x4096_c mm_16x1024x4096_rc mm_16x2048x7168 mm_16x2048x7168_c mm_16x2048x7168_rc | ptxas.spill_st=208 |
+| h100-pcie | prefetch:on | the next panel's LDGs are covered by this panel's math | mm_16x18432x7168 mm_16x18432x7168_c mm_16x18432x7168_r mm_16x18432x7168_rc mm_16x18432x7168_x mm_4096x4096x4096_r mm_4096x4096x4096_x pt_rm_m128_d1024_h2048 pt_rm_m128_d1024_h2048_c pt_rm_m128_d256_h512 pt_rm_m128_d256_h512_c | sass.hot.ldg_cover_min=0 |
+| rtx-3090 | prefetch:on | the next panel's LDGs are covered by this panel's math | mm_16x1024x4096_r mm_16x1024x4096_x mm_4096x4096x4096_r mm_4096x4096x4096_x pt_rm_m128_d256_h512_x | sass.hot.ldg_cover_min=0 |
+
+Intended vs realized, shipped programs (ok / MISMATCH / n-a):
+
+| rung:state | rtx-4090 | rtx-5090 | h100-pcie | rtx-3090 |
+|---|---|---|---|---|
+| arch-rungs:on | 62 / 0 / 0 | 69 / 0 / 0 | 70 / 0 / 0 | 70 / 0 / 0 |
+| arena:on | 41 / 0 / 0 | 41 / 0 / 0 | 41 / 0 / 0 | 41 / 0 / 0 |
+| async:off | 27 / 0 / 0 | 60 / 0 / 0 | 65 / 0 / 0 | 64 / 0 / 0 |
+| async:on | 60 / 0 / 0 | 8 / 0 / 0 | - | - |
+| by-ref:on | 20 / 0 / 0 | 20 / 0 / 0 | 20 / 0 / 0 | 20 / 0 / 0 |
+| by-ref:runtime | 105 / 0 / 0 | 105 / 0 / 0 | 105 / 0 / 0 | 105 / 0 / 0 |
+| cell-fill:on | - | - | 8 / 0 / 0 | 5 / 0 / 0 |
+| cpu-tiling:on | 2 / 0 / 0 | 2 / 0 / 0 | 2 / 0 / 0 | 2 / 0 / 0 |
+| devgen:on | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 |
+| devmap:on | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 |
+| eager-init:on | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 |
+| epilogue:on | 12 / 0 / 0 | 12 / 0 / 0 | 12 / 0 / 0 | 12 / 0 / 0 |
+| exec:on | 66 / 0 / 0 | 50 / 16 / 0 | 66 / 0 / 0 | 66 / 0 / 0 |
+| face-fma:on | 88 / 0 / 0 | 106 / 0 / 0 | 104 / 0 / 0 | 108 / 0 / 0 |
+| face-registers:on | 171 / 0 / 0 | 184 / 8 / 0 | 195 / 0 / 0 | 187 / 5 / 0 |
+| face-separate:on | 36 / 0 / 0 | 32 / 0 / 0 | 36 / 0 / 0 | 32 / 0 / 0 |
+| grid-share:on | 47 / 0 / 0 | 64 / 0 / 0 | 28 / 4 / 0 | 8 / 0 / 0 |
+| hostopt:on | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 0 / 0 |
+| idx32:on | 40 / 0 / 0 | 28 / 0 / 0 | 52 / 0 / 0 | 24 / 0 / 0 |
+| interleave:on | 57 / 0 / 0 | 64 / 0 / 0 | 57 / 0 / 0 | 29 / 0 / 0 |
+| min-blocks:off | - | - | 55 / 0 / 0 | - |
+| min-blocks:on | 114 / 0 / 0 | 120 / 8 / 0 | 20 / 0 / 0 | 123 / 5 / 0 |
+| module:on | 72 / 4 / 0 | 70 / 11 / 0 | 76 / 12 / 0 | 75 / 11 / 0 |
+| panel-regs:on | 10 / 0 / 0 | 54 / 6 / 0 | 55 / 0 / 0 | 6 / 2 / 0 |
+| pdl:off | - | 69 / 0 / 0 | 70 / 0 / 0 | - |
+| prefetch:on | 27 / 0 / 0 | 60 / 0 / 0 | 54 / 11 / 0 | 58 / 6 / 0 |
+| resident:on | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 | 44 / 0 / 0 |
+| row-fit:on | 30 / 0 / 0 | 60 / 0 / 0 | 10 / 0 / 0 | 35 / 0 / 0 |
+| rowfold:on | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 |
+| splitk-atomic-zero:on | - | 9 / 0 / 0 | 5 / 0 / 0 | 5 / 0 / 0 |
+| splitk-atomic:on | 4 / 0 / 0 | 4 / 0 / 0 | 2 / 0 / 0 | 14 / 0 / 0 |
+| splitk:on | 4 / 0 / 0 | - | 12 / 0 / 0 | 8 / 0 / 0 |
+| streamk:on | - | 27 / 0 / 0 | 15 / 0 / 0 | - |
+| unroll:on | 114 / 0 / 0 | 128 / 0 / 0 | 130 / 0 / 0 | 128 / 0 / 0 |
+| warp-fill:on | 57 / 0 / 0 | 37 / 0 / 0 | 53 / 0 / 0 | 37 / 0 / 0 |
+| wide-fma:on | 51 / 0 / 0 | - | - | 45 / 0 / 0 |
+
+### Workload suite: iter ms (median of 30 reps), Mapal vs the best library / PyTorch, S64 beside it
+
+`best other` = fastest of the library leg (cuBLAS `lt`, CUTLASS, fused / cache / streams harnesses) and torch eager /
+compile on the same box. Decode on the 4090 / 5090 as shipped after this session (retain-resident ON, the measured
+arm): 33.05 ms → 2.491, 36.69 ms → 1.944. S64 ran on other boxes of the same parts.
+
+| workload | arch | CPU-only | GPU-only | CPU+GPU | null | best other (ms) | Mapal / best other | S64 CPU+GPU | S64 ratio |
+|---|---|---|---|---|---|---|---|---|---|
+| conv_2048_5 | rtx-4090 | 1.3083 | = shipped | 1.3338 | 0.040 | eager 0.0878 | 15.191 | 1.2274 | 13.775 |
+| decode_1024_256 | rtx-4090 | 1916.34 | = shipped | 40.58 | 0.002 | cache 13.2660 | 3.059 | 136.76 | 5.779 |
+| diamond_4096 | rtx-4090 | 287.98 | = shipped | 9.3463 | 0.001 | compile 8.3425 | 1.120 | 7.4382 | 0.857 |
+| ew_2048 | rtx-4090 | 1.6136 | = shipped | 0.1984 | 0.027 | fused 0.0573 | 3.462 | 0.2966 | 5.078 |
+| ew_4096 | rtx-4090 | 8.1164 | = shipped | 0.2718 | 0.135 | fused 0.2253 | 1.206 | 0.3720 | 1.650 |
+| fanout_4096 | rtx-4090 | 211.86 | = shipped | 6.1545 | 0.001 | streams 5.5030 | 1.118 | 4.9482 | 0.852 |
+| fir_4194304_16 | rtx-4090 | 1.3269 | = shipped | 0.0374 | 0.001 | compile 0.0620 | 0.603 | 0.0445 | 0.711 |
+| indep_4096 | rtx-4090 | 191.34 | = shipped | 6.3178 | 0.001 | compile 5.5368 | 1.141 | 5.0279 | 0.873 |
+| loop_2048 | rtx-4090 | 941.84 | = shipped | 2.5753 | 0.001 | cutlass 2.5836 | 0.997 | 38.46 | 15.703 |
+| loop_4096 | rtx-4090 | 8417.07 | = shipped | 19.65 | 0.002 | compile 21.5572 | 0.911 | - | - |
+| loopmm_1024_8 | rtx-4090 | 119.02 | = shipped | 0.5312 | 0.019 | eager 0.4127 | 1.287 | 13.12 | 33.534 |
+| rm_m128_d1024_h2048 | rtx-4090 | 2.5315 | = shipped | 0.1170 | 0.089 | compile 0.0591 | 1.980 | 0.1332 | 2.204 |
+| rm_m128_d256_h512 | rtx-4090 | 0.2084 | = shipped | 0.1011 | 0.288 | compile 0.0223 | 4.534 | 0.1557 | 6.921 |
+| rowsum_2048 | rtx-4090 | 17.56 | = shipped | 0.4232 | 0.007 | eager 0.3308 | 1.279 | - | - |
+| rowsum_4096 | rtx-4090 | 118.11 | = shipped | 2.4991 | 0.002 | compile 2.7197 | 0.919 | 2.5594 | 0.912 |
+| rt_mlp2_1024 | rtx-4090 | 510.93 | = shipped | 8.7197 | 0.001 | compile 1.7191 | 5.072 | 28.04 | 16.320 |
+| softmax_rows_2048 | rtx-4090 | 20.38 | = shipped | 0.5157 | 0.001 | compile 0.3318 | 1.554 | 6.2131 | 19.018 |
+| softmax_rows_4096 | rtx-4090 | 124.93 | = shipped | 3.5187 | 0.001 | compile 2.4186 | 1.455 | 25.86 | 8.935 |
+| conv_2048_5 | rtx-5090 | 1.7852 | = shipped | 1.8121 | 0.018 | compile 0.0799 | 22.679 | 0.4927 | 6.167 |
+| decode_1024_256 | rtx-5090 | 2171.98 | = shipped | 42.71 | 0.005 | cache 18.8700 | 2.264 | 171.87 | 8.702 |
+| diamond_4096 | rtx-5090 | 427.54 | = shipped | 6.1690 | 0.001 | streams 6.1328 | 1.006 | 7.5879 | 1.081 |
+| ew_2048 | rtx-5090 | 1.7417 | = shipped | 0.1065 | 0.122 | fused 0.0348 | 3.061 | 0.2783 | 8.485 |
+| ew_4096 | rtx-5090 | 8.5493 | = shipped | 0.1426 | 0.054 | fused 0.1311 | 1.088 | 0.3272 | 2.495 |
+| fanout_4096 | rtx-5090 | 284.72 | = shipped | 4.1503 | 0.001 | compile 4.0428 | 1.027 | 4.9674 | 1.059 |
+| fir_4194304_16 | rtx-5090 | 1.5815 | = shipped | 0.0267 | 0.009 | compile 0.0512 | 0.522 | 0.0309 | 0.628 |
+| indep_4096 | rtx-5090 | 284.92 | = shipped | 4.1371 | 0.000 | streams 4.0345 | 1.025 | 5.0399 | 1.067 |
+| loop_2048 | rtx-5090 | 1050.28 | = shipped | 2.1838 | 0.003 | compile 2.0388 | 1.071 | 22.64 | 10.481 |
+| loop_4096 | rtx-5090 | 8553.22 | = shipped | 15.83 | 0.000 | compile 16.2929 | 0.971 | - | - |
+| loopmm_1024_8 | rtx-5090 | 129.01 | = shipped | 0.4818 | 0.006 | compile 0.3523 | 1.368 | 4.6312 | 12.706 |
+| rm_m128_d1024_h2048 | rtx-5090 | 3.7645 | = shipped | 0.0814 | 0.148 | compile 0.0430 | 1.894 | 0.0840 | 2.049 |
+| rm_m128_d256_h512 | rtx-5090 | 0.2571 | = shipped | 0.0389 | 0.457 | compile 0.0225 | 1.728 | 0.0489 | 2.658 |
+| rowsum_2048 | rtx-5090 | 22.55 | = shipped | 0.3156 | 0.002 | compile 0.2621 | 1.204 | - | - |
+| rowsum_4096 | rtx-5090 | 144.52 | = shipped | 2.1269 | 0.000 | compile 1.9640 | 1.083 | 2.5616 | 1.112 |
+| rt_mlp2_1024 | rtx-5090 | 555.09 | = shipped | 7.5898 | 0.001 | compile 1.5514 | 4.892 | 12.68 | 7.859 |
+| softmax_rows_2048 | rtx-5090 | 28.90 | = shipped | 0.3732 | 0.031 | compile 0.2642 | 1.412 | 3.2561 | 11.953 |
+| softmax_rows_4096 | rtx-5090 | 176.01 | = shipped | 2.3396 | 0.001 | compile 2.0142 | 1.162 | 14.75 | 6.314 |
+| conv_2048_5 | h100-pcie | 0.9546 | = shipped | 1.0467 | 0.015 | compile 0.7784 | 1.345 | 1.1127 | 1.429 |
+| decode_1024_256 | h100-pcie | 2932.36 | = shipped | 87.42 | 0.021 | cache 27.0520 | 3.232 | 300.43 | 11.644 |
+| diamond_4096 | h100-pcie | 423.18 | = shipped | 13.50 | 0.000 | streams 12.9601 | 1.042 | 13.57 | 1.038 |
+| ew_2048 | h100-pcie | 1.6441 | = shipped | 0.6552 | 0.030 | compile 0.0329 | 19.915 | 0.6566 | 19.777 |
+| ew_4096 | h100-pcie | 5.1683 | = shipped | 0.7766 | 0.018 | compile 0.1140 | 6.812 | 0.7715 | 6.791 |
+| fanout_4096 | h100-pcie | 279.06 | = shipped | 8.9745 | 0.001 | streams 9.1565 | 0.980 | 9.0416 | 0.977 |
+| fir_4194304_16 | h100-pcie | 0.9421 | = shipped | 0.0639 | 0.044 | eager 0.0928 | 0.689 | 0.0591 | 0.637 |
+| indep_4096 | h100-pcie | 275.61 | = shipped | 9.0438 | 0.003 | streams 8.3833 | 1.079 | 9.0852 | 1.075 |
+| loop_2048 | h100-pcie | 1520.36 | = shipped | 6.4506 | 0.002 | lt 5.0808 | 1.270 | 35.00 | 6.890 |
+| loop_4096 | h100-pcie | 14689.95 | = shipped | 36.28 | 0.000 | lt 36.9943 | 0.981 | - | - |
+| loopmm_1024_8 | h100-pcie | 179.63 | = shipped | 1.0944 | 0.013 | compile 0.7586 | 1.443 | 8.2035 | 10.740 |
+| rm_m128_d1024_h2048 | h100-pcie | 8.2118 | = shipped | 0.2017 | 0.047 | eager 0.0837 | 2.410 | 0.4910 | 5.832 |
+| rm_m128_d256_h512 | h100-pcie | 1.0181 | = shipped | 0.1423 | 0.016 | eager 0.0339 | 4.199 | 0.2805 | 7.835 |
+| rowsum_2048 | h100-pcie | 25.73 | = shipped | 0.9295 | 0.006 | compile 0.6414 | 1.449 | - | - |
+| rowsum_4096 | h100-pcie | 164.26 | = shipped | 4.7771 | 0.001 | compile 4.6128 | 1.036 | 4.7801 | 1.036 |
+| rt_mlp2_1024 | h100-pcie | 767.14 | = shipped | 20.54 | 0.370 | compile 3.1949 | 6.429 | 51.75 | 14.424 |
+| softmax_rows_2048 | h100-pcie | 33.21 | = shipped | 1.0563 | 0.023 | compile 0.6488 | 1.628 | 16.09 | 24.789 |
+| softmax_rows_4096 | h100-pcie | 171.33 | = shipped | 5.1955 | 0.000 | compile 4.7213 | 1.100 | 55.09 | 11.668 |
+| conv_2048_5 | rtx-3090 | 1.4155 | = shipped | 1.4342 | 0.038 | compile 0.1608 | 8.919 | 1.8971 | 11.725 |
+| decode_1024_256 | rtx-3090 | 3890.90 | = shipped | 54.05 | 0.004 | cache 32.9520 | 1.640 | 575.73 | 15.670 |
+| diamond_4096 | rtx-3090 | 671.17 | = shipped | 17.04 | 0.001 | streams 17.1807 | 0.992 | 16.01 | 1.028 |
+| ew_2048 | rtx-3090 | 0.8906 | = shipped | 0.4329 | 0.054 | compile 0.0625 | 6.926 | 0.2746 | 4.394 |
+| ew_4096 | rtx-3090 | 4.1150 | = shipped | 0.5074 | 0.011 | compile 0.2406 | 2.109 | 0.4073 | 1.693 |
+| fanout_4096 | rtx-3090 | 434.49 | = shipped | 11.36 | 0.000 | streams 11.5272 | 0.985 | 10.71 | 1.009 |
+| fir_4194304_16 | rtx-3090 | 0.9845 | = shipped | 0.0838 | 0.002 | compile 0.1126 | 0.744 | 0.0832 | 0.789 |
+| indep_4096 | rtx-3090 | 389.69 | = shipped | 11.21 | 0.018 | streams 11.2589 | 0.996 | 10.72 | 1.050 |
+| loop_2048 | rtx-3090 | 1997.45 | = shipped | 7.0657 | 0.002 | lt 6.1430 | 1.150 | 79.11 | 13.990 |
+| loop_4096 | rtx-3090 | 17627.41 | = shipped | 46.06 | 0.005 | lt 45.6028 | 1.010 | - | - |
+| loopmm_1024_8 | rtx-3090 | 238.12 | = shipped | 1.6191 | 0.001 | compile 0.8960 | 1.807 | 20.15 | 23.339 |
+| rm_m128_d1024_h2048 | rtx-3090 | 6.9193 | = shipped | 0.3484 | 0.000 | eager 0.0953 | 3.656 | 0.3495 | 4.064 |
+| rm_m128_d256_h512 | rtx-3090 | 0.5864 | = shipped | 0.1079 | 0.004 | eager 0.0276 | 3.908 | 0.1229 | 4.622 |
+| rowsum_2048 | rtx-3090 | 35.62 | = shipped | 0.9423 | 0.001 | compile 0.7762 | 1.214 | - | - |
+| rowsum_4096 | rtx-3090 | 234.85 | = shipped | 5.8710 | 0.000 | compile 5.7917 | 1.014 | 5.5507 | 1.047 |
+| rt_mlp2_1024 | rtx-3090 | 1028.22 | = shipped | 14.49 | 0.006 | compile 4.1421 | 3.497 | 47.07 | 12.469 |
+| softmax_rows_2048 | rtx-3090 | 40.55 | = shipped | 1.1036 | 0.004 | compile 0.7567 | 1.458 | 11.36 | 14.996 |
+| softmax_rows_4096 | rtx-3090 | 248.09 | = shipped | 6.3963 | 0.001 | compile 5.8808 | 1.088 | 42.52 | 7.878 |
+
+### Tests
+
+| test | result |
+|---|---|
+| `MAPAL_REQUIRE_CLANG=1 cargo test --workspace --release --no-fail-fast -- --test-threads=1` | 1231 passed, 0 failed, 1 ignored (91 binaries) |
+| `differential_carried_loops_values_and_movement` (shared generator `crates/mapal-rewrite/tests/testgen`) | 320 programs (270 run to the end), 434 loops; per-trip copies 292 = required 292; values = interpreter, ON and OFF, -O0 and -O2 |
+| `differential_device_loops_values_and_movement` (emulated h100-pcie) | 64 programs, 59 with a device unit, 37 device-carried states; values = interpreter ON and OFF; movement = the plan's |
+| `algos.rs` `view_death_follows_projections`, `view_death_init_lives_through_the_loop_exit` | ok |
+| `resident.rs` ping-pong (`two`, 0 copies), one buffer (`one`), row writes in place (`inplace`), device state without host bytes | ok |
+| found by the generator, fixed | an in-place write in the parallel entry racing another task's read (S64 arm too); two device carries on one merge sharing a slot; task-local spare buffers |
+
+## S64
 
 Raw: [`benches/results/evidence/s64/`](../../../benches/results/evidence/s64/) · tables:
 `python3 benches/gpu/evidence_report.py benches/results/evidence/s64` (and `…/s64/endcheck`) · checker:
@@ -325,9 +645,9 @@ Raw: [`benches/results/evidence/s64/`](../../../benches/results/evidence/s64/) �
 | 106 | rtx-3090 | streamk | Filled | Contract | mm_16x18432x7168 mm_16x2048x7168 mm_4096x4096x4096 | explained, ON slower re-measured | mm_16x18432x7168 host.calls.zero 0->1; mm_16x18432x7168 occ.warps_per_sm 24->22; mm_16x18432x7168 sass.red 0->8; mm_16x2048x7168 host.calls.zero 0->1; mm_16x2048x7168 sass.red 0->4; mm_4096x4096x4096 host.calls.zero 0->1 | mm_16x18432x7168 ON/OFF 1.031/1.033 null 0.004 slower; mm_16x2048x7168 ON/OFF 1.319/1.413 null 0.011 slower; mm_4096x4096x4096 ON/OFF 1.114/1.100 null 0.001 slower |
 | 107 | rtx-3090 | splitk-atomic | Filled | Contract | mm_16x2048x7168 | explained | mm_16x2048x7168 host.calls.zero 0->1; mm_16x2048x7168 sass.red 0->4; +mm_16x2048x7168 host.calls.alloc 1->0; +mm_16x2048x7168 host.calls.launch 2->1 | mm_16x2048x7168 ON/OFF 0.991/1.000 null 0.011 inside |
 
-## End check: the warp-fill class split (ON = with the split, OFF = the pre-split build; taken on the H100, not on the 3090: `shipped` below reads the arm name)
+### End check: the warp-fill class split (ON = with the split, OFF = the pre-split build; taken on the H100, not on the 3090: `shipped` below reads the arm name)
 
-### How each optimization turned out in time (arms timed this session: ON / OFF, median over processes)
+#### How each optimization turned out in time (arms timed this session: ON / OFF, median over processes)
 
 | rung | arch | shipped | cells: ON/OFF (null) | ON faster / slower / inside null |
 |---|---|---|---|---|
@@ -339,7 +659,7 @@ Raw: [`benches/results/evidence/s64/`](../../../benches/results/evidence/s64/) �
 | warp-fill | h100-pcie | shipped ON | mm_128x2048x7168 0.575 (0.002); mm_128x2048x7168_c 0.529 (0.002); mm_128x2048x7168_rc 0.528 (0.002); pt_decode_1024_256 0.914 (0.163); pt_rm_m128_d1024_h2048 0.384 (0.355); pt_rm_m128_d1024_h2048_c 0.397 (0.005); pt_rm_m128_d256_h512 0.600 (0.276); pt_rm_m128_d256_h512_c 0.320 (0.009) | 6 / 0 / 2 |
 | warp-fill | rtx-3090 | shipped ON | mm_128x2048x7168 1.179 (0.003); mm_128x2048x7168_c 0.523 (0.003); mm_128x2048x7168_rc 1.058 (0.003); pt_decode_1024_256 0.995 (0.217); pt_rm_m128_d1024_h2048 0.571 (0.076); pt_rm_m128_d1024_h2048_c 0.522 (0.007); pt_rm_m128_d256_h512 0.627 (0.142); pt_rm_m128_d256_h512_c 0.462 (0.032) | 5 / 2 / 1 |
 
-### GEMM cells and MLP kernels: Mapal vs cuBLAS / cuBLASLt / CUTLASS (median ms, both processes)
+#### GEMM cells and MLP kernels: Mapal vs cuBLAS / cuBLASLt / CUTLASS (median ms, both processes)
 
 | cell | arch | Mapal default | realization | Mapal _c | Mapal _x | cuBLAS | cuBLASLt | CUTLASS | tuned CUTLASS | default / best library | null |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -350,7 +670,7 @@ Raw: [`benches/results/evidence/s64/`](../../../benches/results/evidence/s64/) �
 | pt_rm_m128_d1024_h2048 | rtx-3090 | 0.1608 | - | = | 0.1812 | 0.1024 | 0.0932 | 0.3533 | 0.1741 | 1.725 | 0.007 |
 | pt_rm_m128_d256_h512 | rtx-3090 | 0.0317 | - | = | 0.0399 | 0.0297 | 0.0256 | 0.0993 | 0.0297 | 1.238 | 0.032 |
 
-### Workload suite: iter ms (median of the reps), CPU-only / GPU-only / CPU+GPU, libraries, PyTorch
+#### Workload suite: iter ms (median of the reps), CPU-only / GPU-only / CPU+GPU, libraries, PyTorch
 
 | workload | arch | CPU-only | GPU-only | CPU+GPU (shipped) | null | kernel / copy / host ms, launches, MB (traced rep) | best library | torch eager | torch compile | shipped / best other |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -360,4 +680,3 @@ Raw: [`benches/results/evidence/s64/`](../../../benches/results/evidence/s64/) �
 | decode_1024_256 | rtx-3090 | 3950.51 | = shipped | 186.75 | 0.000 | 47.08 / 17.87 / 88.38, 4096, 4 | cache 30.9750 | - | - | 6.029 |
 | rm_m128_d1024_h2048 | rtx-3090 | 30.49 | = shipped | 0.2141 | 0.005 | 0.17 / 0.07 / 0.00, 2, 0 | - | - | - | - |
 | rm_m128_d256_h512 | rtx-3090 | 2.1282 | = shipped | 0.0942 | 0.036 | 0.04 / 0.07 / 0.00, 2, 0 | - | - | - | - |
-
