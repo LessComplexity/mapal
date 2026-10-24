@@ -67,15 +67,13 @@ def results(raw, a):
     return open(p, errors='replace').read().splitlines() if os.path.exists(p) else []
 
 
-def suite_tables(raw):
-    print('### Workload suite: iter ms (median of the reps), CPU-only / GPU-only / CPU+GPU, libraries, PyTorch\n')
-    print('| workload | arch | CPU-only | GPU-only | CPU+GPU (shipped) | null | kernel / copy / host ms, launches, MB '
-          '(traced rep) | best library | torch eager | torch compile | shipped / best other |')
-    print('|---|---|---|---|---|---|---|---|---|---|---|')
+def suite_rows(raw):
+    """Per arch and suite program: the medians and legs the suite table prints (dicts)."""
     for a in ARCHS:
         probes = defaultdict(list)
         trace = {}
         chain = defaultdict(dict)
+        failed = set()
         torch = {}
         for l in results(raw, a):
             if l.startswith('probe prog='):
@@ -91,7 +89,10 @@ def suite_tables(raw):
                                             (int(f.get('bytes_in', 0)) + int(f.get('bytes_out', 0))) / 2 ** 20)
             elif m := re.match(r'chain probe=(\S+) (?:n=(\d+)|T=(\d+) d=(\d+)) leg=(\S+) .*?(?:med_ms|wall_med_ms)=([\d.]+)', l):
                 key = f'{m[1]}_{m[2]}' if m[2] else f'{m[1]}_{m[3]}_{m[4]}'
-                chain[key][m[5]] = float(m[6])
+                if (key, m[5]) not in failed:
+                    chain[key][m[5]] = float(m[6])
+            elif m := re.match(r'chain_values probe=(\S+) (?:n=(\d+)|T=(\d+) d=(\d+)) leg=(\S+) .* gate=FAIL', l):
+                failed.add((f'{m[1]}_{m[2]}' if m[2] else f'{m[1]}_{m[3]}_{m[4]}', m[5]))  # a leg off the oracle
             elif m := re.match(r'torch prog=(\S+) mode=(\w+) .*med_ms=([\d.]+) .*within=(\S+)', l):
                 torch[(m[1], m[2])] = (float(m[3]), m[4])
         progs = sorted({p for p, _ in probes})
@@ -109,11 +110,24 @@ def suite_tables(raw):
             others = [x for x in [bl[1] if bl else None, te[0] if te and te[1] == 'yes' else None,
                                   tc[0] if tc and tc[1] == 'yes' else None] if x]
             ratio = on / min(others) if on and others else None
-            tf = lambda t: '-' if not t else f'{t[0]:.4f}' + ('' if t[1] == 'yes' else f' ({t[1]})')
-            t = trace.get(p)
-            tr = f'{t[1]:.2f} / {t[2]:.2f} / {t[0]:.2f}, {t[3]}, {t[4]:.0f}' if t else '-'
-            print(f'| {key} | {a} | {f4(cpu)} | {gpu_s} | {f4(on)} | {f3(null)} | {tr} | '
-                  f'{f"{bl[0]} {bl[1]:.4f}" if bl else "-"} | {tf(te)} | {tf(tc)} | {f3(ratio)} |')
+            best = min([x for x in [bl and (bl[0], bl[1]), te and te[1] == 'yes' and ('eager', te[0]),
+                                    tc and tc[1] == 'yes' and ('compile', tc[0])] if x],
+                       key=lambda kv: kv[1], default=None)
+            yield dict(key=key, arch=a, cpu=cpu, gpu=gpu, gpu_s=gpu_s, on=on, null=null, trace=trace.get(p), lib=bl,
+                       eager=te, compile=tc, best=best, ratio=ratio)
+
+
+def suite_tables(raw):
+    print('### Workload suite: iter ms (median of the reps), CPU-only / GPU-only / CPU+GPU, libraries, PyTorch\n')
+    print('| workload | arch | CPU-only | GPU-only | CPU+GPU (shipped) | null | kernel / copy / host ms, launches, MB '
+          '(traced rep) | best library | torch eager | torch compile | shipped / best other |')
+    print('|---|---|---|---|---|---|---|---|---|---|---|')
+    tf = lambda t: '-' if not t else f'{t[0]:.4f}' + ('' if t[1] == 'yes' else f' ({t[1]})')
+    for r in suite_rows(raw):
+        t, bl = r['trace'], r['lib']
+        tr = f'{t[1]:.2f} / {t[2]:.2f} / {t[0]:.2f}, {t[3]}, {t[4]:.0f}' if t else '-'
+        print(f'| {r["key"]} | {r["arch"]} | {f4(r["cpu"])} | {r["gpu_s"]} | {f4(r["on"])} | {f3(r["null"])} | {tr} | '
+              f'{f"{bl[0]} {bl[1]:.4f}" if bl else "-"} | {tf(r["eager"])} | {tf(r["compile"])} | {f3(r["ratio"])} |')
     print()
 
 
