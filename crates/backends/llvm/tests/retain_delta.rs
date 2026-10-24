@@ -262,11 +262,8 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
     let r5 = at(r5);
     assert!(tile_calls(&r5).is_empty() && r5.contains("@mapal_gpu_launch("));
     assert_eq!(r5.matches("store i1 true, ptr").count(), 3, "K, V, x");
-    // The 4090's table (measured: no effect there) retains nothing; x still
-    // crosses as its row.
-    let shipped = at(GpuArms::default());
-    assert!(tile_calls(&shipped).is_empty() && shipped.contains("@mapal_gpu_launch"));
-    assert_eq!(shipped.matches("store i1 true, ptr").count(), 1, "x");
+    // The 4090's table retains since S65 (its row left GPU_RUNGS_OFF): shipped = r5.
+    assert_eq!(at(GpuArms::default()), r5);
 }
 
 // --- S54 `retain-resident`, `delta-h2d`, `lane-stride` ----------------------

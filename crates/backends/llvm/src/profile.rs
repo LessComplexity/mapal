@@ -1003,28 +1003,16 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                five reps with overlapping ranges. Prior retain-resident-h100-pcie{,-confirm}.txt wall \
                exact 0.971/0.705x and contract 1.143/1.016x; fresh run repeats the confirm host. \
                Traced kernels improve 1.219/1.130x but do not establish a stable wall win. \
-               Disputed S54 selection fails initial acceptance; OFF is not claimed faster; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 64)",
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 64); \
+               S65 (no loop residue): ON/OFF 1.008 (per rep 0.946..1.139) inside null 0.094, the one-row site costs what the \
+               tile site does (2046 launches 45.18 ms vs 2048 launches 45.83 ms; benches/results/evidence/s65/h100-pcie)",
     },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "retain-resident",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "retain-resident-rtx-5090.txt / retain-resident-rtx-5090-confirm.txt decode_1024_256 OFF/ON loop \
-               1.008 / 1.016 (ON 343–360 / 328–366 ms vs OFF 345–363 / 336–351 ms, overlapping), process wall \
-               1.022 / 1.005: not > 1% in both sessions. The whole K/V site is launch-bound there: traced kernel \
-               76 vs 82 ms over 1024 steps; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 65)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "retain-resident",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "retain-resident-rtx-4090.txt / retain-resident-rtx-4090-confirm.txt decode_1024_256 OFF/ON loop \
-               1.025 / 0.981 (ON 337–367 / 357–411 ms vs OFF 341–365 / 341–419 ms, overlapping), process wall \
-               1.011 / 0.988: the sign changes between sessions. The whole K/V site costs what the row does \
-               there (traced kernel 103 vs 105 and 108 vs 110 ms over 1024 steps, exact); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 66)",
-    },
+    // S65: with the loop residue gone (by-ref), retention ships ON on the 4090 and the 5090 — the S54
+    // rows for both are removed. decode_1024_256 shipped / retain-resident ON, 30 interleaved reps:
+    // 4090 40.58 vs 33.05 ms, ON/OFF 0.824 (per rep 1.192..1.252 faster, null 0.050); 5090 42.71 vs
+    // 36.69 ms, 0.857 (1.122..1.191, null 0.037). Explained by the traced kernels: the 1024-row K/V
+    // tile site (2048 launches, 22.34 / 23.69 ms) becomes its one-row site (2046 launches, 14.94 /
+    // 17.49 ms); benches/results/evidence/s65/{rtx-4090,rtx-5090}.
     // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
     // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
     // `streams` ships ON (no row) on the A100, measured on the device-only shape
@@ -4702,8 +4690,8 @@ mod tests {
     }
 
     /// S54 R5: the delta upload and the strided one-row site ship on every
-    /// measured part. Retention on the resident buffer ships on the 3090
-    /// and A100; S56's untraced H100 selection did not establish a stable win.
+    /// measured part. Retention on the resident buffer ships on the 3090,
+    /// A100, 4090 and 5090 (S65); the H100 selection did not establish a win.
     #[test]
     fn r5_rungs_are_the_measured_table() {
         for p in GPU_MEASURED {
@@ -4711,7 +4699,7 @@ mod tests {
                 for contract in [false, true] {
                     let r = p.gpu_rungs(wps, contract);
                     assert!(r.resident && r.delta_h2d && r.lane_stride, "{}", p.name);
-                    let off = ["rtx-4090", "rtx-5090", "h100-pcie"].contains(&p.name);
+                    let off = p.name == "h100-pcie";
                     assert_eq!(r.retain_resident, !off, "{}", p.name);
                 }
             }
