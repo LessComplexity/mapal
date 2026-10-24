@@ -25,6 +25,7 @@ OPS = {'a': (7, 13, 101, 50, 7.0), 'b': (11, 57, 103, 51, 9.0), 'e': (5, 3, 97, 
 dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
+torch.backends.cudnn.benchmark = True  # cuDNN autotunes each conv shape (untimed first call + warm-ups)
 
 
 def law(length, mul, add, mod, off, div, shift=0):
@@ -70,6 +71,11 @@ def workload(stem):
         n, kk = map(int, stem.split('_')[2:])
         w = n + kk - 1
         wt, img = op('e', kk * kk).view(1, 1, kk, kk), op('a', w * w).view(1, 1, w, w)
+        return (lambda img, wt: corners(torch.nn.functional.conv2d(img, wt))), (img, wt)
+    if stem.startswith(('pt_convmc_', 'px_convmc_')):  # gen_tiles.py `conv_mc`: NCHW, C -> C, valid
+        N, C, n, kk = map(int, stem.split('_')[2:])
+        wt = op('e', C * C * kk * kk).view(C, C, kk, kk)
+        img = op('a', N * C * (n + kk - 1) ** 2).view(N, C, n + kk - 1, n + kk - 1)
         return (lambda img, wt: corners(torch.nn.functional.conv2d(img, wt))), (img, wt)
     # generic-fusion chains (gen_tiles.py `attention`, `smlp`, `firew_rowsum`, `ewconvew`).
     if stem.startswith('pt_attn_'):
@@ -117,6 +123,40 @@ def workload(stem):
             for t in range(T):
                 o = step(torch.tensor(t, device=dev), o, K, V)
             return [o, o, o.sum().view(1)]
+        return run, ('step', step)
+    if stem.startswith(('pt_causal_', 'pt_prefill_')):
+        # gen_tiles.py `decode(causal=True)` / `decode(prefill=P)`: softmax over rows <= t (expo, max-subtracted).
+        n = [int(v) for v in stem.split('_')[2:]]
+        T, P, d = n if len(n) == 3 else (n[0], 0, n[1])
+        w, scale = 16 * d, d ** 0.5
+        wk = law(d * d, 7, 13, 101, 50, float(w)).view(d, d)
+        wv = law(d * d, 11, 57, 103, 51, float(w)).view(d, d)
+        F = law(T * d, 7, 13, 101, 50, 64.0).view(T, d)
+        Q = law(T * d, 5, 3, 97, 48, float(w)).view(T, d)
+        rows = torch.arange(T, device=dev)
+
+        def softmax_v(s, mask, V):  # s: (..., T); masked rows contribute 0
+            s = torch.where(mask, s, -1e9)
+            p = torch.where(mask, expo((s - s.max(dim=-1, keepdim=True).values) / scale), 0.0)
+            return (p @ V) / p.sum(dim=-1, keepdim=True)
+
+        def step(t, o, K, V):  # K, V: the cache, zero rows past t
+            tv = t.view(1)
+            xr = F.index_select(0, tv).view(d) + o
+            K.index_copy_(0, tv, (xr @ wk).view(1, d))
+            V.index_copy_(0, tv, (xr @ wv).view(1, d))
+            return softmax_v(K @ Q.index_select(0, tv).view(d), rows <= t, V)
+
+        def run(step):
+            K, V = torch.zeros(T, d, device=dev), torch.zeros(T, d, device=dev)
+            o, po = torch.zeros(d, device=dev), None
+            if P:  # prefill: the prompt's K/V and causal attention, every prompt row's output
+                K[:P], V[:P] = F[:P] @ wk, F[:P] @ wv
+                po = softmax_v(Q[:P] @ K.T, rows.view(1, T) <= torch.arange(P, device=dev).view(P, 1), V)
+                o = po[P - 1]
+            for t in range(P, T):
+                o = step(torch.tensor(t, device=dev), o, K, V)
+            return [o, o, o.sum().view(1)] + ([po.sum().view(1)] if P else [])
         return run, ('step', step)
     if stem.startswith('pt_loopmm_'):
         n, iters = map(int, stem.split('_')[2:])
@@ -188,12 +228,13 @@ def gate(stem, outs, vals_dir):
         return 'no-mapal', float('nan')
     want = [float(x) for x in open(p).read().split() if re.fullmatch(r'-?[\d.]+(e-?\d+)?', x)]
     got = ends(outs)
-    if stem.startswith('pt_decode_'):
-        got = [outs[0][0].item(), outs[0][-1].item(), outs[2][0].item()]
+    loop = stem.startswith(('pt_decode_', 'pt_causal_', 'pt_prefill_'))
+    if loop:  # out[0], out[d-1], Σout (+ Σpo after a prefill)
+        got = [outs[0][0].item(), outs[0][-1].item()] + [o[0].item() for o in outs[2:]]
     rms = [math.sqrt(float((o.double() ** 2).mean())) for o in outs]
     rms_of = [r for r, o in zip(rms, outs) for _ in range(2 if o.numel() > 1 else 1)]
-    if stem.startswith('pt_decode_'):
-        rms_of = [rms[0], rms[0], abs(got[2])]
+    if loop:
+        rms_of = [rms[0], rms[0]] + [abs(g) for g in got[2:]]
     dev_ = max((abs(g - w) / max(abs(w), r, 1e-30) for g, w, r in zip(got, want, rms_of)), default=float('nan'))
     ok = len(got) >= len(want) > 0 and dev_ <= 1e-3
     return ('yes' if ok else 'no'), dev_
