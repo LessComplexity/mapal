@@ -63,7 +63,7 @@ impl<'a> FnEmit<'a> {
         let fname = if self.cell_slots.is_empty() {
             self.fnames[self.f].clone()
         } else {
-            format!("{}_cell", self.fnames[self.f])
+            format!("{}{}", self.fnames[self.f], self.cell_suffix)
         };
 
         // Only the entry function's frame is once-per-program (plan-s29

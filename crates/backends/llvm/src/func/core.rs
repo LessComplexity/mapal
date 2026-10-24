@@ -55,7 +55,7 @@ impl<'a> FnEmit<'a> {
             perf_timing: false,
             tile_plan: tiling.then(|| ir.tile_plan(f)),
             device: if tiling {
-                gpu::placement(ir, f, &ir.tile_plan(f), profile)
+                gpu::placement(ir, f, &ir.tile_plan(f), profile, true)
             } else {
                 SecondaryMap::new()
             },
@@ -85,6 +85,7 @@ impl<'a> FnEmit<'a> {
             row_bounds: None,
             groups: SecondaryMap::new(),
             cell_slots: Vec::new(),
+            cell_suffix: "_cell".into(),
             cell_vals: Vec::new(),
             path_plan: None,
             split_slots: Vec::new(),
@@ -135,7 +136,7 @@ impl<'a> FnEmit<'a> {
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
             let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, rungs);
-            self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile);
+            self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile, rungs.window);
             self.tile_plan = Some(plan);
             self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
         }
@@ -150,6 +151,10 @@ impl<'a> FnEmit<'a> {
             self.groups = self.epilogues();
         }
         self.resident = resident.then(|| self.resident_plan(rungs)).flatten();
+        // generic-fusion: the host intent line, in the entry block.
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.fuse_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.fuse_line));
+        }
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.
         if let Some(p) = &self.resident {

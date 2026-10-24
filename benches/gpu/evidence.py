@@ -98,7 +98,7 @@ def arm_of(stem):
 I64 = re.compile(r'^(add|sub|mul\.lo|mul\.wide|mad\.lo|mad\.wide|shl|shr)\.[usb]?(64|32)\b|^cvt\.[us]64\.[us]32')
 EXTRA = [('atom_add', r'^atom\.(global\.)?add\.f'), ('red_add', r'^red\.(global\.)?add\.f'), ('mma', r'^mma\.sync'),
          ('ldmatrix', r'^ldmatrix'), ('wgmma', r'^wgmma\.mma_async'), ('wait_n', r'^cp\.async\.wait_group'),
-         ('div_rem', r'^(div|rem)\.')]
+         ('div_rem', r'^(div|rem)\.'), ('call', r'^call')]
 
 
 PTX_KEYS = [k.replace('.', '_') for k, _ in CLS] + [k for k, _ in EXTRA] + ['i64_arith']
@@ -124,9 +124,10 @@ def ptx_counts(lines):
 def ptx_facts(text):
     """{entry: {...counts, maxntid, minnctapersm, hot: {...}}}"""
     out = {}
-    for name, _params, dirs, body in entries(text):
+    for name, params, dirs, body in entries(text):
         lines = [x.strip() for x in body.splitlines()]
         f = dict(ptx_counts(lines))
+        f['params'] = params.count('.param')
         for d in ('maxntid', 'minnctapersm'):
             m = re.search(r'\.' + d + r'\s+(\d+)', dirs)
             f[d] = int(m.group(1)) if m else 0
@@ -290,6 +291,15 @@ def host_facts(ll, asm):
         f['calls'] = {s: len(re.findall(r'call [^@\n]*@mapal_gpu_' + s + r'\(', ll)) for s in GPU_SYMS}
         f['par'] = len(re.findall(r'@mapal_par_begin\(', ll))
         f['sme'] = len(re.findall(r'@mapal_sme_panel', ll))
+        # generic-fusion: every function's `; mapal.fuse.host` line, summed, and the unit launches.
+        fu = Counter()
+        for m in re.finditer(r'; mapal\.fuse\.host (.*)$', ll, re.M):
+            k = kv(m.group(1))
+            for x in ('groups', 'units', 'launches'):
+                fu[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
+            fu['refused'] += len([r for r in str(k.get('refused', '')).split(';') if r])
+        fu['unit_calls'] = len(re.findall(r'@mapal_gpu_launchv\([^\n]*; unit$', ll, re.M))
+        f['fuse'] = dict(fu)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),
@@ -564,6 +574,16 @@ def launch_facts(path):
     return f
 
 
+def fuse_facts(f, dev):
+    """A unit kernel's `; mapal.fuse` line (func/fuse.rs): how many members it holds, keeps (no store, no
+    pointer), stores and reads from Gmem, and its `define`'s pointer parameters in the device unit."""
+    n = lambda key: len([x for x in str(f.get(key, '')).split(';') if x])
+    d = re.search(r'^define ptx_kernel void @' + re.escape(f['kernel']) + r'\((.*)\)', dev, re.M)
+    return dict(n_members=n('members'), n_keep=n('keep'), n_store=n('store'), n_gmem=n('gmem'),
+                n_law=n('law'), n_halo=str(f.get('members', '')).count('+halo'), rows=f.get('rows', 0),
+                smem=f.get('smem', 0), ll_params=d.group(1).count('ptr addrspace(1)') if d else -1)
+
+
 # ---- static: ptxas / cuobjdump / objdump ------------------------------------------------------------
 def static(d, sm):
     ev = os.path.join(d, 'evidence')
@@ -626,6 +646,7 @@ def facts(d, sm):
             src = json.load(open(al))['same_as']
         dev = read(base + '.dev.ll') or read(os.path.join(d, src + '.dev.ll')) or ''
         plans = {p['kernel']: p for p in (kv(m) for m in re.findall(r'^; mapal\.plan (.*)$', dev, re.M))}
+        fuses = {f['kernel']: fuse_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.fuse (.*)$', dev, re.M))}
         devm = re.search(r'^; mapal\.device (.*)$', dev, re.M)
         ptx = read(os.path.join(d, src + '.ptx'))
         pf = ptx_facts(ptx) if ptx else {}
@@ -653,7 +674,8 @@ def facts(d, sm):
         lau = launches(hll)
         for k in sorted(set(plans) | set(pf)):
             p = plans.get(k, {})
-            kf = dict(plan=p, ptx=pf.get(k, {}), ptxas=pa.get(k, {}), mod=dict(launched=launched(k, hll)),
+            kf = dict(plan=p, fuse=fuses.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
+                      mod=dict(launched=launched(k, hll)),
                       launch=lau.get(kid(k), {}),
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
@@ -704,7 +726,7 @@ class Scope(dict):
 
 
 SAFE = dict(ceil=math.ceil, set=set, max=max, min=min, len=len, sum=sum, any=any, all=all, abs=abs)
-NAMES = re.compile(r'\b(plan|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod)(\.\w+)+')
+NAMES = re.compile(r'\b(plan|fuse|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod|dev)(\.\w+)+')
 
 
 def ev(expr, ns):
@@ -747,7 +769,7 @@ def run_intent(it, state, ns):
     return out
 
 
-KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell')
+KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'fuse')
 
 
 def check(d, results=None, out=sys.stdout):
@@ -761,7 +783,8 @@ def check(d, results=None, out=sys.stdout):
             continue
         on, off = (set(x) for x in e['arm'])
         for k, kf in sorted(e['kernels'].items()):
-            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'ptx', 'ptxas', 'sass', 'occ', 'table', 'mod')})
+            ns = Scope({x: D(kf.get(x, {})) for x in ('plan', 'fuse', 'ptx', 'ptxas', 'sass', 'occ', 'table',
+                                                       'mod')})
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'])

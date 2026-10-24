@@ -248,6 +248,10 @@ pub(crate) struct ResidentPlan {
     /// S54 `streams` (R7): each straight-line device site's chain (its stream,
     /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
     pub chain: SecondaryMap<MorphismId, u32>,
+    /// generic-fusion `fuse`: the unit groups, by their launch (first member).
+    pub units: SecondaryMap<MorphismId, super::fuse::Unit>,
+    /// generic-fusion: the host intent line (`; mapal.fuse.host …`).
+    pub fuse_line: String,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -303,6 +307,15 @@ pub(crate) fn color(live: &[(u32, u32, u64)]) -> (Vec<u64>, u64) {
 impl ResidentPlan {
     pub(crate) fn is_carry_next(&self, o: ObjectId) -> bool {
         self.carries.iter().any(|c| c.next == o)
+    }
+
+    /// The unit launch that writes `o`'s device bytes, when a unit group
+    /// stores it (generic-fusion): before `o`'s own morphism's position.
+    pub(crate) fn unit_writer(&self, o: ObjectId) -> Option<MorphismId> {
+        self.units
+            .iter()
+            .find(|(_, u)| u.members.iter().any(|mb| mb.out == o && mb.store))
+            .map(|(m, _)| m)
     }
 
     /// The chain stream `o` is produced on (0: the legacy stream).
@@ -661,7 +674,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The `Map`s reading `v`: directly (capture-free) or through a product.
-    fn cell_readers(&self, v: ObjectId) -> Vec<MorphismId> {
+    pub(super) fn cell_readers(&self, v: ObjectId) -> Vec<MorphismId> {
         let is_map = |m: MorphismId| {
             matches!(
                 self.ir.morphism(m).expect("morphism resolves").op,
@@ -688,7 +701,7 @@ impl<'a> FnEmit<'a> {
 
     /// Does anything but the morphisms `ms` read `o` (through a product or
     /// directly)?
-    fn read_outside(&self, o: ObjectId, ms: &[MorphismId]) -> bool {
+    pub(super) fn read_outside(&self, o: ObjectId, ms: &[MorphismId]) -> bool {
         self.ir.out_edges(o).iter().any(|&m| {
             let mo = self.ir.morphism(m).expect("morphism resolves");
             match mo.op {
@@ -700,6 +713,29 @@ impl<'a> FnEmit<'a> {
                 _ => !ms.contains(&m),
             }
         })
+    }
+
+    /// Where each morphism runs: straight-line (`(None, _)`), or one phase of
+    /// one loop (`(Some(merge), advance)`). A morphism in neither (a guard
+    /// arm, loop machinery) is absent.
+    pub(super) fn regions(&self) -> SecondaryMap<MorphismId, (Option<ObjectId>, bool)> {
+        let mut region = SecondaryMap::new();
+        for m in self.straight_line().keys() {
+            region.insert(m, (None, false));
+        }
+        for scc in self.ir.loop_structure(self.f) {
+            for &mg in &scc.merges {
+                if let Some(plan) = self.ir.loop_plan(self.f, mg) {
+                    for &m in &plan.decide_order {
+                        region.insert(m, (Some(mg), false));
+                    }
+                    for &m in &plan.advance_order {
+                        region.insert(m, (Some(mg), true));
+                    }
+                }
+            }
+        }
+        region
     }
 
     /// **S54 R1: the per-cell morphisms each device site's store evaluates.**
@@ -723,23 +759,7 @@ impl<'a> FnEmit<'a> {
         if sites.is_empty() || cells.is_empty() {
             return out;
         }
-        // Where a morphism runs: straight-line, or one phase of one loop.
-        let mut region: SecondaryMap<MorphismId, (Option<ObjectId>, bool)> = SecondaryMap::new();
-        for m in self.straight_line().keys() {
-            region.insert(m, (None, false));
-        }
-        for scc in self.ir.loop_structure(self.f) {
-            for &mg in &scc.merges {
-                if let Some(plan) = self.ir.loop_plan(self.f, mg) {
-                    for &m in &plan.decide_order {
-                        region.insert(m, (Some(mg), false));
-                    }
-                    for &m in &plan.advance_order {
-                        region.insert(m, (Some(mg), true));
-                    }
-                }
-            }
-        }
+        let region = self.regions();
         let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
         let target = |m: MorphismId| self.ir.morphism(m).expect("morphism resolves").target;
         let mut order: Vec<MorphismId> = sites.keys().collect();
@@ -1422,6 +1442,8 @@ impl<'a> FnEmit<'a> {
         }
         plan.cells = cells;
         self.chains(&sites, &mut plan);
+        // generic-fusion `fuse`: the placed folds and cells, grouped.
+        self.fuse_units(&mut plan);
         // ponytail: the arena reuses bytes by topo position, which concurrent
         // streams do not follow; a function that opens streams keeps its own
         // buffers. Color per stream when a part ships both on one program.
@@ -1638,6 +1660,7 @@ impl<'a> FnEmit<'a> {
                     .iter()
                     .copied()
                     .chain(grouped_writer(&self.groups, o))
+                    .chain(plan.unit_writer(o))
                     .filter_map(|p| self.lup.position(p))
                     .min();
                 let death = self.lup.death(o);
@@ -1665,10 +1688,11 @@ impl<'a> FnEmit<'a> {
         // one not kept is copied out to a host reader: it keeps its slot.
         let copied_out = |o: ObjectId| {
             !plan.keep.contains_key(o)
-                && self
+                && (self
                     .groups
                     .values()
                     .any(|g| g.chain.iter().any(|mb| mb.out == o && mb.store))
+                    || plan.unit_writer(o).is_some())
         };
         for o in plan.keep.keys().chain(built) {
             if !plan.is_carry_next(o)
@@ -1790,7 +1814,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// `o`'s device buffer, allocated on first use (a loop reuses it).
-    fn dalloc(&mut self, o: ObjectId, bytes: u64) -> String {
+    pub(super) fn dalloc(&mut self, o: ObjectId, bytes: u64) -> String {
         let slot = self.dslot(o);
         let d = self.tmp();
         // An arena member: base + offset, the arena made on the first ask
@@ -1810,14 +1834,14 @@ impl<'a> FnEmit<'a> {
         d
     }
 
-    fn dload(&mut self, o: ObjectId) -> String {
+    pub(super) fn dload(&mut self, o: ObjectId) -> String {
         let slot = self.dslot(o);
         let d = self.tmp();
         self.line(format!("{d} = load i64, ptr {slot}"));
         d
     }
 
-    fn array_bytes(&self, ty: &Ty) -> u64 {
+    pub(super) fn array_bytes(&self, ty: &Ty) -> u64 {
         array_len(ty) * crate::profile::elem_bytes(array_elem(ty))
     }
 
@@ -1827,6 +1851,10 @@ impl<'a> FnEmit<'a> {
         let Some(plan) = &self.resident else {
             return false;
         };
+        if let Some(u) = plan.units.get(m).cloned() {
+            self.emit_unit(&u);
+            return true;
+        }
         if plan.skip.contains_key(m) {
             return true;
         }
@@ -2278,7 +2306,7 @@ impl<'a> FnEmit<'a> {
 
     /// A copy-out on stream `s`: the legacy entry on stream 0 (the one-stream
     /// text), else queued behind the chain's kernels and waited for.
-    fn d2h(&mut self, s: u32, h: &str, d: &str, off: &str, bytes: impl std::fmt::Display) {
+    pub(super) fn d2h(&mut self, s: u32, h: &str, d: &str, off: &str, bytes: impl std::fmt::Display) {
         if s == 0 {
             self.line(format!(
                 "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
@@ -2417,6 +2445,8 @@ impl<'a> FnEmit<'a> {
                     }
                 } else if p.rowfold.contains_key(m) || p.cells.contains_key(m) {
                     outs.push(t);
+                } else if let Some(u) = p.units.get(m) {
+                    outs.extend(u.members.iter().filter(|mb| mb.store).map(|mb| mb.out));
                 }
                 for o in outs {
                     if !p.keep.contains_key(o) && !p.is_carry_next(o) {
@@ -2548,14 +2578,14 @@ pub(crate) fn waves_merge((ba, wa): (u64, u64), (bb, wb): (u64, u64)) -> bool {
     last(ba, wa) * wb + last(bb, wb) * wa <= wa * wb
 }
 
-fn array_len(ty: &Ty) -> u64 {
+pub(super) fn array_len(ty: &Ty) -> u64 {
     match ty {
         Ty::Array { size, .. } => *size,
         _ => 0,
     }
 }
 
-fn array_elem(ty: &Ty) -> &Ty {
+pub(super) fn array_elem(ty: &Ty) -> &Ty {
     match ty {
         Ty::Array { elem, .. } => elem,
         other => other,

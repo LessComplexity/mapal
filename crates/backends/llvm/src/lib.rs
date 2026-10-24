@@ -343,6 +343,19 @@ pub struct GpuRungs {
     /// profile, CPU builds included. Off: products hold arrays inline (S64:
     /// five whole copies of the state per trip).
     pub by_ref: bool,
+    /// generic-fusion `fuse` (`func/fuse.rs`): placed folds and cells whose
+    /// read footprints stay inside one row of a group's unit (or a halo of a
+    /// recomputable cell) run as one unit kernel; a member no outside reader
+    /// needs is never stored. Off: the tile root only (`epilogue`, S54 R1).
+    /// Unmeasured on hardware: values, launches and movement are proven by
+    /// `tests/generic_fusion.rs`; the 4-arch timing is a later run.
+    pub fuse: bool,
+    /// generic-fusion `window` (design §4): a tile site whose reads are affine
+    /// in the fold's derived axes `(k÷div, k%div)` — a 2-D convolution's taps —
+    /// is a device site; the one-thread-per-cell kernel walks `k` in order and
+    /// addresses `cq·(k÷div) + cr·(k%div)`. Off: it stays the host's (`func/conv.rs`).
+    /// Unmeasured on hardware.
+    pub window: bool,
 }
 
 impl GpuRungs {
@@ -397,11 +410,13 @@ impl GpuRungs {
         hostopt: true,
         place: true,
         by_ref: true,
+        fuse: true,
+        window: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 49] = [
+    pub const NAMES: [&'static str; 51] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -451,6 +466,8 @@ impl GpuRungs {
         "hostopt",
         "place",
         "by-ref",
+        "fuse",
+        "window",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -505,6 +522,8 @@ impl GpuRungs {
             "hostopt" => &mut self.hostopt,
             "place" => &mut self.place,
             "by-ref" => &mut self.by_ref,
+            "fuse" => &mut self.fuse,
+            "window" => &mut self.window,
             _ => return None,
         })
     }
@@ -832,9 +851,9 @@ fn host_line(
     let (mut dev, mut host) = (0, 0);
     for (f, _) in ir.funcs() {
         let plan = crate::func::gpu::tile_plan(ir, f, profile, rungs);
-        let placed = crate::func::gpu::placement(ir, f, &plan, profile);
+        let placed = crate::func::gpu::placement(ir, f, &plan, profile, rungs.window);
         for (m, s) in plan.sites.iter() {
-            if crate::func::gpu::gpu_site(s, profile) {
+            if crate::func::gpu::gpu_site(s, profile, rungs.window) {
                 if placed.contains_key(m) {
                     dev += 1;
                 } else {
@@ -921,7 +940,8 @@ fn emit_module(
         && opts.packing
         && ir.funcs().any(|(f, _)| {
             let plan = ir.tile_plan(f);
-            let dev = crate::func::gpu::placement(ir, f, &plan, profile);
+            let window = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu).window;
+            let dev = crate::func::gpu::placement(ir, f, &plan, profile, window);
             plan.sites
                 .iter()
                 .any(|(m, site)| !dev.contains_key(m) && packing_site(site, profile, opts.contract))
@@ -941,6 +961,8 @@ fn emit_module(
     let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     // S65: the row folds each function runs on the device.
     let mut folds: Vec<mapal_ir::RowFoldSite> = Vec::new();
+    // generic-fusion `fuse`: each function's unit kernels.
+    let mut units: Vec<crate::func::fuse::UnitKernel> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     let mut orders: Vec<FoldOrder> = Vec::new();
     for (id, _) in ir.funcs() {
@@ -993,6 +1015,7 @@ fn emit_module(
             epi_calls.extend(cs);
             cells.extend(fe.cell_kernels());
             folds.extend(fe.rowfold_kernels());
+            units.extend(fe.unit_kernels());
             let (text, os) = fe.emit_ordered();
             orders.extend(os);
             funcs.push_str(&text);
@@ -1163,6 +1186,7 @@ fn emit_module(
                 &epi_bodies,
                 &cells,
                 &folds,
+                &units,
             )
         })
         .flatten();

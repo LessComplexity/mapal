@@ -1664,9 +1664,14 @@ impl CategoryIr {
         let cells = self.cell_plan(f);
         let elem = self.elem_plan(f);
         let bounds = self.bounds_proof(f);
+        // A closed form of the index alone: capture-free applications down
+        // to `Index` (a captured array is bytes the law reads).
         let rooted = |o: ObjectId| {
             let mut s = elem.src(o);
-            while let Some(ElemSrc::Apply { inner, .. }) = s {
+            while let Some(ElemSrc::Apply {
+                inner, captures: 0, ..
+            }) = s
+            {
                 s = Some(inner);
             }
             matches!(s, Some(ElemSrc::Index))
@@ -2032,7 +2037,7 @@ impl CategoryIr {
                     c,
                     depth,
                     seed.clone(),
-                    false,
+                    strided,
                 ) else {
                     continue;
                 };
@@ -2198,7 +2203,7 @@ impl CategoryIr {
         let (a, b, mul_a_first) = match (read0.clane, read1.clane) {
             (0, 1) => (read0, read1, true),
             (1, 0) => (read1, read0, false),
-            // `tile_plan_strided`, one row only: `b` walks the lanes at stride `l`.
+            // `tile_plan_strided`: `b` walks the lanes at stride `l` (`q·Kᵀ`, one row or 2-D).
             (0, l) if strided && l > 1 => (read0, read1, true),
             (l, 0) if strided && l > 1 => (read1, read0, false),
             _ => return None,
