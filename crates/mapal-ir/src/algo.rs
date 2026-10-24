@@ -377,10 +377,7 @@ pub enum Footprint {
     Col { c: u64 },
     /// `x[k]`, one fixed cell.
     Const(u64),
-    /// `x[base + cq·(t ÷ w) + cr·(t % w)]` — any other address affine in the
-    /// cell's derived axes (`x[t + 1]`, `x[2t]`, a transpose; generic-fusion).
-    Affine { w: u64, base: u64, cq: u64, cr: u64 },
-    /// Any other address (data-dependent, or not affine in `t`).
+    /// Any other address (data-dependent, or not one of the above forms).
     Other,
 }
 
@@ -402,108 +399,6 @@ pub struct CellSite {
     pub extent: u64,
     pub reads: Vec<CellRead>,
     pub body: FuncId,
-}
-
-/// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
-/// [`CategoryIr::footprint_plan`]): the read footprint of one producer →
-/// consumer edge, translated from the facts the recognizers already hold.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Reach {
-    /// `base + cq·(t ÷ w) + cr·(t % w) + Σ coef·kᵢ`, every `kᵢ ∈ [0, ext)`.
-    Affine {
-        w: u64,
-        base: u64,
-        cq: u64,
-        cr: u64,
-        taps: Vec<Tap>,
-    },
-    /// Some cell of `[lo, hi)`: a proven address not affine in `t`.
-    Range { lo: u64, hi: u64 },
-    /// Nothing is read: the producer's element law is closed-form over the
-    /// index (`elem_plan`), so a reader evaluates it.
-    Law,
-    /// Any cell (unproven or data-dependent).
-    Whole,
-}
-
-/// One reduction axis of an [`Reach::Affine`] read: `coef·k`, `k ∈ [0, ext)`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Tap {
-    pub coef: u64,
-    pub ext: u64,
-}
-
-/// One producer → consumer edge: `consumer`'s source slot `slot` is
-/// `producer`, read at `reach`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Edge {
-    pub consumer: MorphismId,
-    pub slot: u32,
-    pub producer: ObjectId,
-    pub reach: Reach,
-}
-
-/// Every array read of a function's per-cell, tile, row-fold, move, fold and
-/// `Index` morphisms, by consumer.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct FootprintPlan {
-    pub edges: SecondaryMap<MorphismId, Vec<Edge>>,
-}
-
-impl Reach {
-    /// The producer `(rows, cols)` rectangle a consumer block reads — consumer
-    /// cells `t = i·w + j`, `i ∈ rows`, `j ∈ cols` — for a producer laid out
-    /// `pw` wide (`len` cells; the rectangle is clipped to it). Each term moves
-    /// whole producer rows (its coefficient a multiple of `pw`) or columns; a
-    /// block whose columns would wrap into the next row is `None`, as is
-    /// [`Reach::Whole`]. [`Reach::Law`] reads nothing: an empty rectangle.
-    pub fn rect(
-        &self,
-        pw: u64,
-        len: u64,
-        rows: std::ops::Range<u64>,
-        cols: std::ops::Range<u64>,
-    ) -> Option<[std::ops::Range<u64>; 2]> {
-        if pw == 0 || rows.is_empty() || cols.is_empty() {
-            return None;
-        }
-        let prow = len.div_ceil(pw);
-        let (mut r, mut c) = match self {
-            Reach::Law => return Some([0..0, 0..0]),
-            Reach::Whole => return None,
-            Reach::Range { lo, hi } => {
-                let (a, b) = (lo / pw, hi.checked_sub(1)? / pw);
-                let cols = if a == b { lo % pw..(hi - 1) % pw + 1 } else { 0..pw };
-                return Some([a..b + 1, cols]);
-            }
-            Reach::Affine { base, .. } => ((base / pw, base / pw), (base % pw, base % pw)),
-        };
-        let Reach::Affine { w, cq, cr, taps, .. } = self else {
-            unreachable!()
-        };
-        if *w == 0 || cols.end > *w {
-            return None;
-        }
-        let terms = [(*cq, rows.start, rows.end - 1), (*cr, cols.start, cols.end - 1)]
-            .into_iter()
-            .chain(taps.iter().map(|t| (t.coef, 0, t.ext.saturating_sub(1))));
-        for (coef, lo, hi) in terms {
-            if coef == 0 || hi < lo {
-                continue;
-            }
-            if coef % pw == 0 {
-                let s = coef / pw;
-                r = (r.0.checked_add(s.checked_mul(lo)?)?, r.1.checked_add(s.checked_mul(hi)?)?);
-            } else {
-                c = (c.0.checked_add(coef.checked_mul(lo)?)?, c.1.checked_add(coef.checked_mul(hi)?)?);
-            }
-        }
-        if c.1 >= pw {
-            return None;
-        }
-        let rows = r.0.min(prow)..(r.1 + 1).min(prow);
-        Some([rows, c.0..c.1 + 1])
-    }
 }
 
 /// Everything a backend needs to emit one recognized tiled map site.
@@ -615,14 +510,16 @@ impl EmissionPlan {
     }
 }
 
-/// An index interval `[d·(a·e + b), … + len)` over a map body's captured
-/// scalar `e` (its capture slot) — [`Outside`] before `e` is resolved.
+/// The cells `lo + step·k`, `k ∈ [0, len)`, `lo = d·(a·e + b)` over a map
+/// body's captured scalar `e` (its capture slot) — [`Outside`] before `e` is
+/// resolved.
 #[derive(Clone, Copy, Debug)]
 struct Interval {
     d: u64,
     a: i64,
     e: Option<u32>,
     b: i64,
+    step: u64,
     len: u64,
 }
 
@@ -708,19 +605,22 @@ pub enum ElemSrc {
     },
 }
 
-/// **The piece of a `Map`'s law outside an index interval** (generic-fusion
-/// natural forms): `out[t] = x[t]` for every `t ∉ [lo, lo + len)`, `x` the
-/// map's capture `slot`, which the body reads at `t` and nowhere else; inside
-/// the interval the body's other arm. `lo = d·(a·e + b)`, `a·e + b` in `e`'s
-/// own wrapping int arithmetic (the program's value; `e` a captured int
-/// scalar of the map, `None`: `lo = d·b`), the product exact.
+/// **The piece of a `Map`'s law outside a set of cells** (generic-fusion
+/// natural forms): `out[t] = x[t]` for every `t` that is not one of the cells
+/// `lo + step·k`, `k ∈ [0, len)`; `x` the map's capture `slot`, which the
+/// body reads at `t` and nowhere else; on those cells the body's other arm.
+/// `lo = d·(a·e + b)`, `a·e + b` in `e`'s own wrapping int arithmetic (the
+/// program's value; `e` a captured int scalar of the map, `None`: `lo = d·b`),
+/// the product exact. `len = u64::MAX`: to the array's end.
 ///
 /// A row write `(t ÷ d == r) ? new(t) : x[t]` is one (`[d·r, d·r + d)`), and
 /// so is `(lo ≤ t ∧ t < lo + len) ? new(t) : x[t]` (`d = 1`; `n − 1 + len`
 /// fits the index type, so `lo + len` never wraps where the interval meets
-/// `[0, n)`). Only `[lo, lo + len) ∩ [0, n)` is computed; every other cell
-/// is the capture's — which is what lets a row write run in place over its
-/// row ([`CategoryIr::write_delta`]'s map step, the emitter's range map).
+/// `[0, n)`), and a column write `(t % s == r) ? new(t) : x[t]` (`step = s`,
+/// from `r`: `t ≥ 0`, so `t % s` is exact and only `r ∈ [0, s)` matches).
+/// Only those cells within `[0, n)` are computed; every other cell is the
+/// capture's — which is what lets a row write run in place over its row
+/// ([`CategoryIr::write_delta`]'s map step, the emitter's range map).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outside {
     pub slot: u32,
@@ -728,6 +628,7 @@ pub struct Outside {
     pub a: i64,
     pub e: Option<ObjectId>,
     pub b: i64,
+    pub step: u64,
     pub len: u64,
 }
 
@@ -1530,123 +1431,6 @@ impl CategoryIr {
         })
     }
 
-    /// **The read footprint of every producer → consumer edge of `f`**
-    /// (generic-fusion, [`Reach`]): for each consumer's cell `t`, the producer
-    /// cells it reads — translated from the facts the recognizers already
-    /// hold, nothing derived anew: a tile site's [`TileRead`]s
-    /// (`tile_plan_strided`: `w = c`, `cq = ci`, `cr = clane`, the fold's taps,
-    /// a `ksplit`'s two), a row fold's read (`w = 1`), a move site's, a cell's
-    /// [`CellRead`]s, a whole fold (`[1, len]`), a host `Index` (the address's
-    /// proven range), and [`Reach::Law`] wherever `elem_plan` rebuilds the
-    /// producer from the index. Absent consumers read through no fact here
-    /// (a `Call`, a loop's machinery): a reader of the plan treats them as
-    /// [`Reach::Whole`].
-    pub fn footprint_plan(&self, f: FuncId) -> FootprintPlan {
-        let mut out = FootprintPlan::default();
-        let Some(fd) = self.func(f) else {
-            return out;
-        };
-        let tiles = self.tile_plan_strided(f);
-        let folds = self.row_fold(f);
-        let moves = self.move_plan(f);
-        let cells = self.cell_plan(f);
-        let elem = self.elem_plan(f);
-        let (_, ranges) = self.bounds_proof_inner(f, &mut Vec::new());
-        let law = |o: ObjectId| {
-            fn rooted(s: &ElemSrc) -> bool {
-                match s {
-                    ElemSrc::Index => true,
-                    ElemSrc::Apply { inner, .. } => rooted(inner),
-                    _ => false,
-                }
-            }
-            elem.src(o).is_some_and(rooted)
-        };
-        let read = |r: &TileRead, c: u64, k: u64| {
-            let taps = match r.ksplit {
-                Some(s) => vec![Tap { coef: s.cq, ext: k / s.div }, Tap { coef: s.cr, ext: s.div }],
-                None => vec![Tap { coef: r.ck, ext: k }],
-            };
-            Reach::Affine { w: c, base: r.base, cq: r.ci, cr: r.clane, taps }
-        };
-        let affine = |w, base, cq, cr| Reach::Affine { w, base, cq, cr, taps: Vec::new() };
-        for &m in &fd.morphisms {
-            let Some(mm) = self.morphisms.get(m) else {
-                continue;
-            };
-            let src = |k: u32| match mm.op {
-                Operation::Map { captures: 0, .. } => Some(mm.source),
-                _ => self.pair_slot_source(mm.source, k),
-            };
-            let mut edges: Vec<(u32, Reach)> = Vec::new();
-            if let Some(s) = tiles.sites.get(m) {
-                edges.push((s.a.slot, read(&s.a, s.c, s.k)));
-                edges.push((s.b.slot, read(&s.b, s.c, s.k)));
-            } else if let Some(s) = folds.get(m) {
-                edges.push((s.a.slot, read(&s.a, 1, s.k)));
-            } else if let Some(s) = moves.sites.get(m) {
-                edges.push((s.slot, affine(s.width, s.base, s.cq, s.cr)));
-            } else if let Some(s) = cells.get(m) {
-                for r in &s.reads {
-                    let reach = match r.foot {
-                        Footprint::Same => affine(1, 0, 1, 0),
-                        Footprint::Row { c } => affine(c, 0, 1, 0),
-                        Footprint::Col { c } => affine(c, 0, 0, 1),
-                        Footprint::Const(k) => affine(1, k, 0, 0),
-                        Footprint::Affine { w, base, cq, cr } => affine(w, base, cq, cr),
-                        Footprint::Other => Reach::Whole,
-                    };
-                    edges.push((r.slot, reach));
-                }
-            } else {
-                match mm.op {
-                    Operation::Fold { captures, .. } => {
-                        let len = self
-                            .pair_slot_source(mm.source, captures + 1)
-                            .and_then(|o| self.objects.get(o))
-                            .and_then(|o| match o.ty {
-                                Ty::Array { size, .. } => Some(size),
-                                _ => None,
-                            });
-                        if let Some(len) = len {
-                            let whole = Reach::Affine {
-                                w: 1,
-                                base: 0,
-                                cq: 0,
-                                cr: 0,
-                                taps: vec![Tap { coef: 1, ext: len }],
-                            };
-                            edges.push((captures + 1, whole));
-                        }
-                    }
-                    Operation::Index => {
-                        let reach = match self.pair_slot_source(mm.source, 1).and_then(|a| ranges.get(a)) {
-                            Some(&Rng::Int(lo, hi)) if lo == hi => affine(1, lo, 0, 0),
-                            Some(&Rng::Int(lo, hi)) if self.bounds_proof(f).proven(m) => {
-                                Reach::Range { lo, hi: hi.saturating_add(1) }
-                            }
-                            _ => Reach::Whole,
-                        };
-                        edges.push((0, reach));
-                    }
-                    _ => {}
-                }
-            }
-            let edges: Vec<Edge> = edges
-                .into_iter()
-                .filter_map(|(slot, reach)| {
-                    let producer = src(slot)?;
-                    let reach = if law(producer) { Reach::Law } else { reach };
-                    Some(Edge { consumer: m, slot, producer, reach })
-                })
-                .collect();
-            if !edges.is_empty() {
-                out.edges.insert(m, edges);
-            }
-        }
-        out
-    }
-
     /// A nested `Map`/`Fold` `g` of a cell body with input `input` that reads
     /// nothing of the cell's inputs but scalars: no array operand is one of
     /// `input`'s components, and its body (and theirs) holds no `Index` — so
@@ -1707,84 +1491,7 @@ impl CategoryIr {
         if let Some(c) = split(Operation::Mod) {
             return Footprint::Col { c };
         }
-        match self.cell_affine(addr, input, captures, &mut None, 0) {
-            // `t = c·(t ÷ c) + t % c`: one width for every term.
-            Some((base, at, aq, ar, w)) => {
-                let w = w.unwrap_or(1);
-                // (`t ÷ 1 = t`, `t % 1 = 0`.)
-                let (cq, cr) = if w == 1 {
-                    (at.saturating_add(aq), 0)
-                } else {
-                    (w.saturating_mul(at).saturating_add(aq), at.saturating_add(ar))
-                };
-                Footprint::Affine { w, base, cq, cr }
-            }
-            None => Footprint::Other,
-        }
-    }
-
-    /// `addr` as `base + at·t + aq·(t ÷ w) + ar·(t % w)` over the map index `t`,
-    /// literals, `Add` and `Mul` by a literal; one literal `w` for every
-    /// `÷`/`%` (recorded in `w`). Depth-guarded (J1).
-    fn cell_affine(
-        &self,
-        o: ObjectId,
-        input: ObjectId,
-        captures: u32,
-        w: &mut Option<u64>,
-        depth: u32,
-    ) -> Option<(u64, u64, u64, u64, Option<u64>)> {
-        if depth > 16 {
-            return None;
-        }
-        if self.tile_input_proj_index(o, input) == Some(captures) {
-            return Some((0, 1, 0, 0, *w));
-        }
-        if let Some(b) = self.tile_literal_u64(o) {
-            return Some((b, 0, 0, 0, *w));
-        }
-        let [g] = self.in_edges(o) else {
-            return None;
-        };
-        for (op, q) in [(Operation::Div, true), (Operation::Mod, false)] {
-            if let Some((_, c)) = self.tile_split(*g, input, captures, op) {
-                if *w.get_or_insert(c) != c {
-                    return None;
-                }
-                return Some(if q { (0, 0, 1, 0, *w) } else { (0, 0, 0, 1, *w) });
-            }
-        }
-        let mm = self.morphisms.get(*g)?;
-        let x = self.pair_slot_source(mm.source, 0)?;
-        let y = self.pair_slot_source(mm.source, 1)?;
-        match mm.op {
-            Operation::Add => {
-                let a = self.cell_affine(x, input, captures, w, depth + 1)?;
-                let b = self.cell_affine(y, input, captures, w, depth + 1)?;
-                Some((
-                    a.0.checked_add(b.0)?,
-                    a.1.checked_add(b.1)?,
-                    a.2.checked_add(b.2)?,
-                    a.3.checked_add(b.3)?,
-                    *w,
-                ))
-            }
-            Operation::Mul => {
-                let (s, v) = match self.tile_literal_u64(x) {
-                    Some(s) => (s, y),
-                    None => (self.tile_literal_u64(y)?, x),
-                };
-                let a = self.cell_affine(v, input, captures, w, depth + 1)?;
-                Some((
-                    a.0.checked_mul(s)?,
-                    a.1.checked_mul(s)?,
-                    a.2.checked_mul(s)?,
-                    a.3.checked_mul(s)?,
-                    *w,
-                ))
-            }
-            _ => None,
-        }
+        Footprint::Other
     }
 
     fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
@@ -2427,7 +2134,7 @@ impl CategoryIr {
             return None;
         }
         // `lo + len` must not wrap where the interval meets `[0, n)`.
-        if iv.d == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64 {
+        if iv.d == 1 && iv.step == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64 {
             return None;
         }
         let e = match iv.e {
@@ -2440,6 +2147,7 @@ impl CategoryIr {
             a: iv.a,
             e,
             b: iv.b,
+            step: iv.step,
             len: iv.len,
         })
     }
@@ -2464,31 +2172,37 @@ impl CategoryIr {
         })
     }
 
-    /// `cond` over the map element `t` (`Proj{captures}` of `input`) as an
-    /// index interval, and whether `t` is inside it when `cond` holds:
-    /// `t ÷ d == X` / `!=` (`[d·X, d·X + d)`), or `L ≤ t ∧ t < L + len` in
-    /// either operand order (`t ≥ L`, `L ≤ t`, `t > L − 1`; `t < H`, `H > t`,
-    /// `t ≤ H − 1`), `X`, `L` affine in one captured int scalar.
+    /// `cond` over the map element `t` (`Proj{captures}` of `input`) as a set
+    /// of cells, and whether `t` is in it when `cond` holds: `t ÷ d == X` /
+    /// `!=` (`[d·X, d·X + d)`), `t % s == X` / `!=` (`X + s·k`), or
+    /// `L ≤ t ∧ t < L + len` in either operand order (`t ≥ L`, `L ≤ t`,
+    /// `t > L − 1`; `t < H`, `H > t`, `t ≤ H − 1`), `X`, `L` affine in one
+    /// captured int scalar.
     fn index_interval(&self, cond: ObjectId, input: ObjectId, captures: u32) -> Option<(Interval, bool)> {
         let c = self.morphisms.get(*self.in_edges(cond).first()?)?;
         let (x, y) = (self.pair_slot_source(c.source, 0)?, self.pair_slot_source(c.source, 1)?);
         let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
         match c.op {
             Operation::Eq | Operation::Neq => {
-                let div_of_t = |o: ObjectId| {
-                    let g = self.tile_definer(o, Operation::Div)?;
+                // `t ÷ d` (a row: `d` cells from `d·X`) or `t % s` (a column:
+                // every `s`-th cell from `X`), `d`, `s` literals.
+                let split_of_t = |o: ObjectId| {
+                    let (op, g) = [Operation::Div, Operation::Mod]
+                        .into_iter()
+                        .find_map(|op| Some((op, self.tile_definer(o, op)?)))?;
                     if !is_t(self.pair_slot_source(g.source, 0)?) {
                         return None;
                     }
-                    self.tile_literal_u64(self.pair_slot_source(g.source, 1)?).filter(|&d| d > 0)
+                    let k = self.tile_literal_u64(self.pair_slot_source(g.source, 1)?).filter(|&k| k > 0)?;
+                    Some(if op == Operation::Div { (k, 1, k) } else { (1, k, u64::MAX) })
                 };
-                let (d, other) = match div_of_t(x) {
-                    Some(d) => (d, y),
-                    None => (div_of_t(y)?, x),
+                let ((d, step, len), other) = match split_of_t(x) {
+                    Some(s) => (s, y),
+                    None => (split_of_t(y)?, x),
                 };
                 let mut e = None;
                 let (a, b) = self.capture_affine(other, input, captures, &mut e, 0)?;
-                Some((Interval { d, a, e, b, len: d }, c.op == Operation::Eq))
+                Some((Interval { d, a, e, b, step, len }, c.op == Operation::Eq))
             }
             Operation::And => {
                 let (bx, by) = (self.t_bound(x, input, captures)?, self.t_bound(y, input, captures)?);
@@ -2499,7 +2213,7 @@ impl CategoryIr {
                 };
                 let len = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
                 (a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
-                    Interval { d: 1, a: a1, e: e1.or(e2), b: b1, len },
+                    Interval { d: 1, a: a1, e: e1.or(e2), b: b1, step: 1, len },
                     true,
                 ))
             }
@@ -4253,6 +3967,7 @@ impl CategoryIr {
                                 a: 1,
                                 e: Some(i),
                                 b: 0,
+                                step: 1,
                                 len: 1,
                             });
                             self.pair_slot_source(mm.source, 0)
@@ -4328,6 +4043,10 @@ impl CategoryIr {
     fn rows_of(&self, idxs: &[Outside], merge: ObjectId, next: ObjectId) -> Option<Delta> {
         let (mut var, mut a, mut bs) = (None, None, Vec::new());
         for p in idxs {
+            // (Every `step`-th cell is no range.)
+            if p.step != 1 && p.len > 1 {
+                return None;
+            }
             let (ae, be) = match p.e {
                 Some(e) => self.affine_in(e, merge, &mut var, 0)?,
                 None => (0, 0),

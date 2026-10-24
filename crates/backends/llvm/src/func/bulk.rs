@@ -102,9 +102,10 @@ impl<'a> FnEmit<'a> {
         }
     }
 
-    /// `[max(lo, l), max(min(lo + len, h), ·))` — the interval met with the
-    /// loop's own bounds `[l, h)`; `lo = d·(a·e + b)`, `a·e + b` in `e`'s
-    /// wrapping width (the program's value), then exact in `i64`.
+    /// The cells `lo + step·k` met with the loop's own bounds `[l, h)`: the
+    /// first at or past `l`, up to `min(lo + step·len, h)` — `lo = d·(a·e +
+    /// b)`, `a·e + b` in `e`'s wrapping width (the program's value), then
+    /// exact in `i64`. A step of 1 is the interval `[max(lo, l), …)`.
     fn range_bounds(&mut self, ou: &mapal_ir::Outside, n: u64) -> (String, String) {
         let (l, h) = self.bulk_bounds(n);
         let x = match ou.e.and_then(|e| self.load_whole(e)) {
@@ -123,16 +124,37 @@ impl<'a> FnEmit<'a> {
         };
         let lo = self.tmp();
         self.line(format!("{lo} = mul i64 {x}, {}", ou.d));
-        let hi = self.tmp();
-        self.line(format!("{hi} = add i64 {lo}, {}", ou.len));
         let pick = |s: &mut Self, cmp: &str, p: &str, q: &str| {
             let (c, t) = (s.tmp(), s.tmp());
             s.line(format!("{c} = icmp {cmp} i64 {p}, {q}"));
             s.line(format!("{t} = select i1 {c}, i64 {p}, i64 {q}"));
             t
         };
-        let start = pick(self, "sgt", &lo, &l);
-        let end = pick(self, "slt", &hi, &h);
+        let start = if ou.step == 1 {
+            pick(self, "sgt", &lo, &l)
+        } else {
+            // `lo + step·⌈(l − lo) / step⌉` when `lo < l` (`l − lo > 0`).
+            let s = ou.step;
+            let (gap, up, k, off, at) = (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{gap} = sub i64 {l}, {lo}"));
+            self.line(format!("{up} = add i64 {gap}, {}", s - 1));
+            self.line(format!("{k} = udiv i64 {up}, {s}"));
+            self.line(format!("{off} = mul i64 {k}, {s}"));
+            self.line(format!("{at} = add i64 {lo}, {off}"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp slt i64 {lo}, {l}"));
+            let t = self.tmp();
+            self.line(format!("{t} = select i1 {c}, i64 {at}, i64 {lo}"));
+            t
+        };
+        let end = match ou.step.checked_mul(ou.len).filter(|&w| w <= n) {
+            Some(w) => {
+                let hi = self.tmp();
+                self.line(format!("{hi} = add i64 {lo}, {w}"));
+                pick(self, "slt", &hi, &h)
+            }
+            None => h,
+        };
         let end = pick(self, "sgt", &end, &start);
         (start, end)
     }
@@ -290,7 +312,8 @@ impl<'a> FnEmit<'a> {
         ));
         self.line(format!("store {ullt} {r}, ptr {dp}"));
         let iv1 = self.tmp();
-        self.line(format!("{iv1} = add i64 {iv}, 1"));
+        let step = range.map_or(1, |(_, ou)| ou.step);
+        self.line(format!("{iv1} = add i64 {iv}, {step}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
         self.line(format!("br label %{lh}"));
         self.label_line(&ld);
