@@ -192,7 +192,8 @@ pub struct GpuRungs {
     /// stride other than 1 (`q·Kᵀ`, [`mapal_ir::CategoryIr::tile_plan_strided`])
     /// is a device site. Off: it stays a host map behind a whole copy-out.
     /// Decode loop 1.30–1.58× faster on every part (no 1 MB copy-out of K, no
-    /// host fold over it).
+    /// host fold over it). Attention (fusion-natural-forms sweep): off-lane-stride/ON
+    /// iter 106–693 on all four parts (the host `q·Kᵀ` of the OFF arm).
     pub lane_stride: bool,
     /// S54 R0 for folds (`func/rowfold.rs`): a row-local in-order fold whose
     /// read array a device site produced runs on the device, one thread per
@@ -348,8 +349,10 @@ pub struct GpuRungs {
     /// read footprints stay inside one row of a group's unit (or a halo of a
     /// recomputable cell) run as one unit kernel; a member no outside reader
     /// needs is never stored. Off: the tile root only (`epilogue`, S54 R1).
-    /// Unmeasured on hardware: values, launches and movement are proven by
-    /// `tests/generic_fusion.rs`; the 4-arch timing is a later run.
+    /// Values, launches and movement are proven by `tests/generic_fusion.rs`.
+    /// **Ships OFF on all four measured parts** (`GPU_RUNGS_OFF` rows,
+    /// fusion-natural-forms sweep): the one unit that forms (the row softmax)
+    /// runs one thread per row, and its kernel is 1.8–4.8× the four it replaces.
     pub fuse: bool,
     /// generic-fusion `window` (design §4): a tile site whose reads are affine
     /// in the fold's derived axes `(k÷div, k%div)` — a 2-D convolution's taps —
@@ -357,13 +360,19 @@ pub struct GpuRungs {
     /// addresses `cq·(k÷div) + cr·(k%div)`; and a weightless window over a
     /// device output (a box filter: a row fold with a split map index and
     /// split taps) is a device fold. Off: both stay the host's (`func/conv.rs`,
-    /// the host fold). Unmeasured on hardware.
+    /// the host fold). Ships ON on all four measured parts (no `GPU_RUNGS_OFF`
+    /// row): off-window/ON iter, conv_2048_5 23.2 / 31.6 / 9.7 / 11.8 and
+    /// ewconvew_2048_5 34.4 / 34.2 / 13.0 / 14.2 (4090 / 5090 / H100 / 3090,
+    /// `benches/results/evidence/fusion-natural-forms/<part>/results-<part>.txt`).
     pub window: bool,
     /// generic-fusion natural forms: a map whose cells outside a set are a
     /// capture's own ([`mapal_ir::Outside`]: a row, a range, a column) runs in
     /// place over that set, under an `Update`'s legality (`in_place_source`).
     /// Any profile, CPU builds included. Off: the map runs over every cell
-    /// into its own buffer.
+    /// into its own buffer. Ships ON on all four measured parts: decode_1024_256
+    /// off-range-map/ON iter 3.96 / 4.39 / 2.50 / 4.15 (4090 / 5090 / H100 /
+    /// 3090), the kernels' traced ms equal — the host map walks one row per trip,
+    /// not 262144 cells (`fusion-natural-forms/<part>/results-<part>.txt`).
     pub range_map: bool,
 }
 

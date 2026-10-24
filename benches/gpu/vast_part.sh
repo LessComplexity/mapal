@@ -15,7 +15,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$RES"
 offers() { # <GPU_NAME>: id dph pcie_bw cpu_ghz host machine cpu_name geo, cheapest first
     vastai search offers "gpu_name=$1 num_gpus=1 rentable=true cuda_max_good>=12.8 reliability>0.97 inet_down>500 disk_space>=40" \
-        -o 'dph+' --limit 20 --raw 2>/dev/null | CPU_NAME="${CPU_NAME:-}" python3 -c 'import json,os,sys
+        -o 'dph+' --limit 64 --raw 2>/dev/null | CPU_NAME="${CPU_NAME:-}" python3 -c 'import json,os,sys
 want = os.environ["CPU_NAME"]
 for o in json.load(sys.stdin):
     cpu = (o.get("cpu_name") or "").replace(" ", "_")

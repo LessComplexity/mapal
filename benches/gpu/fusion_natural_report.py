@@ -193,20 +193,26 @@ def timing(raw):
     import evidence_report as er
     readme = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../docs/performance/evidence/README.md')
     prev = prev_ratios(readme)
+    # `<raw>/confirm/<arch>`: a second box of the arch (another host); its own ratio beside the first's.
+    conf = {(r['key'], r['arch']): r for r in er.suite_rows(os.path.join(raw, 'confirm'))}
     print('\n### Suite: iter ms (median of the reps), Mapal vs the best other leg on the same box\n')
-    print('| workload | arch | CPU-only | CPU+GPU | null | best other (ms) | Mapal / best other | S65 ratio |')
-    print('|---|---|---|---|---|---|---|---|')
+    print('| workload | arch | CPU-only | CPU+GPU | null | best other (ms) | Mapal / best other | confirm box: '
+          'CPU+GPU, best other, ratio | S65 ratio |')
+    print('|---|---|---|---|---|---|---|---|---|')
     for r in sorted(er.suite_rows(raw), key=lambda r: (r['key'], ARCHS.index(r['arch']))):
         b = f'{r["best"][0]} {r["best"][1]:.4f}' if r['best'] else '-'
+        c = conf.get((r['key'], r['arch']))
+        cb = (f'{er.f4(c["on"])}, {c["best"][0] + " " + er.f4(c["best"][1]) if c["best"] else "-"}, '
+              f'{er.f3(c["ratio"])}') if c else '-'
         print(f'| {r["key"]} | {r["arch"]} | {er.f4(r["cpu"])} | {er.f4(r["on"])} | {er.f3(r["null"])} | {b} | '
-              f'{er.f3(r["ratio"])} | {prev.get((r["key"], r["arch"]), "-")} |')
+              f'{er.f3(r["ratio"])} | {cb} | {prev.get((r["key"], r["arch"]), "-")} |')
     print('\n### Each new rung ON vs its OFF arm (traced rep 1; iter ms median of the reps; OFF/ON per rep, '
           'median; null = |null/shipped − 1| max)\n')
-    print('| program | arch | arm | launches ON / OFF | device buffers ON / OFF | kernel ms ON / OFF | '
+    print('| program | arch | box | arm | launches ON / OFF | device buffers ON / OFF | kernel ms ON / OFF | '
           'iter ms ON / OFF | OFF/ON | null | sign |')
-    print('|---|---|---|---|---|---|---|---|---|---|')
-    for a in ARCHS:
-        lines = er.results(raw, a)
+    print('|---|---|---|---|---|---|---|---|---|---|---|')
+    for a, box, rr in [(a, b, r) for a in ARCHS for b, r in (('main', raw), ('confirm', os.path.join(raw, 'confirm')))]:
+        lines = er.results(rr, a)
         lg = er.legs(lines)
         tr = {}
         for l in lines:
@@ -235,7 +241,7 @@ def timing(raw):
             lb = f'{t_on[0]} / {t_off[0]}' if t_on and t_off else '-'
             kb = f'{t_on[1]:.3f} / {t_off[1]:.3f}' if t_on and t_off else '-'
             bb = f'{bufs(e_on)} / {bufs(e_off)}' if e_on and e_off else '-'
-            print(f'| {p.removeprefix("pt_")} | {a} | {arm_} | {lb} | {bb} | {kb} | {er.f4(er.med(list(on.values())))} / '
+            print(f'| {p.removeprefix("pt_")} | {a} | {box} | {arm_} | {lb} | {bb} | {kb} | {er.f4(er.med(list(on.values())))} / '
                   f'{er.f4(er.med(list(off.values())))} | {ratio:.3f} | {er.f3(nul)} | {sign} |')
 
 
