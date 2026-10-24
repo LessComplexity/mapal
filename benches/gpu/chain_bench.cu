@@ -36,6 +36,7 @@
 // usage: chain_bench <probe> <n> <reps> [mapal values...]
 //   probe: epi bias ew pro indep mlp fanout diamond residual rowsum softmax_rows mlp2 loop
 //          decode_<T> (n = d; the eager decode loop with and without a cache, S54)
+//          attn_<T> (n = d) smlp_<M>_<d> (n = h): the generic-fusion chains (eager / fused; eager / lt / cutlass)
 #include <cublasLt.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -146,16 +147,17 @@ __global__ void row_max(float *r, const float *c, int n) {
   for (int d = 16; d; d /= 2) m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, d));
   if (!lane) r[row] = m;
 }
-__global__ void sm_exp(float *o, const float *c, const float *mx, long long cnt, int n) {
+// `div`: the temperature (softmax_rows: n; attention: sqrt(d) as gen_tiles.py prints it).
+__global__ void sm_exp(float *o, const float *c, const float *mx, long long cnt, int n, float div) {
   long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-  if (i < cnt) o[i] = expo((c[i] - mx[i / n]) / (float)n);
+  if (i < cnt) o[i] = expo((c[i] - mx[i / n]) / div);
 }
 __global__ void sm_div(float *o, const float *ex, const float *den, long long cnt, int n) {
   long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
   if (i < cnt) o[i] = ex[i] / den[i / n];
 }
 // softmax_rows, fused: one warp per row — max, exp + sum, quotient.
-__global__ void softmax_row(float *y, const float *c, int n) {
+__global__ void softmax_row(float *y, const float *c, int n, float div) {
   int row = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32, lane = threadIdx.x % 32;
   if (row >= n) return;
   const float *x = c + (size_t)row * n;
@@ -163,9 +165,9 @@ __global__ void softmax_row(float *y, const float *c, int n) {
   float m = -1e9f, s = 0.f;
   for (int j = lane; j < n; j += 32) m = fmaxf(m, x[j]);
   for (int d = 16; d; d /= 2) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, d));
-  for (int j = lane; j < n; j += 32) s += expo((x[j] - m) / (float)n);
+  for (int j = lane; j < n; j += 32) s += expo((x[j] - m) / div);
   for (int d = 16; d; d /= 2) s += __shfl_xor_sync(0xffffffffu, s, d);
-  for (int j = lane; j < n; j += 32) o[j] = expo((x[j] - m) / (float)n) / s;
+  for (int j = lane; j < n; j += 32) o[j] = expo((x[j] - m) / div) / s;
 }
 
 static int n;
@@ -203,18 +205,23 @@ struct LtPlan {
   cublasLtMatmulDesc_t op;
   cublasLtMatrixLayout_t l;
   cublasLtMatmulAlgo_t algo;
-  LtPlan(cublasLtEpilogue_t epi, const float *bias) {
+  cublasLtMatrixLayout_t la, lb;  // Y (N×K col-major), X (K×M); l: O (N×M)
+  // Row-major O(M×N) = X(M×K)·Y(K×N) is column-major Oᵀ = Yᵀ·Xᵀ; 0 = n (the square probes).
+  LtPlan(cublasLtEpilogue_t epi, const float *bias, int M = 0, int N = 0, int K = 0) {
+    M = M ? M : n, N = N ? N : n, K = K ? K : n;
     BLAS(cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F));
     BLAS(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_EPILOGUE, &epi, sizeof epi));
     if (bias) BLAS(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_BIAS_POINTER, &bias, sizeof bias));
-    BLAS(cublasLtMatrixLayoutCreate(&l, CUDA_R_32F, n, n, n));
+    BLAS(cublasLtMatrixLayoutCreate(&l, CUDA_R_32F, N, M, N));
+    BLAS(cublasLtMatrixLayoutCreate(&la, CUDA_R_32F, N, K, N));
+    BLAS(cublasLtMatrixLayoutCreate(&lb, CUDA_R_32F, K, M, K));
     cublasLtMatmulPreference_t pref;
     BLAS(cublasLtMatmulPreferenceCreate(&pref));
     BLAS(cublasLtMatmulPreferenceSetAttribute(pref, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &WS, sizeof WS));
     cublasLtMatmulHeuristicResult_t res;
     int got = 0;
     // No algorithm for this epilogue on this part drops the lt legs, not the run.
-    cublasStatus_t s = cublasLtMatmulAlgoGetHeuristic(lt, op, l, l, l, l, pref, 1, &res, &got);
+    cublasStatus_t s = cublasLtMatmulAlgoGetHeuristic(lt, op, la, lb, l, l, pref, 1, &res, &got);
     if (s != CUBLAS_STATUS_SUCCESS || !got) {
       printf("chain_note cublasLt has no algorithm for epilogue %d (status %d): lt legs dropped\n", (int)epi,
              (int)s);
@@ -226,22 +233,36 @@ struct LtPlan {
   void run(int s, const char *o, const char *x, const char *y, float alpha = 1, float beta = 0,
            const char *c = nullptr) {
     const float *cp = c ? B(c) : B(o);
-    BLAS(cublasLtMatmul(lt, op, &alpha, B(y), l, B(x), l, &beta, cp, l, B(o), l, &algo, ws[s], WS, st[s]));
+    BLAS(cublasLtMatmul(lt, op, &alpha, B(y), la, B(x), lb, &beta, cp, l, B(o), l, &algo, ws[s], WS, st[s]));
     ++launches;
   }
 };
 
 template <class G>
-static void cut(int s, const char *o, const char *x, const char *y, float alpha, float beta,
-                const char *c = nullptr, int ldc = -1) {
+static void cutg(int s, const char *o, const char *x, const char *y, int M, int N, int K, float alpha, float beta,
+                 const char *c = nullptr, int ldc = -1) {
   G g;
   const float *cp = c ? B(c) : B(o);
-  typename G::Arguments args({n, n, n}, {B(x), n}, {B(y), n}, {cp, ldc < 0 ? n : ldc}, {B(o), n},
+  typename G::Arguments args({M, N, K}, {B(x), K}, {B(y), N}, {cp, ldc < 0 ? N : ldc}, {B(o), N},
                              {alpha, beta});
   if (g(args, nullptr, st[s]) != cutlass::Status::kSuccess) {
     fprintf(stderr, "cutlass failed\n");
     exit(102);
   }
+  ++launches;
+}
+template <class G>
+static void cut(int s, const char *o, const char *x, const char *y, float alpha, float beta,
+                const char *c = nullptr, int ldc = -1) {
+  cutg<G>(s, o, x, y, n, n, n, alpha, beta, c, ldc);
+}
+
+// generic-fusion chains (attn, smlp): row-major O(M×N) = X(M×K)·Y, Y row-major K×N — or, `tb`, Yᵀ with Y
+// row-major N×K (q·Kᵀ) — as column-major Oᵀ = op(Y)·Xᵀ.
+static void gemm(int s, const char *o, const char *x, const char *y, int M, int N, int K, bool tb = false) {
+  const float one = 1.f, zero = 0.f;
+  BLAS(cublasSgemm(hb[s], tb ? CUBLAS_OP_T : CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, B(y), tb ? K : N, B(x), K,
+                   &zero, B(o), N));
   ++launches;
 }
 
@@ -520,14 +541,14 @@ int main(int argc, char **argv) {
              [] {
                sgemm(0, "c", "a", "b");
                row_max<<<(n + 7) / 8, 256, 0, st[0]>>>(B("mx"), B("c"), n);
-               sm_exp<<<(unsigned)((nn + 255) / 256), 256, 0, st[0]>>>(B("ex"), B("c"), B("mx"), nn, n);
+               sm_exp<<<(unsigned)((nn + 255) / 256), 256, 0, st[0]>>>(B("ex"), B("c"), B("mx"), nn, n, (float)n);
                row_sum<<<(n + 7) / 8, 256, 0, st[0]>>>(B("den"), B("ex"), n);
                sm_div<<<(unsigned)((nn + 255) / 256), 256, 0, st[0]>>>(B("y"), B("ex"), B("den"), nn, n);
                launches += 4;
              }},
             {"fused", [] {
                sgemm(0, "c", "a", "b");
-               softmax_row<<<(n + 7) / 8, 256, 0, st[0]>>>(B("y"), B("c"), n);
+               softmax_row<<<(n + 7) / 8, 256, 0, st[0]>>>(B("y"), B("c"), n, (float)n);
                ++launches;
              }}};
   } else if (probe == "mlp2") {  // d1 = relu(a·b + bias)·e ; d2 = relu(f·g + bias2)·p
@@ -576,6 +597,66 @@ int main(int argc, char **argv) {
             {"lt", [p] { for (int i = 0; i < LOOP_ITERS; ++i) p->run(0, xs[i + 1], xs[i], "w"); }},
             {"cutlass", [] {
                for (int i = 0; i < LOOP_ITERS; ++i) cut<CutRelu>(0, xs[i + 1], xs[i], "w", 1.f, 0.f);
+             }}};
+  } else if (!probe.compare(0, 5, "attn_")) {
+    // generic-fusion `attention` (gen_tiles.py): o = softmax_rows((q·kkᵀ) / sd)·vv, q kk vv T×d (laws a b e),
+    // sd = sqrt(d) as gen_tiles.py prints it (one decimal); probe attn_<T>, n = d.
+    const int T = atoi(probe.c_str() + 5), d = n;
+    const long long Td = (long long)T * d, TT = (long long)T * T;
+    const float sd = std::round(std::sqrt((float)d) * 10.f) / 10.f;
+    const Op *law[3] = {&OPS[0], &OPS[1], &OPS[2]};
+    const char *names[3] = {"q", "kk", "vv"};
+    for (int i = 0; i < 3; ++i)
+      gen_op<<<(unsigned)((Td + 255) / 256), 256>>>(B(names[i], Td), Td, law[i]->mul, law[i]->add, law[i]->mod,
+                                                    law[i]->off, law[i]->div);
+    for (const char *k : {"s", "ex", "p"}) B(k, TT);
+    B("mx", T);
+    B("den", T);
+    B("o", Td);
+    outs = {{"o", Td}};
+    legs = {{"eager",
+             [=] {
+               gemm(0, "s", "q", "kk", T, T, d, true);
+               row_max<<<(T + 7) / 8, 256, 0, st[0]>>>(B("mx"), B("s"), T);
+               sm_exp<<<(unsigned)((TT + 255) / 256), 256, 0, st[0]>>>(B("ex"), B("s"), B("mx"), TT, T, sd);
+               row_sum<<<(T + 7) / 8, 256, 0, st[0]>>>(B("den"), B("ex"), T);
+               sm_div<<<(unsigned)((TT + 255) / 256), 256, 0, st[0]>>>(B("p"), B("ex"), B("den"), TT, T);
+               launches += 4;
+               gemm(0, "o", "p", "vv", T, d, T);
+             }},
+            {"fused", [=] {
+               gemm(0, "s", "q", "kk", T, T, d, true);
+               softmax_row<<<(T + 7) / 8, 256, 0, st[0]>>>(B("p"), B("s"), T, sd);
+               ++launches;
+               gemm(0, "o", "p", "vv", T, d, T);
+             }}};
+  } else if (!probe.compare(0, 5, "smlp_")) {
+    // generic-fusion `smlp` (gen_tiles.py): s2 = relu(x·w1 + b1)·w2, x M×d, w1 d×h, w2 h×d (laws a b e), b1 the
+    // `bias` law (h = n); probe smlp_<M>_<d>, n = h.
+    int M = 0, d = 0;
+    sscanf(probe.c_str(), "smlp_%d_%d", &M, &d);
+    const int h = n;
+    const long long Md = (long long)M * d, Mh = (long long)M * h, dh = (long long)d * h;
+    gen_op<<<(unsigned)((Md + 255) / 256), 256>>>(B("x", Md), Md, 7, 13, 101, 50, 7.f);
+    gen_op<<<(unsigned)((dh + 255) / 256), 256>>>(B("w1", dh), dh, 11, 57, 103, 51, 9.f);
+    gen_op<<<(unsigned)((dh + 255) / 256), 256>>>(B("w2", dh), dh, 5, 3, 97, 48, 11.f);
+    B("c1", Mh);
+    B("hh", Mh);
+    B("s2", Md);
+    outs = {{"s2", Md}};
+    auto *p1 = new LtPlan(CUBLASLT_EPILOGUE_RELU_BIAS, B("bias"), M, h, d);
+    auto *p0 = new LtPlan(CUBLASLT_EPILOGUE_DEFAULT, nullptr, M, d, h);
+    legs = {{"eager",
+             [=] {
+               gemm(0, "c1", "x", "w1", M, h, d);
+               cell<<<(unsigned)((Mh + 255) / 256), 256, 0, st[0]>>>(BIAS_RELU, B("hh"), B("c1"), B("bias"), Mh, h, 0, 0);
+               ++launches;
+               gemm(0, "s2", "hh", "w2", M, d, h);
+             }},
+            {"lt", [=] { p1->run(0, "hh", "x", "w1"); p0->run(0, "s2", "hh", "w2"); }},
+            {"cutlass", [=] {
+               cutg<CutRelu>(0, "hh", "x", "w1", M, h, d, 1.f, 1.f, "bias", 0);
+               cutg<CutLin>(0, "s2", "hh", "w2", M, d, h, 1.f, 0.f);
              }}};
   } else {
     fprintf(stderr, "unknown probe %s\n", probe.c_str());
