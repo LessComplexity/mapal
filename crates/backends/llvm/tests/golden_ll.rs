@@ -276,17 +276,30 @@ fn main() {
     r[2] -> println;
 }
 "#;
-    let ll = emit(&lower_src(src)).unwrap();
-    let build = ll
-        .split("define internal [4 x i32] @fn")
-        .nth(1)
-        .and_then(|s| s.split("\n}\n").next())
-        .expect("build fn");
+    let build_of = |ll: &str| -> String {
+        ll.split("define internal [4 x i32] @fn")
+            .nth(1)
+            .and_then(|s| s.split("\n}\n").next())
+            .expect("build fn")
+            .to_string()
+    };
+    let mut gpu = GpuArms::default();
+    *gpu.off.rung("by-ref").expect("rung") = true;
+    let s64 = emit_with_opts(&lower_src(src), &EmitOpts { gpu, ..EmitOpts::exact() }).unwrap();
+    let build = build_of(&s64);
     assert_eq!(
         build.matches("alloca [4 x i32]").count(),
         3,
         "the carried Update target shares its source slot (no fourth array alloca):\n{build}"
     );
+    // S65 `by-ref`: the state is the literal's buffer (it dies at the entry),
+    // the Update writes it in place through the state's pointer, and the
+    // loop products forward that pointer — the one other array is the
+    // returned value, which the exit copies out (the caller observes it).
+    let ll = emit(&lower_src(src)).unwrap();
+    let build = build_of(&ll);
+    assert_eq!(build.matches("alloca [4 x i32]").count(), 2, "{build}");
+    assert_eq!(build.matches("@llvm.memcpy").count(), 1, "{build}");
     insta::assert_snapshot!("update_inplace_carried_loop", ll);
 }
 

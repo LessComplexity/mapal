@@ -489,3 +489,181 @@ fn l2_window_covers_the_chain_intermediate_then_the_most_read_operand() {
     assert!(launch_args(&off).iter().all(|x| x.3.is_none()), "{off}");
     assert!(!off.contains("launch_l2"), "{off}");
 }
+
+// --- S65 rule R: the loop state moves pointers, never bytes -------------------
+
+/// `; mapal.move` loops of `ll`: (the `carried=` field, `llvm.memcpy` calls
+/// from the header to the latch — what every trip copies).
+fn trip_moves(ll: &str) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for f in ll.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else {
+                continue;
+            };
+            let header = rest.split_whitespace().next().expect("header");
+            let carried = rest
+                .split_whitespace()
+                .find_map(|kv| kv.strip_prefix("carried="))
+                .expect("carried")
+                .to_string();
+            let back = format!("br label %{header}");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
+            let copies = lines[h..=latch]
+                .iter()
+                .filter(|x| x.contains("@llvm.memcpy"))
+                .count();
+            out.push((carried, copies));
+        }
+    }
+    out
+}
+
+/// One loop over the state `x` (from `x0`) and the loop-invariant `w`.
+fn state_loop(body: &str) -> String {
+    format!(
+        "fn main() {{
+    4096 -> iota -> ta;
+    64 -> iota -> krange;
+{}{}    mut x: [f32; 4096] <- x0;
+    mut it: i32 <- 0;
+    loop {{
+        (it < 8) -> {{
+            -true-> {{
+{body}                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    out[0] -> println;
+    out[4095] -> println;
+}}
+",
+        operand("x0", 7),
+        operand("w", 11),
+    )
+}
+
+fn cpu(src: &str, gpu: GpuArms) -> String {
+    emit_with_opts(
+        &lower_src(src),
+        &EmitOpts {
+            target: "generic",
+            gpu,
+            ..EmitOpts::exact()
+        },
+    )
+    .expect("emits")
+}
+
+/// The CPU build of a loop whose site reads the state it replaces
+/// (`x = site(x, w)`): the next state is written while the old one is read,
+/// so it takes the buffer the state does not point at (two colors) — the
+/// init's, dead at the entry, is the second. No byte crosses the back edge;
+/// the S64 arm copies the state three times a trip.
+#[test]
+fn state_read_by_its_writer_ping_pongs_without_copies() {
+    let src = state_loop(&site("x", "x", "w", 64).replacen("    ", "                ", 1));
+    let on = cpu(&src, GpuArms::default());
+    assert_eq!(trip_moves(&on), [("0:16384:two".to_string(), 0)], "{on}");
+    assert!(!on.contains("%ls"), "the second buffer is the init's:\n{on}");
+    let s64 = cpu(&src, off("by-ref"));
+    assert_eq!(trip_moves(&s64), [("0:16384:value".to_string(), 3)]);
+}
+
+/// `y = site(x, w); x' = relu(y)`: the state dies at the site, before its
+/// next value is written — one buffer, the next state's own.
+#[test]
+fn state_dead_before_its_next_is_written_keeps_one_buffer() {
+    let body = format!(
+        "{}                y -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> x;\n",
+        site("y", "x", "w", 64).replacen("    ", "                ", 1)
+    );
+    let on = cpu(&state_loop(&body), GpuArms::default());
+    assert_eq!(trip_moves(&on), [("0:16384:one".to_string(), 0)], "{on}");
+}
+
+/// A loop writing one row of its state per trip (`x[t*d + j] <- v`, the
+/// decode shape): the update chain writes the state's buffer in place (the
+/// init dies at the entry, so the buffer is the init's), and the one-row
+/// `o`, dead before its next is computed, keeps one buffer. Nothing is copied
+/// per trip; S64 copied the state, its views and its row update every trip.
+#[test]
+fn row_writes_into_the_state_land_in_place() {
+    let on = cpu(DECODE_16_8, GpuArms::default());
+    assert_eq!(
+        trip_moves(&on),
+        [("0:512:inplace,1:32:one".to_string(), 0)],
+        "{on}"
+    );
+    let s64 = cpu(DECODE_16_8, off("by-ref"));
+    let (carried, copies) = &trip_moves(&s64)[0];
+    assert_eq!(carried, "0:512:value,1:32:value");
+    assert!(*copies >= 5, "{copies}");
+}
+
+/// On the device build a state the device carries has no host bytes: its
+/// views, its next state and its kept exit are host-free (no array alloca),
+/// the products forward a null pointer, and the trip copies nothing.
+#[test]
+fn device_carried_state_has_no_host_bytes() {
+    let ll = emit(&loop_src(), shipped());
+    assert_eq!(
+        trip_moves(&ll),
+        [("0:16384:device".to_string(), 0)],
+        "{ll}"
+    );
+    let main = mapal_main(&ll);
+    assert_eq!(main.matches("alloca [4096 x float]").count(), 0, "{main}");
+    assert!(main.contains("store ptr null"), "{main}");
+}
+
+const DECODE_16_8: &str = r#"fn main() {
+    64 -> iota -> tw;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 128.0 } -> wk;
+    tw -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 128.0 } -> wv;
+    128 -> iota -> tc;
+    8 -> iota -> krange;
+    16 -> iota -> rrange;
+    (0.0, 128) -> fill -> x0;
+    (0.0, 8) -> fill -> o0;
+    mut x: [f32; 128] <- x0;
+    mut o: [f32; 8] <- o0;
+    mut t: i32 <- 0;
+    loop {
+        (t < 16) -> {
+            -true-> {
+                ((t * 8 + 0) * 7 + 13) % 101 - 50 -> widen_f32 -> f0;
+                f0 / 64.0 + o[0] -> v0;
+                x[t * 8 + 0] <- v0;
+                ((t * 8 + 1) * 7 + 13) % 101 - 50 -> widen_f32 -> f1;
+                f1 / 64.0 + o[1] -> v1;
+                x[t * 8 + 1] <- v1;
+                tc -> map { c ->
+                    c / 8 -> i;
+                    c % 8 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + x[i * 8 + k] * wk[k * 8 + j] }
+                } -> kk;
+                tc -> map { c ->
+                    c / 8 -> i;
+                    c % 8 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + x[i * 8 + k] * wv[k * 8 + j] }
+                } -> vv;
+                krange -> map { k -> ((t * 8 + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 128.0 } -> q;
+                rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 8 + k] } } -> s;
+                krange -> map { j -> (0.0, rrange) -> fold { acc, r -> acc + s[r] * vv[r * 8 + j] } } -> o;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> o -> out;
+        }
+    }
+    out[0] -> println;
+    out[7] -> println;
+}
+"#;

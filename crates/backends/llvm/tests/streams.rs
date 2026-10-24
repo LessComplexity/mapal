@@ -623,8 +623,27 @@ fn grouped_member_legacy_cell_keeps_the_conservative_fallback() {
 
 #[test]
 fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
+    // S64's arm: the fold over the member's output runs on the host, behind
+    // an ordered whole copy (S65 `by-ref` off).
+    let s64 = |src: &str, contract| {
+        let mut gpu = forced(&["streams"]);
+        for r in ["stream-gate", "by-ref"] {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        emit_detailed(
+            &lower_src(src),
+            &EmitOpts {
+                host: "generic",
+                target: "rtx-5090",
+                contract,
+                gpu,
+                ..EmitOpts::exact()
+            },
+        )
+        .expect("combined placement emits")
+    };
     for contract in [false, true] {
-        let e = grouped(GROUPED_ROW_FOLD, contract);
+        let e = s64(GROUPED_ROW_FOLD, contract);
         let t = calls(&e.text);
         let first = t.iter().position(|x| x == "launchv 1").expect("producer");
         assert_eq!(t[first + 1], "d2h_on 1", "{t:?}");
@@ -635,8 +654,22 @@ fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
         );
         // The existing base-output row-fold veto also remains conservative.
         let raw = GROUPED_ROW_FOLD.replace("acc + h1[i * 64 + j]", "acc + c1[i * 64 + j]");
-        let e = grouped(&raw, contract);
+        let e = s64(&raw, contract);
         assert_eq!(init_flags(&e.text) & 2, 0);
+        // S65 rule R: the fold's operand is complete on the device, so the
+        // fold runs there — one more launch, and the member's output never
+        // crosses whole (every copy-out left is one element).
+        let e = grouped(GROUPED_ROW_FOLD, contract);
+        let t = calls(&e.text);
+        assert_eq!(t.iter().filter(|x| x.starts_with("launch")).count(), 3, "{t:?}");
+        assert!(
+            mapal_main(&e.text)
+                .lines()
+                .filter(|l| l.contains("@mapal_gpu_d2h"))
+                .all(|l| l.ends_with("i64 4)")),
+            "{}",
+            e.text
+        );
     }
 }
 

@@ -114,6 +114,26 @@ pub(crate) fn lower_ptr_paths(ty: &Ty, paths: &[Vec<u32>]) -> Option<String> {
     }
 }
 
+/// Every array position of a value of `ty`: the component-index path to each
+/// array (`[]`: the value is the array). An array's elements are its bytes,
+/// not positions.
+pub(crate) fn array_paths(ty: &Ty) -> Vec<Vec<u32>> {
+    match ty {
+        Ty::Array { .. } => vec![Vec::new()],
+        Ty::Tuple(_) | Ty::Struct { .. } => component_tys(ty)
+            .iter()
+            .enumerate()
+            .flat_map(|(i, c)| {
+                array_paths(c).into_iter().map(move |mut p| {
+                    p.insert(0, i as u32);
+                    p
+                })
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// The paths below component `k`.
 pub(crate) fn sub_paths(paths: &[Vec<u32>], k: u32) -> Vec<Vec<u32>> {
     paths

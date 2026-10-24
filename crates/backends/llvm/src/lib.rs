@@ -333,12 +333,15 @@ pub struct GpuRungs {
     /// ([`TargetProfile::device_pays`]), or where an operand is already
     /// device-produced (`func/gpu.rs:placement`). Off: every capable site.
     pub place: bool,
-    /// S65 `by-ref` (rule R, `func/byref.rs`): a loop's carried array is a
-    /// pointer in the loop's products (init, state, routes) and its `Proj`
-    /// views, so entering, advancing and leaving the loop forward a pointer;
-    /// the bytes live where their producer writes them, and a device-carried
-    /// state has no host bytes at all. Any profile, CPU builds included. Off:
-    /// the products hold the array inline (five whole copies per trip, S64).
+    /// S65 `by-ref` (rule R, `func/frame.rs`): forwarding is not observing —
+    /// `Pair`, `Proj`, `Phi` and a loop's enter, back edge and exit move an
+    /// array's address, so the bytes live where their producer writes them;
+    /// an `Update` writes them in place when no view of them is read again
+    /// (`LastUsePlan::view_dead_after`), and a loop's next state takes one
+    /// buffer or two by whether the state it replaces is still read when it
+    /// is written. A device-carried state has no host bytes at all. Any
+    /// profile, CPU builds included. Off: products hold arrays inline (S64:
+    /// five whole copies of the state per trip).
     pub by_ref: bool,
 }
 

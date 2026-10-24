@@ -168,7 +168,7 @@ impl Epi {
 }
 
 /// The base launch that writes an epilogue member's physical bytes.
-fn grouped_writer(groups: &SecondaryMap<MorphismId, Epi>, o: ObjectId) -> Option<MorphismId> {
+pub(super) fn grouped_writer(groups: &SecondaryMap<MorphismId, Epi>, o: ObjectId) -> Option<MorphismId> {
     groups
         .iter()
         .find(|(_, g)| g.chain.iter().any(|mb| mb.out == o))
@@ -539,8 +539,9 @@ impl<'a> FnEmit<'a> {
                         .iter()
                         .any(|&v| self.uses(sites, cells, v, &fwd).contains(&Use::Dev));
                     // S65 `by-ref`: a state no morphism of the trip reads
-                    // (only forwarded to the exit) stays where it is produced.
-                    let unread = self.families().iter().any(|f| f.merge == merge && f.k == k)
+                    // (only forwarded to the exit) stays where it is produced
+                    // — the loop's products forward its pointer.
+                    let unread = self.is_view(merge, &[k])
                         && views.iter().all(|&v| {
                             self.uses(sites, cells, v, &fwd).iter().all(|u| *u == Use::Fwd)
                         });
@@ -1259,17 +1260,22 @@ impl<'a> FnEmit<'a> {
         // pointer), so a closed-form one is built there — the entry then
         // hands its buffer to the carry (`resident_loop_enter`).
         let mut carried_init: Vec<ObjectId> = Vec::new();
-        for f in self.families() {
-            let a = f.feeder;
+        for c in &plan.carries {
+            let Some(lp) = self.ir.loop_plan(self.f, c.merge) else {
+                continue;
+            };
+            let Some(a) = self.pair_source(lp.init, c.k) else {
+                continue;
+            };
             let kind = self.ir.object(a).expect("object resolves").kind;
-            if plan.carries.iter().any(|c| c.merge == f.merge && c.k == f.k)
+            let enter = self.ir.out_edges(lp.init).first().copied();
+            if self.is_view(lp.init, &[c.k])
                 && self.ir.out_edges(a).len() == 1
                 && kind != ObjectKind::Constant
                 && kind != ObjectKind::Parameter
                 && self.ir.try_owner(a) == Some(self.f)
-                && self
-                    .lup
-                    .position(f.enter)
+                && enter
+                    .and_then(|e| self.lup.position(e))
                     .is_some_and(|p| self.lup.dead_after(a, p))
             {
                 read.insert(a, ());
@@ -1410,6 +1416,13 @@ impl<'a> FnEmit<'a> {
         // buffers. Color per stream when a part ships both on one program.
         if arena && plan.chain.is_empty() {
             plan.arena = Some(self.arena(&plan));
+        }
+        let free = self.carry_host_free(&plan);
+        if !free.is_empty() {
+            let a = plan.arena.get_or_insert_with(Arena::default);
+            for o in free {
+                a.host_free.insert(o, ());
+            }
         }
         Some(plan)
     }
@@ -1656,22 +1669,27 @@ impl<'a> FnEmit<'a> {
                 a.host_free.insert(o, ());
             }
         }
-        // S65 `by-ref`: a device carry whose loop products forward a pointer
-        // has no host bytes either — its views, its next state, and its exit
-        // object unless the host reads that whole.
-        let fams = self.families();
+        a
+    }
+
+    /// S65 `by-ref`: a device carry whose loop products forward a pointer has
+    /// no host bytes — its views, its next state, and its exit object unless
+    /// the host reads that whole (then copied out into its own). With or
+    /// without the arena: the host state holds no bytes to point at.
+    fn carry_host_free(&self, plan: &ResidentPlan) -> Vec<ObjectId> {
+        let mut out = Vec::new();
         for c in &plan.carries {
-            if !fams.iter().any(|f| f.merge == c.merge && f.k == c.k) {
+            if !self.is_view(c.merge, &[c.k]) {
                 continue;
             }
             let exit = c.exit.filter(|x| plan.keep.contains_key(*x));
             for o in c.views.iter().copied().chain([c.next]).chain(exit) {
                 if !self.lup.escapes(o) && self.ir.try_owner(o) == Some(self.f) {
-                    a.host_free.insert(o, ());
+                    out.push(o);
                 }
             }
         }
-        a
+        out
     }
 
     /// `o` has no host slot (S54 `arena`).
@@ -2332,6 +2350,77 @@ impl<'a> FnEmit<'a> {
                 .cloned()
                 .collect()
         })
+    }
+
+    /// S65 movement intent, the loop header's first line: what the facts
+    /// require to cross per trip — this plan's own derivation (uploads of
+    /// host-produced arrays a device site reads, `delta-h2d` rows, copy-outs
+    /// of device outputs a host morphism reads, one-element reads) — and how
+    /// each state array travels (`frame.rs` `carried_desc`).
+    /// `benches/gpu/evidence.py` counts what the host IR realizes against it.
+    /// A loop with no array state off a GPU build moves nothing: no line.
+    pub(crate) fn move_line(&self, plan: &mapal_ir::LoopPlan, header: &str) -> String {
+        if array_paths(&self.obj_ty(plan.merge)).is_empty() && self.resident.is_none() {
+            return String::new();
+        }
+        let bytes = |o: ObjectId| lower_ty(&self.obj_ty(o)).map_or(0, |l| llt_bytes(&l));
+        let (mut h2d, mut d2h, mut retained) = (0u64, 0u64, 0usize);
+        // An `Update` whose source is still read after it (or is not this
+        // function's to write) copies it: the one host copy the facts require.
+        let copy: u64 = plan
+            .decide_order
+            .iter()
+            .chain(&plan.advance_order)
+            .map(|&m| self.ir.morphism(m).expect("morphism resolves"))
+            .filter(|mo| mo.op == Operation::Update && !self.update_aliases.contains_key(mo.target))
+            .map(|mo| bytes(mo.target))
+            .sum();
+        if let Some(p) = &self.resident {
+            for &m in plan.decide_order.iter().chain(&plan.advance_order) {
+                if self.gated.contains_key(m) {
+                    continue;
+                }
+                let t = self.ir.morphism(m).expect("morphism resolves").target;
+                if p.upload.contains_key(t) && !p.devgen.contains_key(m) {
+                    h2d += match p.delta.get(t) {
+                        Some(du) => {
+                            let elem = self.obj_ty(t).component_ty(0).cloned().expect("elem");
+                            du.stride * crate::profile::elem_bytes(&elem)
+                        }
+                        None => bytes(t),
+                    };
+                }
+                if p.elem.contains_key(m) {
+                    d2h += bytes(t);
+                }
+                // The values a launch leaves in device memory, copied out
+                // whole unless kept (`emit_site_resident`).
+                let mut outs = Vec::new();
+                if self.device.contains_key(m) {
+                    match self.groups.get(m) {
+                        Some(g) => {
+                            if g.store_out {
+                                outs.push(t);
+                            }
+                            outs.extend(g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out));
+                        }
+                        None => outs.push(t),
+                    }
+                } else if p.rowfold.contains_key(m) || p.cells.contains_key(m) {
+                    outs.push(t);
+                }
+                for o in outs {
+                    if !p.keep.contains_key(o) && !p.is_carry_next(o) {
+                        d2h += bytes(o);
+                    }
+                }
+                retained += self.retain.contains_key(t) as usize;
+            }
+        }
+        format!(
+            "; mapal.move loop={header} carried={} h2d={h2d} d2h={d2h} host_copy={copy} alloc=0 retained={retained}\n",
+            self.carried_desc(plan.merge)
+        )
     }
 
     /// Loop entry: the carry's buffer gets the init state, copied in once.

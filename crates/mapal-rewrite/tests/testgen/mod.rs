@@ -201,6 +201,24 @@ pub enum Step {
         arr: u8,
         body: u8,
     },
+    /// S65: a canonical loop carrying arrays — state `(counter, x0, [x1,]
+    /// acc)`, or `(counter, x0, (x1, acc))` with `nest` — of `k % 9` trips
+    /// (zero included). The body runs `ops` over the state's views, the
+    /// loop-invariant arrays and scalars before it: maps, updates (chains of
+    /// them), element reads, folds, guards choosing between an arm-owned
+    /// fresh array and another (`Phi`), zips, captured maps. Each array's next
+    /// state is picked from what the body has (a fresh array, a view —
+    /// unchanged or swapped — or an invariant); the exit forwards one state
+    /// array, whose elements the program observes.
+    CarryLoop {
+        k: u8,
+        two: bool,
+        nest: bool,
+        init: [u8; 2],
+        ops: Vec<[u8; 3]>,
+        next: [u8; 2],
+        exit: u8,
+    },
 }
 
 /// A generated fold-in-map body (ADR-0027 two-level capture): the inner fold
@@ -322,13 +340,59 @@ fn nest_body_strategy() -> impl Strategy<Value = NestBody> {
     (body_strategy(), body_strategy()).prop_map(|(inner, outer)| NestBody { inner, outer })
 }
 
+/// S65: [`Step::CarryLoop`].
+fn carry_step() -> impl Strategy<Value = Step> {
+    (
+        any::<u8>(),
+        any::<bool>(),
+        any::<bool>(),
+        prop::array::uniform2(any::<u8>()),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 1..7),
+        prop::array::uniform2(any::<u8>()),
+        any::<u8>(),
+    )
+        .prop_map(|(k, two, nest, init, ops, next, exit)| Step::CarryLoop {
+            k,
+            two,
+            nest,
+            init,
+            ops,
+            next,
+            exit,
+        })
+}
+
 /// The full program strategy for a given mode/openness (DESIGN §6).
 pub fn prog_strategy(trap_free: bool, open: bool) -> impl Strategy<Value = Prog> {
+    prog_strategy_with(trap_free, open, prop::collection::vec(main_step(), 0..12))
+}
+
+/// S65: closed programs whose `main` carries arrays through loops
+/// ([`Step::CarryLoop`] among the ordinary steps, at least one loop).
+pub fn carry_prog_strategy(trap_free: bool) -> impl Strategy<Value = Prog> {
+    let main = (
+        prop::collection::vec(main_step(), 0..6),
+        carry_step(),
+        prop::collection::vec(prop_oneof![2 => main_step(), 1 => carry_step()], 0..6),
+    )
+        .prop_map(|(mut a, l, b)| {
+            a.push(l);
+            a.extend(b);
+            a
+        });
+    prog_strategy_with(trap_free, false, main)
+}
+
+fn prog_strategy_with(
+    trap_free: bool,
+    open: bool,
+    main: impl Strategy<Value = Vec<Step>>,
+) -> impl Strategy<Value = Prog> {
     (
         prop::collection::vec(body_strategy(), 0..2), // helpers
         prop::collection::vec(body_strategy(), 0..3), // map bodies
         prop::collection::vec(body_strategy(), 0..3), // fold bodies
-        prop::collection::vec(main_step(), 0..12),    // main
+        main,                                         // main
         prop::collection::vec(any::<u8>(), 0..4),     // prints
         any::<bool>(),                                // effectful
         any::<u8>(),                                  // ret pick
@@ -413,6 +477,9 @@ struct Pool {
     /// sequential loops are generable (the S12 P0 / llvm-review-F1 shape); each
     /// is a self-contained canonical quartet, so they nest not, only sequence.
     loops_used: u8,
+    /// Values the program must observe (S65: each carried loop's exit
+    /// checksum) — returned or printed.
+    observe: Vec<mapal_ir::ObjectId>,
 }
 
 /// Sequential loops per function (S12 P0 shape needs ≥ 2; kept small so build
@@ -787,6 +854,10 @@ fn build_closed_main(b: &mut IrBuilder, ctx: &Ctx, prog: &Prog) -> Built {
                     printed = true;
                 }
             }
+            for &v in &pool.observe {
+                tok = fb.println(tok, v, L()).unwrap();
+                printed = true;
+            }
             if !printed {
                 // A token must reach Return via a token consumer (I4b) — print a
                 // constant so the trivial (no-op) main still seals.
@@ -812,7 +883,12 @@ fn build_closed_main(b: &mut IrBuilder, ctx: &Ctx, prog: &Prog) -> Built {
             let mut pool = Pool::default();
             seed_consts(&mut fb, &mut pool);
             emit_steps(&mut fb, ctx, &mut pool, &prog.main, true);
-            let ret = pick(&pool.i32s, prog.ret).unwrap_or(pool.i32s[0]);
+            let mut ret = pick(&pool.i32s, prog.ret).unwrap_or(pool.i32s[0]);
+            for &v in &pool.observe {
+                ret = fb
+                    .binop(Operation::Add, ret, v, Dest::Fresh(None), L())
+                    .unwrap();
+            }
             fb.output(ret, None, L()).unwrap();
             fb.finish().unwrap();
         }
@@ -1185,9 +1261,239 @@ fn emit_step(
                     .unwrap(),
             );
         }
+        Step::CarryLoop {
+            k,
+            two,
+            nest,
+            init,
+            ref ops,
+            next,
+            exit,
+        } if collections && pool.loops_used < MAX_LOOPS => {
+            pool.loops_used += 1;
+            build_carry_loop(fb, ctx, pool, k, two, nest, init, ops, next, exit);
+        }
         // Collection/loop steps in a scalar body: skipped.
         _ => {}
     }
+}
+
+/// [`Step::CarryLoop`]'s graph.
+#[allow(clippy::too_many_arguments)]
+fn build_carry_loop(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    ctx: &Ctx,
+    pool: &mut Pool,
+    k: u8,
+    two: bool,
+    nest: bool,
+    init: [u8; 2],
+    ops: &[[u8; 3]],
+    next: [u8; 2],
+    exit: u8,
+) {
+    use Operation::*;
+    let c = |fb: &mut mapal_ir::FnBuilder<'_>, v: i32| fb.constant(Value::I32(v), L()).unwrap();
+    let fresh = Dest::Fresh(None);
+    let n = 1 + two as usize;
+    let zero = c(fb, 0);
+    let mut inits = Vec::new();
+    for &sel in init.iter().take(n) {
+        let a = match pick(&pool.arrs, sel) {
+            Some(a) => a,
+            None => {
+                let ar = c(fb, ARR as i32);
+                fb.iota(ar, fresh.clone(), L()).unwrap()
+            }
+        };
+        inits.push(a);
+    }
+    // The invariants the body may read feed the init (Core starts a loop when
+    // its init is ready — the `build_lift_fold` rule).
+    let outer_arrs: Vec<_> = pool.arrs.iter().rev().take(3).copied().collect();
+    let outer_i32s: Vec<_> = pool.i32s.iter().rev().take(3).copied().collect();
+    let mut dep = zero;
+    for &a in &outer_arrs {
+        let e = fb.index(a, zero, fresh.clone(), L()).unwrap();
+        let e0 = fb.binop(Mul, e, zero, fresh.clone(), L()).unwrap();
+        dep = fb.binop(Add, dep, e0, fresh.clone(), L()).unwrap();
+    }
+    for &v in &outer_i32s {
+        let e0 = fb.binop(Mul, v, zero, fresh.clone(), L()).unwrap();
+        dep = fb.binop(Add, dep, e0, fresh.clone(), L()).unwrap();
+    }
+    let acc0 = pick(&pool.i32s, init[0]).unwrap_or(zero);
+    let pack_state = |fb: &mut mapal_ir::FnBuilder<'_>, i, xs: &[mapal_ir::ObjectId], acc| {
+        if nest && xs.len() == 2 {
+            let sub = fb.pack(&[xs[1], acc], Dest::Fresh(None), L()).unwrap();
+            fb.pack(&[i, xs[0], sub], Dest::Fresh(None), L()).unwrap()
+        } else {
+            let mut parts = vec![i];
+            parts.extend_from_slice(xs);
+            parts.push(acc);
+            fb.pack(&parts, Dest::Fresh(None), L()).unwrap()
+        }
+    };
+    let init_state = pack_state(fb, dep, &inits, acc0);
+    let lh = fb.begin_loop(init_state, L()).unwrap();
+    let st = fb.merge_of(&lh);
+    let i = fb.proj(st, 0, fresh.clone(), L()).unwrap();
+    let mut views = vec![fb.proj(st, 1, fresh.clone(), L()).unwrap()];
+    let acc = if nest && n == 2 {
+        let sub = fb.proj(st, 2, fresh.clone(), L()).unwrap();
+        views.push(fb.proj(sub, 0, fresh.clone(), L()).unwrap());
+        fb.proj(sub, 1, fresh.clone(), L()).unwrap()
+    } else {
+        if n == 2 {
+            views.push(fb.proj(st, 2, fresh.clone(), L()).unwrap());
+        }
+        fb.proj(st, n as u32 + 1, fresh.clone(), L()).unwrap()
+    };
+    let bound = c(fb, i32::from(k % 9));
+    let cond = fb.binop(Lt, i, bound, fresh.clone(), L()).unwrap();
+    let mut lp = Pool {
+        arrs: views.iter().copied().chain(outer_arrs.iter().copied()).collect(),
+        i32s: [i, acc].into_iter().chain(outer_i32s.iter().copied()).collect(),
+        ..Default::default()
+    };
+    // What the body reads; every value it makes and nothing reads joins the
+    // accumulator, so the whole body is live (a loop evaluates only what
+    // feeds its next state or its exit).
+    let used = std::cell::RefCell::new(std::collections::HashSet::new());
+    let take = |v: &[mapal_ir::ObjectId], sel: u8| {
+        let o = pick(v, sel).unwrap();
+        used.borrow_mut().insert(o);
+        o
+    };
+    let idx = |fb: &mut mapal_ir::FnBuilder<'_>, lp: &Pool, sel: u8| {
+        if ctx.trap_free || sel % 2 == 0 {
+            fb.constant(Value::I32(i32::from(sel / 2) % ARR as i32), L()).unwrap()
+        } else {
+            take(&lp.i32s, sel)
+        }
+    };
+    for &[op, a, b] in ops {
+        // The array an op transforms is one the trip makes or a view of the
+        // state — never only invariants, so the op runs in the loop (Core
+        // starts a loop when its init is ready: a body-only invariant would
+        // be pending). Invariants join as second operands.
+        let variant: Vec<_> = lp
+            .arrs
+            .iter()
+            .copied()
+            .filter(|o| !outer_arrs.contains(o))
+            .collect();
+        let x = take(&variant, a);
+        match op % 8 {
+            // An op with no body to call falls back to one without (so `x`
+            // is always read: every value the body makes is live).
+            0 => {
+                let bd = pick(&ctx.map_bodies, b).unwrap_or(ctx.pair_sum);
+                let src = if bd == ctx.pair_sum {
+                    fb.enumerate(x, fresh.clone(), L()).unwrap()
+                } else {
+                    x
+                };
+                lp.arrs.push(fb.map(bd, src, fresh.clone(), L()).unwrap());
+            }
+            1 => {
+                let at = idx(fb, &lp, b);
+                let v = take(&lp.i32s, op / 8);
+                lp.arrs.push(fb.update(x, at, v, fresh.clone(), L()).unwrap());
+            }
+            2 => {
+                let at = idx(fb, &lp, b);
+                lp.i32s.push(fb.index(x, at, fresh.clone(), L()).unwrap());
+            }
+            3 => match pick(&ctx.fold_bodies, b) {
+                Some(bd) => {
+                    let seed = take(&lp.i32s, op / 8);
+                    let pair = fb.pack(&[seed, x], fresh.clone(), L()).unwrap();
+                    lp.i32s.push(fb.fold(bd, pair, fresh.clone(), L()).unwrap());
+                }
+                None => {
+                    let at = idx(fb, &lp, b);
+                    lp.i32s.push(fb.index(x, at, fresh.clone(), L()).unwrap());
+                }
+            },
+            4 => {
+                // A guard choosing between an arm-owned fresh array and another.
+                let arm = match pick(&ctx.map_bodies, b) {
+                    Some(bd) => fb.map(bd, x, fresh.clone(), L()).unwrap(),
+                    None if b % 3 == 0 => {
+                        let e = fb.enumerate(x, fresh.clone(), L()).unwrap();
+                        fb.map(ctx.pair_sum, e, fresh.clone(), L()).unwrap()
+                    }
+                    None => {
+                        let at = c(fb, i32::from(b) % ARR as i32);
+                        fb.update(x, at, i, fresh.clone(), L()).unwrap()
+                    }
+                };
+                let other = take(&lp.arrs, op / 8);
+                let lim = c(fb, i32::from(b % 4));
+                let g = fb.binop(Lt, i, lim, fresh.clone(), L()).unwrap();
+                let (t, e) = if b % 2 == 0 { (arm, other) } else { (other, arm) };
+                lp.arrs.push(fb.phi(t, e, g, fresh.clone(), L()).unwrap());
+            }
+            5 => {
+                let y = take(&lp.arrs, b);
+                let z = fb.zip(x, y, fresh.clone(), L()).unwrap();
+                lp.arrs.push(fb.map(ctx.pair_sum, z, fresh.clone(), L()).unwrap());
+            }
+            6 => {
+                let cap = take(&lp.arrs, op / 8);
+                lp.arrs.push(match pick(&ctx.map_acap_bodies, b) {
+                    Some(bd) => fb.map_captured(bd, &[cap], x, fresh.clone(), L()).unwrap(),
+                    None => {
+                        let z = fb.zip(x, cap, fresh.clone(), L()).unwrap();
+                        fb.map(ctx.pair_sum, z, fresh.clone(), L()).unwrap()
+                    }
+                });
+            }
+            _ => {
+                let (a0, a1) = (idx(fb, &lp, b), idx(fb, &lp, b.wrapping_add(1)));
+                let v = take(&lp.i32s, op / 8);
+                let u = fb.update(x, a0, v, fresh.clone(), L()).unwrap();
+                lp.arrs.push(fb.update(u, a1, i, fresh.clone(), L()).unwrap());
+            }
+        }
+    }
+    let nexts: Vec<_> = (0..n).map(|j| take(&lp.arrs, next[j])).collect();
+    let mut acc1 = acc;
+    let made = |v: &[mapal_ir::ObjectId], outer: usize| v[outer..].to_vec();
+    for v in made(&lp.i32s, 2 + outer_i32s.len()) {
+        if !used.borrow().contains(&v) {
+            acc1 = fb.binop(Add, acc1, v, fresh.clone(), L()).unwrap();
+        }
+    }
+    for a in made(&lp.arrs, n + outer_arrs.len()) {
+        if !used.borrow().contains(&a) {
+            let e = fb.index(a, zero, fresh.clone(), L()).unwrap();
+            acc1 = fb.binop(Add, acc1, e, fresh.clone(), L()).unwrap();
+        }
+    }
+    if acc1 == acc {
+        let one = c(fb, 1);
+        acc1 = fb.binop(Add, acc, one, fresh.clone(), L()).unwrap();
+    }
+    let one = c(fb, 1);
+    let i1 = fb.binop(Add, i, one, fresh.clone(), L()).unwrap();
+    let state1 = pack_state(fb, i1, &nexts, acc1);
+    fb.loop_back(&lh, state1, cond, L()).unwrap();
+    let out = fb
+        .loop_exit(&lh, views[exit as usize % n], cond, fresh.clone(), L())
+        .unwrap();
+    fb.end_loop(lh).unwrap();
+    // Observe every cell of the exit array.
+    let mut sum = zero;
+    for j in 0..ARR as i32 {
+        let at = c(fb, j);
+        let e = fb.index(out, at, fresh.clone(), L()).unwrap();
+        sum = fb.binop(Add, sum, e, fresh.clone(), L()).unwrap();
+    }
+    pool.arrs.push(out);
+    pool.i32s.push(sum);
+    pool.observe.push(sum);
 }
 
 /// A canonical bounded loop `i = 0; while i < k { i += 1 }; i` → `k` (`k ≤ 64`).

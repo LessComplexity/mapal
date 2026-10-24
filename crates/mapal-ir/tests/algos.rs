@@ -823,6 +823,68 @@ fn last_use_two_sequential_loops_own_carried_sets() {
     );
 }
 
+/// S65 `view_death`: a projection of a product re-exposes the bytes the
+/// product holds. `a` packed into `p`, `x = p.0` read after `a` is updated:
+/// `dead_after` (copy semantics — `x` is its own bytes) lets the update write
+/// `a` in place, `view_dead_after` (view semantics — `x` is `a`'s bytes) does
+/// not. A projection of a scalar component is no view.
+#[test]
+fn view_death_follows_projections() {
+    let mut b = IrBuilder::new();
+    let f = b
+        .declare(FuncKind::Named, "main", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    let (a, n);
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let four = fb.constant(Value::I32(4), L).unwrap();
+        a = fb.iota(four, Dest::Fresh(None), L).unwrap();
+        n = fb.input();
+        let p = fb.pack(&[a, n], Dest::Fresh(None), L).unwrap();
+        let x = fb.proj(p, 0, Dest::Fresh(None), L).unwrap();
+        let s = fb.proj(p, 1, Dest::Fresh(None), L).unwrap();
+        let z = fb.constant(Value::I32(0), L).unwrap();
+        let five = fb.constant(Value::I32(5), L).unwrap();
+        let u = fb.update(a, z, five, Dest::Fresh(None), L).unwrap();
+        let e = fb.index(x, z, Dest::Fresh(None), L).unwrap();
+        let e2 = fb.index(u, z, Dest::Fresh(None), L).unwrap();
+        let t = fb.binop(Operation::Add, e, e2, Dest::Fresh(None), L).unwrap();
+        let r = fb.binop(Operation::Add, t, s, Dest::Ret { slot: None }, L);
+        r.unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    let plan = ir.last_use_plan(f);
+    let at = plan.position(one_op(&ir, Operation::Update)).unwrap();
+    assert!(plan.dead_after(a, at), "copy semantics: x holds its own bytes");
+    assert!(!plan.view_dead_after(a, at), "view semantics: x is a's bytes");
+    assert!(plan.view_death(a) > plan.death(a));
+    // The scalar's projection pins nothing: n's view death is its death.
+    assert_eq!(plan.view_death(n), plan.death(n));
+}
+
+/// S65 `view_death` through a loop: the init array dies at the `LoopEnter`
+/// under copy semantics, but its bytes are the merge's first state and,
+/// through the exit, the exit object's — so they live as long as the exit
+/// object is read.
+#[test]
+fn view_death_init_lives_through_the_loop_exit() {
+    let (ir, f) = carried_array_loop();
+    let plan = ir.last_use_plan(f);
+    let enter_m = one_op(&ir, Operation::LoopEnter);
+    let init = ir.morphism(enter_m).unwrap().source;
+    let exit_m = one_op(&ir, Operation::LoopExit);
+    let merge = ir.morphism(enter_m).unwrap().target;
+    // The exit object is the fn's return: escaping, so the init's bytes do
+    // too (the zero-trip path returns them) — the plan's escape agrees.
+    assert!(plan.escapes(init) && plan.view_death(init).is_none());
+    // The merge's own bytes die in the trip: its exit is no pin.
+    let upd = plan.position(one_op(&ir, Operation::Update)).unwrap();
+    assert_eq!(plan.view_death(merge), plan.death(merge));
+    assert!(plan.view_death(merge).unwrap() <= upd);
+    assert!(plan.position(exit_m).unwrap() < upd);
+}
+
 #[test]
 fn last_use_determinism_run_twice_equal() {
     let (ir, f) = carried_array_loop();

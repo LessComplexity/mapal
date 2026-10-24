@@ -162,8 +162,14 @@ impl<'a> FnEmit<'a> {
                                 .array_operand_ptr(source, Some(slot))
                                 .expect("phi arm array ptr");
                             let dst = self.slot(target).expect("phi array target slot");
-                            let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
-                            self.emit_memcpy(&dst, &p, &llt);
+                            if self.ptr_resident.contains_key(target) {
+                                // S65 `by-ref`: the result is a view of the arm.
+                                self.line(format!("store ptr {p}, ptr {dst}"));
+                            } else {
+                                let llt =
+                                    lower_ty(&self.obj_ty(target)).expect("phi array lowers");
+                                self.emit_memcpy(&dst, &p, &llt);
+                            }
                         } else {
                             let (tllt, v) =
                                 self.load_component(source, slot).expect("phi arm value");
@@ -185,8 +191,12 @@ impl<'a> FnEmit<'a> {
                     let r = self.tmp();
                     self.line(format!("{r} = select i1 {c}, ptr {t}, ptr {e}"));
                     let dst = self.slot(target).expect("phi array target slot");
-                    let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
-                    self.emit_memcpy(&dst, &r, &llt);
+                    if self.ptr_resident.contains_key(target) {
+                        self.line(format!("store ptr {r}, ptr {dst}"));
+                    } else {
+                        let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
+                        self.emit_memcpy(&dst, &r, &llt);
+                    }
                 } else {
                     let (tllt, t) = self.load_component(source, 0).expect("phi then");
                     let (_, e) = self.load_component(source, 1).expect("phi else");
@@ -586,14 +596,21 @@ impl<'a> FnEmit<'a> {
             return None;
         }
         let arr = self.pair_source(morph.source, 0)?;
-        // A pointer slot is caller memory — unless it is a view whose buffer
-        // the loop owns (S65 `by-ref`, `func/byref.rs`).
-        if (self.ptr_resident.contains_key(arr) && !self.loop_owned.contains_key(arr))
-            || self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant
-        {
+        if self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant {
             return None;
         }
         let idx = self.lup.position(m)?;
+        // S65 `by-ref`: a view's bytes are written where they live, when the
+        // facts say no other view of them is read again (`frame.rs`).
+        if !self.par_safe(arr, m) {
+            return None;
+        }
+        if self.by_ref {
+            return self.writes_in_place(m, arr, idx).then_some(arr);
+        }
+        if self.ptr_resident.contains_key(arr) {
+            return None;
+        }
         self.lup.dead_after(arr, idx).then_some(arr)
     }
 
@@ -691,7 +708,8 @@ impl<'a> FnEmit<'a> {
         // source shares its slot with the target — the memcpy is skipped and
         // the element store below lands in place. The copy path emits
         // byte-identical text to before.
-        let (tgt_slot, copy_from) = match self.update_in_place_source(m) {
+        // The decision `prepare_storage` made (and laid the frame out by).
+        let (tgt_slot, copy_from) = match self.update_aliases.get(target).copied() {
             Some(arr) => {
                 let slot = self.slot(arr).expect("in-place update source slot");
                 self.slots.insert(target, slot.clone());

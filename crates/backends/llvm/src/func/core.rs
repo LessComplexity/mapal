@@ -88,10 +88,13 @@ impl<'a> FnEmit<'a> {
             cell_vals: Vec::new(),
             path_plan: None,
             split_slots: Vec::new(),
-            ref_paths: SecondaryMap::new(),
-            loop_owned: SecondaryMap::new(),
-            carry_refs: Vec::new(),
-            exit_by_device: SecondaryMap::new(),
+            views: SecondaryMap::new(),
+            views_done: false,
+            by_ref: false,
+            bufs: Vec::new(),
+            loops: Vec::new(),
+            root_index: Default::default(),
+            par: None,
         }
     }
 
@@ -127,6 +130,8 @@ impl<'a> FnEmit<'a> {
     pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms, reduced: Option<crate::Reduced>) {
         self.gpu_arms = arms;
         self.reduced = reduced;
+        // S65 `by-ref`: the products' layout, which the residency plan reads.
+        self.plan_views();
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
             let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, rungs);
@@ -245,7 +250,7 @@ impl<'a> FnEmit<'a> {
                 Some(v) => Some((lower_ty(&obj.ty)?, const_literal(v))),
             };
         }
-        let llt = match self.ref_paths.get(o) {
+        let llt = match self.views.get(o) {
             Some(paths) => lower_ptr_paths(&obj.ty, paths)?,
             None => lower_ty(&obj.ty)?,
         };
@@ -310,7 +315,7 @@ impl<'a> FnEmit<'a> {
                         text.clone(),
                     ),
                     _ => (
-                        if let Some(paths) = self.ref_paths.get(agg) {
+                        if let Some(paths) = self.views.get(agg) {
                             lower_ptr_paths(comp_ty, &sub_paths(paths, k))?
                         } else if self.pointer_only_array_component(agg, k) {
                             "ptr".into()
@@ -765,7 +770,7 @@ impl<'a> FnEmit<'a> {
     /// consumed only as addresses by collection/index/call ops are `ptr`
     /// fields (S20 #6/#8); value-observable components retain their ABI type.
     pub(super) fn lower_slot_ty(&self, o: ObjectId, ty: &Ty) -> Option<String> {
-        if let Some(paths) = self.ref_paths.get(o) {
+        if let Some(paths) = self.views.get(o) {
             return lower_ptr_paths(ty, paths);
         }
         let components: Vec<&Ty> = match ty {
@@ -903,10 +908,8 @@ impl<'a> FnEmit<'a> {
                     if *input == source
                         && k < *bk
                         && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. })));
-                // S65 `by-ref`: a loop product's array field holds the pointer.
-                let ref_field = self.ref_paths.contains_key(source)
-                    && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. }));
-                if byref_field || ref_field {
+                // S65 `by-ref`: a view field holds the pointer.
+                if byref_field || self.is_view(source, &[k]) {
                     let (_, fp) = self.component_ptr(source, k)?;
                     let p = self.tmp();
                     self.line(format!("{p} = load ptr, ptr {fp}"));
