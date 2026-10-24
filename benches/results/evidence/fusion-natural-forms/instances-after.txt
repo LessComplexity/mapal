@@ -11,18 +11,18 @@ DEPRECATED: `vastai show instances` will be removed in a future release. Use `va
 [40m[97m  #  Storage  SSH Addr      SSH Port  $/hr    Image         Net up  Net down[0m
 [48;5;240m[97m  1  60       ssh3.vast.ai  33628     0.0833  ubuntu:22.04  903.3   938.6   [0m
 [40m[97m  2  60       ssh4.vast.ai  34888     0.0967  ubuntu:22.04  2189.8  5540.2  [0m
-[48;5;240m[97m  3  40       ssh1.vast.ai  17006     0.0719  ubuntu:22.04  853.0   899.1   [0m
+[48;5;240m[97m  3  40       ssh1.vast.ai  17006     0.0719  ubuntu:22.04  864.8   900.0   [0m
 [40m[97m  4  120      ssh7.vast.ai  33504     0.0811  ubuntu:22.04  1710.7  2092.2  [0m
-[48;5;240m[97m  5  120      ssh1.vast.ai  28978     0.1680  ubuntu:22.04  906.7   957.9   [0m
-[40m[97m  6  30       ssh9.vast.ai  29610     0.0967  ubuntu:22.04  828.2   895.5   [0m
+[48;5;240m[97m  5  120      ssh1.vast.ai  28978     0.1680  ubuntu:22.04  901.6   957.0   [0m
+[40m[97m  6  30       ssh9.vast.ai  29610     0.0967  ubuntu:22.04  838.6   904.0   [0m
 [48;5;240m[97m  7  120      ssh1.vast.ai  15244     0.0800  ubuntu:22.04  1434.5  1155.1  [0m
 
 [40m[97m  #  R     Label                                   age(hours)  uptime(mins)[0m
-[48;5;240m[97m  1  99.5  stocklab-orderflow-20261021             77.04       4621.35     [0m
-[40m[97m  2  99.7  stocklab-horizon-state-20261021         71.95       4047.05     [0m
-[48;5;240m[97m  3  99.3  stocklab-capital-audit-20261021         67.95       -           [0m
-[40m[97m  4  99.6  stocklab-independent-mbt-120g-20261021  66.81       2977.65     [0m
-[48;5;240m[97m  5  99.7  stocklab-sweep-cpu-20261022             44.51       952.88      [0m
-[40m[97m  6  99.6  stocklab-exit-policy-20261023b          23.91       1036.03     [0m
-[48;5;240m[97m  7  99.6  stocklab-grid-trading-20261023          17.66       1015.62     [0m
+[48;5;240m[97m  1  99.5  stocklab-orderflow-20261021             77.53       4650.32     [0m
+[40m[97m  2  99.7  stocklab-horizon-state-20261021         72.43       4076.02     [0m
+[48;5;240m[97m  3  99.3  stocklab-capital-audit-20261021         68.43       -           [0m
+[40m[97m  4  99.6  stocklab-independent-mbt-120g-20261021  67.29       3006.61     [0m
+[48;5;240m[97m  5  99.7  stocklab-sweep-cpu-20261022             44.99       981.85      [0m
+[40m[97m  6  99.6  stocklab-exit-policy-20261023b          24.39       1065.00     [0m
+[48;5;240m[97m  7  99.6  stocklab-grid-trading-20261023          18.14       1044.58     [0m
 
