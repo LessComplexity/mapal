@@ -56,6 +56,11 @@ def corners(*outs):
 
 def workload(stem):
     """-> (fn, args): fn(*args) returns the program's outputs in print order."""
+    pj = re.fullmatch(r'pt_pj_m(\d+)_n(\d+)_k(\d+)', stem)
+    if pj:  # gen_tiles.py projection: M x K activations times a K x N weight
+        M, N, K = map(int, pj.groups())
+        a, b = op('a', M * K).view(M, K), op('b', K * N).view(K, N)
+        return (lambda a, b: corners(a @ b)), (a, b)
     m = re.fullmatch(r'pt_(\w+?)_(\d+)', stem)
     if stem.startswith('pt_rm_m'):
         M, d, h = map(int, re.findall(r'\d+', stem))
@@ -202,6 +207,10 @@ def workload(stem):
             c = a @ b
             return corners(c @ e + c @ g)
         return dm, (a, b, e, g)
+    if probe == 'twin':
+        return (lambda a, b, e, f: corners(a @ b, e @ f)), (a, b, e, f)
+    if probe == 'epi':
+        return (lambda a, b: corners((a @ b) * 0.5 + 1.0)), (a, b)
     if probe == 'indep':
         return (lambda a, b, e, f: corners(a @ b + e @ f)), (a, b, e, f)
     if probe == 'loop':
@@ -212,7 +221,7 @@ def workload(stem):
                 x = torch.relu(x @ wl)
             return corners(x)
         return lp, (a, wl)
-    raise SystemExit(f'torch_bench: no workload for {stem}')
+    raise LookupError(f'no workload for {stem}')
 
 
 def ends(outs):
@@ -270,7 +279,11 @@ def main():
           f'device="{torch.cuda.get_device_name(0) if dev == "cuda" else "cpu"}"', flush=True)
     flush = torch.empty(64 << 20, device=dev) if dev == 'cuda' else None  # 256 MB
     for stem in stems:
-        fn, args = workload(stem)
+        try:
+            fn, args = workload(stem)
+        except Exception as ex:  # noqa: BLE001 — a stem without a torch leg is a row, not the end of the run
+            print(f'torch prog={stem} NOWORKLOAD {type(ex).__name__}: {str(ex)[:200]}', flush=True)
+            continue
         for mode in ('eager', 'compile'):
             try:
                 t0 = time.perf_counter()
