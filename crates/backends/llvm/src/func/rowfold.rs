@@ -77,6 +77,7 @@ pub(crate) fn rowfold_sites(
         // The fold reads cell (i, k) of the producer's `rows × c` grid, row
         // by row, and is its only reader.
         let in_order = site.rows == tile.rows
+            && site.w == 1
             && site.k == tile.c
             && site.a
                 == TileRead {

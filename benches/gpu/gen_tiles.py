@@ -818,3 +818,85 @@ for stem, kmax in [(s, k) for s, (_, k) in SUITE.items()] + [
         for p, f in (('softmax_rows', 2), ('rowsum', 2), ('ew', 8), ('fanout', 2), ('diamond', 2), ('indep', 1),
                      ('loop', 8), ('mlp', 2))] + [("pt_rt_mlp2_1024", 2 * 1024), ("pt_rt_mlp2_2048", 2 * 2048)]:
     (out / f"{stem}.kmax").write_text(f"{kmax}\n")
+
+
+# --- generic-fusion: cross-algorithm chains (design §9), idiomatic Mapal. `pt_*` timed like the probes (`time`
+# around the computation, then the corners of every output and `iter ms`); `px_*` the small differentials (the
+# interpreter is the oracle: corners and a checksum of every output). `<stem>.kmax`: the longest fold chain.
+def chain_program(ops, body, outs, timed):
+    if timed:
+        return composed(ops, body, outs)
+    s = "fn main() {\n" + "".join(law(*o) for o in ops) + body + "    0.0 -> zero: f32;\n"
+    for o, length in outs:
+        s += (f"    (zero, {o}) -> fold {{ acc, v -> acc + v }} -> s_{o};\n    s_{o} -> println;\n"
+              f"    {o}[0] -> println;\n    {o}[{length - 1}] -> println;\n")
+    return s + "}\n"
+
+
+def firew_rowsum(R, C, taps, timed=True):
+    """FIR -> ew -> rowsum: a 1-D window over R·C samples, a per-sample activation, a sum per row of C."""
+    body = (f"    {R * C} -> iota -> o_y;\n    {taps} -> iota -> k_y;\n"
+            f"    o_y -> map {{ t -> (0.0, k_y) -> fold {{ acc, k -> acc + c[k] * s[t + k] }} }} -> y;\n"
+            f"    y -> map {{ v -> {relu('v * 0.5')} }} -> h;\n"
+            f"    {R} -> iota -> r_i;\n    {C} -> iota -> r_j;\n"
+            f"    r_i -> map {{ i -> (0.0, r_j) -> fold {{ acc, j -> acc + h[i * {C} + j] }} }} -> r;\n")
+    return chain_program([("c", taps, 'e'), ("s", R * C + taps - 1, 'a')], body, [("r", R)], timed)
+
+
+def attention(T, d, timed=True):
+    """matmul -> softmax -> matmul: s = q·Kᵀ / sqrt(d) (K read at the lane stride d), a row max, exp of the
+    difference, a row sum, the quotient, p·V."""
+    sd = f"{d ** 0.5:.1f}"
+    body = (f"    {T * T} -> iota -> o_s;\n    {d} -> iota -> k_d;\n    {T} -> iota -> k_t;\n"
+            f"    o_s -> map {{ e ->\n        e / {T} -> i;\n        e % {T} -> j;\n"
+            f"        (0.0, k_d) -> fold {{ acc, k -> acc + q[i * {d} + k] * kk[j * {d} + k] }}\n    }} -> s;\n"
+            f"    k_t -> map {{ i -> (-1000000000.0, k_t) -> fold {{ acc, j -> s[i * {T} + j] -> e; "
+            f"(e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;\n"
+            f"    o_s -> map {{ t -> {expo(f'(s[t] - mx[t / {T}]) / {sd}')} }} -> ex;\n"
+            f"    k_t -> map {{ i -> (0.0, k_t) -> fold {{ acc, j -> acc + ex[i * {T} + j] }} }} -> den;\n"
+            f"    o_s -> map {{ t -> ex[t] / den[t / {T}] }} -> p;\n"
+            f"    {T * d} -> iota -> o_o;\n"
+            f"    o_o -> map {{ e ->\n        e / {d} -> i;\n        e % {d} -> j;\n"
+            f"        (0.0, k_t) -> fold {{ acc, u -> acc + p[i * {T} + u] * vv[u * {d} + j] }}\n    }} -> o;\n")
+    ops = [("q", T * d, 'a'), ("kk", T * d, 'b'), ("vv", T * d, 'e')]
+    return chain_program(ops, body, [("o", T * d)], timed)
+
+
+def ewconvew(n, kk, timed=True):
+    """ew -> conv -> ew: an activation of the image, a kk×kk convolution (k÷kk, k%kk taps), an activation."""
+    w = n + kk - 1
+    body = (f"    img -> map {{ v -> v * 0.5 + 0.25 }} -> im;\n"
+            f"    {n * n} -> iota -> o_y;\n    {kk * kk} -> iota -> k_y;\n"
+            f"    o_y -> map {{ t ->\n        t / {n} -> i;\n        t % {n} -> j;\n"
+            f"        (0.0, k_y) -> fold {{ acc, k -> acc + wk[k] * im[(i + k / {kk}) * {w} + j + k % {kk}] }}\n"
+            f"    }} -> y;\n"
+            f"    y -> map {{ v -> {relu('v')} }} -> z;\n")
+    return chain_program([("wk", kk * kk, 'e'), ("img", w * w, 'a')], body, [("z", n * n)], timed)
+
+
+def smlp(M, d, h, timed=True):
+    """MLP: relu(x·W1 + b1)·W2."""
+    body = (f"    {h} -> iota -> i_b1;\n"
+            f"    i_b1 -> map {{ t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 }} -> b1;\n"
+            + gsite("s1", "x", "w1", M, h, d)
+            + f"    o_s1 -> map {{ t -> {relu(f's1[t] + b1[t % {h}]')} }} -> hh;\n"
+            + gsite("s2", "hh", "w2", M, d, h))
+    return chain_program([("x", M * d, 'a'), ("w1", d * h, 'b'), ("w2", h * d, 'e')], body, [("s2", M * d)], timed)
+
+
+CHAINS = {
+    "pt_firew_rowsum_2048x2048_16": (firew_rowsum(2048, 2048, 16), 16 + 2048),
+    "pt_attn_1024_64": (attention(1024, 64), 64 + 2 * 1024),
+    "pt_attn_1024_128": (attention(1024, 128), 128 + 2 * 1024),
+    "pt_attn_2048_64": (attention(2048, 64), 64 + 2 * 2048),
+    "pt_attn_2048_128": (attention(2048, 128), 128 + 2 * 2048),
+    "pt_ewconvew_2048_5": (ewconvew(2048, 5), 25),
+    "pt_smlp_4096_256_1024": (smlp(4096, 256, 1024), 256 + 1024),
+    "px_firew_rowsum_32x32_16": (firew_rowsum(32, 32, 16, False), 16 + 32),
+    "px_attn_64_16": (attention(64, 16, False), 16 + 2 * 64),
+    "px_ewconvew_32_5": (ewconvew(32, 5, False), 25),
+    "px_smlp_64_32_64": (smlp(64, 32, 64, False), 32 + 64),
+}
+for stem, (src, kmax) in CHAINS.items():
+    (out / f"{stem}.mapal").write_text(src)
+    (out / f"{stem}.kmax").write_text(f"{kmax}\n")
