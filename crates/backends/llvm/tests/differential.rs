@@ -3627,7 +3627,8 @@ fn differential_natural_twins_values_and_movement() {
     let (mut findings, [rows, probed, devices, inplace, better]) = all.into_inner().unwrap();
     findings.sort();
     assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
-    assert!(rows > cases / 8 && devices > cases / 2, "{rows} Rows claims, {devices} device units");
+    // (The sweep's reach, at the default size: a small MAPAL_TWINS is a smoke run.)
+    assert!(cases < 64 || (rows > cases / 8 && devices > cases / 2), "{rows} Rows claims, {devices} device units");
     eprintln!(
         "differential_natural_twins: {cases} twin programs, {rows} Δ Rows claims ({probed} probed sound), \
          {devices} device builds, {inplace} in-place states; movement, launches, kernels = the unrolled twins' \
