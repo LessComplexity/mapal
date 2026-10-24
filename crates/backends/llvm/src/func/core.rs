@@ -153,8 +153,8 @@ impl<'a> FnEmit<'a> {
         }
         self.resident = resident.then(|| self.resident_plan(rungs)).flatten();
         // generic-fusion: the host intent line, in the entry block.
-        if let Some(p) = self.resident.as_ref().filter(|p| !p.fuse_line.is_empty()) {
-            self.allocas.push_str(&format!("  {}", p.fuse_line));
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.flow_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.flow_line));
         }
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.

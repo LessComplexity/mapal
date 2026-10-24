@@ -345,7 +345,7 @@ pub struct GpuRungs {
     /// profile, CPU builds included. Off: products hold arrays inline (S64:
     /// five whole copies of the state per trip).
     pub by_ref: bool,
-    /// generic-fusion `fuse` (`func/fuse.rs`): placed folds and cells whose
+    /// `flow` (`func/flow.rs`): placed folds and cells whose
     /// read footprints stay inside one row of a group's unit (or a halo of a
     /// recomputable cell) run as one unit kernel; a member no outside reader
     /// needs is never stored. Off: the tile root only (`epilogue`, S54 R1).
@@ -353,7 +353,7 @@ pub struct GpuRungs {
     /// **Ships OFF on all four measured parts** (`GPU_RUNGS_OFF` rows,
     /// fusion-natural-forms sweep): the one unit that forms (the row softmax)
     /// runs one thread per row, and its kernel is 1.8–4.8× the four it replaces.
-    pub fuse: bool,
+    pub flow: bool,
     /// generic-fusion `window` (design §4): a tile site whose reads are affine
     /// in the fold's derived axes `(k÷div, k%div)` — a 2-D convolution's taps —
     /// is a device site; the one-thread-per-cell kernel walks `k` in order and
@@ -428,7 +428,7 @@ impl GpuRungs {
         hostopt: true,
         place: true,
         by_ref: true,
-        fuse: true,
+        flow: true,
         window: true,
         range_map: true,
     };
@@ -485,7 +485,7 @@ impl GpuRungs {
         "hostopt",
         "place",
         "by-ref",
-        "fuse",
+        "flow",
         "window",
         "range-map",
     ];
@@ -542,7 +542,7 @@ impl GpuRungs {
             "hostopt" => &mut self.hostopt,
             "place" => &mut self.place,
             "by-ref" => &mut self.by_ref,
-            "fuse" => &mut self.fuse,
+            "flow" => &mut self.flow,
             "window" => &mut self.window,
             "range-map" => &mut self.range_map,
             _ => return None,
@@ -982,8 +982,8 @@ fn emit_module(
     let mut cells: Vec<crate::func::gpu::CellKernel> = Vec::new();
     // S65: the row folds each function runs on the device.
     let mut folds: Vec<mapal_ir::RowFoldSite> = Vec::new();
-    // generic-fusion `fuse`: each function's unit kernels.
-    let mut units: Vec<crate::func::fuse::UnitKernel> = Vec::new();
+    // `flow`: each function's unit kernels.
+    let mut units: Vec<crate::func::flow::UnitKernel> = Vec::new();
     let mut texts: SecondaryMap<mapal_ir::FuncId, String> = SecondaryMap::new();
     let mut orders: Vec<FoldOrder> = Vec::new();
     for (id, _) in ir.funcs() {

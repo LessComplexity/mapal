@@ -267,10 +267,10 @@ pub(crate) struct ResidentPlan {
     /// S54 `streams` (R7): each straight-line device site's chain (its stream,
     /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
     pub chain: SecondaryMap<MorphismId, u32>,
-    /// generic-fusion `fuse`: the unit groups, by their launch (first member).
-    pub units: SecondaryMap<MorphismId, super::fuse::Unit>,
-    /// generic-fusion: the host intent line (`; mapal.fuse.host …`).
-    pub fuse_line: String,
+    /// `flow`: the unit groups, by their launch (first member).
+    pub units: SecondaryMap<MorphismId, super::flow::Unit>,
+    /// generic-fusion: the host intent line (`; mapal.flow.host …`).
+    pub flow_line: String,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -1475,8 +1475,8 @@ impl<'a> FnEmit<'a> {
         }
         plan.cells = cells;
         self.chains(&sites, &mut plan);
-        // generic-fusion `fuse`: the placed folds and cells, grouped.
-        self.fuse_units(&mut plan);
+        // `flow`: the placed folds and cells, grouped.
+        self.flow_units(&mut plan);
         // ponytail: the arena reuses bytes by topo position, which concurrent
         // streams do not follow; a function that opens streams keeps its own
         // buffers. Color per stream when a part ships both on one program.

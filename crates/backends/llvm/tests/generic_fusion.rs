@@ -1,4 +1,4 @@
-//! generic-fusion `fuse` (`func/fuse.rs`): the footprint rule's unit groups,
+//! `flow` (`func/flow.rs`): the footprint rule's unit groups,
 //! through the GPU emulator — values against the interpreter with the rung on
 //! and off, and the launches and stored intermediates the facts require.
 
@@ -25,7 +25,7 @@ fn lower(src: &str) -> CategoryIr {
 
 /// The exact-face emission on `target` with `off` rungs off (and the ones the
 /// emulator cannot run: `async`, `pdl`, `streams`; `place` so every capable
-/// site is on the device). `fuse` is forced on: it ships OFF on every measured
+/// site is on the device). `flow` is forced on: it ships OFF on every measured
 /// part (`GPU_RUNGS_OFF`, the fusion-natural-forms sweep), and these tests are
 /// its proof of values, launches and stores.
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str]) -> mapal_backend_llvm::Emission {
@@ -40,7 +40,7 @@ fn emission_on(
     base: EmitOpts,
 ) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
-    gpu.on.fuse = true;
+    gpu.on.flow = true;
     for r in off
         .iter()
         .chain(&["place", "async", "pdl", "streams", "pinned"])
@@ -75,12 +75,12 @@ fn check(src: &str, target: &'static str) -> (mapal_backend_llvm::Emission, usiz
     let rr = run(&ir, 2_000_000_000);
     assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
     let on = emission(&ir, target, &[]);
-    let off = emission(&ir, target, &["fuse"]);
+    let off = emission(&ir, target, &["flow"]);
     let clang = emu::clang().expect("clang");
     for (arm, em) in [("on", &on), ("off", &off)] {
         let dev = em.device.as_ref().expect("a device unit");
         let got = emu::run_emulated(&clang, &em.text, dev);
-        assert_eq!(got, rr.output, "fuse {arm}\n{src}");
+        assert_eq!(got, rr.output, "flow {arm}\n{src}");
     }
     let (l_on, _) = launches(&on.text);
     let (l_off, u_off) = launches(&off.text);
@@ -157,8 +157,8 @@ fn softmax_rows_is_one_unit_below_the_tile() {
         let dev = on.device.as_ref().unwrap();
         let line = dev
             .lines()
-            .find(|l| l.starts_with("; mapal.fuse kernel="))
-            .expect("a fuse intent");
+            .find(|l| l.starts_with("; mapal.flow kernel="))
+            .expect("a flow intent");
         assert!(
             line.contains("store=y ") && line.contains("keep=mx:reg:4;ex:reg:0;den:reg:4"),
             "{line}"
@@ -213,7 +213,7 @@ fn halo_of_a_free_cell_is_recomputed() {
     let dev = on.device.unwrap();
     let line = dev
         .lines()
-        .find(|l| l.starts_with("; mapal.fuse kernel="))
+        .find(|l| l.starts_with("; mapal.flow kernel="))
         .expect("a unit");
     assert!(
         line.contains("q:cell:1x1+halo") && line.contains("keep=x:reg:4"),
@@ -380,7 +380,7 @@ fn dump_intents() {
     for l in on
         .text
         .lines()
-        .filter(|l| l.contains("mapal.fuse") || l.contains("launch"))
+        .filter(|l| l.contains("mapal.flow") || l.contains("launch"))
     {
         eprintln!("{l}");
     }
@@ -388,7 +388,7 @@ fn dump_intents() {
         .device
         .unwrap()
         .lines()
-        .filter(|l| l.contains("mapal.fuse") || l.contains("mapal.plan"))
+        .filter(|l| l.contains("mapal.flow") || l.contains("mapal.plan"))
     {
         eprintln!("{l}");
     }
@@ -444,7 +444,7 @@ fn planned_moves(host: &str) -> Vec<(u64, u64)> {
 /// algorithms (testgen `chain_strategy`: laws, capture-free maps, cells at
 /// every footprint, tile sites, windows, row folds, a fold's value per cell,
 /// whole folds, loops), rtx-4090 and h100-pcie alternating, emulated:
-/// 1. values: the exact face equals the interpreter, `fuse` on and off;
+/// 1. values: the exact face equals the interpreter, `flow` on and off;
 /// 2. groups: on keeps every tile root off had (`epi=1` kernels), and adds
 ///    unit groups only;
 /// 3. launches: on launches exactly off's less one per unit member after the
@@ -471,7 +471,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
     let mut defaults = 0;
     let lines_of = |d: &str| -> Vec<String> {
         d.lines()
-            .filter(|l| l.starts_with("; mapal.fuse kernel="))
+            .filter(|l| l.starts_with("; mapal.flow kernel="))
             .map(String::from)
             .collect()
     };
@@ -487,7 +487,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
         );
         let target = if z % 2 == 0 { "rtx-4090" } else { "h100-pcie" };
         let ems = std::panic::catch_unwind(|| {
-            (emission(&ir, target, &[]), emission(&ir, target, &["fuse"]))
+            (emission(&ir, target, &[]), emission(&ir, target, &["flow"]))
         });
         let Ok((on, off)) = ems else {
             findings.push(format!("chain#{z} {target}: the emitter panicked\n{src}"));
@@ -504,7 +504,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
             let got = emu::run_emulated(&clang, &em.text, dev);
             if got != rr.output {
                 findings.push(format!(
-                    "chain#{z} {target} fuse {arm}: {got:?} != {:?}\n{src}",
+                    "chain#{z} {target} flow {arm}: {got:?} != {:?}\n{src}",
                     rr.output
                 ));
             }
@@ -516,7 +516,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
             let base = EmitOpts::default();
             let (a, b) = (
                 emission_on(&ir, target, &[], base),
-                emission_on(&ir, target, &["fuse"], base),
+                emission_on(&ir, target, &["flow"], base),
             );
             if let (Some(da), Some(db)) = (&a.device, &b.device) {
                 defaults += 1;
@@ -547,7 +547,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
         // 3. Launches.
         let lines: Vec<&str> = don
             .lines()
-            .filter(|l| l.starts_with("; mapal.fuse kernel="))
+            .filter(|l| l.starts_with("; mapal.flow kernel="))
             .collect();
         let unit_members: usize = lines
             .iter()
@@ -609,7 +609,7 @@ fn generic_fusion_chains_values_launches_and_stores() {
         for l in on
             .text
             .lines()
-            .filter_map(|l| l.trim().strip_prefix("; mapal.fuse.host "))
+            .filter_map(|l| l.trim().strip_prefix("; mapal.flow.host "))
         {
             for r in field(l, "refused").split(';').filter(|x| !x.is_empty()) {
                 *reasons

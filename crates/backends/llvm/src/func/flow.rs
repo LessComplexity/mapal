@@ -1,4 +1,4 @@
-//! **generic-fusion `fuse`: one footprint rule for device groups** (design §2).
+//! **`flow`: one footprint rule for device groups** (design §2).
 //!
 //! A consumer joins its producer's group when, for every work unit of the
 //! group — one row `i` of its `rows` — the producer cells it reads lie in that
@@ -17,7 +17,7 @@
 //! data: it removes launches, stores and loads. The tile root (a cell reading
 //! a tile site's output at its own cell, `resident.rs:epilogues`) is the same
 //! rule with the tile's block as the unit, and the OFF arm
-//! (`--gpu-off=fuse`): with the rung off only tile roots group.
+//! (`--gpu-off=flow`): with the rung off only tile roots group.
 //!
 //! **Realization.** One thread per unit row, members in topo order as
 //! phases: a fold walks its row in order (the oracle's chain, ADR-0028 D4), a
@@ -174,15 +174,15 @@ const SAME: Reach = Reach::Affine {
 };
 
 impl<'a> FnEmit<'a> {
-    /// **The rule (generic-fusion `fuse`)**: group the placed folds and cells
+    /// **The rule (`flow`)**: group the placed folds and cells
     /// of this plan into unit kernels, greedily in position order — a group
     /// starts at a unit no group holds and takes, one at a time, the earliest
     /// reader of a member that [`Self::unit_of`] admits. Refusals are
     /// recorded with their reason for the host intent line.
-    pub(super) fn fuse_units(&self, plan: &mut ResidentPlan) {
+    pub(super) fn flow_units(&self, plan: &mut ResidentPlan) {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
         let mut refused: Vec<(MorphismId, MorphismId, &'static str)> = Vec::new();
-        if rungs.fuse && plan.chain.is_empty() {
+        if rungs.flow && plan.chain.is_empty() {
             let mut cand: SecondaryMap<MorphismId, Cand> = SecondaryMap::new();
             for (m, r) in plan.rowfold.iter() {
                 cand.insert(m, Cand::Fold(r.clone()));
@@ -279,8 +279,8 @@ impl<'a> FnEmit<'a> {
         // Only where the rule decided something: a function it leaves alone
         // keeps its text.
         if !plan.units.is_empty() || !refused.is_empty() {
-            plan.fuse_line = format!(
-                "; mapal.fuse.host groups={} units={} launches={launches} refused={}\n",
+            plan.flow_line = format!(
+                "; mapal.flow.host groups={} units={} launches={launches} refused={}\n",
                 self.groups.len() + plan.units.len(),
                 plan.units.len(),
                 refused.join(";")
@@ -693,7 +693,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// The unit's kernel: the bodies it calls, and its text (with its
-    /// `; mapal.fuse` and `; mapal.plan` intent lines).
+    /// `; mapal.flow` and `; mapal.plan` intent lines).
     fn unit_kernel(&self, u: &Unit) -> (Vec<(String, String)>, String) {
         let name = gpu::kernel_name(u.id);
         let (blocks, threads) = unit_grid(u, self.profile);
@@ -861,7 +861,7 @@ impl<'a> FnEmit<'a> {
             .unwrap_or(&u.members[0]);
         let w = u.members.iter().map(|mb| mb.w).max().unwrap_or(1);
         let mut text = format!(
-            "; mapal.fuse kernel={name} unit=1x{w} rows={} root={} members={} keep={} store={} gmem={} law={} smem=0\n",
+            "; mapal.flow kernel={name} unit=1x{w} rows={} root={} members={} keep={} store={} gmem={} law={} smem=0\n",
             u.rows,
             label(root.out),
             members.join(";"),
@@ -871,7 +871,7 @@ impl<'a> FnEmit<'a> {
             laws.join(";"),
         );
         text += &format!(
-            "; mapal.plan kernel={name} kind=fuse rows={} gx={blocks} block={threads} members={} rungs_on=fuse\n",
+            "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow\n",
             u.rows,
             u.members.len()
         );

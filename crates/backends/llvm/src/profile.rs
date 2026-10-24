@@ -1420,7 +1420,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // part and program; ON faster on none.
     RungOff {
         profile: "rtx-4090",
-        rung: "fuse",
+        rung: "flow",
         fill: Fill::Any,
         face: Face::Any,
         cite: "evidence/fusion-natural-forms/rtx-4090/results-rtx-4090.txt OFF/ON iter: softmax_rows_4096 2.911/3.296 ms \
@@ -1430,7 +1430,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "rtx-5090",
-        rung: "fuse",
+        rung: "flow",
         fill: Fill::Any,
         face: Face::Any,
         cite: "evidence/fusion-natural-forms/rtx-5090/results-rtx-5090.txt OFF/ON iter: softmax_rows_4096 2.626/3.052 ms \
@@ -1440,7 +1440,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "h100-pcie",
-        rung: "fuse",
+        rung: "flow",
         fill: Fill::Any,
         face: Face::Any,
         cite: "evidence/fusion-natural-forms/h100-pcie/results-h100-pcie.txt OFF/ON iter: softmax_rows_4096 4.203/4.945 ms \
@@ -1450,7 +1450,7 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     RungOff {
         profile: "rtx-3090",
-        rung: "fuse",
+        rung: "flow",
         fill: Fill::Any,
         face: Face::Any,
         cite: "evidence/fusion-natural-forms/rtx-3090/results-rtx-3090.txt OFF/ON iter: softmax_rows_4096 6.488/7.098 ms \
