@@ -1062,7 +1062,8 @@ impl<'a> FnEmit<'a> {
         }
         let mut out = Vec::new();
         for (m, site) in self.ir.row_fold(self.f).iter() {
-            if sites.contains_key(m) || !is_float(&site.elem) || site.k == 0 {
+            let window = site.w > 1 || site.a.ksplit.is_some();
+            if sites.contains_key(m) || !is_float(&site.elem) || site.k == 0 || (window && !rungs.window) {
                 continue;
             }
             sites.insert(

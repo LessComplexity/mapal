@@ -353,8 +353,10 @@ pub struct GpuRungs {
     /// generic-fusion `window` (design §4): a tile site whose reads are affine
     /// in the fold's derived axes `(k÷div, k%div)` — a 2-D convolution's taps —
     /// is a device site; the one-thread-per-cell kernel walks `k` in order and
-    /// addresses `cq·(k÷div) + cr·(k%div)`. Off: it stays the host's (`func/conv.rs`).
-    /// Unmeasured on hardware.
+    /// addresses `cq·(k÷div) + cr·(k%div)`; and a weightless window over a
+    /// device output (a box filter: a row fold with a split map index and
+    /// split taps) is a device fold. Off: both stay the host's (`func/conv.rs`,
+    /// the host fold). Unmeasured on hardware.
     pub window: bool,
 }
 
