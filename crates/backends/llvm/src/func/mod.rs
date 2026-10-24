@@ -408,6 +408,10 @@ pub(crate) struct FnEmit<'a> {
     /// `ptr_resident`.
     views: SecondaryMap<ObjectId, Vec<Vec<u32>>>,
     views_done: bool,
+    /// Each map's piecewise law, as `map_law` gave it (a pure function of
+    /// the IR, asked once per map: `in_place_source`'s fixed point asks every
+    /// round).
+    outside_memo: std::cell::RefCell<SecondaryMap<MorphismId, Option<mapal_ir::Outside>>>,
     /// The `by-ref` rung, as `plan_views` read it.
     by_ref: bool,
     /// The loop state positions whose buffer the host chooses per trip or

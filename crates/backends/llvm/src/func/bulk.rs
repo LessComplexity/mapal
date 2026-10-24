@@ -98,12 +98,15 @@ impl<'a> FnEmit<'a> {
         if tiled || cell || self.device.contains_key(m) || self.member_src(m, 0).is_some() {
             return None;
         }
-        match self.ir.map_law(m)? {
-            ElemSrc::Apply {
-                outside: Some(ou), ..
-            } => Some(ou),
-            _ => None,
+        if let Some(&ou) = self.outside_memo.borrow().get(m) {
+            return ou;
         }
+        let ou = match self.ir.map_law(m) {
+            Some(ElemSrc::Apply { outside, .. }) => outside,
+            _ => None,
+        };
+        self.outside_memo.borrow_mut().insert(m, ou);
+        ou
     }
 
     /// The cells `lo + step·k` met with the loop's own bounds `[l, h)`: the
