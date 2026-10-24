@@ -705,3 +705,56 @@ fn resident_path_matches_the_oracle_emulated() {
         );
     }
 }
+
+/// flow (static explanations): a retained output's `; mapal.move` d2h is what
+/// a steady trip copies out — its one new row — not the whole rebuild its
+/// first pass (`store i1 true` to the pass flag) copies once per loop entry.
+/// The facts-on-graph causal decode claimed 2,097,152 B a step (two whole
+/// 1 MiB K/V); the trace moved 2 MiB once plus 2 × 1 KiB a step.
+#[test]
+fn retained_move_intent_is_the_steady_trip() {
+    let ir = lower(&decode(16, 8, "f32", false));
+    let (host, _) = emit_s54(&ir, &[], false);
+    let mut checked = 0;
+    for f in host.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else {
+                continue;
+            };
+            let header = rest.split_whitespace().next().expect("header");
+            let intent: u64 = rest
+                .split_whitespace()
+                .find_map(|x| x.strip_prefix("d2h="))
+                .and_then(|x| x.parse().ok())
+                .expect("d2h");
+            let back = format!("br label %{header}");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
+            // The trip's blocks, a first pass's left out.
+            let (mut realized, mut block, mut first) = (0u64, 0u64, false);
+            for x in &lines[h..=latch] {
+                let t = x.trim();
+                if t.ends_with(':') && !t.starts_with(';') {
+                    realized += if first { 0 } else { block };
+                    (block, first) = (0, false);
+                }
+                first |= t.starts_with("store i1 true, ptr");
+                if let Some(args) = t.strip_prefix("call void @mapal_gpu_d2h(") {
+                    block += args
+                        .trim_end_matches(')')
+                        .rsplit(", i64 ")
+                        .next()
+                        .and_then(|b| b.parse::<u64>().ok())
+                        .unwrap_or(0);
+                }
+            }
+            realized += if first { 0 } else { block };
+            assert_eq!(intent, realized, "{l}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "a move line");
+}
