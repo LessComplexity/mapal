@@ -173,10 +173,11 @@ def time_table(raw, title='How each optimization turned out in time (arms timed 
     for a in ARCHS:
         lg = legs(results(raw, a))
         for leg, arm in lg.items():
-            m = re.match(r'(.+?)\.(on|off)-([\w+-]+)$', leg)
-            if not m or m[1] not in lg:
+            # S65: `.cpu-off-<rung>` is the CPU-only build's arm, against `.cpu`.
+            m = re.match(r'(.+?)\.(cpu-)?(on|off)-([\w+-]+)$', leg)
+            if not m or m[1] + ('.cpu' if m[2] else '') not in lg:
                 continue
-            base, d, rung = m[1], m[2], m[3].split('+')[-1]
+            base, d, rung = m[1] + ('.cpu' if m[2] else ''), m[3], m[4].split('+')[-1] + ('/cpu' if m[2] else '')
             sh = lg[base]
             ks = [k for k in arm if k in sh]
             if any(k.startswith('p') for k in ks):  # a kernel arm: its tile_bench / mlp_bench events

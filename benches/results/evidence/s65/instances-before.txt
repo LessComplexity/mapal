@@ -1,0 +1,7 @@
+57065574 69770 exited GTX 1660 S stocklab-orderflow-20261021
+57100404 144411 exited Quadro P4000 stocklab-horizon-state-20261021
+57126023 53859 exited Quadro P4000 stocklab-capital-audit-20261021
+57133432 31844 exited GTX 1660 S stocklab-independent-mbt-120g-20261021
+57285249 37055 exited Quadro P4000 stocklab-sweep-cpu-20261022
+57415164 131146 running RTX 3060 stocklab-exit-policy-20261023b
+57450102 17786 running Quadro P4000 stocklab-grid-trading-20261023
