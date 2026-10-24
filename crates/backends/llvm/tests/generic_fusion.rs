@@ -118,12 +118,17 @@ fn row_fold(o: &str, src: &str, n: u64, seed: &str, step: &str) -> String {
     )
 }
 
+/// exp(x) for x <= 0 as `gen_tiles.py`'s `expo`, in its natural form: the
+/// clamped base squared once per step of an 8-step range (a fold nested in
+/// the cell, whose body the unit kernel carries).
+const EXPO: &str = "x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; 8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc }";
+
 /// softmax over the rows of a tile site's output (the `softmax_rows` probe's
 /// form): a row max, a per-cell exp of the difference, a row sum of that, the
 /// quotient. OFF: the tile, two folds, two cells (5 launches); ON: the tile and
 /// one unit holding the four (2 launches), only `y` stored.
 fn softmax(n: u64) -> String {
-    let expo = "x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; v0 * v0 -> v1; v1 * v1 -> v2; v2 * v2 -> v3; v3 * v3 -> v4; v4 * v4 -> v5; v5 * v5 -> v6; v6 * v6 -> v7; v7 * v7 -> v8; v8";
+    let expo = EXPO;
     head(n)
         + &row_fold(
             "mx",
@@ -308,7 +313,7 @@ fn window_box_filter_is_a_device_row_fold() {
 /// `q·Kᵀ` over a 2-D grid (`k` read at the lane stride `d`) is a device site
 /// (`tile_plan_strided`'s split branch), then the row softmax and `·V`.
 fn attention(t: u64, d: u64) -> String {
-    let expo = "x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; v0 * v0 -> v1; v1 * v1 -> v2; v2 * v2 -> v3; v3 * v3 -> v4; v4 * v4 -> v5; v5 * v5 -> v6; v6 * v6 -> v7; v7 * v7 -> v8; v8";
+    let expo = EXPO;
     format!(
         "fn main() {{
     {td} -> iota -> tq;

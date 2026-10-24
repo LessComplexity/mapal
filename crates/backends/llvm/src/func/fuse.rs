@@ -729,12 +729,21 @@ impl<'a> FnEmit<'a> {
             if !fns.iter().any(|(n, _)| *n == callee) {
                 fns.push((callee.clone(), text));
             }
-            for s in &mb.srcs {
-                if let USrc::Law(f) = *s {
-                    let (ln, lt) = self.unit_body(f, &[]);
-                    if !fns.iter().any(|(n, _)| *n == ln) {
-                        fns.push((ln, lt));
-                    }
+            let laws = mb.srcs.iter().filter_map(|s| match *s {
+                USrc::Law(f) => Some(f),
+                _ => None,
+            });
+            // The laws, then every body nested in the member's or a law's (a
+            // natural form's fold inside a cell), as the cell kernels carry
+            // them (`resident::nested_bodies`).
+            let laws: Vec<FuncId> = laws.collect();
+            let nested = std::iter::once(body)
+                .chain(laws.iter().copied())
+                .flat_map(|b| super::resident::nested_bodies(self.ir, b));
+            for f in laws.iter().copied().chain(nested) {
+                let (ln, lt) = self.unit_body(f, &[]);
+                if !fns.iter().any(|(n, _)| *n == ln) {
+                    fns.push((ln, lt));
                 }
             }
             let in_ty = self.obj_ty(self.ir.func(body).expect("body").input);
