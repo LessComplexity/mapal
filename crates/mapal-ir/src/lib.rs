@@ -26,6 +26,7 @@
 
 mod algo;
 mod builder;
+mod facts;
 mod graph;
 mod loc;
 mod mermaid;

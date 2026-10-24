@@ -1,7 +1,7 @@
 //! Per-stage timing for the front end: lex+parse -> lower -> rewrite -> emit,
 //! against the cost of actually compiling the emitted IR. Answers "what would
 //! fusing parse and lower buy?" with a number instead of an argument.
-//! Usage: cargo run --release -p mapal-backend-llvm --example stage_timing -- <file.mapal> [iters]
+//! Usage: cargo run --release -p mapal-backend-llvm --example stage_timing -- <file.mapal> [iters] [emitter flags, e.g. --target=rtx-4090]
 use std::time::Instant;
 
 fn main() {
@@ -10,6 +10,13 @@ fn main() {
         .next()
         .expect("usage: stage_timing <file.mapal> [iters]");
     let iters: u32 = args.next().map_or(20, |s| s.parse().unwrap());
+    let mut opts = mapal_backend_llvm::EmitOpts::default();
+    for a in args {
+        assert!(
+            mapal_backend_llvm::flags::apply(&mut opts, &a).expect("flag"),
+            "unknown flag {a}"
+        );
+    }
     let src = std::fs::read_to_string(&path).expect("read");
 
     let (mut parse_us, mut lower_us, mut rewrite_us, mut emit_us) =
@@ -29,7 +36,9 @@ fn main() {
         rewrite_us = rewrite_us.min(t.elapsed().as_secs_f64() * 1e6);
 
         let t = Instant::now();
-        let ll = mapal_backend_llvm::emit(&res.ir).expect("emit");
+        let ll = mapal_backend_llvm::emit_detailed(&res.ir, &opts)
+            .expect("emit")
+            .text;
         emit_us = emit_us.min(t.elapsed().as_secs_f64() * 1e6);
         ll_bytes = ll.len();
     }

@@ -193,7 +193,6 @@ pub struct FuncDef {
 
 /// The sealed category (DESIGN §2). Append-only during construction, then
 /// immutable; produced only by [`crate::IrBuilder::seal`].
-#[derive(Debug)]
 pub struct CategoryIr {
     pub(crate) objects: SlotMap<ObjectId, Object>,
     pub(crate) morphisms: SlotMap<MorphismId, Morphism>,
@@ -202,6 +201,22 @@ pub struct CategoryIr {
     pub(crate) owner: SecondaryMap<ObjectId, FuncId>,
     pub(crate) funcs: SlotMap<FuncId, FuncDef>,
     pub(crate) entry: FuncId,
+    /// Stored facts ([`crate::facts`]); not part of the graph's identity.
+    pub(crate) facts: crate::facts::Facts,
+}
+
+impl std::fmt::Debug for CategoryIr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CategoryIr")
+            .field("objects", &self.objects)
+            .field("morphisms", &self.morphisms)
+            .field("out_edges", &self.out_edges)
+            .field("in_edges", &self.in_edges)
+            .field("owner", &self.owner)
+            .field("funcs", &self.funcs)
+            .field("entry", &self.entry)
+            .finish()
+    }
 }
 
 impl CategoryIr {
