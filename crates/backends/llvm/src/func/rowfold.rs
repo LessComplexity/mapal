@@ -54,7 +54,8 @@ pub(crate) fn rowfold_sites(
     let tiles = ir.tile_plan(f);
     let dev = gpu::placement(ir, f, &gpu::tile_plan(ir, f, profile, rungs), profile, rungs.window);
     for (m, site) in ir.row_fold(f).iter() {
-        if !is_float(&site.elem) || site.k == 0 {
+        let window = site.w > 1 || site.a.ksplit.is_some();
+        if !is_float(&site.elem) || site.k == 0 || (window && !rungs.window) {
             continue;
         }
         let morph = ir.morphism(m).expect("morphism resolves");
