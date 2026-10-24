@@ -22,9 +22,18 @@ use mapal_ir::{CategoryIr, Delta};
 mod emu;
 use emu::{clang, rt_lib, run_emulated};
 
-/// The decode loop over `elem` (`f32` or `i32`), `T` steps of width `d`; with
-/// `column`, the iteration writes `x[j·d + t]` instead of row `t` (`Top`).
+/// The decode loop over `elem` (`f32` or `i32`), `T` steps of width `d`, in
+/// its natural form (`benches/gpu/gen_tiles.py`): the row write is one map
+/// over the cells; with `column`, the iteration writes `x[j·d + t]` instead
+/// of row `t` (`Top`).
 fn decode(t_steps: u64, d: u64, elem: &str, column: bool) -> String {
+    decode_form(t_steps, d, elem, column, false)
+}
+
+/// [`decode`] with the row written as `d` unrolled `Update`s (`unrolled`) —
+/// the shape the suite used before its generators were made idiomatic; the
+/// facts must give both the same code.
+fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -> String {
     let float = elem == "f32";
     let (zero, w) = if float {
         ("0.0", "x / 128.0")
@@ -32,7 +41,28 @@ fn decode(t_steps: u64, d: u64, elem: &str, column: bool) -> String {
         ("0", "x % 7")
     };
     let mut row = String::new();
-    for j in 0..d {
+    let cell = |c: &str| {
+        if float {
+            format!("({c} * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0")
+        } else {
+            format!("({c} * 7 + 13) % 101 - 50")
+        }
+    };
+    if !unrolled {
+        row = if column {
+            format!(
+                "tc -> map {{ c -> c - t -> u; (u >= 0 && u % {d} == 0 && u < {dd}) -> {{ -true-> {{ {v} + o[u / {d}] }} -false-> x[c]; }} }} -> x;\n",
+                dd = d * d,
+                v = cell(&format!("(t * {d} + u / {d})"))
+            )
+        } else {
+            format!(
+                "tc -> map {{ c -> (c / {d} == t) -> {{ -true-> {{ {v} + o[c % {d}] }} -false-> x[c]; }} }} -> x;\n",
+                v = cell("c")
+            )
+        };
+    }
+    for j in (0..d).filter(|_| unrolled) {
         let idx = if column {
             format!("{j} * {d} + t")
         } else {

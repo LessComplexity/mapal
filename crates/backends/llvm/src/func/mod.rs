@@ -682,7 +682,7 @@ mod frame;
 pub(crate) mod gpu;
 mod ops;
 mod packed;
-mod resident;
+pub(crate) mod resident;
 mod retain;
 mod rowfold;
 mod sme;
