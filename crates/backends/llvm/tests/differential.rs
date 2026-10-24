@@ -3267,3 +3267,163 @@ fn main() {
     }
 }
 
+
+// --- S65 rule R on the device: generated device-sized loops, emulated --------
+
+#[path = "emu/mod.rs"]
+mod emu;
+
+/// Bytes of an LLVM array type text `[n x T]` (nested arrays of scalars).
+fn llt_array_bytes(t: &str) -> u64 {
+    let t = t.trim();
+    if let Some(inner) = t.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
+        let (n, e) = inner.split_once(" x ").expect("array text");
+        return n.trim().parse::<u64>().expect("array length") * llt_array_bytes(e);
+    }
+    match t {
+        "i8" => 1,
+        "i32" | "float" => 4,
+        "i64" | "double" | "ptr" => 8,
+        _ => 0,
+    }
+}
+
+/// Per `; mapal.move` loop: the line's fields, and what the blocks from the
+/// header to the latch move per trip — `(memcpy calls, memcpy bytes, h2d
+/// bytes, d2h bytes)` — a first pass's blocks (a `store i1 true` to a pass
+/// flag: once per entry) aside.
+fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [u64; 4])> {
+    let last_i64 = |l: &str| -> u64 {
+        l.trim_end_matches(')').rsplit("i64 ").next().and_then(|x| x.trim().parse().ok()).unwrap_or(0)
+    };
+    let mut out = Vec::new();
+    for f in ll.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else { continue };
+            let header = rest.split_whitespace().next().expect("header");
+            let kv = rest
+                .split_whitespace()
+                .filter_map(|x| x.split_once('='))
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let back = format!("br label %{header}");
+            let latch = (h..lines.len()).rev().find(|&i| lines[i].trim() == back).expect("latch");
+            // Blocks of the region: a first-pass block stores a pass flag.
+            let mut moved = [0u64; 4];
+            let mut block: Vec<&str> = Vec::new();
+            let flush = |b: &mut Vec<&str>, m: &mut [u64; 4]| {
+                if !b.iter().any(|x| x.trim().starts_with("store i1 true, ptr %s")) {
+                    for x in b.iter() {
+                        if x.contains("call void @llvm.memcpy") {
+                            m[0] += 1;
+                            m[1] += x
+                                .split("getelementptr (")
+                                .nth(1)
+                                .and_then(|t| t.split(", ptr null").next())
+                                .map_or(0, llt_array_bytes);
+                        } else if x.contains("@mapal_gpu_h2d(") {
+                            m[2] += last_i64(x);
+                        } else if x.contains("@mapal_gpu_d2h(") || x.contains("@mapal_gpu_d2h_on(") {
+                            m[3] += last_i64(x);
+                        }
+                    }
+                }
+                b.clear();
+            };
+            for x in &lines[h..=latch] {
+                if x.ends_with(':') && !x.starts_with(' ') {
+                    flush(&mut block, &mut moved);
+                }
+                block.push(x);
+            }
+            flush(&mut block, &mut moved);
+            out.push((kv, moved));
+        }
+    }
+    out
+}
+
+/// **S65 rule R's device leg, on unseen programs.** ≥ 64 generated loops over
+/// device-sized arrays (testgen `device_prog_strategy`: sites, per-cell maps,
+/// guards, row writes into the state, swaps, invariant next states, one or
+/// two carried arrays, element or whole exit reads), every capable site on the
+/// device (`place` off), run on the GPU host emulation (`tests/emu`): the
+/// exact face equals the interpreter with the rung on and off; and per trip
+/// the host IR moves exactly what the residency plan derived from the facts
+/// (`; mapal.move`: uploads of host-produced arrays a device site reads,
+/// copy-outs of device outputs a host morphism reads) plus the host copies the
+/// facts require ([`required_trip_copies`]) — a device-carried state never
+/// crosses, and no forwarding morphism copies.
+#[test]
+fn differential_device_loops_values_and_movement() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP differential_device_loops: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::device_prog_strategy();
+    let (mut n, mut placed, mut carried) = (0usize, 0usize, 0usize);
+    let mut findings = Vec::new();
+    for _ in 0..64 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let src = testgen::device_src(&p);
+        let ir = rewrite(lower_src(&src)).ir;
+        let rr = run(&ir, 400_000_000);
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+        for on in [true, false] {
+            let mut gpu = mapal_backend_llvm::GpuArms::default();
+            let off: &[&str] = if on { &["place"] } else { &["place", "by-ref"] };
+            for r in off.iter().chain(&["streams", "pinned", "pdl", "async"]) {
+                *gpu.off.rung(r).expect("rung") = true;
+            }
+            let opts = mapal_backend_llvm::EmitOpts {
+                host: "generic",
+                target: "h100-pcie",
+                gpu,
+                ..mapal_backend_llvm::EmitOpts::exact()
+            };
+            let em = match std::panic::catch_unwind(|| mapal_backend_llvm::emit_detailed(&ir, &opts)) {
+                Ok(em) => em.expect("emits"),
+                Err(_) => {
+                    findings.push(format!("device#{n} on={on}: the emitter panicked\n{src}"));
+                    continue;
+                }
+            };
+            // (A program whose every site the plan keeps on the host has no
+            // device unit: its CPU build — the CPU leg's.)
+            let Some(dev) = em.device else { continue };
+            let got = emu::run_emulated(&clang, &em.text, &dev);
+            if got != rr.output {
+                findings.push(format!("device#{n} on={on}: {got:?} != {:?}\n{src}", rr.output));
+            }
+            if !on {
+                continue;
+            }
+            placed += 1;
+            let need = required_trip_copies(&ir, ir.entry());
+            let loops = gpu_trip_moves(&em.text);
+            carried += loops.iter().filter(|(kv, _)| kv["carried"].contains(":device")).count();
+            let copies: u64 = loops.iter().map(|(_, m)| m[0]).sum();
+            for (kv, [_, copy_b, h2d, d2h]) in &loops {
+                let want = |k: &str| kv[k].parse::<u64>().expect("intent field");
+                if (*copy_b, *h2d, *d2h) != (want("host_copy"), want("h2d"), want("d2h")) {
+                    findings.push(format!(
+                        "device#{n}: per trip copy {copy_b} B h2d {h2d} B d2h {d2h} B; the plan: {kv:?}\n{src}"
+                    ));
+                }
+            }
+            if copies != need as u64 {
+                findings.push(format!("device#{n}: {copies} host copies per trip, the facts require {need}\n{src}"));
+            }
+        }
+        n += 1;
+    }
+    assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
+    assert!(placed >= 48 && carried > 0, "{placed} device programs, {carried} device-carried states");
+    eprintln!(
+        "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states; \
+         values OK on and off, movement = the plan's"
+    );
+}

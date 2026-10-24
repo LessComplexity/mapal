@@ -36,6 +36,12 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}add {ty} {v}, 0", &l[..i]);
             }
         }
+        // A generic-to-global cast is an identity once both are generic.
+        if let Some((lhs, rest)) = l.split_once(" = addrspacecast ptr ")
+            && let Some(v) = rest.strip_suffix(" to ptr")
+        {
+            l = format!("{lhs} = getelementptr i8, ptr {v}, i64 0");
+        }
         for (r, e) in [
             ("tid.x", "tid_x"),
             ("ctaid.x", "ctaid_x"),

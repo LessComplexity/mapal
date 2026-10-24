@@ -145,6 +145,9 @@ for spec in "$@"; do
         emit_one "$f" "$b" "$prof" "$sm"
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
         emit_cpu "$f" "$b.cpu"
+        # S65: the CPU-only build's S64 arm (`by-ref` off), where it differs.
+        emit_cpu "$f" "$b.cpu-off-by-ref" --gpu-off=by-ref
+        if same "$b.cpu-off-by-ref" "$b.cpu"; then drop "$b.cpu-off-by-ref"; fi
         emit_one "$f" "$b.off-place" "$prof" "$sm" --gpu-off=place
         if same "$b.off-place" "$b"; then drop "$b.off-place"; fi
         chain "$f" "$b" "$prof" "$sm"
