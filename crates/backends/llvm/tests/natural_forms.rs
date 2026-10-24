@@ -57,13 +57,15 @@ fn piecewise_maps_have_an_outside() {
     let new = "{ c -> widen_f32 -> f; f + x[c] }";
     let all = u64::MAX;
     // (d, a, b, step, len)
-    let cases: [(&str, Option<(u64, i64, i64, u64, u64)>); 9] = [
+    let cases: [(&str, Option<(u64, i64, i64, u64, u64)>); 10] = [
         (&format!("(c / 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"), Some((8, 1, 0, 1, 8))),
         (&format!("(r == c / 8) -> {{ -true-> {new} -false-> x[c]; }}"), Some((8, 1, 0, 1, 8))),
         // Swapped arms: the set is the false arm's.
         (&format!("(c / 8 != r) -> {{ -true-> x[c]; -false-> {new} }}"), Some((8, 1, 0, 1, 8))),
         (&format!("(c >= r * 8 && c < r * 8 + 8) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 8, 0, 1, 8))),
         (&format!("(r * 4 - 2 <= c && r * 4 + 3 > c) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 4, -2, 1, 5))),
+        // One cell.
+        (&format!("(c == r * 8 + 5) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 8, 5, 1, 1))),
         // A column: every 8th cell from `r`.
         (&format!("(c % 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 1, 0, 8, all))),
         (&format!("(r + 1 != c % 8) -> {{ -true-> x[c]; -false-> {new} }}"), Some((1, 1, 1, 8, all))),

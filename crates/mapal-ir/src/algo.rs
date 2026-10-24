@@ -2173,8 +2173,9 @@ impl CategoryIr {
     }
 
     /// `cond` over the map element `t` (`Proj{captures}` of `input`) as a set
-    /// of cells, and whether `t` is in it when `cond` holds: `t ÷ d == X` /
-    /// `!=` (`[d·X, d·X + d)`), `t % s == X` / `!=` (`X + s·k`), or
+    /// of cells, and whether `t` is in it when `cond` holds: `t == X` / `!=`
+    /// (`[X, X + 1)`), `t ÷ d == X` / `!=` (`[d·X, d·X + d)`), `t % s == X` /
+    /// `!=` (`X + s·k`), or
     /// `L ≤ t ∧ t < L + len` in either operand order (`t ≥ L`, `L ≤ t`,
     /// `t > L − 1`; `t < H`, `H > t`, `t ≤ H − 1`), `X`, `L` affine in one
     /// captured int scalar.
@@ -2184,9 +2185,13 @@ impl CategoryIr {
         let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
         match c.op {
             Operation::Eq | Operation::Neq => {
-                // `t ÷ d` (a row: `d` cells from `d·X`) or `t % s` (a column:
-                // every `s`-th cell from `X`), `d`, `s` literals.
+                // `t` (one cell), `t ÷ d` (a row: `d` cells from `d·X`) or
+                // `t % s` (a column: every `s`-th cell from `X`), `d`, `s`
+                // literals.
                 let split_of_t = |o: ObjectId| {
+                    if is_t(o) {
+                        return Some((1, 1, 1));
+                    }
                     let (op, g) = [Operation::Div, Operation::Mod]
                         .into_iter()
                         .find_map(|op| Some((op, self.tile_definer(o, op)?)))?;
@@ -3493,11 +3498,15 @@ impl CategoryIr {
         }
 
         // body_order: topo_order filtered to morphisms incident to SCC(merge) OR
-        // targeting the loop-variant route cone, excluding loop ops. Route
-        // objects sit outside the SCC, but every morphism assembling them —
-        // direct Pair edges and the whole computed-payload chain behind them —
-        // must re-fire each iteration, so membership-by-SCC alone would drop
-        // them.
+        // targeting a loop-variant object, excluding loop ops. Route objects
+        // sit outside the SCC, but every morphism assembling them — direct
+        // Pair edges and the whole computed-payload chain behind them — must
+        // re-fire each iteration, so membership-by-SCC alone would drop them.
+        // So must a trip's dead work (a value that feeds no route: it runs,
+        // and may trap, every trip — generic-fusion's twin sweep: a dead site
+        // over the state ran once outside the loop, the interpreter reading a
+        // half-staged capture, the parallel host racing the loop for its
+        // view).
         let body_order: Vec<MorphismId> = self
             .topo_order(f)
             .into_iter()
@@ -3511,7 +3520,7 @@ impl CategoryIr {
                 }
                 in_scc.contains_key(morph.source)
                     || in_scc.contains_key(morph.target)
-                    || (cone.contains_key(morph.target) && variant.contains_key(morph.target))
+                    || variant.contains_key(morph.target)
             })
             .collect();
 

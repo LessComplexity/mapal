@@ -83,9 +83,13 @@ impl<'a> FnEmit<'a> {
         out
     }
 
-    /// The interval of a host map whose law is piecewise ([`mapal_ir::Outside`]):
-    /// the plain body-call loop (no tile site, no device unit).
+    /// The set of a host map whose law is piecewise ([`mapal_ir::Outside`]):
+    /// the plain body-call loop (no tile site, no device unit), under the
+    /// `range-map` rung.
     pub(super) fn range_map(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
+        if !super::gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_map {
+            return None;
+        }
         let tiled = self.tile_plan.as_ref().is_some_and(|p| p.sites.contains_key(m));
         let cell = self
             .resident
