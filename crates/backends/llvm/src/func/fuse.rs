@@ -827,7 +827,7 @@ impl<'a> FnEmit<'a> {
             laws.join(";"),
         );
         text += &format!(
-            "; mapal.plan kernel={name} kind=fuse rows={} gx={blocks} block={threads} members={}\n",
+            "; mapal.plan kernel={name} kind=fuse rows={} gx={blocks} block={threads} members={} rungs_on=fuse\n",
             u.rows,
             u.members.len()
         );
@@ -1053,19 +1053,40 @@ impl UnitGen<'_> {
                 let (kv, acc) = (format!("%k{k}"), format!("%a{k}"));
                 self.line(format!("{kv} = phi i64 [0, %{pre}], [{kv}n, %{lp}]"));
                 self.line(format!("{acc} = phi {t} [{seed}, %{pre}], [{acc}n, %{lp}]"));
+                // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
+                let taps: Vec<String> = match site.a.ksplit {
+                    Some(ks) => vec![self.op("udiv", &kv, ks.div), self.op("urem", &kv, ks.div)],
+                    None => vec![kv.clone()],
+                };
                 let v = match &mb.srcs[0] {
                     USrc::Gmem(g) => {
                         // The site's own addressing (re-addressed when its
                         // producer stores column-major).
-                        let ri = self.op("mul", "%i", site.a.ci);
-                        let rk = self.op("mul", &kv, site.a.ck);
+                        let ri = if site.w > 1 {
+                            let q = self.op("udiv", "%i", site.w);
+                            let l = self.op("urem", "%i", site.w);
+                            let a = self.op("mul", &q, site.a.ci);
+                            let b = self.op("mul", &l, site.a.clane);
+                            self.op("add", &a, &b)
+                        } else {
+                            self.op("mul", "%i", site.a.ci)
+                        };
+                        let rk = match site.a.ksplit {
+                            Some(ks) => {
+                                let a = self.op("mul", &taps[0], ks.cq);
+                                let b = self.op("mul", &taps[1], ks.cr);
+                                self.op("add", &a, &b)
+                            }
+                            None => self.op("mul", &kv, site.a.ck),
+                        };
                         let x = self.op("add", &ri, &rk);
                         let x = self.op("add", &x, site.a.base);
                         self.load(*g, &x)
                     }
                     src => {
                         let src = src.clone();
-                        self.read(&src, "%i", &[kv.as_str()])
+                        let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
+                        self.read(&src, "%i", &taps)
                     }
                 };
                 let step = match site.op {

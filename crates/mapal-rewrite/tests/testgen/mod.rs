@@ -2052,6 +2052,15 @@ impl Chain {
                     printed.push(o);
                     continue;
                 }
+                _ if q % 2 == 0 => {
+                    // A cell of one array's row-first cells, read by the next
+                    // at the row index: outside the reader's own cell.
+                    let (a, b) = (x.pick(Shape::M, p), x.pick(Shape::M, q / 2));
+                    x.s += &format!(
+                        "    {tm} -> map {{ t -> {a}[t / {c} * {c}] * 0.5 }} -> {o}h;\n    {tm} -> map {{ t -> {b}[t] + {o}h[t / {c}] }} -> {o};\n"
+                    );
+                    Shape::M
+                }
                 _ => {
                     // A whole fold, printed (a host reader of its operand's
                     // fold, not of the array).

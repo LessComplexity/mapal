@@ -1096,7 +1096,29 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> 
             format!("  %c = fcmp {pred} {t} {x}, {y}\n  %accn = select i1 %c, {t} {p}, {t} {q}\n")
         }
     };
-    let (rows, k, ci, ck, base) = (s.rows, s.k, s.a.ci, s.a.ck, s.a.base);
+    let (rows, k, ci, base) = (s.rows, s.k, s.a.ci, s.a.base);
+    // generic-fusion `window`: the cell's row and lane `(t÷w, t%w)`, and the
+    // fold's taps `(k÷div, k%div)`; the plain row fold's text otherwise.
+    let row = if s.w > 1 {
+        format!(
+            "  %iq = udiv i64 %i, {w}\n  %il = urem i64 %i, {w}\n  %rq = mul i64 %iq, {ci}\n  \
+             %rl = mul i64 %il, {cl}\n  %ri = add i64 %rq, %rl\n",
+            w = s.w,
+            cl = s.a.clane
+        )
+    } else {
+        format!("  %ri = mul i64 %i, {ci}\n")
+    };
+    let taps = match s.a.ksplit {
+        Some(ks) => format!(
+            "  %kq = udiv i64 %k, {d}\n  %kr = urem i64 %k, {d}\n  %kq1 = mul i64 %kq, {cq}\n  \
+             %kr1 = mul i64 %kr, {cr}\n  %kk = add i64 %kq1, %kr1\n",
+            d = ks.div,
+            cq = ks.cq,
+            cr = ks.cr
+        ),
+        None => format!("  %kk = mul i64 %k, {}\n", s.a.ck),
+    };
     format!(
         "define ptx_kernel void @{name}(\
          ptr addrspace(1) noalias readonly align {e} %a, \
@@ -1112,13 +1134,13 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> 
          \x20 %in = icmp ult i64 %i, {rows}\n\
          \x20 br i1 %in, label %body, label %done\n\
          body:\n\
-         \x20 %ri = mul i64 %i, {ci}\n\
+         {row}\
          \x20 %r0 = add i64 %ri, {base}\n\
          \x20 br label %kloop\n\
          kloop:\n\
          \x20 %k = phi i64 [0, %body], [%kn, %kloop]\n\
          \x20 %acc = phi {t} [{seed}, %body], [%accn, %kloop]\n\
-         \x20 %kk = mul i64 %k, {ck}\n\
+         {taps}\
          \x20 %x = add i64 %r0, %kk\n\
          \x20 %p = getelementptr inbounds {t}, ptr addrspace(1) %a, i64 %x\n\
          \x20 %v = load {t}, ptr addrspace(1) %p, align {e}\n\

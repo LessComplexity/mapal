@@ -600,12 +600,19 @@ pub struct TileSite {
 /// independent and any realization that keeps one row on one in-order chain
 /// computes the oracle's bits. Geometry only, like [`TileSite`]: where it runs
 /// is the backend's question.
+///
+/// generic-fusion `window`: the map index may be split `(t÷w, t%w)` and the
+/// fold's axis `(k÷div, k%div)` — a weightless 2-D window (a box filter):
+/// cell `t` folds `a[base + ci·(t÷w) + clane·(t%w) + taps]`, the taps `ck·k`
+/// or [`TileKSplit`]'s `cq·(k÷div) + cr·(k%div)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RowFoldSite {
     pub rows: u64,
     pub k: u64,
-    /// The one read; `clane == 0` and no `ksplit` by construction.
+    /// The one read; `clane == 0` unless the map index is split (`w > 1`).
     pub a: TileRead,
+    /// The map index's split width (1: no split, `t÷1 = t`).
+    pub w: u64,
     pub op: RowFoldOp,
     pub seed: Value,
     pub elem: Ty,
@@ -1306,13 +1313,58 @@ impl CategoryIr {
         if **read_elem != elem || *acc_ty != elem || seed.ty() != elem {
             return None;
         }
-        // The row index as the fold captures it (the map's element).
-        let i = (0..fcap).find_map(|s| {
-            let o = self.pair_slot_source(fold.source, s)?;
-            (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
-        })?;
-        let aff = self.tile_affine(address, fold.source, fdef.input, fcap, Some(i), i, None)?;
-        if aff.clane != 0 || aff.cq != 0 || aff.cr != 0 {
+        // The map index's axes as the fold captures them: the element itself,
+        // or its split `(t÷w, t%w)` (`tile_site`'s split, one level up).
+        let split = body_def.morphisms.iter().find_map(|&d| {
+            let (q, w) = self.tile_split(d, body_def.input, captures, Operation::Div)?;
+            body_def.morphisms.iter().find_map(|&m| {
+                let (r, wm) = self.tile_split(m, body_def.input, captures, Operation::Mod)?;
+                (wm == w && w > 1 && rows % w == 0).then_some((q, r, w))
+            })
+        });
+        let (i, lane, w) = match split {
+            Some((q, r, w)) => (q, r, w),
+            None => {
+                let t = (0..fcap).find_map(|s| {
+                    let o = self.pair_slot_source(fold.source, s)?;
+                    (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
+                })?;
+                (t, t, 1)
+            }
+        };
+        // The fold's own `(k÷div, k%div)`, rectangular windows only.
+        let element = fcap + 1;
+        let kaxes = fdef.morphisms.iter().find_map(|&d| {
+            let (kq, div) = self.tile_split(d, fdef.input, element, Operation::Div)?;
+            fdef.morphisms.iter().find_map(|&m| {
+                let (kr, md) = self.tile_split(m, fdef.input, element, Operation::Mod)?;
+                (md == div && k % div == 0).then_some((kq, kr, div))
+            })
+        });
+        let aff = self.tile_affine(
+            address,
+            fold.source,
+            fdef.input,
+            fcap,
+            Some(i),
+            lane,
+            kaxes.map(|(kq, kr, _)| (kq, kr)),
+        )?;
+        let ksplit = match kaxes {
+            Some((_, _, div)) if aff.cq != 0 || aff.cr != 0 => {
+                if aff.ck != 0 {
+                    return None;
+                }
+                Some(TileKSplit {
+                    div,
+                    cq: aff.cq,
+                    cr: aff.cr,
+                })
+            }
+            _ if aff.cq != 0 || aff.cr != 0 => return None,
+            _ => None,
+        };
+        if w == 1 && aff.clane != 0 {
             return None;
         }
         if !self.tile_trap_free(body, &self.bounds_proof(body), Some(fold_id))
@@ -1328,9 +1380,10 @@ impl CategoryIr {
                 base: aff.base,
                 ci: aff.ci,
                 ck: aff.ck,
-                clane: 0,
-                ksplit: None,
+                clane: aff.clane,
+                ksplit,
             },
+            w,
             op,
             seed,
             elem,
@@ -1718,20 +1771,8 @@ impl CategoryIr {
                             edges.push((r.slot, Some(r.slot), tile_reach(r, s.c, s.k)));
                         }
                     } else if let Some(s) = folds.get(m) {
-                        edges.push((
-                            s.a.slot,
-                            Some(s.a.slot),
-                            Reach::Affine {
-                                w: 1,
-                                base: s.a.base,
-                                cq: s.a.ci,
-                                cr: 0,
-                                taps: vec![Tap {
-                                    coef: s.a.ck,
-                                    ext: s.k,
-                                }],
-                            },
-                        ));
+                        // A row fold's cells are its map's: `w = s.w`.
+                        edges.push((s.a.slot, Some(s.a.slot), tile_reach(&s.a, s.w, s.k)));
                     } else if let Some(s) = moves.sites.get(m) {
                         let slot = self.move_read_slot(m);
                         if let Some((slot, base)) = slot {

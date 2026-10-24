@@ -213,6 +213,58 @@ fn window_conv_runs_on_the_device() {
     assert!(off.device.is_none(), "window off: the conv stays on the host");
 }
 
+/// `window`: a weightless 2-D window (a 2×2 box filter) over the conv's device
+/// output is a row fold with a split map index and split taps — a device
+/// fold, in order per cell — and a per-cell consumer of it joins its unit.
+#[test]
+fn window_box_filter_is_a_device_row_fold() {
+    if emu::clang().is_none() {
+        return;
+    }
+    let n = 16u64;
+    let (w, m) = (n + 2, n - 1);
+    let src = format!(
+        "fn main() {{
+    {ii} -> iota -> ti;
+    ti -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> img;
+    9 -> iota -> k9;
+    k9 -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> wk;
+    {nn} -> iota -> to;
+    to -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, k9) -> fold {{ acc, k -> acc + wk[k] * img[(i + k / 3) * {w} + j + k % 3] }}
+    }} -> y;
+    4 -> iota -> k4;
+    {mm} -> iota -> tb;
+    tb -> map {{ t ->
+        t / {m} -> i;
+        t % {m} -> j;
+        (0.0, k4) -> fold {{ acc, k -> acc + y[(i + k / 2) * {n} + j + k % 2] }}
+    }} -> bx;
+    tb -> map {{ t -> bx[t] * 0.25 }} -> z;
+",
+        ii = w * w,
+        nn = n * n,
+        mm = m * m
+    ) + &tail("z", m * m);
+    let ir = lower(&src);
+    let folds = ir.row_fold(ir.entry());
+    let s = folds.values().next().expect("the box filter is a row fold");
+    assert_eq!((s.rows, s.k, s.w, s.a.ci, s.a.clane), (m * m, 4, m, n, 1));
+    assert_eq!(
+        s.a.ksplit,
+        Some(mapal_ir::TileKSplit {
+            div: 2,
+            cq: n,
+            cr: 1
+        })
+    );
+    let (on, l_on, l_off) = check(&src, "rtx-4090");
+    // The conv; the box fold and `z` (one unit ON, two launches OFF).
+    assert_eq!((l_on, l_off), (2, 3), "{}", on.text);
+}
+
 /// `q·Kᵀ` over a 2-D grid (`k` read at the lane stride `d`) is a device site
 /// (`tile_plan_strided`'s split branch), then the row softmax and `·V`.
 fn attention(t: u64, d: u64) -> String {
@@ -254,6 +306,19 @@ fn attention_is_three_launches() {
     // q·Kᵀ, one unit for the row softmax, ·V.
     let (_, l_on, l_off) = check(&attention(32, 8), "rtx-4090");
     assert_eq!((l_on, l_off), (3, 6));
+}
+
+/// `FUSE_SRC=<file.mapal>`: the program's values on and off against the
+/// interpreter, both test profiles; prints the launch counts (the suite's
+/// `px_*` chain differentials).
+#[test]
+#[ignore]
+fn check_program_file() {
+    let src = std::fs::read_to_string(std::env::var("FUSE_SRC").expect("FUSE_SRC")).unwrap();
+    for target in ["rtx-4090", "h100-pcie"] {
+        let (_, l_on, l_off) = check(&src, target);
+        eprintln!("{target}: launches on {l_on} off {l_off}");
+    }
 }
 
 /// The intent lines of a program's ON emission (debugging aid).
