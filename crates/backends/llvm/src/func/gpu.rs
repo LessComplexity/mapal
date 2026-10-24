@@ -1286,9 +1286,44 @@ pub(crate) fn cell_kernel_text(
 /// (`(name, emitted text)`), then the kernel text.
 pub(crate) type CellKernel = (Vec<(String, String)>, String);
 
+/// The kernels the host's launch sites name, by symbol: every
+/// `mapal_gpu_{tile,launch,launch_l2,launchv}(id, …)` loads `mapal_tile_<id>`,
+/// every `mapal_gpu_gen(id, …)` loads `mapal_gen_<id>` (`mapal_gpu.c`). A
+/// device kernel outside this set has no use and is not emitted.
+pub(crate) fn launched_kernels(host: &str) -> std::collections::BTreeSet<String> {
+    let mut live = std::collections::BTreeSet::new();
+    for (i, pat) in host.match_indices("call void @mapal_gpu_") {
+        let rest = &host[i + pat.len()..];
+        let Some((entry, args)) = rest.split_once("(i64 ") else {
+            continue;
+        };
+        let prefix = match entry {
+            "tile" | "launch" | "launch_l2" | "launchv" => "mapal_tile",
+            "gen" => "mapal_gen",
+            _ => continue,
+        };
+        let lit: String = args.chars().take_while(|c| *c == '-' || c.is_ascii_digit()).collect();
+        let id = lit
+            .parse::<u64>()
+            .or_else(|_| lit.parse::<i64>().map(|v| v as u64));
+        if let Ok(id) = id {
+            live.insert(format!("{prefix}_{id:016x}"));
+        }
+    }
+    live
+}
+
+/// The symbol a kernel's text defines (its first `void @…(`).
+fn kernel_symbol(text: &str) -> &str {
+    text.split_once("void @")
+        .and_then(|(_, r)| r.split_once('('))
+        .map_or("?", |(n, _)| n)
+}
+
 /// The device translation unit: one kernel per GPU tile site in `ir`, in name
-/// order. `None` when no site offloads (every CPU profile, and a GPU profile
-/// on a program with no tile site).
+/// order, kept only where a host launch site names it (`live`, see
+/// [`launched_kernels`]). `None` when no site offloads (every CPU profile, and
+/// a GPU profile on a program with no tile site).
 pub(crate) fn device_module(
     ir: &CategoryIr,
     profile: &TargetProfile,
@@ -1302,6 +1337,7 @@ pub(crate) fn device_module(
     cells: &[CellKernel],
     folds: &[RowFoldSite],
     units: &[super::fuse::UnitKernel],
+    live: &std::collections::BTreeSet<String>,
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
     for (f, _) in ir.funcs() {
@@ -1412,6 +1448,8 @@ pub(crate) fn device_module(
     if kernels.is_empty() && gens.is_empty() && cells.is_empty() && units.is_empty() {
         return None;
     }
+    // Launch-site use counts: a kernel no launch site names is dead.
+    kernels.retain(|name: &String, _| live.contains(name));
     let mut out = String::from("; mapal-backend-llvm device module\n");
     // S64 evidence: the module's face (each kernel's facts: `; mapal.plan`).
     out.push_str(&format!(
@@ -1440,6 +1478,9 @@ pub(crate) fn device_module(
     // only at `llc` on the bundle machine.
     let mut bodies = std::collections::BTreeSet::new();
     for (id, callee, elem, text) in gens {
+        if !live.contains(&format!("mapal_gen_{id:016x}")) {
+            continue;
+        }
         assert!(
             !text.contains("@mapal_"),
             "devgen body {callee} names a host runtime symbol"
@@ -1467,6 +1508,10 @@ pub(crate) fn device_module(
 
     // `devmap`: each body once (shared with `devgen`'s), then its kernel.
     for (fns, kernel) in cells {
+        let name = kernel_symbol(kernel);
+        if !live.contains(name) {
+            continue;
+        }
         for (callee, text) in fns {
             assert!(
                 !text.contains("@mapal_"),
@@ -1478,16 +1523,15 @@ pub(crate) fn device_module(
             }
         }
         out.push_str("\n; cell\n");
-        let name = kernel
-            .split_once("void @")
-            .and_then(|(_, r)| r.split_once('('))
-            .map_or("?", |(n, _)| n);
         out.push_str(&format!("; mapal.plan kernel={name} kind=cell\n"));
         out.push_str(kernel);
     }
     // generic-fusion: each unit's bodies once (shared with the others'), then
     // its kernel.
     for u in units {
+        if !live.contains(kernel_symbol(&u.text)) {
+            continue;
+        }
         for (callee, text) in &u.fns {
             assert!(
                 !text.contains("@mapal_"),
