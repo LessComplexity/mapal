@@ -650,6 +650,14 @@ pub struct LastUsePlan {
     /// `LoopBack` into — the back-route `Pair` cone, loop-body objects only
     /// (a loop-invariant route feeder is not carried).
     carried: SecondaryMap<ObjectId, ObjectId>,
+    /// `use_pos` when forwarding re-exposes the bytes instead of copying them
+    /// (a view, S65): a `Proj` of an array-holding component and a
+    /// `LoopEnter` pin too — the projection lives on the product's bytes, the
+    /// merge's first state and the loop's exit objects (which may be that
+    /// state) on the init's. The pins [`escape_reach`] already counts, as
+    /// liveness. `LoopExit` is no pin: a loop's own buffers are not written
+    /// once it has exited, and the init's ride the `LoopEnter` pin.
+    view_pos: SecondaryMap<ObjectId, u32>,
 }
 
 impl LastUsePlan {
@@ -697,6 +705,43 @@ impl LastUsePlan {
         !self.escapes(o)
             && self.carried.get(o).is_none()
             && self.use_pos.get(o).copied().is_none_or(|p| p <= idx)
+    }
+
+    /// `view_death` (S65): [`Self::death`] of `o`'s **bytes** when forwarding
+    /// does not copy them — the greatest position at which `o` or any view of
+    /// it (a product holding it, a projection of that, a `Phi` choosing it, a
+    /// loop state starting from it, an exit object that may be that state) is
+    /// used. `None` for escaping objects.
+    pub fn view_death(&self, o: ObjectId) -> Option<u32> {
+        if self.escapes(o) {
+            return None;
+        }
+        self.view_pos.get(o).copied()
+    }
+
+    /// The greatest position at which `o` or a view of its bytes is used,
+    /// escape aside: within one trip of a loop, what its own exit forwards out
+    /// is not read again (the per-iteration release valve of `escapes`).
+    pub fn view_last_use(&self, o: ObjectId) -> Option<u32> {
+        self.view_pos.get(o).copied()
+    }
+
+    /// [`Self::dead_after`] over [`Self::view_death`]: no view of `o`'s bytes
+    /// is used after `idx`, `o` does not escape and is not carried.
+    pub fn view_dead_after(&self, o: ObjectId, idx: u32) -> bool {
+        !self.escapes(o)
+            && self.carried.get(o).is_none()
+            && self.view_pos.get(o).copied().is_none_or(|p| p <= idx)
+    }
+}
+
+/// Whether a value of `ty` holds array bytes (an array, or a product with one).
+fn holds_array(ty: &Ty) -> bool {
+    match ty {
+        Ty::Array { .. } => true,
+        Ty::Tuple(ts) => ts.iter().any(holds_array),
+        Ty::Struct { fields, .. } => fields.iter().any(|(_, t)| holds_array(t)),
+        _ => false,
     }
 }
 
@@ -3385,11 +3430,52 @@ impl CategoryIr {
             }
         }
 
+        // view_pos: the same sweep, every forwarding morphism a pin. A pin's
+        // target is defined after its source (a `LoopEnter`'s merge and the
+        // loop's `LoopExit` targets after the init), so it is settled first.
+        let exits_of = |merge: ObjectId| -> Vec<ObjectId> {
+            plans
+                .iter()
+                .filter(|p| p.merge == merge)
+                .flat_map(|p| p.exits.iter().map(|&x| self.morphisms[x].target))
+                .collect()
+        };
+        let mut view_pos: SecondaryMap<ObjectId, u32> = SecondaryMap::new();
+        for &(o, _) in &definer {
+            let mut best: Option<u32> = None;
+            for &m in self.out_edges(o) {
+                let morph = &self.morphisms[m];
+                let pins: Vec<ObjectId> = match morph.op {
+                    Operation::Pair { .. } | Operation::Phi => vec![morph.target],
+                    Operation::Proj { index }
+                        if self.objects[o].ty.component_ty(index).is_some_and(holds_array) =>
+                    {
+                        vec![morph.target]
+                    }
+                    Operation::LoopEnter => {
+                        let mut v = exits_of(morph.target);
+                        v.push(morph.target);
+                        v
+                    }
+                    _ => Vec::new(),
+                };
+                let p = pins
+                    .iter()
+                    .filter_map(|&t| view_pos.get(t).copied())
+                    .fold(position[m], u32::max);
+                best = Some(best.map_or(p, |b: u32| b.max(p)));
+            }
+            if let Some(b) = best {
+                view_pos.insert(o, b);
+            }
+        }
+
         LastUsePlan {
             position,
             use_pos,
             escapes,
             carried,
+            view_pos,
         }
     }
 

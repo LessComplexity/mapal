@@ -416,14 +416,14 @@ entry:
   %o7 = alloca i32
   %o8 = alloca { i32, i32 }
   %o9 = alloca i32
-  %o10 = alloca { i32, [4 x i32] }
+  %o10 = alloca { i32, ptr }
   %o11 = alloca i32
-  %o12 = alloca [4 x i32]
+  %o12 = alloca ptr
   %o13 = alloca { ptr, i32, ptr, i32, i32, ptr }
   %o14 = alloca i32
-  %s43 = alloca i32
-  %s44 = alloca i64
-  %s53 = alloca { ptr, i32, ptr, i32, i32, i32 }
+  %s45 = alloca i32
+  %s46 = alloca i64
+  %s55 = alloca { ptr, i32, ptr, i32, i32, i32 }
   store { ptr, ptr, ptr, i32 } %arg, ptr %o0
   %t0 = getelementptr { ptr, ptr, ptr, i32 }, ptr %o0, i32 0, i32 0
   %t1 = load ptr, ptr %t0
@@ -438,8 +438,8 @@ entry:
   %t7 = load i32, ptr %t6
   store i32 %t7, ptr %o5
   %t8 = load ptr, ptr %o2
-  %t9 = getelementptr { i32, [4 x i32] }, ptr %o10, i32 0, i32 1
-  call void @llvm.memcpy.p0.p0.i64(ptr %t9, ptr %t8, i64 ptrtoint (ptr getelementptr ([4 x i32], ptr null, i64 1) to i64), i1 false)
+  %t9 = getelementptr { i32, ptr }, ptr %o10, i32 0, i32 1
+  store ptr %t8, ptr %t9
   %t10 = load ptr, ptr %o3
   %t11 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 0
   store ptr %t10, ptr %t11
@@ -474,62 +474,64 @@ entry:
   %t32 = load i32, ptr %o9
   %t33 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 3
   store i32 %t32, ptr %t33
-  %t34 = getelementptr { i32, [4 x i32] }, ptr %o10, i32 0, i32 0
+  %t34 = getelementptr { i32, ptr }, ptr %o10, i32 0, i32 0
   store i32 0, ptr %t34
-  %t35 = getelementptr { i32, [4 x i32] }, ptr %o10, i32 0, i32 0
+  %t35 = getelementptr { i32, ptr }, ptr %o10, i32 0, i32 0
   %t36 = load i32, ptr %t35
   store i32 %t36, ptr %o11
   %t37 = load ptr, ptr %o2
-  call void @llvm.memcpy.p0.p0.i64(ptr %o12, ptr %t37, i64 ptrtoint (ptr getelementptr ([4 x i32], ptr null, i64 1) to i64), i1 false)
+  store ptr %t37, ptr %o12
   %t38 = load i32, ptr %o11
   %t39 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 4
   store i32 %t38, ptr %t39
-  %t40 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 5
-  store ptr %o12, ptr %t40
-  %t41 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 4
-  %t42 = load i32, ptr %t41
-  store i32 %t42, ptr %s43
-  store i64 0, ptr %s44
-  br label %bb45
-bb45:
-  %t48 = load i64, ptr %s44
-  %t49 = icmp uge i64 %t48, 4
-  br i1 %t49, label %bb47, label %bb46
-bb46:
-  %t50 = getelementptr [4 x i32], ptr %o12, i64 0, i64 %t48
-  %t51 = load i32, ptr %t50
-  %t52 = load i32, ptr %s43
-  %t54 = load ptr, ptr %o3
-  %t55 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 0
-  store ptr %t54, ptr %t55
-  %t56 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 1
-  %t57 = load i32, ptr %t56
-  %t58 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 1
-  store i32 %t57, ptr %t58
-  %t59 = load ptr, ptr %o4
-  %t60 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 2
-  store ptr %t59, ptr %t60
-  %t61 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 3
-  %t62 = load i32, ptr %t61
-  %t63 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 3
-  store i32 %t62, ptr %t63
-  %t64 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 4
-  store i32 %t52, ptr %t64
-  %t65 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s53, i32 0, i32 5
-  store i32 %t51, ptr %t65
-  %t66 = load { ptr, i32, ptr, i32, i32, i32 }, ptr %s53
-  %t67 = call i32 @fn1({ ptr, i32, ptr, i32, i32, i32 } %t66)
-  store i32 %t67, ptr %s43
-  %t68 = add i64 %t48, 1
-  store i64 %t68, ptr %s44
-  br label %bb45
+  %t40 = load ptr, ptr %o12
+  %t41 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 5
+  store ptr %t40, ptr %t41
+  %t42 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 4
+  %t43 = load i32, ptr %t42
+  %t44 = load ptr, ptr %o12
+  store i32 %t43, ptr %s45
+  store i64 0, ptr %s46
+  br label %bb47
 bb47:
-  %t69 = load i32, ptr %s43
-  store i32 %t69, ptr %o14
-  %t70 = load i32, ptr %o14
-  store i32 %t70, ptr %o1
-  %t71 = load i32, ptr %o1
-  ret i32 %t71
+  %t50 = load i64, ptr %s46
+  %t51 = icmp uge i64 %t50, 4
+  br i1 %t51, label %bb49, label %bb48
+bb48:
+  %t52 = getelementptr [4 x i32], ptr %t44, i64 0, i64 %t50
+  %t53 = load i32, ptr %t52
+  %t54 = load i32, ptr %s45
+  %t56 = load ptr, ptr %o3
+  %t57 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 0
+  store ptr %t56, ptr %t57
+  %t58 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 1
+  %t59 = load i32, ptr %t58
+  %t60 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 1
+  store i32 %t59, ptr %t60
+  %t61 = load ptr, ptr %o4
+  %t62 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 2
+  store ptr %t61, ptr %t62
+  %t63 = getelementptr { ptr, i32, ptr, i32, i32, ptr }, ptr %o13, i32 0, i32 3
+  %t64 = load i32, ptr %t63
+  %t65 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 3
+  store i32 %t64, ptr %t65
+  %t66 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 4
+  store i32 %t54, ptr %t66
+  %t67 = getelementptr { ptr, i32, ptr, i32, i32, i32 }, ptr %s55, i32 0, i32 5
+  store i32 %t53, ptr %t67
+  %t68 = load { ptr, i32, ptr, i32, i32, i32 }, ptr %s55
+  %t69 = call i32 @fn1({ ptr, i32, ptr, i32, i32, i32 } %t68)
+  store i32 %t69, ptr %s45
+  %t70 = add i64 %t50, 1
+  store i64 %t70, ptr %s46
+  br label %bb47
+bb49:
+  %t71 = load i32, ptr %s45
+  store i32 %t71, ptr %o14
+  %t72 = load i32, ptr %o14
+  store i32 %t72, ptr %o1
+  %t73 = load i32, ptr %o1
+  ret i32 %t73
 }
 
 define i32 @main() {

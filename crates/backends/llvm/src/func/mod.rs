@@ -14,8 +14,8 @@ use crate::MovePanel;
 use crate::module::StrGlobal;
 use crate::profile::TargetProfile;
 use crate::ty::{
-    erased_index, lower_body_input_ty, lower_named_input_ty, lower_ptr_paths, lower_ty,
-    residual_arity, sub_paths,
+    array_paths, erased_index, lower_body_input_ty, lower_named_input_ty, lower_ptr_paths,
+    lower_ty, residual_arity, sub_paths,
 };
 
 /// Truthful fn attributes (trap-aware; suggestions #7): the conservative
@@ -402,15 +402,23 @@ pub(crate) struct FnEmit<'a> {
     /// S62 `splitk`: each split site's workspace slot (`alloca i64`), made on
     /// its first launch and freed at function exit (a loop reuses it).
     split_slots: Vec<String>,
-    /// S65 `by-ref` (`func/byref.rs`): the loop products' component paths
-    /// that hold a pointer instead of the array.
-    ref_paths: SecondaryMap<ObjectId, Vec<Vec<u32>>>,
-    /// Pointer slots whose bytes the loop owns (a view written in place).
-    loop_owned: SecondaryMap<ObjectId, ()>,
-    /// The carried components and how each is carried.
-    carry_refs: Vec<byref::CarryRef>,
-    /// Exit objects a device carry fills (no host copy at the exit).
-    exit_by_device: SecondaryMap<ObjectId, ()>,
+    /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions
+    /// (component paths) that hold a pointer to bytes elsewhere instead of
+    /// the bytes — forwarding does not copy. A bare array view is
+    /// `ptr_resident`.
+    views: SecondaryMap<ObjectId, Vec<Vec<u32>>>,
+    views_done: bool,
+    /// The `by-ref` rung, as `plan_views` read it.
+    by_ref: bool,
+    /// The loop state positions whose buffer the host chooses per trip or
+    /// owns (`frame.rs` `plan_loop_buffers`).
+    bufs: Vec<frame::LoopBuf>,
+    /// The function's canonical loops (with `by-ref`).
+    loops: Vec<frame::Loop>,
+    /// Objects by the bytes their views lead to (`frame.rs` `index_roots`).
+    root_index: std::collections::HashMap<frame::Root, Vec<ObjectId>>,
+    /// The parallel entry's task order (its host and tasks).
+    par: Option<std::rc::Rc<frame::ParOrder>>,
 }
 
 /// Should this site's `b` be packed — shape AND size.
@@ -667,7 +675,6 @@ struct ConvTileCtx {
 // child of this module, so it reaches `FnEmit`'s private fields directly and
 // picks up the imports above through `use super::*`.
 mod bulk;
-mod byref;
 mod conv;
 mod core;
 mod drive;

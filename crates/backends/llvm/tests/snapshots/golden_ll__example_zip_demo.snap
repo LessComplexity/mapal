@@ -30,7 +30,7 @@ declare void @mapal_par_finish(ptr)
 @.str2 = private unnamed_addr constant [8 x i8] c"e[0]  = "
 @.str3 = private unnamed_addr constant [8 x i8] c"e[15] = "
 
-%Frame = type { [16 x i32], [16 x i32], { [16 x i32], [16 x i32] }, [16 x i32], [16 x i32], { ptr, ptr }, [16 x i32], { ptr, i32 }, i32, i32, { ptr, i32 }, i32, i32, [16 x i32], { ptr, i32 }, i32, i32, { ptr, i32 }, i32, i32 }
+%Frame = type { [16 x i32], [16 x i32], { ptr, ptr }, ptr, ptr, { ptr, ptr }, [16 x i32], { ptr, i32 }, i32, i32, { ptr, i32 }, i32, i32, [16 x i32], { ptr, i32 }, i32, i32, { ptr, i32 }, i32, i32 }
 
 @ckpt0_entries = private unnamed_addr constant [0 x i64] zeroinitializer
 @ckpt1_entries = private unnamed_addr constant [1 x i64] [i64 21474836479]
@@ -81,8 +81,8 @@ entry:
   store i32 14, ptr %t14
   %t15 = getelementptr [16 x i32], ptr %o2, i64 0, i64 15
   store i32 15, ptr %t15
-  %t16 = getelementptr { [16 x i32], [16 x i32] }, ptr %o4, i32 0, i32 0
-  call void @llvm.memcpy.p0.p0.i64(ptr %t16, ptr %o2, i64 ptrtoint (ptr getelementptr ([16 x i32], ptr null, i64 1) to i64), i1 false)
+  %t16 = getelementptr { ptr, ptr }, ptr %o4, i32 0, i32 0
+  store ptr %o2, ptr %t16
   %t17 = getelementptr [16 x i32], ptr %o3, i64 0, i64 0
   store i32 100, ptr %t17
   %t18 = getelementptr [16 x i32], ptr %o3, i64 0, i64 1
@@ -115,14 +115,16 @@ entry:
   store i32 100, ptr %t31
   %t32 = getelementptr [16 x i32], ptr %o3, i64 0, i64 15
   store i32 100, ptr %t32
-  %t33 = getelementptr { [16 x i32], [16 x i32] }, ptr %o4, i32 0, i32 1
-  call void @llvm.memcpy.p0.p0.i64(ptr %t33, ptr %o3, i64 ptrtoint (ptr getelementptr ([16 x i32], ptr null, i64 1) to i64), i1 false)
-  call void @llvm.memcpy.p0.p0.i64(ptr %o5, ptr %o2, i64 ptrtoint (ptr getelementptr ([16 x i32], ptr null, i64 1) to i64), i1 false)
-  call void @llvm.memcpy.p0.p0.i64(ptr %o6, ptr %o3, i64 ptrtoint (ptr getelementptr ([16 x i32], ptr null, i64 1) to i64), i1 false)
-  %t34 = getelementptr { ptr, ptr }, ptr %o7, i32 0, i32 0
-  store ptr %o5, ptr %t34
-  %t35 = getelementptr { ptr, ptr }, ptr %o7, i32 0, i32 1
-  store ptr %o6, ptr %t35
+  %t33 = getelementptr { ptr, ptr }, ptr %o4, i32 0, i32 1
+  store ptr %o3, ptr %t33
+  store ptr %o2, ptr %o5
+  store ptr %o3, ptr %o6
+  %t34 = load ptr, ptr %o5
+  %t35 = getelementptr { ptr, ptr }, ptr %o7, i32 0, i32 0
+  store ptr %t34, ptr %t35
+  %t36 = load ptr, ptr %o6
+  %t37 = getelementptr { ptr, ptr }, ptr %o7, i32 0, i32 1
+  store ptr %t36, ptr %t37
   ret void
 }
 
@@ -149,17 +151,19 @@ bb1:
   %t5 = icmp uge i64 %t4, %hi
   br i1 %t5, label %bb3, label %bb2
 bb2:
-  %t6 = getelementptr [16 x i32], ptr %o5, i64 0, i64 %t4
-  %t7 = load i32, ptr %t6
-  %t8 = getelementptr [16 x i32], ptr %o6, i64 0, i64 %t4
-  %t9 = load i32, ptr %t8
-  %t10 = insertvalue { i32, i32 } poison, i32 %t7, 0
-  %t11 = insertvalue { i32, i32 } %t10, i32 %t9, 1
-  %t12 = call i32 @fn1({ i32, i32 } %t11)
-  %t13 = getelementptr [16 x i32], ptr %o9, i64 0, i64 %t4
-  store i32 %t12, ptr %t13
-  %t14 = add i64 %t4, 1
-  store i64 %t14, ptr %s0
+  %t6 = load ptr, ptr %o5
+  %t7 = getelementptr [16 x i32], ptr %t6, i64 0, i64 %t4
+  %t8 = load i32, ptr %t7
+  %t9 = load ptr, ptr %o6
+  %t10 = getelementptr [16 x i32], ptr %t9, i64 0, i64 %t4
+  %t11 = load i32, ptr %t10
+  %t12 = insertvalue { i32, i32 } poison, i32 %t8, 0
+  %t13 = insertvalue { i32, i32 } %t12, i32 %t11, 1
+  %t14 = call i32 @fn1({ i32, i32 } %t13)
+  %t15 = getelementptr [16 x i32], ptr %o9, i64 0, i64 %t4
+  store i32 %t14, ptr %t15
+  %t16 = add i64 %t4, 1
+  store i64 %t16, ptr %s0
   br label %bb1
 bb3:
   ret void

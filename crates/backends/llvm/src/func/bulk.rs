@@ -487,6 +487,11 @@ impl<'a> FnEmit<'a> {
                 .array_operand_ptr(from, None)
                 .expect("array copy source ptr");
             let dst = self.slot(to).expect("array copy target slot");
+            if self.ptr_resident.contains_key(to) {
+                // S65 `by-ref`: the state is a view of the init's bytes.
+                self.line(format!("store ptr {src}, ptr {dst}"));
+                return;
+            }
             let llt = lower_ty(&self.obj_ty(from)).expect("array copy lowers");
             self.emit_memcpy(&dst, &src, &llt);
         } else if let Some(llt) = self.big_aggregate(from)
@@ -503,9 +508,15 @@ impl<'a> FnEmit<'a> {
     /// (exit payload → exit object). No-op if erased.
     pub(crate) fn copy_component(&mut self, route: ObjectId, k: u32, to: ObjectId) {
         if matches!(self.obj_ty(route).component_ty(k), Some(Ty::Array { .. })) {
-            // S65 `by-ref`: a device carry's exit is filled on the device, and
-            // a host-carried one takes the state's pointer.
-            if self.exit_by_device.contains_key(to) || self.host_free(to) {
+            // S65 `by-ref`: a device carry's exit is filled on the device (the
+            // host's state holds no bytes), and a host-carried one takes the
+            // state's pointer.
+            let device = self.by_ref
+                && self
+                    .resident
+                    .as_ref()
+                    .is_some_and(|p| p.carries.iter().any(|c| c.exit == Some(to)));
+            if device || self.host_free(to) {
                 return;
             }
             let src = self

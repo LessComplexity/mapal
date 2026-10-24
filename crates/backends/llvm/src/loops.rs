@@ -28,7 +28,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     // entry: init → merge.slot (init is loop-invariant, already computed by the
     // topo LoopEnter deferral — ir §13).
     fe.copy_obj(plan.init, plan.merge);
-    fe.carry_enter(plan.merge);
+    fe.loop_enter_buffers(plan.merge);
     fe.resident_loop_enter(plan.merge, plan.init);
     fe.retain_reset(plan.merge);
 
@@ -41,7 +41,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     fe.label_line(&header);
     let movement = fe.move_line(&plan, &header);
     fe.body.push_str(&movement);
-    fe.carry_header(plan.merge);
+    fe.loop_trip_buffers(plan.merge);
 
     // Decide/exit cone: the guard cond + exit-route payload, run every iteration
     // (incl. the exit one — ADR-0016 / countdown prints 0). Guard-arm-owned
@@ -65,7 +65,6 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
         fe.emit_morphism(mo);
     }
     fe.copy_component(plan.back_route, 0, plan.merge);
-    fe.carry_back(plan.merge);
     fe.resident_loop_back(plan.merge);
     fe.line(format!("br label %{header}"));
 

@@ -177,6 +177,8 @@ impl<'a> FnEmit<'a> {
         // The rung arms (S65 `by-ref` decides the frame's layout): the host and
         // every task read the same ones.
         host.gpu_arms = arms;
+        let par = std::rc::Rc::new(super::frame::ParOrder::new(plan));
+        host.par = Some(par.clone());
         host.perf_timing = perf_timing;
         // The host runs once per program, so its blocks may go to the arena.
         host.heap_ok = true;
@@ -575,6 +577,7 @@ impl<'a> FnEmit<'a> {
                 profile,
                 pack_task_of.contains_key(&task_id),
                 arms,
+                &par,
             ));
             out.push('\n');
         }
@@ -609,6 +612,7 @@ impl<'a> FnEmit<'a> {
         profile: &'static TargetProfile,
         outer_pack: bool,
         arms: crate::GpuArms,
+        par: &std::rc::Rc<super::frame::ParOrder>,
     ) -> String {
         if let TaskKind::Split { site: m, n } = &task.kind
             && let Some(site) = tiling
@@ -622,6 +626,7 @@ impl<'a> FnEmit<'a> {
                 profile,
             );
             slice.gpu_arms = arms;
+            slice.par = Some(par.clone());
             slice.guard_flavor = GuardFlavor::Task;
             slice.split_range = true;
             slice.prepare_storage();
@@ -646,6 +651,7 @@ impl<'a> FnEmit<'a> {
                 profile,
             );
             pack.gpu_arms = arms;
+            pack.par = Some(par.clone());
             pack.guard_flavor = GuardFlavor::Task;
             pack.split_range = true;
             pack.prepare_storage();
@@ -672,6 +678,7 @@ impl<'a> FnEmit<'a> {
                 profile,
             );
             emit.gpu_arms = arms;
+            emit.par = Some(par.clone());
             emit.guard_flavor = GuardFlavor::Task;
             emit.prepare_storage();
             emit.frame = Some(frame.clone());
@@ -733,6 +740,7 @@ impl<'a> FnEmit<'a> {
             ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
         );
         emit.gpu_arms = arms;
+        emit.par = Some(par.clone());
         emit.guard_flavor = GuardFlavor::Task;
         emit.split_range = matches!(task.kind, TaskKind::Split { .. });
         // A sequential task runs once per program (its registration is
