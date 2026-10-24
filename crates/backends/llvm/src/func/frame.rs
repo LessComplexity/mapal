@@ -490,8 +490,12 @@ impl<'a> FnEmit<'a> {
                         }
                         continue;
                     }
-                    // A view written in place, seen as its own bytes.
+                    // A view written in place, seen as its own bytes: an
+                    // `Update`, or a piecewise map run in place over its set
+                    // (`in_place_source`). Else the state looks unowned and
+                    // the entry copy of a still-read init is skipped.
                     Operation::Update => Root::Obj(o),
+                    Operation::Map { .. } if self.update_aliases.contains_key(o) => Root::Obj(o),
                     _ => Root::Other,
                 },
                 None => Root::Other,

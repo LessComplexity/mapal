@@ -187,7 +187,8 @@ pub struct GpuRungs {
     /// the whole array every iteration. Decode loop 1.10–1.40× faster on every
     /// part (1 MB → 1 KB per step).
     pub delta_h2d: bool,
-    /// S54 R0 for one-row sites: a site whose lane operand is read at a lane
+    /// S54 R0 for one-row sites (and, since generic-fusion, 2-D ones: attention's
+    /// `s = q·Kᵀ`): a site whose lane operand is read at a lane
     /// stride other than 1 (`q·Kᵀ`, [`mapal_ir::CategoryIr::tile_plan_strided`])
     /// is a device site. Off: it stays a host map behind a whole copy-out.
     /// Decode loop 1.30–1.58× faster on every part (no 1 MB copy-out of K, no
