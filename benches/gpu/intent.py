@@ -130,7 +130,7 @@ INTENT = {
     'preload': dict(host=True, applies='host.calls.init > 0', on=[
         ('every kernel resolved at module load (init flag 8)', 'host.init_flags & 8 > 0')],
         off=[('each kernel resolved at its first launch', 'host.init_flags & 8 == 0')]),
-    'entry-arena': dict(host=True, applies='host.calls.alloc + host.calls.arena > 0', on=[
+    'entry-arena': dict(host=True, applies='host.calls.arena > 0', applies_off='host.calls.alloc + host.calls.arena > 0', on=[
         ('the arena made in the entry block, nowhere else', 'host.arena_entry == host.calls.arena > 0')],
         off=[('every member asks the arena (no base loaded from the entry arena)', 'host.arena_load == 0')]),
     'async-h2d': dict(host=True, applies='host.calls.h2d + host.calls.h2d_async > 0', on=[

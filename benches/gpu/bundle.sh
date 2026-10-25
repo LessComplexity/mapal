@@ -103,8 +103,10 @@ emit_one() {
 ls = sys.stdin.read().splitlines()
 k = lambda l: "mapal_tile_%016x" % (int(re.search(r"i64 (-?\d+)", l).group(1)) & (2**64 - 1))
 n = lambda l: re.findall(r"i32 (\d+)", l.split(";")[0])
-s = ls and re.search(r"; splitk=(\d+)", ls[0])
-ls and print(k(ls[0]), *n(ls[0]), *([s.group(1), k(ls[1]), *n(ls[1])] if s else []))' \
+s = ls and re.search(r"; splitk=(\d+)(?: (atomic|streamk))?", ls[0])
+# An atomic / stream-K combine has no reduce launch (the next line may be a cell'"'"'s launchv).
+x = [] if not s else [s.group(1), s.group(2)] if s.group(2) else [s.group(1), k(ls[1]), *n(ls[1])] if len(ls) > 1 else []
+ls and print(k(ls[0]), *n(ls[0]), *x)' \
         > "$stem.launch"
 }
 
