@@ -220,6 +220,11 @@ pub(crate) struct Cell {
     /// `cell-law`: the capture slots evaluated in the cell instead of loaded,
     /// each with its producer's closed-form body (`devgen`'s law).
     pub laws: Vec<(u32, FuncId)>,
+    /// The number capture slots (`CellSite::uniform`): kernel arguments by
+    /// value, the host's scalar at launch.
+    pub uniform: Vec<u32>,
+    /// `CellSite::nested` is not empty: a nested fold reads captures.
+    pub nest: bool,
 }
 
 impl Cell {
@@ -229,7 +234,7 @@ impl Cell {
         let k = self.caps.len() as u32;
         let mapped = self.mapped.map(|o| (o, (k > 0).then_some(k)));
         let caps = (0..k)
-            .filter(|&s| !self.law(s))
+            .filter(|&s| !self.law(s) && !self.uniform.contains(&s))
             .map(|s| (self.caps[s as usize], Some(s)));
         mapped.into_iter().chain(caps).collect()
     }
@@ -845,7 +850,11 @@ impl<'a> FnEmit<'a> {
                     };
                     let cell = &cells[mc];
                     let in_ty = self.obj_ty(self.ir.func(body)?.input);
-                    if region.get(mc) != Some(&rs)
+                    // ponytail: the site's store takes no scalar argument and
+                    // walks no nested fold; such a member stays its own cell.
+                    if !cell.uniform.is_empty()
+                        || !cell.nested.is_empty()
+                        || region.get(mc) != Some(&rs)
                         || cell.extent != n
                         || !is_float(array_elem(&self.obj_ty(morph.target)))
                         || !self.device_leaf(body)
@@ -988,7 +997,22 @@ impl<'a> FnEmit<'a> {
         let Ty::Array { elem, .. } = self.obj_ty(morph.target) else {
             return None;
         };
+        // `uniform`. ponytail: an in-place range map over a uniform's cells
+        // (`map_law` piecewise, `Outside`) stays the host's range write; a
+        // whole-extent cell would rewrite every cell per trip. A device range
+        // cell is item 1c.
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let piecewise = || matches!(self.ir.map_law(m), Some(ElemSrc::Apply { outside: Some(_), .. }));
+        // `nest-cell`: a body folding over captured arrays, unless the map is
+        // a tile or row-fold site (their own kernels).
+        let nest = !site.nested.is_empty();
+        let own = || {
+            self.ir.tile_plan_strided(self.f).sites.contains_key(m)
+                || self.ir.row_fold(self.f).contains_key(m)
+        };
         if self.gated.contains_key(m)
+            || (nest && (!rungs.nest_cell || own()))
+            || (!site.uniform.is_empty() && (!rungs.uniform || piecewise()))
             || self.gen_law(m).is_some()
             || !self.attrs.clean(body)
             || !self.device_leaf(body)
@@ -1012,7 +1036,7 @@ impl<'a> FnEmit<'a> {
             return None;
         }
         let laws =
-            if !loaded && gpu::host_rungs(self.profile, self.contract, self.gpu_arms).cell_law {
+            if !loaded && rungs.cell_law {
                 self.laws(body, site, &caps)
             } else {
                 Vec::new()
@@ -1024,9 +1048,11 @@ impl<'a> FnEmit<'a> {
             mapped: loaded.then_some(mapped),
             caps,
             laws,
+            uniform: site.uniform.clone(),
+            nest,
         };
-        // The output, then every operand: one pointer each.
-        (cell.operands().len() < gpu::LAUNCHV_MAX).then_some(cell)
+        // The output, then every operand and uniform: one 8-byte argument each.
+        (cell.operands().len() + cell.uniform.len() < gpu::LAUNCHV_MAX).then_some(cell)
     }
 
     /// `cell-law`'s fact: the captures of a cell over an `iota` that are
@@ -1085,11 +1111,7 @@ impl<'a> FnEmit<'a> {
     /// stays on the host).
     fn fold_candidates(&self, sites: &mut SecondaryMap<MorphismId, DevSite>) -> Vec<MorphismId> {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        if !rungs.rowfold
-            || !rungs.by_ref
-            || sites.is_empty()
-            || !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty()
-        {
+        if !rungs.rowfold || !rungs.by_ref || sites.is_empty() {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -1174,9 +1196,19 @@ impl<'a> FnEmit<'a> {
                     .any(|c| c.views.contains(&o) || c.exit == Some(o))
             };
             let device_only = |o| carried(o) || self.produced_on_device(sites, &cells, o);
+            // ponytail: an `iota` a nested fold walks is uploaded once at its
+            // producer (`n·4` bytes, outside the loop where the rewriter hoists
+            // it); a device iota kernel if one ever sits in a loop cone.
+            let nest = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).nest_cell;
+            let iota = |o: ObjectId| {
+                nest && self.ir.in_edges(o).iter().any(|&p| {
+                    self.ir.morphism(p).is_some_and(|x| x.op == Operation::Iota)
+                })
+            };
             let there = |o| {
                 device_only(o)
                     || feeders.contains_key(o)
+                    || iota(o)
                     || (devgen
                         && self
                             .ir
@@ -1222,10 +1254,16 @@ impl<'a> FnEmit<'a> {
     /// S62 `place` for a per-cell map: on the device when an operand is
     /// device-produced, or when one cell per thread (`extent` flops, every
     /// read and the store) finishes there first — [`gpu::placement`]'s rule.
+    ///
+    /// A cell that reads no array is a closed form of its index and uniforms:
+    /// `devgen`'s rule decides it (built where every reader is), so it is a
+    /// candidate and [`Self::cell_round`] keeps it when no host reads it whole.
     fn cell_pays(&self, m: MorphismId, site: &CellSite) -> bool {
         let t = self.ir.morphism(m).expect("cell").target;
         let (flops, bytes) = self.cell_roofline(m, site);
-        gpu::device_made(self.ir, &self.device, t) || self.profile.device_pays(flops, bytes)
+        (site.reads.is_empty() && !site.uniform.is_empty())
+            || gpu::device_made(self.ir, &self.device, t)
+            || self.profile.device_pays(flops, bytes)
     }
 
     /// Build the plan. `None` when the function has no device site or cell.
@@ -1922,7 +1960,20 @@ impl<'a> FnEmit<'a> {
         let bytes = self.array_bytes(&self.obj_ty(target));
         let mut ptrs = vec![self.dalloc(target, bytes)];
         let mut temps = Vec::new();
-        for (o, slot) in c.operands() {
+        // The kernel's arguments in slot order: the operands, each uniform
+        // (by value) at its own slot.
+        let k = c.caps.len() as u32;
+        let args = c.mapped.map(|o| (o, (k > 0).then_some(k))).into_iter().chain(
+            (0..k).filter(|&s| !c.law(s)).map(|s| (c.caps[s as usize], Some(s))),
+        );
+        for (o, slot) in args {
+            if let Some(u) = slot.filter(|s| c.uniform.contains(s)) {
+                let (t, v) = self.load_component(source, u).expect("uniform loads");
+                let w = self.tmp();
+                self.line(gpu::uniform_to_i64(&w, &v, &t));
+                ptrs.push(w);
+                continue;
+            }
             let at = self.resident.as_ref().map_or(o, |p| p.alias(o));
             if self.dvalid.contains_key(at) {
                 ptrs.push(self.dload(o));
@@ -2016,12 +2067,19 @@ impl<'a> FnEmit<'a> {
                     },
                     self.body_text(c.body, vals.clone()),
                 )];
-                let caps: Vec<Option<(String, String)>> = (0..c.caps.len() as u32)
+                let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
-                        let &(_, law) = c.laws.iter().find(|&&(x, _)| x == s)?;
+                        if c.uniform.contains(&s) {
+                            let t = lower_ty(&self.obj_ty(c.caps[s as usize]))
+                                .expect("a number uniform lowers");
+                            return gpu::CapArg::Uniform(t);
+                        }
+                        let Some(&(_, law)) = c.laws.iter().find(|&&(x, _)| x == s) else {
+                            return gpu::CapArg::Ptr;
+                        };
                         fns.push((self.fnames[law].clone(), self.body_text(law, Vec::new())));
-                        let t = vals.iter().find(|&&(x, _)| x == s)?.1.clone();
-                        Some((self.fnames[law].clone(), t))
+                        let t = vals.iter().find(|&&(x, _)| x == s).expect("law value").1.clone();
+                        gpu::CapArg::Law(self.fnames[law].clone(), t)
                     })
                     .collect();
                 let laws = c.laws.iter().map(|&(_, l)| l);

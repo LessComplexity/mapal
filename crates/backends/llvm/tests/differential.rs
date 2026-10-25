@@ -3369,7 +3369,7 @@ fn differential_device_loops_values_and_movement() {
     let _ = emu::rt_lib();
     let mut runner = TestRunner::deterministic();
     let strat = testgen::device_prog_strategy();
-    let (mut n, mut placed, mut carried) = (0usize, 0usize, 0usize);
+    let (mut n, mut placed, mut carried, mut uniform, mut nests) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut findings = Vec::new();
     for _ in 0..64 {
         let p = strat.new_tree(&mut runner).unwrap().current();
@@ -3407,6 +3407,13 @@ fn differential_device_loops_values_and_movement() {
                 continue;
             }
             placed += 1;
+            // cpu-gpu-boundary 1b: a closed form of the cell and the trip
+            // counter read by a placed site is a uniform cell, launched per
+            // trip (one whose site sits in a guard arm stays on the host).
+            let laws = src.matches("g;\n").count();
+            let cells = em.text.matches("call void @mapal_gpu_launchv(").count();
+            uniform += laws.min(cells);
+            nests += src.matches("-false-> -1.0;").count();
             let need = required_trip_copies(&ir, ir.entry());
             let loops = gpu_trip_moves(&em.text);
             carried += loops.iter().filter(|(kv, _)| kv["carried"].contains(":device")).count();
@@ -3426,10 +3433,13 @@ fn differential_device_loops_values_and_movement() {
         n += 1;
     }
     assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
-    assert!(placed >= 48 && carried > 0, "{placed} device programs, {carried} device-carried states");
+    assert!(
+        placed >= 48 && carried > 0 && uniform > 0 && nests > 0,
+        "{placed} device programs, {carried} device-carried states, {uniform} uniform laws, {nests} guarded folds"
+    );
     eprintln!(
-        "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states; \
-         values OK on and off, movement = the plan's"
+        "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states, \
+         {uniform} uniform laws, {nests} guarded folds per cell; values OK on and off, movement = the plan's"
     );
 }
 

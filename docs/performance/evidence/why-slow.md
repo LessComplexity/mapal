@@ -148,7 +148,7 @@ hardware counters. Peaks for 4090 / 5090 / H100 PCIe / 3090 are FP32 82.6 / 104.
 
 | id | what | evidence |
 |---|---|---|
-| O1 | Which gate keeps decode's x-row map on the host (C5), and which of s/mx/p/den/o declines first in causal (C1) | A placement dump (`cell_sites` rounds, site list) for pt_decode_1024_256 and pt_causal_1024_256 |
+| O1 | **Closed (cpu-gpu-boundary, placement dump on rtx-4090).** Decode: `x` (range map) and `q` were no `cell_plan` site — a scalar capture (`t`) made a map no `CellSite`, and `gen_law` took `captures: 0` only. Causal: `s` and `o` were no site of any kind (a body folding over captures is neither a tile site — the guard Phi — nor a cell: `local_nest`), `p` had scalar captures (`mx`, `t`), `mx`/`den` are whole folds (no `row_fold` site; the retained-site veto was moot for them, it blocked prefill's `pmx`/`pden`). Fixed by `uniform` (q, rt_mlp2 a/f) and `nest-cell` (s, p, o, convmc's fold); `x` stays the host range write (1c) | `TMP_DUMP` placement dump of `cell_plan`/`cell_of`/`cell_sites` per map |
 | O2 | H100 `retain-resident` on decode, the program the OFF row was judged on | A `.on-retain-resident` arm of pt_decode_1024_256 on h100-pcie, ABBA |
 | O3 | Library kernel SASS: C6a/C6b cite nsys geometry only (regs, smem, CTA, grid) | cuobjdump of the captured cuBLASLt/CUTLASS images (`sass_index.tsv` is absent from the H100 archive) |
 | O4 | C7 attribution in this build | A `CUDA_MODULE_LOADING=EAGER` arm of the straight-line programs (s62 measured MLP programs only) |

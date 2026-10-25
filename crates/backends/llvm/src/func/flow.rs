@@ -257,7 +257,9 @@ impl<'a> FnEmit<'a> {
             for (m, r) in plan.rowfold.iter() {
                 cand.insert(m, Cand::Fold(r.clone()));
             }
-            for (m, c) in plan.cells.iter() {
+            // ponytail: a unit kernel takes no scalar argument; a cell that
+            // reads a uniform runs alone. Pass uniforms to units when one pays.
+            for (m, c) in plan.cells.iter().filter(|(_, c)| c.uniform.is_empty() && !c.nest) {
                 cand.insert(m, Cand::Cell(c.clone()));
             }
             let fp = self.ir.footprint_plan(self.f);
@@ -309,10 +311,15 @@ impl<'a> FnEmit<'a> {
                     }
                 }
                 // A lone fold is a unit of one where its lanes may be a tree:
-                // the row's steps across a block, not one thread's walk.
+                // the row's steps across a block, not one thread's walk. Not
+                // over a column-major operand (`rowfold-layout`'s sole-reader
+                // store): there a row's cells are `rows` apart, so the lanes
+                // would not coalesce and one thread's walk down a column does
+                // (cpu-gpu-boundary item 5: rtx-4090 rowsum_4096 1.056).
                 let tree = |m: MorphismId| {
                     self.order == crate::Order::Free
-                        && matches!(cand.get(m), Some(Cand::Fold(r)) if tree_step(&r.site.op) && r.site.k > 1)
+                        && matches!(cand.get(m), Some(Cand::Fold(r))
+                            if tree_step(&r.site.op) && r.site.k > 1 && (r.colmajor.is_none() || !rungs.tree_gate))
                 };
                 if g.len() >= 2
                     || (tree(seed) && self.unit_of(&g, &cand, &fp, &region, plan).is_ok())

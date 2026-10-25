@@ -412,3 +412,86 @@ fn golden_devmap_device_units() {
     let mlp = emit(&mlp(&corners("d")), &[]);
     insta::assert_snapshot!("devmap_mlp_host", mapal_main(&mlp.text));
 }
+
+// --- cpu-gpu-boundary 1b `uniform`: number captures as kernel arguments ----
+
+mod emu;
+
+fn bench(name: &str) -> String {
+    let p = format!("{}/../../../benches/algorithms/{name}.mapal", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{p}: {e}"))
+}
+
+/// A closed form of the cell and the trip counter read by a site (`q` in
+/// decode, `a` and `f` in rt_mlp2) is a uniform cell launched per trip, the
+/// counter its by-value argument: nothing of it crosses inside the loop. OFF:
+/// the host builds it and uploads it every trip. Values on the emulated
+/// device equal the interpreter's on both arms.
+#[test]
+fn a_closed_form_of_the_trip_counter_is_a_uniform_cell() {
+    let clang = emu::clang();
+    // rt_mlp2 at 32² (the emulator runs a thread at a time); `async` off: the
+    // emulator has no `cp.async`.
+    let mlp2 = bench("px_rt_mlp2_128").replace("16384", "1024").replace("16383", "1023").replace("128", "32");
+    for (name, src, laws, bytes) in [("decode_16_8", bench("decode_16_8"), 1, 8 * 4), ("rt_mlp2_32", mlp2, 2, 32 * 32 * 4)] {
+        let on = emit(&src, &["async"]);
+        let off = emit(&src, &["uniform", "async"]);
+        let (c_on, c_off) = (calls(&on.text), calls(&off.text));
+        let up = |c: &[String]| count(c, &format!("h2d {bytes}"));
+        assert_eq!(count(&c_on, "launchv"), count(&c_off, "launchv") + laws, "{name}: {c_on:?}");
+        assert_eq!(up(&c_on) + laws, up(&c_off), "{name}: ON {c_on:?}\nOFF {c_off:?}");
+        assert!(on.device.as_ref().is_some_and(|d| d.contains("i64 %c0")), "{name}: a by-value argument");
+        // The fact: a cell site that reads no array, its one capture a uniform.
+        let ir = lower_src(&src);
+        let sites = ir.cell_plan(ir.entry());
+        let closed = sites.values().filter(|s| s.reads.is_empty() && s.uniform == [0]).count();
+        assert_eq!(closed, laws, "{name}: {sites:?}");
+        let Some(clang) = &clang else { continue };
+        let rr = mapal_interp::run(&ir, 2_000_000_000);
+        for (arm, em) in [("on", &on), ("off", &off)] {
+            let got = emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
+            assert_eq!(got, rr.output, "{name} uniform {arm}");
+        }
+    }
+}
+
+/// cpu-gpu-boundary 1a `nest-cell`: a map whose body folds over captured
+/// arrays (causal's guarded score `s`, its output `o`) is a device cell once
+/// its operands are on the device: the per-trip K/V rows stay there (no
+/// copy-out of `kk`/`vv`), only the small arrays a host fold reads cross.
+/// Values on the emulated device equal the interpreter's, on and off.
+#[test]
+fn a_guarded_dot_product_per_cell_is_a_device_cell() {
+    let clang = emu::clang();
+    for name in ["causal_16_8", "prefill_16_8_8"] {
+        let src = bench(name);
+        let on = emit(&src, &["async"]);
+        let off = emit(&src, &["nest-cell", "async"]);
+        let ir = lower_src(&src);
+        let sites = ir.cell_plan(ir.entry());
+        assert!(sites.values().filter(|s| !s.nested.is_empty()).count() >= 2, "{name}: {sites:?}");
+        let (c_on, c_off) = (calls(&on.text), calls(&off.text));
+        // The K/V rows (16 x 8 cells) no longer come out per trip.
+        let kv = |c: &[String]| count(in_loop(c), &format!("d2h {}", 16 * 8 * 4));
+        assert!(kv(&c_on) + 2 <= kv(&c_off), "{name}: ON {c_on:?}\nOFF {c_off:?}");
+        assert!(count(&c_on, "launchv") >= count(&c_off, "launchv") + 2, "{name}: {c_on:?}");
+        let Some(clang) = &clang else { continue };
+        let rr = mapal_interp::run(&ir, 2_000_000_000);
+        for (arm, em) in [("on", &on), ("off", &off)] {
+            let got = emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
+            assert_eq!(got, rr.output, "{name} nest-cell {arm}");
+        }
+    }
+    // A multi-channel conv (taps split by constant div/mod: no tile site) is
+    // one such cell — a direct conv, one thread per output.
+    let src = bench("px_convmc_2_4_6_3");
+    let on = emit(&src, &["async"]);
+    let off = emit(&src, &["nest-cell", "async"]);
+    assert_eq!(count(&calls(&on.text), "launchv"), 1 + count(&calls(&off.text), "launchv"));
+    if let Some(clang) = &clang {
+        let rr = mapal_interp::run(&lower_src(&src), 2_000_000_000);
+        let got = emu::run_emulated(clang, &on.text, on.device.as_ref().expect("a device unit"));
+        let values = |o: &str| o.lines().filter(|l| !l.starts_with("iter ms")).collect::<Vec<_>>().join("\n");
+        assert_eq!(values(&got), values(&rr.output), "convmc nest-cell on");
+    }
+}

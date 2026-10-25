@@ -374,6 +374,24 @@ pub struct GpuRungs {
     /// 3090), the kernels' traced ms equal — the host map walks one row per trip,
     /// not 262144 cells (`fusion-natural-forms/<part>/results-<part>.txt`).
     pub range_map: bool,
+    /// cpu-gpu-boundary 1b: a per-cell map with number captures
+    /// (`CellSite::uniform` — a loop counter, a fold's result) is a device
+    /// cell, each uniform a by-value kernel argument; one that reads no array
+    /// is a closed form, built where its readers run (`devgen`'s rule). Off:
+    /// such a map runs on the host and crosses the bus to its device readers.
+    pub uniform: bool,
+    /// cpu-gpu-boundary 1a `nest-cell`: a per-cell map whose body folds over
+    /// captured arrays at any proven address (`CellSite::nested`: a guarded
+    /// dot product, a fold per cell) is a device cell when it is no tile or
+    /// row-fold site. Off: it runs on the host.
+    pub nest_cell: bool,
+    /// cpu-gpu-boundary item 5 `tree-gate`, under `flow`: a lone fold over a
+    /// column-major operand (`rowfold-layout`'s sole-reader store) keeps its
+    /// one-thread-a-row kernel instead of a tree unit — a row's cells are
+    /// `rows` apart, so the tree's lanes would not coalesce. Off: a lone
+    /// tree-able fold is a unit whatever the layout (rtx-4090 rowsum_4096,
+    /// flow ON/OFF 1.056, why-slow C12).
+    pub tree_gate: bool,
 }
 
 impl GpuRungs {
@@ -431,11 +449,14 @@ impl GpuRungs {
         flow: true,
         window: true,
         range_map: true,
+        uniform: true,
+        nest_cell: true,
+        tree_gate: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 52] = [
+    pub const NAMES: [&'static str; 55] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -488,6 +509,9 @@ impl GpuRungs {
         "flow",
         "window",
         "range-map",
+        "uniform",
+        "nest-cell",
+        "tree-gate",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -545,6 +569,9 @@ impl GpuRungs {
             "flow" => &mut self.flow,
             "window" => &mut self.window,
             "range-map" => &mut self.range_map,
+            "uniform" => &mut self.uniform,
+            "nest-cell" => &mut self.nest_cell,
+            "tree-gate" => &mut self.tree_gate,
             _ => return None,
         })
     }
