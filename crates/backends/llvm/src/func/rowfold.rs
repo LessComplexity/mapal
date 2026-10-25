@@ -51,7 +51,7 @@ pub(crate) fn rowfold_sites(
         return out;
     }
     let tiles = ir.tile_plan(f);
-    let dev = gpu::placement(ir, f, &gpu::tile_plan(ir, f, profile, rungs), profile, rungs.window);
+    let dev = gpu::placement(ir, f, &gpu::tile_plan(ir, f, profile, contract, arms), profile, rungs.window);
     for (m, site) in ir.row_fold(f).iter() {
         let window = site.w > 1 || site.a.ksplit.is_some();
         if !is_float(&site.elem) || site.k == 0 || (window && !rungs.window) {

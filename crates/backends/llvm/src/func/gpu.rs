@@ -291,8 +291,10 @@ pub(crate) fn tile_plan(
     ir: &CategoryIr,
     f: FuncId,
     profile: &TargetProfile,
-    rungs: crate::GpuRungs,
+    contract: bool,
+    arms: crate::GpuArms,
 ) -> TilePlan {
+    let rungs = host_rungs(profile, contract, arms);
     if profile.gpu().is_none() {
         return ir.tile_plan(f);
     }
@@ -303,7 +305,7 @@ pub(crate) fn tile_plan(
     // site the tile refuses keeps the `nest-cell` it had).
     if rungs.radix_tile {
         for (m, s) in ir.tile_plan_radix(f) {
-            let staged = launch(&s, profile, true, crate::GpuArms::default()).tiled.is_some();
+            let staged = launch(&s, profile, contract, arms).tiled.is_some();
             if staged && gpu_site(&s, profile, rungs.window) {
                 plan.sites.insert(m, s);
             }
@@ -463,8 +465,11 @@ pub(crate) fn launch(
     // an emitted face: rejection must fall through to the scalar policy.
     // recurrence-precision `tf32-tile`: the permission is the site's product
     // set (ADR-0041 D6); off, the f32 FFMA tile it also admits.
+    // A mixed-radix site stores digit by digit; the tensor kernels store
+    // row-major (`radix-tile` takes the staged FMA tile).
     if site_reduced(site) == Some(Reduced::Tf32)
         && site.elem == Ty::f32()
+        && site.radix.is_none()
         && shaped
         && vector_a(site)
         && vector_b(site)
@@ -1127,25 +1132,25 @@ pub(crate) fn rowfold_lanes(
     arms: crate::GpuArms,
     order: Order,
 ) -> u64 {
-    let Some(g) = profile.gpu() else { return 1 };
     let regroups = matches!(
         site.op,
         RowFoldOp::Arith { op: Operation::Add | Operation::Mul, .. } | RowFoldOp::Select { .. }
     );
-    let fits = site.rows.saturating_mul(g.warp) <= g.sms.saturating_mul(g.max_threads_per_sm);
-    if host_rungs(profile, contract, arms).fold_lanes
-        && order == Order::Free
-        && regroups
-        && g.warp == 32
-        && site.elem == (mapal_ir::Ty::Float { bits: 32 })
-        && site.k >= g.warp
-        && site.w == 1
-        && site.a.ksplit.is_none()
-        && fits
-    {
-        g.warp
-    } else {
-        1
+    match host_rungs(profile, contract, arms).fold_lanes && regroups && site.w == 1 && site.a.ksplit.is_none() {
+        true => warp_lanes(profile, order, &site.elem, site.k, site.rows),
+        false => 1,
+    }
+}
+
+/// The lane gate `fold-lanes` and `cell-lanes` share: a warp per unit (a row,
+/// a cell) where the order is free (ADR-0040), the fold is f32 and at least a
+/// warp long, and `units` warps fit the part's resident threads. 1 otherwise.
+pub(crate) fn warp_lanes(profile: &TargetProfile, order: Order, elem: &Ty, k: u64, units: u64) -> u64 {
+    let Some(g) = profile.gpu() else { return 1 };
+    let fits = units.saturating_mul(g.warp) <= g.sms.saturating_mul(g.max_threads_per_sm);
+    match order == Order::Free && g.warp == 32 && *elem == Ty::f32() && k >= g.warp && fits {
+        true => g.warp,
+        false => 1,
     }
 }
 
@@ -1637,7 +1642,7 @@ pub(crate) fn device_module(
     let mut reduced = None;
     for (f, _) in ir.funcs() {
         let rungs = host_rungs(profile, contract, arms);
-        let plan = tile_plan(ir, f, profile, rungs);
+        let plan = tile_plan(ir, f, profile, contract, arms);
         let dev = placement(ir, f, &plan, profile, rungs.window);
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);

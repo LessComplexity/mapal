@@ -1014,7 +1014,7 @@ fn host_line(
     let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
     let (mut dev, mut host) = (0, 0);
     for (f, _) in ir.funcs() {
-        let plan = crate::func::gpu::tile_plan(ir, f, profile, rungs);
+        let plan = crate::func::gpu::tile_plan(ir, f, profile, opts.contract, opts.gpu);
         let placed = crate::func::gpu::placement(ir, f, &plan, profile, rungs.window);
         for (m, s) in plan.sites.iter() {
             if crate::func::gpu::gpu_site(s, profile, rungs.window) {

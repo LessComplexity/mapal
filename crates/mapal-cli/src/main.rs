@@ -498,8 +498,13 @@ fn test_cmd(a: &Args) -> Res<u8> {
     if a.opts.order == Order::Free {
         a.opts.order = Order::Fixed;
     }
+    let ir = rewritten(&a, frontend(&a)?);
+    // ADR-0041: a `: tf32` product may take the tensor-core kernel, which is
+    // not the f32 oracle's bytes — judged against the weakest member instead.
+    if ir.funcs().any(|(f, _)| !ir.precision_plan(f).set.is_empty()) {
+        a.weakest = true;
+    }
     let a = &a;
-    let ir = rewritten(a, frontend(a)?);
     // The orders are keyed on the IR the compiler saw: a split program's
     // oracle runs on it too (`--no-rewrite`: the lowered IR is that IR); an
     // unsplit one on the lowered IR, as before.
@@ -597,13 +602,10 @@ fn longest_fold(ir: &CategoryIr) -> u64 {
 }
 
 /// `--weakest`'s relative tolerance at fold length `k`: twice (value_gate's
-/// fallback) the sum of ADR-0041 D3's TF32 bound
-/// `(1 + u_t)²·(1 + γ_{K+1}) − 1` and ADR-0040 D2's f32 one `γ_{K+1}`,
-/// `u_t = 2⁻¹¹`, `u = 2⁻²⁴` — the two sides of the exact value.
+/// fallback) the sum of ADR-0041 D3's TF32 bound and ADR-0040 D2's f32 one
+/// (`mapal_ir::bound_coef`, the IR's own) — the two sides of the exact value.
 fn weakest_rel(k: u64) -> f64 {
-    let (u, ut) = (2f64.powi(-24), 2f64.powi(-11));
-    let g = (k + 1) as f64 * u / (1.0 - (k + 1) as f64 * u);
-    2.0 * (((1.0 + ut) * (1.0 + ut) * (1.0 + g) - 1.0) + g)
+    2.0 * (mapal_ir::bound_coef(k, true) + mapal_ir::bound_coef(k, false))
 }
 
 /// Spawn and wait, time-boxed; `Ok(None)` on timeout. Stdout is drained on a
