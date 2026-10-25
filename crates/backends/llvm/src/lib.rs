@@ -429,6 +429,25 @@ pub struct GpuRungs {
     /// independent do not wait for it. Off: on the legacy stream, which
     /// every chain joins at its next launch.
     pub chain_h2d: bool,
+    /// recurrence-precision 1b `range-cell`: a piecewise map written in place
+    /// ([`mapal_ir::Outside`]: a row, a range, a column of the state) is a
+    /// device cell over its interval alone — one thread per written cell,
+    /// the interval's start a by-value argument — when its operands are on
+    /// the device: the state stays there (decode/causal `x`). Off: the host's
+    /// range map, the written row uploaded per trip (`delta-h2d`).
+    pub range_cell: bool,
+    /// recurrence-precision 1b `scalar-fold`: a whole fold of a device array
+    /// ([`mapal_ir::CategoryIr::whole_fold`]: a row fold of one row) runs on
+    /// the device into a one-element buffer, and a cell reading it as a
+    /// number capture loads it there (a pointer, not a by-value argument):
+    /// no host observes it (causal `mx`, `den`). Off: the array comes out
+    /// and the host folds it.
+    pub scalar_fold: bool,
+    /// recurrence-precision 1a `trip-batch`: a loop whose first trip interval
+    /// [`mapal_ir::TripPhase::skip`]s enters at its last trip, the interval's
+    /// `batched` writes made first by one device cell over all their cells
+    /// (each cell's trip `c ÷ d − b`). Off: every trip runs.
+    pub trip_batch: bool,
 }
 
 impl GpuRungs {
@@ -495,11 +514,14 @@ impl GpuRungs {
         async_h2d: true,
         stage: true,
         chain_h2d: true,
+        range_cell: true,
+        scalar_fold: true,
+        trip_batch: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 61] = [
+    pub const NAMES: [&'static str; 64] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -561,6 +583,9 @@ impl GpuRungs {
         "async-h2d",
         "stage",
         "chain-h2d",
+        "range-cell",
+        "scalar-fold",
+        "trip-batch",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -627,6 +652,9 @@ impl GpuRungs {
             "async-h2d" => &mut self.async_h2d,
             "stage" => &mut self.stage,
             "chain-h2d" => &mut self.chain_h2d,
+            "range-cell" => &mut self.range_cell,
+            "scalar-fold" => &mut self.scalar_fold,
+            "trip-batch" => &mut self.trip_batch,
             _ => return None,
         })
     }

@@ -834,6 +834,11 @@ def check(d, results=None, out=sys.stdout):
         fp = lambda p: sum(p.get(k, 0) for k in ('fma_f32', 'mul_f32', 'add_f32'))
         dev['cell_nest_walk'] = sum(kf.get('ptx', {}).get('loops', 0) > 0
                                     or fp(kf.get('ptx', {})) >= kf['plan'].get('work', 1) - 1 for kf in nest)
+        # recurrence-precision: range cells, cells reading a device number, batch variants.
+        has = lambda kf, key: str(kf['plan'].get(key, '')) not in ('', '0')
+        dev['cell_range'] = sum(has(kf, 'range') for kf in cells)
+        dev['cell_dev'] = sum(has(kf, 'dev') for kf in cells)
+        dev['cell_batch'] = sum(has(kf, 'batch') for kf in cells)
         ns = Scope(host=D(e['host']), device=D(e['device']), launch=D(e['launch']), dev=D(dev), arch=prof,
                    sm=e['sm'])
         hon = set(e.get('host_table', [])) | on

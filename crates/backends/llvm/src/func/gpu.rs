@@ -1226,6 +1226,7 @@ pub(crate) fn cell_kernel_text(
     arg: &str,
     elem: Option<&str>,
     caps: &[CapArg],
+    g: CellGeo,
 ) -> String {
     let mut params = vec!["ptr addrspace(1) %o".to_string()];
     if elem.is_some() {
@@ -1234,8 +1235,13 @@ pub(crate) fn cell_kernel_text(
     params.extend(caps.iter().enumerate().filter_map(|(k, c)| match c {
         CapArg::Ptr => Some(format!("ptr addrspace(1) %c{k}")),
         CapArg::Uniform(_) => Some(format!("i64 %c{k}")),
-        CapArg::Law(..) => None,
+        CapArg::Dev(_) => Some(format!("ptr addrspace(1) %c{k}")),
+        CapArg::Law(..) | CapArg::Trip(..) => None,
     }));
+    if g.range.is_some() {
+        params.push("i64 %rs".into());
+        params.push("i64 %rn".into());
+    }
     let mut body = String::new();
     let e_ty = match elem {
         Some(t) => {
@@ -1263,6 +1269,15 @@ pub(crate) fn cell_kernel_text(
                     "{}  %a{k} = insertvalue {arg} {prev}, {t} %g{k}, {k}\n",
                     uniform_from_i64(&format!("%g{k}"), &format!("%c{k}"), t)
                 )),
+                // `scalar-fold`: the number lives in device memory.
+                CapArg::Dev(t) => body.push_str(&format!(
+                    "  %g{k} = load {t}, ptr addrspace(1) %c{k}\n  %a{k} = insertvalue {arg} {prev}, {t} %g{k}, {k}\n"
+                )),
+                // `trip-batch`: the counter is the cell's own trip, `i ÷ d − b`.
+                CapArg::Trip(t, d, b) => body.push_str(&format!(
+                    "  %q{k} = sdiv i64 %i, {d}\n  %w{k} = sub i64 %q{k}, {b}\n{}  %a{k} = insertvalue {arg} {prev}, {t} %g{k}, {k}\n",
+                    uniform_from_i64(&format!("%g{k}"), &format!("%w{k}"), t)
+                )),
             }
             prev = format!("%a{k}");
         }
@@ -1278,6 +1293,16 @@ pub(crate) fn cell_kernel_text(
             call_arg.push_str(&format!(", {t} %v{k}"));
         }
     }
+    // `range-cell`: thread `k` is cell `rs + step·k` of the interval's `rn`
+    // cells.
+    let (gid, guard, at) = match g.range {
+        None => ("%i", format!("  %in = icmp ult i64 %i, {n}\n"), String::new()),
+        Some(step) => (
+            "%k",
+            "  %in = icmp ult i64 %k, %rn\n".to_string(),
+            format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
+        ),
+    };
     format!(
         "define ptx_kernel void @{name}({params}) \"nvvm.maxntid\"=\"{NAIVE_THREADS}\" {{\n\
          entry:\n\
@@ -1286,11 +1311,11 @@ pub(crate) fn cell_kernel_text(
          \x20 %t64 = zext i32 %t to i64\n\
          \x20 %b64 = zext i32 %b to i64\n\
          \x20 %base = mul i64 %b64, {NAIVE_THREADS}\n\
-         \x20 %i = add i64 %base, %t64\n\
-         \x20 %in = icmp ult i64 %i, {n}\n\
+         \x20 {gid} = add i64 %base, %t64\n\
+         {guard}\
          \x20 br i1 %in, label %body, label %done\n\
          body:\n\
-         {body}\
+         {at}{body}\
          \x20 %v = call {out} @{callee}({call_arg})\n\
          \x20 %p = getelementptr inbounds {out}, ptr addrspace(1) %o, i64 %i\n\
          \x20 store {out} %v, ptr addrspace(1) %p\n\
@@ -1312,6 +1337,25 @@ pub(crate) enum CapArg {
     Law(String, String),
     /// A number capture of LLVM type `ty`, by value.
     Uniform(String),
+    /// `scalar-fold`: a number capture of type `ty` in a one-element device
+    /// buffer (a whole fold's result), by pointer.
+    Dev(String),
+    /// `trip-batch`: the loop counter, of type `ty`, as the cell's own trip
+    /// `i ÷ d − b` (a batched row write: row `t + b` is trip `t`'s).
+    Trip(String, u64, i64),
+}
+
+/// A cell kernel's geometry ([`cell_kernel_text`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CellGeo {
+    /// `range-cell`: the interval's step; the kernel takes its start and
+    /// count by value (`%rs`, `%rn`).
+    pub range: Option<u64>,
+}
+
+impl CellGeo {
+    #[cfg(test)]
+    pub(crate) const ONE: CellGeo = CellGeo { range: None };
 }
 
 /// `dst = src` narrowed from the 8-byte launch argument to `ty` (`i64`
@@ -4991,6 +5035,7 @@ mod tests {
             "{ ptr, ptr, i32 }",
             None,
             &caps,
+            CellGeo::ONE,
         );
         assert!(
             k.contains("(ptr addrspace(1) %o, ptr addrspace(1) %c0)"),
@@ -5004,7 +5049,7 @@ mod tests {
         assert!(k.contains("icmp ult i64 %i, 300"), "{k}");
         // A uniform rides the launch's 8-byte slot and is narrowed in the cell.
         let caps = [CapArg::Uniform("i32".into()), CapArg::Ptr];
-        let k = cell_kernel_text(2, "fn4", 8, "float", "{ i32, ptr, i32 }", None, &caps);
+        let k = cell_kernel_text(2, "fn4", 8, "float", "{ i32, ptr, i32 }", None, &caps, CellGeo::ONE);
         assert!(k.contains("(ptr addrspace(1) %o, i64 %c0, ptr addrspace(1) %c1)"), "{k}");
         assert!(k.contains("%g0 = trunc i64 %c0 to i32"), "{k}");
         assert!(k.contains("%a0 = insertvalue { i32, ptr, i32 } poison, i32 %g0, 0"), "{k}");

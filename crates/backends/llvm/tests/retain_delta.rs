@@ -166,8 +166,18 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
     // with no device site (the all-int decode) is the CPU build, which never
     // retains.
     opts.gpu.off.hostopt = true;
+    recurrence_off(&mut opts.gpu);
     let em = emit_detailed(ir, &opts).expect("emits");
     (em.text, em.device)
+}
+
+/// recurrence-precision's item-1 rungs off: the S53/S54 mechanism these
+/// tests pin keeps the written row on the host (`range-cell` moves it, with
+/// every other recurrent node, onto the device — `tests/recurrence.rs`).
+fn recurrence_off(gpu: &mut GpuArms) {
+    for r in ["range-cell", "scalar-fold", "trip-batch"] {
+        *gpu.off.rung(r).expect("a rung") = true;
+    }
 }
 
 /// `(host, device)` on the 4090 with S54's three R5 rungs forced on (the
@@ -186,6 +196,7 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     for r in off {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }
+    recurrence_off(&mut opts.gpu);
     let em = emit_detailed(ir, &opts).expect("emits");
     (em.text, em.device.expect("a device unit"))
 }
@@ -259,7 +270,9 @@ fn natural_decode_moves_what_the_unrolled_one_moves() {
             target,
             ..EmitOpts::exact()
         };
-        for r in ["async", "streams", "pinned", "pdl"] {
+        // `range-cell` is the natural form's alone (an `Update` stays the
+        // host's): the twins compare with it off.
+        for r in ["async", "streams", "pinned", "pdl", "range-cell"] {
             *opts.gpu.off.rung(r).expect("rung") = true;
         }
         emit_detailed(ir, &opts).expect("emits").text
@@ -327,7 +340,8 @@ fn decode_retains_k_and_v_only() {
 #[test]
 fn resident_yields_to_a_retained_site_only_without_retain_resident() {
     let ir = lower(&decode(16, 8, "f32", false));
-    let at = |gpu: GpuArms| {
+    let at = |mut gpu: GpuArms| {
+        recurrence_off(&mut gpu);
         emit_detailed(
             &ir,
             &EmitOpts {

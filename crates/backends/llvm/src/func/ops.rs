@@ -34,6 +34,11 @@ impl<'a> FnEmit<'a> {
                     let (llt, dst) = self
                         .component_ptr(target, slot)
                         .expect("Pair array target ptr");
+                    // `scalar-fold`: a device-only number's field is read by
+                    // cells from its device buffer — nothing to store.
+                    if !matches!(self.obj_ty(source), Ty::Array { .. }) {
+                        return;
+                    }
                     assert_eq!(llt, "ptr", "a device-only array rides a pointer-only field");
                     self.line(format!("store ptr null, ptr {dst}"));
                 } else if matches!(self.obj_ty(source), Ty::Array { .. }) {

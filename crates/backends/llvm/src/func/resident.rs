@@ -67,6 +67,9 @@ pub(crate) struct Carry {
     pub views: Vec<ObjectId>,
     /// The loop's exit object, when the exit payload is a view.
     pub exit: Option<ObjectId>,
+    /// `range-cell`: `next` is written in place over the state (a range
+    /// cell), so it shares the carry's buffer.
+    pub inplace: bool,
 }
 
 impl Carry {
@@ -225,6 +228,12 @@ pub(crate) struct Cell {
     pub uniform: Vec<u32>,
     /// The capture slots a nested fold reads (`CellSite::nested`).
     pub nested: Vec<u32>,
+    /// `range-cell`: the interval a piecewise map writes in place (its
+    /// state's carry buffer); one thread a written cell.
+    pub range: Option<mapal_ir::Outside>,
+    /// `scalar-fold`: the uniform slots a device whole fold produces, loaded
+    /// from its one-element buffer.
+    pub dev: Vec<u32>,
 }
 
 impl Cell {
@@ -288,6 +297,23 @@ pub(crate) struct ResidentPlan {
     pub units: SecondaryMap<MorphismId, super::flow::Unit>,
     /// generic-fusion: the host intent line (`; mapal.flow.host …`).
     pub flow_line: String,
+    /// `trip-batch`: the loops entered at the last trip of a skippable first
+    /// interval, each batched write made first by one cell launch.
+    pub batch: Vec<Batch>,
+}
+
+/// recurrence-precision `trip-batch`: a loop whose first trip interval
+/// [`mapal_ir::TripPhase::skip`]s. At entry its batched range cells run once
+/// over every cell the interval's trips but the last write (`[start, start +
+/// count)`, cell `c` from trip `c ÷ d − b`), and the counter starts at
+/// `enter` — the interval's last trip, which runs as an ordinary trip.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Batch {
+    pub merge: ObjectId,
+    pub counter: u32,
+    pub enter: i64,
+    /// `(range cell, kernel id, start, count, counter slot, d, b)` per batched write.
+    pub writes: Vec<(MorphismId, u64, u64, u64, u32, u64, i64)>,
 }
 
 /// Every arena offset is a multiple of this: `cuMemAlloc`'s own alignment
@@ -374,11 +400,12 @@ impl ResidentPlan {
     }
 
     /// The object whose device slot `o` shares: a carry's views and exit share
-    /// the component's slot (its key).
+    /// the component's slot (its key), and so does a next state written in
+    /// place (`range-cell`).
     pub(crate) fn alias(&self, o: ObjectId) -> ObjectId {
         self.carries
             .iter()
-            .find(|c| c.views.contains(&o) || c.exit == Some(o))
+            .find(|c| c.views.contains(&o) || c.exit == Some(o) || (c.inplace && c.next == o))
             .map_or(o, Carry::key)
     }
 }
@@ -470,6 +497,16 @@ impl<'a> FnEmit<'a> {
                         out.push(self.slot_use(sites, cells, m2, slot));
                     }
                 }
+                // `scalar-fold`: a number every reader of which is a cell
+                // loading it from its device buffer.
+                Operation::Pair { slot, .. }
+                    if !self.ir.out_edges(morph.target).is_empty()
+                        && self.ir.out_edges(morph.target).iter().all(|&m2| {
+                            cells.get(m2).is_some_and(|c| c.dev.contains(&slot))
+                        }) =>
+                {
+                    out.push(Use::Dev)
+                }
                 Operation::Map { captures: 0, .. } if self.member_src(m, 0).is_some() => {
                     out.push(Use::Dev)
                 }
@@ -524,7 +561,12 @@ impl<'a> FnEmit<'a> {
         cells: &SecondaryMap<MorphismId, Cell>,
     ) -> Vec<Carry> {
         let site_out = |o: ObjectId| self.produced_on_device(sites, cells, o);
-        let mut out = Vec::new();
+        let mut out: Vec<Carry> = Vec::new();
+        // `range-cell`: a range cell fed by another state's carry (decode's
+        // `x` row reads `o`) rides only once that carry is found — repeat
+        // until no carry is added (each round only adds, so it ends).
+        loop {
+        let found = out.len();
         for scc in self.ir.loop_structure(self.f) {
             for &merge in &scc.merges {
                 let Some(plan) = self.ir.loop_plan(self.f, merge) else {
@@ -541,7 +583,7 @@ impl<'a> FnEmit<'a> {
                 let back_pair: Vec<MorphismId> = self.ir.out_edges(state).to_vec();
                 for (k, ty) in parts.iter().enumerate() {
                     let k = k as u32;
-                    if !matches!(ty, Ty::Array { .. }) {
+                    if !matches!(ty, Ty::Array { .. }) || out.iter().any(|c| c.merge == merge && c.k == k) {
                         continue;
                     }
                     let Some(next) = self.pair_source(state, k) else {
@@ -609,16 +651,54 @@ impl<'a> FnEmit<'a> {
                         && device_only(next)
                         && views.iter().all(|&v| device_only(v))
                     {
+                        // `range-cell`: `next` is a range cell over this
+                        // state's own view (so its buffer holds the cells off
+                        // the interval).
+                        let range = self
+                            .ir
+                            .in_edges(next)
+                            .first()
+                            .and_then(|&m| Some((m, cells.get(m)?)))
+                            .filter(|(_, c)| c.range.is_some_and(|ou| views.contains(&c.caps[ou.slot as usize])));
+                        // The state rides the device for the range cell alone
+                        // only when something else holds it there: a device
+                        // site reading the state, or an operand of the cell
+                        // made on the device (else the host keeps it).
+                        if let Some((_, c)) = range {
+                            // A site reading the state (a view, or the written
+                            // state, which shares the buffer) — a cell reader
+                            // is no support: it is on the device only because
+                            // the state is (an island the host would keep).
+                            let read_by_site = |o: ObjectId| {
+                                sites.iter().any(|(m, site)| {
+                                    let src = self.ir.morphism(m).expect("site").source;
+                                    site.reads().iter().any(|&k| self.pair_source(src, k) == Some(o))
+                                })
+                            };
+                            let other = views.iter().any(|&v| read_by_site(v)) || read_by_site(next);
+                            let fed = c.operands().iter().any(|&(o, _)| {
+                                !views.contains(&o) && (site_out(o) || out.iter().any(|x| x.views.contains(&o)))
+                            });
+                            if !other && !fed {
+                                continue;
+                            }
+                        }
+                        let inplace = range.is_some();
                         out.push(Carry {
                             merge,
                             k,
                             next,
                             views,
                             exit,
+                            inplace,
                         });
                     }
                 }
             }
+        }
+        if out.len() == found {
+            break;
+        }
         }
         out
     }
@@ -832,7 +912,9 @@ impl<'a> FnEmit<'a> {
             let Some(&rs) = region.get(s) else {
                 continue;
             };
-            if !l.rungs.epilogue {
+            // A retained output (S53) updates one row a trip: its group's
+            // members would keep the full launch's stale rows.
+            if !l.rungs.epilogue || self.retain.contains_key(target(s)) {
                 continue;
             }
             let c = target(s);
@@ -1010,12 +1092,14 @@ impl<'a> FnEmit<'a> {
         let Ty::Array { elem, .. } = self.obj_ty(morph.target) else {
             return None;
         };
-        // `uniform`. ponytail: an in-place range map over a uniform's cells
-        // (`map_law` piecewise, `Outside`) stays the host's range write; a
-        // whole-extent cell would rewrite every cell per trip. A device range
-        // cell is item 1c.
+        // `uniform`: an in-place range map over a uniform's cells (`map_law`
+        // piecewise, `Outside`) is no whole-extent cell (it would rewrite
+        // every cell per trip); under `range-cell` it is a cell over its
+        // interval, written in its state's buffer (`range_in_place`).
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        let piecewise = || matches!(self.ir.map_law(m), Some(ElemSrc::Apply { outside: Some(_), .. }));
+        let range = if rungs.range_cell { self.range_in_place(m) } else { None };
+        let piecewise =
+            || range.is_none() && matches!(self.ir.map_law(m), Some(ElemSrc::Apply { outside: Some(_), .. }));
         // `nest-cell`: a body folding over captured arrays, unless the map is
         // a tile or row-fold site (their own kernels).
         let nest = !site.nested.is_empty();
@@ -1054,8 +1138,12 @@ impl<'a> FnEmit<'a> {
             } else {
                 Vec::new()
             };
+        let tag = match range.is_some() {
+            false => self.fnames[body].clone(),
+            r => format!("{}|range={r}|lanes=1", self.fnames[body]),
+        };
         let cell = Cell {
-            id: gpu::cell_id(&self.fnames[body], site.extent, self.profile),
+            id: gpu::cell_id(&tag, site.extent, self.profile),
             body,
             n: site.extent,
             mapped: loaded.then_some(mapped),
@@ -1063,9 +1151,109 @@ impl<'a> FnEmit<'a> {
             laws,
             uniform: site.uniform.clone(),
             nested: site.nested.clone(),
+            range,
+            dev: Vec::new(),
         };
-        // The output, then every operand and uniform: one 8-byte argument each.
-        (cell.operands().len() + cell.uniform.len() < gpu::LAUNCHV_MAX).then_some(cell)
+        // The output, then every operand and uniform (and an interval's start
+        // and count): one 8-byte argument each.
+        let extra = if range.is_some() { 2 } else { 0 };
+        (cell.operands().len() + cell.uniform.len() + extra < gpu::LAUNCHV_MAX).then_some(cell)
+    }
+
+    /// `trip-batch` (from [`CategoryIr::trip_split`]): each loop whose first
+    /// interval is skippable and every batched write of which is a range
+    /// cell of whole rows (`len = d`) over its own carry, its one uniform the
+    /// counter and every other operand a carry view of the loop (so at entry
+    /// each is its carry's buffer).
+    fn batches(&self, cells: &SecondaryMap<MorphismId, Cell>, carries: &[Carry]) -> Vec<Batch> {
+        let mut out = Vec::new();
+        'loops: for ts in self.ir.trip_split(self.f) {
+            let Some(p) = ts.phases.first().filter(|p| p.skip && !p.batched.is_empty()) else {
+                continue;
+            };
+            let carried = |o: ObjectId| carries.iter().any(|c| c.merge == ts.merge && c.views.contains(&o));
+            let mut writes = Vec::new();
+            for &(_, m) in &p.batched {
+                let Some(c) = cells.get(m) else { continue 'loops };
+                let Some(ou) = c.range else { continue 'loops };
+                let Some(e) = ou.e else { continue 'loops };
+                let [u] = c.uniform[..] else { continue 'loops };
+                let start = (p.lo + ou.b).checked_mul(ou.d as i64);
+                let count = (p.hi - 1 - p.lo).checked_mul(ou.d as i64);
+                let ok = ou.len == ou.d
+                    && c.caps[u as usize] == e
+                    && c.mapped.is_none()
+                    && c.laws.is_empty()
+                    && (0..c.caps.len() as u32).all(|s| s == u || carried(c.caps[s as usize]))
+                    && start.zip(count).is_some_and(|(s, n)| s >= 0 && n > 0 && (s + n) as u64 <= c.n);
+                if !ok {
+                    continue 'loops;
+                }
+                let id = gpu::cell_id(&format!("{}|batch", self.fnames[c.body]), c.n, self.profile);
+                let (s, n) = (start.expect("start") as u64, count.expect("count") as u64);
+                writes.push((m, id, s, n, u, ou.d, ou.b));
+            }
+            out.push(Batch { merge: ts.merge, counter: ts.counter, enter: p.hi - 1, writes });
+        }
+        out
+    }
+
+    /// `trip-batch` at the loop entry (after the carries hold their init):
+    /// the batched writes, then the counter set to the interval's last trip.
+    pub(crate) fn trip_batch(&mut self, merge: ObjectId) {
+        let Some(b) = self.resident.as_ref().and_then(|p| p.batch.iter().find(|b| b.merge == merge)).cloned() else {
+            return;
+        };
+        for &(m, id, start, count, _, _, _) in &b.writes {
+            let c = self.resident.as_ref().expect("plan").cells[m].clone();
+            let target = self.ir.morphism(m).expect("cell").target;
+            let mut ptrs = vec![self.dload(target)];
+            for (s, &o) in c.caps.iter().enumerate() {
+                if !c.uniform.contains(&(s as u32)) {
+                    ptrs.push(self.dload(o));
+                }
+            }
+            ptrs.push(start.to_string());
+            ptrs.push(count.to_string());
+            let args = format!("%dv{}", self.fresh());
+            let np = ptrs.len();
+            self.allocas.push_str(&format!("  {args} = alloca [{np} x i64]\n"));
+            for (i, p) in ptrs.iter().enumerate() {
+                let g = self.tmp();
+                self.line(format!("{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"));
+                self.line(format!("store i64 {p}, ptr {g}"));
+            }
+            let (gx, block) = gpu::cell_grid(count);
+            self.line(format!(
+                "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
+                id as i64
+            ));
+        }
+        let (llt, ptr) = self.component_ptr(merge, b.counter).expect("counter slot");
+        self.line(format!("; mapal.batch enter={} writes={}", b.enter, b.writes.len()));
+        self.line(format!("store {llt} {}, ptr {ptr}", b.enter));
+    }
+
+    /// `range-cell`'s legality: `m` is a piecewise map ([`mapal_ir::Outside`])
+    /// over a loop state's view whose output is that state's next value, and
+    /// no view of the state is read after `m` — the trip writes its state in
+    /// place, so its cells off the interval are already the state's.
+    fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
+        let Some(ElemSrc::Apply { outside: Some(ou), source, .. }) = self.ir.map_law(m) else {
+            return None;
+        };
+        let arr = self.pair_source(source, ou.slot)?;
+        let target = self.ir.morphism(m)?.target;
+        let view = self.ir.morphism(*self.ir.in_edges(arr).first()?)?;
+        let Operation::Proj { index: k } = view.op else {
+            return None;
+        };
+        let merge = view.source;
+        let plan = self.ir.loop_plan(self.f, merge)?;
+        let state = self.pair_source(plan.back_route, 0)?;
+        (self.pair_source(state, k) == Some(target)
+            && self.lup.view_dead_after(arr, self.lup.position(m)?))
+        .then_some(ou)
     }
 
     /// `cell-law`'s fact: the captures of a cell over an `iota` that are
@@ -1126,13 +1314,17 @@ impl<'a> FnEmit<'a> {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
         if !rungs.rowfold
             || !rungs.by_ref
-            || sites.is_empty()
+            || (sites.is_empty() && !rungs.scalar_fold)
             || (!rungs.retained_fold && !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty())
         {
             return Vec::new();
         }
         let mut out = Vec::new();
-        for (m, site) in self.ir.row_fold(self.f).iter() {
+        // `scalar-fold`: a whole fold is a row fold of one row, a candidate
+        // over a cell's output too (no tile site needed).
+        let whole = if rungs.scalar_fold { self.ir.whole_fold(self.f) } else { SecondaryMap::new() };
+        let rows = if sites.is_empty() { SecondaryMap::new() } else { self.ir.row_fold(self.f) };
+        for (m, site) in rows.iter().chain(whole.iter()) {
             let window = site.w > 1 || site.a.ksplit.is_some();
             if sites.contains_key(m) || !is_float(&site.elem) || site.k == 0 || (window && !rungs.window) {
                 continue;
@@ -1242,7 +1434,11 @@ impl<'a> FnEmit<'a> {
                     let t = self.ir.morphism(*m).expect("cell").target;
                     let host = || self.uses(sites, cells, t, &[]).contains(&Use::Host);
                     let walked = |o| !c.nested.is_empty() && iota(o);
-                    !ops.iter().all(|&(o, _)| there(o) || walked(o))
+                    // `range-cell`: written in place, so only into an
+                    // in-place carry's buffer.
+                    let homeless = c.range.is_some() && !carries.iter().any(|k| k.inplace && k.next == t);
+                    homeless
+                        || !ops.iter().all(|&(o, _)| there(o) || walked(o))
                         || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
                 })
                 .map(|(m, _)| m)
@@ -1252,9 +1448,17 @@ impl<'a> FnEmit<'a> {
                 .copied()
                 .filter(|&m| sites.contains_key(m))
                 .filter(|&m| {
-                    let src = self.ir.morphism(m).expect("fold").source;
+                    let fold = self.ir.morphism(m).expect("fold");
                     let a = sites[m].reads()[0];
-                    !self.pair_source(src, a).is_some_and(device_only)
+                    // `scalar-fold`: a whole fold rides only on an array the
+                    // device holds for its own sake — not a closed-form cell
+                    // (no operand), which is there only because its readers
+                    // are (that support is circular: the host builds it).
+                    let whole = matches!(fold.op, Operation::Fold { .. });
+                    let closed = |o: ObjectId| {
+                        self.ir.in_edges(o).first().and_then(|&p| cells.get(p)).is_some_and(|c| c.operands().is_empty())
+                    };
+                    !self.pair_source(fold.source, a).is_some_and(|o| device_only(o) && !(whole && closed(o)))
                 })
                 .collect();
             (drop, unfed, carries)
@@ -1292,14 +1496,32 @@ impl<'a> FnEmit<'a> {
         let (devgen, arena) = (rungs.devgen, rungs.arena);
         let mut sites = self.device_sites();
         let folds = self.fold_candidates(&mut sites);
-        let (cells, carries) = self.cell_sites(&mut sites, &folds, devgen);
+        let (mut cells, carries) = self.cell_sites(&mut sites, &folds, devgen);
         if sites.is_empty() && cells.is_empty() {
             return None;
+        }
+        // `scalar-fold`: a uniform a device whole fold produces is read in
+        // the cell from its buffer.
+        for c in cells.values_mut() {
+            c.dev = c
+                .uniform
+                .iter()
+                .copied()
+                .filter(|&s| {
+                    self.ir.in_edges(c.caps[s as usize]).first().is_some_and(|&p| {
+                        matches!(sites.get(p), Some(DevSite::RowFold(r)) if r.site.rows == 1
+                            && matches!(self.ir.morphism(p).map(|x| x.op), Some(Operation::Fold { .. })))
+                    })
+                })
+                .collect();
         }
         let mut plan = ResidentPlan {
             carries,
             ..ResidentPlan::default()
         };
+        if rungs.trip_batch {
+            plan.batch = self.batches(&cells, &plan.carries);
+        }
         for (m, site) in sites.iter() {
             if let DevSite::RowFold(r) = site {
                 plan.rowfold.insert(m, r.clone());
@@ -1966,8 +2188,13 @@ impl<'a> FnEmit<'a> {
         d
     }
 
+    /// An array's bytes; a number's own (`scalar-fold`: a whole fold's
+    /// one-element device buffer).
     pub(super) fn array_bytes(&self, ty: &Ty) -> u64 {
-        array_len(ty) * crate::profile::elem_bytes(array_elem(ty))
+        match ty {
+            Ty::Float { .. } | Ty::Int { .. } => crate::profile::elem_bytes(ty),
+            _ => array_len(ty) * crate::profile::elem_bytes(array_elem(ty)),
+        }
     }
 
     /// Replaces the host realization of `m` (a device-built or unread
@@ -2012,9 +2239,17 @@ impl<'a> FnEmit<'a> {
         let morph = self.ir.morphism(m).expect("morphism resolves");
         let (source, target) = (morph.source, morph.target);
         let bytes = self.array_bytes(&self.obj_ty(target));
-        let mut ptrs = vec![self.dalloc(target, bytes)];
+        // `range-cell`: the output is the state's carry buffer (its alias).
+        let out = if c.range.is_some() { self.dload(target) } else { self.dalloc(target, bytes) };
+        let mut ptrs = vec![out];
         let mut temps = Vec::new();
         for (o, slot, uniform) in c.args() {
+            if let (true, Some(u)) = (uniform, slot)
+                && c.dev.contains(&u)
+            {
+                ptrs.push(self.dload(o));
+                continue;
+            }
             if let (true, Some(u)) = (uniform, slot) {
                 let (t, v) = self.load_component(source, u).expect("uniform loads");
                 let w = self.tmp();
@@ -2044,6 +2279,26 @@ impl<'a> FnEmit<'a> {
             temps.push(s);
             ptrs.push(d);
         }
+        // `range-cell`: the interval met with `[0, n)` — its start and count
+        // by value, one block row per 256 of its cells (at least one block).
+        let gx_dyn = c.range.map(|ou| {
+            let (lo, hi) = self.range_bounds(&ou, c.n);
+            let (span, up, cnt) = (self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{span} = sub i64 {hi}, {lo}"));
+            self.line(format!("{up} = add i64 {span}, {}", ou.step - 1));
+            self.line(format!("{cnt} = udiv i64 {up}, {}", ou.step));
+            ptrs.push(lo);
+            ptrs.push(cnt.clone());
+            let (thr, blk, b1, z, one, gx) =
+                (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{thr} = mul i64 {cnt}, 1"));
+            self.line(format!("{blk} = add i64 {thr}, 255"));
+            self.line(format!("{b1} = udiv i64 {blk}, 256"));
+            self.line(format!("{z} = icmp eq i64 {b1}, 0"));
+            self.line(format!("{one} = select i1 {z}, i64 1, i64 {b1}"));
+            self.line(format!("{gx} = trunc i64 {one} to i32"));
+            gx
+        });
         let args = format!("%dv{}", self.fresh());
         let np = ptrs.len();
         self.allocas
@@ -2056,6 +2311,7 @@ impl<'a> FnEmit<'a> {
             self.line(format!("store i64 {p}, ptr {g}"));
         }
         let (gx, block) = gpu::cell_grid(c.n);
+        let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
             c.id as i64
@@ -2094,7 +2350,7 @@ impl<'a> FnEmit<'a> {
         };
         plan.cells
             .iter()
-            .map(|(m, c)| {
+            .flat_map(|(m, c)| {
                 let morph = self.ir.morphism(m).expect("cell morphism");
                 let (out, _) = array_parts(&self.obj_ty(morph.target));
                 let input = self.obj_ty(self.ir.func(c.body).expect("cell body").input);
@@ -2107,19 +2363,16 @@ impl<'a> FnEmit<'a> {
                     .map(|&(s, _)| (s, array_parts(&self.obj_ty(c.caps[s as usize])).0))
                     .collect();
                 let name = &self.fnames[c.body];
-                let mut fns = vec![(
-                    if vals.is_empty() {
-                        name.clone()
-                    } else {
-                        gpu::cell_variant(name)
-                    },
-                    self.body_text(c.body, vals.clone()),
-                )];
+                let name = if vals.is_empty() { name.clone() } else { gpu::cell_variant(name) };
+                let mut fns = vec![(name, self.body_text(c.body, vals.clone()))];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
                         if c.uniform.contains(&s) {
                             let t = lower_ty(&self.obj_ty(c.caps[s as usize]))
                                 .expect("a number uniform lowers");
+                            if c.dev.contains(&s) {
+                                return gpu::CapArg::Dev(t);
+                            }
                             return gpu::CapArg::Uniform(t);
                         }
                         let Some(&(_, law)) = c.laws.iter().find(|&&(x, _)| x == s) else {
@@ -2136,12 +2389,30 @@ impl<'a> FnEmit<'a> {
                 }
                 // The facts the kernel was built from, for its `; mapal.plan`.
                 let work = self.ir.cell_plan(self.f).get(m).map_or(1, |x| x.work);
+                let geo = gpu::CellGeo { range: c.range.map(|ou| ou.step) };
+                let mut facts = format!("nested={} work={work}", c.nested.len());
+                if let Some(ou) = c.range {
+                    facts.push_str(&format!(" range={}x{}", ou.step, ou.len.min(c.n)));
+                }
+                if !c.dev.is_empty() {
+                    facts.push_str(&format!(" dev={}", c.dev.len()));
+                }
                 let kernel = format!(
-                    "; mapal.cell nested={} work={work}\n{}",
-                    c.nested.len(),
-                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps)
+                    "; mapal.cell {facts}\n{}",
+                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, geo)
                 );
-                (fns, kernel)
+                // `trip-batch`: the same cell over a batch of trips' rows, the
+                // counter each cell's own trip.
+                let batch = plan.batch.iter().flat_map(|b| &b.writes).find(|w| w.0 == m).map(|&(_, id, _, n, u, d, b)| {
+                    let mut caps = caps.clone();
+                    let gpu::CapArg::Uniform(t) = caps[u as usize].clone() else {
+                        unreachable!("the batched counter is a by-value uniform")
+                    };
+                    caps[u as usize] = gpu::CapArg::Trip(t, d, b);
+                    let k = gpu::cell_kernel_text(id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, gpu::CellGeo { range: Some(1) });
+                    (fns.clone(), format!("; mapal.cell nested={} work={work} batch={n}\n{k}", c.nested.len()))
+                });
+                std::iter::once((fns, kernel)).chain(batch).collect::<Vec<_>>()
             })
             .collect()
     }
@@ -2880,6 +3151,7 @@ mod tests {
             next,
             views: vec![view],
             exit: Some(exit),
+            inplace: false,
         });
         for o in [merge, view, exit, output] {
             assert_eq!(plan.stream_of(&ir, &groups, o), 2);

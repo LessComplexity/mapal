@@ -38,6 +38,8 @@ No keep/remove/gate decision stands on timing alone.
 | `elem_plan`, `map_law` (+ `Outside`) | each array's `out[i]` as a closed function of the index; one map's law, piecewise when every cell off a row / range / column / cell is a capture's own (in-place range map) |
 | `bounds_proof`, `proven` | in-bounds indices; droppable trap guards |
 | `guard_plan`, `gated` | per-Phi arm exclusive work; whether an arm must be gated |
+| `trip_split` | per counted loop: the trip intervals guards on the counter cut, each interval's recurrent state slots, the work outside them, batched row writes, whether the first interval's trips but the last can be skipped |
+| `whole_fold` | a fold of the function itself over one affine read (a one-row row fold) |
 | backend: `ResidentPlan`, `arena`, frame slots (`prepare_storage`), `TargetProfile` | device residency, lifetime-colored buffers, host slots/aliases, hardware facts |
 
 New logic starts from this table; if a needed fact is missing, add it to `mapal-ir` (one query, tested) — never

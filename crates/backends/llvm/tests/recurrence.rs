@@ -1,0 +1,195 @@
+//! recurrence-precision item 1: prefill and decode emerge from the loop's
+//! recurrence. The facts (`trip_split`, `whole_fold`) on the bench programs
+//! and on unseen ones; the rungs read off the emitted host IR against their
+//! OFF arms; values on the emulated device against the interpreter.
+
+use mapal_backend_llvm::{EmitOpts, Emission, GpuArms, emit_detailed};
+use mapal_ir::CategoryIr;
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::TestRunner;
+
+mod emu;
+#[path = "../../../mapal-rewrite/tests/testgen/mod.rs"]
+mod testgen;
+
+/// Item 1's rungs.
+const RUNGS: [&str; 3] = ["range-cell", "scalar-fold", "trip-batch"];
+
+/// `rtx-4090`, the exact face unless `free` (the default face), the rungs
+/// `off` forced off (and those the emulator cannot run: `async`, `pdl`,
+/// `streams`).
+fn arm(ir: &CategoryIr, off: &[&str], free: bool) -> Emission {
+    let mut gpu = GpuArms::default();
+    for r in ["async", "pdl", "streams"].iter().chain(off) {
+        *gpu.off.rung(r).expect("rung") = true;
+    }
+    let base = if free { EmitOpts::default() } else { EmitOpts::exact() };
+    emit_detailed(ir, &EmitOpts { host: "generic", target: "rtx-4090", gpu, ..base }).expect("emits")
+}
+
+/// Per program loop (`; mapal.move loop=…` to its latch, in its function):
+/// the trip's `[uploads, copy-outs and device waits]` calls.
+fn trip_calls(ll: &str) -> Vec<[usize; 2]> {
+    let mut out = Vec::new();
+    for f in ll.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else { continue };
+            let back = format!("br label %{}", rest.split_whitespace().next().expect("header"));
+            let latch = (h..lines.len()).rev().find(|&i| lines[i].trim() == back).expect("latch");
+            let n = |k: &str| lines[h..latch].iter().filter(|x| x.contains(k)).count();
+            out.push([n("@mapal_gpu_h2d"), n("@mapal_gpu_d2h") + n("@mapal_gpu_sync(")]);
+        }
+    }
+    out
+}
+
+/// The cell kernels' `; mapal.plan` lines carrying `key` in the device module.
+fn cells_with(dev: &Option<String>, key: &str) -> usize {
+    dev.iter()
+        .flat_map(|d| d.lines())
+        .filter(|l| l.starts_with("; mapal.plan ") && l.contains(" kind=cell ") && l.contains(key))
+        .count()
+}
+
+fn lower_src(src: &str) -> CategoryIr {
+    let po = mapal_syntax::parse(src);
+    assert!(po.diagnostics.is_empty(), "parse: {:?}", po.diagnostics);
+    let ir = mapal_lower::lower(src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}"));
+    mapal_rewrite::rewrite(ir).ir
+}
+
+fn bench(name: &str) -> String {
+    let p = format!("{}/../../../benches/algorithms/{name}.mapal", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{p}: {e}"))
+}
+
+/// The trip split of the four attention loops: decode and causal are one
+/// recurrent interval (`x` row t reads `o` of trip t − 1, `o` reads `x`);
+/// prefill's loop is the same from t = 8; the natural one-loop generator is
+/// cut at its prompt guard — the prompt interval has no recurrence, `x` is
+/// batched there and its trips but the last are skippable.
+#[test]
+fn trip_split_of_the_attention_loops() {
+    for (name, lo, phases) in [("decode_16_8", 0, 1), ("causal_16_8", 0, 1), ("prefill_16_8_8", 8, 1), ("gen_16_8_8", 0, 2)] {
+        let ir = lower_src(&bench(name));
+        let ts = ir.trip_split(ir.entry());
+        assert_eq!(ts.len(), 1, "{name}: {ts:?}");
+        let s = &ts[0];
+        assert_eq!((s.lo, s.hi, s.phases.len()), (lo, 16, phases), "{name}: {s:?}");
+        let last = s.phases.last().expect("a phase");
+        assert_eq!(last.recurrent.len(), 2, "{name}: x and o recur: {last:?}");
+        assert!(last.batched.is_empty() && !last.skip, "{name}: {last:?}");
+        assert!(!last.outside.is_empty(), "{name}: q is outside the recurrence: {last:?}");
+        if phases == 2 {
+            let p = &s.phases[0];
+            assert_eq!((p.lo, p.hi), (0, 8), "{name}: {p:?}");
+            assert!(p.recurrent.is_empty() && p.batched.len() == 1 && p.skip, "{name}: {p:?}");
+        }
+    }
+}
+
+/// Item 1b on the attention loops: with `range-cell` and `scalar-fold` every
+/// recurrent node is on the device — the steady trip uploads and copies out
+/// nothing and never waits on the device — where their OFF arm moves per trip.
+#[test]
+fn the_attention_trips_never_sync() {
+    for name in ["decode_16_8", "causal_16_8", "prefill_16_8_8", "gen_16_8_8"] {
+        let ir = lower_src(&bench(name));
+        let (on, off) = (arm(&ir, &[], true), arm(&ir, &RUNGS, true));
+        let (con, coff) = (trip_calls(&on.text), trip_calls(&off.text));
+        assert_eq!(con, [[0, 0]], "{name}: per trip ON");
+        assert!(coff.iter().all(|c| c[0] + c[1] > 0), "{name}: per trip OFF {coff:?}");
+    }
+}
+
+/// `whole_fold`: causal's `mx` (a running max) and `den` (a sum) are whole
+/// folds of one row; decode has none.
+#[test]
+fn whole_folds_of_a_trip() {
+    let ir = lower_src(&bench("causal_16_8"));
+    let w = ir.whole_fold(ir.entry());
+    let mut ops: Vec<_> = w.values().map(|s| (s.rows, s.k, s.a.ck, matches!(s.op, mapal_ir::RowFoldOp::Select { .. }))).collect();
+    ops.sort_by_key(|o| o.3);
+    assert_eq!(ops, [(1, 16, 1, false), (1, 16, 1, true)], "{w:?}");
+    let ir = lower_src(&bench("decode_16_8"));
+    assert!(ir.whole_fold(ir.entry()).is_empty());
+}
+
+/// **Item 1's rungs on unseen programs** (testgen `recur_prog_strategy`:
+/// row-recurrent loops — a natural row write fed by the previous trip's row,
+/// a prompt guard on the counter, sites, guarded scores, whole folds read back
+/// per cell, vector·matrix cells): against the arm with `range-cell`,
+/// `scalar-fold` and `trip-batch` off, each rule fires (counted from the
+/// emission: a range cell, a cell reading a device fold, a batched entry) and
+/// never in the OFF arm; per trip no more uploads or copy-outs than OFF, and
+/// fewer over all programs; the emulated device prints the interpreter's
+/// values on both arms and moves no more bytes per run.
+#[test]
+fn recurrence_rungs_on_unseen_programs() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP recurrence_rungs_on_unseen_programs: clang not found");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::recur_prog_strategy();
+    let (mut fired, mut trips_on, mut trips_off) = ([0usize; 3], 0usize, 0usize);
+    for z in 0..32 {
+        let src = testgen::recur_src(&strat.new_tree(&mut runner).unwrap().current());
+        let ir = lower_src(&src);
+        let want = mapal_interp::run(&ir, 400_000_000).output;
+        let (on, off) = (arm(&ir, &[], false), arm(&ir, &RUNGS, false));
+        let marks = |e: &Emission| {
+            [cells_with(&e.device, " range="), cells_with(&e.device, " dev="), e.text.matches("; mapal.batch ").count()]
+        };
+        assert_eq!(marks(&off), [0; 3], "#{z} OFF\n{src}");
+        for (f, m) in fired.iter_mut().zip(marks(&on)) {
+            *f += m;
+        }
+        let (con, coff) = (trip_calls(&on.text), trip_calls(&off.text));
+        assert_eq!(con.len(), coff.len(), "#{z}\n{src}");
+        for (a, b) in con.iter().zip(&coff) {
+            assert!(a[0] <= b[0] && a[1] <= b[1], "#{z}: per trip {a:?} > OFF {b:?}\n{src}");
+            trips_on += a[0] + a[1];
+            trips_off += b[0] + b[1];
+        }
+        if let (Some(a), Some(b)) = (on.device.as_deref(), off.device.as_deref()) {
+            let run = |h: &str, d: &str, tag: &str| {
+                std::panic::catch_unwind(|| emu::run_emulated_totals(&clang, h, d))
+                    .unwrap_or_else(|_| panic!("#{z} {tag}: the emulated run failed\n{src}"))
+            };
+            let (ra, ta) = run(&on.text, a, "ON");
+            let (rb, tb) = run(&off.text, b, "OFF");
+            assert_eq!(ra, want, "#{z} ON\n{src}");
+            assert_eq!(rb, want, "#{z} OFF\n{src}");
+            assert!(ta[3] + ta[4] <= tb[3] + tb[4], "#{z}: moved {ta:?} > OFF {tb:?}\n{src}");
+        }
+    }
+    eprintln!("recurrence_rungs_on_unseen_programs: fired {fired:?} (range, dev fold, batch); per-trip calls {trips_on} vs OFF {trips_off}");
+    assert!(fired.iter().all(|&f| f > 0), "a rule fired on no generated program: {fired:?}");
+    assert!(trips_on < trips_off, "no per-trip call saved: {trips_on} vs {trips_off}");
+}
+
+/// **The natural generator is prefill's twin**: `gen_16_8_8` (one loop from
+/// t = 0, a guard `t < 8` picking the prompt row) against `prefill_16_8_8`
+/// (the prompt's attention written out before a loop from t = 8), on the
+/// emulated device: the same outputs, and the natural form moves no more
+/// (uploads, copy-outs and their bytes per run).
+#[test]
+fn the_natural_generator_is_prefills_twin() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP the_natural_generator_is_prefills_twin: clang not found");
+        return;
+    };
+    let run = |name: &str| {
+        let e = arm(&lower_src(&bench(name)), &[], false);
+        emu::run_emulated_totals(&clang, &e.text, e.device.as_deref().expect("a device module"))
+    };
+    let ((go, gt), (po, pt)) = (run("gen_16_8_8"), run("prefill_16_8_8"));
+    let lines = |o: &str| o.lines().take(3).map(str::to_string).collect::<Vec<_>>();
+    assert_eq!(lines(&go), lines(&po), "the twins' outputs");
+    eprintln!("gen {gt:?} vs prefill {pt:?} ([h2d, d2h, launches, bytes in, bytes out] per run)");
+    for i in [0, 1, 3, 4] {
+        assert!(gt[i] <= pt[i], "gen moves more: {gt:?} vs prefill {pt:?}");
+    }
+}
