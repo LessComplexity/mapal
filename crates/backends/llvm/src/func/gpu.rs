@@ -303,7 +303,7 @@ pub(crate) fn tile_plan(
     // site the tile refuses keeps the `nest-cell` it had).
     if rungs.radix_tile {
         for (m, s) in ir.tile_plan_radix(f) {
-            let staged = launch(&s, profile, true, crate::GpuArms::default(), None).tiled.is_some();
+            let staged = launch(&s, profile, true, crate::GpuArms::default()).tiled.is_some();
             if staged && gpu_site(&s, profile, rungs.window) {
                 plan.sites.insert(m, s);
             }
@@ -440,7 +440,6 @@ pub(crate) fn launch(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
 ) -> Launch {
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
@@ -462,14 +461,16 @@ pub(crate) fn launch(
     };
     // Attempt tensor geometry under its own policy. Permission alone is not
     // an emitted face: rejection must fall through to the scalar policy.
-    if reduced == Some(Reduced::Tf32)
+    // recurrence-precision `tf32-tile`: the permission is the site's product
+    // set (ADR-0041 D6); off, the f32 FFMA tile it also admits.
+    if site_reduced(site) == Some(Reduced::Tf32)
         && site.elem == Ty::f32()
         && shaped
         && vector_a(site)
         && vector_b(site)
     {
         let rungs = rungs_at(profile, wps, Face::Tf32, arms);
-        if rungs.mma {
+        if rungs.mma && rungs.tf32_tile {
             let wgmma = rungs
                 .wgmma
                 .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
@@ -679,6 +680,11 @@ fn plan_line(
         let on: Vec<&str> = parts.iter().filter(|(_, x)| x.is_some()).map(|(n, _)| *n).collect();
         f += &format!(" radix={}", on.join(","));
     }
+    // recurrence-precision `tf32-tile`: the site's product set when it admits
+    // TF32 (ADR-0041 D5 `set`, intent.py `tf32-tile`); f32-only lines unchanged.
+    if site.tf32 {
+        f += " set=tf32|f32";
+    }
     let (c, s, ctas, iters) = match combine {
         Combine::None => ("none", 1, 0, 0),
         Combine::Workspace { s } => ("splitk", s, 0, 0),
@@ -737,10 +743,9 @@ pub(crate) fn launch_in(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
     order: Order,
 ) -> Launch {
-    let mut l = launch(site, profile, contract, arms, reduced);
+    let mut l = launch(site, profile, contract, arms);
     l.combine = combine(&l, site, profile, order, arms);
     l
 }
@@ -882,7 +887,14 @@ fn elem_bytes_of(elem: &Ty) -> u64 {
 /// The site as its kernel ids key it: its `Debug` text, a plain site's
 /// without the `radix` field it lacks (ids from before `radix-tile` stand).
 fn site_key(site: &TileSite) -> String {
-    format!("{site:?}").replace(", radix: None", "")
+    format!("{site:?}").replace(", radix: None", "").replace(", tf32: false", "")
+}
+
+/// ADR-0041 D6: the reduced realization a site's products admit — `tf32` in
+/// `precision_plan.set` of its product ([`TileSite::tf32`]) — keyed from the
+/// program, never a flag (D7).
+pub(crate) fn site_reduced(site: &TileSite) -> Option<Reduced> {
+    site.tf32.then_some(Reduced::Tf32)
 }
 
 /// A stable id for a site's kernel: FNV-1a over everything the kernel text
@@ -892,9 +904,8 @@ pub(crate) fn kernel_id(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
-    reduced: Option<Reduced>,
 ) -> u64 {
-    kernel_id_with(site, profile, contract, reduced, None)
+    kernel_id_with(site, profile, contract, None)
 }
 
 /// [`kernel_id`] of a site whose store evaluates `epi` (S54): the key also
@@ -903,10 +914,9 @@ pub(crate) fn kernel_id_with(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
-    reduced: Option<Reduced>,
     epi: Option<&EpiKernel>,
 ) -> u64 {
-    let mut key = format!("{}|{}|{contract}|{reduced:?}", site_key(site), profile.name);
+    let mut key = format!("{}|{}|{contract}|{:?}", site_key(site), profile.name, site_reduced(site));
     if let Some(e) = epi {
         key.push_str(&format!("|{e:?}"));
     }
@@ -921,13 +931,12 @@ pub(crate) fn kernel_id_col(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
-    reduced: Option<Reduced>,
     col: bool,
 ) -> u64 {
     if !col {
-        return kernel_id(site, profile, contract, reduced);
+        return kernel_id(site, profile, contract);
     }
-    let key = format!("{}|{}|{contract}|{reduced:?}|col", site_key(site), profile.name);
+    let key = format!("{}|{}|{contract}|{:?}|col", site_key(site), profile.name, site_reduced(site));
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -942,10 +951,9 @@ pub(crate) fn kernel_id_split(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
-    reduced: Option<Reduced>,
     part: &str,
 ) -> u64 {
-    let key = format!("{}|{}|{contract}|{reduced:?}|{part}", site_key(site), profile.name);
+    let key = format!("{}|{}|{contract}|{:?}|{part}", site_key(site), profile.name, site_reduced(site));
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -1411,7 +1419,6 @@ pub(crate) fn device_module(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
     order: Order,
     gens: &[GenKernel],
     epis: &[EpiSite],
@@ -1422,6 +1429,8 @@ pub(crate) fn device_module(
     live: &std::collections::BTreeSet<String>,
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
+    // The module's reduced face, for the evidence header: any kernel realized on the tensor cores (ADR-0041 D6).
+    let mut reduced = None;
     for (f, _) in ir.funcs() {
         let rungs = host_rungs(profile, contract, arms);
         let plan = tile_plan(ir, f, profile, rungs);
@@ -1429,7 +1438,7 @@ pub(crate) fn device_module(
         // A retained site's restricted pass (S53) launches its one-row kernel.
         let retained = super::retain::retained_sites(ir, f, profile, rungs);
         // S54 `rowfold`: the device folds, and the sites that store for them.
-        let folds = super::rowfold::rowfold_sites(ir, f, profile, contract, arms, reduced);
+        let folds = super::rowfold::rowfold_sites(ir, f, profile, contract, arms);
         let col = |m: MorphismId| folds.values().any(|r| r.colmajor == Some(m));
         // A grouped site (S54 `epilogue`) launches its epilogue kernel instead.
         let sites = plan
@@ -1445,7 +1454,11 @@ pub(crate) fn device_module(
             .map(|(_, r)| (&r.row, false, false));
         for (site, col, whole) in sites.chain(rows) {
             if gpu_site(site, profile, rungs.window) {
-                let name = kernel_name(kernel_id_col(site, profile, contract, reduced, col));
+                let l = launch(site, profile, contract, arms);
+                if l.mma.is_some() || l.wgmma.is_some() {
+                    reduced = site_reduced(site);
+                }
+                let name = kernel_name(kernel_id_col(site, profile, contract, col));
                 kernels.entry(name.clone()).or_insert_with(|| {
                     kernel_text(
                         &name,
@@ -1453,7 +1466,6 @@ pub(crate) fn device_module(
                         profile,
                         contract,
                         arms,
-                        reduced,
                         col,
                         None,
                         Combine::None,
@@ -1462,11 +1474,11 @@ pub(crate) fn device_module(
                 // S62/S63 (ADR-0040 D4): a whole site whose fold is cut gets
                 // its combine kernels too; the host picks per function
                 // (resident, no epilogue, one stream), so the ordered one stays.
-                let c = launch_in(site, profile, contract, arms, reduced, order).combine;
+                let c = launch_in(site, profile, contract, arms, order).combine;
                 if !whole || col || c == Combine::None {
                     continue;
                 }
-                let id = |part| kernel_name(kernel_id_split(site, profile, contract, reduced, part));
+                let id = |part| kernel_name(kernel_id_split(site, profile, contract, part));
                 let part = match c {
                     Combine::Workspace { .. } => "splitk",
                     Combine::Atomic { .. } => "atomic",
@@ -1474,13 +1486,13 @@ pub(crate) fn device_module(
                 };
                 let k = id(part);
                 kernels.entry(k.clone()).or_insert_with(|| {
-                    kernel_text(&k, site, profile, contract, arms, reduced, false, None, c)
+                    kernel_text(&k, site, profile, contract, arms, false, None, c)
                 });
                 if let Combine::Workspace { s } = c {
                     let red = id("reduce");
                     kernels.entry(red.clone()).or_insert_with(|| {
                         format!("; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n", site.rows, site.c)
-                            + &reduce_kernel_text(&red, site, profile, contract, arms, reduced, s)
+                            + &reduce_kernel_text(&red, site, profile, contract, arms, s)
                     });
                 }
             }
@@ -1511,7 +1523,11 @@ pub(crate) fn device_module(
         });
     }
     for e in epis {
-        let id = kernel_id_with(&e.site, profile, contract, reduced, Some(&e.k));
+        let l = launch(&e.site, profile, contract, arms);
+        if l.mma.is_some() || l.wgmma.is_some() {
+            reduced = site_reduced(&e.site);
+        }
+        let id = kernel_id_with(&e.site, profile, contract, Some(&e.k));
         let name = kernel_name(id);
         kernels.entry(name.clone()).or_insert_with(|| {
             kernel_text(
@@ -1520,7 +1536,6 @@ pub(crate) fn device_module(
                 profile,
                 contract,
                 arms,
-                reduced,
                 false,
                 Some(&e.k),
                 Combine::None,
@@ -1535,9 +1550,10 @@ pub(crate) fn device_module(
     let mut out = String::from("; mapal-backend-llvm device module\n");
     // S64 evidence: the module's face (each kernel's facts: `; mapal.plan`).
     out.push_str(&format!(
-        "; mapal.device target={} fma={} order={order:?} reduced={reduced:?}\n",
+        "; mapal.device target={} fma={} order={order:?} reduced={:?}\n",
         profile.name,
-        u8::from(contract)
+        u8::from(contract),
+        reduced
     ));
     out.push_str(DEVICE_PREAMBLE);
     let mut md = String::new();
@@ -1652,13 +1668,12 @@ fn kernel_text(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
     col: bool,
     epi: Option<&EpiKernel>,
     combine: Combine,
 ) -> String {
-    let mut k = kernel(site, profile, contract, arms, reduced, col, epi, combine);
-    let l = launch(site, profile, contract, arms, reduced);
+    let mut k = kernel(site, profile, contract, arms, col, epi, combine);
+    let l = launch(site, profile, contract, arms);
     debug_assert!(
         !col || col_store(&l, site),
         "a column-major store this kernel has"
@@ -1685,7 +1700,6 @@ fn reduce_kernel_text(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
     s: u64,
 ) -> String {
     let mut k = kernel(
@@ -1693,7 +1707,6 @@ fn reduce_kernel_text(
         profile,
         contract,
         arms,
-        reduced,
         false,
         None,
         Combine::Workspace { s },
@@ -1738,12 +1751,11 @@ fn kernel<'s>(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<Reduced>,
     col: bool,
     epi: Option<&'s EpiKernel>,
     combine: Combine,
 ) -> Kernel<'s> {
-    let l = launch(site, profile, contract, arms, reduced);
+    let l = launch(site, profile, contract, arms);
     let rungs = l.rungs;
     let splitk = combine.splits();
     // `idx32` is an FMA / one-thread-per-cell rung: the tensor-core kernels
@@ -3902,13 +3914,12 @@ impl<'a> FnEmit<'a> {
             // (none when a fold is its only reader: `col` and a group exclude).
             let epi = self.epi_kernel(m);
             let id = if col {
-                kernel_id_col(site, self.profile, self.contract, self.reduced, true)
+                kernel_id_col(site, self.profile, self.contract, true)
             } else {
                 kernel_id_with(
                     site,
                     self.profile,
                     self.contract,
-                    self.reduced,
                     epi.as_ref(),
                 )
             } as i64;
@@ -3917,7 +3928,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
                 self.order,
             );
             let cells = site.rows * site.c;
@@ -3940,7 +3950,7 @@ impl<'a> FnEmit<'a> {
             };
             if let Some((part, geom, tag)) = atomic {
                 let aid =
-                    kernel_id_split(site, self.profile, self.contract, self.reduced, part) as i64;
+                    kernel_id_split(site, self.profile, self.contract, part) as i64;
                 self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], None, |ops, o| {
                     format!(
                         "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
@@ -3961,7 +3971,7 @@ impl<'a> FnEmit<'a> {
             if let Combine::Workspace { s } = l.combine
                 && combined
             {
-                let id = |r| kernel_id_split(site, self.profile, self.contract, self.reduced, r);
+                let id = |r| kernel_id_split(site, self.profile, self.contract, r);
                 let (sid, rid) = (id("splitk") as i64, id("reduce") as i64);
                 let (rgx, rblock) = cell_grid(cells);
                 let bytes = s * bytes_o;
@@ -4050,13 +4060,12 @@ impl<'a> FnEmit<'a> {
         let o_ptr = self.slot(target).expect("tile output slot");
         // LLVM reads an `i64` literal as signed; the runtime prints the same
         // 64 bits back as hex, so the two units agree on the name.
-        let id = kernel_id(site, self.profile, self.contract, self.reduced) as i64;
+        let id = kernel_id(site, self.profile, self.contract) as i64;
         let l = launch(
             site,
             self.profile,
             self.contract,
             self.gpu_arms,
-            self.reduced,
         );
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_ptr}, i64 {a_bytes}, ptr {b_ptr}, \
@@ -4162,13 +4171,12 @@ impl<'a> FnEmit<'a> {
         row: &str,
     ) {
         if self.resident.is_some() {
-            let id = kernel_id(one, self.profile, self.contract, self.reduced) as i64;
+            let id = kernel_id(one, self.profile, self.contract) as i64;
             let l = launch(
                 one,
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             let call = |a: &str, b: &str, o: &str| {
                 format!(
@@ -4209,13 +4217,12 @@ impl<'a> FnEmit<'a> {
         ));
         let a_bytes = ((one.k - 1) * one.a.ck + 1) * eb;
         let (b_bytes, o_bytes) = (b_len * eb, one.c * eb);
-        let id = kernel_id(one, self.profile, self.contract, self.reduced) as i64;
+        let id = kernel_id(one, self.profile, self.contract) as i64;
         let l = launch(
             one,
             self.profile,
             self.contract,
             self.gpu_arms,
-            self.reduced,
         );
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_row}, i64 {a_bytes}, ptr {b_ptr}, \
@@ -4232,6 +4239,48 @@ mod tests {
     use crate::profile::{H100, H100_PCIE, RTX_4090, RTX_5090};
     use mapal_ir::TileRead;
     use proptest::prelude::*;
+
+    /// The tests' call shape from before ADR-0041 D6: `reduced` is now the
+    /// site's own product set ([`TileSite::tf32`]), so it rides on the site.
+    fn with_set(site: &TileSite, reduced: Option<Reduced>) -> TileSite {
+        TileSite { tf32: reduced.is_some(), ..site.clone() }
+    }
+
+    fn launch(
+        site: &TileSite,
+        p: &TargetProfile,
+        contract: bool,
+        arms: crate::GpuArms,
+        reduced: Option<Reduced>,
+    ) -> Launch {
+        super::launch(&with_set(site, reduced), p, contract, arms)
+    }
+
+    fn launch_in(
+        site: &TileSite,
+        p: &TargetProfile,
+        contract: bool,
+        arms: crate::GpuArms,
+        reduced: Option<Reduced>,
+        order: Order,
+    ) -> Launch {
+        super::launch_in(&with_set(site, reduced), p, contract, arms, order)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn kernel_text(
+        name: &str,
+        site: &TileSite,
+        p: &TargetProfile,
+        contract: bool,
+        arms: crate::GpuArms,
+        reduced: Option<Reduced>,
+        col: bool,
+        epi: Option<&EpiKernel>,
+        combine: Combine,
+    ) -> String {
+        super::kernel_text(name, &with_set(site, reduced), p, contract, arms, col, epi, combine)
+    }
 
     /// A `m × n × k` site as `benches/gpu/gen_tiles.py` writes it: `a[i·K + k]`
     /// (or column-major `a[k·M + i]`), `b[k·N + j]` (or `b[j·K + k]`).
@@ -4270,6 +4319,7 @@ mod tests {
             mul_a_first: true,
             add_acc_first: true,
             radix: None,
+            tf32: false,
         }
     }
 
@@ -4482,10 +4532,13 @@ mod tests {
                             None,
                             Combine::None,
                         );
+                        // (The plan line names the site's set, `set=tf32|f32`.)
+                        let code: String =
+                            text.lines().filter(|l| !l.starts_with("; mapal.plan")).collect();
                         assert!(
-                            !text.contains("tf32")
-                                && !text.contains("mma.sync")
-                                && !text.contains("wgmma.mma_async")
+                            !code.contains("tf32")
+                                && !code.contains("mma.sync")
+                                && !code.contains("wgmma.mma_async")
                         );
                         assert_eq!(
                             text.contains("@llvm.fma"),

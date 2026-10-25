@@ -76,7 +76,6 @@ impl<'a> FnEmit<'a> {
             heap_ok: false,
             heap_used: false,
             gpu_arms: crate::GpuArms::default(),
-            reduced: None,
             resident: None,
             dslots: SecondaryMap::new(),
             dvalid: SecondaryMap::new(),
@@ -130,9 +129,8 @@ impl<'a> FnEmit<'a> {
         self.path_plan = plan;
     }
 
-    pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms, reduced: Option<crate::Reduced>) {
+    pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms) {
         self.gpu_arms = arms;
-        self.reduced = reduced;
         // S65 `by-ref`: the products' layout, which the residency plan reads.
         self.plan_views();
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);

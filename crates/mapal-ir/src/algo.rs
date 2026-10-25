@@ -13,7 +13,9 @@ use slotmap::SecondaryMap;
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, Value, ty_contains_token};
 
+mod precision;
 mod radix;
+pub use precision::{PrecisionPlan, bound_coef, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
 
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
@@ -607,6 +609,8 @@ pub struct TileSite {
     /// The addresses that are digit-affine only ([`CategoryIr::tile_plan_radix`]);
     /// `None` on every [`CategoryIr::tile_plan`] site.
     pub radix: Option<Box<RadixTile>>,
+    /// ADR-0041 D1: the site's product admits `tf32` (`precision_plan.set`).
+    pub tf32: bool,
 }
 
 /// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
@@ -2517,6 +2521,7 @@ impl CategoryIr {
             mul_a_first,
             add_acc_first,
             radix: None,
+            tf32: self.precision(mul.id).admits_tf32(),
         })
     }
 

@@ -1,5 +1,5 @@
 //! Emit textual LLVM IR for a `.mapal` file (ADR-0020; dev tool — the future
-//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32] [--splitk=<S>]`
+//! `mapal build` embryo). Usage: `cargo run -p mapal-backend-llvm --example emit -- <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--splitk=<S>]`
 //! (writes `<file>.ll` next to the source, `<file>_perf.ll` with `--perf`, or
 //! stdout with `-`; `--rewrite` rewrites the lowered IR before emission).
 
@@ -9,7 +9,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
         eprintln!(
-            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32] [--splitk=<S>]"
+            "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--splitk=<S>]"
         );
         return ExitCode::from(2);
     };
@@ -39,7 +39,7 @@ fn main() -> ExitCode {
             }
             other => {
                 eprintln!(
-                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--precision=tf32] [--splitk=<S>])"
+                    "unknown flag: {other} (usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--splitk=<S>])"
                 );
                 return ExitCode::from(2);
             }

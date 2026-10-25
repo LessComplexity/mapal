@@ -85,6 +85,12 @@ march() { case $1 in x86-64-v3) echo x86-64-v3 ;; *) echo x86-64 ;; esac; }
 # emit_one <src.mapal> <out-stem> <profile> <sm> [emit flags...]: host object,
 # PTX, and the launch line (kernel gx gy block smem) of the first site.
 # HOST: the host profile; an arm with `hostopt` off is the S52-S54 build (generic, x86-64).
+# ADR-0041 D7: the TF32 face is the program's — `<src>` with `: tf32 | f32` on every fold step, written
+# beside it; `--precision=tf32` is gone.
+tf32_src() { # <src> -> path of its TF32-admitting twin
+    local o="${1%.mapal}_tfsrc.mapal"
+    sed 's/-> fold {/-> fold: tf32 | f32 {/g' "$1" > "$o"; echo "$o"
+}
 emit_one() {
     local src=$1 stem=$2 prof=$3 sm=$4 a m; shift 4
     m=$(march "$HOST")
@@ -193,9 +199,9 @@ for spec in "$@"; do
         mm_[0-9]*)
             # The kernel benches: every rung flipped on all three faces; arms
             # at the four sizes the decisions cite, the shipped kernel at all.
-            emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
+            emit_one "$(tf32_src "$f")" "$d/${b}_tf" "$prof" "$sm" --contract
             case $b in mm_1536|mm_3072) ;; *)
-                arms "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32 -- $TF32_RUNGS
+                arms "$(tf32_src "$f")" "$d/${b}_tf" "$prof" "$sm" --contract -- $TF32_RUNGS
                 arms "$f" "$d/${b}_c" "$prof" "$sm" --order=sequential -- $KERNEL_RUNGS
                 arms "$f" "$d/$b" "$prof" "$sm" --exact -- $KERNEL_RUNGS
                 # The shipped kernel again as an arm: one A/B's noise floor in
@@ -237,8 +243,8 @@ for spec in "$@"; do
             # bound), so the ON arm answers to the OFF arm, bit for bit — the same
             # body over the same accumulators. Programs without a group drop both.
             case $b in px_*)
-                emit_one "$f" "$d/${b}_tf" "$prof" "$sm" --contract --precision=tf32
-                emit_one "$f" "$d/${b}_tf.off-epilogue" "$prof" "$sm" --contract --precision=tf32 \
+                emit_one "$(tf32_src "$f")" "$d/${b}_tf" "$prof" "$sm" --contract
+                emit_one "$(tf32_src "$f")" "$d/${b}_tf.off-epilogue" "$prof" "$sm" --contract \
                     --gpu-off=epilogue
                 if same "$d/${b}_tf.off-epilogue" "$d/${b}_tf"; then rm -f "$d/${b}_tf".*; fi ;;
             esac ;;

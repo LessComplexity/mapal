@@ -206,6 +206,13 @@ INTENT = {
         ('every digit a constant divisor: no div/rem instruction left', 'ptx.div_rem == 0'),
         ('a register tile per thread: >= tm*tn*bk FP ops per panel trip', 'ptx.hot.fma + ptx.hot.mul >= plan.tm * plan.tn * plan.bk'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # recurrence-precision `tf32-tile` (ADR-0041 D6): a site whose products admit TF32 (`; mapal.plan … set=tf32|f32`,
+    # `precision_plan.set`) takes the tensor-core kernel where its shape fits. `.off-tf32-tile`: the f32 FFMA tile.
+    'tf32-tile': dict(applies_on="plan.set == 'tf32|f32' and plan.kind in ('mma', 'wgmma')", on=[
+        ('tensor-core instructions in PTX: mma.sync or wgmma', 'ptx.mma + ptx.wgmma > 0'),
+        ('HMMA / HGMMA in SASS', 'sass.hmma + sass.hgmma > 0')],
+        applies_off="plan.set == 'tf32|f32'", off=[
+        ('the f32 FFMA tile: no mma.sync / wgmma', "ptx.mma == 0 and ptx.wgmma == 0 and plan.kind == 'tile'")]),
     # generic-fusion natural forms `range-map`: a map whose cells off a row / range / column / cell are a capture's
     # own runs in place over that set (`in_place_source`); its movement is the by-ref rows' (`host.move`).
     'range-map': dict(host=True, note='work per trip, not bytes: diff the `.off-range-map` arm (host insns, loops)'),

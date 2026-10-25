@@ -37,6 +37,7 @@ No keep/remove/gate decision stands on timing alone.
 | `tile_plan`, `tile_plan_strided`, `move_plan`, `row_fold`, `cell_plan` | affine map/fold sites, data-move sites, row folds, per-cell maps and what each cell reads |
 | `elem_plan`, `map_law` (+ `Outside`) | each array's `out[i]` as a closed function of the index; one map's law, piecewise when every cell off a row / range / column / cell is a capture's own (in-place range map) |
 | `radix_plan`, `tile_plan_radix` | an integer as digits `(x ÷ s) % r` of the inputs (constant div/mod splits); map/fold sites whose reads are affine per digit as tile sites over `(i, lane, k)` (implicit GEMM) |
+| `precision_plan` (`set`, `round_at`, `cross`, `bound`) | ADR-0041: the precisions each float product admits (innermost `: compute`); values rounded once at the producer; edges a rounded copy must not cross; each tile site's a-priori bound (D3 / ADR-0040 D2) |
 | `bounds_proof`, `proven` | in-bounds indices; droppable trap guards |
 | `guard_plan`, `gated` | per-Phi arm exclusive work; whether an arm must be gated |
 | backend: `ResidentPlan`, `arena`, frame slots (`prepare_storage`), `TargetProfile` | device residency, lifetime-colored buffers, host slots/aliases, hardware facts |

@@ -211,7 +211,6 @@ fn test_judges_the_replayable_faces() {
         &["--contract"][..],
         &["--order=free"],
         &["--order=sequential"],
-        &["--precision=tf32"],
     ] {
         let mut a = vec!["test", f, "--target=generic"];
         a.extend_from_slice(refused);
@@ -219,6 +218,10 @@ fn test_judges_the_replayable_faces() {
         assert_eq!(o.status.code(), Some(2), "{refused:?}");
         assert!(String::from_utf8_lossy(&o.stderr).contains("fixed face"));
     }
+    // ADR-0041 D7: the flag is gone; the program carries `: tf32 | f32`.
+    let o = mapal(&["test", f, "--precision=tf32"]);
+    assert_eq!(o.status.code(), Some(2), "--precision=tf32 is refused");
+    assert!(String::from_utf8_lossy(&o.stderr).contains("ADR-0041"));
     let o = mapal(&["run", f, "--order=sideways"]);
     assert_eq!(o.status.code(), Some(2), "a malformed order is an error");
 }
