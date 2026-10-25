@@ -1,5 +1,6 @@
 ---
 source: crates/backends/llvm/tests/gpu_host.rs
+assertion_line: 142
 expression: "host(SITE, \"rtx-4090\", GpuArms::default())"
 ---
 ; mapal-backend-llvm emitted module
@@ -493,7 +494,7 @@ bb42:
 
 define i32 @main() {
 entry:
-  call void @mapal_gpu_init(i32 25)
+  call void @mapal_gpu_init(i32 9)
   call void @mapal_main()
   ret i32 0
 }

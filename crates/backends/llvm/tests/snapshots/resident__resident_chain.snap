@@ -1,5 +1,6 @@
 ---
 source: crates/backends/llvm/tests/resident.rs
+assertion_line: 343
 expression: "emit(&chain_src(), on())"
 ---
 ; mapal-backend-llvm emitted module
@@ -813,7 +814,7 @@ bb42:
 
 define i32 @main() {
 entry:
-  call void @mapal_gpu_init(i32 25)
+  call void @mapal_gpu_init(i32 9)
   call void @mapal_main()
   ret i32 0
 }

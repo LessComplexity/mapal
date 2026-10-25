@@ -60,8 +60,9 @@ fn a_gpu_site_makes_init_mains_first_call() {
         ll.contains("call void @mapal_gpu_launch"),
         "the site offloads (`resident`'s split entries)"
     );
-    // The shipped rungs: eager-init (1), preload (8), stage (16).
-    assert_eq!(main_first(&ll), "call void @mapal_gpu_init(i32 25)");
+    // The shipped rungs: eager-init (1), preload (8); stage (16) rides on
+    // `async-h2d`, which ships OFF on the measured parts.
+    assert_eq!(main_first(&ll), "call void @mapal_gpu_init(i32 9)");
     assert!(ll.contains("declare void @mapal_gpu_init(i32)\n"));
 }
 
@@ -91,7 +92,7 @@ fn no_pdl() -> GpuArms {
 #[test]
 fn the_rung_is_one_flag_bit() {
     let ll = host(SITE, "h100-pcie", off_eager());
-    assert_eq!(main_first(&ll), "call void @mapal_gpu_init(i32 24)");
+    assert_eq!(main_first(&ll), "call void @mapal_gpu_init(i32 8)");
 }
 
 #[test]
@@ -99,7 +100,7 @@ fn the_host_rung_moves_nothing_but_the_flag() {
     let on = host(SITE, "rtx-5090", no_pdl());
     let off = host(SITE, "rtx-5090", off_eager());
     assert_eq!(
-        on.replace("@mapal_gpu_init(i32 25)", "@mapal_gpu_init(i32 24)"),
+        on.replace("@mapal_gpu_init(i32 9)", "@mapal_gpu_init(i32 8)"),
         off
     );
     let dev = |gpu| {

@@ -1,5 +1,6 @@
 ---
 source: crates/backends/llvm/tests/resident.rs
+assertion_line: 342
 expression: "emit(&e2e_src(), no_devgen())"
 ---
 ; mapal-backend-llvm emitted module
@@ -20,7 +21,6 @@ declare void @mapal_gpu_d2h(ptr, i64, i64, i64)
 declare void @mapal_gpu_launch(i64, i64, i64, i64, i32, i32, i32, i32)
 declare void @mapal_gpu_gen(i64, i64, i64)
 declare void @mapal_gpu_free(ptr)
-declare void @mapal_gpu_h2d_async(i64, ptr, i64)
 
 define internal void @mapal_main() {
 entry:
@@ -72,7 +72,7 @@ bb11:
   br label %bb10
 bb12:
   %t20 = call i64 @mapal_gpu_alloc(ptr %d19, i64 16384)
-  call void @mapal_gpu_h2d_async(i64 %t20, ptr %o3, i64 16384)
+  call void @mapal_gpu_h2d(i64 %t20, ptr %o3, i64 16384)
   store i64 0, ptr %s21
   br label %bb22
 bb22:
@@ -89,7 +89,7 @@ bb23:
   br label %bb22
 bb24:
   %t32 = call i64 @mapal_gpu_alloc(ptr %d31, i64 16384)
-  call void @mapal_gpu_h2d_async(i64 %t32, ptr %o4, i64 16384)
+  call void @mapal_gpu_h2d(i64 %t32, ptr %o4, i64 16384)
   %t33 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o6, i32 0, i32 3
   store ptr %o2, ptr %t33
   %t34 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o6, i32 0, i32 0
@@ -515,7 +515,7 @@ bb42:
 
 define i32 @main() {
 entry:
-  call void @mapal_gpu_init(i32 25)
+  call void @mapal_gpu_init(i32 9)
   call void @mapal_main()
   ret i32 0
 }

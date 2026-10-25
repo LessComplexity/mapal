@@ -178,8 +178,8 @@ pub struct GpuRungs {
     /// S52 round trips (`retain-delta` on) or retains nothing. Measured on
     /// decode_1024_256 (`retain-resident-*.txt`, two boxes per part): ON where
     /// the whole K/V site costs more than its row (3090, A100; 4090 and 5090
-    /// since S65's by-ref removed the loop residue); the H100 row stays in
-    /// `GPU_RUNGS_OFF`.
+    /// since S65's by-ref removed the loop residue; H100 since cpu-gpu-boundary,
+    /// on causal / prefill).
     pub retain_resident: bool,
     /// S54 R5's transmission: a host-written carried array with
     /// [`mapal_ir::Delta::Rows`] that a device site reads is uploaded as the
@@ -415,6 +415,7 @@ pub struct GpuRungs {
     /// so the host may rewrite it at once. A loop trip then waits for the
     /// device only where a host morphism reads a device value (a copy-out).
     /// Off: `cuMemcpyHtoD`, which waits for the device before each copy.
+    /// Ships OFF on the four measured parts (`GPU_RUNGS_OFF`: no win).
     pub async_h2d: bool,
     /// cpu-gpu-boundary `stage`: the runtime keeps a ring of page-locked
     /// staging slots (made with the context, before the clock); an async
