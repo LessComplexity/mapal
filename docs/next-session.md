@@ -36,6 +36,12 @@ Ranked by measured gap ms (H100 worst):
 4. H100 128-accumulator cp.async tile (N4, mlp2/diamond/rt_mlp2/fanout/indep).
 5. Trace the untraced (N5–N7): 3090 epi/MLP rises, ew_4096 async 1.108, smoke evidence mismatches vs flow-latest.
 
+6. **Test speed** (measured 2026-10-25, differential suite 683 s with the oracle optimized): `differential_device_loops`
+   runs 64 programs × 2 arms serially (≈ 600–750 s, ≈ 5 s per emulated run) — spread over the job slots like
+   `differential_natural_twins` (≈ 630 s, 256 programs); profile one emulated run (emulator vs per-binary cost);
+   macOS first exec of each new binary costs 0.50 s (second exec 0.00 s) — batch binaries or exempt the terminal
+   (Developer Tools). The compiler itself: 0.02–0.19 s per bench program (debug build), not the bottleneck.
+
 CUDA graphs: none planned. If nsys ever shows launch rate as the remaining gap, build the graph from the static loop
 plan at load time (never stream capture).
 
