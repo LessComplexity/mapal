@@ -131,8 +131,9 @@ impl<'a> FnEmit<'a> {
     pub(super) fn emit_rowfold(&mut self, m: MorphismId, r: &RowFold) {
         let morph = self.ir.morphism(m).expect("morphism resolves");
         let (source, target) = (morph.source, morph.target);
-        let id = gpu::rowfold_id(&r.site, self.profile) as i64;
-        let (blocks, threads) = gpu::rowfold_grid(&r.site, self.profile);
+        let lanes = gpu::rowfold_lanes(&r.site, self.profile, self.contract, self.gpu_arms, self.order);
+        let id = gpu::rowfold_id(&r.site, self.profile, lanes) as i64;
+        let (blocks, threads) = gpu::rowfold_grid(&r.site, self.profile, lanes);
         self.emit_site_resident(source, target, &[r.site.a.slot], None, |ops, o| {
             let a = &ops[0];
             format!(

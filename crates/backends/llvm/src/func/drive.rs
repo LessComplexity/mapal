@@ -123,7 +123,11 @@ impl<'a> FnEmit<'a> {
             Some(t) => format!("{t} %arg"),
             None => String::new(),
         };
-        let fn_attrs = if clean {
+        // `cell-lanes`: the lane variant meets its warp in shuffles — a
+        // convergent call no optimizer may sink under the lane-0 store.
+        let fn_attrs = if self.lanes.is_some() {
+            " convergent nounwind"
+        } else if clean {
             if self.attrs.loopy(self.f) {
                 " readonly nounwind"
             } else {
@@ -143,6 +147,7 @@ impl<'a> FnEmit<'a> {
         } else {
             gpu::cell_variant(&fname)
         };
+        let fname = if self.lanes.is_some() { gpu::lanes_variant(&fname) } else { fname };
         let param = self
             .cell_vals
             .iter()

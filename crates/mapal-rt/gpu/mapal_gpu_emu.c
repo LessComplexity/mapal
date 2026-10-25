@@ -48,6 +48,30 @@ static void *emu_run(void *p) {
   return 0;
 }
 int32_t emu_tid_x(void) { return tid_x; }
+/* `cell-lanes`: `shfl.sync.bfly` over a warp of a threaded launch — each lane
+ * posts its value, the warp meets, each reads its partner's, the warp meets. */
+int32_t emu_laneid(void) { return tid_x & 31; }
+static float w_x[1024];
+static unsigned w_count[32], w_gen[32];
+static void warp_meet(int w) {
+  pthread_mutex_lock(&b_mu);
+  unsigned g = w_gen[w];
+  if (++w_count[w] == 32) {
+    w_count[w] = 0;
+    w_gen[w]++;
+    pthread_cond_broadcast(&b_cv);
+  } else {
+    while (g == w_gen[w]) pthread_cond_wait(&b_cv, &b_mu);
+  }
+  pthread_mutex_unlock(&b_mu);
+}
+float emu_shfl_bfly(float v, int32_t off) {
+  w_x[tid_x] = v;
+  warp_meet(tid_x / 32);
+  float r = w_x[tid_x ^ off];
+  warp_meet(tid_x / 32);
+  return r;
+}
 int32_t emu_ctaid_x(void) { return ctaid_x; }
 int32_t emu_ctaid_y(void) { return ctaid_y; }
 static unsigned long long n_h2d, n_d2h, n_launch, b_in, b_out;
@@ -132,7 +156,8 @@ static void *sym(const char *prefix, uint64_t id) {
 void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t gx, uint32_t gy, uint32_t block,
                       uint32_t smem) {
   void (*k)(void *, void *, void *) = (void (*)(void *, void *, void *))sym("mapal_tile", id);
-  if (smem) {
+  /* A module with shuffles (`emu_threaded`: `fold-lanes`) runs threaded too. */
+  if (smem || dlsym(RTLD_DEFAULT, "emu_threaded")) {
     if (smem > sizeof emu_smem) {
       fprintf(stderr, "emu: smem %u over the emulator's %zu\n", smem, sizeof emu_smem);
       exit(102);
@@ -201,7 +226,8 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
   kv_t k = (kv_t)sym("mapal_tile", id);
   void *p[16];
   for (uint32_t i = 0; i < nptr && i < 16; i++) p[i] = (void *)ptrs[i];
-  if (smem) {
+  /* A module with shuffles (`emu_threaded`) runs its launches threaded. */
+  if (smem || dlsym(RTLD_DEFAULT, "emu_threaded")) {
     pthread_t *th = malloc(block * sizeof *th);
     struct emu_vthread *xs = malloc(block * sizeof *xs);
     b_n = block;

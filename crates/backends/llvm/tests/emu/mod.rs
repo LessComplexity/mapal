@@ -91,7 +91,13 @@ pub fn host_device(dev: &str) -> String {
         {
             l = format!("{lhs} = getelementptr i8, ptr {v}, i64 0");
         }
+        // `cell-lanes`: a warp's butterfly shuffle meets its 31 lanes in
+        // the emulator (`emu_shfl_bfly`; the kernel runs threaded).
+        if l.contains("@llvm.nvvm.shfl.sync.bfly.f32(i32 -1, ") {
+            l = l.replace("@llvm.nvvm.shfl.sync.bfly.f32(i32 -1, ", "@emu_shfl_bfly(").replace(", i32 31)", ")");
+        }
         for (r, e) in [
+            ("laneid", "laneid"),
             ("tid.x", "tid_x"),
             ("ctaid.x", "ctaid_x"),
             ("ctaid.y", "ctaid_y"),
@@ -104,7 +110,10 @@ pub fn host_device(dev: &str) -> String {
         out.push_str(&l);
         out.push('\n');
     }
-    out + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
+    // A module with shuffles runs its cell launches threaded.
+    let lanes = if out.contains("@emu_shfl_bfly(") { "@emu_threaded = global i32 1\n" } else { "" };
+    out + lanes + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
+           declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
            declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n"
 }
 

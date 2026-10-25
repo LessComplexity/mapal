@@ -241,6 +241,17 @@ INTENT = {
     'trip-batch': dict(host=True, applies='dev.cell_batch > 0', on=[
         ('each batch variant is launched (once per loop entry)', 'host.calls.launchv >= dev.cell_batch')],
         note='trips run: diff the `.off-trip-batch` arm (loop entry counter, launches per run)'),
+    # item 2 `cell-lanes`: on the default face a nest cell whose cells leave resident threads idle folds over a warp's
+    # lanes (lane l takes every 32nd step) and combines by a butterfly of shuffles, lane 0 storing.
+    'cell-lanes': dict(host=True, applies='dev.cell_lanes > 0', on=[
+        ('PTX: each lane cell combines by >= 5 butterfly shuffles (log2 32)', 'dev.cell_lanes_shfl == dev.cell_lanes')],
+        applies_off='dev.cell_nest > 0', off=[('every nest cell one thread a cell', 'dev.cell_lanes == 0')]),
+    # item 2 `fold-lanes`: on the default face a device row fold (a whole fold: one row) is a warp a row, lane l taking
+    # every 32nd k, combined by a butterfly of shuffles; off: one thread a row walking k in order.
+    'fold-lanes': dict(host=True, applies='dev.rowfold_lanes > 0', on=[
+        ('PTX: each lane row fold combines by >= 5 butterfly shuffles (log2 32)',
+         'dev.rowfold_lanes_shfl == dev.rowfold_lanes')],
+        applies_off='dev.rowfold > 0', off=[('every row fold one thread a row', 'dev.rowfold_lanes == 0')]),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

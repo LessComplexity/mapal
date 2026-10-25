@@ -234,6 +234,8 @@ pub(crate) struct Cell {
     /// `scalar-fold`: the uniform slots a device whole fold produces, loaded
     /// from its one-element buffer.
     pub dev: Vec<u32>,
+    /// `cell-lanes`: threads a cell.
+    pub lanes: u64,
 }
 
 impl Cell {
@@ -1138,9 +1140,10 @@ impl<'a> FnEmit<'a> {
             } else {
                 Vec::new()
             };
-        let tag = match range.is_some() {
-            false => self.fnames[body].clone(),
-            r => format!("{}|range={r}|lanes=1", self.fnames[body]),
+        let lanes = self.cell_lanes(site);
+        let tag = match (range.is_some(), lanes) {
+            (false, 1) => self.fnames[body].clone(),
+            (r, l) => format!("{}|range={r}|lanes={l}", self.fnames[body]),
         };
         let cell = Cell {
             id: gpu::cell_id(&tag, site.extent, self.profile),
@@ -1153,6 +1156,7 @@ impl<'a> FnEmit<'a> {
             nested: site.nested.clone(),
             range,
             dev: Vec::new(),
+            lanes,
         };
         // The output, then every operand and uniform (and an interval's start
         // and count): one 8-byte argument each.
@@ -1184,6 +1188,7 @@ impl<'a> FnEmit<'a> {
                     && c.caps[u as usize] == e
                     && c.mapped.is_none()
                     && c.laws.is_empty()
+                    && c.lanes == 1
                     && (0..c.caps.len() as u32).all(|s| s == u || carried(c.caps[s as usize]))
                     && start.zip(count).is_some_and(|(s, n)| s >= 0 && n > 0 && (s + n) as u64 <= c.n);
                 if !ok {
@@ -1254,6 +1259,31 @@ impl<'a> FnEmit<'a> {
         (self.pair_source(state, k) == Some(target)
             && self.lup.view_dead_after(arr, self.lup.position(m)?))
         .then_some(ou)
+    }
+
+    /// `cell-lanes`: threads a nest cell takes — a warp, when the order is
+    /// free (the default face, ADR-0040), the body folds once (one nested
+    /// fold, so one tree), and its cells leave the part's resident threads
+    /// idle. 1 otherwise.
+    fn cell_lanes(&self, site: &CellSite) -> u64 {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let Some(g) = self.profile.gpu() else { return 1 };
+        let f32_fold = |m: MorphismId| {
+            self.ir.morphism(m).is_some_and(|x| self.obj_ty(x.target) == Ty::Float { bits: 32 })
+        };
+        match site.tree {
+            Some((fold, _, k))
+                if rungs.cell_lanes
+                    && self.order == crate::Order::Free
+                    && g.warp == 32
+                    && k >= g.warp
+                    && f32_fold(fold)
+                    && site.extent.saturating_mul(g.warp) <= g.sms * g.max_threads_per_sm =>
+            {
+                g.warp
+            }
+            _ => 1,
+        }
     }
 
     /// `cell-law`'s fact: the captures of a cell over an `iota` that are
@@ -2291,7 +2321,7 @@ impl<'a> FnEmit<'a> {
             ptrs.push(cnt.clone());
             let (thr, blk, b1, z, one, gx) =
                 (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
-            self.line(format!("{thr} = mul i64 {cnt}, 1"));
+            self.line(format!("{thr} = mul i64 {cnt}, {}", c.lanes));
             self.line(format!("{blk} = add i64 {thr}, 255"));
             self.line(format!("{b1} = udiv i64 {blk}, 256"));
             self.line(format!("{z} = icmp eq i64 {b1}, 0"));
@@ -2310,7 +2340,7 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let (gx, block) = gpu::cell_grid(c.n);
+        let (gx, block) = gpu::CellGeo { range: None, lanes: c.lanes }.grid(c.n);
         let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
@@ -2364,7 +2394,13 @@ impl<'a> FnEmit<'a> {
                     .collect();
                 let name = &self.fnames[c.body];
                 let name = if vals.is_empty() { name.clone() } else { gpu::cell_variant(name) };
-                let mut fns = vec![(name, self.body_text(c.body, vals.clone()))];
+                // `cell-lanes`: the body's lane variant, its fold split over the warp.
+                let lanes = (c.lanes > 1)
+                    .then(|| self.ir.cell_plan(self.f).get(m).and_then(|s| s.tree))
+                    .flatten()
+                    .map(|(g, op, _)| (self.ir.morphism(g).expect("fold").target, op, c.lanes));
+                let name = if lanes.is_some() { gpu::lanes_variant(&name) } else { name };
+                let mut fns = vec![(name, self.body_text_with(c.body, vals.clone(), lanes))];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
                         if c.uniform.contains(&s) {
@@ -2389,10 +2425,13 @@ impl<'a> FnEmit<'a> {
                 }
                 // The facts the kernel was built from, for its `; mapal.plan`.
                 let work = self.ir.cell_plan(self.f).get(m).map_or(1, |x| x.work);
-                let geo = gpu::CellGeo { range: c.range.map(|ou| ou.step) };
+                let geo = gpu::CellGeo { range: c.range.map(|ou| ou.step), lanes: c.lanes };
                 let mut facts = format!("nested={} work={work}", c.nested.len());
                 if let Some(ou) = c.range {
                     facts.push_str(&format!(" range={}x{}", ou.step, ou.len.min(c.n)));
+                }
+                if c.lanes > 1 {
+                    facts.push_str(&format!(" lanes={}", c.lanes));
                 }
                 if !c.dev.is_empty() {
                     facts.push_str(&format!(" dev={}", c.dev.len()));
@@ -2409,7 +2448,7 @@ impl<'a> FnEmit<'a> {
                         unreachable!("the batched counter is a by-value uniform")
                     };
                     caps[u as usize] = gpu::CapArg::Trip(t, d, b);
-                    let k = gpu::cell_kernel_text(id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, gpu::CellGeo { range: Some(1) });
+                    let k = gpu::cell_kernel_text(id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, gpu::CellGeo { range: Some(1), lanes: 1 });
                     (fns.clone(), format!("; mapal.cell nested={} work={work} batch={n}\n{k}", c.nested.len()))
                 });
                 std::iter::once((fns, kernel)).chain(batch).collect::<Vec<_>>()
@@ -2420,6 +2459,11 @@ impl<'a> FnEmit<'a> {
     /// `f`'s text as the module emits it (a leaf body, so the text is a pure
     /// function of the IR), or `cell-law`'s device variant of it.
     fn body_text(&self, f: FuncId, vals: Vec<(u32, String)>) -> String {
+        self.body_text_with(f, vals, None)
+    }
+
+    /// [`Self::body_text`], or (`cell-lanes`) its lane variant.
+    fn body_text_with(&self, f: FuncId, vals: Vec<(u32, String)>, lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>) -> String {
         let mut fe = FnEmit::new(
             self.ir,
             f,
@@ -2436,6 +2480,7 @@ impl<'a> FnEmit<'a> {
         );
         fe.set_gpu_arms(self.gpu_arms, self.reduced);
         fe.cell_vals = vals;
+        fe.lanes = lanes;
         fe.emit()
     }
 

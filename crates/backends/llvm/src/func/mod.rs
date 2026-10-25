@@ -377,6 +377,10 @@ pub(crate) struct FnEmit<'a> {
     /// type (every read of it is at the cell's own index) instead of as an
     /// array pointer. Empty: the host body.
     cell_vals: Vec<(u32, String)>,
+    /// `cell-lanes`: this body is a nest cell's lane variant — its fold
+    /// whose target is the first field walks every `lanes`-th step from the
+    /// lane and combines the lanes' partials by `step` (a warp shuffle tree).
+    lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
     /// Object → its device slot (`alloca i64`, 0 = no buffer).
     dslots: SecondaryMap<ObjectId, String>,
     /// Objects whose device copy is current at this point of the walk.
