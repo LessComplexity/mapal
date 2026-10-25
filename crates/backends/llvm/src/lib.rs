@@ -392,6 +392,11 @@ pub struct GpuRungs {
     /// tree-able fold is a unit whatever the layout (rtx-4090 rowsum_4096,
     /// flow ON/OFF 1.056, why-slow C12).
     pub tree_gate: bool,
+    /// cpu-gpu-boundary 1a `retained-fold`: a function with retained sites
+    /// (S54 `retain-resident`) still places its standalone row folds on the
+    /// device (prefill `pmx` / `pden`). Off: S65's veto — no row fold is a
+    /// device site in such a function.
+    pub retained_fold: bool,
     /// cpu-gpu-boundary `preload`: the runtime resolves every kernel of the
     /// module (`cuModuleGetFunction`, which loads it under CUDA lazy loading)
     /// when it loads the module — on the `eager-init` thread, before the
@@ -483,6 +488,7 @@ impl GpuRungs {
         uniform: true,
         nest_cell: true,
         tree_gate: true,
+        retained_fold: true,
         preload: true,
         entry_arena: true,
         async_h2d: true,
@@ -492,7 +498,7 @@ impl GpuRungs {
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 60] = [
+    pub const NAMES: [&'static str; 61] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -548,6 +554,7 @@ impl GpuRungs {
         "uniform",
         "nest-cell",
         "tree-gate",
+        "retained-fold",
         "preload",
         "entry-arena",
         "async-h2d",
@@ -613,6 +620,7 @@ impl GpuRungs {
             "uniform" => &mut self.uniform,
             "nest-cell" => &mut self.nest_cell,
             "tree-gate" => &mut self.tree_gate,
+            "retained-fold" => &mut self.retained_fold,
             "preload" => &mut self.preload,
             "entry-arena" => &mut self.entry_arena,
             "async-h2d" => &mut self.async_h2d,

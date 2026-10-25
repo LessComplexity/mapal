@@ -253,7 +253,7 @@ entry:
 }
 
 ; cell
-; mapal.plan kernel=mapal_tile_23b2fb35808bdeae kind=cell
+; mapal.plan kernel=mapal_tile_23b2fb35808bdeae kind=cell uniform=0 nested=0 work=1
 define ptx_kernel void @mapal_tile_23b2fb35808bdeae(ptr addrspace(1) %o) "nvvm.maxntid"="256" {
 entry:
   %t = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()

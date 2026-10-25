@@ -405,6 +405,9 @@ pub(crate) struct FnEmit<'a> {
     /// S62 `splitk`: each split site's workspace slot (`alloca i64`), made on
     /// its first launch and freed at function exit (a loop reuses it).
     split_slots: Vec<String>,
+    /// `entry-arena`: every `mapal_gpu_alloc` the walk emits on a slot of its
+    /// own (an object's buffer, a split workspace), with its bytes.
+    dallocs: Vec<(String, u64)>,
     /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions
     /// (component paths) that hold a pointer to bytes elsewhere instead of
     /// the bytes — forwarding does not copy. A bare array view is

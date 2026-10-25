@@ -183,6 +183,9 @@ fn chain_h2d_uploads_on_the_readers_stream() {
         gpu.off.stream_gate = true;
         gpu.off.cp_async = true;
         gpu.off.pdl = true;
+        // Host-built operands: `uniform` would build `a`/`e`-like maps (a
+        // fold's result captured) on the device, leaving nothing to upload.
+        gpu.off.uniform = true;
         *(if on { &mut gpu.on } else { &mut gpu.off }).rung("chain-h2d").expect("rung") = true;
         emit_detailed(&ir, &EmitOpts { host: "generic", target: "rtx-4090", gpu, ..EmitOpts::exact() })
             .expect("emits")
@@ -203,4 +206,87 @@ fn chain_h2d_uploads_on_the_readers_stream() {
         let (a, b) = (on.device.as_deref().expect("dev"), off.device.as_deref().expect("dev"));
         assert_eq!(emu::run_emulated(&cc, &on.text, a), emu::run_emulated(&cc, &off.text, b));
     }
+}
+
+/// Independent device chains over host-built operands (a map capturing a
+/// fold of its own source), randomized: 2–3 chains of 1–2 tile sites each
+/// on an `n × n` grid, the host-built operand left or right, element sinks.
+fn indep_src(n: u64, chains: &[(u8, u8, bool)]) -> String {
+    let mut s = format!("fn main() {{\n    {} -> iota -> ta;\n    {n} -> iota -> kr;\n", n * n);
+    let law = |name: &str, p: u8, q: u8| {
+        format!("    ta -> map {{ t -> (t * {} + {}) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> {name};\n", p % 13 + 1, q % 29)
+    };
+    for (i, &(seed, depth, left)) in chains.iter().enumerate() {
+        s += &law(&format!("x{i}"), seed, seed / 3);
+        s += &format!("    (0.0, ta) -> fold {{ acc, t -> acc + x{i}[t] }} -> s{i};\n");
+        s += &format!("    ta -> map {{ t -> x{i}[t] + s{i} }} -> a{i};\n");
+        s += &law(&format!("b{i}"), seed / 7, seed);
+        let mut cur = format!("a{i}");
+        for d in 0..depth % 2 + 1 {
+            let (l, r) = if left || d > 0 { (cur.clone(), format!("b{i}")) } else { (format!("b{i}"), cur.clone()) };
+            let out = format!("c{i}_{d}");
+            s += &format!(
+                "    ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, k -> acc + {l}[i * {n} + k] * {r}[k * {n} + j] }} }} -> {out};\n"
+            );
+            cur = out;
+        }
+        s += &format!("    {cur}[0] -> println;\n    {cur}[{}] -> println;\n", n * n - 1);
+    }
+    s + "}\n"
+}
+
+/// `chain-h2d` on unseen programs (independent chains as above, testgen
+/// chains and device loops; streams open): every `h2d_on(k)` crosses on a
+/// stream some launch of the function runs on, the OFF arm has none, and ON
+/// and OFF print the same through the emulator; the rule fires.
+#[test]
+fn chain_h2d_on_unseen_programs() {
+    use proptest::prelude::*;
+    let mut runner = TestRunner::deterministic();
+    let (dev_s, chain_s) = (testgen::device_prog_strategy(), testgen::chain_strategy());
+    let indep_s = (prop::sample::select(vec![32u64, 64]), prop::collection::vec(any::<(u8, u8, bool)>(), 2..4));
+    let clang = emu::clang();
+    let arm = |ir: &CategoryIr, on: bool| {
+        let mut gpu = GpuArms::default();
+        gpu.on.streams = true;
+        gpu.off.stream_gate = true;
+        gpu.off.cp_async = true;
+        gpu.off.pdl = true;
+        // Host-built operands: `uniform` would build `a`/`e`-like maps (a
+        // fold's result captured) on the device, leaving nothing to upload.
+        gpu.off.uniform = true;
+        *(if on { &mut gpu.on } else { &mut gpu.off }).rung("chain-h2d").expect("rung") = true;
+        emit_detailed(ir, &EmitOpts { host: "generic", target: "rtx-4090", gpu, ..EmitOpts::exact() })
+            .expect("emits")
+    };
+    let streams = |ll: &str| -> Vec<String> {
+        ll.lines()
+            .filter_map(|l| l.trim().strip_prefix("call void @mapal_gpu_h2d_on(i32 "))
+            .map(|r| r[..r.find(',').expect("args")].to_string())
+            .collect()
+    };
+    let mut fired = 0usize;
+    for z in 0..48 {
+        let src = match z % 3 {
+            0 => {
+                let (n, ch) = indep_s.new_tree(&mut runner).unwrap().current();
+                indep_src(n, &ch)
+            }
+            1 => chain_s.new_tree(&mut runner).unwrap().current().source(),
+            _ => testgen::device_src(&dev_s.new_tree(&mut runner).unwrap().current()),
+        };
+        let ir = lower(&src);
+        let (on, off) = (arm(&ir, true), arm(&ir, false));
+        assert!(!off.text.contains("@mapal_gpu_h2d_on("), "#{z} OFF\n{src}");
+        let ups = streams(&on.text);
+        fired += ups.len();
+        for k in &ups {
+            assert!(on.text.contains(&format!(", i32 {k}, i32 ")), "#{z}: h2d_on({k}) but no launch on it\n{src}");
+        }
+        if let (Some(cc), Some(a), Some(b)) = (&clang, on.device.as_deref(), off.device.as_deref()) {
+            assert_eq!(emu::run_emulated(cc, &on.text, a), emu::run_emulated(cc, &off.text, b), "#{z}\n{src}");
+        }
+    }
+    assert!(fired > 0, "chain-h2d fired on no generated program");
+    eprintln!("chain_h2d_on_unseen_programs: {fired} chain uploads");
 }

@@ -138,9 +138,13 @@ INTENT = {
         off=[('every upload synchronous', 'host.calls.h2d_async == 0')]),
     'stage': dict(host=True, applies='host.calls.h2d_async > 0', on=[
         ('the page-locked staging ring (init flag 16)', 'host.init_flags & 16 > 0')],
+        applies_off='host.calls.init > 0', off=[('no staging ring', 'host.init_flags & 16 == 0')],
         note='staged uploads: `staged=` in mapal_gpu_trace_total'),
-    'chain-h2d': dict(host=True, applies='host.calls.launchv > 0 and host.calls.h2d_on + host.calls.h2d_async + host.calls.h2d > 0',
-        note='an upload read by one chain only crosses on its stream: diff the arm (`h2d_on` calls)'),
+    # ON fires only where streams are open and one chain reads an upload (tests/boundary.rs
+    # chain_h2d_on_unseen_programs checks each `h2d_on(k)` has a launch on stream k).
+    'chain-h2d': dict(host=True, applies_off='host.calls.launchv > 0', off=[
+        ('every upload on the legacy stream', 'host.calls.h2d_on == 0')],
+        note='ON: `h2d_on` calls where one chain reads an upload: diff the arm'),
     'eager-init': dict(host=True, applies='host.device_sites > 0', on=[
         ("one init, main's first call", 'host.calls.init == 1')]),
     'epilogue': dict(host=True, applies='dev.epi > 0', on=[
@@ -199,19 +203,27 @@ INTENT = {
     # cpu-gpu-boundary 1b `uniform`: a per-cell map with number captures (a loop counter, a fold's result) is a
     # cell, each uniform a by-value i64 kernel argument; a closed form of (cell, uniforms) is built where its
     # readers run. `.off-uniform` builds it on the host and uploads it per trip (decode q, rt_mlp2 a/f).
-    'uniform': dict(host=True, applies='host.move.loops > 0 and dev.cell > 0', on=[
-        ('cell kernels launched over n arguments', 'host.calls.launchv > 0'),
+    'uniform': dict(host=True, applies='dev.cell_u > 0', on=[
+        ('every uniform cell is launched, its uniforms by-value `i64` parameters', 'host.calls.launchv >= dev.cell_u'),
         ("per-trip uploads are the facts' (a uniform cell's output never crosses)",
-         'host.move.h2d_b == host.move.intent_h2d')]),
+         'host.move.h2d_b == host.move.intent_h2d')],
+        applies_off='dev.cell > 0', off=[('no cell kernel takes a uniform', 'dev.cell_u == 0')]),
     # cpu-gpu-boundary 1a `nest-cell`: a map whose body folds over captured arrays (a guarded dot product: causal /
     # prefill `s`, `o`) is a one-thread-per-cell kernel running the host's body text once its operands are on the
     # device; the K/V rows a host score loop read no longer cross. `.off-nest-cell`: the map on the host.
-    'nest-cell': dict(host=True, applies='host.move.loops > 0 and dev.cell > 0', on=[
-        ('cell kernels launched over n arguments', 'host.calls.launchv > 0'),
+    'nest-cell': dict(host=True, applies='dev.cell_nest > 0', on=[
+        ('each nest cell walks its fold in the kernel (a PTX loop, or >= work-1 FP ops unrolled)',
+         'dev.cell_nest_walk == dev.cell_nest'),
         ("per-trip copy-outs are the facts' (a device producer, a host observer)",
-         'host.move.d2h_b == host.move.intent_d2h')]),
+         'host.move.d2h_b == host.move.intent_d2h')],
+        applies_off='dev.cell > 0', off=[('no nest cell', 'dev.cell_nest == 0')]),
     # item 5 `tree-gate` (under `flow`): a lone fold over a column-major operand keeps its rowfold kernel.
     'tree-gate': dict(host=True, note='unit count: diff the `.off-tree-gate` arm (rtx-4090 contract rowsum: 0 vs 1 unit)'),
+    # 1a `retained-fold`: standalone row folds stay device sites in a function with retained sites (prefill pmx/pden);
+    # `.off-retained-fold` restores S65's veto (fewer `dev.rowfold`). Decided by the H100 retain-resident decode ABBA.
+    'retained-fold': dict(host=True, applies='dev.rowfold > 0', on=[
+        ('each placed row fold is launched', 'host.calls.launch >= dev.rowfold')],
+        note='rowfold count: diff the `.off-retained-fold` arm'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

@@ -5002,6 +5002,7 @@ fn cell_plan_records_a_nested_folds_reads() {
     assert_eq!(site.nested.len(), 3, "a, b and the k range it walks: {site:?}");
     assert!(site.reads.iter().all(|r| r.foot == mapal_ir::Footprint::Other), "{site:?}");
     assert!(site.uniform.is_empty());
+    assert_eq!(site.work, 1 + 16, "one step plus the k = 16 fold: {site:?}");
     assert_eq!(ir.tile_plan(main).sites.len(), 1);
 }
 

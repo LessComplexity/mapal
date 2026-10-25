@@ -451,6 +451,9 @@ pub struct CellSite {
     /// own captures, any proven address: `reads` holds each as
     /// [`Footprint::Other`]) — a dot product or a whole fold per cell.
     pub nested: Vec<u32>,
+    /// Element steps one cell takes: 1, plus each nested `Map`/`Fold`'s
+    /// extent times its own body's steps (a dot product over `k`: `1 + k`).
+    pub work: u64,
 }
 
 /// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
@@ -1611,9 +1614,10 @@ impl CategoryIr {
     /// **The per-cell morphisms of `f` and what each cell reads** (S54,
     /// [`CellSite`]). A `Map` is one when its body is classifiable (trap-,
     /// loop- and effect-free: [`Self::body_is_classifiable`]), calls no
-    /// function and holds no nested `Map`/`Fold` (a cell is one leaf
-    /// evaluation), every `Index` in it is proven and reads a captured array,
-    /// and every capture is an array. Each `Index` address is classified over
+    /// function, every nested `Map`/`Fold` in it walks local values or reads
+    /// captured arrays only (`nested`, `work`), every `Index` in it is proven
+    /// and reads a captured array, and every capture is an array or a number
+    /// (`uniform`). Each `Index` address is classified over
     /// the map index `t` — which exists only when the mapped array is an
     /// `iota`; over any other mapped array the element is a value and an
     /// address built from it is [`Footprint::Other`].
@@ -1707,13 +1711,41 @@ impl CategoryIr {
             slot,
             foot: Footprint::Other,
         }));
+        let work = bd
+            .morphisms
+            .iter()
+            .fold(1u64, |w, &g| w.saturating_add(self.nest_steps(g, 0)));
         Some(CellSite {
             extent,
             reads,
             body,
             uniform,
             nested,
+            work,
         })
+    }
+
+    /// Element steps of one evaluation of `g` when it is a `Map`/`Fold`: the
+    /// extent it walks times (1 + its body's nested steps); 0 otherwise.
+    fn nest_steps(&self, g: MorphismId, depth: u32) -> u64 {
+        let Some(x) = self.morphisms.get(g) else { return 0 };
+        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op else {
+            return 0;
+        };
+        let over = match x.op {
+            Operation::Map { .. } if nc == 0 => Some(x.source),
+            Operation::Map { .. } => self.pair_slot_source(x.source, nc),
+            _ => self.pair_slot_source(x.source, nc + 1),
+        };
+        let n = match over.and_then(|o| self.objects.get(o)).map(|o| &o.ty) {
+            Some(&Ty::Array { size, .. }) => size,
+            _ => 0,
+        };
+        let inner = match self.func(body) {
+            Some(b) if depth < 8 => b.morphisms.iter().map(|&h| self.nest_steps(h, depth + 1)).sum(),
+            _ => 0,
+        };
+        n.saturating_mul(inner.saturating_add(1))
     }
 
     /// The capture slots (`< captures`, of the body whose input is `input`)
