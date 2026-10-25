@@ -132,7 +132,7 @@ INTENT = {
         off=[('each kernel resolved at its first launch', 'host.init_flags & 8 == 0')]),
     'entry-arena': dict(host=True, applies='host.calls.alloc + host.calls.arena > 0', on=[
         ('the arena made in the entry block, nowhere else', 'host.arena_entry == host.calls.arena > 0')],
-        off=[('the arena on its first ask', 'host.arena_entry == 0')]),
+        off=[('every member asks the arena (no base loaded from the entry arena)', 'host.arena_load == 0')]),
     'async-h2d': dict(host=True, applies='host.calls.h2d + host.calls.h2d_async > 0', on=[
         ('no upload waits for the device', 'host.calls.h2d == 0')],
         off=[('every upload synchronous', 'host.calls.h2d_async == 0')]),

@@ -297,6 +297,8 @@ def host_facts(ll, asm):
         f['init_flags'] = int(m.group(1)) if m else 0
         f['arena_entry'] = sum(len(re.findall(r'@mapal_gpu_arena\(', re.split(
             r'\n[^\n]*(?:@mapal_time_ms\(|@mapal_gpu_(?!arena\()\w+\()', d)[0])) for d in ll.split('\ndefine ')[1:])
+        # `entry-arena` ON only: a member's buffer is the entry arena's base loaded (OFF asks the arena).
+        f['arena_load'] = len(re.findall(r'= load i64, ptr %darena\b', ll))
         f['par'] = len(re.findall(r'@mapal_par_begin\(', ll))
         f['sme'] = len(re.findall(r'@mapal_sme_panel', ll))
         # generic-fusion: every function's `; mapal.flow.host` line, summed, and the unit launches.
