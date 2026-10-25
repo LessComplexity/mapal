@@ -1,6 +1,6 @@
 # ADR-0041: Compute precision as a permission on compute nodes — `tf32 | f32`
 
-Date: 2026-10-25 · Status: candidate — NOT decided · number provisional · changes nothing until accepted.
+Date: 2026-10-25 · Status: **accepted-for-implementation** (Sapir, 2026-10-25: "ok go for it" — sprint `recurrence-precision`).
 Direction agreed (Sapir, 2026-10-25): precision is attached to the compute, not to the stored type — "attaching to
 compute type seems more relevant; this way on the graph path we can group by compute type on the dataflow graph".
 Implements: ADR-0032 D1 (the `tf32-class` region contract) and D5 (no precision via ambient config). Amends: ADR-0039
