@@ -33,17 +33,20 @@ fold body) carries a set `P` of admitted product precisions. Members: `f32` (ADR
 `f16` (multiplicands rounded to those significands; `f16` also needs a value-range proof, below). `P` says what is
 *acceptable*; it is not an ordered preference and not "use when available". The default is `P = {f32}`.
 
-**D2 — Surface: a type on the compute step; innermost wins.** (Sapir, 2026-10-25: a `precision(...)` clause "doesn't
-follow the language flow"; chosen: the step takes a type in the same `: T` form a name takes.)
+**D2 — Surface: `: compute` on anything that opens a body; innermost wins.** (Sapir, 2026-10-25: a `precision(...)`
+clause "doesn't follow the language flow"; the compute type is written in the same `: T` form a name takes, on steps,
+blocks and functions.)
 
 ```
-(0.0, krange) -> fold: tf32 | f32 { acc, k -> acc + x[k] * w[k] } -> y;
-tc -> map: tf32 | f32 { c -> (0.0, krange) -> fold { acc, k -> acc + x[c/256*256 + k] * wk[k*256 + c%256] } } -> kk;
+(0.0, krange) -> fold: tf32 | f32 { acc, k -> acc + x[k] * w[k] } -> y;     // a step: fold / map
+loop: tf32 | f32 { … }                                                     // a block: loop / seq / :label
+fn my_func(a: [f32; 16], b: [f32; 16]): tf32 | f32 -> f32 { … }            // a function: before `-> output`
 ```
 
-A step's type applies to every product node lowered from its body, nested `map`/`fold` steps included, unless a
-nested step carries its own type. `fold: f32` restores the default inside a relaxed step. No function-level form.
-The type is part of the function (ADR-0032 semantics note), so the oracle and gates are per step.
+The compute type covers every product node lowered from the body it opens, nested steps and blocks included, unless
+a nested one carries its own. `: f32` restores the default inside a relaxed body. A called function's own compute
+type governs its body (a call does not inherit the caller's). The type is part of the function (ADR-0032 semantics
+note), so the oracle and gates are per body. Labeled blocks take it once they leave Core+1 (P0110).
 
 **D3 — Semantics = the weakest member's bound; the realization is free.** A product node with set `P` admits every
 realization whose error stays within the bound of the weakest member of `P`. For a tile site of length `K` whose
