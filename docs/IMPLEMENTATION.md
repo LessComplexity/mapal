@@ -53,7 +53,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 > geometry remains deduced IR data. Final integrated acceptance is recorded in the
 > [component status](components/backend-nvptx/STATUS.md).
 
-| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`crates/mapal-ir/src/algo.rs`); consumed by llvm in-place `Update` (`crates/backends/llvm/src/func/ops.rs:FnEmit::update_in_place_source`) + cuda in-place `Update` and back-edge freeing (`crates/backends/cuda/src/func.rs:in_place_update`, `crates/backends/cuda/src/func.rs:FnEmit::emit_back_edge_frees`); CUDA arena last-use coloring remains planned (`crates/backends/cuda/src/arena.rs` module documentation) | deduced (recomputed, never stored) |
+| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`crates/mapal-ir/src/algo.rs`); consumed by llvm in-place `Update` (`crates/backends/llvm/src/func/ops.rs:FnEmit::in_place_source`) + cuda in-place `Update` and back-edge freeing (`crates/backends/cuda/src/func.rs:in_place_update`, `crates/backends/cuda/src/func.rs:FnEmit::emit_back_edge_frees`); CUDA arena last-use coloring remains planned (`crates/backends/cuda/src/arena.rs` module documentation) | deduced (recomputed, never stored) |
 
 ## System entry points
 
