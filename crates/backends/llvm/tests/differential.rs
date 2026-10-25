@@ -3327,7 +3327,7 @@ fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [
                                 .nth(1)
                                 .and_then(|t| t.split(", ptr null").next())
                                 .map_or(0, llt_array_bytes);
-                        } else if x.contains("@mapal_gpu_h2d(") {
+                        } else if x.contains("@mapal_gpu_h2d(") || x.contains("@mapal_gpu_h2d_async(") {
                             m[2] += last_i64(x);
                         } else if x.contains("@mapal_gpu_d2h(") || x.contains("@mapal_gpu_d2h_on(") {
                             m[3] += last_i64(x);
