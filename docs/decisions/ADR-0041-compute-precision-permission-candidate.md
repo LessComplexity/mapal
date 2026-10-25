@@ -33,16 +33,17 @@ fold body) carries a set `P` of admitted product precisions. Members: `f32` (ADR
 `f16` (multiplicands rounded to those significands; `f16` also needs a value-range proof, below). `P` says what is
 *acceptable*; it is not an ordered preference and not "use when available". The default is `P = {f32}`.
 
-**D2 — Surface: a `precision(...)` clause on a scope; innermost wins.** Provisional syntax:
+**D2 — Surface: a type on the compute step; innermost wins.** (Sapir, 2026-10-25: a `precision(...)` clause "doesn't
+follow the language flow"; chosen: the step takes a type in the same `: T` form a name takes.)
 
 ```
-fn main() precision(tf32 | f32) { ... }                       // every product in main
-(0.0, k) -> fold precision(tf32 | f32) { acc, k -> acc + x[k] * w[k] } -> y   // this fold only
+(0.0, krange) -> fold: tf32 | f32 { acc, k -> acc + x[k] * w[k] } -> y;
+tc -> map: tf32 | f32 { c -> (0.0, krange) -> fold { acc, k -> acc + x[c/256*256 + k] * wk[k*256 + c%256] } } -> kk;
 ```
 
-A scope's clause applies to every product node lowered from it, nested `map`/`fold` bodies included, unless a nested
-clause overrides it. `precision(f32)` restores the default inside a relaxed scope. The clause is part of the function
-(ADR-0032 semantics note), so the oracle and gates are per scope.
+A step's type applies to every product node lowered from its body, nested `map`/`fold` steps included, unless a
+nested step carries its own type. `fold: f32` restores the default inside a relaxed step. No function-level form.
+The type is part of the function (ADR-0032 semantics note), so the oracle and gates are per step.
 
 **D3 — Semantics = the weakest member's bound; the realization is free.** A product node with set `P` admits every
 realization whose error stays within the bound of the weakest member of `P`. For a tile site of length `K` whose
@@ -67,7 +68,7 @@ graph:
 
 | field | what it proves |
 | --- | --- |
-| `set(m)` | `P` of product node `m` (from the innermost clause) |
+| `set(m)` | `P` of product node `m` (from the innermost step type) |
 | `round_at(v)` | value `v` whose every product reader admits `tf32`: round once at the producer, not per use (the compute-once rule) |
 | `cross(e)` | edges where a value flows from a region admitting `tf32` into one that does not (no rounded copy may cross) |
 | `bound(o)` | each tile site's / output's a-priori bound from D3, for the gates |
@@ -86,13 +87,17 @@ recorded in `facts.json` and the evidence intents.
 
 ## Interpreter
 
-The parser accepts the clause; the IR stores `P` per product node. The interpreter evaluates in f32 (the strongest
+The parser accepts the step type; the IR stores `P` per product node. The interpreter evaluates in f32 (the strongest
 member), so `.expect` files do not change. `mapal test --weakest` evaluates each product with its weakest member
-(operands rounded with the IEEE rule) to exercise D3 from the other side. Value gates on scopes admitting `tf32` accept
+(operands rounded with the IEEE rule) to exercise D3 from the other side. Value gates on steps admitting `tf32` accept
 iff `|got − ref| ≤ D3 bound`, `ref` and `M` in f64 (ADR-0040 D2 pattern). `print` is unchanged.
 
 ## Later (not decided here)
 
+- **Output type sets on bindings** (Sapir, 2026-10-25: "something similar for output type"). The same form on the
+  name a step flows into: `} -> y: bf16 | f32;` — `y` may be stored in any listed format, the compiler picks per target
+  within the weakest format's bound (`bf16`: `u = 2⁻⁸` on each stored value). Symmetric with D2: the step's type says
+  how products are computed, the name's type how the result is stored. Needs ADR-0039's 16-bit storage types.
 - **Deduced narrow storage.** If every reader of a value admits `bf16` (or `f16`), the producer may store it in 16 bits:
   half the bytes moved, deduced from consumers like residency and caching. Needs ADR-0039's storage types and an
   amendment of ADR-0032 D2 (conversions explicit): the permission is the explicit statement, the conversion its
