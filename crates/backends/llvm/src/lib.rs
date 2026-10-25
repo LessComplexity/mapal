@@ -448,6 +448,18 @@ pub struct GpuRungs {
     /// `batched` writes made first by one device cell over all their cells
     /// (each cell's trip `c ÷ d − b`). Off: every trip runs.
     pub trip_batch: bool,
+    /// recurrence-precision item 2 `cell-lanes`: on the default face (order
+    /// free) a nest cell whose cells are fewer than the part's resident
+    /// threads folds across a warp's lanes — lane `l` takes every 32nd step
+    /// from `l`, a shuffle tree combines — one warp a cell. Off: one thread a
+    /// cell, the fold in order.
+    pub cell_lanes: bool,
+    /// recurrence-precision item 2 `fold-lanes`: on the default face a device
+    /// row fold (whole folds included) whose step regroups (`+`, `×`, running
+    /// max/min, f32) and whose rows leave the part's resident threads idle is a
+    /// warp a row — lane `l` takes every 32nd `k` from `l`, a butterfly of
+    /// shuffles combines, lane 0 stores. Off: one thread a row, `k` in order.
+    pub fold_lanes: bool,
 }
 
 impl GpuRungs {
@@ -517,11 +529,13 @@ impl GpuRungs {
         range_cell: true,
         scalar_fold: true,
         trip_batch: true,
+        cell_lanes: true,
+        fold_lanes: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 64] = [
+    pub const NAMES: [&'static str; 66] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -586,6 +600,8 @@ impl GpuRungs {
         "range-cell",
         "scalar-fold",
         "trip-batch",
+        "cell-lanes",
+        "fold-lanes",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -655,6 +671,8 @@ impl GpuRungs {
             "range-cell" => &mut self.range_cell,
             "scalar-fold" => &mut self.scalar_fold,
             "trip-batch" => &mut self.trip_batch,
+            "cell-lanes" => &mut self.cell_lanes,
+            "fold-lanes" => &mut self.fold_lanes,
             _ => return None,
         })
     }

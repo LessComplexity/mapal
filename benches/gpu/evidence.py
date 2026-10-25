@@ -834,11 +834,19 @@ def check(d, results=None, out=sys.stdout):
         fp = lambda p: sum(p.get(k, 0) for k in ('fma_f32', 'mul_f32', 'add_f32'))
         dev['cell_nest_walk'] = sum(kf.get('ptx', {}).get('loops', 0) > 0
                                     or fp(kf.get('ptx', {})) >= kf['plan'].get('work', 1) - 1 for kf in nest)
-        # recurrence-precision: range cells, cells reading a device number, batch variants.
+        # recurrence-precision: range cells, cells reading a device number, batch variants, lane cells (and those
+        # combining by >= 5 butterfly shuffles: log2 of a 32-lane warp).
         has = lambda kf, key: str(kf['plan'].get(key, '')) not in ('', '0')
         dev['cell_range'] = sum(has(kf, 'range') for kf in cells)
         dev['cell_dev'] = sum(has(kf, 'dev') for kf in cells)
         dev['cell_batch'] = sum(has(kf, 'batch') for kf in cells)
+        lanes = [kf for kf in cells if int(kf['plan'].get('lanes', 1) or 1) > 1]
+        dev['cell_lanes'] = len(lanes)
+        dev['cell_lanes_shfl'] = sum(kf.get('ptx', {}).get('shfl', 0) >= 5 for kf in lanes)
+        flanes = [kf for kf in e['kernels'].values()
+                  if kf.get('plan', {}).get('kind') == 'rowfold' and int(kf['plan'].get('lanes', 1) or 1) > 1]
+        dev['rowfold_lanes'] = len(flanes)
+        dev['rowfold_lanes_shfl'] = sum(kf.get('ptx', {}).get('shfl', 0) >= 5 for kf in flanes)
         ns = Scope(host=D(e['host']), device=D(e['device']), launch=D(e['launch']), dev=D(dev), arch=prof,
                    sm=e['sm'])
         hon = set(e.get('host_table', [])) | on

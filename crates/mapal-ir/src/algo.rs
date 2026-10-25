@@ -454,6 +454,12 @@ pub struct CellSite {
     /// Element steps one cell takes: 1, plus each nested `Map`/`Fold`'s
     /// extent times its own body's steps (a dot product over `k`: `1 + k`).
     pub work: u64,
+    /// recurrence-precision item 2: the body's one nested fold, when it is
+    /// its only `Map`/`Fold` and its step is `acc ⊕ g(…)` with `⊕` a `+`, `×`
+    /// or running max/min and `g` blind to `acc` ([`CategoryIr::fold_tree_step`])
+    /// — `(fold, step, extent)`: where the order is free its steps may be
+    /// split across lanes and combined as a tree.
+    pub tree: Option<(MorphismId, RowFoldOp, u64)>,
 }
 
 /// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
@@ -1561,6 +1567,58 @@ impl CategoryIr {
         Some(TripSplit { merge, counter, lo, hi, phases })
     }
 
+    /// **A fold step the order may regroup** (recurrence-precision item 2):
+    /// `fold`'s body is `acc ⊕ g(caps, k)` — `⊕` an `Add` or `Mul` with `acc`
+    /// on either side, or a running max/min (`cmp(acc, e) ? · : ·` over
+    /// exactly `{acc, e}`) — and `acc` feeds nothing but that step, so `g`
+    /// never reads it. Where the order is free (ADR-0040) such a fold may run
+    /// as partial folds from the step's identity combined by `⊕`.
+    pub fn fold_tree_step(&self, fold: MorphismId) -> Option<RowFoldOp> {
+        let Operation::Fold { body, captures } = self.morphisms.get(fold)?.op else {
+            return None;
+        };
+        let fd = self.func(body)?;
+        let accs: Vec<ObjectId> = self
+            .out_edges(fd.input)
+            .iter()
+            .filter(|&&p| self.morphisms[p].op == (Operation::Proj { index: captures }))
+            .map(|&p| self.morphisms[p].target)
+            .collect();
+        let &[acc] = accs.as_slice() else { return None };
+        let [step] = self.in_edges(fd.output) else { return None };
+        let st = self.morphisms.get(*step)?;
+        // Every use of `acc` is a slot of a product read only by `into`.
+        let only_into = |into: &[ObjectId]| {
+            self.out_edges(acc).iter().all(|&e| {
+                let pm = &self.morphisms[e];
+                matches!(pm.op, Operation::Pair { .. }) && into.contains(&pm.target)
+            })
+        };
+        let slot = |k| self.pair_slot_source(st.source, k);
+        match st.op {
+            Operation::Add | Operation::Mul => {
+                let (x, y) = (slot(0)?, slot(1)?);
+                ((x == acc) != (y == acc) && only_into(&[st.source]))
+                    .then_some(RowFoldOp::Arith { op: st.op, acc_first: x == acc })
+            }
+            Operation::Phi => {
+                let (p, q) = (slot(0)?, slot(1)?);
+                let cmp = self.morphisms.get(*self.in_edges(slot(2)?).first()?)?;
+                if !matches!(cmp.op, Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge) {
+                    return None;
+                }
+                let x = self.pair_slot_source(cmp.source, 0)?;
+                let y = self.pair_slot_source(cmp.source, 1)?;
+                let e = if x == acc { y } else { x };
+                let pair = |u: ObjectId, v: ObjectId| (u == acc) != (v == acc) && [u, v].contains(&e);
+                (pair(x, y) && pair(p, q) && e != acc && only_into(&[st.source, cmp.source])).then_some(
+                    RowFoldOp::Select { cmp: cmp.op, acc_lhs: x == acc, acc_if_true: p == acc },
+                )
+            }
+            _ => None,
+        }
+    }
+
     /// **Whole folds** (recurrence-precision): a `Fold` of `f` itself (no
     /// enclosing map) over a counted range whose step reads one captured
     /// array at an affine address — a [`RowFoldSite`] of one row (`rows = 1`,
@@ -2108,6 +2166,20 @@ impl CategoryIr {
             .morphisms
             .iter()
             .fold(1u64, |w, &g| w.saturating_add(self.nest_steps(g, 0)));
+        let bulk: Vec<MorphismId> = bd
+            .morphisms
+            .iter()
+            .copied()
+            .filter(|&g| matches!(self.morphisms[g].op, Operation::Map { .. } | Operation::Fold { .. }))
+            .collect();
+        let tree = match bulk[..] {
+            [g] if !nested.is_empty() => self.fold_tree_step(g).and_then(|op| {
+                let Operation::Fold { captures: fc, .. } = self.morphisms[g].op else { return None };
+                let k = self.tile_iota_size(self.pair_slot_source(self.morphisms[g].source, fc + 1)?)?;
+                Some((g, op, k))
+            }),
+            _ => None,
+        };
         Some(CellSite {
             extent,
             reads,
@@ -2115,6 +2187,7 @@ impl CategoryIr {
             uniform,
             nested,
             work,
+            tree,
         })
     }
 

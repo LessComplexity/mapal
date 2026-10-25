@@ -1035,8 +1035,9 @@ fn gen_kernel_text(id: u64, callee: &str, elem: &str) -> String {
 /// A device row fold's kernel id (S54 `rowfold`): FNV-1a over the site (its
 /// read already re-addressed for a column-major producer) and the profile.
 /// Named `mapal_tile_<id>` like a site's, so the runtime's `launch` finds it.
-pub(crate) fn rowfold_id(site: &RowFoldSite, profile: &TargetProfile) -> u64 {
-    format!("rowfold|{site:?}|{}", profile.name)
+pub(crate) fn rowfold_id(site: &RowFoldSite, profile: &TargetProfile, lanes: u64) -> u64 {
+    let l = if lanes > 1 { format!("|lanes={lanes}") } else { String::new() };
+    format!("rowfold|{site:?}|{}{l}", profile.name)
         .bytes()
         .fold(0xcbf2_9ce4_8422_2325, |h, b| {
             (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -1059,8 +1060,12 @@ pub(crate) fn cell_id(body: &str, n: u64, profile: &TargetProfile) -> u64 {
 /// warp, at most [`NAIVE_THREADS`]. A fold has one thread per row and no more
 /// (ADR-0028 D4), so few threads that the SMs they land on, not the block
 /// size, bound how many loads are in flight.
-pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile) -> (u64, u64) {
+pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile, lanes: u64) -> (u64, u64) {
     let g = profile.gpu().expect("a device fold has a GPU profile");
+    if lanes > 1 {
+        // `fold-lanes`: a warp a row, whole warps per block.
+        return (site.rows.saturating_mul(lanes).div_ceil(NAIVE_THREADS), NAIVE_THREADS);
+    }
     let threads = site
         .rows
         .div_ceil(g.sms)
@@ -1074,8 +1079,63 @@ pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile) -> (u64,
 /// instruction (`fadd`/`fsub`/`fmul`, or `fcmp` + `select` for a running
 /// max/min) in the source's operand order, never `contract`ed. The kernel
 /// takes the site ABI's three pointers; `%b` is unused.
-fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> String {
-    let (_, threads) = rowfold_grid(s, profile);
+/// recurrence-precision item 2 `fold-lanes`: threads a row of a device row
+/// fold folds over — a warp where the order is free (the default face,
+/// ADR-0040), the step regroups (`+`, `×`, running max/min) over `f32`, the
+/// fold is at least a warp long, plain (no window, no tap split) and its
+/// rows leave the part's resident threads idle. 1 otherwise.
+pub(crate) fn rowfold_lanes(
+    site: &RowFoldSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+) -> u64 {
+    let Some(g) = profile.gpu() else { return 1 };
+    let regroups = matches!(
+        site.op,
+        RowFoldOp::Arith { op: Operation::Add | Operation::Mul, .. } | RowFoldOp::Select { .. }
+    );
+    let fits = site.rows.saturating_mul(g.warp) <= g.sms.saturating_mul(g.max_threads_per_sm);
+    if host_rungs(profile, contract, arms).fold_lanes
+        && order == Order::Free
+        && regroups
+        && g.warp == 32
+        && site.elem == (mapal_ir::Ty::Float { bits: 32 })
+        && site.k >= g.warp
+        && site.w == 1
+        && site.a.ksplit.is_none()
+        && fits
+    {
+        g.warp
+    } else {
+        1
+    }
+}
+
+/// A device row fold's kernel: its name, and its `; mapal.plan` line + text.
+fn rowfold_entry(
+    s: &RowFoldSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+) -> (String, String) {
+    let lanes = rowfold_lanes(s, profile, contract, arms, order);
+    let name = kernel_name(rowfold_id(s, profile, lanes));
+    let (gx, block) = rowfold_grid(s, profile, lanes);
+    let l = if lanes > 1 { format!(" lanes={lanes}") } else { String::new() };
+    let text = format!("; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}{l}\n", s.rows, s.k)
+        + &rowfold_kernel_text(&name, s, profile, lanes);
+    (name, text)
+}
+
+/// `fold-lanes` (`lanes > 1`): a warp a row — lane `l` folds `k = l, l +
+/// lanes, …` from the step's identity (a running max/min's from the seed),
+/// a butterfly of shuffles combines the partials, `⊕` the seed once, lane 0
+/// stores.
+fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile, lanes: u64) -> String {
+    let (_, threads) = rowfold_grid(s, profile, lanes);
     let t = lower_ty(&s.elem).expect("float elem lowers");
     let e = elem_bytes_of(&s.elem);
     let seed = const_literal(&s.seed);
@@ -1140,6 +1200,73 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> 
         ),
         None => format!("  %kk = mul i64 %k, {}\n", s.a.ck),
     };
+    // `fold-lanes`: the row is `g ÷ lanes`, the lane `g % lanes`; each lane
+    // walks `k ≡ lane` from the identity, then the warp combines.
+    let (gid, k0, acc0, kstep, fin, store) = if lanes > 1 {
+        let comb = |a: &str, b: &str, r: &str| match s.op {
+            RowFoldOp::Arith { op, .. } => {
+                format!("  {r} = {} {t} {a}, {b}\n", if op == Operation::Mul { "fmul" } else { "fadd" })
+            }
+            RowFoldOp::Select { cmp, acc_lhs, acc_if_true } => {
+                let pred = match cmp {
+                    Operation::Lt => "olt",
+                    Operation::Gt => "ogt",
+                    Operation::Le => "ole",
+                    _ => "oge",
+                };
+                let (x, y) = if acc_lhs { (a, b) } else { (b, a) };
+                let (p, q) = if acc_if_true { (a, b) } else { (b, a) };
+                format!("  {r}c = fcmp {pred} {t} {x}, {y}\n  {r} = select i1 {r}c, {t} {p}, {t} {q}\n")
+            }
+        };
+        let (identity, seeded) = match s.op {
+            RowFoldOp::Arith { op: Operation::Mul, .. } => ("1.0".to_string(), true),
+            RowFoldOp::Arith { .. } => ("-0.0".to_string(), true),
+            RowFoldOp::Select { .. } => (seed.clone(), false),
+        };
+        let mut tree = String::new();
+        let mut cur = "%accn".to_string();
+        let mut off = lanes / 2;
+        while off >= 1 {
+            tree.push_str(&format!(
+                "  %sh{off} = call float @llvm.nvvm.shfl.sync.bfly.f32(i32 -1, float {cur}, i32 {off}, i32 31)\n"
+            ));
+            let r = format!("%cb{off}");
+            tree.push_str(&comb(&cur, &format!("%sh{off}"), &r));
+            cur = r;
+            off /= 2;
+        }
+        if seeded {
+            let first = matches!(s.op, RowFoldOp::Arith { acc_first: true, .. });
+            let (a, b) = if first { (seed.as_str(), cur.as_str()) } else { (cur.as_str(), seed.as_str()) };
+            tree.push_str(&comb(a, b, "%tot"));
+            cur = "%tot".into();
+        }
+        (
+            format!("  %g = add i64 %row0, %t64\n  %i = udiv i64 %g, {lanes}\n  %ln = urem i64 %g, {lanes}\n"),
+            "%ln".to_string(),
+            identity,
+            lanes,
+            "uge",
+            format!(
+                "{tree}  %l0 = icmp eq i64 %ln, 0\n  br i1 %l0, label %st, label %done\nst:\n  \
+                 %q = getelementptr inbounds {t}, ptr addrspace(1) %o, i64 %i\n  \
+                 store {t} {cur}, ptr addrspace(1) %q, align {e}\n"
+            ),
+        )
+    } else {
+        (
+            "  %i = add i64 %row0, %t64\n".to_string(),
+            "0".to_string(),
+            seed.clone(),
+            1,
+            "eq",
+            format!(
+                "  %q = getelementptr inbounds {t}, ptr addrspace(1) %o, i64 %i\n  \
+                 store {t} %accn, ptr addrspace(1) %q, align {e}\n"
+            ),
+        )
+    };
     format!(
         "define ptx_kernel void @{name}(\
          ptr addrspace(1) noalias readonly align {e} %a, \
@@ -1151,7 +1278,7 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> 
          \x20 %t64 = zext i32 %tid to i64\n\
          \x20 %b64 = zext i32 %bid to i64\n\
          \x20 %row0 = mul i64 %b64, {threads}\n\
-         \x20 %i = add i64 %row0, %t64\n\
+         {gid}\
          \x20 %in = icmp ult i64 %i, {rows}\n\
          \x20 br i1 %in, label %body, label %done\n\
          body:\n\
@@ -1159,19 +1286,18 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile) -> 
          \x20 %r0 = add i64 %ri, {base}\n\
          \x20 br label %kloop\n\
          kloop:\n\
-         \x20 %k = phi i64 [0, %body], [%kn, %kloop]\n\
-         \x20 %acc = phi {t} [{seed}, %body], [%accn, %kloop]\n\
+         \x20 %k = phi i64 [{k0}, %body], [%kn, %kloop]\n\
+         \x20 %acc = phi {t} [{acc0}, %body], [%accn, %kloop]\n\
          {taps}\
          \x20 %x = add i64 %r0, %kk\n\
          \x20 %p = getelementptr inbounds {t}, ptr addrspace(1) %a, i64 %x\n\
          \x20 %v = load {t}, ptr addrspace(1) %p, align {e}\n\
          {step}\
-         \x20 %kn = add i64 %k, 1\n\
-         \x20 %fin = icmp eq i64 %kn, {k}\n\
+         \x20 %kn = add i64 %k, {kstep}\n\
+         \x20 %fin = icmp {fin} i64 %kn, {k}\n\
          \x20 br i1 %fin, label %store, label %kloop\n\
          store:\n\
-         \x20 %q = getelementptr inbounds {t}, ptr addrspace(1) %o, i64 %i\n\
-         \x20 store {t} %accn, ptr addrspace(1) %q, align {e}\n\
+         {store}\
          \x20 br label %done\n\
          done:\n\
          \x20 ret void\n\
@@ -1206,6 +1332,11 @@ fn site_fold(ir: &CategoryIr, m: MorphismId) -> (FuncId, MorphismId) {
 /// `cell-law`'s device variant of body `name` (`FnEmit::cell_vals`).
 pub(crate) fn cell_variant(name: &str) -> String {
     format!("{name}_cell")
+}
+
+/// `cell-lanes`' device variant of body `name` (`FnEmit::lanes`).
+pub(crate) fn lanes_variant(name: &str) -> String {
+    format!("{name}_lanes")
 }
 
 /// `out[i] = body(caps…, x[i])`, one thread per cell (`devmap`): the host's
@@ -1294,14 +1425,35 @@ pub(crate) fn cell_kernel_text(
         }
     }
     // `range-cell`: thread `k` is cell `rs + step·k` of the interval's `rn`
-    // cells.
-    let (gid, guard, at) = match g.range {
-        None => ("%i", format!("  %in = icmp ult i64 %i, {n}\n"), String::new()),
-        Some(step) => (
-            "%k",
-            "  %in = icmp ult i64 %k, %rn\n".to_string(),
-            format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
+    // cells. `cell-lanes`: a cell is `lanes` consecutive threads (the body's
+    // lane variant splits its fold over them), lane 0 stores.
+    let (k, bound) = match g.range {
+        None => ("%i", n.to_string()),
+        Some(_) => ("%k", "%rn".to_string()),
+    };
+    let (gid, at) = match (g.lanes, g.range) {
+        (1, None) => ("%i".to_string(), String::new()),
+        (1, Some(step)) => ("%k".to_string(), format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n")),
+        (l, None) => ("%g".to_string(), format!("  %i = udiv i64 %g, {l}\n")),
+        (l, Some(step)) => (
+            "%g".to_string(),
+            format!("  %k = udiv i64 %g, {l}\n  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
         ),
+    };
+    // Lanes: the bound test is on the cell, after the division.
+    let (head, guard) = if g.lanes == 1 {
+        (String::new(), format!("  %in = icmp ult i64 {k}, {bound}\n"))
+    } else {
+        (at.clone(), format!("  %in = icmp ult i64 {k}, {bound}\n"))
+    };
+    let at = if g.lanes == 1 { at } else { String::new() };
+    let store = if g.lanes == 1 {
+        String::new()
+    } else {
+        format!(
+            "  %ln = urem i64 %g, {l}\n  %l0 = icmp eq i64 %ln, 0\n  br i1 %l0, label %st, label %done\nst:\n",
+            l = g.lanes
+        )
     };
     format!(
         "define ptx_kernel void @{name}({params}) \"nvvm.maxntid\"=\"{NAIVE_THREADS}\" {{\n\
@@ -1312,11 +1464,12 @@ pub(crate) fn cell_kernel_text(
          \x20 %b64 = zext i32 %b to i64\n\
          \x20 %base = mul i64 %b64, {NAIVE_THREADS}\n\
          \x20 {gid} = add i64 %base, %t64\n\
-         {guard}\
+         {head}{guard}\
          \x20 br i1 %in, label %body, label %done\n\
          body:\n\
          {at}{body}\
          \x20 %v = call {out} @{callee}({call_arg})\n\
+         {store}\
          \x20 %p = getelementptr inbounds {out}, ptr addrspace(1) %o, i64 %i\n\
          \x20 store {out} %v, ptr addrspace(1) %p\n\
          \x20 br label %done\n\
@@ -1351,11 +1504,18 @@ pub(crate) struct CellGeo {
     /// `range-cell`: the interval's step; the kernel takes its start and
     /// count by value (`%rs`, `%rn`).
     pub range: Option<u64>,
+    /// `cell-lanes`: threads a cell (1: one thread a cell).
+    pub lanes: u64,
 }
 
 impl CellGeo {
     #[cfg(test)]
-    pub(crate) const ONE: CellGeo = CellGeo { range: None };
+    pub(crate) const ONE: CellGeo = CellGeo { range: None, lanes: 1 };
+
+    /// `(blocks, threads)` for `cells` cells.
+    pub(crate) fn grid(self, cells: u64) -> (u64, u64) {
+        cell_grid(cells.saturating_mul(self.lanes.max(1)))
+    }
 }
 
 /// `dst = src` narrowed from the 8-byte launch argument to `ty` (`i64`
@@ -1504,27 +1664,15 @@ pub(crate) fn device_module(
         // generic-fusion: a fold a unit holds launches inside the unit.
         let fused = |m: MorphismId| units.iter().any(|u| u.f == f && u.members.contains(&m));
         for (_, r) in folds.iter().filter(|&(m, _)| !fused(m)) {
-            let name = kernel_name(rowfold_id(&r.site, profile));
-            kernels.entry(name.clone()).or_insert_with(|| {
-                let (gx, block) = rowfold_grid(&r.site, profile);
-                format!(
-                    "; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}\n",
-                    r.site.rows, r.site.k
-                ) + &rowfold_kernel_text(&name, &r.site, profile)
-            });
+            let (name, text) = rowfold_entry(&r.site, profile, contract, arms, order);
+            kernels.entry(name).or_insert(text);
         }
     }
     // S65: the folds a function placed over a device output no tile site
     // wrote (the host's plan names them).
     for f in folds {
-        let name = kernel_name(rowfold_id(f, profile));
-        kernels.entry(name.clone()).or_insert_with(|| {
-            let (gx, block) = rowfold_grid(f, profile);
-            format!(
-                "; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}\n",
-                f.rows, f.k
-            ) + &rowfold_kernel_text(&name, f, profile)
-        });
+        let (name, text) = rowfold_entry(f, profile, contract, arms, order);
+        kernels.entry(name).or_insert(text);
     }
     for e in epis {
         let id = kernel_id_with(&e.site, profile, contract, reduced, Some(&e.k));

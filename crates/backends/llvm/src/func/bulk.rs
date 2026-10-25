@@ -354,7 +354,24 @@ impl<'a> FnEmit<'a> {
         let accslot = self.scratch(&acc_llt);
         let ctr = self.scratch("i64");
         let (lo, hi) = self.bulk_bounds(n);
-        self.line(format!("store {acc_llt} {acc0}, ptr {accslot}"));
+        // `cell-lanes`: this lane walks every `l`-th step from its lane id,
+        // from the step's identity (a max/min from the seed: idempotent).
+        let lane = self.lanes.filter(|l| l.0 == target && acc_llt == "float");
+        let (init, lo, stride) = match lane {
+            Some((_, op, l)) => {
+                let (ln, l64) = (self.tmp(), self.tmp());
+                self.line(format!("{ln} = call i32 @llvm.nvvm.read.ptx.sreg.laneid()"));
+                self.line(format!("{l64} = zext i32 {ln} to i64"));
+                let id = match op {
+                    mapal_ir::RowFoldOp::Arith { op: Operation::Mul, .. } => "1.0".to_string(),
+                    mapal_ir::RowFoldOp::Arith { .. } => "-0.0".to_string(),
+                    mapal_ir::RowFoldOp::Select { .. } => acc0.clone(),
+                };
+                (id, l64, l)
+            }
+            None => (acc0.clone(), lo, 1),
+        };
+        self.line(format!("store {acc_llt} {init}, ptr {accslot}"));
         self.line(format!("store i64 {lo}, ptr {ctr}"));
 
         let (lh, lb, ld) = (self.label(), self.label(), self.label());
@@ -403,13 +420,54 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{na} = call {acc_llt} @{callee}({arg})"));
         self.line(format!("store {acc_llt} {na}, ptr {accslot}"));
         let iv1 = self.tmp();
-        self.line(format!("{iv1} = add i64 {iv}, 1"));
+        self.line(format!("{iv1} = add i64 {iv}, {stride}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
         self.line(format!("br label %{lh}"));
         self.label_line(&ld);
-        let fin = self.tmp();
+        let mut fin = self.tmp();
         self.line(format!("{fin} = load {acc_llt}, ptr {accslot}"));
+        if let Some((_, op, l)) = lane {
+            // The lanes' partials: a butterfly of warp shuffles, `⊕` at each
+            // level (every lane ends with the total), then the seed once.
+            let mut off = l / 2;
+            while off >= 1 {
+                let o = self.tmp();
+                self.line(format!(
+                    "{o} = call float @llvm.nvvm.shfl.sync.bfly.f32(i32 -1, float {fin}, i32 {off}, i32 31)"
+                ));
+                fin = self.lane_step(op, &fin, &o);
+                off /= 2;
+            }
+            if let mapal_ir::RowFoldOp::Arith { .. } = op {
+                fin = self.lane_step(op, &acc0, &fin);
+            }
+        }
         self.store_obj(target, &acc_llt, &fin);
+    }
+
+    /// `cell-lanes`: `a ⊕ b` for two `float` partials of a fold step.
+    fn lane_step(&mut self, op: mapal_ir::RowFoldOp, a: &str, b: &str) -> String {
+        let r = self.tmp();
+        match op {
+            mapal_ir::RowFoldOp::Arith { op, .. } => {
+                let code = if op == Operation::Mul { "fmul" } else { "fadd" };
+                self.line(format!("{r} = {code} float {a}, {b}"));
+            }
+            mapal_ir::RowFoldOp::Select { cmp, acc_lhs, acc_if_true } => {
+                let pred = match cmp {
+                    Operation::Lt => "olt",
+                    Operation::Gt => "ogt",
+                    Operation::Le => "ole",
+                    _ => "oge",
+                };
+                let (x, y) = if acc_lhs { (a, b) } else { (b, a) };
+                let (p, q) = if acc_if_true { (a, b) } else { (b, a) };
+                let c = self.tmp();
+                self.line(format!("{c} = fcmp {pred} float {x}, {y}"));
+                self.line(format!("{r} = select i1 {c}, float {p}, float {q}"));
+            }
+        }
+        r
     }
 
     pub(super) fn emit_zip(&mut self, source: ObjectId, target: ObjectId) {

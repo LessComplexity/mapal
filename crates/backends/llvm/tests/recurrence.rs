@@ -193,3 +193,71 @@ fn the_natural_generator_is_prefills_twin() {
         assert!(gt[i] <= pt[i], "gen moves more: {gt:?} vs prefill {pt:?}");
     }
 }
+
+/// The kernels of `kind` whose `; mapal.plan` line carries `key`.
+fn plans_with(dev: &Option<String>, kind: &str, key: &str) -> usize {
+    dev.iter()
+        .flat_map(|d| d.lines())
+        .filter(|l| l.starts_with("; mapal.plan ") && l.contains(&format!(" kind={kind} ")) && l.contains(key))
+        .count()
+}
+
+/// **Item 2's `cell-lanes` and `fold-lanes` on unseen programs** (testgen
+/// `recur_prog_strategy`, the default face: order free): each against its own
+/// OFF arm, a nest cell whose fold regroups (`CellSite::tree`) is a warp a
+/// cell, and a device row fold (a whole fold included; `flow` off, whose
+/// tree gate leaves such folds at scale) a warp a row —
+/// counted from the emission, never in the OFF arm, the module combining by
+/// ≥ 5 butterfly shuffles a lane kernel — and the emulated device prints the
+/// OFF arm's values within the regrouping's rounding.
+#[test]
+fn lanes_on_unseen_programs() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP lanes_on_unseen_programs: clang not found");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::recur_prog_strategy();
+    let nums = |o: &str| o.lines().map(|l| l.trim().parse::<f64>().unwrap_or(f64::NAN)).collect::<Vec<_>>();
+    let mut fired = [0usize; 2];
+    for z in 0..24 {
+        let src = testgen::recur_src(&strat.new_tree(&mut runner).unwrap().current());
+        let ir = lower_src(&src);
+        // `fold-lanes` takes the row folds `flow` leaves (its tree gate):
+        // with `flow` off every generated row fold is one.
+        for (n, (rung, kind, base)) in
+            [("cell-lanes", "cell", &[][..]), ("fold-lanes", "rowfold", &["flow"][..])].into_iter().enumerate()
+        {
+            let on = arm(&ir, base, true);
+            let off = arm(&ir, &[base, &[rung]].concat(), true);
+            assert_eq!(plans_with(&off.device, kind, " lanes="), 0, "#{z} {rung} OFF\n{src}");
+            let lanes = plans_with(&on.device, kind, " lanes=32");
+            fired[n] += lanes;
+            if lanes == 0 {
+                continue;
+            }
+            let dev = on.device.as_deref().expect("a device module");
+            let shfl = dev.matches("call float @llvm.nvvm.shfl.sync.bfly.f32(").count();
+            assert!(shfl >= 5 * lanes, "#{z} {rung}: {shfl} shuffles for {lanes} lane kernels\n{src}");
+            let a = emu::run_emulated(&clang, &on.text, dev);
+            let b = emu::run_emulated(&clang, &off.text, off.device.as_deref().expect("dev"));
+            let (x, y) = (nums(&a), nums(&b));
+            assert_eq!(x.len(), y.len(), "#{z} {rung}\n{a}\n{b}\n{src}");
+            for (u, v) in x.iter().zip(&y) {
+                assert!((u - v).abs() <= 1e-3 * v.abs().max(1.0), "#{z} {rung}: {a:?} vs OFF {b:?}\n{src}");
+            }
+        }
+    }
+    eprintln!("lanes_on_unseen_programs: {} lane cells, {} lane row folds", fired[0], fired[1]);
+    assert!(fired.iter().all(|&f| f > 0), "a lane rule fired on no generated program: {fired:?}");
+}
+
+/// `fold_tree_step` (`CellSite::tree`): causal's `s` and `o` nest cells each
+/// fold once by `+` (a dot product), so both may run as lanes.
+#[test]
+fn nest_cells_whose_fold_regroups() {
+    let ir = lower_src(&bench("causal_16_8"));
+    let trees: Vec<_> = ir.cell_plan(ir.entry()).values().filter_map(|c| c.tree).map(|(_, op, k)| (op, k)).collect();
+    let add = |op| matches!(op, mapal_ir::RowFoldOp::Arith { op: mapal_ir::Operation::Add, .. });
+    assert!(trees.len() >= 2 && trees.iter().all(|&(op, k)| add(op) && k >= 8), "{trees:?}");
+}
