@@ -1414,50 +1414,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
                win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
     },
-    // fusion-natural-forms: the row-softmax unit (`mx:rowfold; ex:cell; den:rowfold; y|p:cell`) runs one thread
-    // per row, so 2048–4096 threads walk the T-cell members serially (ex twice); the OFF arm's cell kernels
-    // spread them over T² threads. Traced, the unit kernel is 1.8–4.8× the four kernels it replaces on every
-    // part and program; ON faster on none.
-    RungOff {
-        profile: "rtx-4090",
-        rung: "flow",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "evidence/fusion-natural-forms/rtx-4090/results-rtx-4090.txt OFF/ON iter: softmax_rows_4096 2.911/3.296 ms \
-               (0.884, null 0.019), softmax_rows_2048 0.488/0.718 (0.693, null 0.045), attn_2048_128 0.353/0.843 \
-               (0.409, null 0.060); ON slower outside null 4 of 6 programs, inside 2, faster 0; unit kernel 0.859 vs \
-               0.479 ms (softmax 4096), 0.607 vs 0.126 ms (attn 2048x128) for the kernels it replaces; confirm/rtx-4090 (Ryzen 9 5950X host): ON slower 6 of 6",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "flow",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "evidence/fusion-natural-forms/rtx-5090/results-rtx-5090.txt OFF/ON iter: softmax_rows_4096 2.626/3.052 ms \
-               (0.861, null 0.007), softmax_rows_2048 0.419/0.624 (0.674, null 0.031), attn_2048_128 0.276/0.669 \
-               (0.410, null 0.049); ON slower outside null 5 of 6, inside 1, faster 0; unit kernel 0.720 vs 0.311 ms \
-               (softmax 4096), 0.531 vs 0.114 ms (attn 2048x128); confirm/rtx-5090 (Ryzen 9 7950X host): ON slower 4 of 6, inside 2",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "flow",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "evidence/fusion-natural-forms/h100-pcie/results-h100-pcie.txt OFF/ON iter: softmax_rows_4096 4.203/4.945 ms \
-               (0.849, null 0.009), softmax_rows_2048 0.846/1.197 (0.704, null 0.043), attn_2048_128 0.419/1.019 \
-               (0.412, null 0.020); ON slower outside null 4 of 6, inside 2 (attn 1024, null 0.19 / 0.29), faster 0; \
-               unit kernel 1.335 vs 0.592 ms (softmax 4096), 0.766 vs 0.176 ms (attn 2048x128); confirm/h100-pcie (S65 host 670790): ON slower 6 of 6",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "flow",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "evidence/fusion-natural-forms/rtx-3090/results-rtx-3090.txt OFF/ON iter: softmax_rows_4096 6.488/7.098 ms \
-               (0.914, null 0.006), softmax_rows_2048 1.136/1.503 (0.755, null 0.058), attn_2048_128 0.613/1.266 \
-               (0.480, null 0.050); ON slower outside null 6 of 6, faster 0; unit kernel 1.334 vs 0.736 ms \
-               (softmax 4096), 0.890 vs 0.245 ms (attn 2048x128); confirm/rtx-3090 (S65 host 24953, 350 W): ON slower 6 of 6",
-    },
+    // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
+    // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
+    // 0.71/0.60/0.52/0.77, softmax_rows_4096 0.88/0.92/0.88/0.93 (4090/5090/H100/3090). Open: rowsum_4096 on
+    // rtx-4090 1.06 (5090/H100/3090 inside null) — the lone tree-fold class needs its own gate, not a part row.
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
