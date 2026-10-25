@@ -42,15 +42,16 @@ entry:
   %d24 = alloca i64
   store i64 0, ptr %d24
   %s32 = alloca float
-  %t2 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t38 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t2 = load i64, ptr %darena
   %t1 = add i64 %t2, 0
   store i64 %t1, ptr %d0
   call void @mapal_gpu_gen(i64 8401519267851788836, i64 %t1, i64 4096)
-  %t5 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t5 = load i64, ptr %darena
   %t4 = add i64 %t5, 16384
   store i64 %t4, ptr %d3
   call void @mapal_gpu_gen(i64 3848656405154314175, i64 %t4, i64 4096)
-  %t8 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t8 = load i64, ptr %darena
   %t7 = add i64 %t8, 32768
   store i64 %t7, ptr %d6
   call void @mapal_gpu_gen(i64 -2573819159812641718, i64 %t7, i64 4096)
@@ -70,7 +71,7 @@ entry:
   store ptr null, ptr %t15
   %t16 = load i64, ptr %d0
   %t17 = load i64, ptr %d3
-  %t20 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t20 = load i64, ptr %darena
   %t19 = add i64 %t20, 49152
   store i64 %t19, ptr %d18
   call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t16, i64 %t17, i64 %t19, i32 4, i32 2, i32 32, i32 1664)
@@ -78,7 +79,7 @@ entry:
   store ptr null, ptr %t21
   %t22 = load i64, ptr %d18
   %t23 = load i64, ptr %d6
-  %t26 = call i64 @mapal_gpu_arena(ptr %darena, i64 65536)
+  %t26 = load i64, ptr %darena
   %t25 = add i64 %t26, 0
   store i64 %t25, ptr %d24
   call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t22, i64 %t23, i64 %t25, i32 4, i32 2, i32 32, i32 1664)
@@ -810,7 +811,7 @@ bb42:
 
 define i32 @main() {
 entry:
-  call void @mapal_gpu_init(i32 1)
+  call void @mapal_gpu_init(i32 25)
   call void @mapal_main()
   ret i32 0
 }

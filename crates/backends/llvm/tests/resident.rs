@@ -82,6 +82,8 @@ fn transfers(ll: &str) -> Vec<String> {
                 .unwrap_or_default();
             Some(match name {
                 "h2d" | "alloc" | "arena" => format!("{name} {bytes}"),
+                // `async-h2d`: the same copy, without the host wait.
+                "h2d_async" => format!("h2d {bytes}"),
                 "d2h" => format!("d2h {bytes}"),
                 // S54 `l2-window`: a cache policy, not a transfer.
                 "launch_l2" => "launch".to_owned(),
@@ -159,7 +161,7 @@ fn e2e_copies_in_after_the_producers_and_out_one_element() {
     let a_fill = main.find("call float @fn1(").expect("a's producer");
     let b_fill = main.find("call float @fn2(").expect("b's producer");
     let h2d: Vec<usize> = main
-        .match_indices("@mapal_gpu_h2d(")
+        .match_indices("@mapal_gpu_h2d")
         .map(|(i, _)| i)
         .collect();
     let launch = main.find("@mapal_gpu_launch").expect("launch");
@@ -240,7 +242,7 @@ fn loop_copies_w_in_outside_the_loop_and_carries_x_on_the_device() {
         .expect("the loop header branches to the body");
     for i in [header, advance] {
         assert!(
-            !bs[i].1.contains("@mapal_gpu_h2d(") && !bs[i].1.contains("@mapal_gpu_d2h("),
+            !bs[i].1.contains("@mapal_gpu_h2d") && !bs[i].1.contains("@mapal_gpu_d2h("),
             "no transfer inside the loop:\n{}",
             bs[i].1
         );
@@ -248,7 +250,7 @@ fn loop_copies_w_in_outside_the_loop_and_carries_x_on_the_device() {
     // Before the loop: `w` after its producer, the init state at loop entry.
     let before: String = bs[..header].iter().map(|(_, t)| t.as_str()).collect();
     assert_eq!(
-        before.matches("@mapal_gpu_h2d(").count(),
+        before.matches("@mapal_gpu_h2d").count(),
         2,
         "w and x0, once each"
     );
@@ -351,7 +353,11 @@ fn offsets(ll: &str) -> Vec<u64> {
     let lines: Vec<&str> = mapal_main(ll).lines().collect();
     lines
         .windows(2)
-        .filter(|w| w[0].contains("@mapal_gpu_arena("))
+        // `entry-arena`: a member's base is loaded from the slot made at entry.
+        .filter(|w| {
+            (w[0].contains("@mapal_gpu_arena(") || w[0].contains(" = load i64, ptr %darena"))
+                && w[1].contains(" = add i64 ")
+        })
         .map(|w| {
             w[1].rsplit(", ")
                 .next()
@@ -433,10 +439,15 @@ fn arena_device_only_objects_have_no_host_slot() {
 fn arena_keeps_loop_scoped_and_escaping_objects_in_their_own_buffers() {
     // `w` is read inside the loop (dead at a loop position); `x0` is the
     // loop's borrowed init (escapes); `x` is the carry. None is in the arena.
-    let on_ = transfers(&emit(&loop_src(), off("devgen")));
+    let on_ = transfers(&emit(&loop_src(), offs(&["devgen", "entry-arena"])));
     let off_ = transfers(&emit(&loop_src(), no_devgen()));
     assert!(!on_.iter().any(|x| x.starts_with("arena")), "{on_:?}");
     assert_eq!(on_, off_);
+    // cpu-gpu-boundary `entry-arena`: the loop's buffers are seeded from one
+    // arena made at entry, ahead of every other device call.
+    let entry = transfers(&emit(&loop_src(), off("devgen")));
+    assert!(entry[0].starts_with("arena "), "{entry:?}");
+    assert_eq!(entry.iter().filter(|x| x.starts_with("arena")).count(), 1, "{entry:?}");
 }
 
 #[test]

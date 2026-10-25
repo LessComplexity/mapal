@@ -191,7 +191,11 @@ fn a_launch_never_passes_two_objects_on_the_same_arena_bytes() {
         let (mut bases, mut off, mut slot) = (Vec::new(), Vec::new(), Vec::new());
         let lookup = |v: &[(String, u64)], k: &str| v.iter().find(|(n, _)| n == k).map(|x| x.1);
         for l in main.lines().map(str::trim) {
-            if let Some((lhs, _)) = l.split_once(" = call i64 @mapal_gpu_arena(") {
+            // `entry-arena`: the base is made at entry and loaded from its slot.
+            if let Some((lhs, _)) = l
+                .split_once(" = call i64 @mapal_gpu_arena(")
+                .or_else(|| l.split_once(" = load i64, ptr %darena"))
+            {
                 bases.push(lhs.to_owned());
             } else if let Some((lhs, rhs)) = l.split_once(" = add i64 ")
                 && let Some((b, k)) = rhs.split_once(", ")
@@ -339,7 +343,7 @@ fn loop_carries_the_activation_on_the_device() {
     let back = main[lv..].find("br label").expect("the back edge") + lv;
     let body = &main[lv..back];
     assert!(
-        !body.contains("@mapal_gpu_d2h(") && !body.contains("@mapal_gpu_h2d("),
+        !body.contains("@mapal_gpu_d2h(") && !body.contains("@mapal_gpu_h2d"),
         "nothing crosses inside the loop:\n{body}"
     );
     assert_eq!(launchv_ptrs(&e.text)[0][2], "0", "y is never stored");

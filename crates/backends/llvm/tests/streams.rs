@@ -299,7 +299,7 @@ fn every_off_arm_is_the_one_stream_pageable_text() {
         for entry in ["launchv", "event", "d2h_on", "pin", "unpin"] {
             assert!(!ll.contains(&format!("@mapal_gpu_{entry}(")), "{entry}");
         }
-        assert_eq!(init_flags(&ll), 1, "eager-init only");
+        assert_eq!(init_flags(&ll) & 7, 1, "eager-init only, of the S54 bits");
         let dev = emit(&src, H100, all_off).device.expect("a device unit");
         assert!(!dev.contains("griddepcontrol"));
     }
@@ -348,7 +348,7 @@ fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
     // Straight-line copies run once: never pinned (devgen off, so a, b, e, f
     // go up and c, d come down — six single crossings).
     let ll = host(&indep(64), H100, off(&["devgen", "streams"]));
-    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_h2d(").count(), 4);
+    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_h2d").count(), 4);
     assert!(!ll.contains("@mapal_gpu_pin("));
     // Shipped: no part's table pins (the sign followed the host's copy path).
     assert!(!host(&relu_loop(64), H100, on()).contains("@mapal_gpu_pin("));
@@ -368,7 +368,7 @@ fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
         pinned.push(p.to_owned());
         let next = lines[i + 1..]
             .iter()
-            .find(|x| x.contains("@mapal_gpu_h2d(") || x.contains("@mapal_gpu_d2h("))
+            .find(|x| x.contains("@mapal_gpu_h2d") || x.contains("@mapal_gpu_d2h("))
             .expect("a copy after the pin");
         assert!(next.contains(&format!("ptr {p},")), "{l} then {next}");
     }

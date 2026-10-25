@@ -41,7 +41,7 @@ PARTS = {
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk').split()
-GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d init launch_l2 launchv launch pin sync tile unpin '
+GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
             'zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
@@ -289,6 +289,12 @@ def host_facts(ll, asm):
         if m:
             f.update(kv(m.group(1)))
         f['calls'] = {s: len(re.findall(r'call [^@\n]*@mapal_gpu_' + s + r'\(', ll)) for s in GPU_SYMS}
+        # cpu-gpu-boundary: the runtime flags (`preload` 8, `stage` 16) and the arenas made at
+        # function entry (`entry-arena`: ahead of the function's every other device call and clock read).
+        m = re.search(r'@mapal_gpu_init\(i32 (\d+)\)', ll)
+        f['init_flags'] = int(m.group(1)) if m else 0
+        f['arena_entry'] = sum(len(re.findall(r'@mapal_gpu_arena\(', re.split(
+            r'\n[^\n]*(?:@mapal_time_ms\(|@mapal_gpu_(?!arena\()\w+\()', d)[0])) for d in ll.split('\ndefine ')[1:])
         f['par'] = len(re.findall(r'@mapal_par_begin\(', ll))
         f['sme'] = len(re.findall(r'@mapal_sme_panel', ll))
         # generic-fusion: every function's `; mapal.flow.host` line, summed, and the unit launches.
@@ -376,17 +382,21 @@ def block_moves(lines):
             b = copy_bytes(x)
             c['copy_b'] += b or 0
             c['copy_unknown'] += b is None
-        m = re.search(r'call \w+ @mapal_gpu_(h2d|d2h|d2h_on|alloc|arena|tile)\((.*)\)', x)
+        m = re.search(r'call \w+ @mapal_gpu_(h2d_async|h2d_on|h2d|d2h|d2h_on|alloc|arena|tile)\((.*)\)', x)
         if not m:
             continue
         op, args = m.group(1), [a.split()[-1] for a in m.group(2).split(',')]
         last = int(args[-1]) if re.fullmatch(r'\d+', args[-1]) else None
-        if op == 'h2d':
+        # cpu-gpu-boundary: `sync_n` counts the calls that wait for the device (a synchronous
+        # upload, every copy-out); `async-h2d`'s upload is the same bytes without the wait.
+        if op in ('h2d', 'h2d_async', 'h2d_on'):
             c['h2d_n'] += 1
             c['h2d_b'] += last or 0
+            c['sync_n'] += op == 'h2d'
         elif op in ('d2h', 'd2h_on'):
             c['d2h_n'] += 1
             c['d2h_b'] += last or 0
+            c['sync_n'] += 1
         elif op == 'tile':  # the S52 round trip: two copies in, one out
             c['h2d_n'] += 2
             c['d2h_n'] += 1
@@ -397,7 +407,7 @@ def block_moves(lines):
     return c
 
 
-MOVE_KEYS = ('copy_n', 'copy_b', 'h2d_n', 'h2d_b', 'd2h_n', 'd2h_b', 'alloc_n')
+MOVE_KEYS = ('copy_n', 'copy_b', 'h2d_n', 'h2d_b', 'd2h_n', 'd2h_b', 'alloc_n', 'sync_n')
 
 
 def move_facts(ll, trips=()):
