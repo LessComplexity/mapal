@@ -64,8 +64,16 @@ for o in "$PROF"/*.host.o; do
         fail=$((fail + 1)); say "FAIL $b link failed"; continue
     fi
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
-    if [ $rc -eq 0 ] && [ "$got" = "$(cat "$exp")" ]; then
+    # The clock is not a value: a program's `iter ms=` line drops on both sides.
+    got=$(grep -v '^iter ms=' <<< "$got"); want=$(grep -v '^iter ms=' "$exp")
+    if [ $rc -eq 0 ] && [ "$got" = "$want" ]; then
         pass=$((pass + 1)); say "PASS $b $(tr '\n' ' ' <<< "$got")"
+    # TF32: a split-K atomic combine adds in no fixed order, so two runs of one build differ in the
+    # last bits; within 1e-4 relative of the reference (TF32 itself is 2^-11).
+    elif [ $rc -eq 0 ] && [[ $stem == *_tf ]] && python3 -c 'import sys
+g, w = sys.argv[1].split(), sys.argv[2].split()
+sys.exit(not (len(g) == len(w) and all(abs(float(a) - float(b)) <= 1e-4 * max(abs(float(a)), abs(float(b)), 1.0) for a, b in zip(g, w))))' "$got" "$want"; then
+        pass=$((pass + 1)); say "PASS-ORDER $b $(tr '\n' ' ' <<< "$got")"
     else
         fail=$((fail + 1)); say "FAIL $b rc=$rc got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
     fi

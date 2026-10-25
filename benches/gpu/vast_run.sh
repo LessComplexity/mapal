@@ -44,7 +44,8 @@ while [ -n "${WAIT_FILE:-}" ] && [ ! -e "$WAIT_FILE" ]; do sleep 10; done
 # A bundle holds every part's directory: upload this part's only, and no LLVM
 # IR (the box reads host.o, ptx and launch).
 skip=(--exclude='*.ll' --exclude='*.yaml' --exclude='*.yaml.gz' --exclude='*.sass' --exclude='*.ptxas' \
-    --exclude='*.host.asm' --exclude='*.alias' --exclude='evidence.tsv')
+    --exclude='*.host.asm' --exclude='*.alias' --exclude='evidence.tsv' \
+    --exclude='./tiles/*.cpu' --exclude='./tiles/*.cpu_c')  # the oracles' macOS builds (~400 MB)
 for x in "$BUNDLE"/*/; do
     n=$(basename "$x")
     if [ "$n" != "$PROF" ] && compgen -G "$x*.host.o" >/dev/null; then skip+=(--exclude="./$n"); fi
