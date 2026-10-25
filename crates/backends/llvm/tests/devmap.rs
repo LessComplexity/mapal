@@ -63,7 +63,8 @@ fn calls(ll: &str) -> Vec<String> {
             let name = &op[..op.find('(')?];
             let last = op.rsplit("i64 ").next().unwrap_or_default();
             Some(match name {
-                "h2d" | "d2h" => format!("{name} {}", last.trim_end_matches(')')),
+                // `async-h2d` enqueues the same copy without a host wait.
+                "h2d" | "h2d_async" | "d2h" => format!("{} {}", &name[..3], last.trim_end_matches(')')),
                 other => other.to_owned(),
             })
         })

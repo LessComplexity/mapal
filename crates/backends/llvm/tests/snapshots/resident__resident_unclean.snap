@@ -20,6 +20,7 @@ declare void @mapal_gpu_d2h(ptr, i64, i64, i64)
 declare void @mapal_gpu_launch(i64, i64, i64, i64, i32, i32, i32, i32)
 declare void @mapal_gpu_gen(i64, i64, i64)
 declare void @mapal_gpu_free(ptr)
+declare void @mapal_gpu_h2d_async(i64, ptr, i64)
 
 define internal void @mapal_main() {
 entry:
@@ -70,7 +71,7 @@ bb11:
   br label %bb10
 bb12:
   %t20 = call i64 @mapal_gpu_alloc(ptr %d19, i64 16384)
-  call void @mapal_gpu_h2d(i64 %t20, ptr %o3, i64 16384)
+  call void @mapal_gpu_h2d_async(i64 %t20, ptr %o3, i64 16384)
   %t22 = call i64 @mapal_gpu_alloc(ptr %d21, i64 16384)
   call void @mapal_gpu_gen(i64 3848656405154314175, i64 %t22, i64 4096)
   %t23 = getelementptr { ptr, ptr, ptr, ptr }, ptr %o6, i32 0, i32 3
@@ -541,7 +542,7 @@ bb42:
 
 define i32 @main() {
 entry:
-  call void @mapal_gpu_init(i32 1)
+  call void @mapal_gpu_init(i32 25)
   call void @mapal_main()
   ret i32 0
 }

@@ -27,6 +27,12 @@
  *    the emitter's `mapal_gpu_event`; a chain output is copied out on its own
  *    stream (`mapal_gpu_d2h_on`). `pinned`: `mapal_gpu_pin` page-locks a
  *    crossing host array once; `mapal_gpu_unpin` releases every pin.
+ *  - cpu-gpu-boundary: `preload` resolves every kernel at module load;
+ *    `entry-arena` makes the arena at function entry and places loop-cone
+ *    buffers in it (`mapal_gpu_free` releases a member with its arena);
+ *    `async-h2d` (`mapal_gpu_h2d_async`) enqueues an upload without waiting
+ *    for the device, the source staged at the call (`stage`: a page-locked
+ *    ring; else the driver's staging of a pageable source).
  *
  * Kernels are found by name: the emitter passes a 64-bit id and the device
  * unit names the kernel `mapal_tile_<id as 16 hex digits>` (a tile site) or
@@ -39,6 +45,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 /* MAPAL_GPU_TRACE=1: one stderr line per operation with its wall time, and a
@@ -59,6 +66,7 @@ static struct {
   unsigned long long n_l2, l2_persist; /* S54 `l2-window` */
   double pin;
   unsigned long long n_pin, n_event, n_pdl;
+  unsigned long long n_preload, n_async, n_staged; /* cpu-gpu-boundary */
 } tot;
 static unsigned flags;
 static double now_ms(void) {
@@ -72,11 +80,13 @@ static void total_line(void) {
           "init_ms=%.3f ctx_ms=%.3f module_ms=%.3f alloc_ms=%.3f h2d_ms=%.3f "
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
-          "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu\n",
+          "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu "
+          "preloaded=%llu h2d_async=%llu staged=%llu\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
-          tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl);
+          tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl,
+          tot.n_preload, tot.n_async, tot.n_staged);
 }
 
 #define CK(x)                                                                  \
@@ -94,7 +104,7 @@ static void total_line(void) {
  * (`mapal_gpu_init`; the bit is `GPU_INIT_EAGER` in
  * crates/backends/llvm/src/func/gpu.rs). A program without that call runs the
  * S52 path: init at the first site. */
-enum { EAGER = 1, STREAMS = 2, PDL = 4 };
+enum { EAGER = 1, STREAMS = 2, PDL = 4, PRELOAD = 8, STAGE = 16 };
 
 /* Chain streams (`STREAMS`): created with the context. Eight because that is
  * the driver's default count of hardware work queues
@@ -120,6 +130,48 @@ static unsigned slot_of(uint32_t s) {
 
 static CUmodule module;
 static CUcontext ctx;
+
+/* `preload`: every `.entry` of the module, resolved at load. `smem` is the
+ * dynamic shared-memory limit already set on it (the attribute is set once).
+ * ponytail: a linear scan per launch — a module holds tens of kernels; hash
+ * the name if one ever holds thousands. */
+static struct fn_entry {
+  char name[40];
+  CUfunction fn;
+  uint32_t smem;
+} *fns;
+static size_t n_fns;
+static void preload(const char *ptx) {
+  size_t cap = 0;
+  for (const char *p = strstr(ptx, ".entry "); p; p = strstr(p, ".entry ")) {
+    p += 7;
+    size_t n = strcspn(p, "( \t\r\n");
+    if (!n || n >= sizeof fns->name)
+      continue;
+    if (n_fns == cap) {
+      cap = cap ? 2 * cap : 32;
+      fns = realloc(fns, cap * sizeof *fns);
+      if (!fns)
+        exit(102);
+    }
+    struct fn_entry *e = &fns[n_fns++];
+    memcpy(e->name, p, n);
+    e->name[n] = 0;
+    e->smem = 48 * 1024;
+    CK(cuModuleGetFunction(&e->fn, module, e->name));
+  }
+  tot.n_preload = n_fns;
+}
+
+/* `stage`: a ring of page-locked slots an async upload is copied into and
+ * DMA'd from. A slot is reused only once its event says the DMA from it ran,
+ * so the host runs at most `STAGE_SLOTS` uploads ahead of the device. */
+#define STAGE_SLOTS 64
+#define STAGE_SLOT (64 * 1024)
+static unsigned char *stage_buf;
+static CUevent stage_ev[STAGE_SLOTS];
+static int stage_used[STAGE_SLOTS];
+static unsigned stage_next;
 static pthread_t init_thread;
 static int init_state; /* 0 not started, 1 running on init_thread, 2 ready */
 static double t_init;  /* when mapal_gpu_init ran */
@@ -157,7 +209,16 @@ static void init_all(void) {
   ptx[n] = 0;
   fclose(f);
   CK(cuModuleLoadData(&module, ptx));
+  if (flags & PRELOAD)
+    preload(ptx);
   free(ptx);
+  if (flags & STAGE) {
+    void *b;
+    CK(cuMemHostAlloc(&b, (size_t)STAGE_SLOTS * STAGE_SLOT, 0));
+    stage_buf = b;
+    for (int i = 0; i < STAGE_SLOTS; i++)
+      CK(cuEventCreate(&stage_ev[i], CU_EVENT_DISABLE_TIMING));
+  }
   if (flags & STREAMS)
     for (int i = 1; i <= MAPAL_GPU_STREAMS; i++)
       CK(cuStreamCreate(&streams[i], CU_STREAM_NON_BLOCKING));
@@ -222,6 +283,16 @@ static void load_module(void) {
 static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
                          char *name, size_t cap) {
   snprintf(name, cap, "%s_%016llx", prefix, (unsigned long long)id);
+  for (size_t i = 0; i < n_fns; i++)
+    if (!strcmp(fns[i].name, name)) {
+      if (smem > fns[i].smem) {
+        CK(cuFuncSetAttribute(fns[i].fn,
+                              CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                              (int)smem));
+        fns[i].smem = smem;
+      }
+      return fns[i].fn;
+    }
   CUfunction fn;
   CK(cuModuleGetFunction(&fn, module, name));
   if (smem > 48 * 1024)
@@ -256,8 +327,37 @@ uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
 /* S54 `arena`: the function's one allocation, laid out at compile time (each
  * straight-line object at its offset, from death positions). Made on the first
  * ask like any slot; released by `mapal_gpu_free` at function exit. */
+static struct arena {
+  uint64_t *slot, base, bytes;
+} *arenas;
+static size_t n_arenas, cap_arenas;
 uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) {
-  return dev_alloc(slot, bytes, "arena");
+  if (*slot)
+    return *slot;
+  dev_alloc(slot, bytes, "arena");
+  if (n_arenas == cap_arenas) {
+    cap_arenas = cap_arenas ? 2 * cap_arenas : 8;
+    arenas = realloc(arenas, cap_arenas * sizeof *arenas);
+    if (!arenas)
+      exit(102);
+  }
+  arenas[n_arenas++] = (struct arena){slot, *slot, bytes};
+  return *slot;
+}
+
+/* `entry-arena`: a slot holding an arena member's address (a loop-cone
+ * buffer, possibly moved by a back edge) is released with its arena: emptied,
+ * never freed on its own. The arena's own slot frees the allocation. */
+static int arena_member(uint64_t *slot) {
+  for (size_t i = 0; i < n_arenas; i++) {
+    if (arenas[i].slot == slot) {
+      arenas[i] = arenas[--n_arenas];
+      return 0;
+    }
+    if (*slot >= arenas[i].base && *slot < arenas[i].base + arenas[i].bytes)
+      return 1;
+  }
+  return 0;
 }
 
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
@@ -418,7 +518,7 @@ void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off,
  * a range the driver refuses (already registered through a neighbour's page,
  * say) is copied pageable, which is slower and exactly as correct; the trace
  * says which. */
-static struct pin { const void *h; } *pins;
+static struct pin { const void *h; uint64_t bytes; } *pins;
 static size_t n_pins, cap_pins;
 void mapal_gpu_pin(const void *h, uint64_t bytes) {
   load_module();
@@ -436,7 +536,8 @@ void mapal_gpu_pin(const void *h, uint64_t bytes) {
       if (!pins)
         exit(102);
     }
-    pins[n_pins++].h = h;
+    pins[n_pins].h = h;
+    pins[n_pins++].bytes = bytes;
     tot.n_pin++;
   }
   if (trace)
@@ -450,6 +551,98 @@ void mapal_gpu_unpin(void) {
   for (size_t i = 0; i < n_pins; i++)
     CK(cuMemHostUnregister((void *)pins[i].h));
   n_pins = 0;
+}
+
+static int pinned_src(const void *h) {
+  const unsigned char *p = h;
+  for (size_t i = 0; i < n_pins; i++) {
+    const unsigned char *b = pins[i].h;
+    if (p >= b && p < b + pins[i].bytes)
+      return 1;
+  }
+  return 0;
+}
+
+/* `async-h2d`: `bytes` of host `h` into device `d`, enqueued on the legacy
+ * stream (program order) without waiting for the device. The source is staged
+ * before the call returns, so the host may rewrite it at once: into a slot of
+ * the page-locked ring (`stage`), else by the driver (a pageable source: CUDA
+ * copies it to a staging buffer immediately, with no device synchronization).
+ * A page-locked source too large for a slot would be read by the DMA after
+ * the return: it takes the synchronous copy. */
+void mapal_gpu_h2d_async(uint64_t d, const void *h, uint64_t bytes) {
+  load_module();
+  if (!(stage_buf && bytes <= STAGE_SLOT) && pinned_src(h)) {
+    mapal_gpu_h2d(d, h, bytes);
+    return;
+  }
+  double t0 = now_ms();
+  if (stage_buf && bytes <= STAGE_SLOT) {
+    unsigned k = stage_next++ % STAGE_SLOTS;
+    if (stage_used[k])
+      CK(cuEventSynchronize(stage_ev[k]));
+    unsigned char *s = stage_buf + (size_t)k * STAGE_SLOT;
+    memcpy(s, h, bytes);
+    CK(cuMemcpyHtoDAsync((CUdeviceptr)d, s, bytes, streams[0]));
+    CK(cuEventRecord(stage_ev[k], streams[0]));
+    stage_used[k] = 1;
+    tot.n_staged++;
+  } else {
+    CK(cuMemcpyHtoDAsync((CUdeviceptr)d, h, bytes, streams[0]));
+  }
+  legacy_ops++;
+  last_kernel[0] = 0;
+  double ms = now_ms() - t0;
+  tot.h2d += ms;
+  tot.in += bytes;
+  tot.n_h2d++;
+  tot.n_async++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=h2d_async ms=%.3f bytes=%llu\n", ms,
+            (unsigned long long)bytes);
+}
+
+/* `chain-h2d`: an upload every reader of which is a site of chain `stream`,
+ * enqueued on that chain's stream — staged as `mapal_gpu_h2d_async` stages —
+ * so another chain never waits for it. Its buffer is fresh (a function with
+ * chains has no arena) and its readers are on the same stream, so nothing
+ * else orders against it; a free waits for every stream (`chains_busy`). */
+void mapal_gpu_h2d_on(uint32_t stream, uint64_t d, const void *h,
+                      uint64_t bytes) {
+  load_module();
+  unsigned k = slot_of(stream);
+  int staged = stage_buf && bytes <= STAGE_SLOT;
+  if (!staged && pinned_src(h)) {
+    mapal_gpu_h2d(d, h, bytes);
+    return;
+  }
+  double t0 = now_ms();
+  if (staged) {
+    unsigned i = stage_next++ % STAGE_SLOTS;
+    if (stage_used[i])
+      CK(cuEventSynchronize(stage_ev[i]));
+    unsigned char *s = stage_buf + (size_t)i * STAGE_SLOT;
+    memcpy(s, h, bytes);
+    CK(cuMemcpyHtoDAsync((CUdeviceptr)d, s, bytes, streams[k]));
+    CK(cuEventRecord(stage_ev[i], streams[k]));
+    stage_used[i] = 1;
+    tot.n_staged++;
+  } else {
+    CK(cuMemcpyHtoDAsync((CUdeviceptr)d, h, bytes, streams[k]));
+  }
+  last_kernel[k] = 0;
+  if (k)
+    chains_busy = 1;
+  else
+    legacy_ops++;
+  double ms = now_ms() - t0;
+  tot.h2d += ms;
+  tot.in += bytes;
+  tot.n_h2d++;
+  tot.n_async++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=h2d_on ms=%.3f bytes=%llu stream=%u\n",
+            ms, (unsigned long long)bytes, k);
 }
 
 /* S54 `l2-window`: `mapal_gpu_launch` with an L2 access-policy window over
@@ -566,6 +759,10 @@ void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
 void mapal_gpu_free(uint64_t *slot) {
   if (!*slot)
     return;
+  if (arena_member(slot)) {
+    *slot = 0;
+    return;
+  }
   double t0 = now_ms();
   /* A chain stream may still read the buffer: free only when every stream
    * is done (cuMemFree's own wait is not documented to cover non-blocking

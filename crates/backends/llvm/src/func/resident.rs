@@ -272,6 +272,9 @@ pub(crate) struct ResidentPlan {
     /// S54 `streams` (R7): each straight-line device site's chain (its stream,
     /// from 1), when [`FnEmit::chains`] opened streams; empty = one stream.
     pub chain: SecondaryMap<MorphismId, u32>,
+    /// cpu-gpu-boundary `chain-h2d`: an upload every device reader of which
+    /// is a site of one chain, copied in on that chain's stream.
+    pub upload_chain: SecondaryMap<ObjectId, u32>,
     /// `flow`: the unit groups, by their launch (first member).
     pub units: SecondaryMap<MorphismId, super::flow::Unit>,
     /// generic-fusion: the host intent line (`; mapal.flow.host …`).
@@ -1674,6 +1677,33 @@ impl<'a> FnEmit<'a> {
         for (i, &(_, m, _)) in order.iter().enumerate() {
             plan.chain.insert(m, chain[i] as u32 + 1);
         }
+        // `chain-h2d`: an upload read only by one chain's sites (through the
+        // pointer-only products that carry it) crosses on that chain's
+        // stream, so a chain the `PathPlan` proves independent never waits
+        // for it — the copy overlaps the other chains' kernels.
+        if rungs.chain_h2d {
+            for o in plan.upload.keys().collect::<Vec<_>>() {
+                let mut readers = Vec::new();
+                for &m in self.ir.out_edges(o) {
+                    match self.ir.morphism(m).expect("morphism resolves").op {
+                        Operation::Pair { slot, .. } => {
+                            let t = self.ir.morphism(m).expect("m").target;
+                            if !self.pointer_only_array_component(t, slot) {
+                                readers.push(None);
+                                continue;
+                            }
+                            readers.extend(self.ir.out_edges(t).iter().map(|&r| plan.chain.get(r).copied()));
+                        }
+                        _ => readers.push(plan.chain.get(m).copied()),
+                    }
+                }
+                if let Some(&Some(k)) = readers.first()
+                    && readers.iter().all(|r| *r == Some(k))
+                {
+                    plan.upload_chain.insert(o, k);
+                }
+            }
+        }
         let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
         let (lo, last) = (order[0].0, order[order.len() - 1].1);
         let moved: Vec<MorphismId> = plan
@@ -1889,12 +1919,17 @@ impl<'a> FnEmit<'a> {
         let slot = self.dslot(o);
         let d = self.tmp();
         // An arena member: base + offset, the arena made on the first ask
-        // (lazily, so `eager-init` still overlaps the host work before it).
+        // (lazily, so `eager-init` still overlaps the host work before it) —
+        // or at entry (`entry-arena`), where the slot already holds its base.
         if let Some((total, off)) = self.arena_offset(o) {
             let base = self.tmp();
-            self.line(format!(
-                "{base} = call i64 @mapal_gpu_arena(ptr %darena, i64 {total})"
-            ));
+            if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).entry_arena {
+                self.line(format!("{base} = load i64, ptr %darena"));
+            } else {
+                self.line(format!(
+                    "{base} = call i64 @mapal_gpu_arena(ptr %darena, i64 {total})"
+                ));
+            }
             self.line(format!("{d} = add i64 {base}, {off}"));
             self.line(format!("store i64 {d}, ptr {slot}"));
             return d;
@@ -2125,6 +2160,7 @@ impl<'a> FnEmit<'a> {
         let upload = plan.upload.contains_key(t) && !plan.devgen.contains_key(m);
         let delta = plan.delta.get(t).cloned();
         let frees = plan.free_after.get(m).cloned().unwrap_or_default();
+        let chain = plan.upload_chain.get(t).copied();
         if upload {
             let ty = self.obj_ty(t);
             let bytes = self.array_bytes(&ty);
@@ -2132,9 +2168,12 @@ impl<'a> FnEmit<'a> {
             let d = self.dalloc(t, bytes);
             // `pinned` (S54): a copy that runs more than once is page-locked.
             self.pin(m, &h, bytes);
-            match delta {
-                Some(du) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
-                None => self.line(format!(
+            match (delta, chain) {
+                (Some(du), _) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
+                (None, Some(k)) => self.line(format!(
+                    "call void @mapal_gpu_h2d_on(i32 {k}, i64 {d}, ptr {h}, i64 {bytes})"
+                )),
+                (None, None) => self.line(format!(
                     "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
                 )),
             }
@@ -2643,6 +2682,17 @@ impl<'a> FnEmit<'a> {
 
     /// Function exit: free every buffer still held (a no-op on freed slots).
     pub(super) fn resident_teardown(&mut self) {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let entry = rungs.arena && rungs.entry_arena && self.resident.is_some() && self.entry_arena();
+        // `async-h2d`: every upload is enqueued without a host wait (the
+        // runtime stages the source), so no upload is a sync point: the trip
+        // waits only at a copy-out, which exists only where a host morphism
+        // reads a device value (`upload`/`keep`/`elem` in the plan).
+        if rungs.async_h2d && self.resident.is_some() {
+            self.body = self
+                .body
+                .replace("call void @mapal_gpu_h2d(", "call void @mapal_gpu_h2d_async(");
+        }
         // Pins end with the frame they pinned.
         if self.body.contains("@mapal_gpu_pin(") {
             self.line("call void @mapal_gpu_unpin()");
@@ -2659,9 +2709,79 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("call void @mapal_gpu_free(ptr {s})"));
             }
         }
-        if self.arena_slot() {
+        if self.arena_slot() || entry {
             self.line("call void @mapal_gpu_free(ptr %darena)");
         }
+    }
+
+    /// **`entry-arena`: the arena at function entry, loop-cone buffers in
+    /// it.** Every slot the walk allocates with `mapal_gpu_alloc` and frees
+    /// only at exit (a loop-cone buffer, a carry's next, a workspace) is
+    /// placed after the straight-line members, each live over the whole
+    /// function — `[0, ∞)` in the same coloring, so it shares no byte with
+    /// anything: a back edge may swap it into another slot at any trip. The
+    /// entry block makes the arena (static size) and seeds those slots, so
+    /// their first-use allocation finds its buffer. A slot freed before exit
+    /// (a per-site temp) keeps its own allocation. The runtime releases a
+    /// member with its arena, whichever slot holds it at exit
+    /// (`mapal_gpu_free`). Returns whether the function has an arena.
+    fn entry_arena(&mut self) -> bool {
+        let field = |l: &str, key: &str| -> Option<String> {
+            let rest = &l[l.find(key)? + key.len()..];
+            Some(rest[..rest.find([',', ')'])?].to_string())
+        };
+        let freed: std::collections::BTreeSet<String> = self
+            .body
+            .lines()
+            .filter_map(|l| field(l, "call void @mapal_gpu_free(ptr "))
+            .collect();
+        let mut cone: Vec<(String, u64)> = Vec::new();
+        for l in self.body.lines() {
+            let Some(slot) = field(l, "call i64 @mapal_gpu_alloc(ptr ") else {
+                continue;
+            };
+            let Some(bytes) = l
+                .split_once(&format!("{slot}, i64 "))
+                .and_then(|(_, r)| r.split(')').next()?.parse::<u64>().ok())
+            else {
+                continue;
+            };
+            if freed.contains(&slot) {
+                continue;
+            }
+            match cone.iter_mut().find(|(s, _)| *s == slot) {
+                Some(c) => c.1 = c.1.max(bytes),
+                None => cone.push((slot, bytes)),
+            }
+        }
+        let line = self
+            .resident
+            .as_ref()
+            .and_then(|p| p.arena.as_ref())
+            .map_or(0, |a| a.bytes);
+        let live: Vec<(u32, u32, u64)> = cone.iter().map(|&(_, b)| (0, u32::MAX, b)).collect();
+        let (offs, cone_bytes) = color(&live);
+        let total = line + cone_bytes;
+        if total == 0 {
+            return false;
+        }
+        let mut text = String::new();
+        if line == 0 {
+            text.push_str("  %darena = alloca i64\n  store i64 0, ptr %darena\n");
+        }
+        let base = self.tmp();
+        text.push_str(&format!(
+            "  {base} = call i64 @mapal_gpu_arena(ptr %darena, i64 {total})\n"
+        ));
+        for ((slot, _), off) in cone.iter().zip(offs) {
+            let d = self.tmp();
+            text.push_str(&format!(
+                "  {d} = add i64 {base}, {}\n  store i64 {d}, ptr {slot}\n",
+                line + off
+            ));
+        }
+        self.allocas.push_str(&text);
+        true
     }
 
     /// The function has arena members, so `%darena` exists.

@@ -193,9 +193,13 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     (em.text, em.device.expect("a device unit"))
 }
 
+/// The calls of `entry`; `h2d` counts `async-h2d`'s enqueued copies too.
 fn calls<'a>(host: &'a str, entry: &str) -> Vec<&'a str> {
     host.lines()
-        .filter(|l| l.contains(&format!("call void @mapal_gpu_{entry}(")))
+        .filter(|l| {
+            l.contains(&format!("call void @mapal_gpu_{entry}("))
+                || entry == "h2d" && l.contains("call void @mapal_gpu_h2d_async(")
+        })
         .collect()
 }
 
