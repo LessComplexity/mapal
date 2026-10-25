@@ -136,7 +136,7 @@ impl<'a> FnEmit<'a> {
         self.plan_views();
         let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
         if self.tile_plan.is_some() {
-            let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, rungs);
+            let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, self.contract, arms);
             self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile, rungs.window);
             self.tile_plan = Some(plan);
             self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);

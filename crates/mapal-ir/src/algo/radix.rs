@@ -301,7 +301,8 @@ impl CategoryIr {
         let Ty::Array { size, elem: out_elem } = &self.objects.get(map.target)?.ty else {
             return None;
         };
-        if *size != n || n == 0 || map_captures == 0 {
+        // One output (`n = 1`) has no digit of `t` to tile along.
+        if *size != n || n < 2 || map_captures == 0 {
             return None;
         }
         let body_def = self.func(body)?;

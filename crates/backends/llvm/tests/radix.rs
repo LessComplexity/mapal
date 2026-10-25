@@ -161,3 +161,56 @@ fn radix_register_tile_values() {
         assert_eq!(x, emu::run_emulated(&cc, &off.text, off.device.as_deref().unwrap_or("")), "{target}");
     }
 }
+
+/// One output (`n = 1`) is no radix site — the fact used to index an empty
+/// digit list. A `: tf32 | f32` radix site whose operands are plain vectors
+/// (only the output digit-affine) keeps the staged tile: the tensor kernels
+/// store row-major, so admission and emission agree on `kind=tile`.
+#[test]
+fn radix_one_output_and_tf32_plain_operands() {
+    let one = "fn main() {
+    36 -> iota -> i_w;
+    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> w;
+    256 -> iota -> i_img;
+    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> img;
+    1 -> iota -> o_y;
+    36 -> iota -> k_y;
+    o_y -> map { t ->
+        (0.0, k_y) -> fold { acc, k -> k / 9 -> ci; k % 9 -> q; acc + w[k] * img[(ci * 8 + q / 3) * 8 + q % 3] }
+    } -> y;
+    y[0] -> println;
+}
+";
+    let ir = lower(one);
+    assert!(radix_sites(&ir).is_empty());
+    let _ = emission(&ir, "rtx-4090", true);
+    let perm = |ty: &str| {
+        format!(
+            "fn main() {{
+    4096 -> iota -> i_w;
+    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> w;
+    8192 -> iota -> i_x;
+    i_x -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x;
+    8192 -> iota -> o_y;
+    64 -> iota -> k_y;
+    o_y -> map {{ t ->
+        t / 4096 -> b; t / 64 % 64 -> co; t % 64 -> p;
+        (0.0, k_y) -> fold{ty} {{ acc, k -> acc + w[co * 64 + k] * x[k * 128 + b * 64 + p] }}
+    }} -> y;
+    y[0] -> println;
+}}
+"
+        )
+    };
+    for ty in ["", ": tf32 | f32"] {
+        let ir = lower(&perm(ty));
+        for target in ["rtx-4090", "h100-pcie"] {
+            let opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            let e = emit_detailed(&ir, &opts).expect("emits");
+            let tiles = e.device.as_deref().map_or(0, |d| {
+                d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile ") && l.contains(" radix=")).count()
+            });
+            assert_eq!(tiles, 1, "`{ty}` {target}: the staged radix tile");
+        }
+    }
+}
