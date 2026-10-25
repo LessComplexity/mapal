@@ -40,10 +40,11 @@ blocks and functions.)
 ```
 (0.0, krange) -> fold: tf32 | f32 { acc, k -> acc + x[k] * w[k] } -> y;     // a step: fold / map
 loop: tf32 | f32 { … }                                                     // a block: loop / seq / :label
-fn my_func(a: [f32; 16], b: [f32; 16]): tf32 | f32 -> f32 { … }            // a function: before `-> output`
+fn my_func(a: [f32; 16], b: [f32; 16]) -> f32: tf32 | f32 { … }            // a function: after `-> output`
 ```
 
-The compute type covers every product node lowered from the body it opens, nested steps and blocks included, unless
+On a function the compute type follows the output (Sapir, 2026-10-25): `fn f(a) -> T: compute { … }` — before the
+output, `f(a): X` would read as a return type to most programmers. The compute type covers every product node lowered from the body it opens, nested steps and blocks included, unless
 a nested one carries its own. `: f32` restores the default inside a relaxed body. A called function's own compute
 type governs its body (a call does not inherit the caller's). The type is part of the function (ADR-0032 semantics
 note), so the oracle and gates are per body. Labeled blocks take it once they leave Core+1 (P0110).
@@ -98,7 +99,8 @@ iff `|got − ref| ≤ D3 bound`, `ref` and `M` in f64 (ADR-0040 D2 pattern). `p
 ## Later (not decided here)
 
 - **Output type sets on bindings** (Sapir, 2026-10-25: "something similar for output type"). The same form on the
-  name a step flows into: `} -> y: bf16 | f32;` — `y` may be stored in any listed format, the compiler picks per target
+  name a step flows into: `} -> y: bf16 | f32;` (spelling open: on a name, `|` collides with ADR-0026 sum types `Ok(a) | Err(e)`; a floor such
+  as `y: bf16+` avoids it) — `y` may be stored in any listed format, the compiler picks per target
   within the weakest format's bound (`bf16`: `u = 2⁻⁸` on each stored value). Symmetric with D2: the step's type says
   how products are computed, the name's type how the result is stored. Needs ADR-0039's 16-bit storage types.
 - **Deduced narrow storage.** If every reader of a value admits `bf16` (or `f16`), the producer may store it in 16 bits:
