@@ -832,7 +832,8 @@ impl<'a> FnEmit<'a> {
             let Some(&rs) = region.get(s) else {
                 continue;
             };
-            if !l.rungs.epilogue {
+            // A mixed-radix site stores digit by digit: no epilogue (`radix-tile`).
+            if !l.rungs.epilogue || site.radix.is_some() {
                 continue;
             }
             let c = target(s);

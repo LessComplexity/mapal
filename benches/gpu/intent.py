@@ -197,6 +197,15 @@ INTENT = {
         ('no integer divide or remainder left: k÷div, k%div fold to induction variables', 'ptx.div_rem == 0'),
         ('LLVM fully unrolled the constant-trip tap walk (loop-unroll FullyUnrolled)', 'remarks.opt.full_unroll >= 1'),
         ('straight-line taps in SASS: one FFMA (or FMUL) per tap', 'sass.ffma + sass.fmul >= plan.k')]),
+    # recurrence-precision `radix-tile`: a map/fold whose reads are affine per digit of the cell and tap indices
+    # (constant div/mod splits: a convolution's implicit GEMM, `mapal_ir::RadixTile`) is the staged FMA tile; its plan
+    # line names the digit-affine addresses (`radix=b,out`). `.off-radix-tile`: the nest cell (no smem, one thread per
+    # output walking the taps).
+    'radix-tile': dict(applies="plan.kind == 'tile' and plan.radix != ''", on=[
+        ('operands staged through shared memory: ld.shared in the hot loop', 'ptx.hot.ld_shared + ptx.hot.ld_shared_v4 > 0'),
+        ('every digit a constant divisor: no div/rem instruction left', 'ptx.div_rem == 0'),
+        ('a register tile per thread: >= tm*tn*bk FP ops per panel trip', 'ptx.hot.fma + ptx.hot.mul >= plan.tm * plan.tn * plan.bk'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     # generic-fusion natural forms `range-map`: a map whose cells off a row / range / column / cell are a capture's
     # own runs in place over that set (`in_place_source`); its movement is the by-ref rows' (`host.move`).
     'range-map': dict(host=True, note='work per trip, not bytes: diff the `.off-range-map` arm (host insns, loops)'),

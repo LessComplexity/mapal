@@ -429,6 +429,12 @@ pub struct GpuRungs {
     /// independent do not wait for it. Off: on the legacy stream, which
     /// every chain joins at its next launch.
     pub chain_h2d: bool,
+    /// recurrence-precision `radix-tile`: a map/fold whose reads are affine
+    /// per digit of the map and fold indices (`mapal_ir::RadixTile`, a
+    /// convolution's implicit GEMM) is a device tile site — the staged FMA
+    /// tile, addresses formed digit by digit. Off: it stays a `nest-cell`
+    /// (one thread per output walking the fold).
+    pub radix_tile: bool,
 }
 
 impl GpuRungs {
@@ -495,11 +501,12 @@ impl GpuRungs {
         async_h2d: true,
         stage: true,
         chain_h2d: true,
+        radix_tile: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 61] = [
+    pub const NAMES: [&'static str; 62] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -561,6 +568,7 @@ impl GpuRungs {
         "async-h2d",
         "stage",
         "chain-h2d",
+        "radix-tile",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -627,6 +635,7 @@ impl GpuRungs {
             "async-h2d" => &mut self.async_h2d,
             "stage" => &mut self.stage,
             "chain-h2d" => &mut self.chain_h2d,
+            "radix-tile" => &mut self.radix_tile,
             _ => return None,
         })
     }

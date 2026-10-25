@@ -13,6 +13,9 @@ use slotmap::SecondaryMap;
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, Value, ty_contains_token};
 
+mod radix;
+pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
+
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.
 #[derive(Clone, Debug, PartialEq)]
@@ -601,6 +604,9 @@ pub struct TileSite {
     pub elem: Ty,
     pub mul_a_first: bool,
     pub add_acc_first: bool,
+    /// The addresses that are digit-affine only ([`CategoryIr::tile_plan_radix`]);
+    /// `None` on every [`CategoryIr::tile_plan`] site.
+    pub radix: Option<Box<RadixTile>>,
 }
 
 /// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
@@ -2510,6 +2516,7 @@ impl CategoryIr {
             elem: elem0,
             mul_a_first,
             add_acc_first,
+            radix: None,
         })
     }
 
