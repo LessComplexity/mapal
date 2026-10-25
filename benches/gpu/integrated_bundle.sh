@@ -159,6 +159,15 @@ for spec in "$@"; do
         [ "$ap" = "$prof" ] || continue
         f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$dir-${rung//,/+}"
         [ -f "$b.host.ll" ] || emit_one "$f" "$b" "$prof" "$sm" $(flags_of "$face")
+        # cpu-gpu-boundary sweep: emission alone (0.3 s) decides first; an arm whose host and device IR
+        # equal the shipped build's is dropped before clang / opt / llc (hundreds of rung arms per part).
+        q="$d/.q"; rm -f "$q".*
+        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") "--gpu-$dir=$rung" > "$q.host.ll"
+        if cmp -s <(grep -sv '^; mapal\.' "$q.host.ll") <(grep -sv '^; mapal\.' "$b.host.ll") &&
+           { { [ ! -f "$q.dev.ll" ] && [ ! -f "$b.dev.ll" ]; } || cmp -s "$q.dev.ll" "$b.dev.ll"; }; then
+            rm -f "$q".*; echo "rejudge $prof $stem$face $dir-$rung = shipped"; continue
+        fi
+        rm -f "$q".*
         emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") "--gpu-$dir=$rung"
         if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $dir-$rung = shipped"; continue; fi
         echo "rejudge $prof $stem$face $dir-$rung $(cat "$s.launch" 2>/dev/null)"
