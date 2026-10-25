@@ -126,6 +126,21 @@ INTENT = {
     'arena': dict(host=True, applies='host.loop == 0 and host.calls.alloc + host.calls.arena > 0', on=[
         ('straight-line objects in one per-function arena', 'host.calls.arena > 0')],
         off=[('per-object allocations', 'host.calls.arena == 0')]),
+    # cpu-gpu-boundary (runtime): kernel loading, allocation and upload waits leave the timed path.
+    'preload': dict(host=True, applies='host.calls.init > 0', on=[
+        ('every kernel resolved at module load (init flag 8)', 'host.init_flags & 8 > 0')],
+        off=[('each kernel resolved at its first launch', 'host.init_flags & 8 == 0')]),
+    'entry-arena': dict(host=True, applies='host.calls.alloc + host.calls.arena > 0', on=[
+        ('the arena made in the entry block, nowhere else', 'host.arena_entry == host.calls.arena > 0')],
+        off=[('the arena on its first ask', 'host.arena_entry == 0')]),
+    'async-h2d': dict(host=True, applies='host.calls.h2d + host.calls.h2d_async > 0', on=[
+        ('no upload waits for the device', 'host.calls.h2d == 0')],
+        off=[('every upload synchronous', 'host.calls.h2d_async == 0')]),
+    'stage': dict(host=True, applies='host.calls.h2d_async > 0', on=[
+        ('the page-locked staging ring (init flag 16)', 'host.init_flags & 16 > 0')],
+        note='staged uploads: `staged=` in mapal_gpu_trace_total'),
+    'chain-h2d': dict(host=True, applies='host.calls.launchv > 0 and host.calls.h2d_on + host.calls.h2d_async + host.calls.h2d > 0',
+        note='an upload read by one chain only crosses on its stream: diff the arm (`h2d_on` calls)'),
     'eager-init': dict(host=True, applies='host.device_sites > 0', on=[
         ("one init, main's first call", 'host.calls.init == 1')]),
     'epilogue': dict(host=True, applies='dev.epi > 0', on=[

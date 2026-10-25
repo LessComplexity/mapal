@@ -66,12 +66,47 @@ uint64_t mapal_gpu_alloc(uint64_t *slot, uint64_t bytes) {
   }
   return *slot;
 }
-/* `arena` (S54): one allocation per function, made on the first ask. */
-uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) { return mapal_gpu_alloc(slot, bytes); }
+/* `arena` (S54): one allocation per function, made on the first ask. Live
+ * arenas are kept, as `mapal_gpu.c` keeps them (`entry-arena`): a slot holding
+ * a member's address is emptied by `mapal_gpu_free`, never freed. */
+static struct { uint64_t *slot, base, bytes; } arenas[256];
+static size_t n_arenas;
+uint64_t mapal_gpu_arena(uint64_t *slot, uint64_t bytes) {
+  if (*slot) return *slot;
+  mapal_gpu_alloc(slot, bytes);
+  if (n_arenas == 256) exit(102);
+  arenas[n_arenas].slot = slot;
+  arenas[n_arenas].base = *slot;
+  arenas[n_arenas++].bytes = bytes;
+  return *slot;
+}
+static int arena_member(uint64_t *slot) {
+  for (size_t i = 0; i < n_arenas; i++) {
+    if (arenas[i].slot == slot) {
+      arenas[i] = arenas[--n_arenas];
+      return 0;
+    }
+    if (*slot >= arenas[i].base && *slot < arenas[i].base + arenas[i].bytes) return 1;
+  }
+  return 0;
+}
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
   memcpy((void *)d, h, bytes);
   n_h2d++;
   b_in += bytes;
+}
+/* `async-h2d`: the source is staged at the call, so a copy now is exact. */
+void mapal_gpu_h2d_async(uint64_t d, const void *h, uint64_t bytes) { mapal_gpu_h2d(d, h, bytes); }
+void mapal_gpu_h2d_on(uint32_t stream, uint64_t d, const void *h, uint64_t bytes) {
+  (void)stream;
+  mapal_gpu_h2d(d, h, bytes);
+}
+/* `streams`: one thread runs every chain in program order, so an edge is a no-op. */
+void mapal_gpu_event(uint32_t record, uint32_t wait) { (void)record, (void)wait; }
+void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes);
+void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off, uint64_t bytes) {
+  (void)stream;
+  mapal_gpu_d2h(h, d, off, bytes);
 }
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
   memcpy(h, (void *)(d + off), bytes);
@@ -81,7 +116,7 @@ void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
 /* S63: the output an atomic split adds into. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) { memset((void *)d, 0, bytes); }
 void mapal_gpu_free(uint64_t *slot) {
-  if (*slot) free((void *)*slot);
+  if (*slot && !arena_member(slot)) free((void *)*slot);
   *slot = 0;
 }
 static void *sym(const char *prefix, uint64_t id) {

@@ -374,6 +374,37 @@ pub struct GpuRungs {
     /// 3090), the kernels' traced ms equal — the host map walks one row per trip,
     /// not 262144 cells (`fusion-natural-forms/<part>/results-<part>.txt`).
     pub range_map: bool,
+    /// cpu-gpu-boundary `preload`: the runtime resolves every kernel of the
+    /// module (`cuModuleGetFunction`, which loads it under CUDA lazy loading)
+    /// when it loads the module — on the `eager-init` thread, before the
+    /// clock — and launches from that table. Off: each launch resolves its
+    /// kernel, so the first launch of each loads it inside the timed region.
+    pub preload: bool,
+    /// cpu-gpu-boundary `entry-arena`, under `arena`: the function's device arena is made at
+    /// its entry from the static plan, and every buffer freed only at exit (a
+    /// loop-cone buffer, a carry, a workspace) is placed in it too — each its
+    /// own interval, so the existing coloring keeps it apart. Off: the arena
+    /// on the first device op, loop-cone buffers by `mapal_gpu_alloc` on first
+    /// use (inside the loop's first trip).
+    pub entry_arena: bool,
+    /// cpu-gpu-boundary `async-h2d`: every upload is enqueued without a host
+    /// wait (`mapal_gpu_h2d_async`): the runtime stages the source at the call,
+    /// so the host may rewrite it at once. A loop trip then waits for the
+    /// device only where a host morphism reads a device value (a copy-out).
+    /// Off: `cuMemcpyHtoD`, which waits for the device before each copy.
+    pub async_h2d: bool,
+    /// cpu-gpu-boundary `stage`: the runtime keeps a ring of page-locked
+    /// staging slots (made with the context, before the clock); an async
+    /// upload that fits a slot is copied there and DMA'd from it, so a
+    /// page-locked (`pinned`) source never waits either. Off: the driver's
+    /// own staging (pageable) or a synchronous copy (a page-locked source).
+    pub stage: bool,
+    /// cpu-gpu-boundary `chain-h2d`, under `streams`: an upload whose every
+    /// device reader is a site of one chain is copied in on that chain's
+    /// stream (`mapal_gpu_h2d_on`), so the chains the `PathPlan` proves
+    /// independent do not wait for it. Off: on the legacy stream, which
+    /// every chain joins at its next launch.
+    pub chain_h2d: bool,
 }
 
 impl GpuRungs {
@@ -431,11 +462,16 @@ impl GpuRungs {
         flow: true,
         window: true,
         range_map: true,
+        preload: true,
+        entry_arena: true,
+        async_h2d: true,
+        stage: true,
+        chain_h2d: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 52] = [
+    pub const NAMES: [&'static str; 57] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -488,6 +524,11 @@ impl GpuRungs {
         "flow",
         "window",
         "range-map",
+        "preload",
+        "entry-arena",
+        "async-h2d",
+        "stage",
+        "chain-h2d",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -545,6 +586,11 @@ impl GpuRungs {
             "flow" => &mut self.flow,
             "window" => &mut self.window,
             "range-map" => &mut self.range_map,
+            "preload" => &mut self.preload,
+            "entry-arena" => &mut self.entry_arena,
+            "async-h2d" => &mut self.async_h2d,
+            "stage" => &mut self.stage,
+            "chain-h2d" => &mut self.chain_h2d,
             _ => return None,
         })
     }

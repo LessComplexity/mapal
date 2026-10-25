@@ -66,13 +66,19 @@ pub(crate) const GPU_INIT_STREAMS: u32 = 2;
 /// S54: every tile kernel opens with `griddepcontrol.wait` ([`pdl`]), so the
 /// runtime may launch one right behind another as a dependent launch.
 pub(crate) const GPU_INIT_PDL: u32 = 4;
+/// cpu-gpu-boundary `preload`: resolve every kernel when the module loads.
+pub(crate) const GPU_INIT_PRELOAD: u32 = 8;
+/// cpu-gpu-boundary `stage`: the page-locked staging ring for async uploads.
+pub(crate) const GPU_INIT_STAGE: u32 = 16;
 
 /// `main`'s first call in a module with a GPU site: hands the runtime its host
 /// rungs. Off, the runtime does nothing until the first site, the S52 path.
 pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool) -> String {
     let flags = u32::from(rungs.eager_init) * GPU_INIT_EAGER
         + u32::from(streams) * GPU_INIT_STREAMS
-        + u32::from(pdl) * GPU_INIT_PDL;
+        + u32::from(pdl) * GPU_INIT_PDL
+        + u32::from(rungs.preload) * GPU_INIT_PRELOAD
+        + u32::from(rungs.stage && rungs.async_h2d) * GPU_INIT_STAGE;
     format!("  call void @mapal_gpu_init(i32 {flags})\n")
 }
 
@@ -151,7 +157,7 @@ pub(crate) const LAUNCHV_MAX: usize = 16;
 /// S54 entries (`streams`, `pinned`), each declared only where it is called,
 /// so a module that never opens a stream or pins keeps its S53 text.
 /// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
-pub(crate) const S54_DECLS: [(&str, &str); 5] = [
+pub(crate) const S54_DECLS: [(&str, &str); 7] = [
     (
         "@mapal_gpu_event(",
         "declare void @mapal_gpu_event(i32, i32)\n",
@@ -164,6 +170,16 @@ pub(crate) const S54_DECLS: [(&str, &str); 5] = [
     ("@mapal_gpu_unpin(", "declare void @mapal_gpu_unpin()\n"),
     // S63 `splitk-atomic` / `streamk`: the output zeroed before its partials add.
     ("@mapal_gpu_zero(", "declare void @mapal_gpu_zero(i64, i64)\n"),
+    // cpu-gpu-boundary `async-h2d`: an upload enqueued without a host wait.
+    (
+        "@mapal_gpu_h2d_async(",
+        "declare void @mapal_gpu_h2d_async(i64, ptr, i64)\n",
+    ),
+    // `chain-h2d`: an upload on a chain's stream.
+    (
+        "@mapal_gpu_h2d_on(",
+        "declare void @mapal_gpu_h2d_on(i32, i64, ptr, i64)\n",
+    ),
 ];
 
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
