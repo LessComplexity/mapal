@@ -17,3 +17,9 @@ members = [
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
+
+# The interpreter is the tests' oracle (budgets up to 400M steps): optimized in test builds,
+# checks kept (debug-assertions / overflow-checks come from the dev profile). Measured:
+# differential suite 777 -> 683 s; rebuild cost 2 s.
+[profile.dev.package.mapal-interp]
+opt-level = 3
