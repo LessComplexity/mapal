@@ -19,8 +19,17 @@ at or below the best other (flow sweep 26 of 92).
 
 Ranked by measured gap ms (H100 worst):
 
-1. **Device loop for attention-style decode** — decode's in-place row map as a device cell (N1, 46 ms), `mx`/`den`
-   whole scalar folds on the device (N2, causal 56 ms / prefill 22 ms); then the steady trip submits without host syncs.
+1. **Prefill and decode emerge from the loop's recurrence (no workload cases)** — Sapir 2026-10-25: "they should be
+   proven from the datagraph … based on caching/reusing alone". (a) *Trip batching:* a loop node outside the
+   recurrence SCC (`sccs`, `carried_by`), per guard arm on the trip index (`guard_plan`), lifts to a map over `t`
+   computed before/beside the loop — a carried array's rows written by such trips (`write_delta`) are filled in one
+   batched site; a guard `r <= t` becomes a masked tile. (b) *Recurrent trips on the device:* every node in the SCC is
+   placed on the device (decode's row map N1, `mx`/`den` N2), so no host morphism observes inside the loop and the
+   steady trip submits without syncs. (c) *Checkpoints:* a carried array whose rows are final at loop entry seeds the
+   cache (prefill's `k0` = trip 1's `kk` rows) — compute once across the loop boundary. Missing fact: the per-loop
+   trip split (one query in mapal-ir). Acceptance: a natural one-loop generator (guard `t < 512` picks prompt vs
+   generated row) must match `pt_prefill`'s hand-written prefill (twin test); causal/decode are fully recurrent
+   (`x` row t reads `o` of trip t−1), so their win comes from (b).
 2. **Parallel nest cells** — cells now run 1–4 CTAs with one thread folding serially; lanes/tree per cell on the
    default face (order free).
 3. **Mixed-radix index fact** → convmc as an implicit-GEMM tile site (N3).
