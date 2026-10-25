@@ -1459,6 +1459,7 @@ impl CategoryIr {
             [mm.source, mm.target].iter().any(|&o| crate::ty::ty_contains_token(&self.objects[o].ty))
         });
         let slots: Vec<u32> = (0..parts.len() as u32).filter(|&k| k != counter && !views(k).is_empty()).collect();
+        let bounds = self.bounds_proof(f);
         let mut phases = Vec::new();
         for (n, w) in cuts.windows(2).enumerate() {
             let (plo, phi) = (w[0], w[1]);
@@ -1565,9 +1566,12 @@ impl CategoryIr {
                 .collect();
             let unbatched: Vec<ObjectId> = slots.iter().filter(|&&k| !is_batched(k)).flat_map(|&k| views(k)).collect();
             let from_unbatched = reach(&unbatched);
+            // A skipped trip's work must be unobservable: trap-free, so the
+            // interpreter's trap at an early trip is not dropped.
             let skip = n == 0
                 && phi - plo >= 2
                 && !effect
+                && body.keys().all(|m| dead.contains_key(m) || self.morph_trap_free(m, &bounds, None, 0))
                 && !reach(&slots.iter().flat_map(|&k| views(k)).collect::<Vec<_>>()).contains_key(cond)
                 && slots.iter().zip(&nexts).all(|(&k, &nk)| {
                     is_batched(k) || nk.is_some_and(|nk| views(k).contains(&nk) || !from_unbatched.contains_key(nk))
@@ -1597,19 +1601,39 @@ impl CategoryIr {
         let &[acc] = accs.as_slice() else { return None };
         let [step] = self.in_edges(fd.output) else { return None };
         let st = self.morphisms.get(*step)?;
-        // Every use of `acc` is a slot of a product read only by `into`.
-        let only_into = |into: &[ObjectId]| {
-            self.out_edges(acc).iter().all(|&e| {
+        let (op, _) = self.fold_step(st, &|o| o == acc)?;
+        if matches!(op, RowFoldOp::Arith { op: Operation::Sub, .. }) {
+            return None;
+        }
+        // Every use of `acc` is a slot of a product read only by the step
+        // (and a running max/min's compare).
+        let mut into = vec![st.source];
+        if st.op == Operation::Phi {
+            into.push(self.morphisms.get(*self.in_edges(self.pair_slot_source(st.source, 2)?).first()?)?.source);
+        }
+        self.out_edges(acc)
+            .iter()
+            .all(|&e| {
                 let pm = &self.morphisms[e];
                 matches!(pm.op, Operation::Pair { .. }) && into.contains(&pm.target)
             })
-        };
-        let slot = |k| self.pair_slot_source(st.source, k);
-        match st.op {
-            Operation::Add | Operation::Mul => {
+            .then_some(op)
+    }
+
+    /// A fold body's step `acc ⊕ e` and its `e`: `⊕` an `Add`, `Sub` or `Mul`
+    /// with `acc` on one side, or a running max/min (`cmp(acc, e) ? · : ·`
+    /// over exactly `{acc, e}`). One classifier for [`Self::fold_core`] and
+    /// [`Self::fold_tree_step`].
+    fn fold_step(&self, step: &crate::graph::Morphism, acc: &dyn Fn(ObjectId) -> bool) -> Option<(RowFoldOp, ObjectId)> {
+        let slot = |k| self.pair_slot_source(step.source, k);
+        match step.op {
+            Operation::Add | Operation::Sub | Operation::Mul => {
                 let (x, y) = (slot(0)?, slot(1)?);
-                ((x == acc) != (y == acc) && only_into(&[st.source]))
-                    .then_some(RowFoldOp::Arith { op: st.op, acc_first: x == acc })
+                match (acc(x), acc(y)) {
+                    (true, false) => Some((RowFoldOp::Arith { op: step.op, acc_first: true }, y)),
+                    (false, true) => Some((RowFoldOp::Arith { op: step.op, acc_first: false }, x)),
+                    _ => None,
+                }
             }
             Operation::Phi => {
                 let (p, q) = (slot(0)?, slot(1)?);
@@ -1619,11 +1643,12 @@ impl CategoryIr {
                 }
                 let x = self.pair_slot_source(cmp.source, 0)?;
                 let y = self.pair_slot_source(cmp.source, 1)?;
-                let e = if x == acc { y } else { x };
-                let pair = |u: ObjectId, v: ObjectId| (u == acc) != (v == acc) && [u, v].contains(&e);
-                (pair(x, y) && pair(p, q) && e != acc && only_into(&[st.source, cmp.source])).then_some(
-                    RowFoldOp::Select { cmp: cmp.op, acc_lhs: x == acc, acc_if_true: p == acc },
-                )
+                let e = if acc(x) { y } else { x };
+                // Exactly `{acc, e}` on both sides: anything else is not a
+                // running max/min of the read.
+                let one_each = |u: ObjectId, v: ObjectId| acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e);
+                (one_each(x, y) && one_each(p, q))
+                    .then_some((RowFoldOp::Select { cmp: cmp.op, acc_lhs: acc(x), acc_if_true: acc(p) }, e))
             }
             _ => None,
         }
@@ -1869,60 +1894,7 @@ impl CategoryIr {
         let [step] = self.in_edges(fdef.output) else {
             return None;
         };
-        let step = self.morphisms.get(*step)?;
-        let slot = |k| self.pair_slot_source(step.source, k);
-        let (op, e) = match step.op {
-            Operation::Add | Operation::Sub | Operation::Mul => {
-                let (x, y) = (slot(0)?, slot(1)?);
-                match (acc(x), acc(y)) {
-                    (true, false) => (
-                        RowFoldOp::Arith {
-                            op: step.op,
-                            acc_first: true,
-                        },
-                        y,
-                    ),
-                    (false, true) => (
-                        RowFoldOp::Arith {
-                            op: step.op,
-                            acc_first: false,
-                        },
-                        x,
-                    ),
-                    _ => return None,
-                }
-            }
-            Operation::Phi => {
-                let (p, q) = (slot(0)?, slot(1)?);
-                let cmp = self.morphisms.get(*self.in_edges(slot(2)?).first()?)?;
-                if !matches!(
-                    cmp.op,
-                    Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge
-                ) {
-                    return None;
-                }
-                let x = self.pair_slot_source(cmp.source, 0)?;
-                let y = self.pair_slot_source(cmp.source, 1)?;
-                let e = if acc(x) { y } else { x };
-                // Exactly `{acc, e}` on both sides: anything else is not a
-                // running max/min of the read.
-                let one_each = |u: ObjectId, v: ObjectId| {
-                    acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e)
-                };
-                if !one_each(x, y) || !one_each(p, q) {
-                    return None;
-                }
-                (
-                    RowFoldOp::Select {
-                        cmp: cmp.op,
-                        acc_lhs: acc(x),
-                        acc_if_true: acc(p),
-                    },
-                    e,
-                )
-            }
-            _ => return None,
-        };
+        let (op, e) = self.fold_step(self.morphisms.get(*step)?, &acc)?;
         // `e` IS the read — any arithmetic on it is a second step.
         let index = self.tile_definer(e, Operation::Index)?;
         let array = self.pair_slot_source(index.source, 0)?;
@@ -3608,31 +3580,32 @@ impl CategoryIr {
         allow_fold: Option<MorphismId>,
         depth: u32,
     ) -> bool {
-        self.func(f).is_some_and(|fd| {
-            fd.morphisms.iter().all(|m| {
-                let Some(morph) = self.morphisms.get(*m) else {
-                    return false;
-                };
-                match morph.op {
-                    Operation::Div | Operation::Mod => {
-                        self.objects.get(morph.target).is_some_and(|target| {
-                            matches!(target.ty, Ty::Float { .. })
-                                || self
-                                    .pair_slot_source(morph.source, 1)
-                                    .and_then(|o| self.objects.get(o))
-                                    .is_some_and(safe_integer_divisor)
-                        })
-                    }
-                    Operation::Index => bounds.proven(*m),
-                    Operation::Update => false,
-                    Operation::Call { .. } => false,
-                    Operation::Fold { body, .. } | Operation::Map { body, .. } => {
-                        allow_fold == Some(*m) || self.classifiable_at(body, depth + 1)
-                    }
-                    _ => true,
-                }
-            })
-        })
+        self.func(f)
+            .is_some_and(|fd| fd.morphisms.iter().all(|&m| self.morph_trap_free(m, bounds, allow_fold, depth)))
+    }
+
+    /// One morphism of [`Self::trap_free_at`]: it cannot trap (a nested
+    /// body only when it is classifiable — pure, trap-free, loop-free).
+    fn morph_trap_free(&self, m: MorphismId, bounds: &BoundsProof, allow_fold: Option<MorphismId>, depth: u32) -> bool {
+        let Some(morph) = self.morphisms.get(m) else {
+            return false;
+        };
+        match morph.op {
+            Operation::Div | Operation::Mod => self.objects.get(morph.target).is_some_and(|target| {
+                matches!(target.ty, Ty::Float { .. })
+                    || self
+                        .pair_slot_source(morph.source, 1)
+                        .and_then(|o| self.objects.get(o))
+                        .is_some_and(safe_integer_divisor)
+            }),
+            Operation::Index => bounds.proven(m),
+            Operation::Update => false,
+            Operation::Call { .. } => false,
+            Operation::Fold { body, .. } | Operation::Map { body, .. } => {
+                allow_fold == Some(m) || self.classifiable_at(body, depth + 1)
+            }
+            _ => true,
+        }
     }
 
     /// The per-function parallel path query. Tasks are emitted in first topo

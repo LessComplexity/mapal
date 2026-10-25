@@ -255,7 +255,10 @@ INTENT = {
     # 1a `trip-batch`: a loop whose first trip interval skips (`trip_split`) enters at that interval's last trip,
     # its batched row writes made first by one launch of the range cell's batch variant (each cell its own trip).
     'trip-batch': dict(host=True, applies='dev.cell_batch > 0', on=[
-        ('each batch variant is launched (once per loop entry)', 'host.calls.launchv >= dev.cell_batch')],
+        ('each batch variant is launched (once per loop entry)', 'host.calls.launchv >= dev.cell_batch'),
+        ("the loop enters at the interval's last trip (`; mapal.batch enter=`)", 'host.batch > 0')],
+        applies_off='dev.cell_range > 0', off=[
+        ('no batch variant, every trip runs', 'dev.cell_batch == 0 and host.batch == 0')],
         note='trips run: diff the `.off-trip-batch` arm (loop entry counter, launches per run)'),
     # item 2 `cell-lanes`: on the default face a nest cell whose cells leave resident threads idle folds over a warp's
     # lanes (lane l takes every 32nd step) and combines by a butterfly of shuffles, lane 0 storing.

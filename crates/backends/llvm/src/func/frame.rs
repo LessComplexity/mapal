@@ -566,7 +566,7 @@ impl<'a> FnEmit<'a> {
 
     /// `o` is read from a guard arm (which runs at its `Phi`, past its own
     /// position) — the `Update` `upd` reading it aside.
-    fn guard_read(&self, o: ObjectId, upd: Option<MorphismId>) -> bool {
+    pub(super) fn guard_read(&self, o: ObjectId, upd: Option<MorphismId>) -> bool {
         let src = upd.map(|u| self.ir.morphism(u).expect("m").source);
         self.ir.out_edges(o).iter().any(|&e| {
             self.gated.contains_key(e) && Some(e) != upd && Some(self.ir.morphism(e).expect("m").target) != src

@@ -1167,14 +1167,27 @@ impl<'a> FnEmit<'a> {
     /// interval is skippable and every batched write of which is a range
     /// cell of whole rows (`len = d`) over its own carry, its one uniform the
     /// counter and every other operand a carry view of the loop (so at entry
-    /// each is its carry's buffer).
-    fn batches(&self, cells: &SecondaryMap<MorphismId, Cell>, carries: &[Carry]) -> Vec<Batch> {
+    /// each is its carry's buffer) or a loop invariant made before the loop
+    /// whose device copy is placed there (`at_entry`).
+    fn batches(
+        &self,
+        cells: &SecondaryMap<MorphismId, Cell>,
+        carries: &[Carry],
+        at_entry: &dyn Fn(ObjectId) -> bool,
+    ) -> Vec<Batch> {
         let mut out = Vec::new();
         'loops: for ts in self.ir.trip_split(self.f) {
             let Some(p) = ts.phases.first().filter(|p| p.skip && !p.batched.is_empty()) else {
                 continue;
             };
-            let carried = |o: ObjectId| carries.iter().any(|c| c.merge == ts.merge && c.views.contains(&o));
+            let Some(lp) = self.ir.loop_plan(self.f, ts.merge) else { continue };
+            let in_body = |o: ObjectId| {
+                self.ir.in_edges(o).iter().any(|m| lp.decide_order.contains(m) || lp.advance_order.contains(m))
+            };
+            let carried = |o: ObjectId| {
+                carries.iter().any(|c| c.merge == ts.merge && c.views.contains(&o))
+                    || (!lp.scc_objects.contains(&o) && !in_body(o) && at_entry(o))
+            };
             let mut writes = Vec::new();
             for &(_, m) in &p.batched {
                 let Some(c) = cells.get(m) else { continue 'loops };
@@ -1241,7 +1254,12 @@ impl<'a> FnEmit<'a> {
     /// `range-cell`'s legality: `m` is a piecewise map ([`mapal_ir::Outside`])
     /// over a loop state's view whose output is that state's next value, and
     /// no view of the state is read after `m` — the trip writes its state in
-    /// place, so its cells off the interval are already the state's.
+    /// place, so its cells off the interval are already the state's. As
+    /// `state_death` (frame.rs) has it, a whole-state use or a guard-arm read
+    /// (run at its `Phi`, past its own position) reads any time.
+    ///
+    /// ponytail: not `in_place_source` itself — this runs in the residency
+    /// plan, before `prepare_storage` indexes the roots `state_death` walks.
     fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
         let Some(ElemSrc::Apply { outside: Some(ou), source, .. }) = self.ir.map_law(m) else {
             return None;
@@ -1255,7 +1273,19 @@ impl<'a> FnEmit<'a> {
         let merge = view.source;
         let plan = self.ir.loop_plan(self.f, merge)?;
         let state = self.pair_source(plan.back_route, 0)?;
+        let views: Vec<ObjectId> = self
+            .ir
+            .out_edges(merge)
+            .iter()
+            .filter_map(|&e| self.ir.morphism(e))
+            .filter_map(|x| match x.op {
+                Operation::Proj { index } if index == k => Some(Some(x.target)),
+                Operation::Proj { .. } => None,
+                _ => Some(None), // a whole-state use
+            })
+            .collect::<Option<_>>()?;
         (self.pair_source(state, k) == Some(target)
+            && !views.iter().any(|&v| self.guard_read(v, Some(m)))
             && self.lup.view_dead_after(arr, self.lup.position(m)?))
         .then_some(ou)
     }
@@ -1266,20 +1296,10 @@ impl<'a> FnEmit<'a> {
     /// idle. 1 otherwise.
     fn cell_lanes(&self, site: &CellSite) -> u64 {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        let Some(g) = self.profile.gpu() else { return 1 };
-        let f32_fold = |m: MorphismId| {
-            self.ir.morphism(m).is_some_and(|x| self.obj_ty(x.target) == Ty::Float { bits: 32 })
-        };
         match site.tree {
-            Some((fold, _, k))
-                if rungs.cell_lanes
-                    && self.order == crate::Order::Free
-                    && g.warp == 32
-                    && k >= g.warp
-                    && f32_fold(fold)
-                    && site.extent.saturating_mul(g.warp) <= g.sms * g.max_threads_per_sm =>
-            {
-                g.warp
+            Some((fold, _, k)) if rungs.cell_lanes => {
+                let elem = self.obj_ty(self.ir.morphism(fold).expect("fold").target);
+                gpu::warp_lanes(self.profile, self.order, &elem, k, site.extent)
             }
             _ => 1,
         }
@@ -1548,9 +1568,6 @@ impl<'a> FnEmit<'a> {
             carries,
             ..ResidentPlan::default()
         };
-        if rungs.trip_batch {
-            plan.batch = self.batches(&cells, &plan.carries);
-        }
         for (m, site) in sites.iter() {
             if let DevSite::RowFold(r) = site {
                 plan.rowfold.insert(m, r.clone());
@@ -1703,6 +1720,17 @@ impl<'a> FnEmit<'a> {
         }
         if rungs.delta_h2d {
             plan.delta = self.delta_uploads(&plan.upload);
+        }
+        // `trip-batch`, once every operand's device copy is placed: a loop
+        // invariant's is made before the loop (uploaded, devgen'd or a
+        // device product), so the batch at the entry reads it there.
+        if rungs.trip_batch {
+            let at_entry = |o: ObjectId| {
+                plan.upload.contains_key(o)
+                    || self.ir.in_edges(o).first().is_some_and(|&p| plan.devgen.contains_key(p))
+                    || self.produced_on_device(&sites, &cells, o)
+            };
+            plan.batch = self.batches(&cells, &plan.carries, &at_entry);
         }
 
         // `cell-law`: a closed-form producer whose every reader evaluates it

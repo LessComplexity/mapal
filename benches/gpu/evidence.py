@@ -300,6 +300,8 @@ def host_facts(ll, asm):
         # `entry-arena` ON only: a member's buffer is the entry arena's base loaded (OFF asks the arena).
         f['arena_load'] = len(re.findall(r'= load i64, ptr %darena\b', ll))
         f['par'] = len(re.findall(r'@mapal_par_begin\(', ll))
+        # recurrence-precision `trip-batch`: loop entries at a batched interval's last trip.
+        f['batch'] = len(re.findall(r'; mapal\.batch enter=', ll))
         f['sme'] = len(re.findall(r'@mapal_sme_panel', ll))
         # generic-fusion: every function's `; mapal.flow.host` line, summed, and the unit launches.
         fu = Counter()
