@@ -2305,7 +2305,11 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
 /// (sum, max, min) of the vector read back per cell as a number,
 /// vector·matrix nest cells, and row folds (sum, max) of the matrix. The
 /// last vector is `o`'s next; the exit reads
-/// `o` by one element or whole.
+/// `o` by one element or whole. `var` varies the row write the rungs were
+/// built on: bit 0 — the prompt cell reads the loop invariant `w` (not a
+/// closed form); bit 1 — the trip writes row `it + 1` (`b ≠ 0`); bits 2..3
+/// zero (with a prompt) — an int division by `it − c` traps at an early
+/// prompt trip `c`.
 #[derive(Clone, Debug)]
 pub struct RecurProg {
     pub big: bool,
@@ -2313,6 +2317,7 @@ pub struct RecurProg {
     pub prompt: u8,
     pub ops: Vec<[u8; 2]>,
     pub whole: bool,
+    pub var: u8,
 }
 
 pub fn recur_prog_strategy() -> impl Strategy<Value = RecurProg> {
@@ -2322,14 +2327,16 @@ pub fn recur_prog_strategy() -> impl Strategy<Value = RecurProg> {
         any::<u8>(),
         prop::collection::vec(prop::array::uniform2(any::<u8>()), 2..7),
         any::<bool>(),
+        any::<u8>(),
     )
-        .prop_map(|(big, trips, p, ops, whole)| RecurProg {
+        .prop_map(|(big, trips, p, ops, whole, var)| RecurProg {
             big,
             trips,
             // Half the programs have no prompt guard.
             prompt: if p % 2 == 0 { 0 } else { 1 + (p / 2) % trips },
             ops,
             whole,
+            var,
         })
 }
 
@@ -2351,10 +2358,27 @@ pub fn recur_src(p: &RecurProg) -> String {
         0 => format!("f / 64.0 + o[t % {n}]"),
         k => format!("(it < {k}) -> {{ -true-> f / 64.0; -false-> f / 64.0 + o[t % {n}]; }}"),
     };
+    let cell = match p.var & 1 {
+        0 => "(t * 7 + 13) % 101 - 50 -> widen_f32 -> f;".to_string(),
+        // Reversed: not the cell's own index, so `w` is an operand (not `cell-law`).
+        _ => format!("w[{} - t] * 64.0 -> f;", nn - 1),
+    };
+    let row = if p.var & 2 == 0 { "it" } else { "it + 1" };
     s += &format!(
-        "{ind}ta -> map {{ t -> (t / {n} == it) -> {{ -true-> {{ (t * 7 + 13) % 101 - 50 -> widen_f32 -> f; {fed} }} -false-> x[t]; }} }} -> x;\n"
+        "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {{ {cell} {fed} }} -false-> x[t]; }} }} -> x;\n"
     );
-    s += &format!("{ind}krange -> map {{ k -> ((it * {n} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {}.0 }} -> q;\n", 8 * n);
+    let trap = (p.prompt > 0 && (p.var >> 2) & 3 == 0).then(|| (p.var >> 4) % p.prompt);
+    let (dzs, dzt) = match trap {
+        Some(c) => {
+            s += &format!("{ind}100 / (it - {c}) -> dz;\n");
+            (" dz -> widen_f32 -> dq;", " + dq / 1000.0")
+        }
+        None => ("", ""),
+    };
+    s += &format!(
+        "{ind}krange -> map {{ k -> ((it * {n} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv;{dzs} qv / {}.0{dzt} }} -> q;\n",
+        8 * n
+    );
     let (mut mat, mut vec) = ("x".to_string(), "q".to_string());
     for (z, &[op, a]) in p.ops.iter().enumerate() {
         let z = format!("z{z}");
