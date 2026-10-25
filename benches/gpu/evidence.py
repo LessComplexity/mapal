@@ -427,6 +427,14 @@ def move_facts(ll, trips=()):
             continue
         arena += '@mapal_gpu_arena(' in fn
         bbs = block_list(fn)
+        # `entry-arena`: a slot the entry block seeds from the arena never allocates (its
+        # `mapal_gpu_alloc` finds the buffer): those call sites move nothing.
+        entry = next((ls for lab, ls in bbs if lab == 'entry'), [])
+        seeded = set(re.findall(r'store i64 %[\w.]+, ptr (%d\d+)$', '\n'.join(entry), re.M))
+        if seeded:
+            fn = '\n'.join(x for x in fn.split('\n')
+                           if not ((m := re.search(r'@mapal_gpu_alloc\(ptr (%d\d+),', x)) and m.group(1) in seeded))
+            bbs = block_list(fn)
         index = {lab: i for i, (lab, _) in enumerate(bbs)}
         inside = set()
         for h, (lab, lines) in enumerate(bbs):
