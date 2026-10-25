@@ -168,6 +168,39 @@ source says "run these in parallel"
 Small sizes are now a single-thread kernel gap, not a scheduling one
 ([breakdown](docs/performance/cpu/scheduling/dispatch-threshold.md)).
 
+### GPU workloads - 4 GPUs, October 2026
+
+Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile`; below 1 = Mapal faster.
+Values pass on every program and arch. 41 of 96 cells at or below 1.0
+([end check, gaps and causes](docs/performance/evidence/cpu-gpu-boundary.md)).
+
+| workload | RTX 4090 | RTX 5090 | H100 PCIe | RTX 3090 |
+| --- | ---: | ---: | ---: | ---: |
+| convmc_8_64_56_3 | 17.77 | 12.36 | 20.33 | 27.57 |
+| decode_1024_256 | 1.66 | 1.60 | 2.95 | 1.69 |
+| attn_1024_64 | 1.97 | 1.39 | 2.00 | 1.77 |
+| loopmm_1024_8 | 1.31 | 1.25 | 1.12 | 1.62 |
+| pj_m16_n2048_k7168 | **0.86** | 1.21 | 1.35 | 1.56 |
+| causal_1024_256 | **0.62** | 1.30 | 1.41 | **0.75** |
+| mlp2_2048 | 1.01 | 1.12 | 1.39 | 1.03 |
+| indep_2048 | **0.99** | 1.08 | 1.35 | 1.09 |
+| diamond_2048 | **0.98** | 1.11 | 1.30 | 1.01 |
+| prefill_1024_512_256 | **0.64** | 1.25 | 1.30 | **0.81** |
+| smlp_4096_256_1024 | 1.09 | 1.17 | 1.19 | 1.29 |
+| rt_mlp2_2048 | 1.12 | 1.12 | 1.27 | **1.00** |
+| fanout_2048 | **0.97** | 1.08 | 1.23 | 1.02 |
+| mlp_2048 | **0.97** | 1.09 | 1.22 | 1.04 |
+| twin_2048 | **0.95** | 1.05 | 1.21 | 1.01 |
+| rowsum_4096 | 1.05 | 1.10 | **0.97** | **0.95** |
+| softmax_rows_4096 | 1.03 | 1.09 | **0.97** | **0.96** |
+| epi_4096 | **1.00** | 1.06 | **0.97** | **0.88** |
+| ew_4096 | **0.46** | **0.45** | 1.01 | **0.61** |
+| loop_4096 | **0.95** | **0.97** | **0.97** | **0.96** |
+| firew_rowsum_2048x2048_16 | **0.66** | **0.55** | **0.57** | **0.72** |
+| conv_2048_5 | **0.63** | **0.45** | **0.50** | **0.68** |
+| fir_4194304_16 | **0.61** | **0.51** | **0.56** | **0.63** |
+| ewconvew_2048_5 | **0.53** | **0.51** | **0.51** | **0.53** |
+
 ### Three builds
 
 | build                                        | what you get                                                     |
@@ -185,7 +218,7 @@ Small sizes are now a single-thread kernel gap, not a scheduling one
 | Language core          | working - functions, pipelines, parallel fanout, guards, loops, `map`/`fold`/`zip`/`enumerate`, tuples, fixed arrays, `print` |
 | Interpreter            | working - _defines_ the language; every backend is tested against it                                                          |
 | CPU backend (LLVM)     | working - automatic threading, vectorization, cache blocking                                                                  |
-| GPU backend (CUDA)     | working - 640 compile-and-runs on an RTX 4090, July 2026; **not re-validated on hardware since.** No `time` builtin           |
+| GPU backend (CUDA)     | working - value gates pass on RTX 4090, RTX 5090, H100 PCIe and RTX 3090, October 2026. No `time` builtin                     |
 | FPGA backend (Verilog) | not started                                                                                                                   |
 | Command-line tool      | **not built** - `mapal` prints "not yet implemented" and exits 1                                                              |
 | Tests                  | 1,047; 161 are CUDA's and skip without `nvcc`. Green                                                                          |
