@@ -201,7 +201,8 @@ fn chain_h2d_uploads_on_the_readers_stream() {
     for k in ["1", "2"] {
         assert!(on.text.contains(&format!("@mapal_gpu_launchv(i64 ")) && on.text.contains(&format!(", i32 {k}, i32 3, ptr ")));
     }
-    assert!(chains(&off.text).is_empty() && off.text.contains("@mapal_gpu_h2d_async("));
+    // OFF: the uploads stay, on the legacy stream (sync or async per the part's `async-h2d` row).
+    assert!(chains(&off.text).is_empty() && off.text.contains("@mapal_gpu_h2d"));
     if let Some(cc) = emu::clang() {
         let (a, b) = (on.device.as_deref().expect("dev"), off.device.as_deref().expect("dev"));
         assert_eq!(emu::run_emulated(&cc, &on.text, a), emu::run_emulated(&cc, &off.text, b));

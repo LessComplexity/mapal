@@ -994,19 +994,16 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // is in the files beside it. `delta-h2d` and `lane-stride` measured ON on all five parts.
     // S56 rechecks the disputed H100 choice per face on untraced process wall. Traced kernel
     // savings are diagnostic, not proof of a process speedup; the initial S54 acceptance bar applies.
-    RungOff {
-        profile: "h100-pcie",
-        rung: "retain-resident",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "s56-selection-h100-pcie.txt decode OFF/ON untraced wall exact 842/819 ms, contract 878/870 ms, \
-               five reps with overlapping ranges. Prior retain-resident-h100-pcie{,-confirm}.txt wall \
-               exact 0.971/0.705x and contract 1.143/1.016x; fresh run repeats the confirm host. \
-               Traced kernels improve 1.219/1.130x but do not establish a stable wall win. \
-               Disputed S54 selection fails initial acceptance; OFF is not claimed faster; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 64); \
-               S65 (no loop residue): ON/OFF 1.008 (per rep 0.946..1.139) inside null 0.094, the one-row site costs what the \
-               tile site does (2046 launches 45.18 ms vs 2048 launches 45.83 ms; benches/results/evidence/s65/h100-pcie)",
-    },
+    // cpu-gpu-boundary: retention ships ON on the H100 too — its S54/S56/S65 row is removed. Shipped vs
+    // `.on-retain-resident`, ABBA x5, program iter ms (benches/results/evidence/cpu-gpu-boundary/report.md,
+    // h100-pcie): causal 0.922 (null 0.020), prefill 0.949 (null 0.040), decode 0.940 (null 0.077, inside it,
+    // not slower); the flow sweep measured causal 0.678 / prefill 0.787 (null 0.027 / 0.025): the same sign in
+    // two sessions. Explained by the OFF trace (h100-pcie/prof-h100-pcie.tgz) and the ON emission: OFF rebuilds
+    // K/V in full every trip (stream-K tile 8065b046, 228 CTAs, 2048 x 11.6 us = 23.7 ms in causal, 23.8 in
+    // decode) plus 2048-3072 1 MB memsets (2.9 / 4.5 ms); ON emits the one-row site 3881eb4b (1 CTA, 8 LDG +
+    // 4 FFMA per hot-loop trip). Each saving (causal 15.1, prefill 5.0, decode 4.2 ms) is below the work it
+    // removes. The win shrank from the flow sweep because nest-cell keeps causal's K/V readers on the device:
+    // OFF no longer copies 2148 MB D2H per run (9.2 MB now).
     // S65: with the loop residue gone (by-ref), retention ships ON on the 4090 and the 5090 — the S54
     // rows for both are removed. decode_1024_256 shipped / retain-resident ON, 30 interleaved reps:
     // 4090 40.58 vs 33.05 ms, ON/OFF 0.824 (per rep 1.192..1.252 faster, null 0.050); 5090 42.71 vs
@@ -1112,6 +1109,46 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "pt_loop_2048: streams-rtx-5090.txt on 77.545/75.830 vs off 92.102/88.746 ms, -confirm.txt on \
                50.086/48.318 vs off 58.865/57.286 ms (pageable 9-19 GB/s vs pinned 26-52), -final.txt on \
                57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 75)",
+    },
+    // cpu-gpu-boundary `async-h2d` (and `stage`, inert without it): no win on any part — the S63 rule
+    // (no win is a row). benches/results/evidence/cpu-gpu-boundary/report.md, shipped vs `.off-async-h2d`
+    // over 25 programs, ABBA x5, program iter ms: 0 faster / 0 slower beyond each arm's null; smoke
+    // (smoke-rtx-4090/ratios.txt, 32 arms) 0 faster, ew_4096 contract 1.108 slower. Explained by the
+    // movement: the only in-clock uploads are causal/prefill/decode's 1 KB row per trip (1024 x 0.3-1.0 us,
+    // nsys) and each trip ends in a copy-out the host reads, so no upload wait is left to hide; `stage`
+    // measured 1.00 the same way (4090 0.970-1.038, 5090 0.995-1.102, H100 0.913-1.105, 3090 0.970-1.161).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-4090/results-rtx-4090.txt.gz: ON/OFF median 1.001 (0.963 loopmm .. 1.031 \
+               ew_4096), 0/0 beyond null, iter summed ON 281.5 vs OFF 281.7 ms; smoke-rtx-4090/ratios.txt ew_4096 \
+               contract 1.108 slower",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-5090/results-rtx-5090.txt.gz: ON/OFF median 1.003 (0.997 softmax_rows .. \
+               1.157 ew_4096, null 0.147), 0/0 beyond null, iter summed ON 228.0 vs OFF 228.0 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/h100-pcie/results-h100-pcie.txt.gz: ON/OFF median 1.001 (0.958 firew_rowsum .. \
+               1.077 attn, null 0.124), 0/0 beyond null, iter summed ON 436.1 vs OFF 433.7 ms",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-3090/results-rtx-3090.txt.gz: ON/OFF median 0.999 (0.983 attn .. 1.075 \
+               causal, null 0.134), 0/0 beyond null, iter summed ON 387.4 vs OFF 372.9 ms",
     },
     RungOff {
         profile: "h100-pcie",
@@ -1418,6 +1455,8 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
     // 0.71/0.60/0.52/0.77, softmax_rows_4096 0.88/0.92/0.88/0.93 (4090/5090/H100/3090). Open: rowsum_4096 on
     // rtx-4090 1.06 (5090/H100/3090 inside null) — the lone tree-fold class needs its own gate, not a part row.
+    // Closed by cpu-gpu-boundary `tree-gate` (ships ON, no row): rtx-4090 rowsum_4096 ON/OFF 0.944 (null 0.004)
+    // ~ 1/1.056; it changes no other part's emission (cpu-gpu-boundary/report.md).
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -4695,7 +4734,7 @@ mod tests {
 
     /// S54 R5: the delta upload and the strided one-row site ship on every
     /// measured part. Retention on the resident buffer ships on the 3090,
-    /// A100, 4090 and 5090 (S65); the H100 selection did not establish a win.
+    /// A100, 4090 and 5090 (S65) and the H100 (cpu-gpu-boundary).
     #[test]
     fn r5_rungs_are_the_measured_table() {
         for p in GPU_MEASURED {
@@ -4703,8 +4742,7 @@ mod tests {
                 for contract in [false, true] {
                     let r = p.gpu_rungs(wps, contract);
                     assert!(r.resident && r.delta_h2d && r.lane_stride, "{}", p.name);
-                    let off = p.name == "h100-pcie";
-                    assert_eq!(r.retain_resident, !off, "{}", p.name);
+                    assert!(r.retain_resident, "{}", p.name);
                 }
             }
         }
