@@ -224,6 +224,23 @@ INTENT = {
     'retained-fold': dict(host=True, applies='dev.rowfold > 0', on=[
         ('each placed row fold is launched', 'host.calls.launch >= dev.rowfold')],
         note='rowfold count: diff the `.off-retained-fold` arm'),
+    # recurrence-precision 1b `range-cell`: a piecewise map written in place over a device-carried state (a row, a
+    # range, a column) is a cell over its interval in the carry's buffer: the written row never crosses per trip.
+    'range-cell': dict(host=True, applies='dev.cell_range > 0', on=[
+        ('each range cell is launched (its interval start and count by value)', 'host.calls.launchv >= dev.cell_range'),
+        ("per-trip uploads are the facts' (no written row crosses)", 'host.move.h2d_b == host.move.intent_h2d')],
+        applies_off='dev.cell > 0', off=[('no range cell', 'dev.cell_range == 0')]),
+    # 1b `scalar-fold`: a whole fold of a device array is a one-row row fold into a one-element device buffer; a
+    # cell reading it loads it there (a pointer, not a by-value uniform): no host observes inside the trip.
+    'scalar-fold': dict(host=True, applies='dev.cell_dev > 0', on=[
+        ('each placed row fold (whole folds included) is launched', 'host.calls.launch >= dev.rowfold'),
+        ("per-trip copy-outs are the facts' (a device number never crosses)", 'host.move.d2h_b == host.move.intent_d2h')],
+        applies_off='dev.cell > 0', off=[('no cell reads a device number', 'dev.cell_dev == 0')]),
+    # 1a `trip-batch`: a loop whose first trip interval skips (`trip_split`) enters at that interval's last trip,
+    # its batched row writes made first by one launch of the range cell's batch variant (each cell its own trip).
+    'trip-batch': dict(host=True, applies='dev.cell_batch > 0', on=[
+        ('each batch variant is launched (once per loop entry)', 'host.calls.launchv >= dev.cell_batch')],
+        note='trips run: diff the `.off-trip-batch` arm (loop entry counter, launches per run)'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

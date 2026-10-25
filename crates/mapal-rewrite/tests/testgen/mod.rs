@@ -2291,3 +2291,134 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     }
     s + "}\n"
 }
+
+// --- recurrence-precision: row-recurrent loops, as Mapal source --------------
+
+/// A counted loop over a row-written state `x: [f32; n·n]` and a row state
+/// `o: [f32; n]` (`n` 16 or 32, 2..6 trips): trip `it` writes row `it` of `x`
+/// naturally (a guarded map over the cells), its cells a closed form of the
+/// cell — plus `o[t % n]` (the previous trip's row: a recurrence), or, with a
+/// `prompt` P, only once `it ≥ P` (a guard on the counter). Then `ops` over
+/// the trip's current matrix (from `x`) and vector (a closed form of the
+/// counter): affine sites against a loop invariant `w`, per-cell matrix maps,
+/// guarded row scores (`r <= it·c`: a nest cell over the counter), whole folds
+/// (sum, max, min) of the vector read back per cell as a number,
+/// vector·matrix nest cells, and row folds (sum, max) of the matrix. The
+/// last vector is `o`'s next; the exit reads
+/// `o` by one element or whole.
+#[derive(Clone, Debug)]
+pub struct RecurProg {
+    pub big: bool,
+    pub trips: u8,
+    pub prompt: u8,
+    pub ops: Vec<[u8; 2]>,
+    pub whole: bool,
+}
+
+pub fn recur_prog_strategy() -> impl Strategy<Value = RecurProg> {
+    (
+        any::<bool>(),
+        2u8..7,
+        any::<u8>(),
+        prop::collection::vec(prop::array::uniform2(any::<u8>()), 2..7),
+        any::<bool>(),
+    )
+        .prop_map(|(big, trips, p, ops, whole)| RecurProg {
+            big,
+            trips,
+            // Half the programs have no prompt guard.
+            prompt: if p % 2 == 0 { 0 } else { 1 + (p / 2) % trips },
+            ops,
+            whole,
+        })
+}
+
+/// [`RecurProg`]'s source text.
+pub fn recur_src(p: &RecurProg) -> String {
+    let n: u32 = if p.big { 32 } else { 16 };
+    let nn = n * n;
+    let ind = "                ";
+    let mut s = format!(
+        "fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n    \
+         ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / {}.0 }} -> w;\n    \
+         (0.0, {nn}) -> fill -> x0;\n    (0.0, {n}) -> fill -> o0;\n    \
+         mut x: [f32; {nn}] <- x0;\n    mut o: [f32; {n}] <- o0;\n    mut it: i32 <- 0;\n    loop {{\n        \
+         (it < {}) -> {{\n            -true-> {{\n",
+        4 * n,
+        p.trips
+    );
+    let fed = match p.prompt {
+        0 => format!("f / 64.0 + o[t % {n}]"),
+        k => format!("(it < {k}) -> {{ -true-> f / 64.0; -false-> f / 64.0 + o[t % {n}]; }}"),
+    };
+    s += &format!(
+        "{ind}ta -> map {{ t -> (t / {n} == it) -> {{ -true-> {{ (t * 7 + 13) % 101 - 50 -> widen_f32 -> f; {fed} }} -false-> x[t]; }} }} -> x;\n"
+    );
+    s += &format!("{ind}krange -> map {{ k -> ((it * {n} + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / {}.0 }} -> q;\n", 8 * n);
+    let (mut mat, mut vec) = ("x".to_string(), "q".to_string());
+    for (z, &[op, a]) in p.ops.iter().enumerate() {
+        let z = format!("z{z}");
+        s += ind;
+        match op % 6 {
+            0 => {
+                s += &format!(
+                    "ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {mat}[i * {n} + k] * w[k * {n} + j] }} }} -> {z};\n"
+                );
+                mat = z;
+            }
+            1 => {
+                s += &if a % 2 == 0 {
+                    format!("{mat} -> map {{ v -> (v > 0.0) -> {{ -true-> v; -false-> 0.0; }} }} -> {z};\n")
+                } else {
+                    format!("{mat} -> map {{ v -> v * 0.5 }} -> {z};\n")
+                };
+                mat = z;
+            }
+            2 => {
+                let c = u32::from(a % 3) + 1;
+                s += &format!(
+                    "krange -> map {{ r -> (r <= it * {c}) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + {vec}[k] * {mat}[r * {n} + k] }} }} -false-> -1000.0; }} }} -> {z};\n"
+                );
+                vec = z;
+            }
+            3 => {
+                let (seed, step) = match a % 3 {
+                    0 => ("0.0", "acc + e"),
+                    1 => ("-1000000.0", "(e > acc) -> { -true-> e; -false-> acc; }"),
+                    _ => ("1000000.0", "(e < acc) -> { -true-> e; -false-> acc; }"),
+                };
+                s += &format!("({seed}, krange) -> fold {{ acc, r -> {vec}[r] -> e; {step} }} -> {z}m;\n");
+                s += &format!("{ind}krange -> map {{ r -> ({vec}[r] - {z}m) / 16.0 }} -> {z};\n");
+                vec = z;
+            }
+            4 => {
+                s += &format!(
+                    "krange -> map {{ j -> (0.0, krange) -> fold {{ acc, r -> acc + {vec}[r] * {mat}[r * {n} + j] }} -> a; a * 0.25 }} -> {z};\n"
+                );
+                vec = z;
+            }
+            _ => {
+                // A row fold of the matrix (a sum, or a running max).
+                s += &if a % 2 == 0 {
+                    format!("krange -> map {{ i -> (0.0, krange) -> fold {{ acc, k -> acc + {mat}[i * {n} + k] }} }} -> {z};\n")
+                } else {
+                    format!(
+                        "krange -> map {{ i -> (-1000000.0, krange) -> fold {{ acc, k -> {mat}[i * {n} + k] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> {z};\n"
+                    )
+                };
+                vec = z;
+            }
+        }
+    }
+    if vec == "q" {
+        s += &format!("{ind}krange -> map {{ j -> {mat}[j] * 0.5 + q[j] }} -> o;\n");
+    } else {
+        s += &format!("{ind}{vec} -> o;\n");
+    }
+    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> o -> out;\n        }}\n    }}\n");
+    s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", n - 1);
+    if p.whole {
+        s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
+    }
+    s + "}\n"
+}

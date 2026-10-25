@@ -113,7 +113,7 @@ impl<'a> FnEmit<'a> {
     /// first at or past `l`, up to `min(lo + step·len, h)` — `lo = d·(a·e +
     /// b)`, `a·e + b` in `e`'s wrapping width (the program's value), then
     /// exact in `i64`. A step of 1 is the interval `[max(lo, l), …)`.
-    fn range_bounds(&mut self, ou: &mapal_ir::Outside, n: u64) -> (String, String) {
+    pub(super) fn range_bounds(&mut self, ou: &mapal_ir::Outside, n: u64) -> (String, String) {
         let (l, h) = self.bulk_bounds(n);
         let x = match ou.e.and_then(|e| self.load_whole(e)) {
             Some((wllt, ev)) => self.affine_cell(

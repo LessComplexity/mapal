@@ -112,7 +112,16 @@ pub fn host_device(dev: &str) -> String {
 const EMU_TIMEOUT_SECS: u64 = 120;
 
 /// Build and run `host` + `dev` against the emulated device; its stdout.
+#[allow(dead_code)]
 pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
+    run_emulated_totals(clang, host, dev).0
+}
+
+/// [`run_emulated`], and the run's device traffic (`emu_total`: uploads,
+/// copy-outs, launches and their bytes) as `[h2d, d2h, launches, bytes_in,
+/// bytes_out]`.
+#[allow(dead_code)]
+pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64; 5]) {
     let dir = tempfile::tempdir().unwrap();
     let p = |n: &str| dir.path().join(n);
     std::fs::write(p("h.ll"), host).unwrap();
@@ -164,10 +173,18 @@ pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
     let out = child.wait_with_output().unwrap();
     assert!(
         out.status.success(),
-        "{}",
+        "{}: {}",
+        out.status,
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8_lossy(&out.stdout).into_owned()
+    let err = String::from_utf8_lossy(&out.stderr);
+    let mut totals = [0u64; 5];
+    if let Some(l) = err.lines().find_map(|l| l.strip_prefix("emu_total ")) {
+        for (t, kv) in totals.iter_mut().zip(l.split_whitespace()) {
+            *t = kv.split_once('=').and_then(|(_, v)| v.parse().ok()).unwrap_or(0);
+        }
+    }
+    (String::from_utf8_lossy(&out.stdout).into_owned(), totals)
 }
 
 pub fn clang() -> Option<String> {

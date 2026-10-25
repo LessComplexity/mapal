@@ -15,7 +15,7 @@ use slotmap::SecondaryMap;
 
 use crate::algo::{
     BoundsProof, CellSite, Delta, ElemPlan, EmissionPlan, FootprintPlan, GuardSite, LastUsePlan,
-    LoopPlan, LoopScc, MovePlan, PathPlan, RowFoldSite, TilePlan,
+    LoopPlan, LoopScc, MovePlan, PathPlan, RowFoldSite, TilePlan, TripSplit,
 };
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId};
 
@@ -28,6 +28,7 @@ pub(crate) struct FuncFacts {
     pub(crate) tile_plan_strided: OnceLock<TilePlan>,
     pub(crate) move_plan: OnceLock<MovePlan>,
     pub(crate) row_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
+    pub(crate) whole_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
     pub(crate) cell_plan: OnceLock<SecondaryMap<MorphismId, CellSite>>,
     pub(crate) footprint_plan: OnceLock<FootprintPlan>,
     pub(crate) elem_plan: OnceLock<ElemPlan>,
@@ -42,6 +43,7 @@ pub(crate) struct FuncFacts {
     pub(crate) bounds_proof: OnceLock<BoundsProof>,
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
+    pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
 }
 
 /// The graph's fact store.

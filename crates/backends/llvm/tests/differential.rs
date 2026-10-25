@@ -3497,9 +3497,12 @@ fn differential_natural_twins_values_and_movement() {
         v.sort();
         v
     };
-    let emit = |ir: &CategoryIr, target: &'static str, range: bool| {
+    let emit = |ir: &CategoryIr, target: &'static str, range: bool, cell: bool| {
         let mut gpu = mapal_backend_llvm::GpuArms::default();
-        let off = ["streams", "pinned", "pdl", "async", "place"].into_iter().chain((!range).then_some("range-map"));
+        let off = ["streams", "pinned", "pdl", "async", "place"]
+            .into_iter()
+            .chain((!range).then_some("range-map"))
+            .chain((!cell).then_some("range-cell"));
         for r in off {
             *gpu.off.rung(r).expect("rung") = true;
         }
@@ -3523,6 +3526,12 @@ fn differential_natural_twins_values_and_movement() {
             .collect();
         k.sort();
         k
+    };
+    let range_cells = |d: &Option<String>| {
+        d.iter()
+            .flat_map(|d| d.lines())
+            .filter(|l| l.starts_with("; mapal.plan ") && l.contains(" kind=cell ") && l.contains(" range="))
+            .count()
     };
     let run_on = |em: &mapal_backend_llvm::Emission| -> String {
         match &em.device {
@@ -3569,7 +3578,20 @@ fn differential_natural_twins_values_and_movement() {
             probed += 1;
         }
         for target in [["h100-pcie", "rtx-4090"][case % 2], "generic"] {
-            let (on, off, un) = (emit(&ni, target, true), emit(&ni, target, false), emit(&ui, target, true));
+            let (on, off, un) = (emit(&ni, target, true, true), emit(&ni, target, false, true), emit(&ui, target, true, true));
+            // recurrence-precision `range-cell` is the natural form's alone (a
+            // map written in place; an `Update` stays the host's): launches
+            // and kernels are the twins' with it off, and with it on at most
+            // its range cells more, each replacing a written row's upload.
+            let flat = emit(&ni, target, true, false);
+            let ranges = range_cells(&on.device);
+            if launches(&on.text) > launches(&flat.text) + ranges {
+                findings.push(format!(
+                    "{tag} {target}: range-cell launches {} > {} + {ranges} range cells\n{ns}",
+                    launches(&on.text),
+                    launches(&flat.text)
+                ));
+            }
             let (mn, mu) = (moves(&on.text), moves(&un.text));
             if mn != mu {
                 // As well or better: per loop, no more bytes moved, copied or
@@ -3587,13 +3609,13 @@ fn differential_natural_twins_values_and_movement() {
                     better += 1;
                 }
             }
-            if launches(&on.text) > launches(&un.text)
-                || (launches(&on.text) == launches(&un.text) && kinds(&on.device) != kinds(&un.device))
+            if launches(&flat.text) > launches(&un.text)
+                || (launches(&flat.text) == launches(&un.text) && kinds(&flat.device) != kinds(&un.device))
             {
                 findings.push(format!(
                     "{tag} {target}: launches {} kinds {:?} != the unrolled {} {:?}\n{ns}",
-                    launches(&on.text),
-                    kinds(&on.device),
+                    launches(&flat.text),
+                    kinds(&flat.device),
                     launches(&un.text),
                     kinds(&un.device)
                 ));

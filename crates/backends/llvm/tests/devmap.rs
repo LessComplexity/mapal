@@ -435,8 +435,9 @@ fn a_closed_form_of_the_trip_counter_is_a_uniform_cell() {
     // emulator has no `cp.async`.
     let mlp2 = bench("px_rt_mlp2_128").replace("16384", "1024").replace("16383", "1023").replace("128", "32");
     for (name, src, laws, bytes) in [("decode_16_8", bench("decode_16_8"), 1, 8 * 4), ("rt_mlp2_32", mlp2, 2, 32 * 32 * 4)] {
-        let on = emit(&src, &["async"]);
-        let off = emit(&src, &["uniform", "async"]);
+        // `range-cell` needs `uniform` (the trip counter): isolated here.
+        let on = emit(&src, &["async", "range-cell"]);
+        let off = emit(&src, &["uniform", "async", "range-cell"]);
         let (c_on, c_off) = (calls(&on.text), calls(&off.text));
         let up = |c: &[String]| count(c, &format!("h2d {bytes}"));
         assert_eq!(count(&c_on, "launchv"), count(&c_off, "launchv") + laws, "{name}: {c_on:?}");

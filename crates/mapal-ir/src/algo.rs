@@ -645,6 +645,64 @@ pub enum RowFoldOp {
     },
 }
 
+/// **The trip split of a counted loop** (recurrence-precision item 1,
+/// [`CategoryIr::trip_split`]): the counter `t` (a state slot, `t + 1 → t`,
+/// a constant first trip, continued while `t < hi`), the trip intervals the
+/// guards on `t` cut the range into, and per interval which state is a
+/// recurrence there and which body work is outside it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TripSplit {
+    pub merge: ObjectId,
+    /// The counter's state slot.
+    pub counter: u32,
+    /// Trips `t ∈ [lo, hi)`.
+    pub lo: i64,
+    pub hi: i64,
+    /// Consecutive, covering `[lo, hi)`; one per run of trips on which every
+    /// guard on `t` takes the same arm.
+    pub phases: Vec<TripPhase>,
+}
+
+/// One interval of a [`TripSplit`]: the body as its trips run it (every
+/// guard on the counter decided, the arm not taken dropped).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TripPhase {
+    pub lo: i64,
+    pub hi: i64,
+    /// State slots on a cycle of the slot dependence graph (slot `k` → `j`
+    /// when `j`'s next value reads `k`'s view): the recurrence. A piecewise
+    /// write of a slot over itself (`batched`) is not a self-edge: its cells
+    /// read nothing of the previous state.
+    pub recurrent: Vec<u32>,
+    /// Body morphisms no recurrent slot's view reaches: closed forms of the
+    /// counter, loop invariants and non-recurrent state.
+    pub outside: Vec<MorphismId>,
+    /// `(slot, map)`: the slot's next value is a piecewise map over the slot
+    /// itself ([`Outside`]: rows `d·(t + b)`, `len ≤ d` cells each) whose
+    /// other live captures are the counter or loop invariants — the
+    /// interval's writes are one batch of `(hi − lo)·len` cells, cell `c`
+    /// from trip `c ÷ d − b`.
+    pub batched: Vec<(u32, MorphismId)>,
+    /// The first interval only: trips `[lo, hi − 1)` leave no value a later
+    /// trip reads but the `batched` writes — every other state slot is
+    /// unchanged or overwritten from batched state and the counter alone,
+    /// the exit test reads only the counter, and the body has no effect. The
+    /// loop may enter at `hi − 1` with the batch applied.
+    pub skip: bool,
+}
+
+/// [`CategoryIr::fold_core`]: a fold's step and its one read.
+struct FoldCore {
+    fbody: FuncId,
+    fcap: u32,
+    k: u64,
+    seed: Value,
+    op: RowFoldOp,
+    /// The read array as the fold body sees it, and its address.
+    array: ObjectId,
+    address: ObjectId,
+}
+
 impl PathPlan {
     /// Whether scheduling can be skipped entirely.
     pub fn is_single_path(&self) -> bool {
@@ -1251,6 +1309,316 @@ impl CategoryIr {
         self.fact(f, |s| &s.row_fold, || self.row_fold_compute(f))
     }
 
+    /// **The trip split** (recurrence-precision item 1): per canonical loop
+    /// with a counter, its guard-cut trip intervals and each interval's
+    /// recurrence ([`TripSplit`]). Built from `loop_plan`, `guard_plan` (of
+    /// `f` and of each map body in the trip) and `map_law`.
+    pub fn trip_split(&self, f: FuncId) -> Vec<TripSplit> {
+        self.fact(f, |s| &s.trip_split, || {
+            self.loop_structure(f)
+                .iter()
+                .filter_map(|scc| match scc.merges.as_slice() {
+                    &[merge] => self.trip_split_of(f, &self.loop_plan(f, merge)?),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    fn trip_split_of(&self, f: FuncId, plan: &LoopPlan) -> Option<TripSplit> {
+        let merge = plan.merge;
+        let Ty::Tuple(parts) = &self.objects.get(merge)?.ty else {
+            return None;
+        };
+        let next = self.pair_slot_source(plan.back_route, 0)?;
+        let cond = self.pair_slot_source(plan.exit_route, 1)?;
+        let views = |k: u32| -> Vec<ObjectId> {
+            self.out_edges(merge)
+                .iter()
+                .filter_map(|&m| {
+                    let mm = &self.morphisms[m];
+                    (mm.op == Operation::Proj { index: k }).then_some(mm.target)
+                })
+                .collect()
+        };
+        let int_const = |o: ObjectId| -> Option<i64> {
+            let ob = self.objects.get(o)?;
+            match (ob.kind, ob.value.as_ref()?) {
+                (ObjectKind::Constant, Value::I32(v)) => Some(i64::from(*v)),
+                (ObjectKind::Constant, Value::I64(v)) => Some(*v),
+                _ => None,
+            }
+        };
+        // `x op C` as `(op, C)` with `x` the operand `is_x` accepts (a flipped
+        // compare is normalized).
+        let compare = |o: ObjectId, is_x: &dyn Fn(ObjectId) -> bool| -> Option<(Operation, i64)> {
+            let m = self.morphisms.get(*self.in_edges(o).first()?)?;
+            if !matches!(m.op, Operation::Lt | Operation::Le | Operation::Gt | Operation::Ge) {
+                return None;
+            }
+            let (l, r) = (self.pair_slot_source(m.source, 0)?, self.pair_slot_source(m.source, 1)?);
+            let flip = |op| match op {
+                Operation::Lt => Operation::Gt,
+                Operation::Gt => Operation::Lt,
+                Operation::Le => Operation::Ge,
+                _ => Operation::Le,
+            };
+            if is_x(l) {
+                Some((m.op, int_const(r)?))
+            } else if is_x(r) {
+                Some((flip(m.op), int_const(l)?))
+            } else {
+                None
+            }
+        };
+        // The counter: an int slot from a constant, `t + 1`, continued while `t < hi`.
+        let (counter, lo, hi) = (0..parts.len() as u32).find_map(|k| {
+            if !matches!(parts[k as usize], Ty::Int { .. }) {
+                return None;
+            }
+            let vk = views(k);
+            let lo = int_const(self.pair_slot_source(plan.init, k)?)?;
+            let nk = self.pair_slot_source(next, k)?;
+            let add = self.morphisms.get(*self.in_edges(nk).first()?)?;
+            let (a, b) = (self.pair_slot_source(add.source, 0)?, self.pair_slot_source(add.source, 1)?);
+            let step_one = add.op == Operation::Add
+                && ((vk.contains(&a) && int_const(b) == Some(1)) || (vk.contains(&b) && int_const(a) == Some(1)));
+            let hi = match compare(cond, &|o| vk.contains(&o))? {
+                (Operation::Lt, c) => c,
+                (Operation::Le, c) => c.checked_add(1)?,
+                _ => return None,
+            };
+            (step_one && lo < hi).then_some((k, lo, hi))
+        })?;
+        let vc = views(counter);
+        let body: SecondaryMap<MorphismId, ()> =
+            plan.decide_order.iter().chain(&plan.advance_order).map(|&m| (m, ())).collect();
+        let truth = |op: Operation, c: i64, t: i64| match op {
+            Operation::Lt => t < c,
+            Operation::Le => t <= c,
+            Operation::Gt => t > c,
+            _ => t >= c,
+        };
+        let cut = |op: Operation, c: i64| match op {
+            Operation::Lt | Operation::Ge => c,
+            _ => c.saturating_add(1),
+        };
+        // Guards on the counter: `f`'s own (in the trip) and each trip map's
+        // body's, whose test reads a capture the map takes from `t`.
+        let mut guards: Vec<(GuardSite, Operation, i64)> = Vec::new();
+        let mut all: Vec<GuardSite> = self.guard_plan(f);
+        for site in self.guard_plan(f) {
+            if body.contains_key(site.phi)
+                && let Some((op, c)) = compare(site.cond, &|o| vc.contains(&o))
+            {
+                guards.push((site, op, c));
+            }
+        }
+        for &m in plan.decide_order.iter().chain(&plan.advance_order) {
+            let Operation::Map { body: b, captures } = self.morphisms[m].op else {
+                continue;
+            };
+            let input = self.func(b)?.input;
+            let src = self.morphisms[m].source;
+            let from_t = |o: ObjectId| {
+                self.tile_input_proj_index(o, input).is_some_and(|s| {
+                    s < captures && self.pair_slot_source(src, s).is_some_and(|x| vc.contains(&x))
+                })
+            };
+            let sites = self.guard_plan(b);
+            for site in &sites {
+                if let Some((op, c)) = compare(site.cond, &from_t) {
+                    guards.push((site.clone(), op, c));
+                }
+            }
+            all.extend(sites);
+        }
+        let mut cuts: Vec<i64> = guards.iter().map(|g| cut(g.1, g.2)).filter(|&c| lo < c && c < hi).collect();
+        cuts.push(lo);
+        cuts.push(hi);
+        cuts.sort_unstable();
+        cuts.dedup();
+        let effect = body.keys().any(|m| {
+            let mm = &self.morphisms[m];
+            [mm.source, mm.target].iter().any(|&o| crate::ty::ty_contains_token(&self.objects[o].ty))
+        });
+        let slots: Vec<u32> = (0..parts.len() as u32).filter(|&k| k != counter && !views(k).is_empty()).collect();
+        let mut phases = Vec::new();
+        for (n, w) in cuts.windows(2).enumerate() {
+            let (plo, phi) = (w[0], w[1]);
+            // The arms this interval does not take, with every site nested in them.
+            let mut dead: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+            for (site, op, c) in &guards {
+                let off = if truth(*op, *c, plo) { &site.on_false } else { &site.on_true };
+                dead.extend(off.own.iter().map(|&m| (m, ())));
+            }
+            loop {
+                let before = dead.len();
+                for s in &all {
+                    if dead.contains_key(s.phi) {
+                        dead.extend(s.on_true.own.iter().chain(&s.on_false.own).map(|&m| (m, ())));
+                    }
+                }
+                if dead.len() == before {
+                    break;
+                }
+            }
+            // A trip map's capture slot every read of which is in a dropped arm.
+            let slot_dead = |m: MorphismId, s: u32| -> bool {
+                let Operation::Map { body: b, captures } = self.morphisms[m].op else {
+                    return false;
+                };
+                let Some(fd) = self.func(b) else { return false };
+                s < captures
+                    && self.out_edges(fd.input).iter().all(|&p| {
+                        self.morphisms[p].op != (Operation::Proj { index: s })
+                            || dead.contains_key(p)
+                            || self.out_edges(self.morphisms[p].target).iter().all(|&q| dead.contains_key(q))
+                    })
+            };
+            let reach = |seeds: &[ObjectId]| -> SecondaryMap<ObjectId, ()> {
+                let mut seen: SecondaryMap<ObjectId, ()> = seeds.iter().map(|&o| (o, ())).collect();
+                let mut work = seeds.to_vec();
+                while let Some(o) = work.pop() {
+                    for &m in self.out_edges(o) {
+                        let mm = &self.morphisms[m];
+                        if !body.contains_key(m) || dead.contains_key(m) {
+                            continue;
+                        }
+                        if let Operation::Pair { slot, .. } = mm.op {
+                            let readers = self.out_edges(mm.target);
+                            if !readers.is_empty() && readers.iter().all(|&r| slot_dead(r, slot)) {
+                                continue;
+                            }
+                        }
+                        if seen.insert(mm.target, ()).is_none() {
+                            work.push(mm.target);
+                        }
+                    }
+                }
+                seen
+            };
+            let nexts: Vec<Option<ObjectId>> = slots.iter().map(|&k| self.pair_slot_source(next, k)).collect();
+            let batched: Vec<(u32, MorphismId)> = slots
+                .iter()
+                .zip(&nexts)
+                .filter_map(|(&k, &nk)| {
+                    let m = *self.in_edges(nk?).first()?;
+                    let Operation::Map { captures, .. } = self.morphisms[m].op else {
+                        return None;
+                    };
+                    let Some(ElemSrc::Apply { outside: Some(ou), source, .. }) = self.map_law(m) else {
+                        return None;
+                    };
+                    let invariant = |o: ObjectId| vc.contains(&o) || !plan.scc_objects.contains(&o);
+                    let rows = ou.a == 1 && ou.step == 1 && ou.len <= ou.d && ou.e.is_some_and(|e| vc.contains(&e));
+                    let own = self.pair_slot_source(source, ou.slot).is_some_and(|x| views(k).contains(&x));
+                    let rest = (0..=captures)
+                        .filter(|&s| s != ou.slot && !slot_dead(m, s))
+                        .all(|s| self.pair_slot_source(source, s).is_some_and(invariant));
+                    (rows && own && rest).then_some((k, m))
+                })
+                .collect();
+            let is_batched = |k: u32| batched.iter().any(|b| b.0 == k);
+            let reached: Vec<SecondaryMap<ObjectId, ()>> = slots.iter().map(|&k| reach(&views(k))).collect();
+            // Slot edges `i → j`: `j`'s next reads `i`'s view.
+            let n_s = slots.len();
+            let mut closure = vec![vec![false; n_s]; n_s];
+            for (i, row) in closure.iter_mut().enumerate() {
+                for (j, c) in row.iter_mut().enumerate() {
+                    *c = !(i == j && is_batched(slots[j])) && nexts[j].is_some_and(|nj| reached[i].contains_key(nj));
+                }
+            }
+            for k in 0..n_s {
+                for i in 0..n_s {
+                    if closure[i][k] {
+                        for j in 0..n_s {
+                            closure[i][j] |= closure[k][j];
+                        }
+                    }
+                }
+            }
+            let recurrent: Vec<u32> = (0..n_s).filter(|&i| closure[i][i]).map(|i| slots[i]).collect();
+            let rec_reach = reach(&recurrent.iter().flat_map(|&k| views(k)).collect::<Vec<_>>());
+            let outside: Vec<MorphismId> = plan
+                .decide_order
+                .iter()
+                .chain(&plan.advance_order)
+                .copied()
+                .filter(|&m| !dead.contains_key(m) && !rec_reach.contains_key(self.morphisms[m].target))
+                .collect();
+            let unbatched: Vec<ObjectId> = slots.iter().filter(|&&k| !is_batched(k)).flat_map(|&k| views(k)).collect();
+            let from_unbatched = reach(&unbatched);
+            let skip = n == 0
+                && phi - plo >= 2
+                && !effect
+                && !reach(&slots.iter().flat_map(|&k| views(k)).collect::<Vec<_>>()).contains_key(cond)
+                && slots.iter().zip(&nexts).all(|(&k, &nk)| {
+                    is_batched(k) || nk.is_some_and(|nk| views(k).contains(&nk) || !from_unbatched.contains_key(nk))
+                });
+            phases.push(TripPhase { lo: plo, hi: phi, recurrent, outside, batched, skip });
+        }
+        Some(TripSplit { merge, counter, lo, hi, phases })
+    }
+
+    /// **Whole folds** (recurrence-precision): a `Fold` of `f` itself (no
+    /// enclosing map) over a counted range whose step reads one captured
+    /// array at an affine address — a [`RowFoldSite`] of one row (`rows = 1`,
+    /// `ci = 0`): `out = fold_k (seed, ⊕) a[base + ck·k]`. Its slot is the
+    /// fold source's capture slot. A softmax's `max` and `sum` in a loop trip.
+    pub fn whole_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        self.fact(f, |s| &s.whole_fold, || {
+            let mut sites = SecondaryMap::new();
+            for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
+                if let Some(site) = self.whole_fold_site(m) {
+                    sites.insert(m, site);
+                }
+            }
+            sites
+        })
+    }
+
+    fn whole_fold_site(&self, m: MorphismId) -> Option<RowFoldSite> {
+        let fold = self.morphisms.get(m)?;
+        if !matches!(fold.op, Operation::Fold { .. }) {
+            return None;
+        }
+        let elem = self.objects.get(fold.target)?.ty.clone();
+        if !elem.is_numeric() {
+            return None;
+        }
+        let FoldCore { fbody, fcap, k, seed, op, array, address } = self.fold_core(m)?;
+        let fdef = self.func(fbody)?;
+        let slot = self.tile_input_proj_index(array, fdef.input)?;
+        let source = self.pair_slot_source(fold.source, slot)?;
+        if slot >= fcap {
+            return None;
+        }
+        let Ty::Array { elem: read_elem, .. } = &self.objects.get(source)?.ty else {
+            return None;
+        };
+        if **read_elem != elem || self.objects.get(fdef.output)?.ty != elem || seed.ty() != elem {
+            return None;
+        }
+        // No row: the fold's target stands in for the index, never a capture.
+        let aff = self.tile_affine(address, fold.source, fdef.input, fcap, None, fold.target, None)?;
+        if aff.ci != 0 || aff.clane != 0 || aff.cq != 0 || aff.cr != 0 || k == 0 {
+            return None;
+        }
+        if !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None) {
+            return None;
+        }
+        Some(RowFoldSite {
+            rows: 1,
+            k,
+            a: TileRead { slot, base: aff.base, ci: 0, ck: aff.ck, clane: 0, ksplit: None },
+            w: 1,
+            op,
+            seed,
+            elem,
+        })
+    }
+
     fn row_fold_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
         let mut sites = SecondaryMap::new();
         if let Some(fd) = self.func(f) {
@@ -1294,6 +1662,112 @@ impl CategoryIr {
         if fold.target != body_def.output {
             return None;
         }
+        let FoldCore {
+            fbody,
+            fcap,
+            k,
+            seed,
+            op,
+            array,
+            address,
+        } = self.fold_core(fold_id)?;
+        let fdef = self.func(fbody)?;
+        let body_value = self.tile_fold_capture(array, fold.source, fdef.input, fcap)?;
+        let read_slot = self.tile_input_proj_index(body_value, body_def.input)?;
+        if read_slot >= captures {
+            return None;
+        }
+        let Ty::Array {
+            elem: read_elem, ..
+        } = &self.objects.get(array)?.ty
+        else {
+            return None;
+        };
+        let acc_ty = &self.objects.get(fdef.output)?.ty;
+        if **read_elem != elem || *acc_ty != elem || seed.ty() != elem {
+            return None;
+        }
+        // The map index's axes as the fold captures them: the element itself,
+        // or its split `(t÷w, t%w)` (`tile_site`'s split, one level up).
+        let split = body_def.morphisms.iter().find_map(|&d| {
+            let (q, w) = self.tile_split(d, body_def.input, captures, Operation::Div)?;
+            body_def.morphisms.iter().find_map(|&m| {
+                let (r, wm) = self.tile_split(m, body_def.input, captures, Operation::Mod)?;
+                (wm == w && w > 1 && rows % w == 0).then_some((q, r, w))
+            })
+        });
+        let (i, lane, w) = match split {
+            Some((q, r, w)) => (q, r, w),
+            None => {
+                let t = (0..fcap).find_map(|s| {
+                    let o = self.pair_slot_source(fold.source, s)?;
+                    (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
+                })?;
+                (t, t, 1)
+            }
+        };
+        // The fold's own `(k÷div, k%div)`, rectangular windows only.
+        let element = fcap + 1;
+        let kaxes = fdef.morphisms.iter().find_map(|&d| {
+            let (kq, div) = self.tile_split(d, fdef.input, element, Operation::Div)?;
+            fdef.morphisms.iter().find_map(|&m| {
+                let (kr, md) = self.tile_split(m, fdef.input, element, Operation::Mod)?;
+                (md == div && k % div == 0).then_some((kq, kr, div))
+            })
+        });
+        let aff = self.tile_affine(
+            address,
+            fold.source,
+            fdef.input,
+            fcap,
+            Some(i),
+            lane,
+            kaxes.map(|(kq, kr, _)| (kq, kr)),
+        )?;
+        let ksplit = match kaxes {
+            Some((_, _, div)) if aff.cq != 0 || aff.cr != 0 => {
+                if aff.ck != 0 {
+                    return None;
+                }
+                Some(TileKSplit {
+                    div,
+                    cq: aff.cq,
+                    cr: aff.cr,
+                })
+            }
+            _ if aff.cq != 0 || aff.cr != 0 => return None,
+            _ => None,
+        };
+        if w == 1 && aff.clane != 0 {
+            return None;
+        }
+        if !self.tile_trap_free(body, &self.bounds_proof(body), Some(fold_id))
+            || !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None)
+        {
+            return None;
+        }
+        Some(RowFoldSite {
+            rows,
+            k,
+            a: TileRead {
+                slot: read_slot,
+                base: aff.base,
+                ci: aff.ci,
+                ck: aff.ck,
+                clane: aff.clane,
+                ksplit,
+            },
+            w,
+            op,
+            seed,
+            elem,
+        })
+    }
+
+    /// A fold's step and its one read, wherever the fold sits: a row fold's
+    /// (inside a map body) or a whole fold's ([`CategoryIr::whole_fold`]).
+    fn fold_core(&self, fold_id: MorphismId) -> Option<FoldCore> {
+        let fold = self.morphisms.get(fold_id)?;
         let Operation::Fold {
             body: fbody,
             captures: fcap,
@@ -1385,95 +1859,14 @@ impl CategoryIr {
         let index = self.tile_definer(e, Operation::Index)?;
         let array = self.pair_slot_source(index.source, 0)?;
         let address = self.pair_slot_source(index.source, 1)?;
-        let body_value = self.tile_fold_capture(array, fold.source, fdef.input, fcap)?;
-        let read_slot = self.tile_input_proj_index(body_value, body_def.input)?;
-        if read_slot >= captures {
-            return None;
-        }
-        let Ty::Array {
-            elem: read_elem, ..
-        } = &self.objects.get(array)?.ty
-        else {
-            return None;
-        };
-        let acc_ty = &self.objects.get(fdef.output)?.ty;
-        if **read_elem != elem || *acc_ty != elem || seed.ty() != elem {
-            return None;
-        }
-        // The map index's axes as the fold captures them: the element itself,
-        // or its split `(t÷w, t%w)` (`tile_site`'s split, one level up).
-        let split = body_def.morphisms.iter().find_map(|&d| {
-            let (q, w) = self.tile_split(d, body_def.input, captures, Operation::Div)?;
-            body_def.morphisms.iter().find_map(|&m| {
-                let (r, wm) = self.tile_split(m, body_def.input, captures, Operation::Mod)?;
-                (wm == w && w > 1 && rows % w == 0).then_some((q, r, w))
-            })
-        });
-        let (i, lane, w) = match split {
-            Some((q, r, w)) => (q, r, w),
-            None => {
-                let t = (0..fcap).find_map(|s| {
-                    let o = self.pair_slot_source(fold.source, s)?;
-                    (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
-                })?;
-                (t, t, 1)
-            }
-        };
-        // The fold's own `(k÷div, k%div)`, rectangular windows only.
-        let element = fcap + 1;
-        let kaxes = fdef.morphisms.iter().find_map(|&d| {
-            let (kq, div) = self.tile_split(d, fdef.input, element, Operation::Div)?;
-            fdef.morphisms.iter().find_map(|&m| {
-                let (kr, md) = self.tile_split(m, fdef.input, element, Operation::Mod)?;
-                (md == div && k % div == 0).then_some((kq, kr, div))
-            })
-        });
-        let aff = self.tile_affine(
-            address,
-            fold.source,
-            fdef.input,
+        Some(FoldCore {
+            fbody,
             fcap,
-            Some(i),
-            lane,
-            kaxes.map(|(kq, kr, _)| (kq, kr)),
-        )?;
-        let ksplit = match kaxes {
-            Some((_, _, div)) if aff.cq != 0 || aff.cr != 0 => {
-                if aff.ck != 0 {
-                    return None;
-                }
-                Some(TileKSplit {
-                    div,
-                    cq: aff.cq,
-                    cr: aff.cr,
-                })
-            }
-            _ if aff.cq != 0 || aff.cr != 0 => return None,
-            _ => None,
-        };
-        if w == 1 && aff.clane != 0 {
-            return None;
-        }
-        if !self.tile_trap_free(body, &self.bounds_proof(body), Some(fold_id))
-            || !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None)
-        {
-            return None;
-        }
-        Some(RowFoldSite {
-            rows,
             k,
-            a: TileRead {
-                slot: read_slot,
-                base: aff.base,
-                ci: aff.ci,
-                ck: aff.ck,
-                clane: aff.clane,
-                ksplit,
-            },
-            w,
-            op,
             seed,
-            elem,
+            op,
+            array,
+            address,
         })
     }
 

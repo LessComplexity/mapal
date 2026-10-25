@@ -30,6 +30,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     fe.copy_obj(plan.init, plan.merge);
     fe.loop_enter_buffers(plan.merge);
     fe.resident_loop_enter(plan.merge, plan.init);
+    fe.trip_batch(plan.merge);
     fe.retain_reset(plan.merge);
 
     let header = fe.label();

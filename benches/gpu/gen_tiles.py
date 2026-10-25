@@ -257,7 +257,7 @@ print("chain_256\nshare_256\nloop_128_8")
 (out / "loop_mm_1024_8.mapal").write_text(loop_mm(1024, 8))
 (out / "e2e_chain_4096.mapal").write_text(chain(4096, timed=True))
 
-def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0):
+def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0, gen=0):
     """S53 `retain-delta`: a decode loop. Iteration t writes row t of the
     carried `x` — one map over its cells: row t gets the new row, fed by the
     previous output, every other cell keeps its value — then `K = x·Wk`,
@@ -282,8 +282,14 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0):
     P x T scores at static max length T) are computed; the loop then decodes
     rows P..T-1 from the last prompt output. The loop still writes `K`, `V` as
     `x·W` over all T rows: that rows < P carry over from the prefill and only
-    row t changes per step is the compiler's to find."""
+    row t changes per step is the compiler's to find.
+
+    `gen=P` (recurrence-precision): prefill's math as ONE loop from t = 0 —
+    row t is the prompt row while `t < P`, the generated row after. Which trips
+    batch, and that only the last prompt trip's output is read, is the
+    compiler's to find (`trip_split`)."""
     w = 16 * d  # scales from a numpy run: outputs stay O(0.01..0.3) at both sizes
+    causal = causal or gen > 0
     causal = causal or prefill > 0
     scale, ninf = repr(d ** 0.5), "-1000000000.0"
 
@@ -301,8 +307,10 @@ def decode(T, d, rewrite=False, scaled=False, causal=False, prefill=0):
         row = [f"                t % {d} -> col;\n"
                f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     else:
+        fed = (f"(t < {gen}) -> {{ -true-> f / 64.0; -false-> f / 64.0 + o[c % {d}]; }}" if gen
+               else f"f / 64.0 + o[c % {d}]")
         new = (f"(c / {d} == t) -> {{ -true-> {{ "
-               f"(c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % {d}] }} ")
+               f"(c * 7 + 13) % 101 - 50 -> widen_f32 -> f; {fed} }} ")
         row = [f"                tc -> map {{ c -> {new}-false-> x[c]; }} }} -> x;\n"]
     xs = "xh" if scaled else "x"
     half = "                x -> map { v -> v * 0.5 } -> xh;\n" if scaled else ""
@@ -382,6 +390,7 @@ for T, d in ((16, 8), (1024, 256)):
     (out / f"decode_{T}_{d}.mapal").write_text(decode(T, d))
 (out / "causal_16_8.mapal").write_text(decode(16, 8, causal=True))
 (out / "prefill_16_8_8.mapal").write_text(decode(16, 8, prefill=8))
+(out / "gen_16_8_8.mapal").write_text(decode(16, 8, gen=8))
 (out / "loop_rewrite_16_8.mapal").write_text(decode(16, 8, rewrite=True))
 (out / "decode_scaled_16_8.mapal").write_text(decode(16, 8, scaled=True))
 
@@ -870,6 +879,8 @@ SUITE = {
     "pt_causal_1024_256": (timed_loop(decode(1024, 256, causal=True)), 1024 * 256),
     # Timed from the prefill's first op (`pf0`): prefill + decode is the workload.
     "pt_prefill_1024_512_256": (timed_loop(decode(1024, 256, prefill=512)).replace("t1 - t0", "t1 - pf0"), 1024 * 256),
+    # prefill's math as one natural loop (`gen`): its twin, timed over the whole loop.
+    "pt_gen_1024_512_256": (timed_loop(decode(1024, 256, gen=512)), 1024 * 256),
     "pt_loopmm_1024_8": (timed_loop(loop_mm(1024, 8)), 8 * 1024),
 }
 for stem, (src, _) in SUITE.items():
