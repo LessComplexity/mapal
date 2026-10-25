@@ -74,6 +74,7 @@ category.
 | J5 — presentation-free: no `Display` anywhere in crate | `crates/mapal-syntax/src/ast.rs`, `diag.rs` (only `Debug`) | grep/review |
 | J6 — `parse(s).diagnostics ⊇ lex(s).diagnostics` (same values) | `crates/mapal-syntax/src/parser.rs:parse` (seeds `Parser` with lex diags, then stable-sorts) | `tests/proptest_parser.rs::flow_soup_total` |
 | Pipe-weld — `t_to(lex) = t_from(parse_program) = Token*` (Coherence Law 1, specialized) | `crates/mapal-syntax/src/parser.rs:parse` (`lex` → `Parser::new(&lexed.tokens)`) | `tests/golden_trees.rs` (end-to-end), `tests/out_of_core.rs::full_surface_exact_pcode_multiset` |
+| ADR-0041 D2 — `: compute` (`f32`, `tf32`, `|`-joined) on anything that opens a body: `-> fold: tf32 \| f32 { … }` / `map`, `loop: … { … }`, `seq: … { … }`, `fn f(a) -> T: … { … }` (after the output); stored as `Block::compute`, innermost wins in lowering | `crates/mapal-syntax/src/parser.rs:Parser::parse_compute`; `crates/mapal-lower/src/emit.rs:ir_prec` | `crates/mapal-lower/tests/compute_type.rs` |
 
 ## Notes / divergences
 Per FRAMEWORK §6.6 — where code carries structure the model's diagram abstracts over, or

@@ -4,7 +4,7 @@
 //! may appear, that every operand it reads is rounded to nearest-even (ADR-0039
 //! `to_tf32`; `wgmma` truncates what it reads), and that nothing else moved.
 
-use mapal_backend_llvm::{EmitOpts, GpuArms, GpuRungs, Reduced, emit_detailed};
+use mapal_backend_llvm::{EmitOpts, GpuArms, GpuRungs, emit_detailed};
 
 /// `benches/gpu/gen_tiles.py`'s bench site at 1024.
 const MM_1024: &str = r#"
@@ -22,16 +22,21 @@ fn main() {
 }
 "#;
 
-fn device(target: &'static str, contract: bool, reduced: Option<Reduced>, gpu: GpuArms) -> String {
-    let po = mapal_syntax::parse(MM_1024);
+/// ADR-0041: the TF32 face is the program's — `main` admitting `tf32`.
+fn device(target: &'static str, contract: bool, tf32: bool, gpu: GpuArms) -> String {
+    let src = if tf32 {
+        MM_1024.replace("fn main() {", "fn main(): tf32 | f32 {")
+    } else {
+        MM_1024.to_string()
+    };
+    let po = mapal_syntax::parse(&src);
     assert!(po.diagnostics.is_empty(), "parse: {:?}", po.diagnostics);
-    let ir = mapal_lower::lower(MM_1024, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}"));
+    let ir = mapal_lower::lower(&src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}"));
     let ir = mapal_rewrite::rewrite(ir).ir;
     let opts = EmitOpts {
         host: "generic",
         target,
         contract,
-        reduced,
         gpu,
         ..EmitOpts::exact()
     };
@@ -46,7 +51,7 @@ fn device(target: &'static str, contract: bool, reduced: Option<Reduced>, gpu: G
         .collect()
 }
 
-const TF32: Option<Reduced> = Some(Reduced::Tf32);
+const TF32: bool = true;
 
 #[test]
 fn wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even() {
@@ -96,7 +101,7 @@ fn wgmma_is_unreachable_off_hopper_and_off_the_tf32_face() {
         );
     }
     for contract in [false, true] {
-        let k = device("h100-pcie", contract, None, GpuArms::default());
+        let k = device("h100-pcie", contract, false, GpuArms::default());
         assert!(
             !k.contains("wgmma") && !k.contains("tf32"),
             "contract={contract}"

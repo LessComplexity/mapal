@@ -777,7 +777,7 @@ impl<'a> FnEmit<'a> {
             self.move_panel,
             self.profile,
         );
-        fe.set_gpu_arms(self.gpu_arms, self.reduced);
+        fe.set_gpu_arms(self.gpu_arms);
         if slots.is_empty() {
             return (self.fnames[f].clone(), fe.emit());
         }

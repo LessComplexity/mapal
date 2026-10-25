@@ -172,7 +172,12 @@ def report(profile, face, n, globs):
     stems = sorted(p.stem for p in tiles.glob(f"pt_*_{n}.mapal")) + EXISTING
     if globs:
         stems = [s for s in sorted(p.stem for p in tiles.glob("*.mapal")) if any(fnmatch.fnmatch(s, g) for g in globs)]
-    flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract", "--precision=tf32"]}[face]
+    flags = {"exact": [], "contract": ["--contract"], "tf32": ["--contract"]}[face]
+    # ADR-0041 D7: the TF32 face is the program's — each stem's fold steps as `-> fold: tf32 | f32 { … }`.
+    if face == "tf32":
+        for s in stems:
+            p = tiles / f"{s}.mapal"
+            p.write_text(p.read_text().replace("-> fold {", "-> fold: tf32 | f32 {"))
     # A rung's OFF arm: EMIT_FLAGS=--gpu-off=<rung> (FLAGS, the epilogue item's spelling, too).
     flags += (os.environ.get("EMIT_FLAGS", "") + " " + os.environ.get("FLAGS", "")).split()
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True,

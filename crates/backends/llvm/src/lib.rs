@@ -460,6 +460,17 @@ pub struct GpuRungs {
     /// warp a row — lane `l` takes every 32nd `k` from `l`, a butterfly of
     /// shuffles combines, lane 0 stores. Off: one thread a row, `k` in order.
     pub fold_lanes: bool,
+    /// recurrence-precision `radix-tile`: a map/fold whose reads are affine
+    /// per digit of the map and fold indices (`mapal_ir::RadixTile`, a
+    /// convolution's implicit GEMM) is a device tile site — the staged FMA
+    /// tile, addresses formed digit by digit. Off: it stays a `nest-cell`
+    /// (one thread per output walking the fold).
+    pub radix_tile: bool,
+    /// recurrence-precision `tf32-tile` (ADR-0041 D6): a site whose product
+    /// admits `tf32` (`precision_plan.set`) takes the tensor-core kernel
+    /// (`mma.sync` sm_80+, `wgmma` sm_90a) where its shape fits. Off: the
+    /// f32 FFMA tile, which `{tf32, f32}` admits as well.
+    pub tf32_tile: bool,
 }
 
 impl GpuRungs {
@@ -531,11 +542,13 @@ impl GpuRungs {
         trip_batch: true,
         cell_lanes: true,
         fold_lanes: true,
+        radix_tile: true,
+        tf32_tile: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 66] = [
+    pub const NAMES: [&'static str; 68] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -602,6 +615,8 @@ impl GpuRungs {
         "trip-batch",
         "cell-lanes",
         "fold-lanes",
+        "radix-tile",
+        "tf32-tile",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -673,6 +688,8 @@ impl GpuRungs {
             "trip-batch" => &mut self.trip_batch,
             "cell-lanes" => &mut self.cell_lanes,
             "fold-lanes" => &mut self.fold_lanes,
+            "radix-tile" => &mut self.radix_tile,
+            "tf32-tile" => &mut self.tf32_tile,
             _ => return None,
         })
     }
@@ -842,8 +859,6 @@ pub struct EmitOpts {
     pub host: &'static str,
     /// Measurement arms over the GPU rung table; see [`GpuArms`].
     pub gpu: GpuArms,
-    /// A reduced-precision face, when the program admits one; see [`Reduced`].
-    pub reduced: Option<Reduced>,
 }
 
 impl Default for EmitOpts {
@@ -866,7 +881,6 @@ impl Default for EmitOpts {
             target: "native",
             host: "native",
             gpu: GpuArms::default(),
-            reduced: None,
         }
     }
 }
@@ -950,9 +964,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         )));
     }
     let mut both = profile::with_host(profile, host);
-    // `place` off, or the TF32 face (no host kernel reproduces it): no
-    // measured cost, so every capable site is a device site.
-    if (!rungs.place || opts.reduced.is_some())
+    // `place` off: no measured cost, so every capable site is a device site.
+    // (A site admitting `tf32` is placed by the same roofline: the host's f32
+    // realization is admitted too, ADR-0041 D6.)
+    if !rungs.place
         && let profile::Machine::Gpu(g) = &mut both.machine
     {
         g.cost = None;
@@ -1154,7 +1169,7 @@ fn emit_module(
                 // stays sequential on a GPU profile).
                 fe.set_path_plan(path_plan.as_ref().filter(|_| profile.gpu().is_some()));
             }
-            fe.set_gpu_arms(opts.gpu, opts.reduced);
+            fe.set_gpu_arms(opts.gpu);
             if let Some(&site) = body_sites.get(id) {
                 fe.set_task_body_site(site);
             }
@@ -1327,7 +1342,7 @@ fn emit_module(
                 opts.move_panel,
                 profile,
             );
-            fe.set_gpu_arms(opts.gpu, opts.reduced);
+            fe.set_gpu_arms(opts.gpu);
             fe.set_cell_slots(slots);
             fe.emit()
         };
@@ -1341,7 +1356,6 @@ fn emit_module(
                 profile,
                 opts.contract,
                 opts.gpu,
-                opts.reduced,
                 opts.order,
                 &gens,
                 &epis,
