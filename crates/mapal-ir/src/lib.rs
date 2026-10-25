@@ -34,15 +34,20 @@ mod ty;
 mod validate;
 
 pub use algo::{
-    Affine, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Edge, ElemPlan, ElemSrc,
+    Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Edge, ElemPlan, ElemSrc,
     EmissionClass, EmissionPlan, Footprint, FootprintPlan, GuardArm, GuardSite, LastUsePlan,
+<<<<<<< HEAD
     LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan, Reach, RowFoldOp, RowFoldSite, Tap,
     Task, TaskId, TaskKind, TileKSplit, TilePlan, TileRead, TileSite, TripPhase, TripSplit, WaitEntry,
+=======
+    LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, RowFoldOp, RowFoldSite, Tap,
+    Digit, Task, TaskId, bound_coef, gamma, TaskKind, TileKSplit, TilePlan, TileRead, TileSite, WaitEntry,
+>>>>>>> recurrence-precision-tiles
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use graph::{
     CategoryIr, FuncDef, FuncId, FuncKind, Morphism, MorphismId, Object, ObjectId, ObjectKind,
-    Operation,
+    Operation, Precision,
 };
 pub use loc::SourceLoc;
 pub use mermaid::lint_mermaid;

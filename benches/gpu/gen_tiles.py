@@ -1026,3 +1026,15 @@ for n in (1024, 2048):  # one request's chain: the requests are independent (+ t
 for f in sorted(out.glob("pt_*.mapal")):
     if f.stem not in stated:
         (out / f"{f.stem}.kmax").write_text(f"{fold_chain(f.read_text())}\n")
+
+
+# recurrence-precision (ADR-0041): `: tf32 | f32` twins, the same face as torch's TF32 legs — every fold step
+# admits TF32 products (`-> fold: tf32 | f32 { … }`). `.kmax` as their base program's.
+def tf32_folds(src):
+    return src.replace("-> fold {", "-> fold: tf32 | f32 {")
+
+
+for stem in ("pt_convmc_8_64_56_3", "px_convmc_2_4_6_3", "pt_mlp_2048", "pt_mlp2_2048"):
+    (out / f"{stem}_tf32.mapal").write_text(tf32_folds((out / f"{stem}.mapal").read_text()))
+    if (out / f"{stem}.kmax").exists():
+        (out / f"{stem}_tf32.kmax").write_text((out / f"{stem}.kmax").read_text())

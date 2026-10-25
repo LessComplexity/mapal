@@ -4,7 +4,7 @@
 //! multi-computation shapes of `benches/gpu/gen_tiles.py`; the values are the
 //! box differential's job (both faces, ON and OFF arms, the interpreter oracle).
 
-use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, Reduced, emit_detailed};
+use mapal_backend_llvm::{Emission, EmitOpts, GpuArms, emit_detailed};
 use mapal_ir::CategoryIr;
 
 const N: u64 = 64;
@@ -428,13 +428,14 @@ fn the_exact_face_device_unit_has_no_contraction() {
 fn every_kernel_takes_the_epilogue() {
     // TF32: `mma.sync` (4090) and Hopper's `wgmma` (H100 PCIe, sm_90a).
     for target in ["rtx-4090", "h100-pcie"] {
+        // ADR-0041: the TF32 face is the program's.
+        let tf32 = bias().replace("fn main() {", "fn main(): tf32 | f32 {");
         let e = emit_detailed(
-            &lower_src(&bias()),
+            &lower_src(&tf32),
             &EmitOpts {
                 host: "generic",
                 target,
                 contract: true,
-                reduced: Some(Reduced::Tf32),
                 gpu: on(),
                 ..EmitOpts::exact()
             },

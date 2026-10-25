@@ -1189,6 +1189,7 @@ mod typing_table_golden {
             facts: crate::facts::Facts::new(funcs.keys()),
             funcs,
             entry: call_f,
+            precision: SecondaryMap::new(),
         };
         Fx {
             ir,

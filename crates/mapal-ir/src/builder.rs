@@ -17,7 +17,7 @@ use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{
     CategoryIr, FuncDef, FuncId, FuncKind, Morphism, MorphismId, Object, ObjectId, ObjectKind,
-    Operation,
+    Operation, Precision,
 };
 use crate::loc::SourceLoc;
 use crate::ty::{self, Ty, Value};
@@ -164,6 +164,7 @@ pub struct IrBuilder {
     /// Named-function name → FuncId, for duplicate detection. Insertion-ordered
     /// Vec (no HashMap; I12) — function counts are tiny.
     named: Vec<(String, FuncId)>,
+    precision: SecondaryMap<MorphismId, Precision>,
 }
 
 impl Default for IrBuilder {
@@ -183,6 +184,7 @@ impl IrBuilder {
             owner: SecondaryMap::new(),
             funcs: SlotMap::with_key(),
             named: Vec::new(),
+            precision: SecondaryMap::new(),
         }
     }
 
@@ -276,6 +278,7 @@ impl IrBuilder {
             facts: crate::facts::Facts::new(funcs.keys()),
             funcs,
             entry,
+            precision: self.precision,
         };
 
         // Run the global graph-shape checks on the materialized graph.
@@ -915,6 +918,18 @@ impl FnBuilder<'_> {
     /// The function's input Parameter object.
     pub fn input(&self) -> ObjectId {
         self.b.funcs[self.f].def.input
+    }
+
+    /// ADR-0041 D1: record that the float product defining `product` admits
+    /// `p`. A non-product (or an integer one) and `{f32}` record nothing.
+    pub fn admit(&mut self, product: ObjectId, p: Precision) {
+        let Some(&m) = self.b.in_edges.get(product).and_then(|v| v.first()) else {
+            return;
+        };
+        let float = matches!(self.b.objects[product].ty, Ty::Float { .. });
+        if p != Precision::F32 && float && self.b.morphisms[m].op == Operation::Mul {
+            self.b.precision.insert(m, p);
+        }
     }
 
     fn output_id(&self) -> ObjectId {

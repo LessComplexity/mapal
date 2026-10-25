@@ -52,9 +52,15 @@ for p in $PROGS $SUITE; do
     fi
 done
 
+# ADR-0041 D7: the TF32 face is the program's — `<src>` with `: tf32 | f32` on every fold step, written
+# beside it; `--precision=tf32` is gone.
+tf32_src() { # <src> -> path of its TF32-admitting twin
+    local o="${1%.mapal}_tfsrc.mapal"
+    sed 's/-> fold {/-> fold: tf32 | f32 {/g' "$1" > "$o"; echo "$o"
+}
 flags_of() { # <face>
     case $1 in _x) echo --exact ;; _c) echo --order=sequential ;; _r) echo --no-contract --order=fixed ;;
-    _rc) echo --order=fixed ;; _tf) echo --contract --precision=tf32 ;; *) ;; esac
+    _rc) echo --order=fixed ;; _tf) echo --contract ;; *) ;; esac
 }
 # S64: every compile step leaves LLVM's optimization remarks beside its output (evidence.py).
 REMARK_PASSES='loop-vectorize|loop-unroll|slp-vectorizer|inline|sroa|licm'
@@ -158,6 +164,7 @@ for spec in "$@"; do
         IFS=: read -r ap stem face rung dir <<< "$a"
         [ "$ap" = "$prof" ] || continue
         f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$dir-${rung//,/+}"
+        [ "$face" = _tf ] && f=$(tf32_src "$f")
         [ -f "$b.host.ll" ] || emit_one "$f" "$b" "$prof" "$sm" $(flags_of "$face")
         # cpu-gpu-boundary sweep: emission alone (0.3 s) decides first; an arm whose host and device IR
         # equal the shipped build's is dropped before clang / opt / llc (hundreds of rung arms per part).

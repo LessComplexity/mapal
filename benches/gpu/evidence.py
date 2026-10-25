@@ -818,7 +818,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host'):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window')) else 'off'
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile')) else 'off'
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

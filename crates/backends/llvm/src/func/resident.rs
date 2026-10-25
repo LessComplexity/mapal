@@ -428,7 +428,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             for (m, r) in folds {
                 out.insert(m, DevSite::RowFold(r));
@@ -909,14 +908,14 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             let Some(&rs) = region.get(s) else {
                 continue;
             };
             // A retained output (S53) updates one row a trip: its group's
-            // members would keep the full launch's stale rows.
-            if !l.rungs.epilogue || self.retain.contains_key(target(s)) {
+            // members would keep the full launch's stale rows. A mixed-radix
+            // site stores digit by digit: no epilogue (`radix-tile`).
+            if !l.rungs.epilogue || self.retain.contains_key(target(s)) || site.radix.is_some() {
                 continue;
             }
             let c = target(s);
@@ -1929,7 +1928,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             (l.gx * l.gy, l.wave(gpu))
         };
@@ -2478,7 +2476,7 @@ impl<'a> FnEmit<'a> {
             self.move_panel,
             self.profile,
         );
-        fe.set_gpu_arms(self.gpu_arms, self.reduced);
+        fe.set_gpu_arms(self.gpu_arms);
         fe.cell_vals = vals;
         fe.lanes = lanes;
         fe.emit()

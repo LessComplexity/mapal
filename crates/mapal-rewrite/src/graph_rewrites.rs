@@ -357,7 +357,11 @@ fn cse_key(
         .into_iter()
         .map(resolve)
         .collect();
-    Some(format!("{}|{ty}|{feeders:?}", op_tag(morph.op, fseq)))
+    // ADR-0041 D1: a product's admitted set is part of its identity — a `tf32`
+    // product and an f32 one over the same operands never merge.
+    let p = ir.precision(m);
+    let p = if p == mapal_ir::Precision::F32 { String::new() } else { format!("|{p:?}") };
+    Some(format!("{}|{ty}|{feeders:?}{p}", op_tag(morph.op, fseq)))
 }
 
 /// A stable op tag: `Call`/`Map`/`Fold` encode the callee/body by `funcs()`

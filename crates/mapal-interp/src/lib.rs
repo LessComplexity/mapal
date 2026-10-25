@@ -71,6 +71,17 @@ pub fn run_ordered(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, 
     RunResult { outcome, output }
 }
 
+/// [`run_ordered`] with every product evaluated by its weakest admitted
+/// member (ADR-0041, `mapal test --weakest`): a product whose set admits
+/// `tf32` rounds its f32 operands to TF32 (round-to-nearest-even), then
+/// multiplies in f32. The other side of D3's bound from [`run`]'s f32.
+pub fn run_weakest(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, u64)]) -> RunResult {
+    eval::WEAKEST.with(|w| w.set(true));
+    let r = run_ordered(ir, budget, orders);
+    eval::WEAKEST.with(|w| w.set(false));
+    r
+}
+
 /// Call one function directly with an argument (interp DESIGN §8). The public
 /// lift of the internal `Result<RValue, Abort>` at the entry boundary.
 pub fn eval_call(ir: &CategoryIr, f: FuncId, arg: RValue, budget: u64) -> Outcome {

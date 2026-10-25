@@ -2422,3 +2422,163 @@ pub fn recur_src(p: &RecurProg) -> String {
     }
     s + "}\n"
 }
+
+// --- recurrence-precision `radix-tile`: mixed-radix map/fold sites ----------
+
+/// A multi-channel convolution `y[t] = Σ_k w[·]·img[·]` over constant div/mod
+/// splits of the cell `t` and the tap `k`: batch `b` (1–2), `cin` (1–4) input
+/// and `cout` (4/8/16) output channels, an `h × w` image (4/6/8 each side),
+/// `kh × kw` taps (1–3); the output NCHW or NHWC, the weights `[co][k]` or
+/// `[k][co]`, `k` channel-major or tap-major. `mix` reads the image at a
+/// channel shifted by the output channel (`(ci + co) % cin`): a digit of `t`
+/// read by both operands, which no tile admits. Built as source text.
+#[derive(Clone, Debug)]
+pub struct RadixProg {
+    pub dims: [u8; 6],
+    pub nhwc: bool,
+    pub w_kio: bool,
+    pub tap_major: bool,
+    pub mix: bool,
+}
+
+pub fn radix_prog_strategy() -> impl Strategy<Value = RadixProg> {
+    (
+        prop::array::uniform6(any::<u8>()),
+        any::<bool>(),
+        any::<bool>(),
+        any::<bool>(),
+        prop::bool::weighted(0.2),
+    )
+        .prop_map(|(dims, nhwc, w_kio, tap_major, mix)| RadixProg { dims, nhwc, w_kio, tap_major, mix })
+}
+
+/// [`RadixProg`]'s source text and its output length.
+pub fn radix_src(p: &RadixProg) -> (String, u64) {
+    let d = p.dims;
+    let b = u64::from(d[0] % 2) + 1;
+    // (`mix` needs two channels: `(ci + co) % 1` folds to a constant.)
+    let cin = 1u64 << (d[1] % 5).max(u8::from(p.mix));
+    let cout = 4u64 << (d[2] % 5);
+    let (h, w) = ([4, 8, 6][usize::from(d[3] % 3)], [4, 8, 6][usize::from(d[4] % 3)]);
+    let (kh, kw) = (u64::from(d[5] % 4) + 1, u64::from(d[5] / 4 % 4) + 1);
+    let (ih, iw, kk) = (h + kh - 1, w + kw - 1, kh * kw);
+    let (n, k) = (b * cout * h * w, cin * kk);
+    let digits = if p.nhwc {
+        format!(
+            "t / {} -> b; t / {} % {h} -> i; t / {cout} % {w} -> j; t % {cout} -> co;",
+            h * w * cout,
+            w * cout
+        )
+    } else {
+        format!(
+            "t / {} -> b; t / {} % {cout} -> co; t / {w} % {h} -> i; t % {w} -> j;",
+            cout * h * w,
+            h * w
+        )
+    };
+    let taps = if p.tap_major {
+        format!("k / {cin} -> q; k % {cin} -> ci;")
+    } else {
+        format!("k / {kk} -> ci; k % {kk} -> q;")
+    };
+    let wa = if p.w_kio { format!("k * {cout} + co") } else { format!("co * {k} + k") };
+    let ch = if p.mix { format!("(ci + co) % {cin}") } else { "ci".to_string() };
+    let src = format!(
+        "fn main() {{
+    {wn} -> iota -> i_w;
+    i_w -> map {{ t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 }} -> wt;
+    {imn} -> iota -> i_img;
+    i_img -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> img;
+    {n} -> iota -> o_y;
+    {k} -> iota -> k_y;
+    o_y -> map {{ t ->
+        {digits}
+        (0.0, k_y) -> fold {{ acc, k -> {taps} acc + wt[{wa}] * img[((b * {cin} + {ch}) * {ih} + i + q / {kw}) * {iw} + j + q % {kw}] }}
+    }} -> y;
+    y[0] -> println;
+    y[{last}] -> println;
+    0.0 -> zero: f32;
+    (zero, y) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+",
+        wn = cout * k,
+        imn = b * cin * ih * iw,
+        last = n - 1
+    );
+    (src, n)
+}
+
+// --- recurrence-precision `tf32-tile`: products admitting TF32 (ADR-0041) ---
+
+/// An `m × k · k × n` product `y` whose fold's products carry a compute type
+/// (`form`): 0 the step (`-> fold: tf32 | f32`), 1 the function
+/// (`fn main(): tf32 | f32`), 2 the function with the step restoring `: f32`,
+/// 3 none, 4 a `seq: tf32 | f32` block around the map. `bt` reads `b`
+/// transposed. Beside it `mag`, the same cells' `M = Σ_k |a·b|` (ADR-0040's
+/// magnitude) under `: f32`, so a value check needs no oracle of its own.
+#[derive(Clone, Debug)]
+pub struct Tf32Prog {
+    pub dims: [u8; 3],
+    pub bt: bool,
+    pub form: u8,
+    pub law: [u8; 2],
+}
+
+pub fn tf32_prog_strategy() -> impl Strategy<Value = Tf32Prog> {
+    (
+        prop::array::uniform3(any::<u8>()),
+        prop::bool::weighted(0.25),
+        prop::sample::select(vec![0u8, 0, 1, 1, 4, 4, 2, 3]),
+        prop::array::uniform2(any::<u8>()),
+    )
+        .prop_map(|(dims, bt, form, law)| Tf32Prog { dims, bt, form, law })
+}
+
+/// Whether [`Tf32Prog`]'s product `y` admits TF32.
+pub fn tf32_admits(p: &Tf32Prog) -> bool {
+    matches!(p.form, 0 | 1 | 4)
+}
+
+/// [`Tf32Prog`]'s source text and its `(m·n·k, k)`. Prints two cells of `y`,
+/// each followed by its `M`.
+pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let m = pick(p.dims[0], &[16, 32, 64, 128]);
+    let n = pick(p.dims[1], &[8, 16, 32, 64]);
+    let k = pick(p.dims[2], &[8, 16, 32, 64, 128]);
+    let (a1, a2) = (u64::from(p.law[0] % 13) * 2 + 3, u64::from(p.law[1] % 11) * 2 + 5);
+    let bi = if p.bt { format!("b[j * {k} + k]") } else { format!("b[k * {n} + j]") };
+    let (fn_ty, step_ty) = match p.form {
+        0 => ("", ": tf32 | f32"),
+        1 => (": tf32 | f32", ""),
+        2 => (": tf32 | f32", ": f32"),
+        _ => ("", ""),
+    };
+    let y = format!(
+        "ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{step_ty} {{ acc, k -> acc + a[i * {k} + k] * {bi} }} }}"
+    );
+    let y = if p.form == 4 { format!("ic -> seq: tf32 | f32 {{ {y} }}") } else { y };
+    let (c0, c1) = (u64::from(p.law[0]) * 7 % (m * n), m * n - 1 - u64::from(p.law[1]) % n);
+    let src = format!(
+        "fn main(){fn_ty} {{
+    {mk} -> iota -> ia;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 }} -> b;
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+    {y} -> y;
+    ic -> map: f32 {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold {{ acc, k -> a[i * {k} + k] * {bi} -> p; (p > 0.0) -> {{ -true-> p; -false-> 0.0 - p; }} -> q; acc + q }} }} -> mag;
+    y[{c0}] -> println;
+    mag[{c0}] -> println;
+    y[{c1}] -> println;
+    mag[{c1}] -> println;
+}}
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n
+    );
+    (src, (m * n * k, k))
+}
