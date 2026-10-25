@@ -181,6 +181,22 @@ INTENT = {
     # generic-fusion natural forms `range-map`: a map whose cells off a row / range / column / cell are a capture's
     # own runs in place over that set (`in_place_source`); its movement is the by-ref rows' (`host.move`).
     'range-map': dict(host=True, note='work per trip, not bytes: diff the `.off-range-map` arm (host insns, loops)'),
+    # cpu-gpu-boundary 1b `uniform`: a per-cell map with number captures (a loop counter, a fold's result) is a
+    # cell, each uniform a by-value i64 kernel argument; a closed form of (cell, uniforms) is built where its
+    # readers run. `.off-uniform` builds it on the host and uploads it per trip (decode q, rt_mlp2 a/f).
+    'uniform': dict(host=True, applies='host.move.loops > 0 and dev.cell > 0', on=[
+        ('cell kernels launched over n arguments', 'host.calls.launchv > 0'),
+        ("per-trip uploads are the facts' (a uniform cell's output never crosses)",
+         'host.move.h2d_b == host.move.intent_h2d')]),
+    # cpu-gpu-boundary 1a `nest-cell`: a map whose body folds over captured arrays (a guarded dot product: causal /
+    # prefill `s`, `o`) is a one-thread-per-cell kernel running the host's body text once its operands are on the
+    # device; the K/V rows a host score loop read no longer cross. `.off-nest-cell`: the map on the host.
+    'nest-cell': dict(host=True, applies='host.move.loops > 0 and dev.cell > 0', on=[
+        ('cell kernels launched over n arguments', 'host.calls.launchv > 0'),
+        ("per-trip copy-outs are the facts' (a device producer, a host observer)",
+         'host.move.d2h_b == host.move.intent_d2h')]),
+    # item 5 `tree-gate` (under `flow`): a lone fold over a column-major operand keeps its rowfold kernel.
+    'tree-gate': dict(host=True, note='unit count: diff the `.off-tree-gate` arm (rtx-4090 contract rowsum: 0 vs 1 unit)'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

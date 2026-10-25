@@ -183,7 +183,10 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     opts.gpu.on.retain_resident = true;
     opts.gpu.on.delta_h2d = true;
     opts.gpu.on.lane_stride = true;
-    for r in off {
+    // The S54 pins: `q` built on the host and uploaded (cpu-gpu-boundary
+    // `uniform` builds it on the device: `uniform_q_never_crosses`).
+    opts.gpu.off.uniform = !off.contains(&"+uniform");
+    for r in off.iter().filter(|r| !r.starts_with('+')) {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }
     let em = emit_detailed(ir, &opts).expect("emits");
@@ -407,6 +410,18 @@ fn delta_upload_is_stride_times_elem_bytes() {
             "K, V only"
         );
     }
+}
+
+/// cpu-gpu-boundary `uniform`: decode's `q` (a closed form of the cell and
+/// the trip counter) is a cell on the device, so only `x`'s written row
+/// crosses per trip.
+#[test]
+fn uniform_q_never_crosses() {
+    let ir = lower(&decode(16, 8, "f32", false));
+    let (host, _) = emit_s54(&ir, &["+uniform"], false);
+    let rows = calls(&host, "h2d").iter().filter(|l| l.ends_with("i64 32)")).count();
+    assert_eq!(rows, 1, "x's row only");
+    assert_eq!(calls(&host, "launchv").len(), 1, "q's cell");
 }
 
 /// The negative control: a column write has no `Δ::Rows`, so nothing is

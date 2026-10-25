@@ -1197,9 +1197,11 @@ pub(crate) fn cell_variant(name: &str) -> String {
 /// parameters are the output, then the mapped array when it is loaded (`elem`
 /// is its element type; `None` forms the element from the index, an `iota`),
 /// then each captured array the cell loads — generic pointers to the body, as
-/// the host passes them by reference. A capture `Some((law, ty))` is not a
-/// parameter: `cell-law` evaluates `law(i)` and `callee` (the body's variant)
-/// takes the value after its input.
+/// the host passes them by reference — or uniform it reads. A capture
+/// [`CapArg::Law`] is not a parameter: `cell-law` evaluates `law(i)` and
+/// `callee` (the body's variant) takes the value after its input. A
+/// [`CapArg::Uniform`] arrives as the 8-byte argument `mapal_gpu_launchv`
+/// passes, its low bits the host's value.
 pub(crate) fn cell_kernel_text(
     id: u64,
     callee: &str,
@@ -1207,18 +1209,17 @@ pub(crate) fn cell_kernel_text(
     out: &str,
     arg: &str,
     elem: Option<&str>,
-    caps: &[Option<(String, String)>],
+    caps: &[CapArg],
 ) -> String {
     let mut params = vec!["ptr addrspace(1) %o".to_string()];
     if elem.is_some() {
         params.push("ptr addrspace(1) %x".into());
     }
-    params.extend(
-        caps.iter()
-            .enumerate()
-            .filter(|(_, c)| c.is_none())
-            .map(|(k, _)| format!("ptr addrspace(1) %c{k}")),
-    );
+    params.extend(caps.iter().enumerate().filter_map(|(k, c)| match c {
+        CapArg::Ptr => Some(format!("ptr addrspace(1) %c{k}")),
+        CapArg::Uniform(_) => Some(format!("i64 %c{k}")),
+        CapArg::Law(..) => None,
+    }));
     let mut body = String::new();
     let e_ty = match elem {
         Some(t) => {
@@ -1237,12 +1238,16 @@ pub(crate) fn cell_kernel_text(
     } else {
         let mut prev = "poison".to_string();
         for (k, c) in caps.iter().enumerate() {
-            if c.is_some() {
-                continue; // the variant never reads the pointer
+            match c {
+                CapArg::Law(..) => continue, // the variant never reads the pointer
+                CapArg::Ptr => body.push_str(&format!(
+                    "  %g{k} = addrspacecast ptr addrspace(1) %c{k} to ptr\n  %a{k} = insertvalue {arg} {prev}, ptr %g{k}, {k}\n"
+                )),
+                CapArg::Uniform(t) => body.push_str(&format!(
+                    "{}  %a{k} = insertvalue {arg} {prev}, {t} %g{k}, {k}\n",
+                    uniform_from_i64(&format!("%g{k}"), &format!("%c{k}"), t)
+                )),
             }
-            body.push_str(&format!(
-                "  %g{k} = addrspacecast ptr addrspace(1) %c{k} to ptr\n  %a{k} = insertvalue {arg} {prev}, ptr %g{k}, {k}\n"
-            ));
             prev = format!("%a{k}");
         }
         body.push_str(&format!(
@@ -1252,7 +1257,7 @@ pub(crate) fn cell_kernel_text(
         format!("{arg} %a")
     };
     for (k, c) in caps.iter().enumerate() {
-        if let Some((law, t)) = c {
+        if let CapArg::Law(law, t) = c {
             body.push_str(&format!("  %v{k} = call {t} @{law}(i32 %e)\n"));
             call_arg.push_str(&format!(", {t} %v{k}"));
         }
@@ -1280,6 +1285,39 @@ pub(crate) fn cell_kernel_text(
         name = kernel_name(id),
         params = params.join(", "),
     )
+}
+
+/// One capture slot of a cell kernel ([`cell_kernel_text`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CapArg {
+    /// A captured array, by device pointer.
+    Ptr,
+    /// `cell-law`: `(law fn, element type)`, evaluated in the cell.
+    Law(String, String),
+    /// A number capture of LLVM type `ty`, by value.
+    Uniform(String),
+}
+
+/// `dst = src` narrowed from the 8-byte launch argument to `ty` (`i64`
+/// passes as is; a float is its bit pattern).
+pub(crate) fn uniform_from_i64(dst: &str, src: &str, ty: &str) -> String {
+    match ty {
+        "i64" => format!("  {dst} = bitcast i64 {src} to i64\n"),
+        "double" => format!("  {dst} = bitcast i64 {src} to double\n"),
+        "float" => format!("  {dst}.b = trunc i64 {src} to i32\n  {dst} = bitcast i32 {dst}.b to float\n"),
+        t => format!("  {dst} = trunc i64 {src} to {t}\n"),
+    }
+}
+
+/// The host's 8-byte launch argument for a uniform `val` of LLVM type `ty`
+/// (the inverse of [`uniform_from_i64`]): the instructions, then the operand.
+pub(crate) fn uniform_to_i64(dst: &str, val: &str, ty: &str) -> String {
+    match ty {
+        "i64" => format!("{dst} = bitcast i64 {val} to i64"),
+        "double" => format!("{dst} = bitcast double {val} to i64"),
+        "float" => format!("{dst}.b = bitcast float {val} to i32\n  {dst} = zext i32 {dst}.b to i64"),
+        t => format!("{dst} = zext {t} {val} to i64"),
+    }
 }
 
 /// A `devmap` cell for the device unit: the functions its kernel calls
@@ -4917,7 +4955,7 @@ mod tests {
         }
         let p = crate::profile::resolve("rtx-4090").expect("profile");
         assert_ne!(cell_id("fn2", 16384, p), gen_id("fn2", 16384, p));
-        let caps = [None, Some(("fn3".to_string(), "float".to_string()))];
+        let caps = [CapArg::Ptr, CapArg::Law("fn3".to_string(), "float".to_string())];
         let k = cell_kernel_text(
             1,
             "fn2_cell",
@@ -4937,6 +4975,12 @@ mod tests {
             "{k}"
         );
         assert!(k.contains("icmp ult i64 %i, 300"), "{k}");
+        // A uniform rides the launch's 8-byte slot and is narrowed in the cell.
+        let caps = [CapArg::Uniform("i32".into()), CapArg::Ptr];
+        let k = cell_kernel_text(2, "fn4", 8, "float", "{ i32, ptr, i32 }", None, &caps);
+        assert!(k.contains("(ptr addrspace(1) %o, i64 %c0, ptr addrspace(1) %c1)"), "{k}");
+        assert!(k.contains("%g0 = trunc i64 %c0 to i32"), "{k}");
+        assert!(k.contains("%a0 = insertvalue { i32, ptr, i32 } poison, i32 %g0, 0"), "{k}");
     }
 
     /// `idx32`: every S52 site indexes in `i32`; an operand past 2³¹ elements

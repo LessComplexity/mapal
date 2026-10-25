@@ -4992,10 +4992,16 @@ fn cell_plan_refuses_a_trap_capable_body() {
 }
 
 #[test]
-fn cell_plan_refuses_a_nested_fold() {
-    // A tile site's cell holds a fold: a reduction, not one leaf evaluation.
+fn cell_plan_records_a_nested_folds_reads() {
+    // A tile site's cell holds a fold over its captures (cpu-gpu-boundary
+    // `nested`): a, b and its k range read at any proven address, `Other`.
     let (ir, main, _) = tile_matmul_fixture(16, 16, 16);
-    assert!(ir.cell_plan(main).is_empty());
+    let plan = ir.cell_plan(main);
+    let site = plan.values().next().expect("one cell site");
+    assert_eq!(plan.len(), 1);
+    assert_eq!(site.nested.len(), 3, "a, b and the k range it walks: {site:?}");
+    assert!(site.reads.iter().all(|r| r.foot == mapal_ir::Footprint::Other), "{site:?}");
+    assert!(site.uniform.is_empty());
     assert_eq!(ir.tile_plan(main).sites.len(), 1);
 }
 

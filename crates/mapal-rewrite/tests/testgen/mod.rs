@@ -1684,7 +1684,7 @@ pub fn device_src(p: &DeviceProg) -> String {
     let mut cur = "x".to_string();
     for (z, &[op, _, b]) in p.ops.iter().enumerate() {
         // (Most chains start at a site: a device unit to place.)
-        let op = if z == 0 && op % 4 != 3 { 0 } else { op % 6 };
+        let op = if z == 0 && op % 4 != 3 { 0 } else { op % 8 };
         let (x, y) = (cur.clone(), pick(&arrs, b));
         let z = format!("z{z}");
         s += ind;
@@ -1696,6 +1696,19 @@ pub fn device_src(p: &DeviceProg) -> String {
             2 => format!("{x} -> map {{ v -> v * 0.5 }} -> {z};\n"),
             3 => format!("ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n"),
             4 => format!("(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n", b % (p.trips + 1)),
+            // A closed form of the cell and the trip counter (a uniform), read
+            // by a site: built where the site runs, never uploaded.
+            6 => format!(
+                "ta -> map {{ t -> ((t + it * {c}) * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / {s}.0 }} -> {z}g;\n{ind}ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {z}g[k * {n} + j] }} }} -> {z};\n",
+                c = u32::from(b % 5) + 1,
+                s = 8 * n
+            ),
+            // A guarded dot product per cell over the trip counter (causal
+            // attention's score): no tile site, a cell whose body folds.
+            7 => format!(
+                "ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (j <= it * {c}) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {y}[k * {n} + j] }} }} -false-> -1.0; }} }} -> {z};\n",
+                c = u32::from(b % 7) + 1
+            ),
             _ => {
                 // A row write into the state `x`: the trip's row, its cell `j`
                 // one element of the chain (a copy-out when that one lives on

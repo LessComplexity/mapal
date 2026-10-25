@@ -435,15 +435,22 @@ pub struct CellRead {
 }
 
 /// A `Map` whose cell `t` is a clean leaf function of a fixed set of input
-/// cells (S54): `out[t] = body(x₁[f₁(t)], …)`. `reads` lists every array read
-/// the body makes, the mapped element included unless it is the index itself
-/// (an `iota`); a scalar capture makes the morphism no `CellSite`.
+/// cells (S54): `out[t] = body(x₁[f₁(t)], …, u₁, …)`. `reads` lists every
+/// array read the body makes, the mapped element included unless it is the
+/// index itself (an `iota`). A number capture (`uniform`) is one value every
+/// cell reads alike — a loop counter, a fold's result (cpu-gpu-boundary).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellSite {
     /// The number of cells, `len(out)`.
     pub extent: u64,
     pub reads: Vec<CellRead>,
     pub body: FuncId,
+    /// The capture slots holding a number (not an array), ascending.
+    pub uniform: Vec<u32>,
+    /// The capture slots a nested `Map`/`Fold` of the body reads (through its
+    /// own captures, any proven address: `reads` holds each as
+    /// [`Footprint::Other`]) — a dot product or a whole fold per cell.
+    pub nested: Vec<u32>,
 }
 
 /// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
@@ -1641,21 +1648,34 @@ impl CategoryIr {
             return None;
         };
         let bd = self.func(body)?;
+        let mut nested = Vec::new();
         let leaf = bd.morphisms.iter().all(|&g| match self.morphisms.get(g).map(|x| x.op) {
-            Some(Operation::Map { .. } | Operation::Fold { .. }) => self.local_nest(g, bd.input, 0),
+            Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                self.local_nest(g, bd.input, 0)
+                    || self
+                        .nest_reads(g, bd.input, captures, 0)
+                        .map(|r| nested.extend(r))
+                        .is_some()
+            }
             Some(Operation::Call(_)) | None => false,
             Some(_) => true,
         });
         if !leaf || !self.body_is_classifiable(body) {
             return None;
         }
-        if (0..captures).any(|s| {
-            !self
+        nested.sort_unstable();
+        nested.dedup();
+        let mut uniform = Vec::new();
+        for s in 0..captures {
+            match self
                 .pair_slot_source(map.source, s)
                 .and_then(|o| self.objects.get(o))
-                .is_some_and(|o| matches!(o.ty, Ty::Array { .. }))
-        }) {
-            return None;
+                .map(|o| &o.ty)
+            {
+                Some(Ty::Array { .. }) => {}
+                Some(Ty::Int { .. } | Ty::Float { .. }) => uniform.push(s),
+                _ => return None,
+            }
         }
         // The mapped element: the index itself over an `iota`, else a read.
         let index = self.tile_iota_size(mapped) == Some(extent);
@@ -1683,11 +1703,71 @@ impl CategoryIr {
             };
             reads.push(CellRead { slot, foot });
         }
+        reads.extend(nested.iter().map(|&slot| CellRead {
+            slot,
+            foot: Footprint::Other,
+        }));
         Some(CellSite {
             extent,
             reads,
             body,
+            uniform,
+            nested,
         })
+    }
+
+    /// The capture slots (`< captures`, of the body whose input is `input`)
+    /// that nested `Map`/`Fold` `g` reads: every `Index` in its body (and in
+    /// theirs) addresses one of its own captured arrays, each a capture of
+    /// the enclosing body; an array it maps or folds over is either local or
+    /// such a capture. `None` on anything else (a `Call`, an array of
+    /// unknown origin). Depth-guarded (J1).
+    fn nest_reads(&self, g: MorphismId, input: ObjectId, captures: u32, depth: u32) -> Option<Vec<u32>> {
+        let x = self.morphisms.get(g)?;
+        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op
+        else {
+            return None;
+        };
+        let nb = self.func(body)?;
+        if depth >= 8 {
+            return None;
+        }
+        // A component of `g`'s source → the enclosing body's capture slot.
+        let up = |o: ObjectId| {
+            self.tile_input_proj_index(o, input)
+                .filter(|&s| s < captures)
+                .filter(|_| matches!(self.objects.get(o).map(|o| &o.ty), Some(Ty::Array { .. })))
+        };
+        let mut out = Vec::new();
+        // The array `g` maps or folds over: an iota or local value, or a capture.
+        let over = match x.op {
+            Operation::Map { .. } if nc == 0 => Some(x.source),
+            Operation::Map { .. } => self.pair_slot_source(x.source, nc),
+            _ => self.pair_slot_source(x.source, nc + 1),
+        }?;
+        if let Some(s) = up(over) {
+            out.push(s);
+        } else if self.tile_input_proj_index(over, input).is_some() {
+            return None;
+        }
+        for &h in &nb.morphisms {
+            let y = self.morphisms.get(h)?;
+            let inner = match y.op {
+                Operation::Call(_) => return None,
+                Operation::Index => {
+                    let arr = self.pair_slot_source(y.source, 0)?;
+                    vec![self.tile_input_proj_index(arr, nb.input).filter(|&s| s < nc)?]
+                }
+                Operation::Map { .. } | Operation::Fold { .. } => {
+                    self.nest_reads(h, nb.input, nc, depth + 1)?
+                }
+                _ => continue,
+            };
+            for ns in inner {
+                out.push(up(self.pair_slot_source(x.source, ns)?)?);
+            }
+        }
+        (!out.is_empty()).then_some(out)
     }
 
     /// A nested `Map`/`Fold` `g` of a cell body with input `input` that reads
@@ -1914,8 +1994,16 @@ impl CategoryIr {
                     } else if let Some(s) = cells.get(m) {
                         for r in &s.reads {
                             let slot = (captures > 0).then_some(r.slot);
-                            let reach = self.cell_read_reach(m, r, captures, &bounds, len);
+                            let reach = if s.nested.contains(&r.slot) {
+                                read(morph.source, slot)
+                                    .map_or(Reach::Whole, |a| Reach::Range { lo: 0, hi: len(a) })
+                            } else {
+                                self.cell_read_reach(m, r, captures, &bounds, len)
+                            };
                             edges.push((r.slot, slot, reach));
+                        }
+                        for &u in &s.uniform {
+                            edges.push((u, Some(u), Reach::Whole));
                         }
                     } else {
                         for s in 0..captures {
