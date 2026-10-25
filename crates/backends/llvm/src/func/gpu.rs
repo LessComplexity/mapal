@@ -293,11 +293,22 @@ pub(crate) fn tile_plan(
     profile: &TargetProfile,
     rungs: crate::GpuRungs,
 ) -> TilePlan {
-    if !(rungs.lane_stride && profile.gpu().is_some()) {
+    if profile.gpu().is_none() {
         return ir.tile_plan(f);
     }
     let strict = ir.tile_plan(f);
-    let mut plan = ir.tile_plan_strided(f);
+    let mut plan = if rungs.lane_stride { ir.tile_plan_strided(f) } else { strict.clone() };
+    // recurrence-precision `radix-tile`: a mixed-radix site where the staged
+    // tile takes it (its kernels address digits; the naive kernel too, but a
+    // site the tile refuses keeps the `nest-cell` it had).
+    if rungs.radix_tile {
+        for (m, s) in ir.tile_plan_radix(f) {
+            let staged = launch(&s, profile, true, crate::GpuArms::default(), None).tiled.is_some();
+            if staged && gpu_site(&s, profile, rungs.window) {
+                plan.sites.insert(m, s);
+            }
+        }
+    }
     // S62: an extra is a site only where it is placed on the device.
     let dev = placement(ir, f, &plan, profile, rungs.window);
     let extra: Vec<MorphismId> = plan
@@ -326,7 +337,10 @@ impl Arithmetic {
     fn scalar(site: &TileSite, contract: bool) -> Self {
         // Strided-lane sites are host maps whose step stays separate even
         // under Contract. Device placement must preserve that arithmetic.
-        if contract && site.b.clane == 1 {
+        // recurrence-precision `radix-tile`: a mixed-radix site is a device-only
+        // site (no host tile realization to agree with): the contract face's
+        // fused step, its bound ADR-0040 D2's.
+        if contract && (site.b.clane == 1 || site.radix.is_some()) {
             Self::OrderedFma
         } else {
             Self::SeparateMulAdd
@@ -658,6 +672,13 @@ fn plan_line(
     if let Some(ks) = site.a.ksplit.as_ref().or(site.b.ksplit.as_ref()) {
         f += &format!(" taps={}x{}", site.k / ks.div, ks.div);
     }
+    // recurrence-precision `radix-tile`: which addresses are mixed-radix
+    // (intent.py `radix`); no other kernel's line changes.
+    if let Some(r) = site.radix.as_deref() {
+        let parts = [("a", &r.a), ("b", &r.b), ("out", &r.out)];
+        let on: Vec<&str> = parts.iter().filter(|(_, x)| x.is_some()).map(|(n, _)| *n).collect();
+        f += &format!(" radix={}", on.join(","));
+    }
     let (c, s, ctas, iters) = match combine {
         Combine::None => ("none", 1, 0, 0),
         Combine::Workspace { s } => ("splitk", s, 0, 0),
@@ -749,7 +770,7 @@ fn combine(
     arms: crate::GpuArms,
 ) -> Combine {
     // A window's taps (`window`) are walked in order: its `k` is not cut.
-    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some();
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
     if order == Order::Sequential || l.mma.is_some() || l.wgmma.is_some() || window {
         return Combine::None;
     }
@@ -858,6 +879,12 @@ fn elem_bytes_of(elem: &Ty) -> u64 {
     }
 }
 
+/// The site as its kernel ids key it: its `Debug` text, a plain site's
+/// without the `radix` field it lacks (ids from before `radix-tile` stand).
+fn site_key(site: &TileSite) -> String {
+    format!("{site:?}").replace(", radix: None", "")
+}
+
 /// A stable id for a site's kernel: FNV-1a over everything the kernel text
 /// depends on. The host passes it to the runtime, which looks the kernel up as
 /// `mapal_tile_<id>` — so the two translation units agree without sharing state.
@@ -879,7 +906,7 @@ pub(crate) fn kernel_id_with(
     reduced: Option<Reduced>,
     epi: Option<&EpiKernel>,
 ) -> u64 {
-    let mut key = format!("{site:?}|{}|{contract}|{reduced:?}", profile.name);
+    let mut key = format!("{}|{}|{contract}|{reduced:?}", site_key(site), profile.name);
     if let Some(e) = epi {
         key.push_str(&format!("|{e:?}"));
     }
@@ -900,7 +927,7 @@ pub(crate) fn kernel_id_col(
     if !col {
         return kernel_id(site, profile, contract, reduced);
     }
-    let key = format!("{site:?}|{}|{contract}|{reduced:?}|col", profile.name);
+    let key = format!("{}|{}|{contract}|{reduced:?}|col", site_key(site), profile.name);
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -918,7 +945,7 @@ pub(crate) fn kernel_id_split(
     reduced: Option<Reduced>,
     part: &str,
 ) -> u64 {
-    let key = format!("{site:?}|{}|{contract}|{reduced:?}|{part}", profile.name);
+    let key = format!("{}|{}|{contract}|{reduced:?}|{part}", site_key(site), profile.name);
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -935,6 +962,7 @@ pub(crate) fn col_store(l: &Launch, site: &TileSite) -> bool {
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&site.elem);
     l.mma.is_none()
         && l.wgmma.is_none()
+        && site.radix.is_none()
         && l.tiled
             .is_none_or(|g| g.tm.is_multiple_of(lanes) || g.tn < lanes)
         && site.rows.is_multiple_of(lanes)
@@ -1764,7 +1792,12 @@ fn kernel<'s>(
 /// stay inside the operand's own last element. A stream-K kernel (S63) counts
 /// its iteration space up to `ctas·iters` (`tiles × panels`, rounded up).
 fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
+    let rx = site.radix.as_deref();
     let last = |r: &mapal_ir::TileRead| {
+        let ra = rx.and_then(|x| if std::ptr::eq(r, &site.a) { x.a.as_ref() } else { x.b.as_ref() });
+        if let Some(ra) = ra {
+            return ra.max();
+        }
         let taps = r.ksplit.map_or(r.ck * (site.k - 1), |ks| {
             ks.cq * (site.k / ks.div - 1) + ks.cr * (ks.div - 1)
         });
@@ -2251,6 +2284,27 @@ impl Kernel<'_> {
     }
 
     /// `v + c`, or `v` itself when `c` is 0.
+    /// `Σ coef·((x ÷ stride) % radix)` — one axis of a mixed-radix address
+    /// ([`mapal_ir::RadixAddr`]); constant divisors, which LLVM strength-reduces.
+    fn digits(&mut self, ds: &[mapal_ir::AxisDigit], x: &str) -> String {
+        let mut acc = "0".to_string();
+        for d in ds {
+            let q = if d.stride == 1 { x.to_string() } else { self.op("udiv", x, d.stride) };
+            let r = self.op("urem", &q, d.radix);
+            let v = self.op("mul", &r, d.coef);
+            acc = self.op("add", &acc, &v);
+        }
+        acc
+    }
+
+    /// A mixed-radix address at `(i, lane)` without its `k` digits.
+    fn radix_at(&mut self, r: &mapal_ir::RadixAddr, i: &str, lane: &str) -> String {
+        let x = self.digits(&r.i, i);
+        let y = self.digits(&r.lane, lane);
+        let z = self.op("add", &x, &y);
+        self.plus(z, r.base)
+    }
+
     fn plus(&mut self, v: String, c: u64) -> String {
         if c == 0 { v } else { self.op("add", &v, c) }
     }
@@ -2340,13 +2394,14 @@ impl Kernel<'_> {
         n: u64,
         threads: u64,
         tid: &str,
+        affine: bool,
         at: impl Fn(&mut Self, &str, &str) -> (String, String),
         off: impl Fn(u64, u64) -> (u64, u64),
     ) -> Vec<(String, u64, String, u64)> {
         let mut base: Option<(String, String)> = None;
         let mut out = Vec::new();
         for p in 0..n {
-            let delta = self.rungs.affine.then(|| affine_delta(map, threads, p));
+            let delta = (self.rungs.affine && affine).then(|| affine_delta(map, threads, p));
             if let Some(Some((d0, d1))) = delta {
                 let (g, s) = match &base {
                     Some(b) => b.clone(),
@@ -2450,7 +2505,12 @@ impl Kernel<'_> {
         self.out.push_str("body:\n");
         let i = self.op("udiv", &cell, s.c);
         let lane = self.op("urem", &cell, s.c);
+        let rx = s.radix.as_deref();
+        let (ra, rb) = (rx.and_then(|x| x.a.as_ref()), rx.and_then(|x| x.b.as_ref()));
         let base = |k: &mut Self, r: &mapal_ir::TileRead| {
+            if let Some(m) = if std::ptr::eq(r, &s.a) { ra } else { rb } {
+                return k.radix_at(m, &i, &lane);
+            }
             let x = k.op("mul", &i, r.ci);
             let y = k.op("mul", &lane, r.clane);
             let z = k.op("add", &x, &y);
@@ -2477,7 +2537,9 @@ impl Kernel<'_> {
         // taps) addresses `cq·(k÷div) + cr·(k%div)`; constant divisors, a
         // constant trip count — LLVM folds the division away.
         let load = |k: &mut Self, arr: &str, base: &str, r: &mapal_ir::TileRead| {
+            let m = if std::ptr::eq(r, &s.a) { ra } else { rb };
             let off = match r.ksplit {
+                _ if m.is_some() => k.digits(&m.expect("radix").k, &kv),
                 Some(ks) => {
                     let q = k.op("udiv", &kv, ks.div);
                     let m = k.op("urem", &kv, ks.div);
@@ -2505,6 +2567,8 @@ impl Kernel<'_> {
         let cell = if self.col {
             let jr = self.op("mul", &lane, s.rows);
             self.op("add", &jr, &i)
+        } else if let Some(o) = rx.and_then(|x| x.out.as_ref()) {
+            self.radix_at(o, &i, &lane)
         } else {
             cell
         };
@@ -3260,13 +3324,31 @@ impl Kernel<'_> {
         // `(global index at k0 = 0, + constant, shared index, + constant)`.
         let (a_vec, b_vec) = (vector_a(s), vector_b(s));
         let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g);
+        // recurrence-precision `radix-tile`: a mixed-radix operand's copy holds
+        // its row (lane) digits at `k = 0` and its own `k` offset `kc`; each
+        // panel adds the `k` digits of `k0 + kc` (not affine: no constant
+        // delta between copies, no `k0·ck` stride).
+        let rx = s.radix.as_deref();
+        let (ra, rb, ro) = (
+            rx.and_then(|x| x.a.as_ref()),
+            rx.and_then(|x| x.b.as_ref()),
+            rx.and_then(|x| x.out.as_ref()),
+        );
+        let a_kc = std::cell::RefCell::new(Vec::new());
+        let b_kc = std::cell::RefCell::new(Vec::new());
         let a_src = self.copies(
             a_map,
             a_loads,
             threads,
             &tid,
+            ra.is_none(),
             |k, r, kc| {
                 let grow = k.op("add", &row0, r);
+                if let Some(m) = ra {
+                    a_kc.borrow_mut().push(kc.to_string());
+                    let skc = k.op("mul", kc, sa);
+                    return (k.radix_at(m, &grow, "0"), k.op("add", &skc, r));
+                }
                 let gr = k.op("mul", &grow, s.a.ci);
                 let gk = k.op("mul", kc, s.a.ck);
                 let g0 = k.op("add", &gr, &gk);
@@ -3282,7 +3364,15 @@ impl Kernel<'_> {
             b_loads,
             threads,
             &tid,
+            rb.is_none(),
             |k, kr, nc| {
+                if let Some(m) = rb {
+                    b_kc.borrow_mut().push(kr.to_string());
+                    let gc = k.op("add", &col0, nc);
+                    let sk = k.op("mul", kr, bn);
+                    let sn = k.op("add", &sk, nc);
+                    return (k.radix_at(m, "0", &gc), k.op("add", &sn, bs_off));
+                }
                 let gk = k.op("mul", kr, s.b.ck);
                 let gc = k.op("add", &col0, nc);
                 let gl = k.op("mul", &gc, s.b.clane);
@@ -3309,7 +3399,15 @@ impl Kernel<'_> {
         // in `tn` (`cell-fill`'s 1 × 1) has no chunks to space: each thread's
         // cells are contiguous and stored one word each (`narrow`).
         let aw = tm.min(lanes);
-        let narrow = tn < lanes;
+        // A mixed-radix output stores a vector where its unit lane digit runs
+        // `lanes`-aligned and every other digit moves by whole vectors.
+        let out_vec = ro.is_none_or(|o| {
+            let v = |c: u64| c.is_multiple_of(lanes);
+            o.lane.first().is_some_and(|d| d.stride == 1 && d.coef == 1 && v(d.radix))
+                && o.i.iter().chain(&o.lane[1..]).all(|d| v(d.coef))
+                && v(o.base)
+        });
+        let narrow = tn < lanes || !out_vec;
         let (a_step, b_step, a_chunk, b_chunk) = if self.rungs.interleave && !narrow {
             (aw, lanes, g.ty * aw, g.tx * lanes)
         } else {
@@ -3323,13 +3421,23 @@ impl Kernel<'_> {
         let b_ty = if b_vec { vt.clone() } else { t.clone() };
         let a_al = if a_vec { GPU_VEC_BYTES } else { e };
         let b_al = if b_vec { GPU_VEC_BYTES } else { e };
+        let (a_kc, b_kc) = (a_kc.into_inner(), b_kc.into_inner());
+        // Copy `p`'s global index for panel `k0` (`kd` = `k0·ck` on a plain operand).
+        let gidx = |k: &mut Self, m: Option<&mapal_ir::RadixAddr>, kcs: &[String], p: usize, gsrc: &str, goff: u64, k0: &str, kd: &str| {
+            if let Some(m) = m {
+                let kk = k.op("add", k0, &kcs[p]);
+                let kx = k.digits(&m.k, &kk);
+                return k.op("add", gsrc, &kx);
+            }
+            let gi = k.op("add", gsrc, kd);
+            k.plus(gi, goff)
+        };
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
             let ka = k.op("mul", k0, s.a.ck);
             let kb = k.op("mul", k0, s.b.ck);
             let mut vals = Vec::new();
-            for (gsrc, goff, _, _) in &a_src {
-                let gi = k.op("add", gsrc, &ka);
-                let gi = k.plus(gi, *goff);
+            for (p, (gsrc, goff, _, _)) in a_src.iter().enumerate() {
+                let gi = gidx(k, ra, &a_kc, p, gsrc, *goff, k0, &ka);
                 let gp = k.gep(1, "%a", &gi);
                 let v = k.tmp();
                 k.line(format!(
@@ -3337,9 +3445,8 @@ impl Kernel<'_> {
                 ));
                 vals.push(v);
             }
-            for (gsrc, goff, _, _) in &b_src {
-                let gi = k.op("add", gsrc, &kb);
-                let gi = k.plus(gi, *goff);
+            for (p, (gsrc, goff, _, _)) in b_src.iter().enumerate() {
+                let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, k0, &kb);
                 let gp = k.gep(1, "%b", &gi);
                 let v = k.tmp();
                 k.line(format!(
@@ -3391,9 +3498,8 @@ impl Kernel<'_> {
                 let ka = k.op("mul", &k0, s.a.ck);
                 let kb = k.op("mul", &k0, s.b.ck);
                 let so = k.op("mul", stage, stage_elems);
-                for (gsrc, goff, sdst, soff) in &a_src {
-                    let gi = k.op("add", gsrc, &ka);
-                    let gi = k.plus(gi, *goff);
+                for (p, (gsrc, goff, sdst, soff)) in a_src.iter().enumerate() {
+                    let gi = gidx(k, ra, &a_kc, p, gsrc, *goff, &k0, &ka);
                     let gp = k.gep(1, "%a", &gi);
                     let si = k.op("add", sdst, &so);
                     let si = k.plus(si, *soff);
@@ -3402,9 +3508,8 @@ impl Kernel<'_> {
                         "call void @llvm.nvvm.cp.async.ca.shared.global.{e}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
                     ));
                 }
-                for (gsrc, goff, sdst, soff) in &b_src {
-                    let gi = k.op("add", gsrc, &kb);
-                    let gi = k.plus(gi, *goff);
+                for (p, (gsrc, goff, sdst, soff)) in b_src.iter().enumerate() {
+                    let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, &k0, &kb);
                     let gp = k.gep(1, "%b", &gi);
                     let si = k.op("add", sdst, &so);
                     let si = k.plus(si, *soff);
@@ -3585,7 +3690,9 @@ impl Kernel<'_> {
                     let r = self.plus(r, i);
                     let cc = self.op("add", &col0, &b_frag0);
                     let cc = self.plus(cc, j);
-                    let oi = if self.col {
+                    let oi = if let Some(o) = ro {
+                        self.radix_at(o, &r, &cc)
+                    } else if self.col {
                         let cr = self.op("mul", &cc, s.rows);
                         self.op("add", &cr, &r)
                     } else {
@@ -3647,6 +3754,7 @@ impl Kernel<'_> {
             let rr = self.op("mul", &r, s.c);
             let c0 = self.op("add", &rr, &col0);
             let c0 = self.op("add", &c0, &b_frag0);
+            let rrow = ro.map(|_| r.clone());
             // A split kernel stores its partials into workspace slab `z`,
             // or adds them into the output (S63).
             let c0 = self.slab(c0);
@@ -3670,7 +3778,14 @@ impl Kernel<'_> {
                     self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
                     xs.push(x);
                 }
-                let oi = self.op("add", &c0, v * b_chunk);
+                let oi = match (ro, &rrow) {
+                    (Some(o), Some(r)) => {
+                        let cc = self.op("add", &col0, &b_frag0);
+                        let cc = self.op("add", &cc, v * b_chunk);
+                        self.radix_at(o, r, &cc)
+                    }
+                    _ => self.op("add", &c0, v * b_chunk),
+                };
                 self.store_o(&xs, &oi);
             }
         }
@@ -4154,6 +4269,7 @@ mod tests {
             elem,
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
         }
     }
 

@@ -117,6 +117,7 @@ mod tests {
             elem: Ty::f32(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
         }
     }
 

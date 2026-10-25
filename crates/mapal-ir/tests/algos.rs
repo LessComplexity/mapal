@@ -1680,6 +1680,7 @@ fn tile_matmul_site_recognized() {
             elem: Ty::f64(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
         }
     );
 }
@@ -1871,6 +1872,7 @@ fn tile_fir_site_recognized() {
             elem: Ty::f32(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
         }
     );
 }
@@ -2177,6 +2179,7 @@ fn tile_conv2d_site_recognized() {
             elem: Ty::f32(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
         }
     );
 }
