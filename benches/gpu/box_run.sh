@@ -284,6 +284,8 @@ for o in "$PROF"/pt_*.host.o; do
         if [ -z "$face" ] && [ -s "tiles/${b}_x.expect" ] && [ -n "$kmax" ]; then
             # S65: against D2's M (absolute) where the bundle has the program's magnitude oracle.
             xabs=(); [ -s "tiles/${b}_xabs.expect" ] && xabs=("tiles/${b}_xabs.expect")
+            # ADR-0041 D3: a program whose products admit TF32 answers to D3's bound.
+            grep -q ': tf32' "tiles/$b.mapal" 2>/dev/null && xabs+=(--tf32)
             if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax" ${xabs[@]+"${xabs[@]}"}); then
                 bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
             else

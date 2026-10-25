@@ -360,7 +360,6 @@ pub(crate) struct FnEmit<'a> {
     /// The GPU rung arms (S52/S53) — the host needs them because a rung can
     /// change the launch (the prefetch rung's panel depth).
     gpu_arms: crate::GpuArms,
-    reduced: Option<crate::Reduced>,
     /// The `k` fold's order (ADR-0040 D1): the device chooser's input
     /// ([`gpu::combine`]) and, on the host, whether `reassoc` rides the
     /// tiled steps ([`FnEmit::fp_flags`]).

@@ -399,7 +399,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             for (m, r) in folds {
                 out.insert(m, DevSite::RowFold(r));
@@ -827,7 +826,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             let Some(&rs) = region.get(s) else {
                 continue;
@@ -1678,7 +1676,6 @@ impl<'a> FnEmit<'a> {
                 self.profile,
                 self.contract,
                 self.gpu_arms,
-                self.reduced,
             );
             (l.gx * l.gy, l.wave(gpu))
         };
@@ -2164,7 +2161,7 @@ impl<'a> FnEmit<'a> {
             self.move_panel,
             self.profile,
         );
-        fe.set_gpu_arms(self.gpu_arms, self.reduced);
+        fe.set_gpu_arms(self.gpu_arms);
         fe.cell_vals = vals;
         fe.emit()
     }

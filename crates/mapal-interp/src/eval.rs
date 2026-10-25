@@ -208,7 +208,10 @@ pub(crate) fn eval_morphism(
             Ok(())
         }
         Operation::Add | Operation::Sub | Operation::Mul | Operation::Div | Operation::Mod => {
-            let v = arith(ctx, source, op)?;
+            let tf32 = op == Operation::Mul
+                && WEAKEST.with(std::cell::Cell::get)
+                && ctx.ir.precision(m).admits_tf32();
+            let v = arith(ctx, source, op, tf32)?;
             write(ctx, target, v);
             Ok(())
         }
@@ -565,8 +568,26 @@ fn neg(x: &RValue) -> RValue {
     }
 }
 
+thread_local! {
+    /// ADR-0041 `--weakest`: each product evaluates with its set's weakest
+    /// member — a `tf32` product's f32 operands rounded to TF32 first.
+    /// ponytail: a thread-local beside `orders`; thread it with them when a
+    /// second evaluation mode needs one.
+    pub(crate) static WEAKEST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `x` rounded to TF32 (10 explicit significand bits), round-to-nearest-even:
+/// the IEEE rule ADR-0041's interpreter applies to a `tf32` product's operands.
+pub(crate) fn round_tf32(x: f32) -> f32 {
+    if !x.is_finite() {
+        return x;
+    }
+    let b = x.to_bits();
+    f32::from_bits(b.wrapping_add(0x0fff + ((b >> 13) & 1)) & !0x1fff)
+}
+
 /// `Add/Sub/Mul/Div/Mod` at the operand width; integer ÷/% by 0 ⇒ trap.
-fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation) -> Result<RValue, Abort> {
+fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation, tf32: bool) -> Result<RValue, Abort> {
     let pair = read(ctx, source);
     let a = scalar(component(pair, 0));
     let b = scalar(component(pair, 1));
@@ -612,6 +633,9 @@ fn arith(ctx: &EvalCtx, source: ObjectId, op: Operation) -> Result<RValue, Abort
         (Value::I32(x), Value::I32(y)) => int_arith!(Value::I32, *x, *y),
         (Value::I64(x), Value::I64(y)) => int_arith!(Value::I64, *x, *y),
         (Value::U8(x), Value::U8(y)) => int_arith!(Value::U8, *x, *y),
+        (Value::F32(x), Value::F32(y)) if tf32 => {
+            float_arith!(Value::F32, round_tf32(*x), round_tf32(*y))
+        }
         (Value::F32(x), Value::F32(y)) => float_arith!(Value::F32, *x, *y),
         (Value::F64(x), Value::F64(y)) => float_arith!(Value::F64, *x, *y),
         _ => unreachable!("arith on mismatched/non-numeric operands"),
@@ -772,5 +796,26 @@ fn add_floats(x: &RValue, y: &RValue) -> RValue {
             RValue::Scalar(Value::F64(a + b))
         }
         _ => unreachable!("a split fold accumulates a float"),
+    }
+}
+
+#[cfg(test)]
+mod tf32_tests {
+    use super::round_tf32;
+
+    #[test]
+    fn tf32_keeps_ten_bits_round_to_nearest_even() {
+        assert_eq!(round_tf32(1.0), 1.0);
+        // 1 + 2^-10 is a TF32 value; 1 + 2^-11 ties to even (1.0); 1 + 3·2^-11 ties up.
+        assert_eq!(round_tf32(1.0 + 2f32.powi(-10)), 1.0 + 2f32.powi(-10));
+        assert_eq!(round_tf32(1.0 + 2f32.powi(-11)), 1.0);
+        assert_eq!(round_tf32(1.0 + 3.0 * 2f32.powi(-11)), 1.0 + 2.0 * 2f32.powi(-10));
+        assert_eq!(round_tf32(-1.0 - 2f32.powi(-12)), -1.0);
+        assert!(round_tf32(f32::NAN).is_nan());
+        assert_eq!(round_tf32(f32::MAX), f32::INFINITY);
+        // Every rounding is within u_t = 2^-11 relative.
+        for x in [0.1f32, 3.14159, 1e-30, 6.0e7] {
+            assert!(((round_tf32(x) - x) / x).abs() <= 2f32.powi(-11));
+        }
     }
 }

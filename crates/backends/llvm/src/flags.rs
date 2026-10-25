@@ -1,7 +1,7 @@
 //! The emitter's command-line flags, shared by the `emit` dev example and the
 //! `mapal` CLI so every rung's OFF arm is reachable from the product binary.
 
-use crate::{EmitOpts, GpuRungs, MovePanel, Order, Reduced};
+use crate::{EmitOpts, GpuRungs, MovePanel, Order};
 
 /// Apply one emitter flag to `opts`. `Ok(false)` = not an emitter flag (the
 /// caller owns it); `Err` = an emitter flag with a malformed value.
@@ -83,9 +83,13 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
                 *r = true;
             }
         }
-        // A reduced-precision face (ADR-0032 D1): changes values by the
-        // format's bound and admits the tensor cores.
-        "--precision=tf32" => opts.reduced = Some(Reduced::Tf32),
+        // ADR-0041 D7: `--precision=tf32` is gone — a program admits TF32
+        // products with `: tf32 | f32` on the body (`-> fold: tf32 | f32 { … }`).
+        "--precision=tf32" => {
+            return Err("--precision=tf32 was removed (ADR-0041 D7): write `: tf32 | f32` on the \
+                        fold, map, loop, seq or fn body"
+                .into());
+        }
         // Measurement only: force split-K's partition count (0 = derive), on
         // `splitk` and `splitk-atomic`.
         _ if a.starts_with("--splitk=") => {

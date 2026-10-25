@@ -38,7 +38,6 @@ pub(crate) fn rowfold_sites(
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
-    reduced: Option<crate::Reduced>,
 ) -> SecondaryMap<MorphismId, RowFold> {
     let mut out = SecondaryMap::new();
     let rungs = gpu::host_rungs(profile, contract, arms);
@@ -87,7 +86,7 @@ pub(crate) fn rowfold_sites(
                     ck: 1,
                     ..site.a.clone()
                 };
-        let launch = gpu::launch(tile, profile, contract, arms, reduced);
+        let launch = gpu::launch(tile, profile, contract, arms);
         if rungs.rowfold_layout
             && in_order
             && only_reader(ir, c, m, site.a.slot)

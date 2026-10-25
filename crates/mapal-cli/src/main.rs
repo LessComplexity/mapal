@@ -21,12 +21,13 @@ use mapal_syntax::{Diagnostic, LineIndex, Severity};
 
 const USAGE: &str = "usage: mapal <build|run|dump-ir|test> <file.mapal> [options]
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
-  run      [--interp] [--budget N]        compile and execute (--interp: the oracle)
+  run      [--interp [--weakest]] [--budget N]  compile and execute (--interp: the oracle)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
   test     [--budget N] [--timeout SECS]  the fixed face (or --exact) vs the oracle, byte for byte
+           [--weakest]                    vs the weakest-member oracle, within ADR-0041 D3's bound
 common: --target=<profile> --no-rewrite -v, and the emitter flags
   --perf --no-tile --no-pack --kc --move-panel=off|W:B
-  --exact --no-contract --contract --order=sequential|fixed|free --precision=tf32
+  --exact --no-contract --contract --order=sequential|fixed|free
   --gpu-off=<rung,..> --gpu-on=<rung,..> --splitk=<S>
   (default face: fma steps, order free, bounded — ADR-0040)
 env: CC (clang), MAPAL_RT (libmapal_rt.a), LLVM (opt/llc dir), MAPAL_CUDA, MAPAL_LD";
@@ -41,6 +42,8 @@ struct Args {
     out: Option<PathBuf>,
     emit_only: bool,
     interp: bool,
+    /// ADR-0041: the oracle evaluates each product with its weakest member.
+    weakest: bool,
     budget: u64,
     timeout: u64,
     stage: String,
@@ -81,6 +84,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
         out: None,
         emit_only: false,
         interp: false,
+        weakest: false,
         budget: 100_000_000,
         timeout: 60,
         stage: "llvm".into(),
@@ -106,6 +110,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             "-o" => a.out = Some(it.next().ok_or_else(|| usage("-o expects a path"))?.into()),
             "--emit-only" => a.emit_only = true,
             "--interp" => a.interp = true,
+            "--weakest" => a.weakest = true,
             "--budget" => a.budget = num(it.next(), "--budget")?,
             "--timeout" => a.timeout = num(it.next(), "--timeout")?,
             "--no-rewrite" => a.rewrite = false,
@@ -426,7 +431,11 @@ fn run_cmd(a: &Args) -> Res<u8> {
     }
     // The oracle prints the observable the compiled program must (L1/BL8),
     // and exits with its code: 0, or 101 on a trap.
-    let rr = mapal_interp::run(&ir, a.budget);
+    let rr = if a.weakest {
+        mapal_interp::run_weakest(&ir, a.budget, &[])
+    } else {
+        mapal_interp::run(&ir, a.budget)
+    };
     let Some((out, code)) = native_observable(&ir, &rr) else {
         eprintln!(
             "mapal: diverged — step budget ({}) exhausted (E1). Raise it with --budget N.",
@@ -473,8 +482,7 @@ fn dump_ir(a: &Args) -> Res<u8> {
 fn test_cmd(a: &Args) -> Res<u8> {
     let given = |f: &str| a.face_flags.iter().any(|x| x == f);
     let separate = given("--no-contract") || given("--exact");
-    if a.opts.reduced.is_some()
-        || given("--contract")
+    if given("--contract")
         || given("--order=free")
         || (given("--order=sequential") && !separate)
     {
@@ -507,7 +515,11 @@ fn test_cmd(a: &Args) -> Res<u8> {
     } else {
         &ir
     };
-    let rr = mapal_interp::run_ordered(oracle, a.budget, &orders);
+    let rr = if a.weakest {
+        mapal_interp::run_weakest(oracle, a.budget, &orders)
+    } else {
+        mapal_interp::run_ordered(oracle, a.budget, &orders)
+    };
     let Some((want_out, want_code)) = native_observable(oracle, &rr) else {
         println!("SKIP {}: oracle diverged at budget {}", a.file, a.budget);
         return Err(1);
@@ -526,6 +538,29 @@ fn test_cmd(a: &Args) -> Res<u8> {
         println!("FAIL {tag}: exit want {want_code}, got {got_code}");
         return Ok(1);
     }
+    // ADR-0041 D3 from the other side: the compiled f32 realization against
+    // the weakest-member oracle, each float within both faces' bounds of the
+    // program's longest fold — relative, value_gate.py's fallback (a value
+    // under cancellation needs the magnitude oracle there).
+    if a.weakest
+        && let Some(want) = &want_out
+    {
+        let rel = weakest_rel(longest_fold(oracle));
+        let (w, g): (Vec<_>, Vec<_>) = (want.split_whitespace().collect(), got_out.split_whitespace().collect());
+        let bad = (w.len() != g.len()).then(|| format!("{} tokens, want {}", g.len(), w.len())).or_else(|| {
+            w.iter().zip(&g).find_map(|(x, y)| match (x.parse::<f64>(), y.parse::<f64>()) {
+                (Ok(p), Ok(q)) if (p - q).abs() <= rel * p.abs().max(q.abs()) => None,
+                (Ok(_), Ok(_)) => Some(format!("{y} vs {x} beyond rel {rel:.3e}")),
+                _ => (x != y).then(|| format!("{y} != {x}")),
+            })
+        });
+        if let Some(b) = bad {
+            println!("FAIL {tag} (--weakest): {b}");
+            return Ok(1);
+        }
+        println!("PASS {tag} (--weakest, rel {rel:.3e})");
+        return Ok(0);
+    }
     if let Some(want) = want_out
         && want != got_out
     {
@@ -543,6 +578,32 @@ fn test_cmd(a: &Args) -> Res<u8> {
     }
     println!("PASS {tag}");
     Ok(0)
+}
+
+/// The longest fold's trip count in `ir` (ADR-0040's `K`).
+fn longest_fold(ir: &CategoryIr) -> u64 {
+    ir.morphisms()
+        .filter_map(|(_, m)| match m.op {
+            mapal_ir::Operation::Fold { captures, .. } => {
+                match ir.object(m.source)?.ty.component_ty(captures + 1)? {
+                    mapal_ir::Ty::Array { size, .. } => Some(*size),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .max()
+        .unwrap_or(1)
+}
+
+/// `--weakest`'s relative tolerance at fold length `k`: twice (value_gate's
+/// fallback) the sum of ADR-0041 D3's TF32 bound
+/// `(1 + u_t)²·(1 + γ_{K+1}) − 1` and ADR-0040 D2's f32 one `γ_{K+1}`,
+/// `u_t = 2⁻¹¹`, `u = 2⁻²⁴` — the two sides of the exact value.
+fn weakest_rel(k: u64) -> f64 {
+    let (u, ut) = (2f64.powi(-24), 2f64.powi(-11));
+    let g = (k + 1) as f64 * u / (1.0 - (k + 1) as f64 * u);
+    2.0 * (((1.0 + ut) * (1.0 + ut) * (1.0 + g) - 1.0) + g)
 }
 
 /// Spawn and wait, time-boxed; `Ok(None)` on timeout. Stdout is drained on a

@@ -1681,6 +1681,7 @@ fn tile_matmul_site_recognized() {
             mul_a_first: true,
             add_acc_first: true,
             radix: None,
+            tf32: false,
         }
     );
 }
@@ -1873,6 +1874,7 @@ fn tile_fir_site_recognized() {
             mul_a_first: true,
             add_acc_first: true,
             radix: None,
+            tf32: false,
         }
     );
 }
@@ -2180,6 +2182,7 @@ fn tile_conv2d_site_recognized() {
             mul_a_first: true,
             add_acc_first: true,
             radix: None,
+            tf32: false,
         }
     );
 }

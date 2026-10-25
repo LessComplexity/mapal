@@ -542,14 +542,14 @@ fn emit_op(
     match op {
         Add | Sub | Mul | Div | Mod | Eq | Neq | Lt | Gt | Le | Ge | And | Or => {
             let f = slot_feeders(ir, src);
-            fb.binop(
-                op,
-                feed(plan, remap, f[0]),
-                feed(plan, remap, f[1]),
-                dest,
-                loc,
-            )
-            .expect("replay: binop")
+            let new = fb
+                .binop(op, feed(plan, remap, f[0]), feed(plan, remap, f[1]), dest, loc)
+                .expect("replay: binop");
+            // ADR-0041 D1: a product keeps its admitted set wherever it lands.
+            if let Some(&m) = ir.in_edges(target).first() {
+                fb.admit(new, ir.precision(m));
+            }
+            new
         }
         Neg | Not => fb
             .unop(op, feed(plan, remap, src), dest, loc)

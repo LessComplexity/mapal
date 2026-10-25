@@ -529,6 +529,7 @@ impl CategoryIr {
             mul_a_first,
             add_acc_first,
             radix: Some(Box::new(radix)),
+            tf32: self.precision(mul.id).admits_tf32(),
         })
     }
 }
