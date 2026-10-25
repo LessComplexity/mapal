@@ -60,6 +60,12 @@ const TIMEOUT_SECS: u64 = 15;
 /// unchanged; only the number of *binaries* shrinks.
 const BATCH: usize = 32;
 
+/// Pool width of a sweep child: parallel, but small enough that
+/// `job_slots() × SWEEP_LANES` stays inside the core budget. Single tests that
+/// pin the default pool (`run_exe(.., None)`) keep it.
+const SWEEP_LANES: &str = "2";
+
+
 const EXAMPLES: &[&str] = &[
     "abs",
     "calc",
@@ -158,7 +164,10 @@ fn try_compile_exe(
     {
         cmd.arg(format!("-fuse-ld={ld}"));
     }
-    let out = cmd.output().unwrap();
+    let out = {
+        let _slot = slot();
+        cmd.output().unwrap()
+    };
     if out.status.success() {
         Ok((dir, exe))
     } else {
@@ -171,7 +180,9 @@ fn run_exe(exe: &Path, secs: u64, mapal_par: Option<&str>) -> Option<(Vec<u8>, i
     command
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .env_remove("MAPAL_PAR");
+        .env_remove("MAPAL_PAR")
+        // Values only: no host spin while other children share the cores.
+        .env("MAPAL_SPIN", "0");
     if let Some(value) = mapal_par {
         command.env("MAPAL_PAR", value);
     }
@@ -187,13 +198,15 @@ fn run_case(exe: &Path, secs: u64, slot: usize) -> Option<(Vec<u8>, i32)> {
         .arg(slot.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .env_remove("MAPAL_PAR");
+        .env("MAPAL_PAR", SWEEP_LANES)
+        .env("MAPAL_SPIN", "0");
     wait_boxed(command, secs)
 }
 
 /// Spawn and wait, time-boxed. `None` on timeout (the caller fails loudly
 /// rather than hanging).
 fn wait_boxed(mut command: Command, secs: u64) -> Option<(Vec<u8>, i32)> {
+    let _slot = slot();
     let mut child = command.spawn().unwrap();
     let start = Instant::now();
     loop {
@@ -666,10 +679,7 @@ fn run_jobs(clang: &str, jobs: &[Job]) -> Vec<String> {
     let next = AtomicUsize::new(0);
     let failures: Mutex<Vec<String>> = Mutex::new(Vec::new());
     std::thread::scope(|s| {
-        let threads = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(8);
-        for _ in 0..threads {
+        for _ in 0..job_slots() {
             s.spawn(|| {
                 loop {
                     let bi = next.fetch_add(1, Ordering::Relaxed);
@@ -3277,6 +3287,7 @@ fn main() {
 
 #[path = "emu/mod.rs"]
 mod emu;
+use emu::{job_slots, slot};
 
 /// Bytes of an LLVM array type text `[n x T]` (nested arrays of scalars).
 fn llt_array_bytes(t: &str) -> u64 {
@@ -3619,7 +3630,7 @@ fn differential_natural_twins_values_and_movement() {
     // emulator-bound and independent of the others).
     let next = AtomicUsize::new(0);
     let all = Mutex::new((Vec::new(), [0usize; 5]));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
+    let workers = job_slots();
     std::thread::scope(|sc| {
         for _ in 0..workers {
             sc.spawn(|| {

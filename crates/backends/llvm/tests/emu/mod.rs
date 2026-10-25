@@ -2,7 +2,56 @@
 //! S62 `splitk`): the device unit compiled for the host and run thread by
 //! thread through `crates/mapal-rt/gpu/mapal_gpu_emu.c`.
 
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
+
+/// Child processes (clang, test binaries) this test binary runs at once, across
+/// all of its tests: half the cores left after the two CLAUDE.md keeps free
+/// (a child runs a 2-lane pool), or `MAPAL_TEST_JOBS`.
+///
+/// Unbounded, each sweep ran `available_parallelism` workers, each starting a
+/// binary whose runtime pool was itself `available_parallelism` wide: 14 × 14
+/// runnable threads on 14 cores — the runtime's own oversubscription cliff
+/// (`mapal-rt` `spin_iters`, 1500x at 14 executors) — so programs ran into the
+/// 15 s timeout with every core pegged and the machine unusable.
+pub fn job_slots() -> usize {
+    static N: OnceLock<usize> = OnceLock::new();
+    *N.get_or_init(|| {
+        std::env::var("MAPAL_TEST_JOBS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or_else(|| {
+                let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+                (cores.saturating_sub(2) / 2).max(1)
+            })
+    })
+}
+
+/// Children in flight, bounded by [`job_slots`].
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+/// Hold one of [`job_slots`] while a child process runs.
+pub struct Slot;
+
+pub fn slot() -> Slot {
+    let (m, cv) = &IN_FLIGHT;
+    let guard = m.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut used = cv
+        .wait_while(guard, |n| *n >= job_slots())
+        .unwrap_or_else(PoisonError::into_inner);
+    *used += 1;
+    Slot
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let (m, cv) = &IN_FLIGHT;
+        *m.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+        cv.notify_one();
+    }
+}
 
 /// The device unit compiled for the host: special registers become the
 /// emulator's `emu_*` (`mapal_gpu_emu.c`), global and shared pointers generic
@@ -59,6 +108,9 @@ pub fn host_device(dev: &str) -> String {
            declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n"
 }
 
+/// Emulation runs every device thread on the host, so it gets 8x the native timeout.
+const EMU_TIMEOUT_SECS: u64 = 120;
+
 /// Build and run `host` + `dev` against the emulated device; its stdout.
 pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
@@ -69,6 +121,7 @@ pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
         "{}/../../mapal-rt/gpu/mapal_gpu_emu.c",
         env!("CARGO_MANIFEST_DIR")
     );
+    let _slot = slot();
     let ok = Command::new(clang)
         .args(["-O1", "-Wno-override-module", "-c"])
         .arg(p("d.ll"))
@@ -91,7 +144,24 @@ pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
         link.args(["-rdynamic", "-ldl", "-lm"]);
     }
     assert!(link.status().unwrap().success(), "link failed");
-    let out = Command::new(p("x")).output().unwrap();
+    // Time-boxed: an emulated program that never finishes fails the test
+    // instead of pinning a core until someone kills it.
+    let mut child = Command::new(p("x"))
+        .env("MAPAL_PAR", "2")
+        .env("MAPAL_SPIN", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if start.elapsed() > Duration::from_secs(EMU_TIMEOUT_SECS) {
+            let _ = child.kill();
+            panic!("emulated run timed out after {EMU_TIMEOUT_SECS} s");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let out = child.wait_with_output().unwrap();
     assert!(
         out.status.success(),
         "{}",
