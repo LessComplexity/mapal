@@ -128,6 +128,7 @@ def ptx_facts(text):
         lines = [x.strip() for x in body.splitlines()]
         f = dict(ptx_counts(lines))
         f['params'] = params.count('.param')
+        f['loops'] = 0  # backward branches
         for d in ('maxntid', 'minnctapersm'):
             m = re.search(r'\.' + d + r'\s+(\d+)', dirs)
             f[d] = int(m.group(1)) if m else 0
@@ -138,6 +139,7 @@ def ptx_facts(text):
         for i, x in enumerate(lines):
             m = re.search(r'bra(?:\.uni)?\s+(\$L__\w+);', x)
             if m and m[1] in labels and labels[m[1]] < i:
+                f['loops'] += 1
                 seg = lines[labels[m[1]]:i + 1]
                 c = ptx_counts(seg)
                 key = (c['fma_f32'] + c['mul_f32'] + c['mma'] + c['wgmma'], -len(seg))
@@ -814,6 +816,14 @@ def check(d, results=None, out=sys.stdout):
         kinds = Counter(kf.get('plan', {}).get('kind', '?') for kf in e['kernels'].values())
         dev = {x: kinds.get(x, 0) for x in KINDS}
         dev['epi'] = sum(kf.get('plan', {}).get('epi', 0) == 1 for kf in e['kernels'].values())
+        cells = [kf for kf in e['kernels'].values() if kf.get('plan', {}).get('kind') == 'cell']
+        dev['cell_u'] = sum(kf['plan'].get('uniform', 0) > 0 for kf in cells)
+        nest = [kf for kf in cells if kf['plan'].get('nested', 0) > 0]
+        dev['cell_nest'] = len(nest)
+        # A nest cell walks its fold on the device: a loop, or the walk unrolled (≥ work-1 FP ops).
+        fp = lambda p: sum(p.get(k, 0) for k in ('fma_f32', 'mul_f32', 'add_f32'))
+        dev['cell_nest_walk'] = sum(kf.get('ptx', {}).get('loops', 0) > 0
+                                    or fp(kf.get('ptx', {})) >= kf['plan'].get('work', 1) - 1 for kf in nest)
         ns = Scope(host=D(e['host']), device=D(e['device']), launch=D(e['launch']), dev=D(dev), arch=prof,
                    sm=e['sm'])
         hon = set(e.get('host_table', [])) | on

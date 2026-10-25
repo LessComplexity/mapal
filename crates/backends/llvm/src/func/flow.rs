@@ -259,7 +259,7 @@ impl<'a> FnEmit<'a> {
             }
             // ponytail: a unit kernel takes no scalar argument; a cell that
             // reads a uniform runs alone. Pass uniforms to units when one pays.
-            for (m, c) in plan.cells.iter().filter(|(_, c)| c.uniform.is_empty() && !c.nest) {
+            for (m, c) in plan.cells.iter().filter(|(_, c)| c.uniform.is_empty() && c.nested.is_empty()) {
                 cand.insert(m, Cand::Cell(c.clone()));
             }
             let fp = self.ir.footprint_plan(self.f);

@@ -352,8 +352,15 @@ fn pins_are_the_arrays_that_cross_the_bus_repeatedly() {
     assert!(!ll.contains("@mapal_gpu_pin("));
     // Shipped: no part's table pins (the sign followed the host's copy path).
     assert!(!host(&relu_loop(64), H100, on()).contains("@mapal_gpu_pin("));
-    // In the loop, each pin sits right before the copy of the array it pins.
+    // Under `async-h2d` an upload is not pinned (the runtime stages it): only
+    // the copy-out of y is.
     let ll = host(&relu_loop(64), H100, forced(&["pinned"]));
+    assert_eq!(mapal_main(&ll).matches("@mapal_gpu_pin(").count(), 1);
+    // In the loop, each pin sits right before the copy of the array it pins
+    // (synchronous uploads: `async-h2d` off).
+    let mut arms = forced(&["pinned"]);
+    arms.off.async_h2d = true;
+    let ll = host(&relu_loop(64), H100, arms);
     let main = mapal_main(&ll);
     let lines: Vec<&str> = main.lines().collect();
     let mut pinned = Vec::new();

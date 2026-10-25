@@ -15,6 +15,8 @@ id=$(vastai create instance "$OFFER" --image "$IMAGE" --disk 40 --ssh --direct -
      python3 -c 'import json,sys; print(json.load(sys.stdin)["new_contract"])')
 log "instance $id from offer $OFFER"
 echo "$id" > "$RES/instance-$PROF"
+# LABEL=<topic>: names the rental (CLAUDE.md: never touch an instance you did not create).
+if [ -n "${LABEL:-}" ]; then vastai label instance "$id" "$LABEL" >/dev/null 2>&1 || log "label failed"; fi
 cleanup() {
     if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1: instance $id still billing"; return; fi
     vastai destroy instance "$id" -y >/dev/null 2>&1; if vastai show instances --raw 2>/dev/null | grep -q "\"id\": $id,"; then log "DESTROY FAILED — $id STILL BILLING"; else log "destroyed $id"; fi

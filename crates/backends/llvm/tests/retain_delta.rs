@@ -183,10 +183,7 @@ fn emit_s54(ir: &CategoryIr, off: &[&str], contract: bool) -> (String, String) {
     opts.gpu.on.retain_resident = true;
     opts.gpu.on.delta_h2d = true;
     opts.gpu.on.lane_stride = true;
-    // The S54 pins: `q` built on the host and uploaded (cpu-gpu-boundary
-    // `uniform` builds it on the device: `uniform_q_never_crosses`).
-    opts.gpu.off.uniform = !off.contains(&"+uniform");
-    for r in off.iter().filter(|r| !r.starts_with('+')) {
+    for r in off {
         *opts.gpu.off.rung(r).expect("a rung") = true;
     }
     let em = emit_detailed(ir, &opts).expect("emits");
@@ -368,7 +365,8 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
 #[test]
 fn decode_retains_on_the_resident_buffers() {
     let ir = lower(&decode(16, 8, "f32", false));
-    let (host, _) = emit_s54(&ir, &[], false);
+    // `q` built on the host (`uniform` off: `uniform_q_never_crosses`).
+    let (host, _) = emit_s54(&ir, &["uniform"], false);
     assert!(tile_calls(&host).is_empty());
     // K, V: whole + row; s; o.
     assert_eq!(calls(&host, "launch").len(), 6);
@@ -379,8 +377,8 @@ fn decode_retains_on_the_resident_buffers() {
     assert_eq!(d2h.len(), 1, "{d2h:#?}");
     assert!(d2h[0].ends_with("i64 0, i64 32)"), "{d2h:#?}");
     // The device unit gains the one-row kernel (K and V share it) and `s`'s.
-    let (_, dev) = emit_s54(&ir, &[], false);
-    let (_, base) = emit_s54(&ir, &["retain-resident", "delta-h2d", "lane-stride"], false);
+    let (_, dev) = emit_s54(&ir, &["uniform"], false);
+    let (_, base) = emit_s54(&ir, &["retain-resident", "delta-h2d", "lane-stride", "uniform"], false);
     let kernels = |d: &str| d.matches("void @mapal_tile_").count();
     assert_eq!(kernels(&dev), kernels(&base) + 2);
 }
@@ -392,7 +390,8 @@ fn decode_retains_on_the_resident_buffers() {
 fn delta_upload_is_stride_times_elem_bytes() {
     for (d, row, whole) in [(8u64, 32, 512), (4, 16, 256)] {
         let ir = lower(&decode(16, d, "f32", false));
-        let (host, _) = emit_s54(&ir, &[], false);
+        // `q` built on the host (`uniform` off: `uniform_q_never_crosses`).
+        let (host, _) = emit_s54(&ir, &["uniform"], false);
         // `x` and `q` are both one row: the written row of `x` and `q`'s
         // whole map cross at `row` bytes, the first pass whole. (Since S65
         // `by-ref` the carried `x` is reached through its pointer, so the host
@@ -406,7 +405,7 @@ fn delta_upload_is_stride_times_elem_bytes() {
                 .count(),
             1
         );
-        let (off_arm, _) = emit_s54(&ir, &["delta-h2d"], false);
+        let (off_arm, _) = emit_s54(&ir, &["delta-h2d", "uniform"], false);
         assert_eq!(rows(&calls(&off_arm, "h2d")), 1, "q only");
         assert_eq!(
             off_arm.matches("store i1 true, ptr").count(),
@@ -422,7 +421,7 @@ fn delta_upload_is_stride_times_elem_bytes() {
 #[test]
 fn uniform_q_never_crosses() {
     let ir = lower(&decode(16, 8, "f32", false));
-    let (host, _) = emit_s54(&ir, &["+uniform"], false);
+    let (host, _) = emit_s54(&ir, &[], false);
     let rows = calls(&host, "h2d").iter().filter(|l| l.ends_with("i64 32)")).count();
     assert_eq!(rows, 1, "x's row only");
     assert_eq!(calls(&host, "launchv").len(), 1, "q's cell");

@@ -3407,13 +3407,17 @@ fn differential_device_loops_values_and_movement() {
                 continue;
             }
             placed += 1;
-            // cpu-gpu-boundary 1b: a closed form of the cell and the trip
-            // counter read by a placed site is a uniform cell, launched per
-            // trip (one whose site sits in a guard arm stays on the host).
-            let laws = src.matches("g;\n").count();
-            let cells = em.text.matches("call void @mapal_gpu_launchv(").count();
-            uniform += laws.min(cells);
-            nests += src.matches("-false-> -1.0;").count();
+            // cpu-gpu-boundary 1b / 1a, counted from the emission: a rule
+            // fires when its arm launches more cells than its OFF arm, and a
+            // uniform cell takes an `i64` kernel parameter.
+            let launches = |t: &str| t.matches("call void @mapal_gpu_launchv(").count();
+            let fires = |rung: &str| {
+                let mut o = opts;
+                *o.gpu.off.rung(rung).expect("rung") = true;
+                mapal_backend_llvm::emit_detailed(&ir, &o).is_ok_and(|e| launches(&em.text) > launches(&e.text))
+            };
+            uniform += usize::from(dev.contains("i64 %c") && fires("uniform"));
+            nests += usize::from(fires("nest-cell"));
             let need = required_trip_copies(&ir, ir.entry());
             let loops = gpu_trip_moves(&em.text);
             carried += loops.iter().filter(|(kv, _)| kv["carried"].contains(":device")).count();
@@ -3435,11 +3439,11 @@ fn differential_device_loops_values_and_movement() {
     assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
     assert!(
         placed >= 48 && carried > 0 && uniform > 0 && nests > 0,
-        "{placed} device programs, {carried} device-carried states, {uniform} uniform laws, {nests} guarded folds"
+        "{placed} device programs, {carried} device-carried states, {uniform} with a uniform cell, {nests} with a nest cell"
     );
     eprintln!(
         "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states, \
-         {uniform} uniform laws, {nests} guarded folds per cell; values OK on and off, movement = the plan's"
+         {uniform} with a uniform cell, {nests} with a nest cell; values OK on and off, movement = the plan's"
     );
 }
 

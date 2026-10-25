@@ -219,6 +219,41 @@ fn a_lone_fold_over_a_column_major_store_is_no_tree_unit() {
     }
 }
 
+/// `tree-gate` on unseen programs: over generated chains (rtx-4090, default
+/// face), wherever the gate fires (fewer units than its OFF arm) both arms
+/// answer to the interpreter within the bound, and the gate fires somewhere.
+#[test]
+fn tree_gate_on_generated_chains() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let _ = emu::rt_lib();
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::chain_strategy();
+    let units = |em: &mapal_backend_llvm::Emission| launches(&em.text).1;
+    let (mut fired, mut findings) = (0, Vec::new());
+    for z in 0..256 {
+        let src = strat.new_tree(&mut runner).unwrap().current().source();
+        let ir = lower(&src);
+        let on = emission_on(&ir, "rtx-4090", &[], EmitOpts::default());
+        let off = emission_on(&ir, "rtx-4090", &["tree-gate"], EmitOpts::default());
+        if units(&on) >= units(&off) {
+            continue;
+        }
+        fired += 1;
+        let rr = run(&ir, 400_000_000);
+        for em in [&on, &off] {
+            let got = emu::run_emulated(&clang, &em.text, em.device.as_ref().expect("a device unit"));
+            if !within(&got, &rr.output) {
+                findings.push(format!("chain#{z}: {got:?} vs {:?}\n{src}", rr.output));
+            }
+        }
+    }
+    assert!(findings.is_empty(), "{}", findings.join("\n"));
+    assert!(fired > 0, "tree-gate fired on no generated chain");
+    eprintln!("tree_gate_on_generated_chains: fired on {fired}/256");
+}
+
 /// An element-wise chain over a tile site's output and an operand.
 #[test]
 fn ew_chain_is_one_unit() {

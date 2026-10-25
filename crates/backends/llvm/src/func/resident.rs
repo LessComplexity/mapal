@@ -223,20 +223,29 @@ pub(crate) struct Cell {
     /// The number capture slots (`CellSite::uniform`): kernel arguments by
     /// value, the host's scalar at launch.
     pub uniform: Vec<u32>,
-    /// `CellSite::nested` is not empty: a nested fold reads captures.
-    pub nest: bool,
+    /// The capture slots a nested fold reads (`CellSite::nested`).
+    pub nested: Vec<u32>,
 }
 
 impl Cell {
     /// The arrays the kernel reads, with the product slot each sits in
     /// (`None`: the bare mapped source of a capture-free map).
     fn operands(&self) -> Vec<(ObjectId, Option<u32>)> {
+        self.args().filter(|a| !a.2).map(|(o, s, _)| (o, s)).collect()
+    }
+
+    /// The kernel's arguments after its output, in [`gpu::cell_kernel_text`]'s
+    /// parameter order: the mapped array, then each capture slot not
+    /// evaluated in the cell — `(object, slot, uniform)`, a uniform passed by
+    /// value, the rest by reference.
+    fn args(&self) -> impl Iterator<Item = (ObjectId, Option<u32>, bool)> + '_ {
         let k = self.caps.len() as u32;
         let mapped = self.mapped.map(|o| (o, (k > 0).then_some(k)));
-        let caps = (0..k)
-            .filter(|&s| !self.law(s) && !self.uniform.contains(&s))
-            .map(|s| (self.caps[s as usize], Some(s)));
-        mapped.into_iter().chain(caps).collect()
+        let caps = (0..k).filter(|&s| !self.law(s)).map(|s| (self.caps[s as usize], Some(s)));
+        mapped
+            .into_iter()
+            .chain(caps)
+            .map(|(o, s)| (o, s, s.is_some_and(|s| self.uniform.contains(&s))))
     }
 
     fn law(&self, slot: u32) -> bool {
@@ -985,8 +994,9 @@ impl<'a> FnEmit<'a> {
         out
     }
 
-    /// The `devmap` gate on a [`CellSite`] (`cell_plan`: a classifiable leaf
-    /// body over array captures, every read classified): outside every guard
+    /// The `devmap` gate on a [`CellSite`] (`cell_plan`: a classifiable body
+    /// over array captures, number captures (`uniform`) and nested folds over
+    /// captures (`nested`), every read classified): outside every guard
     /// arm, a body whose text names no runtime symbol (clean) and lowers to
     /// the host's bits on the device ([`Self::device_leaf`]), number elements, an
     /// input product with no erased component, and no more pointers than one
@@ -1052,7 +1062,7 @@ impl<'a> FnEmit<'a> {
             caps,
             laws,
             uniform: site.uniform.clone(),
-            nest,
+            nested: site.nested.clone(),
         };
         // The output, then every operand and uniform: one 8-byte argument each.
         (cell.operands().len() + cell.uniform.len() < gpu::LAUNCHV_MAX).then_some(cell)
@@ -1114,7 +1124,11 @@ impl<'a> FnEmit<'a> {
     /// stays on the host).
     fn fold_candidates(&self, sites: &mut SecondaryMap<MorphismId, DevSite>) -> Vec<MorphismId> {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        if !rungs.rowfold || !rungs.by_ref || sites.is_empty() {
+        if !rungs.rowfold
+            || !rungs.by_ref
+            || sites.is_empty()
+            || (!rungs.retained_fold && !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty())
+        {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -1199,19 +1213,21 @@ impl<'a> FnEmit<'a> {
                     .any(|c| c.views.contains(&o) || c.exit == Some(o))
             };
             let device_only = |o| carried(o) || self.produced_on_device(sites, &cells, o);
-            // ponytail: an `iota` a nested fold walks is uploaded once at its
-            // producer (`n·4` bytes, outside the loop where the rewriter hoists
-            // it); a device iota kernel if one ever sits in a loop cone.
-            let nest = gpu::host_rungs(self.profile, self.contract, self.gpu_arms).nest_cell;
+            // ponytail: an `iota` operand of a nest cell (non-empty `nested`,
+            // so only under `nest-cell`; plain cells keep the rule above) is
+            // uploaded once at its producer (`n·4` bytes, outside the loop
+            // where the rewriter hoists it); a device iota kernel if one ever
+            // sits in a loop cone. Not narrowed to `nested` slots: a fold in a
+            // guard arm walks its range through the arm's input, which
+            // `nest_reads` does not attribute (causal's `s` over `krange`).
             let iota = |o: ObjectId| {
-                nest && self.ir.in_edges(o).iter().any(|&p| {
+                self.ir.in_edges(o).iter().any(|&p| {
                     self.ir.morphism(p).is_some_and(|x| x.op == Operation::Iota)
                 })
             };
             let there = |o| {
                 device_only(o)
                     || feeders.contains_key(o)
-                    || iota(o)
                     || (devgen
                         && self
                             .ir
@@ -1225,7 +1241,8 @@ impl<'a> FnEmit<'a> {
                     let ops = c.operands();
                     let t = self.ir.morphism(*m).expect("cell").target;
                     let host = || self.uses(sites, cells, t, &[]).contains(&Use::Host);
-                    !ops.iter().all(|&(o, _)| there(o))
+                    let walked = |o| !c.nested.is_empty() && iota(o);
+                    !ops.iter().all(|&(o, _)| there(o) || walked(o))
                         || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
                 })
                 .map(|(m, _)| m)
@@ -1244,14 +1261,15 @@ impl<'a> FnEmit<'a> {
         }
     }
 
-    /// One thread per cell: `extent` flops, every read and the store.
+    /// One thread per cell: `work` flops each (a nested fold's `k`), every
+    /// read and the store.
     fn cell_roofline(&self, m: MorphismId, site: &CellSite) -> (u64, u64) {
         let t = self.ir.morphism(m).expect("cell").target;
         let w = crate::profile::elem_bytes(array_elem(&self.obj_ty(t)));
         let bytes = (site.reads.len() as u64 + 1)
             .saturating_mul(site.extent)
             .saturating_mul(w);
-        (site.extent, bytes)
+        (site.extent.saturating_mul(site.work), bytes)
     }
 
     /// S62 `place` for a per-cell map: on the device when an operand is
@@ -1937,6 +1955,7 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "{d} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {bytes})"
         ));
+        self.dallocs.push((slot, bytes));
         d
     }
 
@@ -1995,14 +2014,8 @@ impl<'a> FnEmit<'a> {
         let bytes = self.array_bytes(&self.obj_ty(target));
         let mut ptrs = vec![self.dalloc(target, bytes)];
         let mut temps = Vec::new();
-        // The kernel's arguments in slot order: the operands, each uniform
-        // (by value) at its own slot.
-        let k = c.caps.len() as u32;
-        let args = c.mapped.map(|o| (o, (k > 0).then_some(k))).into_iter().chain(
-            (0..k).filter(|&s| !c.law(s)).map(|s| (c.caps[s as usize], Some(s))),
-        );
-        for (o, slot) in args {
-            if let Some(u) = slot.filter(|s| c.uniform.contains(s)) {
+        for (o, slot, uniform) in c.args() {
+            if let (true, Some(u)) = (uniform, slot) {
                 let (t, v) = self.load_component(source, u).expect("uniform loads");
                 let w = self.tmp();
                 self.line(gpu::uniform_to_i64(&w, &v, &t));
@@ -2121,8 +2134,13 @@ impl<'a> FnEmit<'a> {
                 for nb in std::iter::once(c.body).chain(laws).flat_map(|b| nested_bodies(self.ir, b)) {
                     fns.push((self.fnames[nb].clone(), self.body_text(nb, Vec::new())));
                 }
-                let kernel =
-                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps);
+                // The facts the kernel was built from, for its `; mapal.plan`.
+                let work = self.ir.cell_plan(self.f).get(m).map_or(1, |x| x.work);
+                let kernel = format!(
+                    "; mapal.cell nested={} work={work}\n{}",
+                    c.nested.len(),
+                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps)
+                );
                 (fns, kernel)
             })
             .collect()
@@ -2167,7 +2185,7 @@ impl<'a> FnEmit<'a> {
             let h = self.array_operand_ptr(t, None).expect("uploaded array ptr");
             let d = self.dalloc(t, bytes);
             // `pinned` (S54): a copy that runs more than once is page-locked.
-            self.pin(m, &h, bytes);
+            self.pin(m, &h, bytes, true);
             match (delta, chain) {
                 (Some(du), _) => self.emit_delta_h2d(t, &du, &d, &h, bytes),
                 (None, Some(k)) => self.line(format!(
@@ -2330,7 +2348,7 @@ impl<'a> FnEmit<'a> {
             self.line(format!(
                 "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
             ));
-            self.pin(ms, &h, bytes);
+            self.pin(ms, &h, bytes, true);
             self.line(format!(
                 "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
             ));
@@ -2428,7 +2446,7 @@ impl<'a> FnEmit<'a> {
             if !keep {
                 let bytes = self.array_bytes(&self.obj_ty(o));
                 let h = self.slot(o).expect("device output slot");
-                self.pin(ms, &h, bytes);
+                self.pin(ms, &h, bytes, false);
                 // A device fold's output lands in what was a host loop's slot: say
                 // the copy keeps no pointer to it, as the loop did not, or the slot
                 // counts as escaped and a later host loop that reads it loses its
@@ -2467,11 +2485,12 @@ impl<'a> FnEmit<'a> {
     /// more than one pinned copy saves on every box measured
     /// (`streams-<part>.txt`, S54 trace + `copy_rate`: 0.06–0.09 ms per MB
     /// registered at 64 MB, 0.3–0.5 at 1 MB, against 0.002 (RTX 4090 box) to
-    /// 0.08 ms per MB (RTX 5090 box) saved per crossing).
-    fn pin(&mut self, m: MorphismId, h: &str, bytes: u64) {
-        if gpu::host_rungs(self.profile, self.contract, self.gpu_arms).pinned
-            && !self.straight_line().contains_key(m)
-        {
+    /// 0.08 ms per MB (RTX 5090 box) saved per crossing). An upload (`up`)
+    /// under `async-h2d` is not pinned: the runtime would have to wait for a
+    /// page-locked source it does not stage, and staging makes the pin moot.
+    fn pin(&mut self, m: MorphismId, h: &str, bytes: u64, up: bool) {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        if rungs.pinned && !(up && rungs.async_h2d) && !self.straight_line().contains_key(m) {
             self.line(format!("call void @mapal_gpu_pin(ptr {h}, i64 {bytes})"));
         }
     }
@@ -2715,43 +2734,36 @@ impl<'a> FnEmit<'a> {
     }
 
     /// **`entry-arena`: the arena at function entry, loop-cone buffers in
-    /// it.** Every slot the walk allocates with `mapal_gpu_alloc` and frees
-    /// only at exit (a loop-cone buffer, a carry's next, a workspace) is
-    /// placed after the straight-line members, each live over the whole
-    /// function — `[0, ∞)` in the same coloring, so it shares no byte with
-    /// anything: a back edge may swap it into another slot at any trip. The
-    /// entry block makes the arena (static size) and seeds those slots, so
-    /// their first-use allocation finds its buffer. A slot freed before exit
-    /// (a per-site temp) keeps its own allocation. The runtime releases a
-    /// member with its arena, whichever slot holds it at exit
-    /// (`mapal_gpu_free`). Returns whether the function has an arena.
+    /// it.** Every slot the walk allocated with `mapal_gpu_alloc` (`dallocs`)
+    /// that no `free_after` death frees (a loop-cone buffer, a carry's next, a
+    /// split workspace) is placed after the straight-line members, each live
+    /// over the whole function — `[0, ∞)` in the same coloring, so it shares
+    /// no byte with anything: a back edge may swap it into another slot at any
+    /// trip. The entry block makes the arena (static size) and seeds those
+    /// slots, so their first-use allocation finds its buffer. A slot freed
+    /// before exit keeps its own allocation. The runtime releases a member
+    /// with its arena, whichever slot holds it at exit (`mapal_gpu_free`).
+    /// Returns whether the function has an arena.
+    ///
+    /// ponytail: whole-function intervals, so the cones of two loops in one
+    /// function never share bytes; per-loop spans (`loop_plan` through the
+    /// death of each carry's exit alias) when that footprint matters.
     fn entry_arena(&mut self) -> bool {
-        let field = |l: &str, key: &str| -> Option<String> {
-            let rest = &l[l.find(key)? + key.len()..];
-            Some(rest[..rest.find([',', ')'])?].to_string())
-        };
-        let freed: std::collections::BTreeSet<String> = self
-            .body
-            .lines()
-            .filter_map(|l| field(l, "call void @mapal_gpu_free(ptr "))
+        let freed: std::collections::BTreeSet<&String> = self
+            .resident
+            .iter()
+            .flat_map(|p| p.free_after.values().flatten())
+            .filter(|&&o| self.arena_offset(o).is_none())
+            .filter_map(|&o| self.dslots.get(o))
             .collect();
         let mut cone: Vec<(String, u64)> = Vec::new();
-        for l in self.body.lines() {
-            let Some(slot) = field(l, "call i64 @mapal_gpu_alloc(ptr ") else {
-                continue;
-            };
-            let Some(bytes) = l
-                .split_once(&format!("{slot}, i64 "))
-                .and_then(|(_, r)| r.split(')').next()?.parse::<u64>().ok())
-            else {
-                continue;
-            };
-            if freed.contains(&slot) {
+        for (slot, bytes) in &self.dallocs {
+            if freed.contains(slot) {
                 continue;
             }
-            match cone.iter_mut().find(|(s, _)| *s == slot) {
-                Some(c) => c.1 = c.1.max(bytes),
-                None => cone.push((slot, bytes)),
+            match cone.iter_mut().find(|(s, _)| s == slot) {
+                Some(c) => c.1 = c.1.max(*bytes),
+                None => cone.push((slot.clone(), *bytes)),
             }
         }
         let line = self

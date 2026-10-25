@@ -1576,8 +1576,18 @@ pub(crate) fn device_module(
                 out.push_str(text);
             }
         }
+        // `emit_cell`'s facts line, then the kernel; a uniform is an `i64`
+        // parameter of its `define`.
+        let (facts, kernel) = kernel
+            .strip_prefix("; mapal.cell ")
+            .and_then(|r| r.split_once('\n'))
+            .unwrap_or(("", kernel));
+        let uniform = kernel
+            .lines()
+            .find(|l| l.starts_with("define"))
+            .map_or(0, |d| d.matches("i64 %c").count());
         out.push_str("\n; cell\n");
-        out.push_str(&format!("; mapal.plan kernel={name} kind=cell\n"));
+        out.push_str(&format!("; mapal.plan kernel={name} kind=cell uniform={uniform} {facts}\n"));
         out.push_str(kernel);
     }
     // generic-fusion: each unit's bodies once (shared with the others'), then
@@ -3850,6 +3860,7 @@ impl<'a> FnEmit<'a> {
                     "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
                 ));
                 self.split_slots.push(slot.clone());
+                self.dallocs.push((slot.clone(), bytes));
                 let ws = self.tmp();
                 self.line(format!(
                     "{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {bytes})"

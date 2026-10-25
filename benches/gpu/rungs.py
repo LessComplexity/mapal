@@ -46,7 +46,8 @@ EPS = 0.01  # no effect within ±1%: the same ratio differs by a median 0.5-1.2%
 # except `epilogue`, `raster` and `l2-gate`, which a site's own launch reads at its fill.
 HOST = {'resident', 'devgen', 'eager-init', 'retain-delta', 'arena', 'devmap', 'cell-law', 'delta-h2d',
         'retain-resident', 'lane-stride', 'rowfold', 'rowfold-layout', 'streams', 'stream-gate', 'pinned',
-        'pdl', 'l2-window', 'preload', 'entry-arena', 'async-h2d', 'stage', 'chain-h2d'}
+        'pdl', 'l2-window', 'preload', 'entry-arena', 'async-h2d', 'stage', 'chain-h2d',
+        'uniform', 'nest-cell', 'tree-gate', 'retained-fold'}
 COMPOSITE = {'arch-rungs', 'fma-regs'}
 FACE = {'_exact': 'Exact', '_c': 'Contract', '_tf': 'Tf32'}
 FILL = {}  # (profile, 'MxNxK') -> fill, from --fill
