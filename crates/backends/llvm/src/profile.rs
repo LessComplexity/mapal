@@ -246,6 +246,14 @@ fn block_threads(g: &Gpu, regs_est: u64) -> u64 {
     (g.regs_per_sm / regs_est / g.geom.resident).min(g.max_threads_per_block)
 }
 
+/// Blocks of `threads` threads at `regs` registers a thread one SM holds: the
+/// register file, the thread and the block-slot limits (every tile's step 5).
+fn residency(g: &Gpu, regs: u64, threads: u64) -> u64 {
+    (g.regs_per_sm / regs / threads)
+        .min(g.max_threads_per_sm / threads)
+        .min(g.max_blocks_per_sm)
+}
+
 impl Gpu {
     /// The compute capability as a number: `sm_89` → 89. The capability
     /// table below is read off it — ISA rules, not part facts.
@@ -342,6 +350,10 @@ impl Gpu {
 /// scheduler has no second warp to issue while one waits — the reason the
 /// thread budget is split in two, applied per scheduler — so the site is
 /// latency-bound and a rung that hides latency pays differently.
+///
+/// Keyed at [`GPU_RESIDENT_BLOCKS`], not [`Geom::resident`]: the rows were
+/// measured there, and the grid they key ([`TargetProfile::gpu_tile`]) reads
+/// the seed row — a `resident` arm moves the launch, never which rows apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fill {
     Any,
@@ -424,6 +436,14 @@ pub struct RungOff {
 /// when no size in the class measured it positive with a stable sign (a sign
 /// that changes between sessions is no effect; S54: within ±1% is no effect, the
 /// median spread of one ratio between two boxes).
+/// site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's
+/// 4-byte `cp.async` digit copies and cell-by-cell digit store never ran
+/// locally (the emulator runs no `mma.sync`), so it ships OFF on every part
+/// no box has value-gated it on yet.
+const TF32_RADIX_UNGATED: &str = "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+     runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+     benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row";
+
 pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-4090",
@@ -1468,6 +1488,34 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
                win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
     },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: TF32_RADIX_UNGATED,
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: TF32_RADIX_UNGATED,
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: TF32_RADIX_UNGATED,
+    },
+    RungOff {
+        profile: "a100",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: TF32_RADIX_UNGATED,
+    },
     // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
     // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
     // 0.71/0.60/0.52/0.77, softmax_rows_4096 0.88/0.92/0.88/0.93 (4090/5090/H100/3090). Open: rowsum_4096 on
@@ -2230,13 +2278,18 @@ impl TargetProfile {
             }
             let whole =
                 (bm * bk).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads);
-            if k.is_multiple_of(bk) && whole {
+            // ADR-0034 D1: a forced panel depth is the only one taken.
+            if k.is_multiple_of(bk) && whole && (gpu.geom.bk == 0 || bk == gpu.geom.bk) {
                 best = Some(geom);
             }
             bk *= 2;
         }
         let geom = best?;
         let stages = (share / (geom.stage_elems() * e)).min(k / geom.bk).max(2);
+        // A forced stage count that fits the share replaces the derived one.
+        let stages = Some(gpu.geom.stages)
+            .filter(|&s| s >= 2 && GpuTile { stages: s, ..geom }.smem_bytes(e) <= share)
+            .unwrap_or(stages);
         Some(GpuTile { stages, ..geom })
     }
 
@@ -2272,10 +2325,7 @@ impl TargetProfile {
         if !c.is_multiple_of(bn) {
             return None;
         }
-        let blocks_per_sm = (g.regs_per_sm / fma_held_regs(1, 1, e) / threads)
-            .min(g.max_threads_per_sm / threads)
-            .min(g.max_blocks_per_sm)
-            .max(1);
+        let blocks_per_sm = residency(g, fma_held_regs(1, 1, e), threads).max(1);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
             .min(g.smem_per_block);
@@ -2492,10 +2542,7 @@ impl TargetProfile {
             return None;
         }
         let threads = warps_x * warps_y * g.warp;
-        let blocks_per_sm = (resident_threads / threads)
-            .min(g.max_threads_per_sm / threads)
-            .min(g.max_blocks_per_sm)
-            .max(1);
+        let blocks_per_sm = residency(g, regs_est, threads).max(1);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
             .min(g.smem_per_block);
@@ -2555,7 +2602,18 @@ impl TargetProfile {
     ///    fill whole [`WGMMA_SWIZZLE_BYTES`] rows.
     ///
     /// The deepest valid `bk` wins; then as many stages as the share holds.
+    ///
+    /// ADR-0034 D1 (site-geometry B4): a forced `n` / warpgroup count
+    /// ([`Geom::wg_n`], `wg_groups`) replaces steps 1–3; one the site cannot
+    /// take falls back to the derived tile, never to another kernel class.
     pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
+        let q = self.gpu()?.geom;
+        self.wgmma_tile_at(rows, c, k, q.wg_n, q.wg_groups).or_else(|| {
+            (q.wg_n + q.wg_groups > 0).then(|| self.wgmma_tile_at(rows, c, k, 0, 0)).flatten()
+        })
+    }
+
+    fn wgmma_tile_at(&self, rows: u64, c: u64, k: u64, wg_n: u64, wg_groups: u64) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
         if !g.has_wgmma() {
             return None;
@@ -2579,14 +2637,14 @@ impl TargetProfile {
                 }
                 let cap = 2 * (g.regs_per_thread - frag_regs);
                 // site-geometry B4: a forced `n` that divides the rows and fits.
-                let forced_n = Some(g.geom.wg_n)
+                let forced_n = Some(wg_n)
                     .filter(|&n| n > 0 && n % WGMMA_N_STEP == 0 && n <= cap.min(WGMMA_N_MAX) && rows.is_multiple_of(n));
                 let mut n = forced_n.or_else(|| fit_n(cap))?;
                 let resident = g.regs_per_sm / regs(n, bk);
                 let per_block = (resident / wg_threads)
                     .min(g.max_threads_per_block / wg_threads)
                     .max(1);
-                let forced_g = Some(g.geom.wg_groups).filter(|&x| x.is_power_of_two() && x <= per_block);
+                let forced_g = Some(wg_groups).filter(|&x| x.is_power_of_two() && x <= per_block);
                 let mut groups = forced_g.unwrap_or(1 << per_block.ilog2());
                 while forced_n.is_none() && forced_g.is_none() && (rows / n) * (c / (groups * WGMMA_M)) < g.sms {
                     if groups > 1 {
@@ -2601,10 +2659,7 @@ impl TargetProfile {
                 if !c.is_multiple_of(bn) {
                     return None;
                 }
-                let blocks_per_sm = (g.regs_per_sm / regs(n, bk) / threads)
-                    .min(g.max_threads_per_sm / threads)
-                    .min(g.max_blocks_per_sm)
-                    .max(1);
+                let blocks_per_sm = residency(g, regs(n, bk), threads).max(1);
                 let share = (g.smem_per_sm / blocks_per_sm)
                     .saturating_sub(g.smem_reserved_per_block)
                     .min(g.smem_per_block);
@@ -2694,7 +2749,19 @@ impl TargetProfile {
             fill,
             ..crate::GpuRungs::default()
         };
-        self.gpu_tile_with(rows, c, k, elem, wide, r)
+        // The rung table's rows were measured on grids this geometry keys at
+        // the seed row (`resident` 2, nothing forced): a `--geom=` arm or a
+        // searched table row moves the launch, never which rows apply.
+        self.with_geom(GEOM).gpu_tile_with(rows, c, k, elem, wide, r)
+    }
+
+    /// This profile with its GPU part's geometry row replaced by `geom`.
+    fn with_geom(&self, geom: Geom) -> TargetProfile {
+        let mut p = *self;
+        if let Machine::Gpu(g) = &mut p.machine {
+            g.geom = geom;
+        }
+        p
     }
 
     /// [`Self::gpu_tile`] under the rungs `r` reads: `fill` (`warp-fill`) and
@@ -2733,8 +2800,36 @@ impl TargetProfile {
     /// [`Self::gpu_tile_with`] for a grid whose fold is cut in `split`
     /// partitions (site-geometry `fill-wave`): `grid-share` counts the
     /// `blocks · split` the launch puts on the part. 1 = the unsplit grid.
+    ///
+    /// ADR-0034 D1 (site-geometry B4): the part's forced tile knobs
+    /// ([`Geom::tm`], `tn`, `warps`, `bk`) replace the step they name — the
+    /// register tile (steps 1 and 3), the threads (steps 2 and 4), the panel
+    /// depth (step 5) — and every other step derives as before; a forced tile
+    /// the site cannot take falls back to the derived one.
     #[allow(clippy::too_many_arguments)]
     pub fn gpu_tile_split(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+        split: u64,
+    ) -> Option<GpuTile> {
+        let q = self.gpu()?.geom;
+        self.tile_split_at(rows, c, k, elem, wide, r, split).or_else(|| {
+            (q.tm + q.tn + q.warps + q.bk > 0)
+                .then(|| {
+                    let derived = Geom { tm: 0, tn: 0, warps: 0, bk: 0, ..q };
+                    self.with_geom(derived).tile_split_at(rows, c, k, elem, wide, r, split)
+                })
+                .flatten()
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tile_split_at(
         &self,
         rows: u64,
         c: u64,
@@ -2755,10 +2850,11 @@ impl TargetProfile {
             }
         }
         let g = self.gpu()?;
+        let q = g.geom;
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
 
-        let (mut tm, mut tn, regs_est) = if wide {
+        let (mut tm, mut tn, mut regs_est) = if wide {
             let (mut tm, mut tn) = (lanes, lanes);
             loop {
                 let (m, n) = if tn == tm { (tm, 2 * tm) } else { (2 * tm, tn) };
@@ -2772,10 +2868,24 @@ impl TargetProfile {
             let (t, regs_est) = square_register_tile(g, e);
             (t, t, regs_est)
         };
+        let mut held = if wide { regs_est } else { 0 };
+        // A forced register tile: a thread holds its accumulators twice over
+        // (the derived budget), or what it holds when that outgrows the file.
+        let forced_tile = q.tm + q.tn > 0;
+        if forced_tile {
+            tm = if q.tm > 0 { q.tm } else { tm };
+            tn = if q.tn > 0 { q.tn } else { tn };
+            if !(tm.is_power_of_two() && tn.is_power_of_two()) || !tn.is_multiple_of(lanes) {
+                return None;
+            }
+            let twice = 2 * tm * tn * e.div_ceil(4);
+            held = if wide || twice > g.regs_per_thread { fma_held_regs(tm, tn, e) } else { 0 };
+            regs_est = if held > 0 { held } else { twice };
+        }
         let under_warps =
             |tm: u64, tn: u64| fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
         let tm_floor = if r.fill_rows { 1 } else { lanes };
-        while !wide && under_warps(tm, tn) {
+        while !wide && !forced_tile && under_warps(tm, tn) {
             if tn >= tm && tn > lanes {
                 tn /= 2;
             } else if tm > tm_floor {
@@ -2785,9 +2895,14 @@ impl TargetProfile {
             }
         }
 
-        let resident_threads = g.regs_per_sm / regs_est;
-        let threads = block_threads(g, regs_est);
-        let (mut tx, mut ty) = if wide {
+        let threads = match q.warps {
+            0 => block_threads(g, regs_est),
+            w if (w * g.warp).is_power_of_two() && w * g.warp <= g.max_threads_per_block => w * g.warp,
+            _ => return None,
+        };
+        // The block tile square-most (`ty·tm ≈ tx·tn`) for the wide or a forced
+        // tile, else the thread grid.
+        let (mut tx, mut ty) = if wide || forced_tile || q.warps > 0 {
             let threads = 1 << threads.max(1).ilog2();
             let aspect = |ty: u64| {
                 let (h, w) = (ty * tm, threads / ty * tn);
@@ -2823,12 +2938,13 @@ impl TargetProfile {
                 fy /= 2;
                 fx *= 2;
             }
-            if (rows / (fy * tm)) * (c / (fx * tn)) >= g.sms {
+            let divides = rows.is_multiple_of(fy * tm) && c.is_multiple_of(fx * tn);
+            if divides && (rows / (fy * tm)) * (c / (fx * tn)) >= g.sms {
                 (ty, tx) = (fy, fx);
             }
         }
-        let mut halve_x = true;
-        while (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
+        let mut halve_x = q.warps == 0;
+        while q.warps == 0 && (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
             if halve_x && tx > 1 {
                 tx /= 2;
             } else if ty > 1 {
@@ -2858,7 +2974,7 @@ impl TargetProfile {
             stages: 1,
             pad_a: 0,
             a_row_lanes: 0,
-            held: if wide { regs_est } else { 0 },
+            held,
         };
         let (bm, bn, threads) = (geom(0).bm(), geom(0).bn(), tx * ty);
         if rows % bm != 0 || c % bn != 0 {
@@ -2869,11 +2985,7 @@ impl TargetProfile {
         } else {
             u64::MAX
         };
-        let blocks_per_sm = (resident_threads / threads)
-            .min(g.max_threads_per_sm / threads)
-            .min(g.max_blocks_per_sm)
-            .min(grid)
-            .max(1);
+        let blocks_per_sm = residency(g, regs_est, threads).min(grid).max(1);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
             .min(g.smem_per_block);
@@ -2884,7 +2996,7 @@ impl TargetProfile {
         let mut bk = lanes;
         let mut best = None;
         while bk <= k && (bm + bn) * bk * e <= share {
-            if k.is_multiple_of(bk) && loads_whole(bk) {
+            if k.is_multiple_of(bk) && loads_whole(bk) && (q.bk == 0 || bk == q.bk) {
                 best = Some(bk);
             }
             bk *= 2;
@@ -2893,111 +3005,6 @@ impl TargetProfile {
             blocks_per_sm,
             ..geom(best?)
         })
-    }
-
-    /// **The FMA tile `g` under the part's forced tile knobs** (ADR-0034 D1,
-    /// site-geometry B4: [`Geom::tm`], `tn`, `warps`, `bk`, `stages`) — the
-    /// candidates the offline search times; `None` when no knob is set or the
-    /// forced tile does not divide the site, load in whole vectors, or fit the
-    /// part (the derived `g` stands). The rest follows [`Self::gpu_tile_with`]
-    /// and [`Self::gpu_tile_async`]: the block tile square-most, the blocks
-    /// per SM from the registers a thread holds (capped at the `split` grid's
-    /// share under `grid-share`), the deepest panel the share holds. Each cell
-    /// still folds `k` in order on one thread: every candidate prints the same
-    /// bits.
-    #[allow(clippy::too_many_arguments)]
-    pub fn gpu_tile_forced(
-        &self,
-        g: GpuTile,
-        rows: u64,
-        c: u64,
-        k: u64,
-        elem: &Ty,
-        r: crate::GpuRungs,
-        split: u64,
-    ) -> Option<GpuTile> {
-        let gpu = self.gpu()?;
-        let q = gpu.geom;
-        if q.tm + q.tn + q.warps + q.bk + q.stages == 0 {
-            return None;
-        }
-        let e = elem_bytes(elem);
-        let lanes = (GPU_VEC_BYTES / e).max(1);
-        let pick = |v: u64, d: u64| if v > 0 { v } else { d };
-        let (tm, tn) = (pick(q.tm, g.tm), pick(q.tn, g.tn));
-        let threads = pick(q.warps * gpu.warp, g.threads());
-        let pow2 = |x: u64| x.is_power_of_two();
-        if !(pow2(tm) && pow2(tn) && pow2(threads)) || threads > gpu.max_threads_per_block || tn % lanes != 0 {
-            return None;
-        }
-        // The block tile: `g`'s split when the thread count and register tile
-        // are its own, else square-most (`ty·tm ≈ tx·tn`) inside the rows.
-        let (tx, ty) = if (tm, tn, threads) == (g.tm, g.tn, g.threads()) {
-            (g.tx, g.ty)
-        } else {
-            let aspect = |ty: u64| {
-                let (h, w) = (ty * tm, threads / ty * tn);
-                (h > rows, h.max(w) / h.min(w))
-            };
-            let ty = (0..=threads.ilog2()).map(|p| 1u64 << p).min_by_key(|&ty| aspect(ty))?;
-            (threads / ty, ty)
-        };
-        let (bm, bn) = (ty * tm, tx * tn);
-        if rows % bm != 0 || c % bn != 0 {
-            return None;
-        }
-        let rpe = e.div_ceil(4);
-        let half = tm * tn * rpe * 2 > gpu.regs_per_thread;
-        let held = if g.held > 0 || half { fma_held_regs(tm, tn, e) } else { 0 };
-        let regs = held.max(2 * tm * tn * rpe).max(1);
-        let blocks = (rows / bm) * (c / bn) * split.max(1);
-        let grid = if r.grid_share { blocks.div_ceil(gpu.sms) } else { u64::MAX };
-        let blocks_per_sm = (gpu.regs_per_sm / regs / threads)
-            .min(gpu.max_threads_per_sm / threads)
-            .min(gpu.max_blocks_per_sm)
-            .min(grid)
-            .max(1);
-        let share = (gpu.smem_per_sm / blocks_per_sm)
-            .saturating_sub(gpu.smem_reserved_per_block)
-            .min(gpu.smem_per_block);
-        let stages = pick(q.stages, g.stages);
-        let streamed = stages >= 2;
-        if streamed && !gpu.has_mma_sync() {
-            return None;
-        }
-        let pad_a = if streamed { conflict_free_pad(bm, |l| (l % lanes, l / lanes))? } else { 0 };
-        let whole = |bk: u64| {
-            k.is_multiple_of(bk)
-                && (bk * bn / lanes).is_multiple_of(threads)
-                && if streamed { (bm * bk).is_multiple_of(threads) } else { (bm * bk / lanes).is_multiple_of(threads) }
-        };
-        let tile = |bk: u64, stages: u64| GpuTile {
-            tm,
-            tn,
-            tx,
-            ty,
-            bk,
-            blocks_per_sm,
-            stages,
-            pad_a,
-            a_row_lanes: 0,
-            held,
-        };
-        // The stages that must fit: the forced count, else two (`cp.async`) or one.
-        let need = if q.stages > 0 { stages } else { stages.clamp(1, 2) };
-        let fits = |bk: u64| tile(bk, need).smem_bytes(e) <= share;
-        let bk = match q.bk {
-            0 => (0..=k.max(1).ilog2())
-                .map(|p| 1u64 << p)
-                .filter(|&bk| bk >= lanes && whole(bk) && fits(bk))
-                .max()?,
-            bk => Some(bk).filter(|&bk| bk >= lanes && whole(bk) && fits(bk))?,
-        };
-        let stages = match (q.stages, streamed) {
-            (0, true) => (share / (tile(bk, 1).stage_elems() * e)).min(k / bk).max(2),
-            (s, _) => s.max(1),
-        };
-        Some(tile(bk, stages)).filter(|t| t.smem_bytes(e) <= share && (!streamed || stages <= k / bk))
     }
 
     /// **The blocks of tile `g` one SM can hold** at its registers and
@@ -3009,12 +3016,7 @@ impl TargetProfile {
             return g.blocks_per_sm;
         };
         let regs = if g.held > 0 { g.held } else { square_register_tile(gpu, elem_bytes(elem)).1 };
-        let threads = g.threads().max(1);
-        (gpu.regs_per_sm / regs / threads)
-            .min(gpu.max_threads_per_sm / threads)
-            .min(gpu.max_blocks_per_sm)
-            .max(g.blocks_per_sm)
-            .max(1)
+        residency(gpu, regs, g.threads().max(1)).max(g.blocks_per_sm).max(1)
     }
 
     /// **S62/S63 split-K sizing (ADR-0040 D4, gap map M1): how many contiguous
@@ -3652,7 +3654,7 @@ pub struct Geom {
     /// `8 × 16` tile, `cp.async` stages, the panel depth at `K = 1024`):
     /// a thread's register tile `tm × tn`, warps per block, the panel depth
     /// `bk` and its stages (1 = register staging, ≥ 2 = `cp.async`); 0 =
-    /// derived ([`TargetProfile::gpu_tile_forced`]).
+    /// derived ([`TargetProfile::gpu_tile_split`], [`TargetProfile::gpu_tile_async`]).
     pub tm: u64,
     pub tn: u64,
     pub warps: u64,
@@ -5409,6 +5411,43 @@ mod tests {
         };
         assert_eq!(m(&RTX_3090), (64, 32, 128, 128, 16, 2));
         assert_eq!(m(&A100), (64, 32, 128, 128, 32, 2));
+    }
+
+    /// site-geometry `fit-first` (integrate review): the reshape is taken
+    /// only where its block tile divides the site, so it never loses the tile
+    /// OFF finds (rows 64 over `c = 2⁷·257`: a 256-lane block row does not
+    /// divide `c`; OFF's shrunk 64-lane one does). A forced tile knob the site
+    /// cannot take falls back to the derived tile; the fill key ignores it.
+    #[test]
+    fn fit_first_divides_and_forced_tiles_fall_back() {
+        let f32 = Ty::f32();
+        let mut seen = 0;
+        for p in GPU_MEASURED {
+            let on = crate::GpuRungs::ALL;
+            let off = crate::GpuRungs { fit_first: false, ..on };
+            let t = |r| p.gpu_tile_with(64, 128 * 257, 1024, &f32, false, r);
+            if let Some(o) = t(off) {
+                seen += 1;
+                let n = t(on).unwrap_or_else(|| panic!("{}: fit-first lost OFF's tile {o:?}", p.name));
+                assert!(64 % n.bm() == 0 && (128 * 257) % n.bn() == 0, "{}", p.name);
+            }
+            // tm = 3 is no power of two: the derived tile stands.
+            let mut forced = *p;
+            if let Machine::Gpu(g) = &mut forced.machine {
+                g.geom.tm = 3;
+                g.geom.resident = 4;
+            }
+            let r = crate::GpuRungs::default();
+            let derived = p.with_geom(Geom { resident: 4, ..GEOM });
+            assert_eq!(
+                forced.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
+                derived.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
+                "{}",
+                p.name
+            );
+            assert_eq!(forced.gpu_tile(4096, 4096, 4096, &f32, false, true), p.gpu_tile(4096, 4096, 4096, &f32, false, true));
+        }
+        assert!(seen > 0, "OFF tiles the shape somewhere");
     }
 
     /// ADR-0034 D1: the search's knob file lists every knob of [`Geom`] for
