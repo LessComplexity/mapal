@@ -1482,10 +1482,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     // site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's 4-byte `cp.async` digit copies and
     // cell-by-cell digit store never ran locally (the emulator runs no `mma.sync`): OFF on every part no box has
-    // value-gated it on yet. Lifted on rtx-5090 / rtx-3090 by the site-geometry sweep: the forced-ON arm of
-    // convmc_8_64_56_3_tf32 is within its a-priori bound (K=576) on both boxes and ON 0.07003 vs OFF 0.08518 ms
-    // (5090, null 1.0 %) / 0.1327 vs 0.1671 ms (3090, null 1.1 %): 16 / 32 `mma.sync` + 27 / 54 `cp.async` replace
-    // the 512 / 1024-FFMA hot loop (sweep/<part>/evidence-<part>.tsv).
+    // value-gated it on yet. Lifted on rtx-3090 by the site-geometry sweep: the forced-ON arm of
+    // convmc_8_64_56_3_tf32 is within its a-priori bound (K=576) and ON 0.1327 vs OFF 0.1671 ms (null 1.1 %), also
+    // ahead of the FFMA tile with `fit-first` off (0.1477 ms): 32 `mma.sync` + 54 `cp.async` replace the 1024-FFMA
+    // hot loop (sweep/rtx-3090/evidence-rtx-3090.tsv).
     RungOff {
         profile: "h100-pcie",
         rung: "tf32-radix",
@@ -1494,6 +1494,15 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
                runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
                benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt: values within the bound \
+               (K=576), ON 0.07003 vs OFF 0.08518 ms (null 1.0 %), but the FFMA tile with `fit-first` off (its row \
+               below) runs 0.06797 ms: the mma.sync tile loses to the tile it replaces once that tile is fitted",
     },
     RungOff {
         profile: "a100",
