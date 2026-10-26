@@ -3380,11 +3380,14 @@ fn differential_device_loops_values_and_movement() {
     let _ = emu::rt_lib();
     let mut runner = TestRunner::deterministic();
     let strat = testgen::device_prog_strategy();
-    let (mut n, mut placed, mut carried, mut uniform, mut nests) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    let mut findings = Vec::new();
-    for _ in 0..64 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
-        let src = testgen::device_src(&p);
+    // The programs drawn in order (one deterministic runner), then run over the
+    // job slots: each is interpreter-, emitter-, clang- and emulator-bound and
+    // independent of the others.
+    let progs: Vec<_> = (0..64).map(|_| strat.new_tree(&mut runner).unwrap().current()).collect();
+    let work = |n: usize, p: &testgen::DeviceProg| -> (Vec<String>, [usize; 4]) {
+        let (mut placed, mut carried, mut uniform, mut nests) = (0usize, 0usize, 0usize, 0usize);
+        let mut findings = Vec::new();
+        let src = testgen::device_src(p);
         let ir = rewrite(lower_src(&src)).ir;
         let rr = run(&ir, 400_000_000);
         assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
@@ -3445,8 +3448,29 @@ fn differential_device_loops_values_and_movement() {
                 findings.push(format!("device#{n}: {copies} host copies per trip, the facts require {need}\n{src}"));
             }
         }
-        n += 1;
-    }
+        (findings, [placed, carried, uniform, nests])
+    };
+    let next = AtomicUsize::new(0);
+    let all = Mutex::new((Vec::new(), [0usize; 4]));
+    std::thread::scope(|sc| {
+        for _ in 0..job_slots() {
+            sc.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= progs.len() {
+                    break;
+                }
+                let (f, st) = work(i, &progs[i]);
+                let mut a = all.lock().unwrap();
+                a.0.extend(f);
+                for (x, y) in a.1.iter_mut().zip(st) {
+                    *x += y;
+                }
+            });
+        }
+    });
+    let n = progs.len();
+    let (mut findings, [placed, carried, uniform, nests]) = all.into_inner().unwrap();
+    findings.sort();
     assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
     assert!(
         placed >= 48 && carried > 0 && uniform > 0 && nests > 0,
