@@ -172,8 +172,9 @@ fn radix_register_tile_values() {
 
 /// One output (`n = 1`) is no radix site — the fact used to index an empty
 /// digit list. A `: tf32 | f32` radix site whose operands are plain vectors
-/// (only the output digit-affine) keeps the staged tile: the tensor kernels
-/// store row-major, so admission and emission agree on `kind=tile`.
+/// (only the output digit-affine) takes the `mma.sync` tile, which stores the
+/// digit-affine output cell by cell (site-geometry `tf32-radix`); admission
+/// and emission agree on the kind.
 #[test]
 fn radix_one_output_and_tf32_plain_operands() {
     let one = "fn main() {
@@ -210,15 +211,18 @@ fn radix_one_output_and_tf32_plain_operands() {
 "
         )
     };
-    for ty in ["", ": tf32 | f32"] {
+    // site-geometry `tf32-radix`: a `tf32` radix site takes the `mma.sync`
+    // tile (never `wgmma`); its OFF arm, the staged FFMA radix tile.
+    for (ty, off, kind) in [("", false, " kind=tile "), (": tf32 | f32", false, " kind=mma "), (": tf32 | f32", true, " kind=tile ")] {
         let ir = lower(&perm(ty));
         for target in ["rtx-4090", "h100-pcie"] {
-            let opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            let mut opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            opts.gpu.off.tf32_radix = off;
             let e = emit_detailed(&ir, &opts).expect("emits");
             let tiles = e.device.as_deref().map_or(0, |d| {
-                d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile ") && l.contains(" radix=")).count()
+                d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(kind) && l.contains(" radix=")).count()
             });
-            assert_eq!(tiles, 1, "`{ty}` {target}: the staged radix tile");
+            assert_eq!(tiles, 1, "`{ty}` off={off} {target}: the radix{kind}");
         }
     }
 }

@@ -491,6 +491,11 @@ pub struct GpuRungs {
     /// doubled, threads kept — before the fill-the-SMs step halves its
     /// threads (a 64-row convolution's 2-warp blocks). Off: the shrink first.
     pub fit_first: bool,
+    /// site-geometry `tf32-radix` (R2): a mixed-radix site whose products
+    /// admit `tf32` takes the `mma.sync` tile — its digit-affine operands
+    /// copied element by element (`cp.async` 4 B), its digit-affine output
+    /// stored cell by cell. Off: the FFMA radix tile.
+    pub tf32_radix: bool,
 }
 
 impl GpuRungs {
@@ -567,11 +572,12 @@ impl GpuRungs {
         row_split: true,
         fill_wave: true,
         fit_first: true,
+        tf32_radix: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 71] = [
+    pub const NAMES: [&'static str; 72] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -643,6 +649,7 @@ impl GpuRungs {
         "row-split",
         "fill-wave",
         "fit-first",
+        "tf32-radix",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -719,6 +726,7 @@ impl GpuRungs {
             "row-split" => &mut self.row_split,
             "fill-wave" => &mut self.fill_wave,
             "fit-first" => &mut self.fit_first,
+            "tf32-radix" => &mut self.tf32_radix,
             _ => return None,
         })
     }
