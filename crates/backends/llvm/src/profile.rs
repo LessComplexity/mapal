@@ -1482,27 +1482,12 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     },
     // site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's 4-byte `cp.async` digit copies and
     // cell-by-cell digit store never ran locally (the emulator runs no `mma.sync`): OFF on every part no box has
-    // value-gated it on yet.
+    // value-gated it on yet. Lifted on rtx-5090 / rtx-3090 by the site-geometry sweep: the forced-ON arm of
+    // convmc_8_64_56_3_tf32 is within its a-priori bound (K=576) on both boxes and ON 0.07003 vs OFF 0.08518 ms
+    // (5090, null 1.0 %) / 0.1327 vs 0.1671 ms (3090, null 1.1 %): 16 / 32 `mma.sync` + 27 / 54 `cp.async` replace
+    // the 512 / 1024-FFMA hot loop (sweep/<part>/evidence-<part>.tsv).
     RungOff {
         profile: "h100-pcie",
-        rung: "tf32-radix",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
-               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
-               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "tf32-radix",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
-               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
-               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
-    },
-    RungOff {
-        profile: "rtx-3090",
         rung: "tf32-radix",
         fill: Fill::Any,
         face: Face::Tf32,
@@ -1518,6 +1503,65 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
                runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
                benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
+    },
+    // site-geometry judge — stopgaps, each citing its open item in docs/performance/evidence/site-geometry.md
+    // (a rung whose sign turns on a fact the launch does not read yet ships OFF only where it lost every measured
+    // program; the fact that separates its winners is the item).
+    // `row-split` (open G2): on these parts the one-row pass takes the atomic combine — a naive kernel with
+    // `atom.add`, 1-2 FMA in its hot loop vs 8 unrolled OFF, and 2 more zero launches per decode trip
+    // (host.calls.zero 8 vs 6); on h100-pcie (no `splitk-atomic`) it takes the workspace split S=128 and wins
+    // 1.41-1.56. The missing fact: an atomic combine's per-trip zero pass and S-way contention on a short row.
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-4090/results-rtx-4090.txt iter ON vs OFF: decode 36.08 vs 30.65, prefill 22.69 vs 19.53, gen \
+               21.95 vs 18.60, causal 43.97 vs 37.12 ms (null 0.4-2.8 %); site-geometry.md G2",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: decode 47.00 vs 34.95, prefill 24.95 vs 22.41 ms \
+               (beyond null); gen 24.77 vs 24.64, causal 48.15 vs 50.93 ms inside a 11-16 % null; site-geometry.md G2",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt iter ON vs OFF: decode 38.74 vs 32.85, prefill 27.71 vs 23.37, gen \
+               25.93 vs 22.30, causal 46.92 vs 40.21 ms (causal null 25 %, others <= 2.6 %); site-geometry.md G2",
+    },
+    // `fit-first` (open G4): the 4090 keeps it (convmc ON 0.0948 vs OFF 0.1107 ms, mm_16x18432x7168 1.053 vs
+    // 0.972 ms: mixed). The reshape pays where its grid stays balanced over the SMs (4090 convmc 196 blocks on 128
+    // SMs) and loses where it leaves most SMs one block (5090 convmc 196 on 170, 4090 16x18432 144 on 128) or keeps
+    // the grid and only cuts residency (2 vs 5-8 blocks per SM: 3090, H100).
+    RungOff {
+        profile: "rtx-5090",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: convmc_8_64_56_3 0.08566 vs 0.06729 ms (null 0.3 %), \
+               _c 0.1099 vs 0.08686 ms; site-geometry.md G4",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/h100-pcie/results-h100-pcie.txt ON vs OFF: pj_m16_n18432_k7168 0.6217 vs 0.5794 ms (null 0.4 %), \
+               mm_16x18432x7168 1.485 vs 1.392 ms; convmc _c 0.2069 vs 0.2107 ms (no null); site-geometry.md G4",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt ON vs OFF: convmc_8_64_56_3 0.1653 vs 0.1461 ms (null 0.0 %), _c \
+               0.3296 vs 0.2579 ms, mm_16x18432x7168 1.038 vs 0.9816 ms (_c 0.8926 vs 0.9223); site-geometry.md G4",
     },
     // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
     // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
