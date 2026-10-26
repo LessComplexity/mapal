@@ -14,6 +14,8 @@
 # HOST_RUNGS="<rung>..." narrows the whole programs' arms (default: every host rung).
 # NOARMS="<glob>..." builds those whole programs shipped only (both faces, no rung
 # arms): the regression programs an item's rungs leave byte-identical.
+# DEFAULT="<stem>..." (site-geometry, changed.py env) also builds their default face (`<stem>_d`): the
+# differential gates it against the exact oracle within ADR-0040 D2's bound (tiles/<stem>.kmax).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -161,6 +163,7 @@ for spec in "$@"; do
         keep "$b" || continue
         emit_one "$f" "$d/$b" "$prof" "$sm" --exact
         emit_one "$f" "$d/${b}_c" "$prof" "$sm" --order=sequential
+        case " ${DEFAULT:-} " in *" $b "*) emit_one "$f" "$d/${b}_d" "$prof" "$sm" ;; esac
         # S62: the CPU-only build and the null arm of every timed whole program.
         case $b in pt_*|e2e_*|decode_1024_*)
             emit_cpu "$f" "$d/$b.cpu" --exact

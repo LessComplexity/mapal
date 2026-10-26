@@ -276,8 +276,8 @@ INTENT = {
     # the part holds at the tile's own registers and threads; the split kernel's panels are sized for the split grid.
     # `.off-fill-wave`: the largest split inside the unsplit grid's wave (grid-share's residency: GEMV, attn P·V).
     'fill-wave': dict(applies="plan.kind == 'tile' and plan.combine in ('atomic', 'splitk')", on=[
-        ('the split grid reaches 2 warps a scheduler on every SM, or holds the whole wave',
-         'plan.gx * plan.gy * plan.S * ((plan.block + 31) // 32) >= 8 * occ.sms'
+        ('the split grid reaches the fill target (plan fill_warps: `resident` a scheduler), or holds the whole wave',
+         'plan.gx * plan.gy * plan.S * ((plan.block + 31) // 32) >= plan.fill_warps'
          ' or 2 * plan.gx * plan.gy * plan.S > occ.blocks_per_sm * occ.sms'),
         ('one wave: the split grid is resident at ptxas registers + smem',
          'plan.gx * plan.gy * plan.S <= occ.blocks_per_sm * occ.sms'),
@@ -285,17 +285,22 @@ INTENT = {
     # site-geometry `row-split` (D1): a retained site's one-row pass takes the fold chooser — the row zeroed and one
     # launch whose partials add into it (a part without the atomic split: the workspace split and its reduce) —
     # instead of one block over the row (decode: grid 1x1x256 per trip).
-    'row-split': dict(host=True, applies='dev.naive + dev.tile > 0', on=[
-        ('a split launch zeroes its output first (atomic) or reduces a workspace (splitk)',
-         'host.calls.zero >= 1 or host.calls.alloc >= 1')],
-        note='row launch geometry: diff the `.off-row-split` arm (S CTAs per trip vs 1)'),
+    'row-split': dict(applies="plan.kind == 'tile' and plan.rows == 1 and plan.combine != 'none'", on=[
+        ('the row runs on more than one CTA (S partitions or stream-K CTAs)', 'plan.S > 1 or plan.ctas > 1'),
+        ('its partials add into a zeroed row (atomic, stream-K) or a reduced workspace (splitk)',
+         'host.calls.zero >= 1 if plan.combine != "splitk" else host.calls.alloc + host.calls.arena >= 1')],
+        note='a whole one-row site (GEMV) takes the same split; the retained row: diff the `.off-row-split` arm'),
     # site-geometry `fit-first` (R1): an FMA tile whose thread grid outgrows its rows reshapes (`ty` halved, `tx`
     # doubled, threads kept) when that alone gives every SM a block, before the fill step halves its threads (convmc on
     # the 4090: 784 blocks of 2 warps -> 196 of 8). `.off-fit-first`: the shrink first.
-    'fit-first': dict(applies=TILE + " and plan.ty * plan.tm <= plan.rows and plan.block >= 128", on=[
-        ('the thread grid fits the rows and every SM has a block',
-         'plan.ty * plan.tm <= plan.rows and plan.gx * plan.gy >= occ.sms'),
-        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # Applies where the derived 256-thread block (16 x 16 on every profiled part) is taller than the rows and its
+    # reshaped grid alone fills the SMs.
+    'fit-first': dict(applies=TILE + " and plan.rows < 16 * plan.tm and plan.rows * plan.c >= 256 * plan.tm * plan.tn"
+                      " * occ.sms", on=[
+        ('the block keeps its threads, fits the rows, and every SM has a block',
+         'plan.block >= 256 and plan.ty * plan.tm <= plan.rows and plan.gx * plan.gy >= occ.sms'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        off=[('the shrink first: the block loses threads', 'plan.block < 256')]),
     # site-geometry `tf32-radix` (R2): a mixed-radix site whose products admit TF32 takes the `mma.sync` tile, its
     # digit-affine operands copied by 4-byte `cp.async`, its digit-affine output stored cell by cell (never `wgmma`).
     # `.off-tf32-radix`: the FFMA radix tile (convmc_tf32 today: `sass.hot.ffma=512`, no HMMA).

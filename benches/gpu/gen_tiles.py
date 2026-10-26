@@ -1053,3 +1053,14 @@ def mabs(src):
 
 for stem in ("pt_pc_32", "pt_pc_64", "pt_pc_128", "pt_mlp_2048", "pt_mlp2_2048", "pt_mlp_2048_tf32", "pt_mlp2_2048_tf32"):
     (out / f"{stem}_xabs.mapal").write_text(mabs((out / f"{stem}.mapal").read_text()))
+
+
+# site-geometry: every loop-free program's K, so its default face answers to D2's bound in the differential
+# (box_run.sh `_d`); one fold_chain cannot bound (a loop, a fold over a function's argument) states its K where it
+# is written, or its default face is reported unchecked (changed.py env UNCHECKED).
+for f in sorted(out.glob("*.mapal")):
+    if not (out / f"{f.stem}.kmax").exists():
+        try:
+            (out / f"{f.stem}.kmax").write_text(f"{fold_chain(f.read_text())}\n")
+        except (AssertionError, KeyError):
+            pass

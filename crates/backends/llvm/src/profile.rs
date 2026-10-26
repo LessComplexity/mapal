@@ -436,14 +436,6 @@ pub struct RungOff {
 /// when no size in the class measured it positive with a stable sign (a sign
 /// that changes between sessions is no effect; S54: within ±1% is no effect, the
 /// median spread of one ratio between two boxes).
-/// site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's
-/// 4-byte `cp.async` digit copies and cell-by-cell digit store never ran
-/// locally (the emulator runs no `mma.sync`), so it ships OFF on every part
-/// no box has value-gated it on yet.
-const TF32_RADIX_UNGATED: &str = "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
-     runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
-     benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row";
-
 pub const GPU_RUNGS_OFF: &[RungOff] = &[
     RungOff {
         profile: "rtx-4090",
@@ -1488,33 +1480,44 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
                win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
     },
+    // site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's 4-byte `cp.async` digit copies and
+    // cell-by-cell digit store never ran locally (the emulator runs no `mma.sync`): OFF on every part no box has
+    // value-gated it on yet.
     RungOff {
         profile: "h100-pcie",
         rung: "tf32-radix",
         fill: Fill::Any,
         face: Face::Tf32,
-        cite: TF32_RADIX_UNGATED,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
     },
     RungOff {
         profile: "rtx-5090",
         rung: "tf32-radix",
         fill: Fill::Any,
         face: Face::Tf32,
-        cite: TF32_RADIX_UNGATED,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
     },
     RungOff {
         profile: "rtx-3090",
         rung: "tf32-radix",
         fill: Fill::Any,
         face: Face::Tf32,
-        cite: TF32_RADIX_UNGATED,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
     },
     RungOff {
         profile: "a100",
         rung: "tf32-radix",
         fill: Fill::Any,
         face: Face::Tf32,
-        cite: TF32_RADIX_UNGATED,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
     },
     // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
     // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum

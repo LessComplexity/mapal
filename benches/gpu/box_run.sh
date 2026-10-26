@@ -44,8 +44,10 @@ for o in "$PROF"/*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     case $b in mm_*|e2e_*|loop_mm_*|pt_*) continue ;; esac
-    # `<prog>[_c][.<arm>]`: every arm of a face answers to that face's oracle.
+    # `<prog>[_c|_d][.<arm>]`: every arm of a face answers to that face's oracle; site-geometry: the default
+    # face (`_d`) to the exact one within ADR-0040 D2's bound (value_gate.py, tiles/<prog>.kmax).
     stem=${b%%.*}; base=${stem%_c}; exp="tiles/$base.expect"; [ "$stem" != "$base" ] && exp="tiles/${base}_c.expect"
+    dflt=; [ "${stem%_d}" != "$stem" ] && [ -s "tiles/${stem%_d}.kmax" ] && { base=${stem%_d}; dflt=1; exp="tiles/$base.expect"; }
     # S54: a TF32 program answers to its `off-epilogue` arm (bundle.sh), run first.
     case $stem in *_tf)
         exp="tiles/$stem.ref"
@@ -66,6 +68,15 @@ for o in "$PROF"/*.host.o; do
     got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     # The clock is not a value: a program's `iter ms=` line drops on both sides.
     got=$(grep -v '^iter ms=' <<< "$got"); want=$(grep -v '^iter ms=' "$exp")
+    if [ -n "$dflt" ]; then
+        tf=(); grep -q ': tf32' "tiles/$base.mapal" 2>/dev/null && tf=(--tf32)
+        if [ $rc -eq 0 ] && g=$(python3 value_gate.py "$exp" "$(tr '\n' ' ' <<< "$got")" "$(cat "tiles/$base.kmax")" ${tf[@]+"${tf[@]}"}); then
+            pass=$((pass + 1)); say "PASS-BOUND $b K=$(cat "tiles/$base.kmax") $g $(tr '\n' ' ' <<< "$got")"
+        else
+            fail=$((fail + 1)); say "FAIL $b rc=$rc default face outside D2's bound: $g got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
+        fi
+        continue
+    fi
     if [ $rc -eq 0 ] && [ "$got" = "$want" ]; then
         pass=$((pass + 1)); say "PASS $b $(tr '\n' ' ' <<< "$got")"
     # TF32: a split-K atomic combine adds in no fixed order, so two runs of one build differ in the
@@ -275,8 +286,9 @@ for o in "$PROF"/pt_*.host.o; do
             [ -x "pt_$s" ] && runs+=("$face:$arm")
         done
     done
-    # The value gate, before any timing: every arm prints its face's oracle.
-    bad=0
+    # The value gate, before any timing: every arm prints its face's oracle. site-geometry: a failing arm
+    # drops alone (its VALUE-FAIL line stays); the others are timed (a search bundle's other knob values).
+    bad=0; failed=" "
     for fa in "${runs[@]}"; do
         face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
         got=$(probe_out "$s"); got=${got%%iter ms=*}
@@ -287,7 +299,7 @@ for o in "$PROF"/pt_*.host.o; do
             # ADR-0041 D3: a program whose products admit TF32 answers to D3's bound.
             grep -q ': tf32' "tiles/$b.mapal" 2>/dev/null && xabs+=(--tf32)
             if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax" ${xabs[@]+"${xabs[@]}"}); then
-                bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
+                bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
             else
                 say "value-bound prog=$b face=_default arm=$arm K=$kmax $g got=[$got] exact=[$(tr '\n' ' ' < "tiles/${b}_x.expect")]"
             fi
@@ -297,16 +309,22 @@ for o in "$PROF"/pt_*.host.o; do
         # flow: a default face without its bound is a gate failure, never a bit comparison against
         # another order-free build (the facts-on-graph sweep failed split-K / stream-K that way).
         if [ -z "$face" ] && [ ! -s "$exp" ]; then
-            bad=1; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] no bound (tiles/${b}_x.expect, K)"
+            bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] no bound (tiles/${b}_x.expect, K)"
             continue
         fi
         if [ -s "$exp" ]; then want=$(tr '\n' ' ' < "$exp"); else want=$(probe_out "$b$face.cpu"); want=${want%%iter ms=*}; fi
         if [ "$got" != "$want" ]; then
-            bad=1; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
+            bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
         fi
     done
-    [ "$bad" = 0 ] || { val_fail=$((val_fail + 1)); continue; }
-    say "value-gate prog=$b arms=${#runs[@]} pass"
+    kept=(); for fa in "${runs[@]}"; do [[ "$failed" == *" $fa "* ]] || kept+=("$fa"); done
+    if [ "$bad" != 0 ]; then
+        val_fail=$((val_fail + 1)); say "value-gate prog=$b arms=${#runs[@]} failed=$(wc -w <<< "$failed") timing the rest"
+    else
+        say "value-gate prog=$b arms=${#runs[@]} pass"
+    fi
+    [ ${#kept[@]} -gt 0 ] || continue
+    runs=("${kept[@]}")
     mkdir -p vals
     vals=""
     for r in $(seq "${PROBE_REPS:-5}"); do

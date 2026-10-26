@@ -141,6 +141,10 @@ def pick(a):
     t = times(text)
     failed = {(m[1], changed.RESULT_FACE.get(m[2], m[2]), m[3])
               for m in re.finditer(r'^VALUE-FAIL prog=(\S+) face=(\S+) arm=(\S+)', text, re.M)}
+    # A cell candidate tile_bench's gate fails (and leaves out of the timing): ADR-0034 D4's emitter bug.
+    failed |= {(m[1], {'_c': 'contract', '_x': 'exact'}.get(m[2], 'default'), m[3] or 'on')
+               for m in re.finditer(r'^pass=\d+ cell=\S+ values leg=(mm_\d+x\d+x\d+)(_c|_x)?(?:\.(\S+))? .*GATE-FAILED',
+                                    text, re.M)}
     stamp = changed.box_stamp(text)[0]
     verdicts = cache_rows(arch, 'search')
     s, null, gate, fresh = {}, {}, set(), []

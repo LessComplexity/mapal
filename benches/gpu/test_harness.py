@@ -379,7 +379,8 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(got["SUITE"], "pt_a_64 pt_c_64")
         self.assertEqual(got["SUITE_C"], "pt_a_64")
         self.assertEqual(got["CELLS"], "16x32x64")
-        self.assertEqual(got["ONLY"], "cell_8")  # cell_9's default face is not its differential's
+        self.assertEqual(got["ONLY"], "cell_8 cell_9")  # cell_9's default face: D2's bound, given a K
+        self.assertEqual((got["DEFAULT"], got["UNCHECKED"]), ("", "cell_9"))  # no tiles/cell_9.kmax
         self.assertEqual(got["ARMS"], "rtx-4090:pt_a_64::x:off")  # the carried arm stays out
         self.assertEqual(got["HOST_RUNGS"], "z")
         every = self.py(HERE / "changed.py", "env", self.root, "rtx-4090", env={"ALL_ARMS": "1"}).stdout
@@ -404,10 +405,10 @@ class MeasureTests(unittest.TestCase):
         self.py(HERE / "changed.py", "ingest", self.root, "rtx-4090", res)
         rows = [l.split("\t") for l in (self.root / "cache" / "rtx-4090.tsv").read_text().splitlines()[1:]]
         got = {(r[0], r[1], r[2]): r[3].split()[0] for r in rows}
-        self.assertEqual(got[("h0", "mapal", "-")], "med_ms=11.5")
-        self.assertEqual(got[("hx", "mapal", "-")], "med_ms=21.5")
-        self.assertEqual(got[("h0", "mapal-null", "-")], "med_ms=11.5")
-        self.assertEqual(got[("hc", "mapal", "-")], "med_ms=91.5")
+        self.assertEqual(got[("h0", "mapal", "-|12.8|570.1")], "med_ms=11.5")
+        self.assertEqual(got[("hx", "mapal", "-|12.8|570.1")], "med_ms=21.5")
+        self.assertEqual(got[("h0", "mapal-null", "-|12.8|570.1")], "med_ms=11.5")
+        self.assertEqual(got[("hc", "mapal", "-|12.8|570.1")], "med_ms=91.5")
         src = hashlib.sha256(b"prog").hexdigest()[:16]
         self.assertEqual(got[(src, "chain-cublas", "12.8")], "med_ms=2.5")
         self.assertEqual(got[(src, "torch-eager", "2.11.0")], "med_ms=3.5")
@@ -474,7 +475,7 @@ class MeasureTests(unittest.TestCase):
             "#!/usr/bin/env python3\nimport os, sys\nargs = []\nfor a in sys.argv[1:]:\n"
             "    if a.startswith('--geom='):\n        k, v = a[7:].split('=', 1)\n"
             "        a = {'splitk': '--splitk=' + v, 'kc': '--kc' if v == '1' else None,\n"
-            "             'sk': '--splitk=4'}[k]\n    if a:\n        args.append(a)\n"
+            "             'sk': '--splitk=2'}[k]\n    if a:\n        args.append(a)\n"
             f"os.execv({str(real)!r}, [{str(real)!r}, *args])\n")
         stub.chmod(0o755)
         knobs = self.root / "knobs.json"
@@ -487,13 +488,15 @@ class MeasureTests(unittest.TestCase):
                 (l.split("\t") for l in (out / "plan.tsv").read_text().splitlines()[1:])}
         self.assertEqual(plan[("pt_rowsum_2048", "splitk", "2")][1], "drop")  # no site the knob reaches
         self.assertEqual(plan[("mm_16x2048x7168", "kc", "1")][1], "drop")
-        self.assertEqual(plan[("mm_16x2048x7168", "splitk", "4")][1], "build")
-        self.assertEqual(plan[("mm_16x2048x7168", "sk", "a")], ("on-g-splitk-4", "alias"))
-        self.assertIn("rtx-4090:pt_pj_m1_n2048_k7168::splitk=4:geom", arms)
+        # (fill-wave ships S=4 on this cell: splitk=4 is the shipped build.)
+        self.assertEqual(plan[("mm_16x2048x7168", "splitk", "4")][1], "drop")
+        self.assertEqual(plan[("mm_16x2048x7168", "splitk", "2")][1], "build")
+        self.assertEqual(plan[("mm_16x2048x7168", "sk", "a")], ("on-g-splitk-2", "alias"))
+        self.assertIn("rtx-4090:pt_pj_m1_n2048_k7168::splitk=2:geom", arms)
         self.assertFalse(any(":sk=" in a or ":kc=" in a for a in arms))
-        # The box run: splitk=4 is 20% (probe) and 10% (cell) faster; nulls 0.5% and 1%.
-        probe = {"on": 10.0, "null": 10.05, "on-g-splitk-2": 9.0, "on-g-splitk-4": 8.0, "on-g-splitk-8": 9.5}
-        cell = {"": 1.0, ".null": 1.01, ".on-g-splitk-2": 0.95, ".on-g-splitk-4": 0.9}
+        # The box run: splitk=2 is 20% (probe) and 10% (cell) faster; nulls 0.5% and 1%.
+        probe = {"on": 10.0, "null": 10.05, "on-g-splitk-2": 8.0, "on-g-splitk-4": 9.0, "on-g-splitk-8": 9.5}
+        cell = {"": 1.0, ".null": 1.01, ".on-g-splitk-2": 0.9}
         lines = ["name, driver_version, x", "NVIDIA X, 570.1, 1"]
         for rep in (1, 2):
             lines += [f"probe prog=pt_pj_m1_n2048_k7168 face=_default arm={a} rep={rep} wall_us=1 "
@@ -504,7 +507,7 @@ class MeasureTests(unittest.TestCase):
         res.write_text("\n".join(lines) + "\n")
         best = self.py(HERE / "search.py", "pick", out, "rtx-4090", res, "--knobs", knobs).stdout
         rows = {r[1]: r for r in (l.split("\t") for l in (out / "best-rtx-4090.tsv").read_text().splitlines()[1:])}
-        self.assertEqual((rows["splitk"][3], rows["splitk"][9]), ("4", "ship"), best)
+        self.assertEqual((rows["splitk"][3], rows["splitk"][9]), ("2", "ship"), best)
         self.assertEqual(rows["splitk"][6], "0.010")  # the largest null over the programs it reaches
         self.assertEqual(rows["kc"][9], "no-site")
         self.assertEqual((rows["sk"][3], rows["sk"][9]), ("a", "ship"))
