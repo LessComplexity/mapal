@@ -134,6 +134,8 @@ fn recurrence_rungs_on_unseen_programs() {
     let mut runner = TestRunner::deterministic();
     let strat = testgen::recur_prog_strategy();
     let (mut fired, mut trips_on, mut trips_off, mut traps, mut inv_batch) = ([0usize; 3], 0usize, 0usize, 0usize, 0usize);
+    // Valued programs with a guard in the written cell, a half row, two row-written states.
+    let (mut shapes, mut shape_batch) = ([0usize; 3], [0usize; 3]);
     for z in 0..40 {
         let prog = strat.new_tree(&mut runner).unwrap().current();
         let src = testgen::recur_src(&prog);
@@ -179,20 +181,45 @@ fn recurrence_rungs_on_unseen_programs() {
             let (rb, tb) = run(&off.text, b, "OFF");
             assert_eq!(ra, want, "#{z} ON\n{src}");
             assert_eq!(rb, want, "#{z} OFF\n{src}");
-            // ponytail: from 3 trips. In a 2-trip loop a device-carried state's
-            // one entry and exit copy can outweigh the one row upload it saves
-            // (open: a constant-fill carry init is copied in, not generated).
-            if prog.trips >= 3 {
-                assert!(ta[3] + ta[4] <= tb[3] + tb[4], "#{z}: moved {ta:?} > OFF {tb:?}\n{src}");
+            for (n, c) in shapes.iter_mut().enumerate() {
+                *c += usize::from(prog.var & (16 << n) != 0);
+                shape_batch[n] += usize::from(prog.var & (16 << n) != 0) * marks(&on)[2];
             }
+            assert!(ta[3] + ta[4] <= tb[3] + tb[4], "#{z}: moved {ta:?} > OFF {tb:?}\n{src}");
         }
     }
     eprintln!(
-        "recurrence_rungs_on_unseen_programs: fired {fired:?} (range, dev fold, batch); per-trip calls {trips_on} vs OFF {trips_off}; {traps} trapping; {inv_batch} batches over an invariant"
+        "recurrence_rungs_on_unseen_programs: fired {fired:?} (range, dev fold, batch); per-trip calls {trips_on} vs OFF {trips_off}; {traps} trapping; {inv_batch} batches over an invariant; valued {shapes:?}, batches {shape_batch:?} (cell guard, half row, two states)"
     );
+    assert!(shapes.iter().all(|&c| c > 0), "a row-write shape was never valued: {shapes:?}");
     assert!(inv_batch > 0, "no batch read a loop invariant");
     assert!(fired.iter().all(|&f| f > 0), "a rule fired on no generated program: {fired:?}");
     assert!(trips_on < trips_off, "no per-trip call saved: {trips_on} vs {trips_off}");
+}
+
+/// `trip-batch` over the row-write shapes it was not built on (the generator's
+/// `var` bits 4..6: a guard in the written cell, a half row, two row-written
+/// states): each batches — two slots in one batch — and the emulated device
+/// prints the interpreter's values on both arms.
+#[test]
+fn trip_batch_over_row_write_shapes() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP trip_batch_over_row_write_shapes: clang not found");
+        return;
+    };
+    // bits 2..3 ≠ 0: no trap; 119 sets every shape bit plus `w` and row `it + 1`.
+    for (var, slots) in [(20u8, 1usize), (36, 1), (68, 2), (119, 2)] {
+        let prog = testgen::RecurProg { big: false, trips: 6, prompt: 3, ops: vec![[0, 0], [4, 0]], whole: true, var };
+        let src = testgen::recur_src(&prog);
+        let ir = lower_src(&src);
+        let want = mapal_interp::run(&ir, 400_000_000).output;
+        let (on, off) = (arm(&ir, &[], false), arm(&ir, &RUNGS, false));
+        assert!(on.text.contains(&format!("; mapal.batch enter=2 writes={slots}\n")), "var {var}: no batch\n{src}");
+        for (e, tag) in [(&on, "ON"), (&off, "OFF")] {
+            let got = emu::run_emulated(&clang, &e.text, e.device.as_deref().expect("a device module"));
+            assert_eq!(got, want, "var {var} {tag}\n{src}");
+        }
+    }
 }
 
 /// **The natural generator is prefill's twin**: `gen_16_8_8` (one loop from
@@ -234,7 +261,7 @@ fn plans_with(dev: &Option<String>, kind: &str, key: &str) -> usize {
 /// tree gate leaves such folds at scale) a warp a row —
 /// counted from the emission, never in the OFF arm, the module combining by
 /// ≥ 5 butterfly shuffles a lane kernel — and the emulated device prints the
-/// OFF arm's values within the regrouping's rounding.
+/// interpreter's values within the regrouping's rounding on both arms.
 #[test]
 fn lanes_on_unseen_programs() {
     let Some(clang) = emu::clang() else {
@@ -248,9 +275,11 @@ fn lanes_on_unseen_programs() {
     for z in 0..24 {
         let src = testgen::recur_src(&strat.new_tree(&mut runner).unwrap().current());
         let ir = lower_src(&src);
-        if matches!(mapal_interp::run(&ir, 400_000_000).outcome, mapal_interp::Outcome::Trapped(_)) {
+        let rr = mapal_interp::run(&ir, 400_000_000);
+        if matches!(rr.outcome, mapal_interp::Outcome::Trapped(_)) {
             continue;
         }
+        let want = nums(&rr.output);
         // `fold-lanes` takes the row folds `flow` leaves (its tree gate):
         // with `flow` off every generated row fold is one.
         for (n, (rung, kind, base)) in
@@ -269,11 +298,17 @@ fn lanes_on_unseen_programs() {
             assert!(shfl >= 5 * lanes, "#{z} {rung}: {shfl} shuffles for {lanes} lane kernels\n{src}");
             let a = emu::run_emulated(&clang, &on.text, dev);
             let b = emu::run_emulated(&clang, &off.text, off.device.as_deref().expect("dev"));
-            let (x, y) = (nums(&a), nums(&b));
-            assert_eq!(x.len(), y.len(), "#{z} {rung}\n{a}\n{b}\n{src}");
-            for (u, v) in x.iter().zip(&y) {
-                let same = u == v || (u.is_nan() && v.is_nan());
-                assert!(same || (u - v).abs() <= 1e-3 * v.abs().max(1.0), "#{z} {rung}: {a:?} vs OFF {b:?}\n{src}");
+            // Both arms against the interpreter (the oracle). ponytail: relative
+            // tolerance — the composed programs print no per-cell M (ADR-0040's
+            // |seed| + Σ|a·b|); the per-cell bound is gated where M is printed
+            // (splitk, tf32_tile).
+            for (out, tag) in [(&a, "ON"), (&b, "OFF")] {
+                let x = nums(out);
+                assert_eq!(x.len(), want.len(), "#{z} {rung} {tag}\n{out}\n{}\n{src}", rr.output);
+                for (u, v) in x.iter().zip(&want) {
+                    let same = u == v || (u.is_nan() && v.is_nan());
+                    assert!(same || (u - v).abs() <= 1e-3 * v.abs().max(1.0), "#{z} {rung} {tag}: {out:?} vs {:?}\n{src}", rr.output);
+                }
             }
         }
     }
