@@ -1,0 +1,26 @@
+program	status	arch/face emission differs	new rungs whose OFF arm differs
+decode_1024_256	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	range-cell
+pt_causal_1024_256	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	range-cell,scalar-fold,cell-lanes
+pt_convmc_8_64_56_3	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	radix-tile
+pt_convmc_8_64_56_3_tf32	new	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	radix-tile
+pt_decode_1024_256	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	range-cell
+pt_gen_1024_512_256	new	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	trip-batch,range-cell,scalar-fold,cell-lanes
+pt_mlp_2048_tf32	new	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	tf32-tile
+pt_mlp2_2048_tf32	new	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	tf32-tile
+pt_prefill_1024_512_256	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	range-cell,scalar-fold,cell-lanes
+pt_rg_indep_1024	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rg_indep_2048	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rg_mlp2_1024	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rg_mlp2_2048	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rowsum_2048	changed	rtx-4090/default	fold-lanes
+pt_rowsum_2048_xabs	changed	rtx-4090/default rtx-5090/default h100-pcie/default rtx-3090/default	cell-lanes
+pt_rowsum_4096	changed	rtx-4090/default	fold-lanes
+pt_rowsum_4096_xabs	changed	rtx-4090/default rtx-5090/default h100-pcie/default	cell-lanes
+pt_rt_indep_1024	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rt_indep_2048	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rt_mlp2_1024	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+pt_rt_mlp2_2048	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+px_convmc_2_4_6_3_tf32	new	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+px_rg_mlp2_128	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
+px_rowsum_128	changed	rtx-4090/default	fold-lanes
+px_rt_mlp2_128	changed	rtx-4090/default rtx-4090/contract rtx-5090/default rtx-5090/contract h100-pcie/default h100-pcie/contract rtx-3090/default rtx-3090/contract	-
