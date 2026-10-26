@@ -58,6 +58,11 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
   No workload-named special cases, and no parallel module that re-derives what an IR fact or existing allocator
   already models (e.g. a loop-only lifetime allocator next to `LastUsePlan` coloring) — extend the existing
   machinery so the case falls out. Reuse the plans/facts at hand; add a new fact only when none carries it.
+- **A mixed result is a missing fact** (Sapir, 2026-10-26). An optimization that wins on some programs and loses on
+  others beyond null means its condition lumps different situations together (over-abstraction). Find what separates
+  winners from losers in the SASS/usage evidence (layout, extent vs SMs, reuse, occupancy, …), add it as an IR or
+  `TargetProfile` fact, and make the rule read it, so each case gets its own decision. A `GPU_RUNGS_OFF` row is only a
+  stopgap and is always recorded as an open "missing fact" item.
 - **Generic, proven on unseen cases.** Never target a benchmark. Every rule is validated by a property test over
   programs from the random generator (`crates/mapal-rewrite/tests/testgen/`, extended as needed) that the change was
   not designed on: values vs the interpreter / bound, plus movement and kernel intents. Benchmarks are acceptance
