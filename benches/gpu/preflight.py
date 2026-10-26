@@ -3,7 +3,8 @@
 
 Per part (box_run.sh's own rules, read off the bundle):
   - the harness: x86-64 ELF libmapal_rt.a, mapal_gpu.c, tile_bench.cu, chain_bench.cu, box_run.sh, the CUTLASS
-    headers (cutlass/include/cutlass), value_gate.py for default-face probes, torch_bench.py unless TORCH=0;
+    headers (cutlass/include/cutlass), value_gate.py where a probe answers to D2's bound, torch_bench.py unless
+    TORCH=0;
   - the part directory with its host objects, and a non-empty launch line for every cell arm;
   - every differential program and arm has its face's oracle (tiles/<prog>[_c].expect; a TF32 one its off-epilogue);
   - every probe face has its gate: the default face D2's bound (tiles/<b>_x.expect + K) or tiles/<b>.expect,
@@ -84,7 +85,7 @@ def check(bundle, prof):
     box = (bundle / 'box_run.sh').read_text() if (bundle / 'box_run.sh').exists() else ''
     chain = (re.findall(r'case \$probe in ([^)]+)\) ;;', box) or [''])[0].split('|')
     maps = torch_workload(bundle) if probes and torch_on else (lambda s: False)
-    if probes and not (bundle / 'value_gate.py').exists():
+    if any((tiles / f'{b}_x.expect').exists() for b in probes) and not (bundle / 'value_gate.py').exists():
         bad.append('value_gate.py missing (the default face\'s bound)')
     if probes and torch_on and not (bundle / 'torch_bench.py').exists():
         bad.append('torch_bench.py missing (TORCH=0 to run without the torch legs)')
