@@ -1007,6 +1007,10 @@ def fold_chain(src):
         if it:
             lens[it.group(2)] = int(it.group(1))
         elif m:
+            # site-geometry: a map's output is as long as what it maps (a fold over it is that long).
+            src_map = re.match(r"    (\w+) -> map \{", stmt)
+            if src_map and src_map.group(1) in lens:
+                lens[m.group(1)] = lens[src_map.group(1)]
             w = sum(lens[r] for r in re.findall(r", (\w+)\) -> fold", stmt)) + len(re.findall(r" [-+*/] ", stmt))
             reads = set(re.findall(r"\w+", stmt)) - {m.group(1)}
             chain[m.group(1)] = w + max((chain[x] for x in reads if x in chain), default=0)
