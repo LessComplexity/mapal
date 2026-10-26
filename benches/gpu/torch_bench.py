@@ -207,6 +207,12 @@ def workload(stem):
             c = a @ b
             return corners(c @ e + c @ g)
         return dm, (a, b, e, g)
+    if probe == 'mlp':  # d = ((a·b)·0.5)·e
+        return (lambda a, b, e: corners(((a @ b) * 0.5) @ e)), (a, b, e)
+    if probe == 'mlp2':  # d1 = relu(a·b + bias)·e ; d2 = relu(f·g + bias2)·p
+        p = op('p', n * n).view(n, n)
+        b1, b2 = bias(n, 13, 6, 5.0), bias(n, 11, 5, 4.0)
+        return (lambda a, b, e, f, g, p, b1, b2: corners(torch.relu(a @ b + b1) @ e, torch.relu(f @ g + b2) @ p)), (a, b, e, f, g, p, b1, b2)
     if probe == 'twin':
         return (lambda a, b, e, f: corners(a @ b, e @ f)), (a, b, e, f)
     if probe == 'epi':
@@ -237,7 +243,7 @@ def gate(stem, outs, vals_dir):
         return 'no-mapal', float('nan')
     want = [float(x) for x in open(p).read().split() if re.fullmatch(r'-?[\d.]+(e-?\d+)?', x)]
     got = ends(outs)
-    loop = stem.startswith(('pt_decode_', 'pt_causal_', 'pt_prefill_'))
+    loop = stem.startswith(('pt_decode_', 'pt_causal_', 'pt_prefill_', 'pt_gen_'))
     if loop:  # out[0], out[d-1], Σout (+ Σpo after a prefill)
         got = [outs[0][0].item(), outs[0][-1].item()] + [o[0].item() for o in outs[2:]]
     rms = [math.sqrt(float((o.double() ** 2).mean())) for o in outs]
@@ -280,7 +286,8 @@ def main():
     flush = torch.empty(64 << 20, device=dev) if dev == 'cuda' else None  # 256 MB
     for stem in stems:
         try:
-            fn, args = workload(stem)
+            # pt_gen is pt_prefill's math in one loop; `_tf32` programs are the same math under the program's `: tf32` face.
+            fn, args = workload(re.sub(r'^pt_gen_', 'pt_prefill_', stem.removesuffix('_tf32')))
         except Exception as ex:  # noqa: BLE001 — a stem without a torch leg is a row, not the end of the run
             print(f'torch prog={stem} NOWORKLOAD {type(ex).__name__}: {str(ex)[:200]}', flush=True)
             continue
