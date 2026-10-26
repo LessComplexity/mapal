@@ -437,6 +437,8 @@ fn every_kernel_takes_the_epilogue() {
                 target,
                 contract: true,
                 gpu: on(),
+                // ADR-0041 D4: the tensor cores sum a k-step in their own order.
+                order: mapal_backend_llvm::Order::Free,
                 ..EmitOpts::exact()
             },
         )

@@ -336,13 +336,19 @@ pub(crate) enum Arithmetic {
 }
 
 impl Arithmetic {
-    fn scalar(site: &TileSite, contract: bool) -> Self {
+    fn scalar(site: &TileSite, contract: bool, free: bool) -> Self {
         // Strided-lane sites are host maps whose step stays separate even
         // under Contract. Device placement must preserve that arithmetic.
-        // recurrence-precision `radix-tile`: a mixed-radix site is a device-only
-        // site (no host tile realization to agree with): the contract face's
-        // fused step, its bound ADR-0040 D2's.
-        if contract && (site.b.clane == 1 || site.radix.is_some()) {
+        // recurrence-precision `radix-tile`: a mixed-radix site is device-only
+        // too — the host realizes its fold as that map, separate steps, which
+        // a sequential or fixed face's oracle replays (rtx-4090 smoke: convmc
+        // `_c` differed in the last bits with the fused step); where the order
+        // is free the fused step, its bound ADR-0040 D2's.
+        let fused = match site.radix {
+            Some(_) => free,
+            None => site.b.clane == 1,
+        };
+        if contract && fused {
             Self::OrderedFma
         } else {
             Self::SeparateMulAdd
@@ -513,7 +519,7 @@ pub(crate) fn launch(
             }
         }
     }
-    let arithmetic = Arithmetic::scalar(site, contract);
+    let arithmetic = Arithmetic::scalar(site, contract, arms.free);
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
     let tiled = shaped
         .then(|| {
@@ -4549,6 +4555,7 @@ mod tests {
             on: GpuRungs::default(),
             off,
             splitk: 0,
+            free: false,
         }
     }
 
@@ -5031,6 +5038,7 @@ mod tests {
                 on: GpuRungs::default(),
                 off,
                 splitk: 0,
+                free: false,
             }
         };
         for p in parts {
@@ -5523,6 +5531,7 @@ mod tests {
             on: GpuRungs::default(),
             off,
             splitk: 0,
+            free: false,
         }
     }
 
