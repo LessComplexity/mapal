@@ -296,6 +296,15 @@ INTENT = {
         ('the thread grid fits the rows and every SM has a block',
          'plan.ty * plan.tm <= plan.rows and plan.gx * plan.gy >= occ.sms'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # site-geometry `tf32-radix` (R2): a mixed-radix site whose products admit TF32 takes the `mma.sync` tile, its
+    # digit-affine operands copied by 4-byte `cp.async`, its digit-affine output stored cell by cell (never `wgmma`).
+    # `.off-tf32-radix`: the FFMA radix tile (convmc_tf32 today: `sass.hot.ffma=512`, no HMMA).
+    'tf32-radix': dict(applies_on="plan.kind == 'mma' and plan.radix != ''", on=[
+        ('tensor-core instructions in PTX: mma.sync', 'ptx.mma > 0'),
+        ('HMMA in SASS', 'sass.hmma > 0'),
+        ('the digit-affine panels stream with cp.async', 'ptx.cp_async > 0')],
+        applies_off="plan.radix != '' and plan.set == 'tf32|f32'", off=[
+        ('the FFMA radix tile: no mma.sync', "ptx.mma == 0 and plan.kind == 'tile'")]),
     # site-geometry B4 / ADR-0034 D1: a `--geom=` candidate (knobs.json: tm, tn, warps, bk, stages; wgmma wg_n,
     # wg_groups) replaces the derived tile where the site takes it; every candidate is checked as its plan line says.
     'geom': dict(applies="plan.kind in ('tile', 'wgmma')", on=[

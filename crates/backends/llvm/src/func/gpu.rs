@@ -305,7 +305,8 @@ pub(crate) fn tile_plan(
     // site the tile refuses keeps the `nest-cell` it had).
     if rungs.radix_tile {
         for (m, s) in ir.tile_plan_radix(f) {
-            let staged = launch(&s, profile, contract, arms).tiled.is_some();
+            let l = launch(&s, profile, contract, arms);
+            let staged = l.tiled.is_some() || l.mma.is_some();
             if staged && gpu_site(&s, profile, rungs.window) {
                 plan.sites.insert(m, s);
             }
@@ -484,19 +485,20 @@ pub(crate) fn launch_split(
     // an emitted face: rejection must fall through to the scalar policy.
     // recurrence-precision `tf32-tile`: the permission is the site's product
     // set (ADR-0041 D6); off, the f32 FFMA tile it also admits.
-    // A mixed-radix site stores digit by digit; the tensor kernels store
-    // row-major (`radix-tile` takes the staged FMA tile).
+    // A mixed-radix site stores digit by digit: site-geometry `tf32-radix`
+    // gives the `mma.sync` tile element copies and stores for its
+    // digit-affine addresses (`wgmma`'s swizzled 16-byte panels have none).
+    let rx = site.radix.as_deref();
+    let radix_ok = |rungs: crate::GpuRungs| rx.is_none() || rungs.tf32_radix;
     if site_reduced(site) == Some(Reduced::Tf32)
         && site.elem == Ty::f32()
-        && site.radix.is_none()
         && shaped
-        && vector_a(site)
-        && vector_b(site)
+        && (vector_a(site) || rx.is_some_and(|x| x.a.is_some()))
+        && (vector_b(site) || rx.is_some_and(|x| x.b.is_some()))
     {
         let rungs = rungs_at(profile, wps, Face::Tf32, arms);
-        if rungs.mma && rungs.tf32_tile {
-            let wgmma = rungs
-                .wgmma
+        if rungs.mma && rungs.tf32_tile && radix_ok(rungs) {
+            let wgmma = (rungs.wgmma && rx.is_none())
                 .then(|| profile.gpu_wgmma_tile(site.rows, site.c, site.k))
                 .flatten();
             if let Some(w) = wgmma {
@@ -866,18 +868,23 @@ fn combine(
     // `red.global.add.f32` exists from sm_20, `.f64` from sm_60.
     let atomic = e == 4 || gpu.sm() >= 60;
     let s_at = count(false);
+    // `fill-wave` counts the split, not the ladder: stream-K is weighed
+    // against the S63 count, as before.
+    let s_cmp = match under && forced == 0 {
+        true => profile.split_count(blocks, wave, panels, site.rows * site.c, e, false),
+        false => s_at,
+    };
     // ponytail: stream-K runs the register-staged tile (its panel loop takes
     // a runtime trip count); the cp.async pipeline's prologue is unrolled over
     // a constant one — add a predicated prologue when a streamed tile needs it.
     let streamk = rungs.streamk
-        && !under
         && atomic
         && l.tiled.is_some_and(|g| g.stages < 2)
         && panels >= 2
         && blocks * panels > wave;
     if streamk {
         let iters = (blocks * panels).div_ceil(wave);
-        let split = (blocks * s_at).div_ceil(wave) * (panels / s_at);
+        let split = (blocks * s_cmp).div_ceil(wave) * (panels / s_cmp);
         if iters + 1 < split {
             return Combine::StreamK {
                 ctas: (blocks * panels).div_ceil(iters),
@@ -3250,7 +3257,41 @@ impl Kernel<'_> {
         // one per 16-byte chunk this thread copies, A then B.
         let mut copies: Vec<(bool, String, String)> = Vec::new();
         let (ac, bc) = (bk / 4, bn / 4);
-        for p in 0..bm * bk / 4 / threads {
+        // site-geometry `tf32-radix`: a digit-affine operand's copies, one
+        // element each — `(is_a, row/lane digits, shared word, its k)`; each
+        // panel adds the `k` digits of `k0 + k` (`digits`).
+        let rx = s.radix.as_deref();
+        let (ra, rb, ro) = (
+            rx.and_then(|x| x.a.as_ref()),
+            rx.and_then(|x| x.b.as_ref()),
+            rx.and_then(|x| x.out.as_ref()),
+        );
+        let mut radix: Vec<(bool, String, String, String)> = Vec::new();
+        if let Some(m) = ra {
+            for p in 0..bm * bk / threads {
+                let li = self.op("add", &tid, p * threads);
+                let r = self.op("udiv", &li, bk);
+                let kc = self.op("urem", &li, bk);
+                let grow = self.op("add", &row0, &r);
+                let g = self.radix_at(m, &grow, "0");
+                let sr = self.op("mul", &r, lda);
+                radix.push((true, g, self.op("add", &sr, &kc), kc));
+            }
+        }
+        if let Some(m) = rb {
+            for p in 0..bk * bn / threads {
+                let li = self.op("add", &tid, p * threads);
+                let kr = self.op("udiv", &li, bn);
+                let nc = self.op("urem", &li, bn);
+                let gc = self.op("add", &col0, &nc);
+                let g = self.radix_at(m, "0", &gc);
+                let sk = self.op("mul", &kr, ldb);
+                let sn = self.op("add", &sk, &nc);
+                radix.push((false, g, self.op("add", &sn, bm * lda), kr));
+            }
+        }
+        let a_chunks = if ra.is_some() { 0 } else { bm * bk / 4 / threads };
+        for p in 0..a_chunks {
             let li = self.op("add", &tid, p * threads);
             let r = self.op("udiv", &li, ac);
             let kc0 = self.op("urem", &li, ac);
@@ -3263,7 +3304,8 @@ impl Kernel<'_> {
             let sdst = self.op("add", &sr, &kc);
             copies.push((true, gsrc, sdst));
         }
-        for p in 0..bk * bn / 4 / threads {
+        let b_chunks = if rb.is_some() { 0 } else { bk * bn / 4 / threads };
+        for p in 0..b_chunks {
             let li = self.op("add", &tid, p * threads);
             let kr = self.op("udiv", &li, bc);
             let nc0 = self.op("urem", &li, bc);
@@ -3278,7 +3320,24 @@ impl Kernel<'_> {
             copies.push((false, gsrc, sdst));
         }
         let issue = |k: &mut Self, tile: &str, stage: &str| {
-            k.issue16(&copies, tile, stage, bk, stage_words)
+            k.issue16(&copies, tile, stage, bk, stage_words);
+            if radix.is_empty() {
+                return;
+            }
+            let k0 = k.op("mul", tile, bk);
+            let so = k.op("mul", stage, stage_words);
+            for (is_a, g, sdst, kc) in &radix {
+                let (arr, m) = if *is_a { ("%a", ra) } else { ("%b", rb) };
+                let kv = k.op("add", &k0, kc);
+                let kd = k.digits(&m.expect("a radix operand").k, &kv);
+                let gi = k.op("add", g, &kd);
+                let gp = k.gep(1, arr, &gi);
+                let si = k.op("add", sdst, &so);
+                let sp = k.gep(3, "@mapal_smem", &si);
+                k.line(format!(
+                    "call void @llvm.nvvm.cp.async.ca.shared.global.4(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
+                ));
+            }
         };
         for st in 0..(g.stages - 1).min(nk) {
             issue(self, &st.to_string(), &st.to_string());
@@ -3444,6 +3503,23 @@ impl Kernel<'_> {
                 let rc = self.op("add", &rr, &ocol);
                 for ni in 0..nt {
                     let base = (mi * nt + ni) * 4 + half as usize * 2;
+                    // `tf32-radix`: a digit-affine output, cell by cell.
+                    if let Some(o) = ro {
+                        for j in 0..2u64 {
+                            let p = acc_slot(self, base + j as usize);
+                            let x = self.tmp();
+                            self.line(format!("{x} = load float, ptr {p}, align 4"));
+                            let cc = self.op("add", &ocol, ni as u64 * MMA_N + j);
+                            let oi = self.radix_at(o, &r, &cc);
+                            if self.epi.is_some() {
+                                self.store_cells(&[x], &oi);
+                            } else {
+                                let op = self.gep(1, "%o", &oi);
+                                self.line(format!("store float {x}, ptr addrspace(1) {op}, align 4"));
+                            }
+                        }
+                        continue;
+                    }
                     if self.epi.is_some() {
                         let mut xs = Vec::new();
                         for j in 0..2 {
@@ -5284,9 +5360,11 @@ mod tests {
                     );
                     assert_eq!(at(arms, Order::Sequential).combine, Combine::None);
                     for o in [Order::Free, Order::Fixed] {
-                        let c = at(arms, o).combine;
+                        // (A `fill-wave` split's wave is its own launch's.)
+                        let lo = at(arms, o);
+                        let c = lo.combine;
                         let parts_ = c.splits();
-                        assert!(parts_ == 1 || blocks * parts_ <= wave, "{c:?}");
+                        assert!(parts_ == 1 || blocks * parts_ <= lo.wave(g), "{c:?}");
                         assert!(k.is_multiple_of(parts_ * unit), "{c:?}");
                         if let Combine::StreamK { ctas, iters } = c {
                             assert!(ctas <= wave && ctas * iters >= blocks * (k / unit));

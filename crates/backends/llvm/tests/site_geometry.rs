@@ -238,3 +238,65 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
     eprintln!("knobs: {moved} candidates moved a kernel, {valued} valued");
     assert!(moved >= 8, "the candidates reach the kernels ({moved})");
 }
+
+/// site-geometry `tf32-radix` (R2) on convolutions from the generator whose
+/// fold admits TF32 (`: tf32 | f32` on the step): counted from the emission —
+/// ON a radix site takes the `mma.sync` tile (never `wgmma`), its digit-affine
+/// operands copied by 4-byte `cp.async`; OFF the FFMA radix tile; ON = OFF on
+/// a program without a radix site — and every ON module assembles to PTX
+/// (`llc`, when found). The tensor core's values are the box's value gate
+/// (the emulator runs no `mma.sync`).
+#[test]
+fn tf32_radix_counted_on_unseen_programs() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::radix_prog_strategy();
+    let llc = std::process::Command::new("llc").arg("--version").output().is_ok();
+    let targets = [("rtx-4090", "sm_89"), ("h100-pcie", "sm_90a"), ("rtx-5090", "sm_120"), ("rtx-3090", "sm_86")];
+    let (mut tensor, mut ffma, mut assembled) = (0, 0, 0);
+    // (Few generated convolutions fit a tensor tile: `k = cin·taps` a whole
+    // number of `mma` steps, `cout` whole m16 tiles.)
+    for z in 0..128 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let src = testgen::radix_src(&p).0.replacen("(0.0, k_y) -> fold {", "(0.0, k_y) -> fold: tf32 | f32 {", 1);
+        let ir = lower(&src);
+        let (target, sm) = targets[z % targets.len()];
+        let at = |on: bool| {
+            let mut gpu = GpuArms::default();
+            *gpu.off.rung("place").expect("rung") = true;
+            *(if on { gpu.on.rung("tf32-radix") } else { gpu.off.rung("tf32-radix") }).expect("rung") = true;
+            emit_detailed(&ir, &EmitOpts { host: "generic", target, gpu, ..EmitOpts::default() })
+                .expect("emits")
+                .device
+                .unwrap_or_default()
+        };
+        let (on, off) = (at(true), at(false));
+        let radix = |d: &str, kind: &str| {
+            d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" radix=") && l.contains(kind)).count()
+        };
+        assert_eq!(radix(&off, " kind=mma ") + radix(&off, " kind=wgmma "), 0, "#{z} {target} OFF\n{src}");
+        assert_eq!(radix(&on, " kind=wgmma "), 0, "#{z} {target}: no wgmma radix tile\n{src}");
+        if radix(&on, " kind=mma ") > 0 {
+            tensor += 1;
+            assert!(on.contains("call void @llvm.nvvm.cp.async.ca.shared.global.4("), "#{z} {target}\n{src}");
+            if llc {
+                let dir = tempfile::tempdir().unwrap();
+                let ll = dir.path().join("d.ll");
+                std::fs::write(&ll, &on).unwrap();
+                let st = std::process::Command::new("llc")
+                    .args(["-mtriple=nvptx64-nvidia-cuda", &format!("-mcpu={sm}"), "-mattr=+ptx87", "-o", "/dev/null"])
+                    .arg(&ll)
+                    .status()
+                    .unwrap();
+                assert!(st.success(), "#{z} {target}: llc\n{src}");
+                assembled += 1;
+            }
+        } else {
+            ffma += 1;
+            if radix(&off, " kind=tile ") == 0 {
+                assert_eq!(on, off, "#{z} {target}: no radix tile, no change\n{src}");
+            }
+        }
+    }
+    eprintln!("tf32-radix: {tensor} tensor-core, {ffma} not, {assembled} assembled");
+    assert!(tensor >= 8, "the generator reaches the radix mma tile ({tensor})");
+}
