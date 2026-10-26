@@ -86,7 +86,7 @@ ADR-NNNN-short-slug-candidate.md    while the decision is still open
 | [0031](ADR-0031-iota-fill-pipeline-surface.md) | `iota`/`fill` ride the pipeline — the call-expression carve is removed | 2026-07-22 | accepted |
 | [0032](ADR-0032-precision-contracts-vs-backend-config.md) | Precision contracts in the type system, machine tailoring in backend config | 2026-07-24 | accepted |
 | [0033](ADR-0033-second-consumer-proof-obligation-candidate.md) | The backend-genericity proof obligation — CUDA consumes `tile_plan` | 2026-07-25 | **candidate** |
-| [0034](ADR-0034-autotuned-placement-constants-candidate.md) | Placement constants are searched, not set — an autotuner over `tile_plan` | 2026-07-25 | **candidate** |
+| [0034](ADR-0034-autotuned-placement-constants-candidate.md) | Placement constants are searched, not set — an autotuner over `tile_plan` | 2026-07-25 | accepted-for-implementation |
 | [0035](ADR-0035-co-execution-multi-backend-candidate.md) | Co-execution — one source, several backends at once; `Trm` as cross-backend transmission | 2026-07-25 | **candidate**, unscheduled |
 | [0036](ADR-0036-scan-core-op-candidate.md) | `scan` — the loop/fold middle class as a first-class Core op | 2026-07-25 | **candidate** |
 | [0037](ADR-0037-project-name-mapal.md) | The language is named **Mapal**; source files are `.mapal` | 2026-07-26 | accepted |
