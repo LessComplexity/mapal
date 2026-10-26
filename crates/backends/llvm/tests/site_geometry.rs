@@ -69,6 +69,7 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
         let fill = resolve_profile(target).and_then(|t| t.gpu()).expect("a GPU part").fill_warps();
         let (on, off) = (emission(&ir, target, true), emission(&ir, target, false));
         let (s_on, s_off) = (splits(on.device.as_deref()), splits(off.device.as_deref()));
+        launches_give_planned_smem(&on, &format!("#{z} {target}\n{src}"));
         // The re-sized split kernel still walks each partition's `k / S` in
         // whole panels (`fill-wave` keeps the unsplit launch otherwise).
         for l in on.device.as_deref().unwrap_or("").lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile ")) {
@@ -110,6 +111,64 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
     eprintln!("site-geometry: {filled} filled splits, {short} short, {rows} row splits, {same} unchanged, {valued} valued");
     assert!(filled >= 8, "the generator reaches fill-wave ({filled})");
     assert!(rows >= 4, "the generator reaches row-split ({rows})");
+}
+
+/// Every tile launch (`launch`, `launchv`) gives its kernel the dynamic
+/// shared memory the kernel's `; mapal.plan` line was sized for (the smoke
+/// box: an epilogue group's ordered kernel launched with a split tile's).
+fn launches_give_planned_smem(e: &mapal_backend_llvm::Emission, ctx: &str) {
+    let dev = e.device.as_deref().unwrap_or("");
+    let planned = |id: i64| {
+        let name = format!("kernel=mapal_tile_{:016x} ", id as u64);
+        dev.lines().find(|l| l.starts_with("; mapal.plan") && l.contains(&name)).and_then(|l| {
+            l.split(' ').find_map(|f| f.strip_prefix("smem=")).and_then(|v| v.parse::<u64>().ok())
+        })
+    };
+    for l in e.text.lines().filter(|l| l.contains("call void @mapal_gpu_launch")) {
+        let args = l.split('(').nth(1).unwrap_or("").split(')').next().unwrap_or("");
+        let id = args.split(", ").next().and_then(|a| a.strip_prefix("i64 ")).and_then(|v| v.parse::<i64>().ok());
+        let smem = args.rsplit(", ").next().and_then(|a| a.strip_prefix("i32 ")).and_then(|v| v.parse::<u64>().ok());
+        if let (Some(smem), Some(want)) = (smem, id.and_then(planned)) {
+            assert_eq!(smem, want, "launch smem != plan smem\n{l}\n{ctx}");
+        }
+    }
+}
+
+/// The smoke box's failure, on its shape: a resident two-layer chain whose
+/// middle product feeds a bias + relu epilogue group (an ordered launch)
+/// while `fill-wave` cuts the fold of a sibling site. Every launch carries the
+/// shared memory its kernel was sized for, on every part.
+#[test]
+fn epilogue_launch_keeps_its_own_tile_beside_a_split() {
+    let src = "fn main() {
+    32768 -> iota -> tx;
+    65536 -> iota -> two;
+    131072 -> iota -> tup;
+    131072 -> iota -> tdn;
+    65536 -> iota -> th;
+    256 -> iota -> dr;
+    512 -> iota -> hr;
+    tx -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> x;
+    two -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 256.0 } -> wo;
+    tup -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0 } -> wup;
+    tdn -> map { t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v; v / 512.0 } -> wdn;
+    hr -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> b1;
+    tx -> map { t -> t / 256 -> i; t % 256 -> j; (0.0, dr) -> fold { acc, k -> acc + x[i * 256 + k] * wo[k * 256 + j] } } -> p;
+    th -> map { t -> t / 512 -> i; t % 512 -> j; (0.0, dr) -> fold { acc, k -> acc + p[i * 256 + k] * wup[k * 512 + j] } } -> hraw;
+    th -> map { t -> hraw[t] + b1[t % 512] -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> hh;
+    tx -> map { t -> t / 256 -> i; t % 256 -> j; (0.0, hr) -> fold { acc, k -> acc + hh[i * 512 + k] * wdn[k * 256 + j] } } -> m;
+    m[0] -> println;
+    m[32767] -> println;
+}
+";
+    let ir = lower(src);
+    let mut split = 0;
+    for target in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"] {
+        let e = emit_detailed(&ir, &EmitOpts { host: "generic", target, ..EmitOpts::default() }).expect("emits");
+        split += e.device.as_deref().unwrap_or("").matches("combine=atomic").count();
+        launches_give_planned_smem(&e, target);
+    }
+    assert!(split > 0, "a sibling site's fold is cut somewhere");
 }
 
 /// `(kernel, rows, blocks, block, tm, tn, ty)` of every FMA tile kernel.

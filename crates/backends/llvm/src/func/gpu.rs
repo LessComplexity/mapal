@@ -4368,6 +4368,14 @@ impl<'a> FnEmit<'a> {
                 });
                 return;
             }
+            // The ordered kernel (an epilogue group, a column-major store, a
+            // function on streams, or no cut): the unsplit launch — `launch_in`
+            // re-sizes the tile for a split (`fill-wave`) this kernel does not take.
+            let l = if l.combine.splits() > 1 {
+                launch(site, self.profile, self.contract, self.gpu_arms)
+            } else {
+                l
+            };
             // ponytail: a grouped launch (`launchv`) and a function on streams
             // (whose launches order through `launch_on`) carry no L2 window; give
             // them one when a part ships both on one program.

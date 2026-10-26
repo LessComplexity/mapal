@@ -77,6 +77,22 @@ for f in "$OUT"/tiles/*.mapal; do
         clang -O2 "$b.cpu_c.ll" "$ROOT/target/release/libmapal_rt.a" -o "$b.cpu_c" 2>/dev/null
         "$b.cpu_c" > "${b}_c.expect"
     fi
+    # site-geometry: a DEFAULT program's magnitude oracle — every closed-form input by its magnitude, so each
+    # printed value of the exact build is its M (gen_tiles.py `mabs`; only a program of sums of products,
+    # bias and relu over such inputs: no other subtraction). box_run.sh `_d` gates on D2's absolute bound with it.
+    case " ${DEFAULT:-} " in *" $(basename "$b") "*)
+        if [ ! -s "${b}_xabs.expect" ] && python3 -c 'import re, sys
+s = open(sys.argv[1]).read()
+o, n = re.subn(r"-> widen_(f32|f64) -> (\w+); \2 / ([0-9.]+) \}",
+              r"-> widen_\1 -> \2; (\2 > 0.0) -> { -true-> \2; -false-> 0.0 - \2; } -> va; va / \3 }", s)
+rest = re.sub(r"[^\n]*widen_f(32|64)[^\n]*", "", s)
+sys.exit(1 if n == 0 or " - " in rest or "max" in rest or "exp" in rest else open(sys.argv[2], "w").write(o) * 0)' \
+                "$f" "${b}_xabs.mapal"; then
+            "$EMIT" "${b}_xabs.mapal" - --rewrite --exact --target=apple-m > "${b}_xabs.cpu.ll"
+            clang -O2 "${b}_xabs.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "${b}_xabs.cpu" 2>/dev/null
+            "${b}_xabs.cpu" > "${b}_xabs.expect"
+        fi ;;
+    esac
 done
 
 # The ISA level a host profile describes (S62): its host objects are compiled for it, so
