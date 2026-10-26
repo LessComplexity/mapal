@@ -2996,13 +2996,33 @@ impl<'a> FnEmit<'a> {
                 .cloned()
                 .expect("carry ty");
             let bytes = self.array_bytes(&ty);
-            let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
             let d = self.dalloc(c.key(), bytes);
-            self.line(format!(
-                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
-            ));
+            // A `+0.0` fill (`(0.0, n) -> fill`, every byte zero) is zeroed
+            // there: no host bytes cross.
+            if self.pair_source(init, c.k).is_some_and(|a| self.zero_fill(a)) {
+                self.line(format!("call void @mapal_gpu_zero(i64 {d}, i64 {bytes})"));
+            } else {
+                let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
+                self.line(format!(
+                    "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
+                ));
+            }
             self.dvalid.insert(c.key(), ());
         }
+    }
+
+    /// `a` is a `Fill` of a float `+0.0`: all its bytes are zero.
+    fn zero_fill(&self, a: ObjectId) -> bool {
+        let Some(m) = self.ir.in_edges(a).first().and_then(|&m| self.ir.morphism(m)) else {
+            return false;
+        };
+        let v = self.pair_source(m.source, 0).and_then(|x| self.ir.object(x)).and_then(|x| x.value.as_ref());
+        m.op == Operation::Fill
+            && match v {
+                Some(mapal_ir::Value::F32(x)) => x.to_bits() == 0,
+                Some(mapal_ir::Value::F64(x)) => x.to_bits() == 0,
+                _ => false,
+            }
     }
 
     /// The back edge: the next state's buffer becomes the carry's, and the old
