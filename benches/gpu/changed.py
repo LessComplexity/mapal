@@ -44,9 +44,9 @@ ARCHS = ['rtx-4090', 'rtx-5090', 'h100-pcie', 'rtx-3090', 'x86-64-v3']
 FACES = {'default': [], 'contract': ['--order=sequential'], 'exact': ['--exact']}
 RESULT_FACE = {'_default': 'default', '_c': 'contract', '_x': 'exact', '_exact': 'exact'}
 CPU = 'x86-64-v3'
-# What a row's time depends on besides its emission: the runtime the bundle links and the box harness.
-RT_PATHS = ['crates/mapal-rt', 'benches/gpu/tile_bench.cu', 'benches/gpu/chain_bench.cu', 'benches/gpu/mlp_bench.cu',
-            'benches/gpu/box_run.sh', 'benches/gpu/value_gate.py']
+# What a Mapal row's time runs through besides its emission: the runtime it links and the harnesses that time it
+# (box_run.sh only orchestrates and gates; the library legs are keyed by their own source and toolchain).
+RT_PATHS = ['crates/mapal-rt', 'benches/gpu/tile_bench.cu', 'benches/gpu/mlp_bench.cu']
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
