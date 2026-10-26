@@ -452,6 +452,18 @@ class MeasureTests(unittest.TestCase):
         self.assertNotIn("pt_epi_64: no library leg", r.stdout)  # chain_bench's
         self.assertNotIn("pt_fir_9_4: no library leg", r.stdout)  # torch_bench's
 
+    def test_targets_maps_touched_files_to_test_targets(self):
+        t = HERE.parent.parent / "tests/targets.py"
+        src = self.py(t, "crates/backends/llvm/src/func/splitk.rs").stdout.splitlines()
+        self.assertEqual(src[:2], ["cargo test --release -p mapal-backend-llvm --test splitk",
+                                   "cargo test --release -p mapal-backend-llvm --lib"])
+        self.assertIn("cargo test --release -p mapal-backend-llvm --test differential", src)
+        shared = self.py(t, "crates/mapal-rewrite/tests/testgen/mod.rs").stdout.splitlines()
+        self.assertIn("cargo test --release -p mapal-backend-llvm --test differential", shared)
+        self.assertIn("cargo test --release -p mapal-rewrite --test property", shared)
+        self.assertEqual(self.py(t, "benches/gpu/changed.py").stdout.strip(),
+                         "python3 -m unittest benches/gpu/test_harness.py")
+
     def test_search_plan_and_pick_on_a_stub_table(self):
         real = HERE.parent.parent / "target/release/examples/emit"
         if not real.exists():
