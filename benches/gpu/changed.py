@@ -164,7 +164,7 @@ def diff(a):
         todo = [(p, arch, face, h) for p, arch, face, st, b, h in em if st in ('changed', 'new') and b != h]
         names = a.rungs or rungs(EMIT, next(iter(head.values())))
         known = set(rungs(bemit, next(iter(base.values())))) if base else set()
-        ons = {arch: rungs_off_at(arch) for arch in a.archs}
+        ons = {arch: [r for r in rungs_off_at(arch) if not a.rungs or r in a.rungs] for arch in a.archs}
         probe = [(p, arch, face, h, f'off-{r}') for p, arch, face, h in todo for r in names] + \
                 [(p, arch, face, h, f'on-{r}') for p, arch, face, h in todo for r in ons[arch]]
         flag = lambda arm: f'--gpu-{arm.replace("-", "=", 1)}'  # noqa: E731 — off-x -> --gpu-off=x
@@ -331,7 +331,7 @@ def main():
     d.add_argument('--base-emit', help='a prebuilt base emitter (skips the build; programs from HEAD)')
     d.add_argument('--archs', nargs='+', default=ARCHS)
     d.add_argument('--faces', nargs='+', default=list(FACES), choices=list(FACES))
-    d.add_argument('--rungs', nargs='+', help='the rungs whose OFF arms to probe (default: every rung)')
+    d.add_argument('--rungs', nargs='+', help='the rungs whose arms to probe (default: every rung)')
     d.add_argument('--jobs', type=int)
     e = sub.add_parser('env')
     e.add_argument('out')

@@ -96,7 +96,7 @@ def arm_of(stem):
 
 # ---- PTX -------------------------------------------------------------------------------------------
 I64 = re.compile(r'^(add|sub|mul\.lo|mul\.wide|mad\.lo|mad\.wide|shl|shr)\.[usb]?(64|32)\b|^cvt\.[us]64\.[us]32')
-EXTRA = [('atom_add', r'^atom\.(global\.)?add\.f'), ('red_add', r'^red\.(global\.)?add\.f'), ('mma', r'^mma\.sync'),
+EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.)*?add\.f'), ('mma', r'^mma\.sync'),  # (newer llc: .relaxed.gpu.global)
          ('ldmatrix', r'^ldmatrix'), ('wgmma', r'^wgmma\.mma_async'), ('wait_n', r'^cp\.async\.wait_group'),
          ('div_rem', r'^(div|rem)\.'), ('call', r'^call')]
 
