@@ -171,42 +171,48 @@ Small sizes are now a single-thread kernel gap, not a scheduling one
 ### GPU workloads - 4 GPUs, October 2026
 
 Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
-below 1 = Mapal faster. Values pass on every program and arch. 54 of 120 cells at or below 1.0. † = carried from the
-previous sweep (emission identical)
-([end check, gaps and causes](docs/performance/evidence/recurrence-precision.md)).
+below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an
+earlier sweep (emission identical); – = not timed on that part (no library leg, or a new program whose emission is
+unchanged there) ([end check, gaps and causes](docs/performance/evidence/site-geometry.md);
+[earlier](docs/performance/evidence/recurrence-precision.md)).
 
 | workload | RTX 4090 | RTX 5090 | H100 PCIe | RTX 3090 |
 | --- | ---: | ---: | ---: | ---: |
-| decode_1024_256 | 1.03 | 1.52 | 2.48 | 1.12 |
-| convmc_8_64_56_3_tf32 | 2.07 | 1.36 | 2.38 | 1.69 |
-| attn_1024_64 † | 1.97 | 1.39 | 2.00 | 1.77 |
-| mlp2_2048_tf32 | 1.16 | 1.15 | 1.87 | 1.17 |
-| mlp_2048_tf32 | 1.06 | 1.16 | 1.75 | 1.40 |
-| convmc_8_64_56_3 | 1.66 | 1.04 | 1.29 | 1.68 |
+| decode_1024_256 | 1.01 | **0.82** | 1.51 | **1.00** |
+| convmc_8_64_56_3_tf32 | 1.91 | 1.44 | 2.62 | 1.53 |
+| indep_512 | 2.18 | 2.18 | – | – |
+| mlp_512 | 2.10 | 1.58 | – | – |
+| pj_m16_n18432_k7168 | 1.08 | – | 1.86 | – |
+| pj_m1_n18432_k7168 | 1.01 | **0.93** | 1.21 | – |
+| pj_m1_n2048_k7168 | **0.42** | **0.77** | 1.40 | – |
+| attn_1024_64 | 2.09 | **0.82** | 2.00 † | 1.77 † |
+| mlp2_2048_tf32 † | 1.16 | 1.15 | 1.87 | 1.17 |
+| mlp_2048_tf32 † | 1.06 | 1.16 | 1.75 | 1.40 |
+| convmc_8_64_56_3 | 1.38 | **0.89** | 1.18 | 1.43 |
 | loopmm_1024_8 † | 1.31 | 1.25 | 1.12 | 1.62 |
-| pj_m16_n2048_k7168 † | **0.86** | 1.21 | 1.35 | 1.56 |
-| rt_mlp2_1024 | 1.14 | 1.20 | 1.45 | **0.99** |
+| pj_m16_n2048_k7168 | **0.69** | 1.30 | 1.58 | 1.56 † |
+| rt_mlp2_1024 † | 1.14 | 1.20 | 1.45 | **0.99** |
 | mlp2_2048 † | 1.01 | 1.12 | 1.39 | 1.03 |
 | indep_2048 † | **0.99** | 1.08 | 1.35 | 1.09 |
 | diamond_2048 † | **0.98** | 1.11 | 1.30 | 1.01 |
 | smlp_4096_256_1024 † | 1.09 | 1.17 | 1.19 | 1.29 |
 | fanout_2048 † | **0.97** | 1.08 | 1.23 | 1.02 |
 | mlp_2048 † | **0.97** | 1.09 | 1.22 | 1.04 |
-| rowsum_2048 | **0.93** | 1.08 | 1.21 | 1.11 |
+| rowsum_2048 † | **0.93** | 1.08 | 1.21 | 1.11 |
 | twin_2048 † | **0.95** | 1.05 | 1.21 | 1.01 |
-| rt_mlp2_2048 | **0.75** | **1.00** | 1.17 | **0.88** |
+| rt_mlp2_2048 † | **0.75** | **1.00** | 1.17 | **0.88** |
 | softmax_rows_4096 † | 1.03 | 1.09 | **0.97** | **0.96** |
-| rowsum_4096 | **0.99** | 1.07 | **0.96** | **0.96** |
+| rowsum_4096 † | **0.99** | 1.07 | **0.96** | **0.96** |
 | epi_4096 † | **1.00** | 1.06 | **0.97** | **0.88** |
 | ew_4096 † | **0.46** | **0.45** | 1.01 | **0.61** |
 | loop_4096 † | **0.95** | **0.97** | **0.97** | **0.96** |
 | firew_rowsum_2048x2048_16 † | **0.66** | **0.55** | **0.57** | **0.72** |
 | conv_2048_5 † | **0.63** | **0.45** | **0.50** | **0.68** |
 | fir_4194304_16 † | **0.61** | **0.51** | **0.56** | **0.63** |
-| causal_1024_256 | **0.21** | **0.40** | **0.54** | **0.16** |
-| prefill_1024_512_256 | **0.21** | **0.38** | **0.53** | **0.16** |
+| causal_1024_256 | **0.18** | **0.26** | **0.25** | **0.14** |
+| prefill_1024_512_256 | **0.18** | **0.22** | **0.26** | **0.15** |
 | ewconvew_2048_5 † | **0.53** | **0.51** | **0.51** | **0.53** |
-| gen_1024_512_256 | **0.16** | **0.44** | **0.52** | **0.12** |
+| gen_1024_512_256 | **0.17** | **0.24** | **0.25** | **0.15** |
 
 ### Three builds
 
