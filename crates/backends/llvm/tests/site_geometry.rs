@@ -181,3 +181,60 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
     eprintln!("fit-first: {moved} moved, {same} unchanged, {valued} valued");
     assert!(moved >= 4, "the generator reaches fit-first ({moved})");
 }
+
+/// The candidates `benches/gpu/knobs.json` lists for `knob` on `arch`.
+fn candidates(arch: &str, knob: &str) -> Vec<u64> {
+    let json = include_str!("../../../../benches/gpu/knobs.json");
+    let row = json.split(&format!("\"{arch}\":")).nth(1).and_then(|r| r.split('}').next()).expect("an arch row");
+    let list = row.split(&format!("\"{knob}\": [")).nth(1).and_then(|r| r.split(']').next()).expect("a knob");
+    list.split(',').map(|v| v.trim().parse().expect("a count")).collect()
+}
+
+/// ADR-0034 D4 (site-geometry B4): every knob candidate the offline search
+/// times is value-invariant. On products from the generator, one candidate
+/// per program (`--geom=<knob>=<value>`, the search's own flag) prints the
+/// table row's values in the emulator; counted: candidates that moved a
+/// kernel. (A `cp.async` kernel — forced stages — is counted, not emulated.)
+#[test]
+fn knob_candidates_value_invariant_on_unseen_programs() {
+    const KNOBS: [&str; 9] = ["resident", "split", "tm", "tn", "warps", "bk", "stages", "wg_n", "wg_groups"];
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::geom_prog_strategy();
+    let clang = emu::clang();
+    let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
+    let (mut moved, mut valued) = (0, 0);
+    for z in 0..48usize {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let src = testgen::geom_src(&testgen::GeomProg { wide: false, ..p.clone() }).0;
+        let ir = lower(&src);
+        let target = targets[z % targets.len()];
+        let knob = KNOBS[z / targets.len() % KNOBS.len()];
+        let cands = candidates(target, knob);
+        let Some(&v) = cands.get(1 + usize::from(p.law[0]) % cands.len().saturating_sub(1).max(1)) else {
+            continue;
+        };
+        let at = |forced: bool| {
+            let mut opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            for r in ["async", "pdl", "streams", "place"] {
+                *opts.gpu.off.rung(r).expect("rung") = true;
+            }
+            if forced {
+                assert!(mapal_backend_llvm::flags::apply(&mut opts, &format!("--geom={knob}={v}")).expect("a knob"));
+            }
+            emit_detailed(&ir, &opts).expect("emits")
+        };
+        let (on, off) = (at(true), at(false));
+        if on.device == off.device {
+            continue;
+        }
+        moved += 1;
+        let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
+        if let (Some(cc), false) = (&clang, dev(&on).contains("call void @llvm.nvvm.cp.async")) {
+            let (x, y) = (emu::run_emulated(cc, &on.text, &dev(&on)), emu::run_emulated(cc, &off.text, &dev(&off)));
+            assert_eq!(x, y, "#{z} {target} --geom={knob}={v}\n{src}");
+            valued += 1;
+        }
+    }
+    eprintln!("knobs: {moved} candidates moved a kernel, {valued} valued");
+    assert!(moved >= 8, "the candidates reach the kernels ({moved})");
+}

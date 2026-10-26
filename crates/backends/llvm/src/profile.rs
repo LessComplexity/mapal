@@ -2577,13 +2577,18 @@ impl TargetProfile {
                 if !k.is_multiple_of(bk) || frag_regs >= g.regs_per_thread {
                     return None;
                 }
-                let mut n = fit_n(2 * (g.regs_per_thread - frag_regs))?;
+                let cap = 2 * (g.regs_per_thread - frag_regs);
+                // site-geometry B4: a forced `n` that divides the rows and fits.
+                let forced_n = Some(g.geom.wg_n)
+                    .filter(|&n| n > 0 && n % WGMMA_N_STEP == 0 && n <= cap.min(WGMMA_N_MAX) && rows.is_multiple_of(n));
+                let mut n = forced_n.or_else(|| fit_n(cap))?;
                 let resident = g.regs_per_sm / regs(n, bk);
                 let per_block = (resident / wg_threads)
                     .min(g.max_threads_per_block / wg_threads)
                     .max(1);
-                let mut groups = 1 << per_block.ilog2();
-                while (rows / n) * (c / (groups * WGMMA_M)) < g.sms {
+                let forced_g = Some(g.geom.wg_groups).filter(|&x| x.is_power_of_two() && x <= per_block);
+                let mut groups = forced_g.unwrap_or(1 << per_block.ilog2());
+                while forced_n.is_none() && forced_g.is_none() && (rows / n) * (c / (groups * WGMMA_M)) < g.sms {
                     if groups > 1 {
                         groups /= 2;
                     } else if let Some(m) = fit_n(n / 2) {
@@ -2888,6 +2893,111 @@ impl TargetProfile {
             blocks_per_sm,
             ..geom(best?)
         })
+    }
+
+    /// **The FMA tile `g` under the part's forced tile knobs** (ADR-0034 D1,
+    /// site-geometry B4: [`Geom::tm`], `tn`, `warps`, `bk`, `stages`) — the
+    /// candidates the offline search times; `None` when no knob is set or the
+    /// forced tile does not divide the site, load in whole vectors, or fit the
+    /// part (the derived `g` stands). The rest follows [`Self::gpu_tile_with`]
+    /// and [`Self::gpu_tile_async`]: the block tile square-most, the blocks
+    /// per SM from the registers a thread holds (capped at the `split` grid's
+    /// share under `grid-share`), the deepest panel the share holds. Each cell
+    /// still folds `k` in order on one thread: every candidate prints the same
+    /// bits.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gpu_tile_forced(
+        &self,
+        g: GpuTile,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        r: crate::GpuRungs,
+        split: u64,
+    ) -> Option<GpuTile> {
+        let gpu = self.gpu()?;
+        let q = gpu.geom;
+        if q.tm + q.tn + q.warps + q.bk + q.stages == 0 {
+            return None;
+        }
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let pick = |v: u64, d: u64| if v > 0 { v } else { d };
+        let (tm, tn) = (pick(q.tm, g.tm), pick(q.tn, g.tn));
+        let threads = pick(q.warps * gpu.warp, g.threads());
+        let pow2 = |x: u64| x.is_power_of_two();
+        if !(pow2(tm) && pow2(tn) && pow2(threads)) || threads > gpu.max_threads_per_block || tn % lanes != 0 {
+            return None;
+        }
+        // The block tile: `g`'s split when the thread count and register tile
+        // are its own, else square-most (`ty·tm ≈ tx·tn`) inside the rows.
+        let (tx, ty) = if (tm, tn, threads) == (g.tm, g.tn, g.threads()) {
+            (g.tx, g.ty)
+        } else {
+            let aspect = |ty: u64| {
+                let (h, w) = (ty * tm, threads / ty * tn);
+                (h > rows, h.max(w) / h.min(w))
+            };
+            let ty = (0..=threads.ilog2()).map(|p| 1u64 << p).min_by_key(|&ty| aspect(ty))?;
+            (threads / ty, ty)
+        };
+        let (bm, bn) = (ty * tm, tx * tn);
+        if rows % bm != 0 || c % bn != 0 {
+            return None;
+        }
+        let rpe = e.div_ceil(4);
+        let half = tm * tn * rpe * 2 > gpu.regs_per_thread;
+        let held = if g.held > 0 || half { fma_held_regs(tm, tn, e) } else { 0 };
+        let regs = held.max(2 * tm * tn * rpe).max(1);
+        let blocks = (rows / bm) * (c / bn) * split.max(1);
+        let grid = if r.grid_share { blocks.div_ceil(gpu.sms) } else { u64::MAX };
+        let blocks_per_sm = (gpu.regs_per_sm / regs / threads)
+            .min(gpu.max_threads_per_sm / threads)
+            .min(gpu.max_blocks_per_sm)
+            .min(grid)
+            .max(1);
+        let share = (gpu.smem_per_sm / blocks_per_sm)
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let stages = pick(q.stages, g.stages);
+        let streamed = stages >= 2;
+        if streamed && !gpu.has_mma_sync() {
+            return None;
+        }
+        let pad_a = if streamed { conflict_free_pad(bm, |l| (l % lanes, l / lanes))? } else { 0 };
+        let whole = |bk: u64| {
+            k.is_multiple_of(bk)
+                && (bk * bn / lanes).is_multiple_of(threads)
+                && if streamed { (bm * bk).is_multiple_of(threads) } else { (bm * bk / lanes).is_multiple_of(threads) }
+        };
+        let tile = |bk: u64, stages: u64| GpuTile {
+            tm,
+            tn,
+            tx,
+            ty,
+            bk,
+            blocks_per_sm,
+            stages,
+            pad_a,
+            a_row_lanes: 0,
+            held,
+        };
+        // The stages that must fit: the forced count, else two (`cp.async`) or one.
+        let need = if q.stages > 0 { stages } else { stages.clamp(1, 2) };
+        let fits = |bk: u64| tile(bk, need).smem_bytes(e) <= share;
+        let bk = match q.bk {
+            0 => (0..=k.max(1).ilog2())
+                .map(|p| 1u64 << p)
+                .filter(|&bk| bk >= lanes && whole(bk) && fits(bk))
+                .max()?,
+            bk => Some(bk).filter(|&bk| bk >= lanes && whole(bk) && fits(bk))?,
+        };
+        let stages = match (q.stages, streamed) {
+            (0, true) => (share / (tile(bk, 1).stage_elems() * e)).min(k / bk).max(2),
+            (s, _) => s.max(1),
+        };
+        Some(tile(bk, stages)).filter(|t| t.smem_bytes(e) <= share && (!streamed || stages <= k / bk))
     }
 
     /// **The blocks of tile `g` one SM can hold** at its registers and
@@ -3538,12 +3648,33 @@ pub struct Geom {
     /// 0 = [`TargetProfile::split_count`]. Ignored where it does not divide
     /// the fold's panels.
     pub split: u64,
+    /// The FMA tile's candidates (site-geometry B4: the 128-accumulator
+    /// `8 × 16` tile, `cp.async` stages, the panel depth at `K = 1024`):
+    /// a thread's register tile `tm × tn`, warps per block, the panel depth
+    /// `bk` and its stages (1 = register staging, ≥ 2 = `cp.async`); 0 =
+    /// derived ([`TargetProfile::gpu_tile_forced`]).
+    pub tm: u64,
+    pub tn: u64,
+    pub warps: u64,
+    pub bk: u64,
+    pub stages: u64,
+    /// The `wgmma` tile's candidates: rows of one warpgroup's instruction
+    /// (`n`) and warpgroups per block (T1: the grid's last wave); 0 = derived.
+    pub wg_n: u64,
+    pub wg_groups: u64,
 }
 
 /// The seed row: every part's table before a search wrote one.
 pub const GEOM: Geom = Geom {
     resident: GPU_RESIDENT_BLOCKS,
     split: 0,
+    tm: 0,
+    tn: 0,
+    warps: 0,
+    bk: 0,
+    stages: 0,
+    wg_n: 0,
+    wg_groups: 0,
 };
 
 /// A `--geom=` override per knob, in [`Geom::NAMES`] order (`None` = the
@@ -3551,13 +3682,21 @@ pub const GEOM: Geom = Geom {
 pub type GeomOver = [Option<u64>; Geom::NAMES.len()];
 
 impl Geom {
-    pub const NAMES: [&'static str; 2] = ["resident", "split"];
+    pub const NAMES: [&'static str; 9] =
+        ["resident", "split", "tm", "tn", "warps", "bk", "stages", "wg_n", "wg_groups"];
 
     /// The knob called `name`, `None` for an unknown name.
     pub fn knob(&mut self, name: &str) -> Option<&mut u64> {
         Some(match name {
             "resident" => &mut self.resident,
             "split" => &mut self.split,
+            "tm" => &mut self.tm,
+            "tn" => &mut self.tn,
+            "warps" => &mut self.warps,
+            "bk" => &mut self.bk,
+            "stages" => &mut self.stages,
+            "wg_n" => &mut self.wg_n,
+            "wg_groups" => &mut self.wg_groups,
             _ => return None,
         })
     }

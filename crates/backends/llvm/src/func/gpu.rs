@@ -591,6 +591,12 @@ pub(crate) fn launch_split(
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
                 .flatten()
                 .unwrap_or(g)
+        })
+        // ADR-0034 D1 (site-geometry B4): the part's forced tile candidate.
+        .map(|g| {
+            profile
+                .gpu_tile_forced(g, site.rows, site.c, site.k, &site.elem, rungs, split)
+                .unwrap_or(g)
         });
     match tiled {
         Some(g) => Launch {
