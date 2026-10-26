@@ -38,6 +38,8 @@ fn device(target: &'static str, contract: bool, tf32: bool, gpu: GpuArms) -> Str
         target,
         contract,
         gpu,
+        // ADR-0041 D4: the tensor cores sum a k-step in their own order.
+        order: mapal_backend_llvm::Order::Free,
         ..EmitOpts::exact()
     };
     // The kernels, without the S64 `; mapal.` evidence comments (they name rungs).

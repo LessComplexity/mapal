@@ -76,12 +76,18 @@ fn radix_addresses_match_the_program_everywhere() {
 /// emulator cannot run: `async`, `pdl`, `streams`; `place` off: every capable
 /// site on the device, whatever its size).
 fn emission(ir: &CategoryIr, target: &'static str, on: bool) -> mapal_backend_llvm::Emission {
+    emission_face(ir, target, on, false)
+}
+
+/// `contract`: the sequential contract face (`--order=sequential`), whose
+/// oracle is the host's own fold.
+fn emission_face(ir: &CategoryIr, target: &'static str, on: bool, contract: bool) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
     for r in ["async", "pdl", "streams", "place"] {
         *gpu.off.rung(r).expect("rung") = true;
     }
     *(if on { gpu.on.rung("radix-tile") } else { gpu.off.rung("radix-tile") }).expect("rung") = true;
-    let opts = EmitOpts { host: "generic", target, gpu, ..EmitOpts::exact() };
+    let opts = EmitOpts { host: "generic", target, gpu, contract, ..EmitOpts::exact() };
     emit_detailed(ir, &opts).expect("emits")
 }
 
@@ -152,8 +158,10 @@ fn radix_register_tile_values() {
 ";
     let ir = lower(src);
     let Some(cc) = emu::clang() else { return };
-    for target in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"] {
-        let (on, off) = (emission(&ir, target, true), emission(&ir, target, false));
+    // Both faces: on the sequential contract face the device-only radix tile
+    // keeps the host fold's separate step (the face's oracle), as OFF's cell.
+    for (target, c) in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"].into_iter().flat_map(|t| [(t, false), (t, true)]) {
+        let (on, off) = (emission_face(&ir, target, true, c), emission_face(&ir, target, false, c));
         let dev = on.device.as_deref().expect("dev");
         let plan = dev.lines().find(|l| l.contains(" radix=")).expect("a radix kernel");
         assert!(!plan.contains(" tm=1 tn=1 "), "{target}: a register tile\n{plan}");

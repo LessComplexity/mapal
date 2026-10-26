@@ -719,6 +719,10 @@ pub struct GpuArms {
     /// instead of the derived count, when `S` cuts `k` into whole units.
     /// 0 = derive.
     pub splitk: u64,
+    /// The emission's order is free (ADR-0040 D1), set from
+    /// [`EmitOpts::order`] by [`emit_detailed`]: a device-only site may take
+    /// the fused step the bound admits (`radix-tile`).
+    pub free: bool,
 }
 
 /// A reduced-precision face — ADR-0032 D1's lattice below `contract`. Unlike
@@ -950,6 +954,15 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if profile.gpu().is_none() {
         return emit_module(ir, opts, profile);
     }
+    // ADR-0041 D4: a tensor core's k-step sums in the hardware's order, so a
+    // `tf32` product takes it only where the order is free; a sequential or
+    // fixed face realizes it as f32 (a member of every set): the FFMA tile.
+    let mut face = *opts;
+    face.gpu.free = opts.order == Order::Free;
+    if !face.gpu.free {
+        face.gpu.off.tf32_tile = true;
+    }
+    let opts = &face;
     // S62 `hostopt`: everything outside a device site is emitted against the
     // host's CPU facts; off, against `generic`'s — the S52–S54 GPU build.
     let rungs = crate::func::gpu::host_rungs(profile, opts.contract, opts.gpu);
