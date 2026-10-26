@@ -455,7 +455,8 @@ cells="1024 1536 2048 3072 4096 8192 $(for f in "$PROF"/mm_*x*x*.launch; do [ -f
 for pass in $(seq "${PASSES:-1}"); do
     for n in $cells; do
         for face in ${FACES:-_exact _c _tf}; do
-            case $face in _exact) s=mm_$n; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
+            # ADR-0040: the unsuffixed module is the default face (order free); the in-order check needs `_x`.
+            case $face in _exact) s=mm_${n}_x; flag=() ;; _c) s=mm_${n}_c; flag=(--contract) ;; _tf) s=mm_${n}_tf; flag=(--tf32) ;; esac
             [ -f "$PROF/$s.launch" ] || continue
             legs=(shipped)
             for v in "$PROF/$s".*.launch; do
