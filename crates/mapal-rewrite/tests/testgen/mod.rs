@@ -2632,3 +2632,103 @@ pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
     );
     (src, (m * n * k, k))
 }
+
+// --- site-geometry: launch geometry of tile sites (`fill-wave`, `row-split`) --
+
+/// An `m × k · k × n` product `y` with integer-valued operands — every partial
+/// sum is exact in f32, so every cut of the fold prints the same bits — from a
+/// skinny projection (`m` 1) to a small GEMM: `m` 1–64, `n` 32–512, `k`
+/// 32–1024; `bt` reads `b` transposed. `retained`: the product runs in a loop
+/// over a carried `x` (its `a`, `m ≥ 4` rows) whose trip `t` rewrites row `t`
+/// and reads row `t` of `y` (decode's K/V rebuild: the retained one-row site).
+#[derive(Clone, Debug)]
+pub struct GeomProg {
+    pub dims: [u8; 3],
+    pub bt: bool,
+    pub retained: bool,
+    pub law: [u8; 2],
+}
+
+pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
+    (
+        prop::array::uniform3(any::<u8>()),
+        prop::bool::weighted(0.25),
+        any::<bool>(),
+        prop::array::uniform2(any::<u8>()),
+    )
+        .prop_map(|(dims, bt, retained, law)| GeomProg { dims, bt, retained, law })
+}
+
+/// [`GeomProg`]'s source text and its `(m, n, k)`.
+pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let m = pick(p.dims[0], if p.retained { &[4, 8, 16, 64] } else { &[1, 2, 4, 16, 64] });
+    let n = pick(p.dims[1], &[32, 64, 128, 256, 512]);
+    let k = pick(p.dims[2], &[32, 64, 256, 1024]);
+    let (a1, a2) = (u64::from(p.law[0] % 13) * 2 + 3, u64::from(p.law[1] % 11) * 2 + 5);
+    let bi = if p.bt { format!("b[j * {k} + q]") } else { format!("b[q * {n} + j]") };
+    let y = |a: &str| {
+        format!(
+            "ic -> map {{ c -> c / {n} -> i; c % {n} -> j; (0.0, kr) -> fold {{ acc, q -> acc + {a}[i * {k} + q] * {bi} }} }} -> y;"
+        )
+    };
+    let head = format!(
+        "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 }} -> b;
+    {mn} -> iota -> ic;
+    {k} -> iota -> kr;
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n
+    );
+    let body = if p.retained {
+        format!(
+            "    {n} -> iota -> nr;
+    (0.0, {n}) -> fill -> o0;
+    mut x: [f32; {mk}] <- a;
+    mut o: [f32; {n}] <- o0;
+    mut t: i32 <- 0;
+    loop {{
+        (t < {trips}) -> {{
+            -true-> {{
+                ia -> map {{ c -> (c / {k} == t) -> {{ -true-> (c * 3 + t * 5) % 23 - 11 -> widen_f32; -false-> x[c]; }} }} -> x;
+                {y}
+                nr -> map {{ j -> y[t * {n} + j] }} -> o;
+                t + 1 -> t;
+                -> loop;
+            }}
+            -false-> o -> out;
+        }}
+    }}
+    out[0] -> println;
+    out[{last}] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+",
+            mk = m * k,
+            trips = m.min(4),
+            y = y("x"),
+            last = n - 1
+        )
+    } else {
+        format!(
+            "    {y}
+    y[0] -> println;
+    y[{last}] -> println;
+    0.0 -> zero: f32;
+    (zero, y) -> fold {{ acc, v -> acc + v }} -> total;
+    total -> println;
+}}
+",
+            y = y("a"),
+            last = m * n - 1
+        )
+    };
+    (head + &body, (m, n, k))
+}

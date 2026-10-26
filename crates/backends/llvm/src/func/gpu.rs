@@ -449,6 +449,19 @@ pub(crate) fn launch(
     contract: bool,
     arms: crate::GpuArms,
 ) -> Launch {
+    launch_split(site, profile, contract, arms, 1)
+}
+
+/// [`launch`] for the kernel that folds `split` partitions (site-geometry
+/// `fill-wave`): the FMA tile's panels and stages are sized for the
+/// `blocks · split` grid ([`TargetProfile::gpu_tile_split`]). 1 = [`launch`].
+pub(crate) fn launch_split(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    split: u64,
+) -> Launch {
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
     let shaped = site.a.clane == 0 && site.b.ci == 0;
@@ -523,7 +536,7 @@ pub(crate) fn launch(
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
     let tiled = shaped
         .then(|| {
-            profile.gpu_tile_with(site.rows, site.c, site.k, &site.elem, rungs.wide_fma, rungs)
+            profile.gpu_tile_split(site.rows, site.c, site.k, &site.elem, rungs.wide_fma, rungs, split)
         })
         .flatten()
         // S62 `cell-fill`: no register tile divides the site — one output per
@@ -549,7 +562,7 @@ pub(crate) fn launch(
             // hiding; with a warp per scheduler, warps hide it and the deeper
             // panel costs registers (S62 v1, the 5090, 4090, H100 PCIe and 3090:
             // 35 of 38 measured cells on this side of the line).
-            let grid = (site.rows / g.bm()) * (site.c / g.bn());
+            let grid = (site.rows / g.bm()) * (site.c / g.bn()) * split;
             let g = match rungs.prefetch {
                 true if g.held > 0 => {
                     prefetch_depth(g, e, gpu.regs_per_thread.saturating_sub(g.held))
@@ -572,7 +585,7 @@ pub(crate) fn launch(
         // one read per block; the panel order `0..k/bk` and each cell's step
         // order are unchanged ([`Kernel::step`]).
         .map(|g| {
-            let blocks = (site.rows / g.bm()) * (site.c / g.bn());
+            let blocks = (site.rows / g.bm()) * (site.c / g.bn()) * split;
             rungs
                 .async_stage
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
@@ -758,7 +771,28 @@ pub(crate) fn launch_in(
 ) -> Launch {
     let mut l = launch(site, profile, contract, arms);
     l.combine = combine(&l, site, profile, order, arms);
+    if l.rungs.fill_wave && l.combine.splits() > 1 {
+        let c = l.combine;
+        l = launch_split(site, profile, contract, arms, c.splits());
+        l.combine = c;
+    }
     l
+}
+
+/// The launch a kernel of realization `combine` is emitted with: under
+/// `fill-wave` a split kernel's tile is the split grid's ([`launch_split`]).
+fn launch_for(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    combine: Combine,
+) -> Launch {
+    let l = launch(site, profile, contract, arms);
+    match l.rungs.fill_wave && combine.splits() > 1 {
+        true => launch_split(site, profile, contract, arms, combine.splits()),
+        false => l,
+    }
 }
 
 /// **The chooser (ADR-0040 D4, gap map M1/G2/G6)**: how a site's `k` fold is
@@ -796,10 +830,20 @@ fn combine(
     let panels = site.k / l.tiled.map_or(1, |g| g.bk);
     let blocks = l.gx * l.gy;
     let wave = l.wave(gpu);
+    // site-geometry `fill-wave`: a grid with fewer warps than the fill rule's
+    // target is cut into the fewest partitions that reach it, inside the wave
+    // the part holds at the tile's own registers and threads.
+    let warps = l.block.div_ceil(gpu.warp);
+    let under = rungs.fill_wave && blocks * warps < gpu.fill_warps();
+    let cap = match l.tiled {
+        Some(g) if under => gpu.sms * profile.tile_capacity(&g, &site.elem),
+        _ => wave,
+    };
     // `--splitk=` (arms) over the part's table (`Geom::split`).
     let forced = if arms.splitk > 0 { arms.splitk } else { gpu.geom.split };
     let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
+        _ if under => profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace),
         _ => profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace),
     };
     let s_ws = if rungs.splitk && l.raster == 1 {
@@ -820,6 +864,7 @@ fn combine(
     // a runtime trip count); the cp.async pipeline's prologue is unrolled over
     // a constant one — add a predicated prologue when a streamed tile needs it.
     let streamk = rungs.streamk
+        && !under
         && atomic
         && l.tiled.is_some_and(|g| g.stages < 2)
         && panels >= 2
@@ -1692,7 +1737,14 @@ pub(crate) fn device_module(
                 // its combine kernels too; the host picks per function
                 // (resident, no epilogue, one stream), so the ordered one stays.
                 let c = launch_in(site, profile, contract, arms, order).combine;
-                if !whole || col || c == Combine::None {
+                // site-geometry `row-split`: a retained row's atomic split or
+                // stream-K kernel (the host zeroes the row; no workspace).
+                let row = l.rungs.row_split
+                    && match c {
+                        Combine::Workspace { .. } => order == Order::Free,
+                        _ => true,
+                    };
+                if !(whole || row) || col || c == Combine::None {
                     continue;
                 }
                 let id = |part| kernel_name(kernel_id_split(site, profile, contract, part));
@@ -1878,7 +1930,7 @@ fn kernel_text(
     combine: Combine,
 ) -> String {
     let mut k = kernel(site, profile, contract, arms, col, epi, combine);
-    let l = launch(site, profile, contract, arms);
+    let l = launch_for(site, profile, contract, arms, combine);
     debug_assert!(
         !col || col_store(&l, site),
         "a column-major store this kernel has"
@@ -1960,7 +2012,7 @@ fn kernel<'s>(
     epi: Option<&'s EpiKernel>,
     combine: Combine,
 ) -> Kernel<'s> {
-    let l = launch(site, profile, contract, arms);
+    let l = launch_for(site, profile, contract, arms, combine);
     let rungs = l.rungs;
     let splitk = combine.splits();
     // `idx32` is an FMA / one-thread-per-cell rung: the tensor-core kernels
@@ -4375,20 +4427,75 @@ impl<'a> FnEmit<'a> {
         one: &TileSite,
         row: &str,
     ) {
-        if self.resident.is_some() {
-            let id = kernel_id(one, self.profile, self.contract) as i64;
+        if let Some(plan) = &self.resident {
+            // site-geometry `row-split` (D1): the row's fold through the
+            // chooser — zero the row, one launch whose partials add into it
+            // (the whole site's `splitk-atomic` / `streamk`, one stream).
+            // A workspace split (a part without the atomic one) on a free
+            // order only: a fixed face replays one partition count per fold.
+            let lc = launch_in(one, self.profile, self.contract, self.gpu_arms, self.order);
+            let split = match lc.combine {
+                _ if !lc.rungs.row_split || !plan.chain.is_empty() => None,
+                Combine::Workspace { .. } if self.order != Order::Free => None,
+                Combine::None => None,
+                c => Some(c),
+            };
+            let bytes_o = one.c * elem_bytes_of(&one.elem);
+            let part = match split {
+                Some(Combine::Atomic { .. }) => "atomic",
+                Some(Combine::StreamK { .. }) => "streamk",
+                _ => "splitk",
+            };
+            let id = match split {
+                Some(_) => kernel_id_split(one, self.profile, self.contract, part),
+                None => kernel_id(one, self.profile, self.contract),
+            } as i64;
+            let ws = match split {
+                Some(Combine::Workspace { s }) => {
+                    let slot = format!("%d{}", self.fresh());
+                    self.allocas.push_str(&format!("  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"));
+                    self.split_slots.push(slot.clone());
+                    self.dallocs.push((slot.clone(), s * bytes_o));
+                    let ws = self.tmp();
+                    self.line(format!("{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})", s * bytes_o));
+                    ws
+                }
+                _ => String::new(),
+            };
+            let rid = kernel_id_split(one, self.profile, self.contract, "reduce") as i64;
             let l = launch(
                 one,
                 self.profile,
                 self.contract,
                 self.gpu_arms,
             );
-            let call = |a: &str, b: &str, o: &str| {
-                format!(
+            let call = |a: &str, b: &str, o: &str| match split {
+                Some(Combine::Atomic { s }) => format!(
+                    "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
+                     call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
+                     i32 {}, i32 {}, i32 {}, i32 {}) ; splitk={s} atomic",
+                    lc.gx, lc.gy * s, lc.block, lc.smem
+                ),
+                Some(Combine::StreamK { ctas, iters }) => format!(
+                    "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
+                     call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
+                     i32 {ctas}, i32 1, i32 {}, i32 {}) ; streamk={ctas}x{iters}",
+                    lc.block, lc.smem
+                ),
+                Some(Combine::Workspace { s }) => {
+                    let (rgx, rblock) = cell_grid(one.c);
+                    format!(
+                        "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {ws}, \
+                         i32 {}, i32 {}, i32 {}, i32 {}) ; splitk={s}\n  \
+                         call void @mapal_gpu_launch(i64 {rid}, i64 {ws}, i64 0, i64 {o}, i32 {rgx}, i32 1, i32 {rblock}, i32 0)",
+                        lc.gx, lc.gy * s, lc.block, lc.smem
+                    )
+                }
+                _ => format!(
                     "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
                      i32 {}, i32 {}, i32 {}, i32 {})",
                     l.gx, l.gy, l.block, l.smem
-                )
+                ),
             };
             if !self.emit_row_resident(source, target, site, row, call) {
                 self.emit_tiled_map_gpu(source, target, site);
@@ -5205,9 +5312,12 @@ mod tests {
         assert_eq!(l.combine.splits(), 1, "{:?}", l.combine);
         let s16 = site(16, 2048, 7168, true, true, Ty::f32());
         // S63 the shipped default per part (`GPU_RUNGS_OFF`, measured,
-        // `benches/results/gpu/s63/default-float/`): each is a session arm.
+        // `benches/results/gpu/s63/default-float/`): each is a session arm
+        // (site-geometry `fill-wave` off: the S63 chooser; its own arm is
+        // `site_geometry.rs`'s).
+        let s63 = off(&["fill-wave"]);
         let shipped = |p, (m, n, k)| {
-            let c = launch_in(&site(m, n, k, true, true, Ty::f32()), p, true, arms, None, Order::Free)
+            let c = launch_in(&site(m, n, k, true, true, Ty::f32()), p, true, s63, None, Order::Free)
                 .combine;
             match c {
                 Combine::None => "none",

@@ -2722,13 +2722,30 @@ impl TargetProfile {
         wide: bool,
         r: crate::GpuRungs,
     ) -> Option<GpuTile> {
+        self.gpu_tile_split(rows, c, k, elem, wide, r, 1)
+    }
+
+    /// [`Self::gpu_tile_with`] for a grid whose fold is cut in `split`
+    /// partitions (site-geometry `fill-wave`): `grid-share` counts the
+    /// `blocks · split` the launch puts on the part. 1 = the unsplit grid.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gpu_tile_split(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+        split: u64,
+    ) -> Option<GpuTile> {
         let fill = r.fill;
         if r.fill_rows && fill && !wide {
             let floor = crate::GpuRungs {
                 fill_rows: false,
                 ..r
             };
-            if let Some(t) = self.gpu_tile_with(rows, c, k, elem, wide, floor) {
+            if let Some(t) = self.gpu_tile_split(rows, c, k, elem, wide, floor, split) {
                 return Some(t);
             }
         }
@@ -2790,7 +2807,7 @@ impl TargetProfile {
         // fills (S53: halving the wide grid at 1024² measured 0.70× on Ada and
         // Blackwell — half the warps per block over the same tiles).
         if wide && ((rows / (ty * tm)) * (c / (tx * tn)) < g.sms || under_warps(tm, tn)) {
-            return self.gpu_tile_with(rows, c, k, elem, false, r);
+            return self.gpu_tile_split(rows, c, k, elem, false, r, split);
         }
         let mut halve_x = true;
         while (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
@@ -2830,7 +2847,7 @@ impl TargetProfile {
             return None;
         }
         let grid = if r.grid_share {
-            blocks.div_ceil(g.sms)
+            (blocks * split.max(1)).div_ceil(g.sms)
         } else {
             u64::MAX
         };
@@ -2858,6 +2875,23 @@ impl TargetProfile {
             blocks_per_sm,
             ..geom(best?)
         })
+    }
+
+    /// **The blocks of tile `g` one SM can hold** at its registers and
+    /// threads — [`Self::gpu_tile_with`] step 5 without `grid-share`'s cap at
+    /// the unsplit grid (site-geometry `fill-wave`). The panel share follows
+    /// the residency, so shared memory does not bound it here.
+    pub fn tile_capacity(&self, g: &GpuTile, elem: &Ty) -> u64 {
+        let Some(gpu) = self.gpu() else {
+            return g.blocks_per_sm;
+        };
+        let regs = if g.held > 0 { g.held } else { square_register_tile(gpu, elem_bytes(elem)).1 };
+        let threads = g.threads().max(1);
+        (gpu.regs_per_sm / regs / threads)
+            .min(gpu.max_threads_per_sm / threads)
+            .min(gpu.max_blocks_per_sm)
+            .max(g.blocks_per_sm)
+            .max(1)
     }
 
     /// **S62/S63 split-K sizing (ADR-0040 D4, gap map M1): how many contiguous
@@ -2895,6 +2929,33 @@ impl TargetProfile {
                 panels.is_multiple_of(d) && (!workspace || d * cells * elem <= g.l2_bytes)
             })
             .unwrap_or(1)
+    }
+
+    /// **site-geometry `fill-wave`: the fewest partitions that fill the
+    /// part** — the smallest `S` dividing the panels for which the split
+    /// grid's `blocks · S · warps` reaches [`Gpu::fill_warps`], inside `cap`
+    /// blocks (the wave the part holds at the tile's own registers and
+    /// threads, [`Self::tile_capacity`]) and, for a workspace, the L2 (as
+    /// [`Self::split_count`]). A fold too short to fill takes the largest such
+    /// `S` — [`Self::split_count`] at `cap`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn split_fill(
+        &self,
+        blocks: u64,
+        warps: u64,
+        cap: u64,
+        panels: u64,
+        cells: u64,
+        elem: u64,
+        workspace: bool,
+    ) -> u64 {
+        let Some(g) = self.gpu() else {
+            return 1;
+        };
+        let most = self.split_count(blocks, cap, panels, cells, elem, workspace);
+        (1..=most)
+            .find(|&d| panels.is_multiple_of(d) && blocks * d * warps >= g.fill_warps())
+            .unwrap_or(most)
     }
 
     /// The streaming matrix unit's facts, when this part has one. Same seam
