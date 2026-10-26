@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; DIFF=$2; shift 2
 mkdir -p "$OUT"
-(cd "$ROOT" && cargo build -q --release --example emit --example run -p mapal-backend-llvm &&
+(cd "$ROOT" && cargo build -q --release --example emit -p mapal-backend-llvm && cargo build -q --release --example run -p mapal-interp &&
     cargo build -q --release -p mapal-rt && cargo build -q --release -p mapal-rt --target x86_64-unknown-linux-gnu)
 CPU_BOX=${CPU_BOX:-${1%%:*}}
 built=()
