@@ -2309,7 +2309,9 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
 /// built on: bit 0 — the prompt cell reads the loop invariant `w` (not a
 /// closed form); bit 1 — the trip writes row `it + 1` (`b ≠ 0`); bits 2..3
 /// zero (with a prompt) — an int division by `it − c` traps at an early
-/// prompt trip `c`.
+/// prompt trip `c`; bit 4 — a guard inside the written cell (`t % 3`); bit 5
+/// — the trip writes the row's first half only (`len < d`); bit 6 — a second
+/// row-written state `y` (two batched slots), read by `o`.
 #[derive(Clone, Debug)]
 pub struct RecurProg {
     pub big: bool,
@@ -2349,24 +2351,42 @@ pub fn recur_src(p: &RecurProg) -> String {
         "fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n    \
          ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / {}.0 }} -> w;\n    \
          (0.0, {nn}) -> fill -> x0;\n    (0.0, {n}) -> fill -> o0;\n    \
-         mut x: [f32; {nn}] <- x0;\n    mut o: [f32; {n}] <- o0;\n    mut it: i32 <- 0;\n    loop {{\n        \
+         mut x: [f32; {nn}] <- x0;\n{}    mut o: [f32; {n}] <- o0;\n    mut it: i32 <- 0;\n    loop {{\n        \
          (it < {}) -> {{\n            -true-> {{\n",
         4 * n,
+        if p.var & 64 != 0 { format!("    (0.0, {nn}) -> fill -> y0;\n    mut y: [f32; {nn}] <- y0;\n") } else { String::new() },
         p.trips
     );
-    let fed = match p.prompt {
-        0 => format!("f / 64.0 + o[t % {n}]"),
-        k => format!("(it < {k}) -> {{ -true-> f / 64.0; -false-> f / 64.0 + o[t % {n}]; }}"),
+    let fed = |f: &str| match p.prompt {
+        0 => format!("{f} / 64.0 + o[t % {n}]"),
+        k => format!("(it < {k}) -> {{ -true-> {f} / 64.0; -false-> {f} / 64.0 + o[t % {n}]; }}"),
     };
     let cell = match p.var & 1 {
         0 => "(t * 7 + 13) % 101 - 50 -> widen_f32 -> f;".to_string(),
         // Reversed: not the cell's own index, so `w` is an operand (not `cell-law`).
         _ => format!("w[{} - t] * 64.0 -> f;", nn - 1),
     };
+    let body = match p.var & 16 {
+        0 => format!("{cell} {}", fed("f")),
+        _ => format!("{cell} (t % 3 == 0) -> {{ -true-> {{ {} }} -false-> f / 32.0; }}", fed("f")),
+    };
     let row = if p.var & 2 == 0 { "it" } else { "it + 1" };
+    // The row's cells the trip writes: all, or (bit 5) its first half.
+    let write = |body: &str, st: &str| match p.var & 32 {
+        0 => format!("{{ {body} }}"),
+        _ => format!("{{ (t % {n} < {}) -> {{ -true-> {{ {body} }} -false-> {st}[t]; }} }}", n / 2),
+    };
     s += &format!(
-        "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {{ {cell} {fed} }} -false-> x[t]; }} }} -> x;\n"
+        "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {} -false-> x[t]; }} }} -> x;\n",
+        write(&body, "x")
     );
+    if p.var & 64 != 0 {
+        let g = format!("(t * 3 + 5) % 89 - 44 -> widen_f32 -> g; {}", fed("g"));
+        s += &format!(
+            "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {} -false-> y[t]; }} }} -> y;\n",
+            write(&g, "y")
+        );
+    }
     let trap = (p.prompt > 0 && (p.var >> 2) & 3 == 0).then(|| (p.var >> 4) % p.prompt);
     let (dzs, dzt) = match trap {
         Some(c) => {
@@ -2434,8 +2454,14 @@ pub fn recur_src(p: &RecurProg) -> String {
             }
         }
     }
-    if vec == "q" {
-        s += &format!("{ind}krange -> map {{ j -> {mat}[j] * 0.5 + q[j] }} -> o;\n");
+    let last = if vec == "q" { format!("{mat}[j] * 0.5 + q[j]") } else { format!("{vec}[j]") };
+    if p.var & 64 != 0 {
+        // `y` read by a vector·matrix cell.
+        s += &format!(
+            "{ind}krange -> map {{ j -> (0.0, krange) -> fold {{ acc, r -> acc + {vec}[r] * y[r * {n} + j] }} -> a; a * 0.25 + {last} }} -> o;\n"
+        );
+    } else if vec == "q" {
+        s += &format!("{ind}krange -> map {{ j -> {last} }} -> o;\n");
     } else {
         s += &format!("{ind}{vec} -> o;\n");
     }
