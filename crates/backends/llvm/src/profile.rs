@@ -159,6 +159,9 @@ pub struct Gpu {
     /// What a device site costs on this part, measured (S62 `place`). `None`:
     /// every capable site is a device site — the behaviour before it existed.
     pub cost: Option<DeviceCost>,
+    /// The part's launch-geometry constants (ADR-0034 D1): the row the
+    /// offline search writes, overridable per knob (`--geom=`).
+    pub geom: Geom,
 }
 
 /// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
@@ -240,7 +243,7 @@ fn square_register_tile(g: &Gpu, elem_bytes: u64) -> (u64, u64) {
 /// budget at `regs_est` registers a thread, split across
 /// [`GPU_RESIDENT_BLOCKS`], capped by the block limit.
 fn block_threads(g: &Gpu, regs_est: u64) -> u64 {
-    (g.regs_per_sm / regs_est / GPU_RESIDENT_BLOCKS).min(g.max_threads_per_block)
+    (g.regs_per_sm / regs_est / g.geom.resident).min(g.max_threads_per_block)
 }
 
 impl Gpu {
@@ -271,7 +274,7 @@ impl Gpu {
     /// [`GPU_RESIDENT_BLOCKS`] of them — that constant's reason applied per
     /// scheduler: one warp issues while the other waits on a load.
     pub fn fill_warps(&self) -> u64 {
-        GPU_RESIDENT_BLOCKS * self.schedulers() * self.sms
+        self.geom.resident * self.schedulers() * self.sms
     }
 
     /// How full a grid of `blocks × threads` keeps the part: warps per warp
@@ -2463,7 +2466,7 @@ impl TargetProfile {
             }
         }
         let resident_threads = g.regs_per_sm / regs_est;
-        let warps = (resident_threads / GPU_RESIDENT_BLOCKS / g.warp).max(1);
+        let warps = (resident_threads / g.geom.resident / g.warp).max(1);
         // Square-most block tile: warps_y·wm ≈ warps_x·wn.
         let (wm, wn) = (mt * MMA_M, nt * MMA_N);
         let aspect = |wy: u64| {
@@ -3296,6 +3299,7 @@ const ADA_SM: Gpu = Gpu {
     max_blocks_per_sm: 24,
     l2_bytes: 48 * 1024 * 1024,
     cost: None,
+    geom: GEOM,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -3441,6 +3445,59 @@ pub const A100: TargetProfile = TargetProfile {
 /// computes while the other waits at the panel barrier. Policy, like
 /// [`Sme::panel_l1d_ratio`] — not a property of the silicon.
 pub const GPU_RESIDENT_BLOCKS: u64 = 2;
+
+/// **A GPU part's launch-geometry constants (ADR-0034 D1)** — the per-target
+/// table the offline search (D2, `benches/gpu/knobs.json`) writes; a measurement
+/// arm replaces one with `--geom=<knob>=<value>` ([`Geom::with`]). Every knob is
+/// value-invariant: it re-partitions independent cells, or a fold the face
+/// leaves free, never an output bit. A count of 0 is "derived" — the rule that
+/// computes it from the site's extents and the part's facts — and a forced
+/// value the site cannot take falls back to that rule. [`GEOM`] is the seed
+/// row: today's literals and derivations, byte for byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Geom {
+    /// Warps each scheduler should hold: the FMA and `mma` tiles split the
+    /// resident-thread budget across this many blocks, and the fill rule
+    /// ([`Gpu::fill_warps`]) aims at it ([`GPU_RESIDENT_BLOCKS`]).
+    pub resident: u64,
+    /// Contiguous partitions of a cut `k` fold (`splitk`, `splitk-atomic`);
+    /// 0 = [`TargetProfile::split_count`]. Ignored where it does not divide
+    /// the fold's panels.
+    pub split: u64,
+}
+
+/// The seed row: every part's table before a search wrote one.
+pub const GEOM: Geom = Geom {
+    resident: GPU_RESIDENT_BLOCKS,
+    split: 0,
+};
+
+/// A `--geom=` override per knob, in [`Geom::NAMES`] order (`None` = the
+/// table's value).
+pub type GeomOver = [Option<u64>; Geom::NAMES.len()];
+
+impl Geom {
+    pub const NAMES: [&'static str; 2] = ["resident", "split"];
+
+    /// The knob called `name`, `None` for an unknown name.
+    pub fn knob(&mut self, name: &str) -> Option<&mut u64> {
+        Some(match name {
+            "resident" => &mut self.resident,
+            "split" => &mut self.split,
+            _ => return None,
+        })
+    }
+
+    /// This row with the overrides in `over` applied.
+    pub fn with(mut self, over: &GeomOver) -> Self {
+        for (name, v) in Self::NAMES.iter().zip(over) {
+            if let Some(v) = v {
+                *self.knob(name).expect("a listed knob") = *v;
+            }
+        }
+        self
+    }
+}
 
 /// Apple M4 with the streaming matrix unit enabled: [`APPLE_M`] plus the SME
 /// facts measured on the part (`benches/sme/svl.c` — SVL 64 B, 4 f32 tiles;
@@ -5139,5 +5196,29 @@ mod tests {
         };
         assert_eq!(m(&RTX_3090), (64, 32, 128, 128, 16, 2));
         assert_eq!(m(&A100), (64, 32, 128, 128, 32, 2));
+    }
+
+    /// ADR-0034 D1: the search's knob file lists every knob of [`Geom`] for
+    /// every measured part, the part's table value first (the shipped arm),
+    /// and an override replaces exactly its knob.
+    #[test]
+    fn knobs_json_lists_every_knob_table_value_first() {
+        let json = include_str!("../../../../benches/gpu/knobs.json");
+        for p in GPU_MEASURED {
+            let mut g = p.gpu().expect("a GPU part").geom;
+            let row = json
+                .split(&format!("\"{}\":", p.name))
+                .nth(1)
+                .and_then(|r| r.split('}').next())
+                .unwrap_or_else(|| panic!("knobs.json has no `{}` row", p.name));
+            for n in Geom::NAMES {
+                let v = *g.knob(n).expect("a listed knob");
+                assert!(row.contains(&format!("\"{n}\": [{v}")), "{}: `{n}` must list {v} first", p.name);
+            }
+        }
+        let mut over = GeomOver::default();
+        over[1] = Some(4);
+        assert_eq!(GEOM.with(&over), Geom { split: 4, ..GEOM });
+        assert_eq!(GEOM.with(&GeomOver::default()), GEOM);
     }
 }

@@ -866,6 +866,9 @@ pub struct EmitOpts {
     pub host: &'static str,
     /// Measurement arms over the GPU rung table; see [`GpuArms`].
     pub gpu: GpuArms,
+    /// ADR-0034 D1: `--geom=<knob>=<value>` over the GPU part's geometry table
+    /// ([`profile::Geom`]); all `None` = the table.
+    pub geom: profile::GeomOver,
 }
 
 impl Default for EmitOpts {
@@ -888,6 +891,7 @@ impl Default for EmitOpts {
             target: "native",
             host: "native",
             gpu: GpuArms::default(),
+            geom: Default::default(),
         }
     }
 }
@@ -953,7 +957,15 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
             profile::names()
         ))
     };
-    let profile = profile::resolve(opts.target).ok_or_else(|| unknown(opts.target))?;
+    let mut profile = profile::resolve(opts.target).ok_or_else(|| unknown(opts.target))?;
+    // ADR-0034 D1: a measurement arm's geometry overrides, on a copy of the part.
+    if opts.geom.iter().any(Option::is_some)
+        && let profile::Machine::Gpu(g) = profile.machine
+    {
+        let mut p = *profile;
+        p.machine = profile::Machine::Gpu(profile::Gpu { geom: g.geom.with(&opts.geom), ..g });
+        profile = Box::leak(Box::new(p));
+    }
     if profile.gpu().is_none() {
         return emit_module(ir, opts, profile);
     }
