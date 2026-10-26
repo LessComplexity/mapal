@@ -217,7 +217,9 @@ fn radix_one_output_and_tf32_plain_operands() {
         let ir = lower(&perm(ty));
         for target in ["rtx-4090", "h100-pcie"] {
             let mut opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            // (ON as an arm: parts no box has value-gated it on ship it OFF.)
             opts.gpu.off.tf32_radix = off;
+            opts.gpu.on.tf32_radix = !off;
             let e = emit_detailed(&ir, &opts).expect("emits");
             let tiles = e.device.as_deref().map_or(0, |d| {
                 d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(kind) && l.contains(" radix=")).count()

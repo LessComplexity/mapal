@@ -549,8 +549,13 @@ pub(crate) fn launch_split(
                 .flatten()
         })
         .map(|g| {
-            let streamed = rungs
-                .cp_async
+            // ADR-0034 D1: a forced stage count picks the pipeline (1 =
+            // register staging, >= 2 = `cp.async`) over the rung.
+            let stream = match gpu.geom.stages {
+                0 => rungs.cp_async,
+                s => s >= 2,
+            };
+            let streamed = stream
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
                 .flatten();
             if let Some(a) = streamed {
@@ -588,16 +593,9 @@ pub(crate) fn launch_split(
         // order are unchanged ([`Kernel::step`]).
         .map(|g| {
             let blocks = (site.rows / g.bm()) * (site.c / g.bn()) * split;
-            rungs
-                .async_stage
+            (rungs.async_stage && gpu.geom.stages == 0)
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
                 .flatten()
-                .unwrap_or(g)
-        })
-        // ADR-0034 D1 (site-geometry B4): the part's forced tile candidate.
-        .map(|g| {
-            profile
-                .gpu_tile_forced(g, site.rows, site.c, site.k, &site.elem, rungs, split)
                 .unwrap_or(g)
         });
     match tiled {
@@ -619,7 +617,9 @@ pub(crate) fn launch_split(
             tiled: None,
             mma: None,
             wgmma: None,
-            gx: blocks,
+            // One thread per cell: its own grid, not the fill key's (which
+            // keys a tile the launch may not take — a `--geom=` arm).
+            gx: (site.rows * site.c).div_ceil(NAIVE_THREADS),
             gy: 1,
             block: NAIVE_THREADS,
             smem: 0,
@@ -723,6 +723,10 @@ fn plan_line(
         Combine::Atomic { s } => ("atomic", s, 0, 0),
         Combine::StreamK { ctas, iters } => ("streamk", 1, ctas, iters),
     };
+    // site-geometry `fill-wave`: the target its split grid reaches (intent.py).
+    if l.rungs.fill_wave && s > 1 {
+        f += &format!(" fill_warps={}", gpu.fill_warps());
+    }
     let on: Vec<&str> = KERNEL_RUNGS
         .iter()
         .copied()
@@ -737,7 +741,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 29] = [
+const KERNEL_RUNGS: [&str; 33] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -767,6 +771,10 @@ const KERNEL_RUNGS: [&str; 29] = [
     "splitk",
     "splitk-atomic",
     "streamk",
+    "row-split",
+    "fill-wave",
+    "fit-first",
+    "tf32-radix",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -777,14 +785,33 @@ pub(crate) fn launch_in(
     arms: crate::GpuArms,
     order: Order,
 ) -> Launch {
-    let mut l = launch(site, profile, contract, arms);
-    l.combine = combine(&l, site, profile, order, arms);
-    if l.rungs.fill_wave && l.combine.splits() > 1 {
-        let c = l.combine;
-        l = launch_split(site, profile, contract, arms, c.splits());
-        l.combine = c;
-    }
+    let l = launch(site, profile, contract, arms);
+    let c = combine(&l, site, profile, order, arms);
+    let mut l = resized(site, profile, contract, arms, l, c);
+    l.combine = c;
     l
+}
+
+/// `l` re-sized for the split grid of `combine` under `fill-wave`
+/// ([`launch_split`]) — kept only when the re-sized panel still cuts each
+/// partition's `k / S` whole (the split kernel walks `kext / bk` panels).
+fn resized(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    l: Launch,
+    combine: Combine,
+) -> Launch {
+    let s = combine.splits();
+    if !(l.rungs.fill_wave && s > 1) {
+        return l;
+    }
+    let r = launch_split(site, profile, contract, arms, s);
+    match r.tiled {
+        Some(g) if (site.k / s).is_multiple_of(g.bk) => r,
+        _ => l,
+    }
 }
 
 /// The launch a kernel of realization `combine` is emitted with: under
@@ -796,11 +823,7 @@ fn launch_for(
     arms: crate::GpuArms,
     combine: Combine,
 ) -> Launch {
-    let l = launch(site, profile, contract, arms);
-    match l.rungs.fill_wave && combine.splits() > 1 {
-        true => launch_split(site, profile, contract, arms, combine.splits()),
-        false => l,
-    }
+    resized(site, profile, contract, arms, launch(site, profile, contract, arms), combine)
 }
 
 /// **The chooser (ADR-0040 D4, gap map M1/G2/G6)**: how a site's `k` fold is

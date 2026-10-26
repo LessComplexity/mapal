@@ -69,6 +69,14 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
         let fill = resolve_profile(target).and_then(|t| t.gpu()).expect("a GPU part").fill_warps();
         let (on, off) = (emission(&ir, target, true), emission(&ir, target, false));
         let (s_on, s_off) = (splits(on.device.as_deref()), splits(off.device.as_deref()));
+        // The re-sized split kernel still walks each partition's `k / S` in
+        // whole panels (`fill-wave` keeps the unsplit launch otherwise).
+        for l in on.device.as_deref().unwrap_or("").lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile ")) {
+            let f = |k: &str| -> u64 { l.split(' ').find_map(|x| x.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or(0) };
+            if f("S=") > 1 {
+                assert!((f("k=") / f("S=")).is_multiple_of(f("bk=")), "#{z} {target}: bk | k/S\n{l}\n{src}");
+            }
+        }
         // OFF never cuts a retained row: its row kernel is the ordered one.
         assert!(!p.retained || s_off.iter().all(|s| s.0 > 1 || m == 1), "#{z} {target}\n{src}");
         for &(r, grid, warps, s) in &s_on {
