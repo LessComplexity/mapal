@@ -123,13 +123,14 @@ for spec in "$@"; do
     IFS=: read -r prof sm <<< "$spec"; d="$OUT/$prof"; mkdir -p "$d"
     for c in $CELLS; do
         f="$OUT/tiles/mm_$c.mapal"; b="$d/mm_$c"
-        for face in "" _x _c _r _rc; do
+        faces=("" _x _c _r _rc); [ "${SUITE_ARMS:-1}" = 1 ] || faces=("" _x _c)  # site-geometry: arms from ARMS
+        for face in "${faces[@]}"; do
             # shellcheck disable=SC2046  # the face's flags are separate arguments
             emit_one "$f" "$b$face" "$prof" "$sm" $(flags_of "$face")
         done
         cp "$b.ptx" "$b.null.ptx"; cp "$b.launch" "$b.null.launch"
         echo "cell $prof $c default $(cat "$b.launch")"
-        chain "$f" "$b" "$prof" "$sm"
+        [ "${SUITE_ARMS:-1}" = 1 ] && chain "$f" "$b" "$prof" "$sm"
     done
     for p in $PROGS; do
         f="$OUT/tiles/$p.mapal"; b="$d/$p"
@@ -154,8 +155,12 @@ for spec in "$@"; do
         emit_one "$f" "$b" "$prof" "$sm"
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
         if [[ " $SUITE_C " == *" $p "* ]]; then emit_one "$f" "${b}_c" "$prof" "$sm" --order=sequential; fi
-        # site-geometry: SUITE_ARMS=0 (search.py) keeps the shipped build and its null only.
-        [ "${SUITE_ARMS:-1}" = 1 ] || continue
+        # site-geometry: SUITE_ARMS=0 (search.py, changed_bundle.sh) keeps the shipped build and its null, plus the
+        # `cpu` arm of SUITE_CPU (its CPU-only build changed); every other arm comes from ARMS.
+        if [ "${SUITE_ARMS:-1}" != 1 ]; then
+            case " ${SUITE_CPU:-} " in *" $p "*) emit_cpu "$f" "$b.cpu" ;; esac
+            continue
+        fi
         emit_cpu "$f" "$b.cpu"
         # S65: the CPU-only build's S64 arm (`by-ref` off), where it differs.
         emit_cpu "$f" "$b.cpu-off-by-ref" --gpu-off=by-ref

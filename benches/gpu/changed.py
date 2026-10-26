@@ -6,16 +6,21 @@ diff   — emit every bench program (gen_tiles.py) per arch x face on a base ref
          every changed row, each rung's OFF arm is emitted at HEAD; one whose emission differs from the shipped
          build is a differing arm. A row whose HEAD emission the arch's result cache already holds is `cached`.
            changed.py diff <out> [--base REF] [--base-emit PATH] [--archs ..] [--faces ..] [--rungs ..] [--jobs N]
+           A runtime / harness change (RT_PATHS at the base vs the working tree) makes every row `changed`;
+           OFF arms are probed only where the emission moved. Parts with GPU_RUNGS_OFF rows also probe
+           `--gpu-on=<r>` for those rungs (arms `on-<r>`).
            -> <out>/emission.tsv  program arch face status base_hash head_hash  (same|changed|new|gone|cached)
+              <out>/stamp         HEAD's runtime stamp (the cache's `ver` prefix)
               <out>/arms.tsv      program arch face arm hash tag                (changed rows' arms != shipped;
                                   tag new | cause (off at HEAD == off at base: the change is this rung's) | carried)
               <out>/changed.tsv   program status arch/face.. rungs              (the summary)
               <out>/tiles/        HEAD's programs (the cache's source hashes)
-env    — one arch's selection as shell assignments for integrated_bundle.sh / bundle.sh (changed_bundle.sh).
-           changed.py env <out> <arch>
+env    — one arch's selection as shell assignments for integrated_bundle.sh / bundle.sh (changed_bundle.sh);
+         CPU-only changes go to one box (--cpu-box, default this arch).
+           changed.py env <out> <arch> [--cpu-box ARCH]
 ingest — a box run's rows into the result cache benches/results/cache/<arch>.tsv (key leg ver value stamp):
-         key = the arm's emission hash (Mapal legs) or the program's source hash (library legs); ver = `-` for
-         Mapal (the hash is the emission), the torch version or the nvcc release for the libraries.
+         key = the arm's emission hash (Mapal legs) or the program's source hash (library legs); ver = the
+         runtime stamp | nvcc release | driver for Mapal, the torch version or the nvcc release for the libraries.
            changed.py ingest <out> <arch> <results-<arch>.txt>
 The x86-64-v3 "arch" is the CPU-only build on the boxes' host profile (the `cpu` arm).
 """
@@ -39,6 +44,10 @@ ARCHS = ['rtx-4090', 'rtx-5090', 'h100-pcie', 'rtx-3090', 'x86-64-v3']
 FACES = {'default': [], 'contract': ['--order=sequential'], 'exact': ['--exact']}
 RESULT_FACE = {'_default': 'default', '_c': 'contract', '_x': 'exact', '_exact': 'exact'}
 CPU = 'x86-64-v3'
+# What a row's time depends on besides its emission: the runtime the bundle links and the box harness.
+RT_PATHS = ['crates/mapal-rt', 'benches/gpu/tile_bench.cu', 'benches/gpu/chain_bench.cu', 'benches/gpu/mlp_bench.cu',
+            'benches/gpu/box_run.sh', 'benches/gpu/value_gate.py']
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def sh(*cmd, **kw):
@@ -99,15 +108,41 @@ def base_tree(ref, tmp):
     return exe, tiles(gen, tmp / 'tiles')
 
 
-def cached_keys(arch):
+def rt_stamp(ref):
+    """16 hex over RT_PATHS' blobs at `ref`; `HEAD` adds the working tree's uncommitted changes to them."""
+    g = ['git', '-C', str(ROOT)]
+    ids = sh(*g, 'ls-tree', '-r', sh(*g, 'rev-parse', ref).strip(), '--', *RT_PATHS)
+    if ref == 'HEAD':
+        ids += sh(*g, 'diff', 'HEAD', '--', *RT_PATHS)
+    return hashlib.sha256(ids.encode()).hexdigest()[:16]
+
+
+def cached_keys(arch, rt):
+    """Mapal keys the cache holds measured on runtime stamp `rt`."""
     f = CACHE / f'{arch}.tsv'
-    return {l.split('\t')[0] for l in f.read_text().splitlines() if l.split('\t')[1:2] == ['mapal']} \
-        if f.exists() else set()
+    rows = [l.split('\t') for l in f.read_text().splitlines()] if f.exists() else []
+    return {r[0] for r in rows if r[1:2] == ['mapal'] and r[2].split('|')[0] == rt}
+
+
+def rungs_off_at(arch):
+    """The rungs a GPU_RUNGS_OFF row ships OFF on `arch` (their ON arm is the one to re-judge)."""
+    from evidence import rows_off
+    return sorted({r for prof, r, *_ in rows_off() if prof == arch})
+
+
+def build_emit():
+    """The emitter this checkout's source builds (a no-op when fresh); EMIT= names another and skips it."""
+    if 'EMIT' not in os.environ:
+        subprocess.run(['cargo', 'build', '-q', '--release', '--example', 'emit', '-p', 'mapal-backend-llvm'],
+                       cwd=ROOT, check=True)
 
 
 def diff(a):
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    build_emit()
+    rt_base, rt = rt_stamp(a.base), rt_stamp('HEAD')
+    (out / 'stamp').write_text(rt + '\n')
     head = tiles(ROOT / 'benches/gpu/gen_tiles.py', out / 'tiles')
     jobs = a.jobs or int(os.environ.get('CARGO_BUILD_JOBS') or max(1, (os.cpu_count() or 4) - 2))
     with tempfile.TemporaryDirectory() as t, cf.ThreadPoolExecutor(jobs) as pool:
@@ -116,24 +151,31 @@ def diff(a):
         rows = [(p, arch, face) for p in sorted(set(head) | set(base)) for arch in a.archs for face in a.faces]
         hb = pool.map(lambda r: emission(bemit, base[r[0]], r[1], r[2]) if r[0] in base else '-', rows)
         hh = pool.map(lambda r: emission(EMIT, head[r[0]], r[1], r[2]) if r[0] in head else '-', rows)
-        cached = {arch: cached_keys(arch) for arch in a.archs}
+        cached = {arch: cached_keys(arch, rt) for arch in a.archs}
+        if rt != rt_base:
+            print(f'runtime/harness changed since {a.base} ({rt_base} -> {rt}): every row is measured again',
+                  file=sys.stderr)
         em = []
         for (p, arch, face), b, h in zip(rows, hb, hh):
-            st = 'new' if b == '-' else 'gone' if h == '-' else 'same' if b == h else \
+            st = 'new' if b == '-' else 'gone' if h == '-' else 'same' if b == h and rt == rt_base else \
                 'cached' if h in cached[arch] else 'changed'
             em.append((p, arch, face, st, b, h))
-        todo = [(p, arch, face, h) for p, arch, face, st, _, h in em if st in ('changed', 'new')]
+        # Arms only where the emission moved (a runtime-only change re-measures the shipped build).
+        todo = [(p, arch, face, h) for p, arch, face, st, b, h in em if st in ('changed', 'new') and b != h]
         names = a.rungs or rungs(EMIT, next(iter(head.values())))
         known = set(rungs(bemit, next(iter(base.values())))) if base else set()
-        probe = [(p, arch, face, h, r) for p, arch, face, h in todo for r in names]
-        offs = pool.map(lambda x: emission(EMIT, head[x[0]], x[1], x[2], [f'--gpu-off={x[4]}']), probe)
+        ons = {arch: rungs_off_at(arch) for arch in a.archs}
+        probe = [(p, arch, face, h, f'off-{r}') for p, arch, face, h in todo for r in names] + \
+                [(p, arch, face, h, f'on-{r}') for p, arch, face, h in todo for r in ons[arch]]
+        flag = lambda arm: f'--gpu-{arm.replace("-", "=", 1)}'  # noqa: E731 — off-x -> --gpu-off=x
+        offs = pool.map(lambda x: emission(EMIT, head[x[0]], x[1], x[2], [flag(x[4])]), probe)
         live = [(x, o) for x, o in zip(probe, offs) if o not in (x[3], 'err')]
-        # The arm's tag: `new` (a rung the base lacks), `cause` (turning it off at HEAD gives the base's OFF arm:
-        # the change is this rung's), `carried` (the change runs through both arms of its A/B).
-        boffs = pool.map(lambda xo: emission(bemit, base[xo[0][0]], xo[0][1], xo[0][2], [f'--gpu-off={xo[0][4]}'])
-                         if xo[0][0] in base and xo[0][4] in known else 'new', live)
-        arms = [(p, arch, face, f'off-{r}', o, 'new' if b == 'new' else 'cause' if b == o else 'carried')
-                for ((p, arch, face, h, r), o), b in zip(live, boffs)]
+        # The arm's tag: `new` (a rung the base lacks), `cause` (the arm at HEAD gives the base's arm: the change
+        # is this rung's), `carried` (the change runs through both arms of its A/B).
+        boffs = pool.map(lambda xo: emission(bemit, base[xo[0][0]], xo[0][1], xo[0][2], [flag(xo[0][4])])
+                         if xo[0][0] in base and xo[0][4].split('-', 1)[1] in known else 'new', live)
+        arms = [(p, arch, face, arm, o, 'new' if b == 'new' else 'cause' if b == o else 'carried')
+                for ((p, arch, face, h, arm), o), b in zip(live, boffs)]
     write(out / 'emission.tsv', ['program', 'arch', 'face', 'status', 'base_hash', 'head_hash'], em)
     write(out / 'arms.tsv', ['program', 'arch', 'face', 'arm', 'hash', 'tag'], arms)
     summary = defaultdict(lambda: [set(), set(), set()])
@@ -144,8 +186,8 @@ def diff(a):
             s[1].add(f'{arch}/{face}')
     for p, _, _, arm, _, tag in arms:
         if tag != 'carried':
-            summary[p][2].add(arm[4:])
-    write(out / 'changed.tsv', ['program', 'status', 'arch/face emission differs', 'new / cause rungs (OFF arm differs)'],
+            summary[p][2].add(arm)
+    write(out / 'changed.tsv', ['program', 'status', 'arch/face emission differs', 'new / cause arms (differ)'],
           [(p, '/'.join(sorted(s[0])), ' '.join(sorted(s[1])), ','.join(sorted(s[2])))
            for p, s in sorted(summary.items())])
     count = defaultdict(int)
@@ -168,15 +210,20 @@ def read(path):
 
 def env(a):
     """integrated_bundle.sh: SUITE (pt_*, default face) / SUITE_C (contract face too) / PROGS (pt_rm_*) / CELLS
-    (mm_MxNxK) / ARMS (their `new` and `cause` arms; ALL_ARMS=1 adds the `carried` ones); bundle.sh: ONLY (every other program: the differential) with its
-    differing rungs as HOST_RUNGS / KERNEL_RUNGS / TF32_RUNGS (NOARMS where it has none). A pt_* program whose
-    CPU-only build changed is measured on every box (its `cpu` arm runs on the box's host)."""
+    (mm_MxNxK) / ARMS (their `new` and `cause` arms; ALL_ARMS=1 adds the `carried` ones) / SUITE_CPU (the suite
+    programs whose CPU-only build changed: their `cpu` arm); bundle.sh: ONLY (every other program: the differential)
+    with its differing rungs as HOST_RUNGS / KERNEL_RUNGS / TF32_RUNGS (NOARMS where it has none) and DEFAULT (those
+    whose default face moved: gated against the exact oracle within D2's bound, box_run.sh `_d`; UNCHECKED where no
+    K bounds it — changed_bundle.sh stops on those unless UNCHECKED_OK=1). CPU-only changes
+    are measured on the `--cpu-box` part alone."""
     out, arch = Path(a.out), a.arch
+    cpu_box = a.cpu_box or arch
     moved = defaultdict(set)  # program -> faces changed on this arch (`cpu` for the CPU-only build)
     for p, ar, face, st, _, _ in read(out / 'emission.tsv'):
-        if st in ('changed', 'new') and ar in (arch, CPU):
+        if st in ('changed', 'new') and (ar == arch or (ar == CPU and arch == cpu_box)):
             moved[p].add(face if ar == arch else 'cpu')
-    suite, suite_c, progs, cells, only, arms, rungs_only = [], [], [], [], [], [], set()
+    suite, suite_c, suite_cpu, progs, cells, only, default, unchecked, arms, rungs_only = \
+        [], [], [], [], [], [], [], [], [], set()
     for p, faces in sorted(moved.items()):
         if p.startswith('pt_'):
             if not faces & {'default', 'contract', 'cpu'}:
@@ -184,23 +231,29 @@ def env(a):
             (progs if p.startswith('pt_rm_m') else suite).append(p)
             if 'contract' in faces and not p.startswith('pt_rm_m'):
                 suite_c.append(p)
+            if 'cpu' in faces and not p.startswith('pt_rm_m'):
+                suite_cpu.append(p)
         elif re.fullmatch(r'mm_\d+x\d+x\d+', p):
             cells.append(p[3:])
-        elif faces & {'exact', 'contract'}:
+        elif faces & {'exact', 'contract', 'default'}:
             only.append(p)
+            if 'default' in faces:  # D2's bound needs the program's K (gen_tiles.py `.kmax`)
+                (default if (out / 'tiles' / f'{p}.kmax').exists() else unchecked).append(p)
     timed = set(suite) | set(progs) | {f'mm_{c}' for c in cells}
     every = os.environ.get('ALL_ARMS') == '1'
     for p, ar, face, arm, _, tag in read(out / 'arms.tsv'):
         if ar != arch or (tag == 'carried' and not every):
             continue
+        d, r = arm.split('-', 1)
         if p in timed and face in ('default', 'contract'):
-            arms.append(f'{arch}:{p}:{"_c" if face == "contract" else ""}:{arm[4:]}:off')
-        elif p in only and face in ('exact', 'contract'):
-            rungs_only.add(arm[4:])
+            arms.append(f'{arch}:{p}:{"_c" if face == "contract" else ""}:{r}:{d}')
+        elif p in only and face in ('exact', 'contract') and d == 'off':
+            rungs_only.add(r)
     rr = ' '.join(sorted(rungs_only)) or ' '  # a blank, not empty: bundle.sh's `${X:-default}` keeps it
     noarms = '' if rungs_only else ' '.join(only)
-    for k, v in [('SUITE', suite), ('SUITE_C', suite_c), ('PROGS', progs), ('CELLS', cells), ('ARMS', arms),
-                 ('ONLY', only), ('NOARMS', noarms.split())]:
+    for k, v in [('SUITE', suite), ('SUITE_C', suite_c), ('SUITE_CPU', suite_cpu), ('PROGS', progs),
+                 ('CELLS', cells), ('ARMS', arms), ('ONLY', only), ('DEFAULT', default), ('UNCHECKED', unchecked),
+                 ('NOARMS', noarms.split())]:
         print(f"{k}='{' '.join(v)}'")
     for k in ('HOST_RUNGS', 'KERNEL_RUNGS', 'TF32_RUNGS'):
         print(f"{k}='{rr}'")
@@ -226,6 +279,8 @@ def ingest(a):
     cpu = {(p, face): h for p, ar, face, _, _, h in read(out / 'emission.tsv') if ar == CPU}
     arm_h = {(p, face, arm): h for p, ar, face, arm, h, _ in read(out / 'arms.tsv') if ar == arch}
     stamp, nvcc, tv = box_stamp(text)
+    rt = (out / 'stamp').read_text().strip() if (out / 'stamp').exists() else '-'
+    ver = f'{rt}|{nvcc}|{stamp.split("|")[-1]}'  # runtime stamp | nvcc | driver
 
     def key(p, face, arm):
         if arm in ('on', 'null'):
@@ -244,7 +299,7 @@ def ingest(a):
             face = {'_x': 'exact', '_c': 'contract', None: 'default'}.get(s[2], s[2])
             ms[(s[1], face, s[3] or 'on')].append(float(m[3]))
         else:
-            lib[(f'mm_{m[1]}', m[2], nvcc)].append(float(m[3]))
+            lib[(m[1], m[2], nvcc)].append(float(m[3]))  # cell= carries mm_ (box_run.sh)
     for m in re.finditer(r'^torch prog=(\S+) mode=(\S+) .*med_ms=([\d.]+)', text, re.M):
         lib[(m[1], f'torch-{m[2]}', tv)].append(float(m[3]))
     for m in re.finditer(r'^chain probe=(\S+) n=(\d+) leg=(\S+) .*med_ms=([\d.]+)', text, re.M):
@@ -253,7 +308,7 @@ def ingest(a):
     for (p, face, arm), v in ms.items():
         k = key(p, face, arm)
         if k:
-            rows.append((k, 'mapal-null' if arm == 'null' else 'mapal', '-',
+            rows.append((k, 'mapal-null' if arm == 'null' else 'mapal', ver,
                          f'med_ms={statistics.median(v):.6g} n={len(v)} prog={p} face={face} arm={arm}', stamp))
     for (p, leg, ver), v in lib.items():
         rows.append((src_hash(out, p), leg, ver, f'med_ms={statistics.median(v):.6g} n={len(v)} prog={p}', stamp))
@@ -281,6 +336,7 @@ def main():
     e = sub.add_parser('env')
     e.add_argument('out')
     e.add_argument('arch')
+    e.add_argument('--cpu-box', help='the one part that measures CPU-only changes (default: this one)')
     i = sub.add_parser('ingest')
     i.add_argument('out')
     i.add_argument('arch')

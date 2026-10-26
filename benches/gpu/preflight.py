@@ -23,6 +23,11 @@ from unittest import mock
 HERE = Path(__file__).resolve().parent
 
 
+def nonempty(path):
+    """box_run.sh's `-s` (an empty oracle or K fails there as "no bound")."""
+    return path.exists() and path.stat().st_size > 0
+
+
 def elf_x86_64(path):
     data = path.read_bytes()[:1 << 20]
     i = data.find(b'\x7fELF')
@@ -77,25 +82,30 @@ def check(bundle, prof):
             continue
         base = stem.removesuffix('_c')
         exp = tiles / (f'{base}_c.expect' if stem != base else f'{base}.expect')
+        dflt = stem.endswith('_d') and nonempty(tiles / f'{stem[:-2]}.kmax')  # box_run.sh `_d`: D2's bound
+        if dflt:
+            exp = tiles / f'{stem[:-2]}.expect'
+            if not (bundle / 'value_gate.py').exists():
+                bad.append(f'{b}: default face without value_gate.py')
         if stem.endswith('_tf'):
             if f'{stem}.off-epilogue' not in objs:
                 bad.append(f'{b}: TF32 program without its off-epilogue reference arm')
-        elif not exp.exists():
+        elif not nonempty(exp):
             bad.append(f'{b}: missing oracle tiles/{exp.name}')
     box = (bundle / 'box_run.sh').read_text() if (bundle / 'box_run.sh').exists() else ''
     chain = (re.findall(r'case \$probe in ([^)]+)\) ;;', box) or [''])[0].split('|')
     maps = torch_workload(bundle) if probes and torch_on else (lambda s: False)
-    if any((tiles / f'{b}_x.expect').exists() for b in probes) and not (bundle / 'value_gate.py').exists():
+    if any(nonempty(tiles / f'{b}_x.expect') for b in probes) and not (bundle / 'value_gate.py').exists():
         bad.append('value_gate.py missing (the default face\'s bound)')
     if probes and torch_on and not (bundle / 'torch_bench.py').exists():
         bad.append('torch_bench.py missing (TORCH=0 to run without the torch legs)')
     for b in sorted(probes):
-        kmax = (tiles / f'{b}.kmax').exists() or re.search(r'_d\d+_h\d+', b)
-        if not ((tiles / f'{b}_x.expect').exists() and kmax) and not (tiles / f'{b}.expect').exists():
+        kmax = nonempty(tiles / f'{b}.kmax') or re.search(r'_d\d+_h\d+', b)
+        if not (nonempty(tiles / f'{b}_x.expect') and kmax) and not nonempty(tiles / f'{b}.expect'):
             bad.append(f'{b}: default face without its bound (tiles/{b}_x.expect + K, or tiles/{b}.expect)')
         for face in ('_c', '_x'):
             if any(o == b + face or o.startswith(f'{b}{face}.') for o in objs) and \
-                    not (tiles / f'{b}{face}.expect').exists() and f'{b}{face}.cpu' not in objs:
+                    not nonempty(tiles / f'{b}{face}.expect') and f'{b}{face}.cpu' not in objs:
                 bad.append(f'{b}{face}: no oracle (tiles/{b}{face}.expect or {b}{face}.cpu)')
         probe, n = b[3:].rsplit('_', 1)
         has_chain = n.isdigit() and any(fnmatch.fnmatchcase(probe, g) for g in chain if g)
