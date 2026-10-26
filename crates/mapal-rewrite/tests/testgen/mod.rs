@@ -2721,12 +2721,24 @@ pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
             last = n - 1
         )
     } else {
+        // site-geometry integrate: a third of the products feed a bias + relu
+        // epilogue (the tile kernel's epilogue group: an ordered launch beside
+        // a cut fold's chooser).
+        let epi = if p.law[1] % 3 == 0 {
+            format!(
+                "\n    {n} -> iota -> nb;\n    nb -> map {{ t -> t % 7 - 3 -> widen_f32 }} -> bias;\n    \
+                 ic -> map {{ c -> y[c] + bias[c % {n}] -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> z;"
+            )
+        } else {
+            String::new()
+        };
+        let o = if epi.is_empty() { "y" } else { "z" };
         format!(
-            "    {y}
-    y[0] -> println;
-    y[{last}] -> println;
+            "    {y}{epi}
+    {o}[0] -> println;
+    {o}[{last}] -> println;
     0.0 -> zero: f32;
-    (zero, y) -> fold {{ acc, v -> acc + v }} -> total;
+    (zero, {o}) -> fold {{ acc, v -> acc + v }} -> total;
     total -> println;
 }}
 ",

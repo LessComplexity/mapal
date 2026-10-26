@@ -69,7 +69,9 @@ for o in "$PROF"/*.host.o; do
     # The clock is not a value: a program's `iter ms=` line drops on both sides.
     got=$(grep -v '^iter ms=' <<< "$got"); want=$(grep -v '^iter ms=' "$exp")
     if [ -n "$dflt" ]; then
-        tf=(); grep -q ': tf32' "tiles/$base.mapal" 2>/dev/null && tf=(--tf32)
+        tf=(); [ -s "tiles/${base}_xabs.expect" ] && tf=("tiles/${base}_xabs.expect")  # D2 absolute, with M
+        grep -q ': tf32' "tiles/$base.mapal" 2>/dev/null && tf+=(--tf32)
+        g="process exit $rc"
         if [ $rc -eq 0 ] && g=$(python3 value_gate.py "$exp" "$(tr '\n' ' ' <<< "$got")" "$(cat "tiles/$base.kmax")" ${tf[@]+"${tf[@]}"}); then
             pass=$((pass + 1)); say "PASS-BOUND $b K=$(cat "tiles/$base.kmax") $g $(tr '\n' ' ' <<< "$got")"
         else
