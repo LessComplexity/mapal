@@ -15,7 +15,9 @@
 # build on the host profile), `.off-place` (GPU-only: every capable site on the device; dropped where
 # it equals the shipped build) and `.null`; ARMS="<profile>:<stem>:<face>:<rung>[,<rung>]:<on|off>..."
 # extra arms (`<stem><face>.<on|off>-<rung>`, dropped where equal to the shipped emission) — the re-judged
-# rows' cells (evidence.py rejudge prints them).
+# rows' cells (evidence.py rejudge prints them). site-geometry: SUITE_C="<stem>.." also builds those suite programs'
+# contract face (`_c`, its oracle too); an ARMS entry `<profile>:<stem>:<face>:<knob>=<value>:geom` is the arm
+# `--geom=<knob>=<value>` (`<stem><face>.on-g-<knob>-<value>`, `.` -> `p`: search.py's candidates).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
@@ -24,6 +26,7 @@ EMIT="${EMIT:-$ROOT/target/release/examples/emit}"
 CELLS=${CELLS-"16x2048x7168 16x1024x4096 16x18432x7168 128x2048x7168 4096x4096x4096"}
 PROGS=${PROGS-"pt_rm_m128_d256_h512 pt_rm_m128_d1024_h2048"}
 SUITE=${SUITE-""}
+SUITE_C=${SUITE_C-""}
 ARMS=${ARMS-""}
 mkdir -p "$OUT/tiles"
 python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
@@ -36,7 +39,7 @@ ulimit -s 65520 2>/dev/null || true
 for p in $PROGS $SUITE; do
     # The suite runs the default face alone: its gate is the exact face's oracle.
     # (and the contract face where a re-judge arm runs on it).
-    faces=(_x _c); [[ " $SUITE " == *" $p "* ]] && [[ " $ARMS " != *":$p:_c:"* ]] && faces=(_x)
+    faces=(_x _c); [[ " $SUITE " == *" $p "* ]] && [[ " $ARMS " != *":$p:_c:"* ]] && [[ " $SUITE_C " != *" $p "* ]] && faces=(_x)
     for face in "${faces[@]}"; do
         [ -s "$OUT/tiles/$p$face.expect" ] && continue
         fl=(--exact); [ "$face" = _c ] && fl=(--order=sequential)
@@ -150,6 +153,9 @@ for spec in "$@"; do
         f="$OUT/tiles/$p.mapal"; b="$d/$p"
         emit_one "$f" "$b" "$prof" "$sm"
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
+        if [[ " $SUITE_C " == *" $p "* ]]; then emit_one "$f" "${b}_c" "$prof" "$sm" --order=sequential; fi
+        # site-geometry: SUITE_ARMS=0 (search.py) keeps the shipped build and its null only.
+        [ "${SUITE_ARMS:-1}" = 1 ] || continue
         emit_cpu "$f" "$b.cpu"
         # S65: the CPU-only build's S64 arm (`by-ref` off), where it differs.
         emit_cpu "$f" "$b.cpu-off-by-ref" --gpu-off=by-ref
@@ -163,21 +169,23 @@ for spec in "$@"; do
     for a in $ARMS; do
         IFS=: read -r ap stem face rung dir <<< "$a"
         [ "$ap" = "$prof" ] || continue
-        f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$dir-${rung//,/+}"
+        flag="--gpu-$dir=$rung"; tag="$dir-${rung//,/+}"
+        if [ "$dir" = geom ]; then flag="--geom=$rung"; tag=$(tr '=.' '-p' <<< "on-g-$rung"); fi
+        f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$tag"
         [ "$face" = _tf ] && f=$(tf32_src "$f")
         [ -f "$b.host.ll" ] || emit_one "$f" "$b" "$prof" "$sm" $(flags_of "$face")
         # cpu-gpu-boundary sweep: emission alone (0.3 s) decides first; an arm whose host and device IR
         # equal the shipped build's is dropped before clang / opt / llc (hundreds of rung arms per part).
         q="$d/.q"; rm -f "$q".*
-        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") "--gpu-$dir=$rung" > "$q.host.ll"
+        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") "$flag" > "$q.host.ll"
         if cmp -s <(grep -sv '^; mapal\.' "$q.host.ll") <(grep -sv '^; mapal\.' "$b.host.ll") &&
            { { [ ! -f "$q.dev.ll" ] && [ ! -f "$b.dev.ll" ]; } || cmp -s "$q.dev.ll" "$b.dev.ll"; }; then
-            rm -f "$q".*; echo "rejudge $prof $stem$face $dir-$rung = shipped"; continue
+            rm -f "$q".*; echo "rejudge $prof $stem$face $tag = shipped"; continue
         fi
         rm -f "$q".*
-        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") "--gpu-$dir=$rung"
-        if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $dir-$rung = shipped"; continue; fi
-        echo "rejudge $prof $stem$face $dir-$rung $(cat "$s.launch" 2>/dev/null)"
+        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") "$flag"
+        if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $tag = shipped"; continue; fi
+        echo "rejudge $prof $stem$face $tag $(cat "$s.launch" 2>/dev/null)"
         case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
     done
     # S64: the evidence — ptxas -v / SASS of every distinct PTX (cudatool.sh), the facts, the intent check.

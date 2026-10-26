@@ -34,7 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EMIT = Path(os.environ.get('EMIT', ROOT / 'target/release/examples/emit'))
-CACHE = ROOT / 'benches/results/cache'
+CACHE = Path(os.environ.get('MAPAL_RESULT_CACHE') or ROOT / 'benches/results/cache')
 ARCHS = ['rtx-4090', 'rtx-5090', 'h100-pcie', 'rtx-3090', 'x86-64-v3']
 FACES = {'default': [], 'contract': ['--order=sequential'], 'exact': ['--exact']}
 RESULT_FACE = {'_default': 'default', '_c': 'contract', '_x': 'exact', '_exact': 'exact'}
@@ -206,6 +206,14 @@ def env(a):
         print(f"{k}='{rr}'")
 
 
+def box_stamp(text):
+    """(GPU name|driver, nvcc release, torch version) off a box_run.sh results file."""
+    gpu = re.search(r'^name, driver_version.*\n([^,\n]+), ([^,\n]+)', text, re.M)
+    nvcc = (re.findall(r'Cuda compilation tools, release ([\d.]+)', text) or ['?'])[0]
+    tv = (re.findall(r'^torch version=(\S+)', text, re.M) or ['?'])[0]
+    return (f'{gpu[1].strip()}|{gpu[2].strip()}' if gpu else '?'), nvcc, tv
+
+
 def src_hash(out, prog):
     f = Path(out) / 'tiles' / f'{prog}.mapal'
     return hashlib.sha256(f.read_bytes()).hexdigest()[:16] if f.exists() else f'src:{prog}'
@@ -217,10 +225,7 @@ def ingest(a):
     head = {(p, face): h for p, ar, face, _, _, h in read(out / 'emission.tsv') if ar == arch}
     cpu = {(p, face): h for p, ar, face, _, _, h in read(out / 'emission.tsv') if ar == CPU}
     arm_h = {(p, face, arm): h for p, ar, face, arm, h, _ in read(out / 'arms.tsv') if ar == arch}
-    gpu = re.search(r'^name, driver_version.*\n([^,\n]+), ([^,\n]+)', text, re.M)
-    stamp = f'{gpu[1].strip()}|{gpu[2].strip()}' if gpu else '?'
-    nvcc = (re.findall(r'Cuda compilation tools, release ([\d.]+)', text) or ['?'])[0]
-    tv = (re.findall(r'^torch version=(\S+)', text, re.M) or ['?'])[0]
+    stamp, nvcc, tv = box_stamp(text)
 
     def key(p, face, arm):
         if arm in ('on', 'null'):
