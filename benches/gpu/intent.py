@@ -289,6 +289,13 @@ INTENT = {
         ('a split launch zeroes its output first (atomic) or reduces a workspace (splitk)',
          'host.calls.zero >= 1 or host.calls.alloc >= 1')],
         note='row launch geometry: diff the `.off-row-split` arm (S CTAs per trip vs 1)'),
+    # site-geometry `fit-first` (R1): an FMA tile whose thread grid outgrows its rows reshapes (`ty` halved, `tx`
+    # doubled, threads kept) when that alone gives every SM a block, before the fill step halves its threads (convmc on
+    # the 4090: 784 blocks of 2 warps -> 196 of 8). `.off-fit-first`: the shrink first.
+    'fit-first': dict(applies=TILE + " and plan.ty * plan.tm <= plan.rows and plan.block >= 128", on=[
+        ('the thread grid fits the rows and every SM has a block',
+         'plan.ty * plan.tm <= plan.rows and plan.gx * plan.gy >= occ.sms'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),

@@ -2641,12 +2641,15 @@ pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
 /// 32–1024; `bt` reads `b` transposed. `retained`: the product runs in a loop
 /// over a carried `x` (its `a`, `m ≥ 4` rows) whose trip `t` rewrites row `t`
 /// and reads row `t` of `y` (decode's K/V rebuild: the retained one-row site).
+/// `wide` (not retained): a few rows over many lanes — `m` 16–64, `n`
+/// 16384–32768, `k` 32–64 (a convolution's implicit GEMM shape).
 #[derive(Clone, Debug)]
 pub struct GeomProg {
     pub dims: [u8; 3],
     pub bt: bool,
     pub retained: bool,
     pub law: [u8; 2],
+    pub wide: bool,
 }
 
 pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
@@ -2655,16 +2658,17 @@ pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
         prop::bool::weighted(0.25),
         any::<bool>(),
         prop::array::uniform2(any::<u8>()),
+        prop::bool::weighted(0.3),
     )
-        .prop_map(|(dims, bt, retained, law)| GeomProg { dims, bt, retained, law })
+        .prop_map(|(dims, bt, retained, law, wide)| GeomProg { dims, bt, retained, law, wide: wide && !retained })
 }
 
 /// [`GeomProg`]'s source text and its `(m, n, k)`.
 pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
     let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
-    let m = pick(p.dims[0], if p.retained { &[4, 8, 16, 64] } else { &[1, 2, 4, 16, 64] });
-    let n = pick(p.dims[1], &[32, 64, 128, 256, 512]);
-    let k = pick(p.dims[2], &[32, 64, 256, 1024]);
+    let m = pick(p.dims[0], if p.retained { &[4, 8, 16, 64] } else if p.wide { &[16, 32, 64] } else { &[1, 2, 4, 16, 64] });
+    let n = pick(p.dims[1], if p.wide { &[16384, 32768] } else { &[32, 64, 128, 256, 512] });
+    let k = pick(p.dims[2], if p.wide { &[32, 64] } else { &[32, 64, 256, 1024] });
     let (a1, a2) = (u64::from(p.law[0] % 13) * 2 + 3, u64::from(p.law[1] % 11) * 2 + 5);
     let bi = if p.bt { format!("b[j * {k} + q]") } else { format!("b[q * {n} + j]") };
     let y = |a: &str| {

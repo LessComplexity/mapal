@@ -103,3 +103,81 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
     assert!(filled >= 8, "the generator reaches fill-wave ({filled})");
     assert!(rows >= 4, "the generator reaches row-split ({rows})");
 }
+
+/// `(kernel, rows, blocks, block, tm, tn, ty)` of every FMA tile kernel.
+fn tiles(dev: Option<&str>) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
+    let field = |l: &str, k: &str| -> u64 {
+        l.split(' ').find_map(|f| f.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or(0)
+    };
+    dev.unwrap_or("")
+        .lines()
+        .filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile "))
+        .map(|l| {
+            let name = l.split(' ').find_map(|f| f.strip_prefix("kernel=")).unwrap_or("").to_string();
+            let f = |k| field(l, k);
+            (name, f("rows="), f("gx=") * f("gy="), f("block="), f("tm="), f("tn="), f("ty="))
+        })
+        .collect()
+}
+
+/// site-geometry `fit-first` (R1) on convolutions and products from the
+/// generator: where it moves a tile, the thread grid fits the rows, every SM
+/// has a block, the register tile and the threads over the grid are OFF's —
+/// only fewer, larger blocks — and the values are OFF's (emulated).
+#[test]
+fn fit_first_counted_and_valued_on_unseen_programs() {
+    let mut runner = TestRunner::deterministic();
+    let (radix, geom) = (testgen::radix_prog_strategy(), testgen::geom_prog_strategy());
+    let clang = emu::clang();
+    let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
+    let (mut moved, mut same, mut valued) = (0, 0, 0);
+    for z in 0..40 {
+        let src = match z % 2 {
+            0 => testgen::radix_src(&radix.new_tree(&mut runner).unwrap().current()).0,
+            // (A few rows over many lanes: the shape the rule moves.)
+            _ => {
+                let p = geom.new_tree(&mut runner).unwrap().current();
+                testgen::geom_src(&testgen::GeomProg { wide: true, retained: false, ..p }).0
+            }
+        };
+        let ir = lower(&src);
+        let target = targets[z / 2 % targets.len()];
+        let sms = resolve_profile(target).and_then(|t| t.gpu()).expect("a GPU part").sms;
+        let at = |on: bool| {
+            let mut gpu = GpuArms::default();
+            for r in ["async", "pdl", "streams", "place"] {
+                *gpu.off.rung(r).expect("rung") = true;
+            }
+            *(if on { gpu.on.rung("fit-first") } else { gpu.off.rung("fit-first") }).expect("rung") = true;
+            emit_detailed(&ir, &EmitOpts { host: "generic", target, gpu, ..EmitOpts::exact() }).expect("emits")
+        };
+        let (on, off) = (at(true), at(false));
+        if on.device == off.device {
+            same += 1;
+            continue;
+        }
+        moved += 1;
+        let offs = tiles(off.device.as_deref());
+        for (name, rows, grid, block, tm, tn, ty) in tiles(on.device.as_deref()) {
+            let Some(o) = offs.iter().find(|o| o.0 == name) else { continue };
+            if (grid, block, ty) == (o.2, o.3, o.6) {
+                continue;
+            }
+            assert!(ty * tm <= rows && grid >= sms, "#{z} {target} {name}\n{src}");
+            // OFF's halving lost the register tile (`cell-fill`'s 1 × 1), or
+            // kept it on fewer threads a block.
+            if (o.4, o.5) != (1, 1) {
+                assert_eq!((tm, tn, grid * block), (o.4, o.5, o.2 * o.3), "#{z} {target} {name}\n{src}");
+                assert!(block > o.3, "#{z} {target} {name}: larger blocks\n{src}");
+            }
+        }
+        if let Some(cc) = &clang {
+            let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
+            let (x, y) = (emu::run_emulated(cc, &on.text, &dev(&on)), emu::run_emulated(cc, &off.text, &dev(&off)));
+            assert_eq!(x, y, "#{z} {target} values\n{src}");
+            valued += 1;
+        }
+    }
+    eprintln!("fit-first: {moved} moved, {same} unchanged, {valued} valued");
+    assert!(moved >= 4, "the generator reaches fit-first ({moved})");
+}
