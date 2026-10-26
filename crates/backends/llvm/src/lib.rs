@@ -459,6 +459,9 @@ pub struct GpuRungs {
     /// max/min, f32) and whose rows leave the part's resident threads idle is a
     /// warp a row — lane `l` takes every 32nd `k` from `l`, a butterfly of
     /// shuffles combines, lane 0 stores. Off: one thread a row, `k` in order.
+    /// Ships OFF on the rtx-4090 (a [`crate::profile::GPU_RUNGS_OFF`] row: its
+    /// one changed site reads a column-major operand, already coalesced one
+    /// thread a row); its emission equals OFF on the other measured parts.
     pub fold_lanes: bool,
     /// recurrence-precision `radix-tile`: a map/fold whose reads are affine
     /// per digit of the map and fold indices (`mapal_ir::RadixTile`, a
