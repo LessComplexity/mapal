@@ -1038,3 +1038,18 @@ for stem in ("pt_convmc_8_64_56_3", "px_convmc_2_4_6_3", "pt_mlp_2048", "pt_mlp2
     (out / f"{stem}_tf32.mapal").write_text(tf32_folds((out / f"{stem}.mapal").read_text()))
     if (out / f"{stem}.kmax").exists():
         (out / f"{stem}_tf32.kmax").write_text((out / f"{stem}.kmax").read_text())
+
+
+# recurrence-precision smoke: M through fold chains, relu and bias adds. Every closed-form input by its
+# magnitude makes every term, bias and relu input non-negative, so each printed value of the exact build is
+# its chain's M (relu is 1-Lipschitz). The 4090 smoke failed pt_pc_32 and pt_mlp2_2048_tf32 on the relative
+# fallback under cancellation (|exact| << M) with the error inside D2 / D3 of M.
+def mabs(src):
+    out, n = re.subn(r'-> widen_f32 -> v; v / ([0-9.]+) \}',
+                     r'-> widen_f32 -> v; (v > 0.0) -> { -true-> v; -false-> 0.0 - v; } -> va; va / \1 }', src)
+    assert n > 0, "no closed-form input"
+    return out.replace("-> fold: tf32 | f32 {", "-> fold {")  # M is the exact face's
+
+
+for stem in ("pt_pc_32", "pt_pc_64", "pt_pc_128", "pt_mlp_2048", "pt_mlp2_2048", "pt_mlp_2048_tf32", "pt_mlp2_2048_tf32"):
+    (out / f"{stem}_xabs.mapal").write_text(mabs((out / f"{stem}.mapal").read_text()))
