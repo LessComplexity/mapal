@@ -474,6 +474,18 @@ pub struct GpuRungs {
     /// (`mma.sync` sm_80+, `wgmma` sm_90a) where its shape fits. Off: the
     /// f32 FFMA tile, which `{tf32, f32}` admits as well.
     pub tf32_tile: bool,
+    /// site-geometry `row-split` (D1): a retained site's one-row pass takes
+    /// the fold chooser ([`Order`]-free faces: the atomic split or stream-K,
+    /// the row zeroed first) instead of one block over the row. Off: the row
+    /// in order on the one-thread-per-cell grid.
+    pub row_split: bool,
+    /// site-geometry `fill-wave` (C9, C10, C6c): a tile site whose grid
+    /// holds fewer warps than [`profile::Gpu::fill_warps`] cuts its free fold
+    /// into the fewest partitions that fill it, counted against the blocks
+    /// the part can hold at the tile's own registers and threads (not the
+    /// unsplit grid's share), and the split kernel's panels are sized for the
+    /// split grid. Off: the largest split inside the unsplit grid's wave.
+    pub fill_wave: bool,
 }
 
 impl GpuRungs {
@@ -547,11 +559,13 @@ impl GpuRungs {
         fold_lanes: true,
         radix_tile: true,
         tf32_tile: true,
+        row_split: true,
+        fill_wave: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 68] = [
+    pub const NAMES: [&'static str; 70] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -620,6 +634,8 @@ impl GpuRungs {
         "fold-lanes",
         "radix-tile",
         "tf32-tile",
+        "row-split",
+        "fill-wave",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -693,6 +709,8 @@ impl GpuRungs {
             "fold-lanes" => &mut self.fold_lanes,
             "radix-tile" => &mut self.radix_tile,
             "tf32-tile" => &mut self.tf32_tile,
+            "row-split" => &mut self.row_split,
+            "fill-wave" => &mut self.fill_wave,
             _ => return None,
         })
     }

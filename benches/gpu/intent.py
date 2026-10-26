@@ -271,6 +271,24 @@ INTENT = {
         ('PTX: each lane row fold combines by >= 5 butterfly shuffles (log2 32)',
          'dev.rowfold_lanes_shfl == dev.rowfold_lanes')],
         applies_off='dev.rowfold > 0', off=[('every row fold one thread a row', 'dev.rowfold_lanes == 0')]),
+    # site-geometry `fill-wave` (C9, C10, C6c): a tile site whose grid holds fewer warps than the fill rule's target
+    # (`Geom::resident` = 2 a scheduler) cuts its free fold into the fewest partitions that reach it, inside the blocks
+    # the part holds at the tile's own registers and threads; the split kernel's panels are sized for the split grid.
+    # `.off-fill-wave`: the largest split inside the unsplit grid's wave (grid-share's residency: GEMV, attn P·V).
+    'fill-wave': dict(applies="plan.kind == 'tile' and plan.combine in ('atomic', 'splitk')", on=[
+        ('the split grid reaches 2 warps a scheduler on every SM, or holds the whole wave',
+         'plan.gx * plan.gy * plan.S * ((plan.block + 31) // 32) >= 8 * occ.sms'
+         ' or 2 * plan.gx * plan.gy * plan.S > occ.blocks_per_sm * occ.sms'),
+        ('one wave: the split grid is resident at ptxas registers + smem',
+         'plan.gx * plan.gy * plan.S <= occ.blocks_per_sm * occ.sms'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # site-geometry `row-split` (D1): a retained site's one-row pass takes the fold chooser — the row zeroed and one
+    # launch whose partials add into it (a part without the atomic split: the workspace split and its reduce) —
+    # instead of one block over the row (decode: grid 1x1x256 per trip).
+    'row-split': dict(host=True, applies='dev.naive + dev.tile > 0', on=[
+        ('a split launch zeroes its output first (atomic) or reduces a workspace (splitk)',
+         'host.calls.zero >= 1 or host.calls.alloc >= 1')],
+        note='row launch geometry: diff the `.off-row-split` arm (S CTAs per trip vs 1)'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),
