@@ -796,7 +796,9 @@ fn combine(
     let panels = site.k / l.tiled.map_or(1, |g| g.bk);
     let blocks = l.gx * l.gy;
     let wave = l.wave(gpu);
-    let count = |workspace| match arms.splitk {
+    // `--splitk=` (arms) over the part's table (`Geom::split`).
+    let forced = if arms.splitk > 0 { arms.splitk } else { gpu.geom.split };
+    let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
         _ => profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace),
     };

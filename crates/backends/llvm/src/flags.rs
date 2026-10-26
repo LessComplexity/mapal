@@ -98,6 +98,22 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
             };
             opts.gpu.splitk = s;
         }
+        // ADR-0034 D1: one geometry knob of the GPU part's table, for the
+        // offline search's arms (`benches/gpu/knobs.json`). Repeatable.
+        _ if a.starts_with("--geom=") => {
+            let spec = &a["--geom=".len()..];
+            let knob = spec.split_once('=').and_then(|(k, v)| {
+                let i = crate::profile::Geom::NAMES.iter().position(|n| *n == k)?;
+                Some((i, v.parse::<u64>().ok()?))
+            });
+            let Some((i, v)) = knob else {
+                return Err(format!(
+                    "--geom expects <knob>=<count> with a knob of {}, got `{spec}`",
+                    crate::profile::Geom::NAMES.join(", ")
+                ));
+            };
+            opts.geom[i] = Some(v);
+        }
         // Machine facts by name (plan-s31-target-profiles); never probed
         // unless the name is `native`. A box run names its machine.
         _ if a.starts_with("--target=") => {
