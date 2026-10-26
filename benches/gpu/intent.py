@@ -296,6 +296,14 @@ INTENT = {
         ('the thread grid fits the rows and every SM has a block',
          'plan.ty * plan.tm <= plan.rows and plan.gx * plan.gy >= occ.sms'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # site-geometry B4 / ADR-0034 D1: a `--geom=` candidate (knobs.json: tm, tn, warps, bk, stages; wgmma wg_n,
+    # wg_groups) replaces the derived tile where the site takes it; every candidate is checked as its plan line says.
+    'geom': dict(applies="plan.kind in ('tile', 'wgmma')", on=[
+        ('stages >= 2 stream with cp.async, register staging has none',
+         "plan.kind != 'tile' or (plan.stages >= 2) == (ptx.cp_async > 0)"),
+        ('the derived blocks/SM are resident at ptxas registers + smem', 'occ.blocks_per_sm >= plan.blocks_per_sm'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        note='candidate vs table row: diff the arm (`--geom=<knob>=<value>`, emission hash)'),
     'cpu-tiling': dict(host=True, applies='host.cpu == 1 and host.obj.insns > 0', on=[
         ('the CPU build vectorizes on ymm', 'host.obj.ymm_ops > 0'),
         ('the CPU build has the parallel entry', 'host.par > 0')]),
