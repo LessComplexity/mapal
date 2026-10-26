@@ -123,14 +123,15 @@ for spec in "$@"; do
     IFS=: read -r prof sm <<< "$spec"; d="$OUT/$prof"; mkdir -p "$d"
     for c in $CELLS; do
         f="$OUT/tiles/mm_$c.mapal"; b="$d/mm_$c"
-        faces=("" _x _c _r _rc); [ "${SUITE_ARMS:-1}" = 1 ] || faces=("" _x _c)  # site-geometry: arms from ARMS
+        # (`_r` / `_rc`: the reassociation faces box_run.sh's split-aware cell section times — always built.)
+        faces=("" _x _c _r _rc)
         for face in "${faces[@]}"; do
             # shellcheck disable=SC2046  # the face's flags are separate arguments
             emit_one "$f" "$b$face" "$prof" "$sm" $(flags_of "$face")
         done
         cp "$b.ptx" "$b.null.ptx"; cp "$b.launch" "$b.null.launch"
         echo "cell $prof $c default $(cat "$b.launch")"
-        [ "${SUITE_ARMS:-1}" = 1 ] && chain "$f" "$b" "$prof" "$sm"
+        if [ "${SUITE_ARMS:-1}" = 1 ]; then chain "$f" "$b" "$prof" "$sm"; fi
     done
     for p in $PROGS; do
         f="$OUT/tiles/$p.mapal"; b="$d/$p"
