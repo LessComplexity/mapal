@@ -486,6 +486,11 @@ pub struct GpuRungs {
     /// unsplit grid's share), and the split kernel's panels are sized for the
     /// split grid. Off: the largest split inside the unsplit grid's wave.
     pub fill_wave: bool,
+    /// site-geometry `fit-first` (R1): an FMA tile's thread grid taller than
+    /// the site (`ty·tm > rows`) takes `row-fit`'s reshape — `ty` halved, `tx`
+    /// doubled, threads kept — before the fill-the-SMs step halves its
+    /// threads (a 64-row convolution's 2-warp blocks). Off: the shrink first.
+    pub fit_first: bool,
 }
 
 impl GpuRungs {
@@ -561,11 +566,12 @@ impl GpuRungs {
         tf32_tile: true,
         row_split: true,
         fill_wave: true,
+        fit_first: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 70] = [
+    pub const NAMES: [&'static str; 71] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -636,6 +642,7 @@ impl GpuRungs {
         "tf32-tile",
         "row-split",
         "fill-wave",
+        "fit-first",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -711,6 +718,7 @@ impl GpuRungs {
             "tf32-tile" => &mut self.tf32_tile,
             "row-split" => &mut self.row_split,
             "fill-wave" => &mut self.fill_wave,
+            "fit-first" => &mut self.fit_first,
             _ => return None,
         })
     }

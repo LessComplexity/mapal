@@ -2809,6 +2809,19 @@ impl TargetProfile {
         if wide && ((rows / (ty * tm)) * (c / (tx * tn)) < g.sms || under_warps(tm, tn)) {
             return self.gpu_tile_split(rows, c, k, elem, false, r, split);
         }
+        // site-geometry `fit-first` (R1): a grid short only because its thread
+        // grid outgrows the rows — reshaped (`row-fit`'s move, threads kept),
+        // it gives every SM a block — reshapes instead of losing threads.
+        if r.fit_first && rows > 0 && ty * tm > rows {
+            let (mut fy, mut fx) = (ty, tx);
+            while fy > 1 && fy * tm > rows {
+                fy /= 2;
+                fx *= 2;
+            }
+            if (rows / (fy * tm)) * (c / (fx * tn)) >= g.sms {
+                (ty, tx) = (fy, fx);
+            }
+        }
         let mut halve_x = true;
         while (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
             if halve_x && tx > 1 {
