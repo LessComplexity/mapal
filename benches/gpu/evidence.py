@@ -438,7 +438,7 @@ def move_facts(ll, trips=()):
                            if not ((m := re.search(r'@mapal_gpu_alloc\(ptr (%d\d+),', x)) and m.group(1) in seeded))
             bbs = block_list(fn)
         index = {lab: i for i, (lab, _) in enumerate(bbs)}
-        inside = set()
+        inside, last = set(), 0
         for h, (lab, lines) in enumerate(bbs):
             mv = next((x for x in lines if x.startswith('; mapal.move ')), None)
             if not mv:
@@ -465,6 +465,11 @@ def move_facts(ll, trips=()):
                         sib.add(index.get(m.group(2)))
             per, nested = Counter(), 0
             n = trips[li] if li < len(trips) else None
+            # `trip-batch`: the loop enters at trip E (`; mapal.batch enter=E` before its header), so it runs
+            # n − E trips; the batch launch before it is straight-line.
+            pre = [x.strip() for _, ls in bbs[last:h] for x in ls if x.strip().startswith('; mapal.batch enter=')]
+            if n is not None and pre:
+                n -= int(kv(pre[-1])['enter'])
             run = Counter()
             for i in range(h, latch + 1):
                 inside.add((id(fn), i))
@@ -486,6 +491,7 @@ def move_facts(ll, trips=()):
                               **{k: per[k] for k in MOVE_KEYS}, run=dict(run)))
             total += run
             li += 1
+            last = latch + 1
         for i, (_, lines) in enumerate(bbs):
             if (id(fn), i) not in inside:
                 once += block_moves(lines)
