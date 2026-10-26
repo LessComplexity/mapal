@@ -1150,6 +1150,20 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         cite: "cpu-gpu-boundary/rtx-3090/results-rtx-3090.txt.gz: ON/OFF median 0.999 (0.983 attn .. 1.075 \
                causal, null 0.134), 0/0 beyond null, iter summed ON 387.4 vs OFF 372.9 ms",
     },
+    // recurrence-precision `fold-lanes`: its emission differs only on the 4090 (the one part whose
+    // rowsum keeps a standalone rowfold, cpu-gpu-boundary `tree-gate`), and there the rowfold reads a
+    // column-major operand, so one thread a row is already coalesced and the warp-a-row form strides
+    // its lanes across columns. Explained by the fold kernel alone (probe_kernels, 2 reps each).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "fold-lanes",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "recurrence-precision/sweep-rtx-4090/results-rtx-4090.txt.gz: ON/OFF rowfold kernel pt_rowsum_2048 \
+               0.024/0.023 vs off 0.020/0.020 ms, pt_rowsum_4096 0.088/0.088 vs off 0.075/0.075 ms; program \
+               OFF/ON 0.98 (null 1.3%) / 0.99 (null 0.6%), smoke-rtx-4090/ratios.txt 1.004 / 0.994: no \
+               positive sign",
+    },
     RungOff {
         profile: "h100-pcie",
         rung: "pdl",
