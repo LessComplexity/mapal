@@ -284,14 +284,22 @@ def main():
         except Exception as ex:  # noqa: BLE001 — a stem without a torch leg is a row, not the end of the run
             print(f'torch prog={stem} NOWORKLOAD {type(ex).__name__}: {str(ex)[:200]}', flush=True)
             continue
-        for mode in ('eager', 'compile'):
+        # ADR-0041: the `: tf32 | f32` programs (and the conv family, whose default cuDNN leg is TF32) also get
+        # the TF32-on legs (matmul and cuDNN allow_tf32), beside the pure-FP32 ones above.
+        modes = ['eager', 'compile']
+        if 'tf32' in stem or 'convmc' in stem or '_mlp' in stem:
+            modes += ['eager-tf32', 'compile-tf32']
+        for mode in modes:
+            tf = mode.endswith('-tf32')
+            torch.backends.cuda.matmul.allow_tf32 = tf
+            torch.backends.cudnn.allow_tf32 = tf
             try:
                 t0 = time.perf_counter()
                 if fn.__name__ == 'run':  # decode: the step is what compiles, the loop stays Python
-                    st = args[1] if mode == 'eager' else torch.compile(args[1], mode='max-autotune-no-cudagraphs')
+                    st = args[1] if mode.startswith('eager') else torch.compile(args[1], mode='max-autotune-no-cudagraphs')
                     f, a = fn, (st,)
                 else:
-                    f = fn if mode == 'eager' else torch.compile(fn, mode='max-autotune-no-cudagraphs')
+                    f = fn if mode.startswith('eager') else torch.compile(fn, mode='max-autotune-no-cudagraphs')
                     a = args
                 outs = f(*a)
                 comp = time.perf_counter() - t0
