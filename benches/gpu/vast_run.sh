@@ -10,6 +10,10 @@ OFFER=$1; PROF=$2; SM=$3; BUNDLE=$4; RES=$5; REPS=${6:-30}
 IMAGE=${IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}
 mkdir -p "$RES"
 log() { echo "[$(date +%T) $PROF] $*" | tee -a "$RES/vast-$PROF.log"; }
+# site-geometry: a bundle box_run.sh would stop on fails here, before the rental (PREFLIGHT=0 skips).
+if [ "${PREFLIGHT:-1}" = 1 ] && ! python3 "$(dirname "$0")/preflight.py" "$BUNDLE" "$PROF" >> "$RES/vast-$PROF.log"; then
+    log "preflight failed ($RES/vast-$PROF.log): no rental"; exit 1
+fi
 
 id=$(vastai create instance "$OFFER" --image "$IMAGE" --disk 40 --ssh --direct --raw |
      python3 -c 'import json,sys; print(json.load(sys.stdin)["new_contract"])')
