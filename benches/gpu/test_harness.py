@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Exercise GPU smoke status and rental cleanup without CUDA, SSH or a rental."""
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -30,6 +33,7 @@ class HarnessTests(unittest.TestCase):
             "KEEP": "0",
             "PROFILE": "1",
             "START_TRIES": "1",
+            "PREFLIGHT": "0",  # the stub bundles hold no harness (MeasureTests checks preflight.py)
         }
         self.stub("nvidia-smi", "echo test-device")
         self.stub("nvcc", 'echo nvcc >> "$STUB_LOG"; exit 99')
@@ -334,6 +338,182 @@ class DefaultFaceBoundTests(unittest.TestCase):
             longest = max(true.values())
             self.assertGreaterEqual(k, longest)
             self.assertLessEqual(k, longest + 16 * len(outs) + 16)
+
+
+class MeasureTests(unittest.TestCase):
+    """site-geometry A: changed.py env / ingest, preflight.py, search.py plan + pick on a stub knobs.json."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.env = {**os.environ, "MAPAL_RESULT_CACHE": str(self.root / "cache")}
+
+    def py(self, *args, ok=True, env=None):
+        r = subprocess.run(["python3", *map(str, args)], capture_output=True, text=True,
+                           env={**self.env, **(env or {})}, timeout=600)
+        if ok:
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def tsv(self, name, rows):
+        (self.root / name).write_text("\n".join("\t".join(r) for r in rows) + "\n")
+
+    def test_env_selects_changed_rows_and_cause_arms(self):
+        self.tsv("emission.tsv", [["program", "arch", "face", "status", "b", "h"],
+                                  ["pt_a_64", "rtx-4090", "default", "changed", "1", "2"],
+                                  ["pt_a_64", "rtx-4090", "contract", "changed", "1", "3"],
+                                  ["pt_b_64", "rtx-4090", "default", "same", "1", "1"],
+                                  ["pt_c_64", "x86-64-v3", "default", "changed", "1", "4"],
+                                  ["mm_16x32x64", "rtx-4090", "exact", "new", "-", "5"],
+                                  ["cell_8", "rtx-4090", "exact", "changed", "1", "6"],
+                                  ["cell_9", "rtx-4090", "default", "changed", "1", "7"],
+                                  ["pt_d_64", "h100-pcie", "default", "changed", "1", "8"],
+                                  ["pt_e_64", "rtx-4090", "default", "cached", "1", "9"]])
+        self.tsv("arms.tsv", [["program", "arch", "face", "arm", "hash", "tag"],
+                              ["pt_a_64", "rtx-4090", "default", "off-x", "a", "cause"],
+                              ["pt_a_64", "rtx-4090", "contract", "off-y", "b", "carried"],
+                              ["cell_8", "rtx-4090", "exact", "off-z", "c", "new"]])
+        out = self.py(HERE / "changed.py", "env", self.root, "rtx-4090").stdout
+        got = dict(re.findall(r"^(\w+)='(.*)'$", out, re.M))
+        self.assertEqual(got["SUITE"], "pt_a_64 pt_c_64")
+        self.assertEqual(got["SUITE_C"], "pt_a_64")
+        self.assertEqual(got["CELLS"], "16x32x64")
+        self.assertEqual(got["ONLY"], "cell_8")  # cell_9's default face is not its differential's
+        self.assertEqual(got["ARMS"], "rtx-4090:pt_a_64::x:off")  # the carried arm stays out
+        self.assertEqual(got["HOST_RUNGS"], "z")
+        every = self.py(HERE / "changed.py", "env", self.root, "rtx-4090", env={"ALL_ARMS": "1"}).stdout
+        self.assertIn("rtx-4090:pt_a_64:_c:y:off", every)
+
+    def test_ingest_files_mapal_and_library_rows(self):
+        (self.root / "tiles").mkdir()
+        (self.root / "tiles" / "pt_a_64.mapal").write_text("prog")
+        self.tsv("emission.tsv", [["program", "arch", "face", "status", "b", "h"],
+                                  ["pt_a_64", "rtx-4090", "default", "changed", "1", "h0"],
+                                  ["pt_a_64", "x86-64-v3", "default", "changed", "1", "hc"]])
+        self.tsv("arms.tsv", [["program", "arch", "face", "arm", "hash", "tag"],
+                              ["pt_a_64", "rtx-4090", "default", "off-x", "hx", "cause"]])
+        res = self.root / "results.txt"
+        res.write_text(
+            "name, driver_version, clocks\nNVIDIA X, 570.1, 3000\n"
+            "Cuda compilation tools, release 12.8, V12.8.93\ntorch version=2.11.0 cuda=12.8\n"
+            + "".join(f"probe prog=pt_a_64 face=_default arm={a} rep={r} wall_us=1 out=[1 iter ms={t + r} ] rc=0\n"
+                      for a, t in (("on", 10), ("off-x", 20), ("null", 10), ("cpu", 90)) for r in (1, 2))
+            + "chain probe=a n=64 leg=cublas launches=1 reps=3 min_ms=1 med_ms=2.5 max_ms=3\n"
+            + "torch prog=pt_a_64 mode=eager n=3 min_ms=1 med_ms=3.5 max_ms=4 within=yes\n")
+        self.py(HERE / "changed.py", "ingest", self.root, "rtx-4090", res)
+        rows = [l.split("\t") for l in (self.root / "cache" / "rtx-4090.tsv").read_text().splitlines()[1:]]
+        got = {(r[0], r[1], r[2]): r[3].split()[0] for r in rows}
+        self.assertEqual(got[("h0", "mapal", "-")], "med_ms=11.5")
+        self.assertEqual(got[("hx", "mapal", "-")], "med_ms=21.5")
+        self.assertEqual(got[("h0", "mapal-null", "-")], "med_ms=11.5")
+        self.assertEqual(got[("hc", "mapal", "-")], "med_ms=91.5")
+        src = hashlib.sha256(b"prog").hexdigest()[:16]
+        self.assertEqual(got[(src, "chain-cublas", "12.8")], "med_ms=2.5")
+        self.assertEqual(got[(src, "torch-eager", "2.11.0")], "med_ms=3.5")
+        self.assertTrue(all(r[4] == "NVIDIA X|570.1" for r in rows))
+
+    def bundle(self):
+        b = self.root / "bundle"
+        (b / "p").mkdir(parents=True)
+        (b / "tiles").mkdir()
+        (b / "cutlass/include/cutlass").mkdir(parents=True)
+        (b / "libmapal_rt.a").write_bytes(b"!<arch>\n" + b"\0" * 60 + b"\x7fELF" + b"\0" * 14 + b"\x3e\x00")
+        for f in ("mapal_gpu.c", "tile_bench.cu", "chain_bench.cu", "value_gate.py"):
+            (b / f).touch()
+        (b / "box_run.sh").write_text("case $probe in epi|decode_*) ;; *) continue ;; esac\n")
+        (b / "torch_bench.py").write_text(
+            "import torch\ndef workload(stem):\n    if stem.startswith('pt_fir_'): return None, ()\n"
+            "    raise LookupError(stem)\n")
+        for s in ("cell_8", "cell_8_c.off-x", "pt_epi_64", "pt_fir_9_4", "pt_odd_64", "pt_odd_64_c"):
+            (b / "p" / f"{s}.host.o").touch()
+        for s in ("cell_8", "cell_8_c", "pt_epi_64", "pt_fir_9_4", "pt_odd_64"):
+            (b / "tiles" / f"{s}.expect").write_text("1\n")
+        return b
+
+    def test_preflight_passes_a_whole_bundle(self):
+        b = self.bundle()
+        r = self.py(HERE / "preflight.py", b, "p", ok=False, env={"NO_LEG": "pt_odd_*"})
+        self.assertIn("pt_odd_64_c: no oracle", r.stdout)
+        (b / "tiles" / "pt_odd_64_c.expect").write_text("1\n")
+        r = self.py(HERE / "preflight.py", b, "p", env={"NO_LEG": "pt_odd_*"})
+        self.assertIn("preflight p: OK", r.stdout)
+
+    def test_preflight_fails_what_box_run_would_stop_on(self):
+        b = self.bundle()
+        (b / "tiles" / "cell_8_c.expect").unlink()
+        shutil.rmtree(b / "cutlass")
+        (b / "libmapal_rt.a").write_bytes(b"\xcf\xfa\xed\xfe")  # Mach-O
+        r = self.py(HERE / "preflight.py", b, "p", ok=False)
+        self.assertEqual(r.returncode, 1)
+        for want in ("cell_8_c.off-x: missing oracle tiles/cell_8_c.expect", "cutlass/include/cutlass missing",
+                     "not x86-64 ELF", "pt_odd_64: no library leg", "pt_odd_64_c: no oracle"):
+            self.assertIn(want, r.stdout)
+        self.assertNotIn("pt_epi_64: no library leg", r.stdout)  # chain_bench's
+        self.assertNotIn("pt_fir_9_4: no library leg", r.stdout)  # torch_bench's
+
+    def test_targets_maps_touched_files_to_test_targets(self):
+        t = HERE.parent.parent / "tests/targets.py"
+        src = self.py(t, "crates/backends/llvm/src/func/splitk.rs").stdout.splitlines()
+        self.assertEqual(src[:2], ["cargo test --release -p mapal-backend-llvm --test splitk",
+                                   "cargo test --release -p mapal-backend-llvm --lib"])
+        self.assertIn("cargo test --release -p mapal-backend-llvm --test differential", src)
+        shared = self.py(t, "crates/mapal-rewrite/tests/testgen/mod.rs").stdout.splitlines()
+        self.assertIn("cargo test --release -p mapal-backend-llvm --test differential", shared)
+        self.assertIn("cargo test --release -p mapal-rewrite --test property", shared)
+        self.assertEqual(self.py(t, "benches/gpu/changed.py").stdout.strip(),
+                         "python3 -m unittest benches/gpu/test_harness.py")
+
+    def test_search_plan_and_pick_on_a_stub_table(self):
+        real = HERE.parent.parent / "target/release/examples/emit"
+        if not real.exists():
+            self.skipTest("no release emitter (cargo build --release --example emit -p mapal-backend-llvm)")
+        stub = self.root / "geom_emit.py"
+        # The stub table's knobs are the emitter's measurement overrides; `sk` a and b are one emission.
+        stub.write_text(
+            "#!/usr/bin/env python3\nimport os, sys\nargs = []\nfor a in sys.argv[1:]:\n"
+            "    if a.startswith('--geom='):\n        k, v = a[7:].split('=', 1)\n"
+            "        a = {'splitk': '--splitk=' + v, 'kc': '--kc' if v == '1' else None,\n"
+            "             'sk': '--splitk=4'}[k]\n    if a:\n        args.append(a)\n"
+            f"os.execv({str(real)!r}, [{str(real)!r}, *args])\n")
+        stub.chmod(0o755)
+        knobs = self.root / "knobs.json"
+        knobs.write_text(json.dumps({"rtx-4090": {"splitk": [0, 2, 4, 8], "kc": [0, 1], "sk": [0, "a", "b"]}}))
+        out = self.root / "s"
+        progs = ["mm_16x2048x7168", "pt_pj_m1_n2048_k7168", "pt_rowsum_2048"]
+        env = {"EMIT": str(stub)}
+        arms = self.py(HERE / "search.py", "plan", out, knobs, "rtx-4090", *progs, env=env).stdout.split()
+        plan = {(r[0], r[2], r[3]): (r[5], r[6]) for r in
+                (l.split("\t") for l in (out / "plan.tsv").read_text().splitlines()[1:])}
+        self.assertEqual(plan[("pt_rowsum_2048", "splitk", "2")][1], "drop")  # no site the knob reaches
+        self.assertEqual(plan[("mm_16x2048x7168", "kc", "1")][1], "drop")
+        self.assertEqual(plan[("mm_16x2048x7168", "splitk", "4")][1], "build")
+        self.assertEqual(plan[("mm_16x2048x7168", "sk", "a")], ("on-g-splitk-4", "alias"))
+        self.assertIn("rtx-4090:pt_pj_m1_n2048_k7168::splitk=4:geom", arms)
+        self.assertFalse(any(":sk=" in a or ":kc=" in a for a in arms))
+        # The box run: splitk=4 is 20% (probe) and 10% (cell) faster; nulls 0.5% and 1%.
+        probe = {"on": 10.0, "null": 10.05, "on-g-splitk-2": 9.0, "on-g-splitk-4": 8.0, "on-g-splitk-8": 9.5}
+        cell = {"": 1.0, ".null": 1.01, ".on-g-splitk-2": 0.95, ".on-g-splitk-4": 0.9}
+        lines = ["name, driver_version, x", "NVIDIA X, 570.1, 1"]
+        for rep in (1, 2):
+            lines += [f"probe prog=pt_pj_m1_n2048_k7168 face=_default arm={a} rep={rep} wall_us=1 "
+                      f"out=[1 iter ms={t} ] rc=0" for a, t in probe.items()]
+            lines += [f"pass={rep} cell=16x2048x7168 time leg={l} M=16 N=2048 K=7168 n=30 min_ms=1 med_ms={t} max_ms=1"
+                      for l, t in [*((f"mm_16x2048x7168{a}", t) for a, t in cell.items()), ("cublas", 2.0)]]
+        res = self.root / "results-rtx-4090.txt"
+        res.write_text("\n".join(lines) + "\n")
+        best = self.py(HERE / "search.py", "pick", out, "rtx-4090", res, "--knobs", knobs).stdout
+        rows = {r[1]: r for r in (l.split("\t") for l in (out / "best-rtx-4090.tsv").read_text().splitlines()[1:])}
+        self.assertEqual((rows["splitk"][3], rows["splitk"][9]), ("4", "ship"), best)
+        self.assertEqual(rows["splitk"][6], "0.010")  # the largest null over the programs it reaches
+        self.assertEqual(rows["kc"][9], "no-site")
+        self.assertEqual((rows["sk"][3], rows["sk"][9]), ("a", "ship"))
+        self.assertTrue(rows["splitk"][10].endswith("results-rtx-4090.txt") and rows["splitk"][11] == "NVIDIA X|570.1")
+        # Measured verdicts are cached by (arm, shipped): the same plan builds nothing again.
+        self.py(HERE / "search.py", "plan", out, knobs, "rtx-4090", *progs, env=env)
+        st = [l.split("\t")[6] for l in (out / "plan.tsv").read_text().splitlines()[1:]]
+        self.assertNotIn("build", st)
+        self.assertIn("cached", st)
 
 
 if __name__ == "__main__":
