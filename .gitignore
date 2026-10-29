@@ -11,3 +11,10 @@ benches/matmul/*.cu
 
 # built artifact — regenerate with package-vsix.py
 editors/vscode/*.vsix
+
+# Raw run output goes to a GitHub release (benches/gpu/archive_raw.sh), never into git.
+benches/results/evidence/**/*.tgz
+benches/results/evidence/**/*.out
+benches/results/evidence/**/*.log
+benches/results/evidence/**/results-*
+benches/results/evidence/**/run-*
