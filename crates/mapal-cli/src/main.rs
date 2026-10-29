@@ -1,4 +1,4 @@
-//! `mapal build|run|dump-ir|test` — the driver over
+//! `mapal build|run|dump-ir|test|fmt` — the driver over
 //! parse → lower → check → rewrite → emit → (opt∘llc) → link → exec, with the
 //! interpreter as the oracle (docs/components/cli/DESIGN.md).
 //!
@@ -19,7 +19,10 @@ use mapal_interp::{Outcome, TrapKind, native_observable};
 use mapal_ir::CategoryIr;
 use mapal_syntax::{Diagnostic, LineIndex, Severity};
 
-const USAGE: &str = "usage: mapal <build|run|dump-ir|test> <file.mapal> [options]
+mod fmt;
+
+const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt> <file.mapal> [options]
+  fmt      [--check | --stdout] <files... | ->  format source (use fmt --help for modes)
   build    [-o <exe>] [--emit-only]       emit <exe>.ll (+ .dev.ll/.ptx on a GPU profile) and link
   run      [--interp [--weakest]] [--budget N]  compile and execute (--interp: the oracle)
   dump-ir  [--stage=lowered|rewritten|llvm|device]
@@ -55,7 +58,12 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    let code = match parse_args(std::env::args().skip(1)) {
+    let mut args = std::env::args().skip(1).peekable();
+    if args.peek().is_some_and(|arg| arg == "fmt") {
+        args.next();
+        return ExitCode::from(fmt::run(args).unwrap_or_else(|code| code));
+    }
+    let code = match parse_args(args) {
         Ok(a) => match a.cmd.as_str() {
             "build" => build_cmd(&a),
             "run" => run_cmd(&a),
@@ -98,7 +106,9 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Res<Args> {
             .ok_or_else(|| usage(&format!("{f} expects a non-negative integer")))
     };
     while let Some(s) = it.next() {
-        if matches!(s.as_str(), "--contract" | "--no-contract" | "--exact") || s.starts_with("--order=") {
+        if matches!(s.as_str(), "--contract" | "--no-contract" | "--exact")
+            || s.starts_with("--order=")
+        {
             a.face_flags.push(s.clone());
         }
         match flags::apply(&mut a.opts, &s) {
@@ -482,10 +492,7 @@ fn dump_ir(a: &Args) -> Res<u8> {
 fn test_cmd(a: &Args) -> Res<u8> {
     let given = |f: &str| a.face_flags.iter().any(|x| x == f);
     let separate = given("--no-contract") || given("--exact");
-    if given("--contract")
-        || given("--order=free")
-        || (given("--order=sequential") && !separate)
-    {
+    if given("--contract") || given("--order=free") || (given("--order=sequential") && !separate) {
         eprintln!(
             "mapal: test judges the fixed face (or --exact) — the default, contract and \
              reduced faces are bound-checked, not bit-equal to the interpreter \
@@ -501,7 +508,10 @@ fn test_cmd(a: &Args) -> Res<u8> {
     let ir = rewritten(&a, frontend(&a)?);
     // ADR-0041: a `: tf32` product may take the tensor-core kernel, which is
     // not the f32 oracle's bytes — judged against the weakest member instead.
-    if ir.funcs().any(|(f, _)| !ir.precision_plan(f).set.is_empty()) {
+    if ir
+        .funcs()
+        .any(|(f, _)| !ir.precision_plan(f).set.is_empty())
+    {
         a.weakest = true;
     }
     let a = &a;
@@ -551,14 +561,21 @@ fn test_cmd(a: &Args) -> Res<u8> {
         && let Some(want) = &want_out
     {
         let rel = weakest_rel(longest_fold(oracle));
-        let (w, g): (Vec<_>, Vec<_>) = (want.split_whitespace().collect(), got_out.split_whitespace().collect());
-        let bad = (w.len() != g.len()).then(|| format!("{} tokens, want {}", g.len(), w.len())).or_else(|| {
-            w.iter().zip(&g).find_map(|(x, y)| match (x.parse::<f64>(), y.parse::<f64>()) {
-                (Ok(p), Ok(q)) if (p - q).abs() <= rel * p.abs().max(q.abs()) => None,
-                (Ok(_), Ok(_)) => Some(format!("{y} vs {x} beyond rel {rel:.3e}")),
-                _ => (x != y).then(|| format!("{y} != {x}")),
-            })
-        });
+        let (w, g): (Vec<_>, Vec<_>) = (
+            want.split_whitespace().collect(),
+            got_out.split_whitespace().collect(),
+        );
+        let bad = (w.len() != g.len())
+            .then(|| format!("{} tokens, want {}", g.len(), w.len()))
+            .or_else(|| {
+                w.iter()
+                    .zip(&g)
+                    .find_map(|(x, y)| match (x.parse::<f64>(), y.parse::<f64>()) {
+                        (Ok(p), Ok(q)) if (p - q).abs() <= rel * p.abs().max(q.abs()) => None,
+                        (Ok(_), Ok(_)) => Some(format!("{y} vs {x} beyond rel {rel:.3e}")),
+                        _ => (x != y).then(|| format!("{y} != {x}")),
+                    })
+            });
         if let Some(b) = bad {
             println!("FAIL {tag} (--weakest): {b}");
             return Ok(1);

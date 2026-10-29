@@ -58,8 +58,16 @@ category.
 | `line_col` | `SourceLoc.start → LineCol` (Deduced, display-only) | `crates/mapal-syntax/src/loc.rs:LineIndex::line_col` | built |
 | `lex` (pass) | `𝕊 → LexOutput` (Total) | `crates/mapal-syntax/src/lexer.rs:lex` | built |
 | `parse` (pass) | `𝕊 → ParseOutput` (Total; composes `lex ; parse_program ; merge+sort`) | `crates/mapal-syntax/src/parser.rs:parse` | built |
+| `format_source` | `Source → Source ⊕ Diagnostic*` (formatting partial on accepted syntax) | `crates/mapal-syntax/src/format.rs:format_source` | built |
 
 ## Composition rules / invariants → where enforced
+
+Formatting uses existing spans and token kinds, retaining source comment slices.
+`crates/mapal-syntax/src/format.rs:format_source` validates input and output syntax
+and exact token identity. `crates/mapal-syntax/tests/format.rs:assert_stable` checks
+idempotence; bounded generated whitespace cases and the nonrecursive example /
+algorithm corpus exercise composition across syntax constructs. It has no I/O.
+
 | Rule (from DESIGN) | Enforced at | Tested at |
 | --- | --- | --- |
 | I1 — `lex` total, `Eof`-terminated, scanner always advances | `crates/mapal-syntax/src/lexer.rs:lex` (scan loop) | `tests/proptest_lexer.rs::arbitrary_strings_total`, `::arbitrary_unicode_total` |

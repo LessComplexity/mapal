@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapal Architecture Explorer — from source code to executable</title>
+<meta name="description" content="A top-down, linked guide to Mapal: language syntax, AST, Category IR, deduced plans, rewriting, and device compilation. Written for developers, no category theory required.">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --ink:#17202a; --muted:#4b5a68; --paper:#ffffff; --side:#13212b; --side-ink:#d9e6ee;
+    --line:#dfe7ec; --accent:#0f766e; --accent-soft:#e6f4f1; --fact:#9a6b12; --fact-soft:#fdf3d7;
+    --code-bg:#101a22; --code-ink:#e8f0f5; --warn-soft:#fdeeee; --maxw:920px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  #progress{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:60}
+  header.top{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:10px 20px}
+  header.top .mark{width:34px;height:34px;border:2px solid var(--ink);border-radius:8px;display:grid;place-items:center;font:700 17px Georgia,serif}
+  header.top b{font-family:Georgia,"Times New Roman",serif;font-size:19px;letter-spacing:.2px}
+  header.top span{color:var(--muted);font-size:13.5px}
+  header.top .sp{flex:1}
+  header.top a{color:var(--accent);text-decoration:none;font-size:14px}
+  header.top a:hover{text-decoration:underline}
+  .layout{display:flex;align-items:flex-start}
+  nav.side{position:sticky;top:55px;height:calc(100vh - 55px);width:288px;flex:0 0 288px;background:var(--side);color:var(--side-ink);overflow:auto;padding:18px 18px 30px}
+  nav.side h2{font:700 12px/1.4 -apple-system,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#8fb3a8;margin:18px 0 8px}
+  nav.side h2:first-child{margin-top:2px}
+  nav.side a{display:block;color:var(--side-ink);text-decoration:none;font-size:14px;line-height:1.45;padding:4px 8px;border-radius:6px}
+  nav.side a:hover{background:#1e3442}
+  nav.side a.active{background:#0f766e;color:#fff}
+  nav.side a.sub{padding-left:22px;font-size:13px;color:#b9cdd8}
+  nav.side .note{font-size:12.5px;color:#93aebd;line-height:1.55;margin-top:16px;border-top:1px solid #263d4c;padding-top:14px}
+  main{flex:1;min-width:0}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:34px 28px 90px}
+  .hero{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:8px}
+  .hero p.kicker{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 10px}
+  h1{font-family:Georgia,"Times New Roman",serif;font-size:40px;line-height:1.12;margin:0 0 12px;letter-spacing:-.01em}
+  .lede{font-size:18px;line-height:1.6;color:#2b3b48;margin:0 0 14px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:3px 11px;font-size:13px;color:var(--muted);background:#f7fafb}
+  section{padding-top:34px}
+  section>h2{font-family:Georgia,serif;font-size:29px;line-height:1.2;margin:0 0 6px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  section>h2 .no{color:var(--accent);margin-right:8px}
+  h3{font-size:20px;margin:26px 0 8px}
+  h4{font-size:16.5px;margin:20px 0 6px}
+  p{margin:8px 0}
+  .muted{color:var(--muted)}
+  .small{font-size:13.5px}
+  a{color:var(--accent)}
+  code{font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#eef3f5;border-radius:4px;padding:1px 5px}
+  pre{background:var(--code-bg);color:var(--code-ink);border-radius:10px;padding:16px 18px;overflow:auto;font:13.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:12px 0}
+  pre code{background:none;color:inherit;padding:0;font:inherit}
+  .callout{border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0}
+  .callout.fact{border-left-color:var(--fact);background:var(--fact-soft)}
+  .callout p{margin:4px 0}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f2f6f8}
+  tr:nth-child(even) td{background:#fbfcfd}
+  details{border:1px solid var(--line);border-radius:10px;margin:12px 0;background:#fff}
+  details>summary{cursor:pointer;padding:12px 16px;font-weight:600;list-style:none}
+  details>summary::-webkit-details-marker{display:none}
+  details>summary::before{content:"▸ ";color:var(--accent);font-weight:700}
+  details[open]>summary::before{content:"▾ "}
+  details .body{padding:2px 16px 14px;border-top:1px solid var(--line)}
+  .mermaid{background:#f7fafb;border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0;overflow:auto;text-align:center}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fff}
+  .card h4{margin-top:2px}
+  .plan{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0;background:#fff}
+  .plan h4{margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+  .tag{font-size:11.5px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:2px 9px;background:var(--accent-soft);color:var(--accent)}
+  .tag.mem{background:#eaf0fb;color:#2b4c9b}.tag.geo{background:#fdf3d7;color:var(--fact)}.tag.safe{background:#fdeeee;color:#9b2c2c}.tag.struct{background:#eef3f5;color:#4b5a68}
+  .plan dl{display:grid;grid-template-columns:110px 1fr;gap:2px 12px;margin:8px 0;font-size:14.5px}
+  .plan dt{color:var(--muted);font-weight:600}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  .toolbar input{flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:14.5px}
+  .fbtn{border:1px solid var(--line);background:#f7fafb;border-radius:999px;padding:6px 13px;font-size:13.5px;cursor:pointer}
+  .fbtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  ol.steps li,ul.tight li{margin:4px 0}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:13.5px;padding:22px 28px}
+  @media(max-width:900px){nav.side{display:none}.grid2{grid-template-columns:1fr}h1{font-size:31px}.wrap{padding:26px 18px 70px}}
+  @media print{nav.side,header.top,#progress,.toolbar{display:none}.wrap{max-width:none}details{border:none}details .body{border:none}}
+  @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<header class="top">
+  <div class="mark">M</div>
+  <div><b>Mapal Architecture Explorer</b><br><span>Source code → AST → Category IR → plans → executable</span></div>
+  <div class="sp"></div>
+  <a href="#journey">Master diagram</a><a href="#plans">Plan catalog</a><a href="#code-map">Code map</a>
+</header>
+<div class="layout">
+<nav class="side" aria-label="Contents">
+  <h2>Start here</h2>
+  <a href="#how">0 · How to read this page</a>
+  <a href="#journey">1 · The whole journey</a>
+  <h2>The language</h2>
+  <a href="#syntax">2 · Language syntax</a>
+  <a href="#ast">3 · AST — how it is built</a>
+  <a href="#lower">4 · Lowering &amp; checks</a>
+  <h2>The middle</h2>
+  <a href="#ir">5 · Category IR, in plain words</a>
+  <a href="#plans">6 · Plans (deduced facts)</a>
+  <a href="#plans" class="sub">— catalog &amp; filter</a>
+  <a href="#walkthroughs" class="sub">— code → plan walkthroughs</a>
+  <a href="#rewrite">7 · Rewriting (optimizer)</a>
+  <h2>The back half</h2>
+  <a href="#device">8 · Plan → device compilation</a>
+  <a href="#runtime">9 · Runtime &amp; execution</a>
+  <a href="#e2e">10 · End-to-end examples</a>
+  <h2>Reference</h2>
+  <a href="#code-map">11 · Code map &amp; glossary</a>
+  <a href="#keep-current">12 · Keeping this doc true</a>
+  <p class="note">One file, no build step. Open it directly in a browser. Diagrams need internet once (Mermaid CDN); all text and code read fine offline. Source of truth is always the code — file paths are named throughout so you can jump from any claim to its implementation.</p>
+</nav>
+<main><div class="wrap">
+<div class="hero">
+  <p class="kicker">Central architecture record · Onboarding · Top-down</p>
+  <h1>How Mapal turns a short program into fast parallel code</h1>
+  <p class="lede">You write <em>what depends on what</em>. Mapal works out what can run at the same time, how to tile it for caches and vector registers, where data must live, and which checks it can safely drop — then emits CPU or GPU code. No threads, locks, tile sizes, or intrinsics appear in your source.</p>
+  <p>This page follows one program from the top (source text) to the bottom (executable), then opens each layer: syntax, AST, the graph IR, the facts (“plans”) deduced from that graph, and finally how plans plus machine facts become device code. Category-theory words are translated on first use — you do not need them to follow the story.</p>
+  <div class="chips"><span class="chip">Crates: syntax · lower · check · ir · rewrite · interp · rt · backends</span><span class="chip"><code>crates/mapal-ir/src/algo.rs</code> = the plans</span><span class="chip">Interpreter = correctness oracle</span></div>
+</div>
+
+<section id="how">
+<h2><span class="no">0</span>How to read this page</h2>
+<p>Read it in order the first time — each layer only uses ideas from the layer above. After that, use the left navigation as an index. Three reading aids recur:</p>
+<ul class="tight">
+  <li><strong>Diagrams</strong> show flow. Boxes are artifacts (text, tree, graph, code); arrows are compiler steps. Dotted arrows mean “consults, does not modify.”</li>
+  <li><strong>Expand areas</strong> (click the ▸ line) hold full examples, DAGs, and catalog tables. Skim past them on a first read; open them when you need the detail.</li>
+  <li><strong>Plain-words boxes</strong> translate the project’s categorical vocabulary. The translation is the whole point: <em>object</em> = a value, <em>morphism</em> = a step that makes a value, <em>functor</em> = a translator that preserves meaning. Nothing deeper is required.</li>
+</ul>
+<div class="callout"><p><strong>The 60-second version.</strong> Mapal source is parsed into a thin tree (AST), then lowered into a single dataflow graph — the <em>Category IR</em> — where every value has exactly one producer. Everything else is deduced from that graph by pure queries called <em>plans</em> (loops, parallelism, tiling geometry, lifetimes, proven-safe indices…). A rewriter simplifies the graph without changing its answer. Backends combine plans with facts about <em>your</em> machine (cache sizes, vector width, GPU shape) and emit LLVM/PTX that LLVM turns into an executable. The interpreter, which runs the graph directly, defines the correct answer; compiled output must match it byte-for-byte.</p></div>
+</section>
+
+<section id="journey">
+<h2><span class="no">1</span>The whole journey: code → Mapal → executable</h2>
+<p>This is the master map. Every later section zooms into one box of this diagram.</p>
+<div class="mermaid">
+flowchart TD
+  SRC["Your program<br/>.mapal source text"] --> LEX["1 · Lex + Parse<br/>mapal-syntax<br/>text → AST (thin tree)"]
+  LEX --> LOW["2 · Lower<br/>mapal-lower<br/>AST → Category IR (graph)"]
+  LOW --> CHK{"3 · Gates<br/>validate + check<br/>accept or diagnose"}
+  CHK -->|"accepted"| IR["Category IR<br/>sealed dataflow graph<br/>the only stored truth"]
+  IR --> PLANS["4 · Plans — deduced facts<br/>mapal-ir § algo.rs<br/>loops · parallelism · tiling · lifetimes …"]
+  IR --> RW["5 · Rewrite<br/>mapal-rewrite<br/>same answer, smaller graph"]
+  PLANS -.->|"facts"| RW
+  RW --> IR2["Rewritten graph<br/>facts recomputed on demand"]
+  IR2 --> BE["6 · Backends<br/>graph × plans × machine facts<br/>LLVM (CPU+GPU) · CUDA host · Verilog"]
+  PLANS -.->|"facts"| BE
+  BE --> LLVM["LLVM IR text (+ PTX for GPU)"]
+  LLVM --> CLANG["clang -O3 / ptxas<br/>vectorize · unroll · schedule"]
+  CLANG --> EXE["Executable<br/>+ mapal-rt thread pool"]
+  IR -.->|"defines the answer"| ORACLE["Interpreter — oracle<br/>mapal-interp<br/>runs the graph directly"]
+  EXE -.->|"must match byte-for-byte"| ORACLE
+</div>
+<h3>Who owns what — and what each step erases</h3>
+<table>
+<tr><th>Stage (crate)</th><th>Input → Output</th><th>Owns</th><th>Erases / normalizes</th></tr>
+<tr><td><code>lex</code> + <code>parse</code> (<code>mapal-syntax</code>)</td><td><code>&amp;str → ParseOutput { program, diagnostics }</code></td><td>Tokens, spans, error recovery. The only stage that can hold a broken program.</td><td>Nothing — it preserves even rejected forms so errors can point at exact spans.</td></tr>
+<tr><td><code>lower</code> (<code>mapal-lower</code>)</td><td><code>(&amp;str, &amp;Program) → Result&lt;CategoryIr, Vec&lt;Diagnostic&gt;&gt;</code></td><td>Name resolution, typing, desugaring, graph construction.</td><td><code>seq</code> (no IR footprint), spelling differences (arrow vs call forms become one op), error nodes (rejected as L1000).</td></tr>
+<tr><td><code>check</code> (<code>mapal-check</code>)</td><td><code>(&amp;str, &amp;Program, &amp;CategoryIr) → Vec&lt;Diagnostic&gt;</code></td><td>Return exclusivity (T0101), effect legality (T0201). Reads <em>both</em> tree and graph, because lowering erased fanout scope.</td><td>— (a gate, not a transform)</td></tr>
+<tr><td>Plans (<code>mapal-ir</code>)</td><td><code>CategoryIr → Facts</code> (per function, cached on the graph)</td><td>All structural knowledge: loops, tasks, tile geometry, lifetimes, proofs.</td><td>— (read-only views; silence = “take the slow path”)</td></tr>
+<tr><td><code>rewrite</code> (<code>mapal-rewrite</code>)</td><td><code>CategoryIr → CategoryIr</code></td><td>Const-fold, dead-code, CSE, map fusion, inlining, loop lifting.</td><td>Redundant work — never the answer (<code>eval ∘ rewrite = eval</code>).</td></tr>
+<tr><td>Backends (<code>backends/llvm</code>, <code>backends/cuda</code>, <code>backends/verilog</code>)</td><td><code>CategoryIr × Plans × TargetProfile → text</code></td><td>Layout, tiling constants, scheduling, placement (CPU vs GPU), residency.</td><td>All portability: this is where one program becomes <em>this machine’s</em> code.</td></tr>
+<tr><td><code>interp</code> (<code>mapal-interp</code>)</td><td><code>CategoryIr → output / trap</code></td><td>The definition of correctness (the oracle).</td><td>—</td></tr>
+</table>
+<div class="callout fact"><p><strong>Why this shape matters.</strong> Lowering is deliberately many-to-one: different spellings of the same computation become the same graph. That is why optimization can be uniform — backends never pattern-match on syntax. The measured cost of keeping the tree is tiny (parse + lower ≈ 0.06% of a compile; LLVM is ≈ 99%), and it buys error recovery and precise diagnostics. See <code>docs/architecture/INDEX.md</code>.</p></div>
+<details><summary>Expand: the CLI commands that expose each stage</summary><div class="body">
+<p>The <code>mapal</code> CLI (<code>crates/mapal-cli/src/main.rs</code>) is the lone renderer of diagnostics and the driver of the pipeline:</p>
+<pre><code>mapal run      prog.mapal              # frontend → (rewrite) → emit → clang → execute
+mapal build    prog.mapal -o prog      # same, keep the executable
+mapal dump-ir  prog.mapal --stage=lowered     # sealed graph, as lowered
+mapal dump-ir  prog.mapal --stage=rewritten   # graph after rewriting
+mapal dump-ir  prog.mapal --stage=llvm        # emitted LLVM IR text
+mapal dump-ir  prog.mapal --stage=device      # emitted device (PTX) text, when placed
+mapal test     prog.mapal              # differential: compiled output vs interpreter oracle
+mapal fmt      prog.mapal              # formatter (owns layout; --check to verify)</code></pre>
+<p>Useful flags while exploring: <code>--interp</code> (run the oracle instead of compiling), <code>--no-rewrite</code> (skip the optimizer), <code>--emit-only</code> (stop after emission), <code>--exact</code> / <code>--contract</code> (float faces, §8). If the CLI is not installed, every command works as <code>cargo run -p mapal-cli -- &lt;args&gt;</code>.</p>
+</div></details>
+</section>
+<section id="syntax">
+<h2><span class="no">2</span>Language syntax — Mapal-Core in one sitting</h2>
+<p>Mapal programs are <em>flows</em>: values move left-to-right through steps joined by <code>-&gt;</code>. There is no hidden control flow — the text you read <em>is</em> the dependency structure the compiler will use. This section covers Mapal-Core, the subset that compiles today (<code>HANDOFF.md §4</code>, <code>docs/spec/user-guide.md</code>). Constructs outside Core still parse and are rejected with a precise P- or L-code diagnostic.</p>
+
+<h3>2.1 The smallest useful program</h3>
+<pre><code>fn main() {
+    1048576 -&gt; iota -&gt; ts;
+    ts -&gt; map { t -&gt; t * 2 } -&gt; doubled;
+    doubled[1048575] -&gt; println;
+}</code></pre>
+<p>Read each line as a pipeline: make the range <code>0..1048576</code>, double every element (in parallel — nothing says so, the graph proves it), print the last one. Bindings (<code>-&gt; ts;</code>) name an intermediate so later flows can use it. A flow is a <em>statement</em>, not an expression: it routes a value; it does not itself produce one.</p>
+
+<h3>2.2 Types</h3>
+<table>
+<tr><th>Kind</th><th>Spelling</th><th>Notes</th></tr>
+<tr><td>Integers</td><td><code>i32</code>, <code>i64</code>, <code>u8</code></td><td>The three Core integer types. Literals default to <code>i32</code>.</td></tr>
+<tr><td>Floats</td><td><code>f32</code>, <code>f64</code></td><td>Literal type is directed by context (e.g. binding annotation).</td></tr>
+<tr><td>Bool / unit / string</td><td><code>bool</code>, <code>()</code>, <code>"…"</code></td><td>Strings exist to be printed in Core.</td></tr>
+<tr><td>Fixed arrays</td><td><code>[f32; 8]</code>, <code>[Pixel; 16]</code></td><td>Size is part of the type and always ≥ 1. Dynamic <code>[T]</code> is rejected (P0104).</td></tr>
+<tr><td>Tuples</td><td><code>(i32, f32)</code>, value <code>(a, b)</code></td><td>The product type; multi-argument calls are tuple inputs. Project with <code>p.0</code>, <code>p.1</code>.</td></tr>
+<tr><td>Named products</td><td><code>type Pixel { r: f32, g: f32, b: f32 }</code></td><td>Keyword is <code>type</code> (erratum E5). Construct as <code>Pixel { r: 1.0, g: 2.0, b: 3.0 }</code>, read fields as <code>px.r</code>.</td></tr>
+</table>
+
+<h3>2.3 Bindings, mutation, element update</h3>
+<pre><code>5 -&gt; x: i32;              // immutable binding (flow form)
+mut counter: i32 &lt;- 0;    // mutable binding (assignment form)
+counter + 1 -&gt; counter;   // legal only because counter is mut
+c[t] &lt;- v;                // element update: "c with slot t replaced" (a fresh value in the IR)</code></pre>
+<p>Immutability by default is load-bearing: an immutable value can be read by any number of parallel branches safely. <code>c[t] &lt;- v</code> looks like mutation but denotes a new array value in the graph (<code>Update</code>, §5) — whether it is stored in place is a backend decision guided by <code>last_use_plan</code> (§6).</p>
+
+<h3>2.4 Functions</h3>
+<pre><code>fn clamp(v: f32, lo: f32, hi: f32) -&gt; f32 {
+    (v &gt; hi) -&gt; {
+        -true-&gt;  hi;
+        -false-&gt; v;
+    } -&gt; ret;
+}
+
+fn main() {
+    (270.2, 0.0, 255.0) -&gt; clamp -&gt; r;   // tuple input, one step
+    r -&gt; println;                          // 255
+}</code></pre>
+<ul class="tight">
+<li><code>ret</code> names the function’s output; <code>ret.0</code> / <code>ret.1</code> fill tuple slots. At most one full-value writer may reach <code>ret</code> (checked as T0101).</li>
+<li>A function conceptually takes <em>one</em> input — a tuple when it has several parameters. This single-input rule is what keeps the graph uniform (§5).</li>
+<li>Recursion is out of Core by design (L1008): cycles live in <code>loop</code> dataflow, never in the call graph. Iteration is written with <code>loop</code> (§2.7) or <code>fold</code> (§2.6).</li>
+<li><code>main</code> takes no parameters and declares no return.</li>
+</ul>
+
+<h3>2.5 Pipelines and shorthand stages</h3>
+<pre><code>fn f(data: i32) -&gt; i32 {
+    data * 2
+        -&gt; + 5        // shorthand: piped value is the left operand
+        -&gt; ret;
+}
+// f(10) = 25</code></pre>
+<p>A shorthand stage like <code>-&gt; + 5</code> means “pair the piped value with <code>5</code>, then add.” In the AST it is an <code>OpShorthand</code> stage whose expression contains a single <code>Hole</code> leaf for the piped value; in the IR it becomes an ordinary <code>Pair</code> + <code>Add</code> (§4, §5). Naming intermediates (<code>-&gt; s1;</code>) changes nothing semantically — it only labels a graph node.</p>
+
+<h3>2.6 Collections: <code>map</code>, <code>fold</code>, and the pure builtins</h3>
+<pre><code>(a, b) -&gt; zip -&gt; map { p -&gt; p.0 + p.1 } -&gt; c: [i32; 16];   // elementwise add
+(0, c) -&gt; fold { acc, x -&gt; acc + x } -&gt; total;              // sum, in order
+16 -&gt; iota -&gt; ts;                                            // [0,1,…,15]
+arr -&gt; enumerate -&gt; indexed;                                 // [(0,a0),(1,a1),…]
+7 -&gt; fill -&gt; sevens: [i32; 4];                               // [7,7,7,7] (count from the type)
+t -&gt; widen_f64 -&gt; wide;                                      // i32 → f64 (also widen_i64, widen_f32)</code></pre>
+<ul class="tight">
+<li><code>map { x -&gt; … }</code> applies an inline block to every element: <code>[T; n] → [U; n]</code>. The block may <em>capture</em> enclosing values (arrays included) — captures are broadcast to every element and recorded explicitly in the IR.</li>
+<li><code>fold { acc, x -&gt; … }</code> threads an accumulator in index order: <code>(Acc × [T; n]) → Acc</code>. Order is part of the meaning unless the compiler proves a regrouping is allowed (§6, <code>fold_tree_step</code>).</li>
+<li>The block is not a first-class function value; lowering turns it into a real (anonymous) function in the graph (<code>MapBody</code> / <code>FoldBody</code>).</li>
+</ul>
+
+<h3>2.7 Choice and repetition: guards and <code>loop</code></h3>
+<pre><code>// Choice — a guard block. Arms are pure; only the taken arm computes.
+op -&gt; {
+    -0-&gt; a + b;
+    -1-&gt; a - b;
+    -2-&gt; a * b;
+    -3-&gt; a / b;      // does NOT run (and cannot trap) when op is 0
+    -_-&gt; a % b;      // default
+} -&gt; ret;
+
+// Repetition — a loop is a cycle in the dataflow, steered by a guard.
+mut k: i32   &lt;- 0;
+mut acc: f32 &lt;- 0.0;
+loop {
+    (k &lt; 4) -&gt; {
+        -true-&gt; {
+            acc + coeffs[k] * signal[4 + k] -&gt; acc;
+            k + 1 -&gt; k;
+            -&gt; loop;          // back-edge: go around again
+        }
+        -false-&gt; acc -&gt; ret;  // exit edge
+    }
+}</code></pre>
+<p>Guard discriminants in Core: <code>-true-&gt;</code>, <code>-false-&gt;</code>, integer literals (<code>-3-&gt;</code>), and the default <code>-_-&gt;</code>. Pure guard blocks lower to a <code>Phi</code> (choose-one) step in the IR; which arm’s work is <em>gated</em> (skipped when not taken) is decided by <code>guard_plan</code> (§6). Both arms are always <em>compiled</em>; computing is what is conditional.</p>
+
+<h3>2.8 Fanout (parallel by default) and <code>seq</code></h3>
+<pre><code>6 -&gt; {
+    -&gt; square -&gt; sq;     // branch 1 — independent
+    -&gt; double -&gt; db;     // branch 2 — independent, may run at the same time
+}
+// implicit join: both sq and db are available here
+sq -&gt; println;
+db -&gt; println;</code></pre>
+<p>Fanout branches are headless flows starting from the piped value. Independence is structural: if no branch needs another’s result, they are parallel — no keyword required. Effects (<code>print</code>) may <em>not</em> appear inside a fanout branch (T0201); they belong to the sequential “host spine.” A <code>seq { … }</code> stage is the opposite: an explicitly ordered statement block. It leaves no footprint in the IR — ordering there comes from data dependencies and the effect token (§5).</p>
+
+<h3>2.9 Effects, time, and precision annotations</h3>
+<pre><code>"total = " -&gt; print;      // raw, no newline
+total -&gt; println;         // with newline
+() -&gt; time -&gt; t0;         // monotonic clock read (milliseconds, f64) — effectful, never reordered
+
+(a, b) -&gt; fold: tf32 | f32 { acc, k -&gt; acc + a[k] * b[k] } -&gt; s;
+                          // ": compute" — products in this body admit TF32 operands (ADR-0041)</code></pre>
+<ul class="tight">
+<li><code>print</code>/<code>println</code> and <code>time</code> are the only effects in Core. In the graph they thread a linear <em>IO token</em>, which is what pins their order (§5).</li>
+<li>A <code>: compute</code> annotation (<code>: tf32 | f32</code>) on a function, <code>loop</code>/<code>seq</code> block, or <code>map</code>/<code>fold</code> step widens the set of precisions its float products admit. Default is full <code>f32</code> with an a-priori error bound (§6, <code>precision_plan</code>; §8).</li>
+<li>Operators: <code>+ - * / %</code>, comparisons <code>== != &lt; &gt; &lt;= &gt;=</code>, logic <code>&amp;&amp; || !</code>, unary <code>-</code>. Division/modulo by zero and out-of-bounds indexing are <em>traps</em> (defined failures), reported in source order.</li>
+</ul>
+<details><summary>Expand: grammar cheat-sheet (Core productions)</summary><div class="body">
+<pre><code>program   := item* EOF
+item      := fn-decl | type-decl
+fn-decl   := 'fn' IDENT '(' params? ')' ('-&gt;' type)? (':' compute)? block
+type-decl := 'type' IDENT '{' (IDENT ':' type ','?)* '}'
+type      := IDENT | '(' type (',' type)+ ')' | '[' type ';' INT ']'
+block     := '{' (stmt | guard-arm)* chain? '}'
+stmt      := chain ';' | bind ';' | 'loop' (':' compute)? block
+bind      := 'mut'? IDENT ('[' expr ']')? (':' type)? '&lt;-' expr
+chain     := expr? stage+                     // headless inside fanout branches
+stage     := '-&gt;' ( expr | 'mut'? IDENT (':' type)? | 'ret' ('.' INT)?
+                  | 'loop' | op expr
+                  | '{' guard-arm+ '}' | '{' chain+ '}'
+                  | ('map'|'fold') (':' compute)? '{' params '-&gt;' block-body '}'
+                  | 'seq' (':' compute)? block )
+guard-arm := '-' ('true'|'false'|'_'|INT) '-&gt;' (chain | block) ';'?
+expr      := or ;  or := and ('||' and)* ;  and := cmp ('&amp;&amp;' cmp)*
+cmp       := add (('=='|'!='|'&lt;'|'&gt;'|'&lt;='|'&gt;=') add)?
+add       := mul (('+'|'-') mul)* ;  mul := unary (('*'|'/'|'%') unary)*
+unary     := ('-'|'!')? postfix
+postfix   := primary ( '.' (IDENT|INT) | '[' expr ']' )*
+primary   := INT | FLOAT | STRING | 'true' | 'false' | '()' | IDENT
+           | '(' expr (',' expr)* ')' | '[' expr (',' expr)* ']'
+           | IDENT '{' (IDENT (':' expr)? ','?)* '}'</code></pre>
+<p class="small muted">Authoritative grammar: <code>docs/components/syntax/DESIGN.md §14</code>; parser: <code>crates/mapal-syntax/src/parser.rs</code>. Formatting is owned by <code>mapal fmt</code> (four spaces, multiline brace bodies) — run it on every <code>.mapal</code> file you touch.</p>
+</div></details>
+</section>
+
+<section id="ast">
+<h2><span class="no">3</span>AST — what it is and how it is created</h2>
+<p>The AST is a <strong>thin parse tree</strong>: syntax, names, spans, literal values, and flags — nothing more. It does no name resolution, no type inference, and no effect classification (<code>crates/mapal-syntax/src/ast.rs</code>). Think of it as the deserializer’s scratch space: faithful to the text, including its mistakes, so diagnostics can be precise. The <em>program</em>, for all later purposes, is the graph (§5).</p>
+<div class="mermaid">
+flowchart LR
+  TXT["source text<br/>&amp;str"] --> LEX["Lexer<br/>lexer.rs → tokens + spans<br/>L-codes for bad literals"]
+  LEX --> PAR["Parser (recursive descent)<br/>parser.rs → Program tree<br/>P-codes, error recovery"]
+  PAR --> OUT["ParseOutput<br/>{ program: Program,<br/>  diagnostics: Vec (sorted by span) }"]
+  OUT -->|"clean (no diagnostics)"| NEXT["to lowering §4"]
+  OUT -->|"dirty"| STOP["stop: CLI renders diagnostics"]
+</div>
+<h3>3.1 Step by step</h3>
+<ol class="steps">
+<li><strong>Lex.</strong> <code>lex(&amp;str)</code> produces tokens, each a kind plus a byte-range <code>SourceLoc { start, end }</code> into the original text. Token text is never copied — consumers slice <code>&amp;source[span]</code> (single source of truth). Malformed literals yield L-code diagnostics but lexing continues.</li>
+<li><strong>Parse.</strong> A hand-written recursive-descent parser builds the tree following the §2 grammar. Every node carries its span. On error it recovers (synchronizes to a plausible boundary) and records an <code>Error</code> node, so one run can report many problems — 32 P-codes in total.</li>
+<li><strong>Keep the rejected.</strong> Forms outside Core (function-call syntax <code>f(x)</code>, <code>?</code>, dynamic arrays <code>[T]</code>, custom loop labels, pattern guards) are <em>kept</em> as dedicated node kinds with their diagnostic, rather than silently mis-parsed. Lowering’s job is then a clean “defined exactly on Core” partial map (§4).</li>
+<li><strong>Merge + sort.</strong> Lex and parse diagnostics are merged and stably sorted by <code>(span.start, span.end)</code>. The public entry is <code>parse(&amp;str) -&gt; ParseOutput</code> (<code>crates/mapal-syntax/src/lib.rs</code>).</li>
+</ol>
+<h3>3.2 The node catalogue</h3>
+<p>Every node below is a plain Rust struct/enum in <code>ast.rs</code> with a <code>span: SourceLoc</code>. <code>Name</code> is just a span (the identifier’s text is sliced from source on demand). There is deliberately no <code>Display</code> anywhere in the crate — rendering belongs to the CLI.</p>
+<table>
+<tr><th>Node</th><th>Shape</th><th>Carries</th></tr>
+<tr><td><code>Program</code></td><td><code>{ items: Vec&lt;Item&gt; }</code></td><td>The whole file.</td></tr>
+<tr><td><code>Item</code></td><td><code>Fn(FnDecl) | Type(TypeDecl) | Error(span)</code></td><td>Top-level declarations; <code>Error</code> = recovery region.</td></tr>
+<tr><td><code>FnDecl</code></td><td><code>{ name, params, ret_ty?, body: Block }</code></td><td><code>Param { mut?, name, ty }</code>; body block may carry a <code>: compute</code> <code>Precision</code>.</td></tr>
+<tr><td><code>TypeDecl</code></td><td><code>{ name, fields: Vec&lt;Field&gt; }</code></td><td>Named product types.</td></tr>
+<tr><td><code>Ty / TyKind</code></td><td><code>Named | Tuple | Array{elem,len} | Dynamic | Error</code></td><td>Surface types (distinct from IR types — §4 translates).</td></tr>
+<tr><td><code>Block</code></td><td><code>{ items: Vec&lt;BlockItem&gt;, tail: Option&lt;Chain&gt;, compute? }</code></td><td>Statements <em>or</em> guard arms (mixing draws P0006), plus an optional tail chain (the block’s value in <code>map</code>/<code>fold</code> bodies and arm payloads).</td></tr>
+<tr><td><code>Stmt / StmtKind</code></td><td><code>Chain | Bind | Loop | Error</code></td><td><code>BindStmt { mut?, name, index?, ty?, value }</code> covers both <code>x &lt;- e</code> and <code>c[i] &lt;- e</code>; <code>LoopStmt { label, body }</code>.</td></tr>
+<tr><td><code>Chain</code></td><td><code>{ head: Option&lt;Expr&gt;, stages: Vec&lt;Stage&gt; }</code></td><td>One flat pipeline. Chains never nest arrows; headless chains appear in fanout branches.</td></tr>
+<tr><td><code>Stage / StageKind</code></td><td><code>Expr | Bind | Ret | LoopJump | OpShorthand | Guard | Fanout | MapFold | SeqBlock | StmtBlock | Error</code></td><td>Everything that can follow <code>-&gt;</code>. <code>MapFold { op: Map|Fold, params, body }</code>; <code>OpShorthand</code> wraps an expr with one <code>Hole</code>.</td></tr>
+<tr><td><code>GuardArm</code></td><td><code>{ discr: True|False|Default|Int|OutOfCore, payload: Chain|Block }</code></td><td>One <code>-d-&gt;</code> arm.</td></tr>
+<tr><td><code>Expr / ExprKind</code></td><td><code>Int | Float | Str | Bool | Unit | Var | Hole | Unary | Binary | Member | Index | Tuple | Array | Struct | Call | Question | Error</code></td><td>Ordinary expressions. <code>Float</code>/<code>Str</code> keep only a span (value is type-directed / unescaped later). <code>Call</code>/<code>Question</code> are rejected-but-kept.</td></tr>
+</table>
+<details><summary>Expand: worked example — source text to AST (pipeline function)</summary><div class="body">
+<pre><code>fn f(data: i32) -&gt; i32 {
+    data * 2
+        -&gt; + 5
+        -&gt; ret;
+}</code></pre>
+<div class="mermaid">
+flowchart TD
+  P["Program"] --> F["Item::Fn  FnDecl f<br/>params: [data: i32] · ret_ty: i32"]
+  F --> B["body: Block<br/>items: [Stmt], tail: none"]
+  B --> S["StmtKind::Chain"]
+  S --> C["Chain<br/>head + 2 stages"]
+  C --> H["head: Expr Binary(Mul)<br/>Var(data) · Int(2)"]
+  C --> S1["Stage 1: OpShorthand<br/>Binary(Add, Hole, Int 5)<br/>Hole = the piped value"]
+  C --> S2["Stage 2: Ret<br/>proj: none"]
+</div>
+<p>Three things to notice. (1) The shorthand <code>-&gt; + 5</code> is already an expression tree with a <code>Hole</code> placeholder — the parser classifies it; lowering just substitutes the incoming value. (2) Nothing here knows that <code>data</code> is the parameter or that the types agree — that is lowering’s typing walk. (3) Every node knows exactly which bytes it came from, which is what later diagnostics (and trap ordering, §9) rely on.</p>
+</div></details>
+<details><summary>Expand: why keep a tree at all? (vs parsing straight to the graph)</summary><div class="body">
+<p>Because the tree is the only place that can represent a <em>broken</em> program, declaration order freedom (lowering walks items three times: types, signatures, bodies), and fanout scope for the effect check. The measured price is ~4 µs of parsing against ~140 ms of LLVM on a real compile. Skipping the tree would save microseconds and cost all three properties. Full argument: <code>docs/architecture/INDEX.md</code>.</p>
+</div></details>
+</section>
+<section id="lower">
+<h2><span class="no">4</span>Lowering &amp; checks: tree → graph</h2>
+<p><code>lower(&amp;str, &amp;Program) -&gt; Result&lt;CategoryIr, Vec&lt;Diagnostic&gt;&gt;</code> (<code>crates/mapal-lower/src/lib.rs</code>) turns a parse-clean tree into the sealed graph. It is the one place where names become edges. Precondition: the tree came from a diagnostic-free <code>parse</code>; anything else yields L1000, never a panic.</p>
+<div class="mermaid">
+flowchart TD
+  T["Program (clean tree)"] --> A["Pass A — type table<br/>tys.rs: surface Ty ⇀ IR Ty<br/>struct inlining, Core whitelist"]
+  A --> B["Pass B — effects + call graph<br/>effects.rs: who can print?<br/>recursion rejected (L1008)"]
+  B --> D1["Pass D1 — typing walk, per fn<br/>typing.rs: multi-error surface<br/>return completeness (L1306)"]
+  D1 --> C["Pass C — declare<br/>one input + one output object per fn"]
+  C --> D2["Pass D2/D3 — emit<br/>emit.rs + scope.rs: names → objects<br/>every step → one morphism (fail-fast)"]
+  D2 --> E["Pass E — seal<br/>IrBuilder::seal → immutable CategoryIr"]
+  E --> V{"validate (oracle)<br/>re-derives every invariant<br/>seal Ok ⇒ validate empty"}
+  V --> K["check (mapal-check)<br/>T0101 return exclusivity<br/>T0201 no effects in fanout"]
+</div>
+<h3>4.1 What lowering does, in words</h3>
+<ol class="steps">
+<li><strong>Types first (A).</strong> Surface <code>TyKind</code> values are resolved to IR <code>Ty</code> values: named types are looked up and structs inlined, depth is bounded (<code>MAX_TY_DEPTH = 64</code>), and anything outside the Core whitelist is refused. The two <code>Ty</code> types are genuinely different types joined by this partial translation — do not conflate them.</li>
+<li><strong>Effects + call graph (B).</strong> Which functions can (transitively) print or read the clock, and is the call graph acyclic? A recursive cycle aborts here with the teaching diagnostic L1008.</li>
+<li><strong>Typing walk (D1).</strong> Each function body is type-checked; this pass collects <em>many</em> errors. Emission afterwards is fail-fast and assumes a well-typed-enough tree.</li>
+<li><strong>Declare + emit (C, D2/D3).</strong> Each function gets exactly one input object and one output object. Scopes map names to objects; every computation step becomes one morphism built through the checked <code>IrBuilder</code>. Inline <code>map</code>/<code>fold</code> blocks become anonymous functions; captured variables become leading tuple components.</li>
+<li><strong>Seal (E).</strong> The builder freezes the graph. From here on it is immutable; the only way to “change” it is to build a new one (which is exactly what the rewriter does, §7).</li>
+</ol>
+<h3>4.2 Desugaring table — surface form to graph form</h3>
+<table>
+<tr><th>You write</th><th>The graph gets</th><th>Why</th></tr>
+<tr><td><code>a + b</code></td><td><code>Pair</code> both operands into a 2-tuple object, then one <code>Add</code> edge</td><td>Every step has exactly one input value. Binary ops take the pair. (“Pair-then-primitive.”)</td></tr>
+<tr><td><code>-&gt; + 5</code></td><td>Same as above, with the piped value substituted for the AST <code>Hole</code></td><td>Shorthand is pure syntax.</td></tr>
+<tr><td><code>(a, b) -&gt; f</code> and <code>x -&gt; f</code></td><td>One <code>Call(f)</code> edge from the (tuple) input object</td><td>Arrow and call spellings collapse (ADR-0031).</td></tr>
+<tr><td>Pure guard block</td><td>Arm values + discriminant paired, then one <code>Phi</code> edge: <code>(T × T × Bool) → T</code> (multi-arm = nested <code>Phi</code>s)</td><td>Choice is a value-level step, not control flow. Gating is decided later (§6).</td></tr>
+<tr><td>Guard steering a <code>loop</code></td><td><code>LoopEnter</code> into a <code>LoopMerge</code> object; <code>LoopBack</code> (fires on true) / <code>LoopExit</code> (fires on false) sharing one <code>Bool</code></td><td>The cycle <em>is</em> the loop. No separate loop node is stored.</td></tr>
+<tr><td><code>c[i] &lt;- x</code></td><td>One <code>Update</code> edge: <code>(array × index × value) → array′</code></td><td>Functional update; in-place storage is a backend decision.</td></tr>
+<tr><td><code>map</code>/<code>fold</code> with captures</td><td><code>Map{body, captures=k}</code> / <code>Fold{body, captures=k}</code>; source is <code>(c₁…cₖ, array)</code></td><td>Captures are explicit inputs, never hidden environment reads.</td></tr>
+<tr><td><code>x -&gt; print</code></td><td><code>Print</code> edge: <code>(IoToken × P) → IoToken</code></td><td>The token threads effects in source order.</td></tr>
+<tr><td><code>seq { … }</code></td><td>Nothing</td><td>Ordering inside comes from dependencies + token (ADR-0019).</td></tr>
+<tr><td><code>x -&gt; ret</code></td><td>One <code>Output</code> edge (the only identity-shaped step)</td><td>Keeps “every value has one producer” true for the return object.</td></tr>
+</table>
+<h3>4.3 The two gates after lowering</h3>
+<ul class="tight">
+<li><strong><code>validate</code></strong> (<code>crates/mapal-ir/src/validate.rs</code>) is an independent oracle: it re-derives every graph invariant from scratch without sharing builder code. The property “seal succeeded ⇒ validate finds nothing” is property-tested. It runs in tests/debug, not as a mandatory production pass.</li>
+<li><strong><code>check</code></strong> (<code>crates/mapal-check/src/lib.rs</code>) discharges exactly what the interpreter assumes: <em>T0101</em> — at most one full-value writer per return object; <em>T0201</em> — no effectful step inside a parallel fanout branch. It needs the tree as well as the graph, because fanout scope is precisely what lowering erased. This is the one place the tree is consulted after lowering; everything downstream sees only the graph.</li>
+</ul>
+</section>
+
+<section id="ir">
+<h2><span class="no">5</span>Category IR — the graph, in plain words</h2>
+<p>Forget the word “category” for a moment. The Category IR (<code>CategoryIr</code>, <code>crates/mapal-ir/src/graph.rs</code>) is a <strong>dataflow graph</strong>: circles are values, arrows are steps that compute a value. The categorical names stuck because the design borrows two ideas from that world — <em>compose steps by matching output-to-input types</em> and <em>translate the whole graph with meaning preserved</em> — but the data structure itself is ordinary Rust: three <code>slotmap</code> arenas with deterministic iteration order and no <code>HashMap</code> anywhere.</p>
+<div class="callout"><p><strong>Vocabulary translation (the only category theory on this page).</strong><br>
+<em>Object</em> → a value (with a type). &nbsp; <em>Morphism</em> → a step: one directed edge <code>source → target</code> labeled with an operation. &nbsp; <em>Composition</em> (<code>f -&gt; g</code>) → plumbing: feed <code>f</code>’s output into <code>g</code>. &nbsp; <em>Product</em> (<code>A × B</code>) → a tuple. &nbsp; <em>Functor</em> → a translator (a backend) that maps the graph to another world while preserving the plumbing, hence the answer. &nbsp; <em>Trace</em> → feedback: a loop.</p></div>
+<h3>5.1 What the graph is made of</h3>
+<div class="mermaid">
+flowchart LR
+  IR["CategoryIr (sealed)"] --> OB["objects: SlotMap&lt;ObjectId, Object&gt;<br/>ty · kind · value? · name? · loc"]
+  IR --> MO["morphisms: SlotMap&lt;MorphismId, Morphism&gt;<br/>source · target · op · loc"]
+  IR --> FU["funcs: SlotMap&lt;FuncId, FuncDef&gt;<br/>input · output · morphism list"]
+  IR --> ED["in/out edge lists + owner map<br/>(SecondaryMaps, insertion-ordered)"]
+  IR --> FA["facts store (§6)<br/>per-fn OnceLock slots, filled on demand"]
+  IR --> EN["entry: FuncId (main)"]
+</div>
+<h4>Objects — the values</h4>
+<pre><code>Object { id, ty: Ty, value: Option&lt;Value&gt;, kind: ObjectKind, name: Option&lt;String&gt;, loc }</code></pre>
+<table>
+<tr><th><code>ObjectKind</code></th><th>Meaning</th><th>Rule</th></tr>
+<tr><td><code>Parameter</code></td><td>The function’s single input (tuple-typed when multi-param).</td><td>Exactly one per function.</td></tr>
+<tr><td><code>Constant</code></td><td>A literal.</td><td><code>value = Some(v)</code> exactly here; in-degree 0.</td></tr>
+<tr><td><code>Temporary</code></td><td>A computed intermediate (the default).</td><td>Exactly one producing edge.</td></tr>
+<tr><td><code>Return</code></td><td>The function’s output.</td><td>Exactly one per function.</td></tr>
+<tr><td><code>LoopMerge</code></td><td>The meeting point of a loop: initial value in, next-iteration values around.</td><td>One <code>LoopEnter</code> + at least one <code>LoopBack</code>.</td></tr>
+</table>
+<p>One struct with an optional <code>value</code> field, rather than separate “constant node” / “inner node” types — the kind tag plus the option carries the distinction. <code>name</code> is the surface variable name, kept only for dumps and debugging; no semantics reads it.</p>
+<h4>Morphisms — the steps</h4>
+<pre><code>Morphism { id, source: ObjectId, target: ObjectId, op: Operation, loc }</code></pre>
+<p>Exactly one source, exactly one target (invariant I1). Multi-input operations take a tuple object built by <code>Pair</code> edges — there is no “wide edge” type. Well-typedness is therefore a <em>local</em> check at each edge: does this operation accept the source’s type and produce the target’s type?</p>
+<details><summary>Expand: the full operation set (25 operations, grouped)</summary><div class="body">
+<table>
+<tr><th>Group</th><th>Operation</th><th>Signature (plain words)</th></tr>
+<tr><td>Structural</td><td><code>Pair{slot, arity}</code></td><td>Inject a value into slot <em>k</em> of a tuple/struct/array product being built.</td></tr>
+<tr><td></td><td><code>Proj{index}</code></td><td>Read component <em>k</em> out of a tuple/struct.</td></tr>
+<tr><td></td><td><code>Output</code></td><td>The single identity-shaped step: route a value to <code>Return</code>.</td></tr>
+<tr><td>Arithmetic</td><td><code>Add Sub Mul Div Mod Neg</code></td><td>Binary ops take the 2-tuple; <code>Neg</code> is unary (IEEE <code>fneg</code> ≠ <code>0 − x</code>). <code>Div</code>/<code>Mod</code> may trap.</td></tr>
+<tr><td>Compare/logic</td><td><code>Eq Neq Lt Gt Le Ge And Or Not</code></td><td>Produce <code>Bool</code>.</td></tr>
+<tr><td>Selection</td><td><code>Phi</code></td><td><code>(T × T × Bool) → T</code>: choose one of two values.</td></tr>
+<tr><td>Calls</td><td><code>Call(FuncId)</code></td><td>Named functions only; input is the argument tuple.</td></tr>
+<tr><td>Collections</td><td><code>Map{body, captures}</code></td><td><code>[T; n] → [U; n]</code> via body <code>T → U</code> (captures prepended when present).</td></tr>
+<tr><td></td><td><code>Fold{body, captures}</code></td><td><code>(Acc × [T; n]) → Acc</code> via body <code>(Acc × T) → Acc</code>, in index order.</td></tr>
+<tr><td></td><td><code>Index</code></td><td><code>([T; n] × I) → T</code>; out-of-bounds traps.</td></tr>
+<tr><td></td><td><code>Update</code></td><td><code>([T; n] × I × T) → [T; n]</code> with one slot replaced; may trap.</td></tr>
+<tr><td></td><td><code>Zip</code> / <code>Enumerate</code></td><td><code>([A;n] × [B;n]) → [(A,B);n]</code> / <code>[A;n] → [(i32,A);n]</code>.</td></tr>
+<tr><td></td><td><code>Iota</code> / <code>Fill</code></td><td><code>n → [0..n)</code> (count is a constant object) / <code>T → [T; n]</code> (count carried by the type).</td></tr>
+<tr><td></td><td><code>Widen</code></td><td><code>i32→i64</code>, <code>i32→f32</code>, <code>i32→f64</code>, <code>f32→f64</code>.</td></tr>
+<tr><td>Effects</td><td><code>Print{newline}</code></td><td><code>(IoToken × P) → IoToken</code>.</td></tr>
+<tr><td></td><td><code>TimeMs</code></td><td><code>IoToken → (IoToken × f64)</code>.</td></tr>
+<tr><td>Loops</td><td><code>LoopEnter</code> / <code>LoopBack</code> / <code>LoopExit</code></td><td>Init into merge / <code>(U × Bool) → U</code> back-edge (true) / <code>(B × Bool) → B</code> exit (false).</td></tr>
+</table>
+<p class="small muted">Deliberately absent vs the frozen spec: <code>Identity</code> (only <code>Output</code>), <code>Const</code> (constants are objects), <code>Trace</code> (the cycle is the trace). Source: <code>crates/mapal-ir/src/graph.rs</code> (<code>Operation</code>).</p>
+</div></details>
+<h4>Types and functions</h4>
+<pre><code>Ty ::= Int{bits, signed}   // i32, i64, u8 only
+     | Float{bits}         // f32, f64 only
+     | Bool | Unit | Str | IoToken
+     | Tuple(Vec&lt;Ty&gt;)               // arity ≥ 2
+     | Struct{name, fields}         // name is part of equality
+     | Array{elem, size}            // size ≥ 1
+
+FuncDef { name, kind: Named | MapBody | FoldBody, input, output, morphisms: Vec&lt;MorphismId&gt; }</code></pre>
+<ul class="tight">
+<li><strong><code>IoToken</code></strong> is the linear “world” value threaded through effects. It may never be duplicated, stored in an array, chosen by <code>Phi</code>, or captured by a <code>map</code>/<code>fold</code> body — one shared predicate (<code>ty_contains_token</code>) enforces all token rules, deeply (it finds a token nested in <code>((IoToken, x), y)</code>).</li>
+<li>A function’s morphism list is an insertion-ordered <em>set</em>, not a schedule. Execution order is recomputed by <code>topo_order</code> (§6) whenever someone needs one — never stored, so it can never go stale.</li>
+<li>Each float <code>Mul</code> also carries an admitted-precision set (default <code>{f32}</code>; widened by <code>: compute</code>) in a side table on the graph.</li>
+</ul>
+<h3>5.2 What it looks like — three small DAGs</h3>
+<p>Graph dumps use Mermaid too (<code>crates/mapal-ir/src/mermaid.rs</code>), so what you see here is the same shape <code>dump-ir</code> tooling shows you. Ellipses are objects (values); labels on arrows are operations.</p>
+<details open><summary>Example A — pipeline <code>f(x) = x*2 + 5</code> (straight-line DAG)</summary><div class="body">
+<div class="mermaid">
+flowchart LR
+  IN(["Parameter<br/>data: i32"]) -->|"Pair slot 0"| T1(["(i32 × i32)"])
+  C2(["Constant 2"]) -->|"Pair slot 1"| T1
+  T1 -->|"Mul"| M(["t1: i32"])
+  M -->|"Pair slot 0"| T2(["(i32 × i32)"])
+  C5(["Constant 5"]) -->|"Pair slot 1"| T2
+  T2 -->|"Add"| A(["t2: i32"])
+  A -->|"Output"| R(["Return: i32"])
+</div>
+<p>Notice the pairs: <code>Mul</code> and <code>Add</code> each consume <em>one</em> tuple object. It looks verbose, but it is what makes every later analysis local and uniform — and <code>emission_plan</code> (§6) dissolves these product objects back into plain operand lists at emission time, so they cost no memory.</p>
+</div></details>
+<details><summary>Example B — fanout (parallelism is just missing edges)</summary><div class="body">
+<pre><code>6 -&gt; { -&gt; square -&gt; sq;  -&gt; double -&gt; db; }</code></pre>
+<div class="mermaid">
+flowchart LR
+  C6(["Constant 6"]) -->|"Call square"| SQ(["sq: i32"])
+  C6 -->|"Call double"| DB(["db: i32"])
+  SQ --> USE(["…later uses…"])
+  DB --> USE
+</div>
+<p>There is no path between the two calls, so neither can observe the other. That reachability fact — not an annotation — is the entire parallelism story. <code>path_plan</code> (§6) turns it into tasks.</p>
+</div></details>
+<details><summary>Example C — a loop (the only cycles in the graph)</summary><div class="body">
+<div class="mermaid">
+flowchart TD
+  INIT(["init state U<br/>(k, acc) packed"]) -->|"LoopEnter"| M{"LoopMerge U"}
+  M --> BODY["decide + advance<br/>cond = k &lt; 4 · next = step(U)"]
+  BODY -->|"LoopBack · fires on true"| M
+  BODY -->|"LoopExit · fires on false"| OUT(["exit value"])
+</div>
+<p>All carried state (<code>k</code>, <code>acc</code>, any <code>mut</code> arrays) is packed into the single merge type <code>U</code>. <code>LoopBack</code> and <code>LoopExit</code> read the <em>same</em> <code>Bool</code> object and fire mutually exclusively — <code>validate</code> enforces that they share it. <code>loop_plan</code> (§6) recovers the canonical init/decide/advance/exit reading from this cycle; the interpreter, rewriter, and both backends all consume that one reading.</p>
+</div></details>
+<h3>5.3 The rules the graph guarantees</h3>
+<p>These invariants (DESIGN “I-codes”) are what every plan silently relies on. In plain words:</p>
+<ul class="tight">
+<li><strong>One producer.</strong> Every non-constant, non-parameter value is written by exactly one edge (a <code>LoopMerge</code> excepted: one enter + back-edges). Dataflow dependencies are therefore <em>exact</em> — no alias analysis, no “may-def” guessing.</li>
+<li><strong>Typed plumbing.</strong> Every edge type-checks locally against its operation’s signature.</li>
+<li><strong>Tokens stay linear.</strong> The IO token is never duplicated or dropped, so effect order is structural.</li>
+<li><strong>Determinism.</strong> Arena storage iterates in insertion order; dumps, topo orders, and emissions are byte-stable across runs.</li>
+<li><strong>Sealed = trustworthy.</strong> Graphs can only be built through the checked builder and are immutable afterwards. Consumers never defensive-check structure the builder already proved.</li>
+</ul>
+</section>
+<section id="plans">
+<h2><span class="no">6</span>Plans — the facts deduced from the graph</h2>
+<p>A note on the title first, because it corrects a common first guess: plans are <strong>not</strong> built on the AST. The tree is discarded after lowering/checking. Every plan is a pure query over the sealed graph: <code>fn plan(&amp;self, f: FuncId) -&gt; Plan</code> on <code>CategoryIr</code> in <code>crates/mapal-ir/src/algo.rs</code> (≈ 6,300 lines — the intellectual center of the compiler). “Code → plan” therefore means: source → graph → the fact the graph proves. This section is the central record of those plans, their algorithms, and who consumes them.</p>
+<h3>6.1 The four rules every plan obeys</h3>
+<ol class="steps">
+<li><strong>Facts live on the graph.</strong> Each fact is computed at most once per (graph, function) and stored in a pre-allocated <code>OnceLock</code> slot (<code>crates/mapal-ir/src/facts.rs</code>). Facts depend on other facts (<code>path_plan</code> reads <code>loop_plan</code>; <code>tile_plan</code> reads <code>bounds_proof</code>), forming a small dataflow of their own. A query reads the stored value; nothing recomputes per call site.</li>
+<li><strong>Partial = safe.</strong> If a plan cannot <em>prove</em> its shape, it returns <code>None</code> / empty / <code>false</code> and the compiler takes the slow correct path. A plan can cost performance when silent; it can never change the answer.</li>
+<li><strong>Machine-free.</strong> <code>mapal-ir</code> answers “is this legal?” (geometry, independence, proofs). Backends answer “is this worth it?” using <code>TargetProfile</code> (§8). No cache size or GPU fact ever enters a plan.</li>
+<li><strong>One question each.</strong> New logic starts by checking this catalog. If a needed fact is missing, it is added here as one tested query — never re-derived inside a backend pass (<code>AGENTS.md</code> standing rule).</li>
+</ol>
+<div class="mermaid">
+flowchart TD
+  G["sealed graph"] --> T["topo_order · sccs<br/>(structure)"]
+  T --> LP["loop_structure · loop_plan"]
+  T --> BP["bounds_proof"]
+  LP --> PP["path_plan<br/>(parallel tasks)"]
+  BP --> PP
+  BP --> TP["tile_plan · cell_plan<br/>footprint_plan (geometry)"]
+  LP --> LU["last_use_plan · write_delta<br/>(lifetimes)"]
+  T --> EP["elem_plan · map_law<br/>(closed-form elements)"]
+  T --> GP["guard_plan · trip_split"]
+  T --> EM["emission_plan<br/>(what materializes)"]
+  PP --> BE["backends (§8)"]
+  TP --> BE
+  EP --> BE
+  LU --> BE
+</div>
+<h3>6.2 The catalog</h3>
+<p>Filter by text or by group. Each card states the question in plain words, the algorithm sketch, the consumer, and the fallback when the proof fails. Groups: <span class="tag struct">structure</span> order &amp; loops · <span class="tag">parallel</span> tasks &amp; gating · <span class="tag geo">geometry</span> kernel shapes · <span class="tag mem">memory</span> lifetimes &amp; materialization · <span class="tag safe">safety</span> proofs &amp; precision.</p>
+<div class="toolbar">
+  <input id="plan-q" type="search" placeholder="Filter plans… try: tile, bounds, loop, lifetime">
+  <button class="fbtn on" data-g="all">All</button>
+  <button class="fbtn" data-g="struct">Structure</button>
+  <button class="fbtn" data-g="par">Parallel</button>
+  <button class="fbtn" data-g="geo">Geometry</button>
+  <button class="fbtn" data-g="mem">Memory</button>
+  <button class="fbtn" data-g="safe">Safety</button>
+</div>
+
+<div class="plan" data-g="struct"><h4><code>topo_order(f) -&gt; Vec&lt;MorphismId&gt;</code><span class="tag struct">structure</span></h4>
+<p><strong>Question:</strong> in what single order could this function execute, respecting every dependency?</p>
+<dl><dt>Algorithm</dt><dd>Kahn-style ready walk with a min-heap keyed by <code>(loc.start, loc.end, insertion index)</code> — source order, not compiler-construction order. That choice is observable: when two independent steps can both trap, the one earlier in your source is reported (§9).</dd>
+<dt>Consumers</dt><dd>Everyone: interpreter walk, sequential emission, and as the position basis for <code>last_use_plan</code>.</dd><dt>Fallback</dt><dd>None — total on well-formed graphs (cycles only inside loop SCCs, handled by <code>loop_plan</code>).</dd></dl></div>
+
+<div class="plan" data-g="struct"><h4><code>sccs(f)</code> · <code>loop_structure(f) -&gt; Vec&lt;LoopScc&gt;</code> · <code>loop_plan(f, merge) -&gt; Option&lt;LoopPlan&gt;</code><span class="tag struct">structure</span></h4>
+<p><strong>Question:</strong> where are the loops, and for each one: what is the initial state, the merge point, the decide/advance order, and the exits?</p>
+<dl><dt>Algorithm</dt><dd>Tarjan SCC over objects; an SCC containing a <code>LoopMerge</code> is a loop region. <code>loop_plan</code> then checks the canonical shape (one <code>LoopEnter</code>, shared condition <code>Bool</code>, exits leaving the region) and records init/merge/decide/advance/exits.</dd>
+<dt>Consumers</dt><dd>Interpreter loop driver, rewrite replayer + loop lifting, both backends’ loop CFGs, <code>path_plan</code>, <code>trip_split</code>, <code>last_use_plan</code> (two-iteration liveness).</dd><dt>Fallback</dt><dd><code>None</code> ⇒ the region is treated as opaque sequential work; never miscompiled.</dd></dl></div>
+
+<div class="plan" data-g="par"><h4><code>path_plan(f) -&gt; PathPlan</code> (+ <code>is_single_path</code>)<span class="tag">parallel</span></h4>
+<p><strong>Question:</strong> what can run at the same time, as an explicit task DAG — and where must the sequential (effectful) world wait?</p>
+<dl><dt>Algorithm</dt><dd>(1) Order by <code>topo_order</code>. (2) Set aside the <em>host spine</em>: token-touching steps and effectful loops become ordered checkpoints. (3) Bulk ops (<code>Map/Zip/Enumerate/Iota/Fill</code>) → <code>Split</code> tasks (element range sliceable); <code>Fold</code> → <code>Seq</code> task; each loop region → one <code>Seq</code> task; remaining scalars grouped by dataflow+co-writing connectivity (never mere sibling reads). (4) Dependencies = “the task that produced each input object” — direct dataflow is the complete relation. (5) Rank = critical-path weight, long poles first. (6) Checkpoints carry per-task <em>watermarks</em> (past-last-trap) or completion when the value is consumed.</dd>
+<dt>Consumers</dt><dd>LLVM backend → one <code>@taskN</code> per task + static dep/rank table → <code>mapal-rt</code> work-stealing pool (§8, §9).</dd><dt>Fallback</dt><dd>Single-path (or malformed) plan ⇒ plain sequential emission.</dd></dl></div>
+
+<div class="plan" data-g="par"><h4><code>guard_plan(f) -&gt; Vec&lt;GuardSite&gt;</code> (+ <code>gated()</code>)<span class="tag">parallel</span></h4>
+<p><strong>Question:</strong> for each <code>Phi</code> (guard), which work belongs exclusively to each arm — and must that work be gated (not computed when the arm is not taken)?</p>
+<dl><dt>Algorithm</dt><dd>Per-arm consumer closure (work whose every consumer is inside the arm), with loops joining as whole units via <code>loop_plan</code>. Transitive <code>can_trap</code>/<code>heavy</code> flags through nested sites. Legality first (can-trap <em>must</em> gate), then cost (heavy work gates; two scalar arms are left branchless).</dd>
+<dt>Consumers</dt><dd>Interpreter (skip unchosen arm), LLVM + CUDA host emission (branch around gated work). Both arms stay in the binary.</dd><dt>Fallback</dt><dd>Not gated ⇒ both arms compute, <code>Phi</code> selects — correct only where both arms are total, hence the must-gate rule.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>tile_plan(f)</code> · <code>tile_plan_strided(f)</code> · <code>tile_plan_radix(f)</code> → <code>TileSite / TileRead</code><span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> is this innocent “one result per element” map secretly a tiled kernel — neighboring outputs computed by lockstep folds reading broadcasts and vector runs?</p>
+<dl><dt>Algorithm</dt><dd>(1) Skeleton: <code>Map</code> over <code>iota</code> whose body ends in exactly one <code>Fold</code>. (2) Coordinates from a <code>t/C, t%C</code> split (2-D) or the element itself (1-D). (3) Chain shape <code>acc + x*y</code> (either operand order). (4) Each read address decomposed affinely as <code>base + ci·i + clane·lane + ck·k</code>: <code>clane=0</code> ⇒ broadcast, <code>clane=1</code> ⇒ vector load, anything else ⇒ refuse. Strided/radix variants widen the coordinate reading (see <code>radix_plan</code>). <code>TileKSplit</code> records when the <em>k</em> axis itself may be split.</dd>
+<dt>Consumers</dt><dd>CPU tiled micro-kernels (NEON/AVX/SME), GPU tile kernels (§8). Records geometry only — tile <em>sizes</em> come from <code>TargetProfile</code>.</dd><dt>Fallback</dt><dd>No site ⇒ ordinary elementwise map emission. Matmul, FIR, conv and attention shapes all match; there is no “matrix” concept in the recognizer.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>cell_plan(f)</code> → <code>CellSite / CellRead</code> (+ <code>tree</code>)<span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> per output cell of a map, exactly what does it read — and is its fold step regroupable as lane partials + a tree?</p>
+<dl><dt>Algorithm</dt><dd>Generalizes the tile reading per cell: affine reads with reach classification, independent cells across threads. <code>CellSite::tree</code> marks steps whose order is free (§6 <code>fold_tree_step</code>), enabling tree reductions where the float face permits (§8).</dd>
+<dt>Consumers</dt><dd>GPU one-thread-per-cell / cooperative kernels; CPU cell kernels.</dd><dt>Fallback</dt><dd>No site ⇒ generic map path.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>footprint_plan(f) -&gt; FootprintPlan</code> (<code>of</code>, <code>rect</code>, <code>at</code>)<span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> for each consumer, what region of each producer does it actually touch?</p>
+<dl><dt>Algorithm</dt><dd>Per producer→consumer edge, the touched footprint (rectangles / affine reaches with taps). This is the fact that replaces any “fusion pass”: whether work runs together, stays in registers/shared memory, or is stored follows from footprints + death points + the target (§8). Kernel boundaries are a <em>result</em>, never a pass.</dd>
+<dt>Consumers</dt><dd>Backend work-unit formation, residency and staging decisions.</dd><dt>Fallback</dt><dd>Whole-array footprint ⇒ materialize and pass the buffer.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>elem_plan(f) -&gt; ElemPlan</code> · <code>map_law(m) -&gt; Option&lt;ElemSrc&gt;</code> (+ <code>Outside</code>)<span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> what is <code>out[i]</code>, as a closed function of <code>i</code> — can a consumer recompute (or directly source) elements instead of materializing the array?</p>
+<dl><dt>Algorithm</dt><dd>Per array object, an <code>ElemSrc</code> law: element <em>i</em> expressed via sources, piecewise when every cell outside a row/range/column/single cell is a capture’s own element (the in-place range-map shape). <code>map_law</code> gives the same for one <code>Map</code>.</dd>
+<dt>Consumers</dt><dd>Backends decide recompute-vs-store per target (GPU: usually recompute; CPU: vs L2 round-trip; FPGA: BRAM vs area) — the plan records legality, never the choice.</dd><dt>Fallback</dt><dd>No law ⇒ the array materializes.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>row_fold(f)</code> · <code>whole_fold(f)</code> → <code>RowFoldSite / RowFoldOp</code> · <code>fold_tree_step(fold)</code><span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> is this fold really “one row at a time” (or the whole function folded over one affine read) — and may its step be regrouped?</p>
+<dl><dt>Algorithm</dt><dd>Recognize folds whose reads are affine in (row, k): softmax/decode and reduction shapes. <code>fold_tree_step</code> proves the step is an order-free combine (e.g. <code>+</code>/<code>max</code> under the admitted face), licensing lane-partials + tree reduction.</dd>
+<dt>Consumers</dt><dd>Row kernels, split-K / tree-reduction emission.</dd><dt>Fallback</dt><dd>Sequential accumulator chain, exact source order.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>move_plan(f) -&gt; MovePlan / MoveSite</code><span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> where is data merely <em>moved</em> (transposed, gathered, re-laid-out) rather than computed — with what affine source pattern?</p>
+<dl><dt>Algorithm</dt><dd>Sites whose element law is a pure affine re-indexing of one source. Backends traverse them in cache-blocked panels derived from <code>TargetProfile</code> geometry instead of element order.</dd>
+<dt>Consumers</dt><dd>Transpose/pack/panel traversals on CPU; staging on GPU.</dd><dt>Fallback</dt><dd>Element-order copy.</dd></dl></div>
+
+<div class="plan" data-g="mem"><h4><code>emission_plan(f) -&gt; EmissionPlan</code> (<code>class(o)</code>)<span class="tag mem">memory</span></h4>
+<p><strong>Question:</strong> which objects must actually materialize in emitted code — and which are just graph plumbing?</p>
+<dl><dt>Algorithm</dt><dd>Classify each object: <em>dissolved</em> (products/views — no bytes, e.g. <code>Pair</code> tuples), <em>inline</em> (single-use scalar, emitted at its use), or <em>named</em> (needs storage), from consumer counts and kinds. Minimal emission: if it has no bytes in the semantics, it gets no bytes in the binary.</dd>
+<dt>Consumers</dt><dd>All backends (naming, SSA/alloca decisions); CUDA minimal-emission path.</dd><dt>Fallback</dt><dd>Named ⇒ allocate; always safe.</dd></dl></div>
+
+<div class="plan" data-g="mem"><h4><code>last_use_plan(f) -&gt; LastUsePlan</code> (<code>position · death · escapes · carried_by · dead_after</code>, view variants)<span class="tag mem">memory</span></h4>
+<p><strong>Question:</strong> for each value, where is its last read — does it escape into the output, is it carried around a loop, and after which step is its storage free?</p>
+<dl><dt>Algorithm</dt><dd>Positions from <code>topo_order</code>; death = max position over consumers; <code>carried_by</code> marks values crossing a <code>LoopBack</code> (live across two iterations); view-aware variants track dissolved products to their storage. Lifetimes are exact because every read is an edge.</dd>
+<dt>Consumers</dt><dd>Buffer coloring/reuse (arena), in-place <code>Update</code>, free-at-back-edge, host↔device retention (§8). This is Mapal’s “memory model”: no GC, no ownership annotations — last-use is the lifetime.</dd><dt>Fallback</dt><dd>Escaping/unknown ⇒ keep alive to function end.</dd></dl></div>
+
+<div class="plan" data-g="mem"><h4><code>write_delta(f)</code> → per-object <code>Delta</code><span class="tag mem">memory</span></h4>
+<p><strong>Question:</strong> for a loop-carried array, what contiguous range does each trip actually write?</p>
+<dl><dt>Algorithm</dt><dd>Chase <code>Update</code>s and piecewise map laws around the loop to a per-trip written interval. A partial update then moves/retains only the delta across host↔device or iterations, instead of the whole array.</dd>
+<dt>Consumers</dt><dd>Residency/retention, delta copies, cache decisions.</dd><dt>Fallback</dt><dd>Whole array is the delta.</dd></dl></div>
+
+<div class="plan" data-g="struct"><h4><code>trip_split(f) -&gt; Vec&lt;TripSplit&gt;</code> (<code>TripPhase</code>)<span class="tag struct">structure</span></h4>
+<p><strong>Question:</strong> for a counted loop, what trip intervals do guards on the counter cut out — which state is recurrent in each, what work sits outside, and can all-but-last trips of the first interval be skipped?</p>
+<dl><dt>Algorithm</dt><dd>Counter-guard analysis over the <code>loop_plan</code>: phases with their recurrent slots, batched row writes, and the skip fact. Turns “loop with cases inside” into “phases the backend can schedule separately.”</dd>
+<dt>Consumers</dt><dd>Loop emission (phase splitting, batching).</dd><dt>Fallback</dt><dd>One phase = the whole loop, guard evaluated per trip.</dd></dl></div>
+
+<div class="plan" data-g="safe"><h4><code>bounds_proof(f) -&gt; BoundsProof</code> (<code>proven(m)</code>)<span class="tag safe">safety</span></h4>
+<p><strong>Question:</strong> which <code>Index</code>/<code>Update</code> steps are <em>provably</em> in bounds, so their trap guard can be dropped?</p>
+<dl><dt>Algorithm</dt><dd>Affine/range reasoning over index expressions against static array sizes (iota-derived indices, div/mod decompositions, counter ranges). Only proven guards drop — “which bounds checks are provably unnecessary, and only those.”</dd>
+<dt>Consumers</dt><dd>Guard elision in LLVM + CUDA emission; also read by <code>tile_plan</code>/<code>path_plan</code> (trap capability feeds watermarks).</dd><dt>Fallback</dt><dd>Unproven ⇒ keep the check; the trap remains possible and ordered.</dd></dl></div>
+
+<div class="plan" data-g="safe"><h4><code>precision_plan</code> → <code>set · round_at · cross · bound</code> (ADR-0041/0040)<span class="tag safe">safety</span></h4>
+<p><strong>Question:</strong> which precisions does each float product admit, where may a value be rounded (once, at its producer), which edges must a rounded copy not cross, and what is each tile site’s a-priori error bound?</p>
+<dl><dt>Algorithm</dt><dd>From the per-<code>Mul</code> admitted sets (innermost <code>: compute</code> wins): propagate rounding points to producers, mark edges a rounded copy would corrupt, and compose the weakest-member bound per site. Default face: full precision + bound + unspecified order, fastest on the native CPU+GPU; exact/contract faces are opt-in (§8).</dd>
+<dt>Consumers</dt><dd>TF32/tensor-core eligibility, value gates in tests (check the bound, not bit-equality, on the default face).</dd><dt>Fallback</dt><dd><code>{f32}</code> everywhere — no rounding, bound is the f32 one.</dd></dl></div>
+
+<div class="plan" data-g="geo"><h4><code>radix_plan(f)</code> → <code>RadixForm</code><span class="tag geo">geometry</span></h4>
+<p><strong>Question:</strong> is this integer really “digits” of the inputs — <code>(x ÷ s) % r</code> with constant divisors?</p>
+<dl><dt>Algorithm</dt><dd>Recognize constant div/mod digit decompositions per object. Map/fold reads affine <em>per digit</em> then become tile sites over <code>(i, lane, k)</code> — the implicit-GEMM reading that lets convolution-shaped index arithmetic reuse the tile machinery.</dd>
+<dt>Consumers</dt><dd><code>tile_plan_radix</code> → tile kernels for conv/window shapes.</dd><dt>Fallback</dt><dd>Plain integer arithmetic, ordinary addressing.</dd></dl></div>
+
+<p class="small muted">Supporting queries you will meet in the source: <code>func_objects</code> (a function’s object set) and per-function <em>trap capability</em> (can this function trap, transitively?) — both stored facts feeding the plans above. Deep dives with line references: <code>docs/architecture/deduced-queries.md</code>.</p>
+
+<h3 id="walkthroughs">6.3 Code → plan walkthroughs</h3>
+<p>Three programs, three different plans. In each case the source says nothing about the optimization — the graph proves it.</p>
+
+<details open><summary>Walkthrough 1 — independent maps → <code>path_plan</code> tasks</summary><div class="body">
+<pre><code>fn main() {
+    [1, 2, 3, 4] -&gt; a: [i32; 4];
+    a -&gt; map { x -&gt; x * 2 }  -&gt; b: [i32; 4];
+    a -&gt; map { x -&gt; x + 10 } -&gt; c: [i32; 4];
+    (b, c) -&gt; zip -&gt; map { p -&gt; p.0 + p.1 } -&gt; d: [i32; 4];
+    d[0] -&gt; println;
+}</code></pre>
+<div class="mermaid">
+flowchart TD
+  A(["a"]) -->|"Map ×2"| B(["b"])
+  A -->|"Map +10"| C(["c"])
+  B --> Z["Zip + Map add"]
+  C --> Z
+  Z --> D(["d"])
+  D --> P["Print d.0 — host spine"]
+</div>
+<table>
+<tr><th>Step</th><th>What the plan concludes</th></tr>
+<tr><td>Classify</td><td>Two <code>Map</code>s → two <code>Split</code> tasks (T1, T2). <code>Zip</code>+<code>Map</code> → <code>Split</code> task T3. <code>Print</code> → checkpoint, not a task.</td></tr>
+<tr><td>Dependencies</td><td>T3 depends on T1 and T2 (they produced <code>b</code>, <code>c</code>). T1, T2 independent — they merely <em>share a read</em> of <code>a</code>, which never creates an edge.</td></tr>
+<tr><td>Checkpoint</td><td>Print consumes <code>d[0]</code>, so T3 must <em>complete</em> (not just pass its last trap point) before the host proceeds.</td></tr>
+<tr><td>Emission</td><td>Three <code>@taskN</code> functions + dep/rank table; the pool runs T1‖T2, then T3 sliced across lanes. Output bytes identical at any thread count.</td></tr>
+</table>
+<p>The same mechanism at program scale: two independent neural nets in one <code>main</code> overlap for free (measured 1.34–1.36× vs the same flops chained) — nothing in the source asks for it.</p>
+</div></details>
+
+<details><summary>Walkthrough 2 — idiomatic matmul → <code>tile_plan</code> geometry</summary><div class="body">
+<pre><code>16384 -&gt; iota -&gt; ta;                       // the 128×128 cells, flattened
+128 -&gt; iota -&gt; krange;
+ta -&gt; map { t -&gt;
+    t / 128 -&gt; i;
+    t % 128 -&gt; j;
+    (0.0, krange) -&gt; fold { acc, k -&gt; acc + a[i * 128 + k] * b[k * 128 + j] }
+} -&gt; c;                                       // examples/matmul128.mapal (abridged)</code></pre>
+<table>
+<tr><th>Recognition step</th><th>Result</th></tr>
+<tr><td>Skeleton</td><td><code>Map</code> over <code>iota(16384)</code>, body returns one <code>Fold</code> over <code>iota(128)</code>. ✓</td></tr>
+<tr><td>Coordinates</td><td><code>i = t/128</code>, <code>j = t%128</code>, same constant ⇒ 2-D, 128 rows, lane = <code>j</code>.</td></tr>
+<tr><td>Chain</td><td><code>acc + (a[…] * b[…])</code> — multiply-accumulate. ✓</td></tr>
+<tr><td>Read <code>a[i*128 + k]</code></td><td><code>base + 128·i + 0·lane + 1·k</code> → <code>clane = 0</code>: every lane reads the same <code>a</code> element per <em>k</em> — a <strong>broadcast</strong>.</td></tr>
+<tr><td>Read <code>b[k*128 + j]</code></td><td><code>base + 0·i + 1·lane + 128·k</code> → <code>clane = 1</code>: neighboring lanes read neighbors — one <strong>vector load</strong> per <em>k</em>.</td></tr>
+<tr><td>Safety</td><td><code>bounds_proof</code>: indices affine over proven ranges ⇒ trap-free site; guards elided inside the kernel.</td></tr>
+</table>
+<div class="mermaid">
+flowchart LR
+  LANE["lanes j, j+1, j+2, j+3<br/>(one vector register of cells)"] --> STEP["per k: acc += broadcast a[i,k]<br/>× vector-load b[k, j..j+3]"]
+  STEP --> STORE["after k = 0..128:<br/>store 4 finished cells once"]
+</div>
+<p>The plan records <em>only</em> this geometry. How many lanes per register block, how deep to tile for L1/L2, whether to pack <code>b</code> — those constants come from the machine profile in §8. The same recognizer (one affine-address rule, no matrix concept) also fires on FIR windows and conv stencils.</p>
+</div></details>
+
+<details><summary>Walkthrough 3 — FIR loop → <code>loop_plan</code> + <code>bounds_proof</code> + <code>last_use_plan</code></summary><div class="body">
+<pre><code>fn fir4(signal: [f32; 8], coeffs: [f32; 4]) -&gt; f32 {
+    mut k: i32   &lt;- 0;
+    mut acc: f32 &lt;- 0.0;
+    loop {
+        (k &lt; 4) -&gt; {
+            -true-&gt; {
+                acc + coeffs[k] * signal[4 + k] -&gt; acc;
+                k + 1 -&gt; k;
+                -&gt; loop;
+            }
+            -false-&gt; acc -&gt; ret;
+        }
+    }
+}   // examples/fir.mapal</code></pre>
+<table>
+<tr><th>Plan</th><th>What it proves here</th><th>Payoff</th></tr>
+<tr><td><code>loop_plan</code></td><td>Merge <code>U = (k, acc)</code>; init <code>(0, 0.0)</code>; decide <code>k&lt;4</code>; advance computes next <code>U</code>; single exit carrying <code>acc</code>.</td><td>One canonical reading shared by interpreter, rewriter, CPU loop CFG, GPU loop handling.</td></tr>
+<tr><td><code>bounds_proof</code></td><td>On the true arm <code>0 ≤ k ≤ 3</code>, so <code>coeffs[k]</code> (size 4) and <code>signal[4+k]</code> (size 8, index ≤ 7) are in bounds.</td><td>Both trap guards dropped inside the loop body.</td></tr>
+<tr><td><code>last_use_plan</code></td><td><code>k</code>/<code>acc</code> are <code>carried_by</code> the merge (live across the back-edge); <code>signal</code>/<code>coeffs</code> die at loop exit; nothing escapes except via <code>Return</code>.</td><td>Carried scalars live in registers/frame slots reused each trip; no per-trip allocation.</td></tr>
+<tr><td><code>guard_plan</code></td><td>The loop fork is the <code>LoopBack</code>/<code>LoopExit</code> pair on one <code>Bool</code> — mutually exclusive by construction.</td><td>The exit arm’s work never runs mid-loop and vice versa.</td></tr>
+</table>
+</div></details>
+
+<details><summary>Walkthrough 4 — sepia image filter → map law, gating, single-path check</summary><div class="body">
+<p><code>examples/sepia.mapal</code> maps a per-pixel block (three clamped channel mixes) over <code>[Pixel; 16]</code>, then folds the red channel. What the plans see:</p>
+<ul class="tight">
+<li><code>map_law</code>/<code>elem_plan</code>: <code>out[i] = Pixel{ clamp(…pxᵢ…), … }</code> — each output pixel is a closed function of input pixel <em>i</em> alone ⇒ cells independent; a backend may fuse the following fold’s reads or recompute instead of storing, per target economics.</li>
+<li><code>guard_plan</code>: inside <code>clamp</code>, both <code>Phi</code> arms are scalars (no trap, not heavy) ⇒ left branchless — gating them would cost the map body its vectorization. Legality-then-cost in action.</li>
+<li><code>path_plan</code>: the map is one <code>Split</code> task, the fold one <code>Seq</code> task depending on it, the final <code>println</code> a checkpoint. At 16 pixels the backend’s roofline test (§8) will run it on the calling thread — dispatch must pay for itself.</li>
+</ul>
+</div></details>
+</section>
+
+<section id="rewrite">
+<h2><span class="no">7</span>Rewriting — same answer, smaller graph</h2>
+<p>Plans <em>observe</em>; the rewriter (<code>crates/mapal-rewrite/</code>) is the one component allowed to <em>change</em> the program — under a strict contract: <strong><code>eval ∘ rewrite = eval</code></strong> (the interpreter must produce byte-identical output, traps included, before and after). Because sealed graphs are immutable, every pass works as <em>analyze → plan → replay</em>: a pure analysis produces a <code>RewritePlan</code>, and one shared replayer rebuilds a fresh sealed graph through the public builder — so output well-formedness holds by construction.</p>
+<div class="mermaid">
+flowchart TD
+  G["sealed graph"] --> AN["analyses (pure)<br/>const-fold · DCE · CSE<br/>map fusion · inline · loop lift"]
+  AN --> RP["RewritePlan<br/>(six channels)"]
+  RP --> RE["replay via IrBuilder<br/>→ new sealed graph"]
+  RE -->|"changed? (≤ MAX_ROUNDS)"| G
+  RE -->|"fixpoint"| OUT["rewritten graph → backends"]
+</div>
+<table>
+<tr><th>Layer / pass</th><th>Does</th><th>Justified by</th></tr>
+<tr><td>Inline (strip)</td><td>Expand small single-use calls into their callers (body-size capped).</td><td>Call = composition; substitution preserves the plumbing.</td></tr>
+<tr><td>Loop lifting (R-LF/R-LM)</td><td>Recognize counted loops and lift them to <code>Map</code>/<code>Fold</code> form where the cycle is a disguised bulk op.</td><td><code>loop_plan</code> canonical shape + trip analysis.</td></tr>
+<tr><td>Map fusion + <code>map(id)</code> (<code>functor_laws</code>)</td><td><code>map g ∘ map f → map (g∘f)</code>; drop identity maps.</td><td>The functor laws for <code>Map</code> — with the hard lesson pinned by tests: a body is judged by <em>all</em> its effects (a dead trapping division still traps), never by its return value alone.</td></tr>
+<tr><td>Constant folding (<code>equations</code>)</td><td>Evaluate closed subgraphs; resolve constant guards (dropping the losing arm only under the same conditions gating would apply).</td><td>Interpreter semantics on constants; guard-ownership discipline from <code>guard_plan</code>.</td></tr>
+<tr><td>DCE / CSE (<code>graph_rewrites</code>)</td><td>Remove unread pure work; merge duplicate steps. Trapping cones are <em>pinned</em> (a dead <code>7/0</code> still traps) unless gated away soundly.</td><td>Purity + trap-preservation rules (R4).</td></tr>
+<tr><td>Naturality table (<code>naturality</code>)</td><td>Data-only law table (e.g. <code>Proj</code> commutes with <code>Map</code> over products) consulted by the passes above.</td><td>Stated equations between operations.</td></tr>
+</table>
+<div class="callout fact"><p><strong>The standing design pressure: move work from rewrite into plans.</strong> A wrong plan costs speed; a wrong rewrite costs correctness. So tiling is a plan (not a “tiling pass”), element laws are recorded rather than deleted, and after every rewrite round all facts are simply recomputed on the new graph — cheap and safe precisely because plans are pure functions with nothing to invalidate. The gate is the differential suite: thousands of generated programs (<code>crates/mapal-rewrite/tests/testgen/</code>) checked against the oracle at <code>-O0</code> and <code>-O2</code>, values <em>and</em> traps.</p></div>
+<p class="small muted">Skip it with <code>mapal … --no-rewrite</code>; compare stages with <code>dump-ir --stage=lowered|rewritten</code>.</p>
+</section>
+<section id="device">
+<h2><span class="no">8</span>Plan → device compilation</h2>
+<p>A backend is a <em>translator</em> (the spec’s word is functor: <code>F : Mapal-Cat → T</code>) from the graph to one target world. It never re-derives program structure — it reads plans (§6) for <em>what is legal</em> and a <code>TargetProfile</code> for <em>what this machine rewards</em>, then emits code shaped so that LLVM can finish the job (vectorize, unroll, contract FMAs, schedule). Same graph, different profile, different code — same answer.</p>
+<div class="mermaid">
+flowchart TD
+  G["rewritten graph + stored plans"] --> DEC["backend decisions<br/>placement · work units · tiling constants<br/>layout/packing · residency · dispatch"]
+  PROF["TargetProfile (machine facts)<br/>caches · vector width · matrix unit<br/>GPU: SMs, warps, smem, mma/wgmma"] --> DEC
+  DEC --> HOST["host LLVM IR<br/>tasks · loops · kernels as functions"]
+  DEC --> DEV["device module (when placed)<br/>NVPTX → PTX kernels"]
+  HOST --> CLANG["clang -O3<br/>LLVM opt: SROA · vectorize · unroll · LSR"]
+  DEV --> PTXAS["ptxas / driver JIT<br/>PTX → SASS (cubin)"]
+  CLANG --> EXE["executable + mapal-rt"]
+  PTXAS --> EXE
+</div>
+<h3>8.1 <code>TargetProfile</code> — machine facts as data</h3>
+<p><code>crates/backends/llvm/src/profile.rs</code>: one record per part (e.g. Apple M4 + SME variant, Raptor Lake, <code>cuda-ada</code> sm_89, H100 sm_90a, RTX 5090 sm_120, RTX 3090 sm_86, plus <code>generic</code> and auto-detected <code>native</code>). It holds only hardware facts — L1d geometry (sets/ways/line), L2 size, vector width, matrix-unit shape, measured dispatch economics, and for GPUs: SM count, schedulers, warp size, shared-memory budget, MMA/WGMMA capability, copy costs. Derived helpers (<code>tile_i</code>, <code>move_block</code>, <code>gpu_tile</code>, <code>pack_pays</code>, <code>device_pays</code>, <code>raster</code>…) turn facts + a site’s extents into concrete constants. A profile with no measured number carries <code>None</code> and the corresponding optimization simply does not fire — no part is made worse by a number nobody took.</p>
+<div class="callout"><p><strong>Geometry ports; constants don’t.</strong> Which reads broadcast, which axes split, what may interleave — deduced once, backend-independent (<code>tile_plan</code>, <code>path_plan</code>). Tile factors, panel depths, unroll counts, task grain — facts about a cache hierarchy and a register file, measured per target and kept in the profile. That split is the project’s answer to “portable performance”: the algorithm ports, the tuning is a per-machine table.</p></div>
+<h3>8.2 The CPU path (LLVM backend)</h3>
+<p>Entry: <code>emit_detailed(ir, &amp;EmitOpts) -&gt; Emission { text, device, profile_name }</code> (<code>crates/backends/llvm/src/lib.rs</code>). Emission is a pure function of (graph, options, profile) — same triple, same text. Per function, the emitter (<code>src/func/</code>: <code>core · frame · drive · ops · tile · window · conv · packed · trio · vec · bulk</code>) walks the plans:</p>
+<ol class="steps">
+<li><strong>Frame + storage</strong> (<code>frame</code>, <code>reuse.rs</code>): <code>emission_plan</code> decides what gets an <code>alloca</code> slot vs dissolving to SSA; <code>last_use_plan</code> colors buffers so dead storage is reused; frame aliases let an <code>Update</code> whose source dies here write in place.</li>
+<li><strong>Scheduling</strong> (<code>drive</code>): if <code>path_plan</code> is not single-path, emit one <code>@taskN</code> per task + the static dependency/rank/checkpoint tables for <code>mapal-rt</code> (§9). Before dispatching, a roofline test asks whether the task can pay for its own dispatch (<code>max(flops/rate, bytes/rate)</code> vs measured <code>dispatch_ns</code>); one-slice tasks run on the calling thread. Otherwise emit plain sequential code in <code>topo_order</code>.</li>
+<li><strong>Kernels</strong> (<code>tile · packed · window · conv · vec · bulk</code>): a <code>TileSite</code> becomes a register-blocked micro-kernel nest — pack the strided operand into panels (only when <code>pack_pays</code>: working set &gt; L2), block for L1/L2 from profile geometry, keep accumulators resident across <em>k</em>, store once. The innermost leaf differs per part (scalar FMA / NEON / AVX / ARM SME <code>fmopa</code> into ZA tiles); the nest around it is shared. <code>MoveSite</code>s traverse in conflict-avoiding panels; window/conv sites reuse the same geometry with tap reads.</li>
+<li><strong>Loops + guards</strong> (<code>loops.rs</code>, <code>trio</code>): <code>loop_plan</code> → a CFG with phis for carried state; <code>guard_plan.gated()</code> → branches around gated arm work; <code>bounds_proof</code> → omitted trap branches. Traps that remain call the runtime trap path with the source-order index (§9).</li>
+<li><strong>Hand off to LLVM.</strong> The emitted IR is deliberately shaped for LLVM to derive the schedule: accumulators as SSA so SROA keeps them in registers, affine accesses so the vectorizer and LSR fire, <code>contract</code> flags only on the contract float face. <code>clang -O3</code> does the rest (≈ 99% of compile time).</li>
+</ol>
+<details><summary>Expand: float faces — exact, contract, default</summary><div class="body">
+<table>
+<tr><th>Face</th><th>Meaning</th><th>Value gate</th></tr>
+<tr><td>Exact (<code>--exact</code>)</td><td>Source order, no FMA contraction, no reassociation.</td><td>Bit-identical to the oracle.</td></tr>
+<tr><td>Contract (<code>--contract</code>)</td><td>FMA contraction allowed (<code>a*b+c</code> may fuse); order otherwise kept. Matrix units (SME, tensor cores) live here.</td><td>Checked against the contracted oracle / bound.</td></tr>
+<tr><td>Default (ADR-0040)</td><td>Full precision, order unspecified where a plan proves regrouping legal, fastest on the native CPU+GPU. Products may use admitted reduced precisions (<code>: compute</code>, TF32) with values rounded once at the producer.</td><td>A-priori error bound from <code>precision_plan</code> — <em>not</em> bit-equality.</td></tr>
+</table>
+<p>Every other optimization on this page (parallelism, tiling, packing, placement) is required to be <em>invisible in the output bytes</em> on the exact/contract faces.</p>
+</div></details>
+<h3>8.3 The GPU path (NVPTX device module + host orchestration)</h3>
+<p>The GPU leg reuses the <em>same</em> LLVM backend: device-suitable sites are emitted as an NVPTX module (PTX text embedded beside the host IR), and the host code launches them. This is the one place physical location is real — host vs device are different places, and every host↔device copy is a typed, costed transmission the facts must justify.</p>
+<ol class="steps">
+<li><strong>Placement.</strong> For each candidate site (tile/cell/row-fold/bulk), <code>device_pays</code> compares estimated device time + required copies against staying on the host, using footprints, extents vs SM count, and whether operands are already resident. Unplaced work runs as CPU tasks — a program is CPU-only, GPU-only, or mixed, per site.</li>
+<li><strong>Residency + arena.</strong> <code>last_use_plan</code> + <code>write_delta</code> + footprints deduce, per object (loop-carried state included), where it lives, what is reused, and what is retained across launches. Buffers are lifetime-colored in a device arena; any copy or allocation the dataflow facts do not require is treated as a bug (a “finding”), never a default. Partial loop updates move only their delta.</li>
+<li><strong>Kernel formation (the <code>flow</code> rung).</strong> There is no fusion pass. Work units follow producer/consumer footprints, death points, and cell independence: a value with several readers is computed once; independent cells spread across threads; folds with a proven tree step become lane partials + tree/warp reductions. Kernel boundaries fall out of where values must materialize.</li>
+<li><strong>Kernel leaves.</strong> Per site geometry + <code>GpuTile</code> derivation: thread/block tile shape, shared-memory staging (optionally <code>cp.async</code>/LDGSTS double-buffering), register accumulators per thread, <code>mma.sync</code>/<code>wgmma</code> tensor-core leaves where the face + <code>precision_plan</code> admit them (TF32 operands rounded once, accumulation in f32), split-K where <code>TileKSplit</code> allows, rasterization order for L2 reuse.</li>
+<li><strong>Rungs.</strong> Each GPU kernel optimization is a named boolean <em>rung</em> in <code>GpuRungs</code> (e.g. async staging, warp specialization, wide FMA, min-blocks). Defaults are per-arch and evidence-gated: <code>GPU_RUNGS_OFF</code> rows record, with citations, where a rung measured negative on a (part, grid-fill, face) class. A mixed win/loss is treated as a <em>missing fact</em> to be added — an OFF row is a stopgap, tracked as open work. Every rung has an OFF measurement arm (<code>--gpu-off=</code>/<code>--gpu-on=</code>).</li>
+<li><strong>Lowering.</strong> LLVM NVPTX emits PTX; <code>ptxas</code>/driver produces SASS. What LLVM <em>must</em> derive (vector widths, unroll, FFMA contraction…) is declared up front per rung and then checked in the realized PTX/SASS — see the evidence pass below.</li>
+</ol>
+<p>The older standalone CUDA-text backend (<code>crates/backends/cuda/</code>: host emitter + kernel emitter + arena) remains as the host-form reference; new device work lands in the NVPTX leg. The Verilog backend (<code>crates/backends/verilog/</code>) is the planned third translator — the same graph to clocked hardware with a done-protocol — evidence that the dataflow model reaches past SIMT machines.</p>
+<details><summary>Expand: the evidence pass — how optimization decisions are kept honest</summary><div class="body">
+<p>No keep/remove/gate decision stands on timing alone (<code>AGENTS.md</code>). For every optimization or codegen change:</p>
+<ol class="steps">
+<li><strong>Intent, before measuring.</strong> Declare machine-checkably what LLVM/NVPTX must derive from the emitted IR, which PTX/SASS features must appear/disappear (instruction mix, vector widths, FFMA-per-load, registers, spills, occupancy, launches), and what data movement the facts require per program and per loop trip.</li>
+<li><strong>Realized.</strong> Collect LLVM optimization remarks, PTX, SASS (<code>cuobjdump</code>/<code>nvdisasm</code>), and <code>ptxas -v</code> for every measured kernel/arch; check against intent. A mismatch is a finding, never a pass. Library kernels (cuBLAS/CUTLASS) are captured from the actual launch.</li>
+<li><strong>Explain.</strong> Every decision-driving timing difference cites the SASS/usage difference that explains it. Unexplained ⇒ the decision stays “open.”</li>
+<li><strong>Breadth + genericity.</strong> Judge on the multi-workload suite (GEMM/MLP, attention/softmax, reductions, FIR/conv/window, elementwise chains, fan-in/out, loops; CPU-only, GPU-only, mixed) against the best library or PyTorch — and validate every rule on <em>unseen</em> generated programs (values vs oracle/bound, plus movement/kernel intents). Benchmarks are acceptance only; programs are written idiomatically and never reshaped to flatter the recognizer. Tooling: <code>benches/gpu/intent.py</code>, <code>evidence.py</code>, <code>rejudge.py</code> — a GPU run without its <code>evidence.tsv</code> is not a result.</li>
+</ol>
+</div></details>
+<h3>8.4 Algorithm summary: plan → device, end to end</h3>
+<div class="mermaid">
+flowchart TD
+  S1["1 · Read stored facts per fn<br/>path · tile/cell · footprint · elem<br/>last-use · bounds · guard · precision"] --> S2["2 · Form work units<br/>footprints + deaths + independence<br/>(no fusion pass; boundaries fall out)"]
+  S2 --> S3["3 · Place each unit<br/>device_pays: compute + copies vs host<br/>residency deduced per object"]
+  S3 --> S4["4 · Choose constants from profile<br/>tile shape · panels · stages · grain<br/>rung table per arch/face"]
+  S4 --> S5["5 · Emit LLVM-shaped IR<br/>SSA accumulators · affine access<br/>gated branches · elided guards"]
+  S5 --> S6["6 · LLVM derives the schedule<br/>vectorize · unroll · SROA · contract"]
+  S6 --> S7["7 · Evidence check<br/>remarks + PTX/SASS vs declared intent"]
+</div>
+</section>
+
+<section id="runtime">
+<h2><span class="no">9</span>Runtime &amp; execution semantics</h2>
+<h3>9.1 The thread pool (<code>mapal-rt</code>)</h3>
+<p>Compiled parallel programs link <code>mapal-rt</code> (<code>crates/mapal-rt/src/lib.rs</code>), a work-stealing pool executing the static task table the backend emitted from <code>path_plan</code>. Tasks unlock as their producer dependencies retire; <code>Split</code> tasks slice their element range across lanes; ranks schedule long poles first. <code>MAPAL_PAR</code> sets total executors including the host thread (<code>MAPAL_PAR=1</code> is the sequential lever). Hard-won details, all measured: dispatch wakes only the lanes it filled; the completion path is lock-free; the host spins briefly before parking while workers do not (spinning workers measured <em>worse</em> and were removed).</p>
+<h3>9.2 Checkpoints, watermarks, and trap order</h3>
+<ul class="tight">
+<li>Effectful steps (prints, clock reads) run on the host in program order. Before each, the runtime waits only as much as the checkpoint demands: <em>completion</em> if the effect consumes the task’s value, else its <em>watermark</em> — past its last trap-capable point — so “the task trapped” is always observed before “the print ran.”</li>
+<li>When several independent steps could trap, the reported trap is the earliest in <em>source order</em>: the interpreter walk, sequential emission, and the parallel runtime’s minimum-index reporting all derive from the same <code>topo_order</code> key, so they cannot disagree. Output written before the trap is preserved.</li>
+<li>The interpreter (<code>mapal-interp</code>: fueled graph evaluator + SCC loop driver) is the oracle for all of this. Differential tests require compiled stdout/traps to match it byte-for-byte at <code>-O0</code> and <code>-O2</code>, at any <code>MAPAL_PAR</code> — and, for placed programs, under any CPU/GPU placement on the exact/contract faces.</li>
+</ul>
+<div class="callout"><p><strong>Determinism is a feature, not an accident.</strong> Arena-ordered storage, source-ordered topo, rank-ordered tasks, and order-pinned folds mean the same source produces the same bytes on every run and every thread count. Where the default float face frees the order, it does so explicitly, with a bound (§8.2).</p></div>
+</section>
+
+<section id="e2e">
+<h2><span class="no">10</span>End-to-end: two programs through every layer</h2>
+<details open><summary><code>sepia.mapal</code> — the whole surface in 60 lines</summary><div class="body">
+<table>
+<tr><th>Layer</th><th>What happens to sepia</th></tr>
+<tr><td>Source (§2)</td><td><code>type Pixel</code>, a pure <code>clamp</code> via nested guards, <code>map</code> with an inline block capturing nothing but the pixel, <code>fold</code> summing red, one final <code>println</code>. Expected: <code>4080</code> (clamp fires: 270.2 → 255, × 16).</td></tr>
+<tr><td>AST (§3)</td><td>Two <code>FnDecl</code>s + one <code>TypeDecl</code>; the map/fold bodies are <code>Block</code>s with tail chains; guards are <code>Guard</code> stages with <code>True/False</code> arms.</td></tr>
+<tr><td>Lower (§4)</td><td><code>Pixel</code> → IR <code>Struct</code>; each channel mix → <code>Pair</code>+<code>Mul</code>/<code>Add</code> chains; <code>clamp</code> calls → <code>Call</code>; guards → nested <code>Phi</code>s; map/fold bodies → <code>MapBody</code>/<code>FoldBody</code> functions; print → token-threaded <code>Print</code>.</td></tr>
+<tr><td>Plans (§6)</td><td><code>map_law</code>: per-pixel closed form. <code>guard_plan</code>: scalar arms, not gated (vectorization preserved). <code>path_plan</code>: <code>Split</code>(map) → <code>Seq</code>(fold) → checkpoint(print). <code>bounds_proof</code>: no indexing to prove. <code>emission_plan</code>: all pair tuples dissolved.</td></tr>
+<tr><td>Rewrite (§7)</td><td><code>clamp</code> inlined into the map body (small, single-purpose); constants folded where closed.</td></tr>
+<tr><td>Device (§8–9)</td><td>16 elements fails the roofline dispatch test ⇒ runs on the calling thread as a vectorized loop; LLVM keeps channel math in registers. Output <code>4080</code>, byte-equal to <code>--interp</code>.</td></tr>
+</table>
+<pre><code>mapal run examples/sepia.mapal        # compiled
+mapal run --interp examples/sepia.mapal   # oracle — must agree</code></pre>
+</div></details>
+<details><summary><code>matmul128.mapal</code> — from textbook loops to a tiled kernel</summary><div class="body">
+<table>
+<tr><th>Layer</th><th>What happens</th></tr>
+<tr><td>Source</td><td><code>iota</code> ranges, two generator maps (with <code>widen_f64</code>), one cell map with an inner dot-product fold capturing <code>a</code>, <code>b</code>, <code>krange</code> (§6, Walkthrough 2).</td></tr>
+<tr><td>Graph</td><td>Three <code>Map</code> sites; the cell site’s source is <code>(a, b, krange, ta)</code> with <code>captures = 3</code>; the fold body reads two affine <code>Index</code>es.</td></tr>
+<tr><td>Plans</td><td><code>tile_plan</code> fires (broadcast + vector reads, §6.3). <code>path_plan</code>: generator maps are independent <code>Split</code> tasks; the cell map depends on both. <code>last_use_plan</code>: <code>ta</code> dies after the generators; <code>a</code>/<code>b</code> live into the kernel; <code>c</code> escapes to the prints.</td></tr>
+<tr><td>CPU device</td><td>Profile picks register block + panel depths; <code>b</code> packed if the working set exceeds L2; accumulators resident across <em>k</em>; tasks sliced by row blocks across the pool.</td></tr>
+<tr><td>GPU device</td><td><code>device_pays</code> at this size typically declines (copies dominate) — at 2048²+ the same source places, stages tiles in shared memory, and runs the rung-gated kernel. Placement changes; bytes don’t (contract face).</td></tr>
+</table>
+<p>Scale the same idiom up and you get the README table: 4096² f32 matmul at 38.7 ms vs NumPy 44.1 ms on an M4 Pro — from source that never mentions a tile, a thread, or a vector.</p>
+</div></details>
+</section>
+
+<section id="code-map">
+<h2><span class="no">11</span>Code map &amp; glossary</h2>
+<h3>11.1 Where everything lives</h3>
+<table>
+<tr><th>Concern</th><th>Crate / files</th><th>Start reading</th></tr>
+<tr><td>Lexer, parser, AST, formatter</td><td><code>crates/mapal-syntax/</code> (<code>lexer.rs · parser.rs · ast.rs · format.rs</code>)</td><td><code>ast.rs</code>, then <code>docs/components/syntax/DESIGN.md §14–15</code></td></tr>
+<tr><td>Graph IR + plans</td><td><code>crates/mapal-ir/</code> (<code>graph.rs · ty.rs · builder.rs · validate.rs · algo.rs · facts.rs · mermaid.rs</code>)</td><td><code>graph.rs</code>, then <code>docs/architecture/deduced-queries.md</code></td></tr>
+<tr><td>Lowering</td><td><code>crates/mapal-lower/</code> (<code>lib.rs · tys.rs · effects.rs · typing.rs · emit.rs · scope.rs</code>)</td><td><code>lib.rs</code> pass map (§4)</td></tr>
+<tr><td>Checks</td><td><code>crates/mapal-check/</code> (<code>exclusivity.rs · effects.rs</code>)</td><td><code>lib.rs</code> (T0101/T0201)</td></tr>
+<tr><td>Optimizer</td><td><code>crates/mapal-rewrite/</code> (<code>driver.rs · plan.rs · replay.rs · equations.rs · graph_rewrites.rs · functor_laws.rs · inline.rs · lift.rs · naturality.rs</code>)</td><td><code>lib.rs</code> + <code>tests/testgen/</code></td></tr>
+<tr><td>Oracle</td><td><code>crates/mapal-interp/</code> (<code>eval.rs · loops.rs · value.rs</code>)</td><td><code>lib.rs: run</code></td></tr>
+<tr><td>CPU+GPU backend</td><td><code>crates/backends/llvm/</code> (<code>lib.rs · profile.rs · module.rs · loops.rs · reuse.rs · func/*</code>)</td><td><code>profile.rs</code>, then <code>func/drive.rs</code></td></tr>
+<tr><td>CUDA-text backend</td><td><code>crates/backends/cuda/</code> (<code>module.rs · func.rs · kernel.rs · arena.rs · loops.rs</code>)</td><td><code>lib.rs</code></td></tr>
+<tr><td>FPGA backend (planned)</td><td><code>crates/backends/verilog/</code></td><td><code>docs/components/backend-verilog/DESIGN.md</code></td></tr>
+<tr><td>Runtime</td><td><code>crates/mapal-rt/src/lib.rs</code></td><td><code>FlowParRun</code> + pool</td></tr>
+<tr><td>CLI (<code>build/run/dump-ir/test/fmt</code>)</td><td><code>crates/mapal-cli/</code> (<code>main.rs · fmt.rs</code>)</td><td><code>frontend()</code> → <code>rewritten()</code> → <code>emit()</code></td></tr>
+<tr><td>Programs to learn from</td><td><code>examples/*.mapal</code> · <code>benches/algorithms/*.mapal</code> (idiomatic snapshot)</td><td><code>sepia</code>, <code>fib</code>, <code>fir</code>, <code>matmul128</code>, <code>calc</code></td></tr>
+</table>
+<div class="mermaid">
+flowchart LR
+  CLI["mapal-cli"] --> SYN["mapal-syntax"]
+  CLI --> LOW["mapal-lower"]
+  CLI --> CHK["mapal-check"]
+  CLI --> RW["mapal-rewrite"]
+  CLI --> BE["backends/llvm (+cuda)"]
+  CLI --> IN["mapal-interp"]
+  LOW --> IR["mapal-ir ★ hub<br/>(zero deps on syntax)"]
+  CHK --> IR
+  RW --> IR
+  BE --> IR
+  IN --> IR
+  LOW --> SYN
+  CHK --> SYN
+  BE -.->|"links at runtime"| RT["mapal-rt"]
+</div>
+<p class="small muted"><code>mapal-ir</code> is the depended-on hub and depends on nothing in the workspace — which is why it defines its own field-identical <code>SourceLoc</code> (one declared conversion seam in <code>mapal-lower</code>) instead of importing the syntax crate’s.</p>
+<h3>11.2 Glossary — project words, plain meanings</h3>
+<table>
+<tr><th>Word</th><th>Plain meaning</th></tr>
+<tr><td>Object / Morphism</td><td>A value / a step that computes a value (graph node / labeled edge).</td></tr>
+<tr><td>Sealed graph</td><td>An immutable, builder-checked <code>CategoryIr</code>. The only stored truth.</td></tr>
+<tr><td>Plan / deduced query / fact</td><td>The same thing: a pure, cached, possibly-silent proof about the graph (§6).</td></tr>
+<tr><td>Host spine / checkpoint / watermark</td><td>The sequential effectful thread of a program / a wait point on it / “past the last possible trap” (weaker than finished).</td></tr>
+<tr><td><code>Split</code> vs <code>Seq</code> task</td><td>Element range can be sliced across lanes / must run in order as one unit.</td></tr>
+<tr><td>Site</td><td>A place a plan recognized a shape (tile site, cell site, move site…).</td></tr>
+<tr><td>Rung</td><td>One named, evidence-gated backend optimization switch with measured on/off arms (§8.3). The work-unit rung is called <code>flow</code> — there is no “fusion” concept; boundaries follow footprints.</td></tr>
+<tr><td><code>TargetProfile</code></td><td>All machine facts + derived constants for one part. Backends read it; plans never see it.</td></tr>
+<tr><td>Face</td><td>Float contract level: exact / contract / default-with-bound (§8.2).</td></tr>
+<tr><td>Oracle</td><td>The interpreter. Defines the correct bytes; everything else is checked against it.</td></tr>
+<tr><td>Trap</td><td>A defined runtime failure (divide-by-zero, out-of-bounds), reported in source order.</td></tr>
+<tr><td>Finding</td><td>An intent-vs-realized mismatch (extra copy, missing vectorization…). Findings block “pass” claims until explained.</td></tr>
+</table>
+</section>
+
+<section id="keep-current">
+<h2><span class="no">12</span>Keeping this doc true</h2>
+<p>This page is a <em>map</em>, not a second source of truth — the code wins any disagreement, and every claim above names its file so drift is checkable. When you change the compiler, update this file in the same change:</p>
+<ul class="tight">
+<li><strong>New/changed plan?</strong> Add or edit its card in §6.2 (question, algorithm, consumer, fallback) and the facts diagram in §6.1. A plan without a card does not exist for onboarding purposes.</li>
+<li><strong>New operation / AST node / type?</strong> Update the §5 operation table, §3 node catalogue, and §2 syntax as applicable.</li>
+<li><strong>New backend decision or rung?</strong> Record it in §8 with its evidence citation; a rung kept off needs its <code>GPU_RUNGS_OFF</code> reason summarized.</li>
+<li><strong>Pipeline change?</strong> Fix the §1 master diagram first — if the top-level story changed, say so loudly there.</li>
+<li>Reconcile alongside the living docs (<code>docs/STATUS.md</code>, component <code>DESIGN/IMPLEMENTATION.md</code>) and run the drift check; session narrative belongs in <code>docs/sessions/</code>, not here.</li>
+</ul>
+<div class="callout"><p><strong>Try it now (5 minutes).</strong> <code>cargo run -p mapal-cli -- run examples/sepia.mapal</code> → <code>4080</code>. Then <code>… dump-ir examples/fib.mapal --stage=lowered</code> and find the <code>LoopMerge</code>; <code>… dump-ir examples/matmul128.mapal --stage=llvm</code> and find the tiled kernel; finally re-read §6 Walkthrough 2 next to <code>tile_plan</code> in <code>algo.rs</code>. You now have the whole machine in your head — welcome aboard.</p></div>
+</section>
+</div></main>
+</div>
+<footer>Mapal Architecture Explorer · Standalone file: <code>docs/architecture-explorer.html</code> · Diagrams render with Mermaid (CDN). If a diagram area stays blank offline, the surrounding text and tables carry the same content.</footer>
+<script>
+  mermaid.initialize({startOnLoad:true, theme:"neutral", securityLevel:"loose", flowchart:{curve:"basis"}});
+  // reading progress + scroll-spy
+  var bar=document.getElementById("progress");
+  var links=[].slice.call(document.querySelectorAll("nav.side a"));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute("href"));});
+  function onScroll(){
+    var h=document.documentElement, max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0?(100*h.scrollTop/max):0)+"%";
+    var cur=0; for(var i=0;i<secs.length;i++){ if(secs[i]&&secs[i].getBoundingClientRect().top<160) cur=i; }
+    links.forEach(function(a,i){a.classList.toggle("active",i===cur);});
+  }
+  addEventListener("scroll",onScroll,{passive:true}); onScroll();
+  // plan filter
+  var q=document.getElementById("plan-q");
+  function filterPlans(){
+    var text=(q?q.value:"").toLowerCase();
+    var grp=document.querySelector(".fbtn.on");
+    var g=grp?grp.dataset.g:"all";
+    document.querySelectorAll(".plan").forEach(function(el){
+      var hit=el.textContent.toLowerCase().indexOf(text)>-1;
+      var inG=(g==="all"||el.dataset.g===g);
+      el.style.display=(hit&&inG)?"":"none";
+    });
+  }
+  if(q) q.addEventListener("input",filterPlans);
+  document.querySelectorAll(".fbtn").forEach(function(b){b.addEventListener("click",function(){
+    document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); filterPlans();
+  });});
+</script>
+</body>
+</html>

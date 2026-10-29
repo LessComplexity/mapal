@@ -1,15 +1,17 @@
 # Mapal — Neovim support
 
-Regex syntax highlighting and filetype detection for `*.mapal`. Best-effort and
+Source formatting, regex syntax highlighting and filetype detection for `*.mapal`. Highlighting is best-effort and
 non-authoritative: a tree-sitter grammar is deferred until it can be derived from the real
 `mapal-syntax` parser (ADR-0008).
 
 ```
-ftdetect/mapal.vim        *.mapal -> filetype=flow
+ftdetect/mapal.vim        *.mapal -> filetype=mapal
+ftplugin/mapal.lua        four-space indentation, :MapalFormat and gq
+lua/mapal/format.lua      buffer formatting through mapal fmt -
 syntax/mapal.vim          highlighting
 plugin/mapal_icon.lua     registers the file icon automatically, adds :MapalIcon
 lua/mapal/icon.lua        icon module (glyph, color, diagnostics)
-test/run.sh              assert the highlighting decisions
+test/run.sh              assert highlighting and formatting
 ```
 
 Groups link to standard groups via `hi default link`, so your colorscheme drives the actual
@@ -39,6 +41,43 @@ use { "/path/to/flow/editors/nvim" }
 ```lua
 vim.opt.runtimepath:append("/path/to/flow/editors/nvim")
 ```
+
+## Formatting
+
+Install the CLI from the repository root, then reopen a `.mapal` buffer:
+
+```sh
+cargo install --path crates/mapal-cli
+```
+
+Use `:MapalFormat` or `gggqG` to format the whole buffer. The plugin sends your
+unsaved text to `mapal fmt -`; it does not save the file. Indentation uses four
+spaces, matching the CLI. Invalid source or an unavailable CLI leaves the buffer
+unchanged and reports an error. `gq` on a partial selection is intentionally a no-op;
+format the whole document instead.
+
+If the CLI is not on Neovim's PATH, set its executable path (without arguments):
+
+```lua
+vim.g.mapal_executable = "/path/to/mapal/target/debug/mapal"
+```
+
+With no plugin manager, also enable `filetype plugin on`. If you use conform.nvim
+for your normal formatting key or format-on-save, add this formatter to its setup:
+
+```lua
+formatters_by_ft = { mapal = { "mapal" } },
+formatters = {
+  mapal = {
+    command = "mapal", -- or an absolute executable path
+    args = { "fmt", "-" },
+    stdin = true,
+  },
+},
+```
+
+The built-in adapter waits at most ten seconds and accepts up to 16 MiB of output.
+It discards results if the buffer changes during formatting.
 
 ## File icon
 
@@ -108,12 +147,15 @@ This is a heuristic that is right for every program in `examples/`.
 ## Tests
 
 ```sh
+cargo build -p mapal-cli     # or set MAPAL_BIN to an already-built CLI
 editors/test.sh              # both editors
 editors/nvim/test/run.sh     # this one only
 ```
 
 Asserts the group each token actually resolves to, and that no file in `examples/` lights up
-as an error. Exits non-zero on failure.
+as an error. Formatting tests exercise the actual CLI on unsaved buffer text,
+`gq`, paths with spaces, invalid input, missing executables and concurrent edits.
+Exits non-zero on failure.
 
 Worth running after **any** edit to `syntax/mapal.vim`. That file depends on Vim's
 last-match-wins rule and its header warns against reordering; the test pins outcomes rather

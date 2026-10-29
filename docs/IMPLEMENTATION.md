@@ -29,6 +29,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 
 | Object / bridge | Signature | Realized at | Stored? |
 | --- | --- | --- | --- |
+| formatted source | `Source → Source ⊕ Diagnostic*` | `crates/mapal-syntax/src/format.rs:format_source`, used by `crates/mapal-cli/src/fmt.rs:run`; editor ports mapped in [cli](components/cli/IMPLEMENTATION.md) | deduced from source tokens and comments |
 | `SourceLoc` duality (D8) | `mapal_syntax::SourceLoc → mapal_ir::SourceLoc` | seam: `crates/mapal-lower/src/tys.rs:ir_loc` | stored copy at one declared seam (keeps `mapal-ir` zero-dep) |
 | type-resolution functor | `mapal_syntax::TyKind ⇀ mapal_ir::Ty` (partial) | `crates/mapal-lower/src/tys.rs:resolve_ty` / `tys.rs:TypeTable::resolve` | deduced (a pass) |
 | Diagnostic seam | `Diagnostic ⊕ IrError ⊕ IrViolation ⇀ rendered 𝕊` | per-crate enums; renderer reserved to `mapal-cli` (planned) | deduced at the CLI |
@@ -59,7 +60,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 
 | Entry | Trn triggered | Code | State |
 | --- | --- | --- | --- |
-| `mapal` CLI | build/run/dump-ir/test | `crates/mapal-cli/src/main.rs:main` | implemented (S62) |
+| `mapal` CLI | build/run/dump-ir/test/fmt | `crates/mapal-cli/src/main.rs:main` | implemented; source formatting 2026-10-28 |
 | `dump_ir` example | file → lex→parse→lower → Mermaid | `crates/mapal-lower/examples/dump_ir.rs` | built |
 | LLVM `emit` example | file → lex→parse→lower → `.ll` text (dev tool — the `mapal build` embryo) | `crates/backends/llvm/examples/emit.rs` | built (S16) |
 | CUDA `emit_cuda` example | file → lex→parse→lower → `.cu` text (dev tool — distinct Cargo target prevents the LLVM output collision) | `crates/backends/cuda/examples/emit_cuda.rs` | built (S16; target renamed S55) |
