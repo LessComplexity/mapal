@@ -37,6 +37,9 @@ No keep/remove/gate decision stands on timing alone.
    library (cuBLAS/cuBLASLt/CUTLASS) or PyTorch where no library exists.
    Tooling: `benches/gpu/intent.py` (intents), `evidence.py` (checker), `rejudge.py`; a GPU run without its
    `evidence.tsv` is not a result.
+   Raw run output (profile archives, box logs, raw result text) never goes into git: `benches/gpu/archive_raw.sh`
+   uploads it to a GitHub release and appends `benches/results/evidence/RAW-manifest.tsv`; commit only the evidence
+   tables, reports and the manifest (`benches/results/evidence/RAW.md`).
 5. **End check.** The final integrated build gets the same pass: a table of intended vs realized per optimization per
    arch, and how it turned out in time.
 
