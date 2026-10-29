@@ -1,7 +1,7 @@
 # Continue after `site-geometry`
 
-Main checkout: branch **`site-geometry-latest`**. Nothing is pushed. Rules every agent follows:
-[`CLAUDE.md`](../CLAUDE.md) (`AGENTS.md` → symlink). History: [session log](sessions/2026-10-26-site-geometry.md).
+Main checkout: branch **`site-geometry-latest`**, pushed, with a PR open to `main` (`gh pr view site-geometry-latest`). Plain summary: [`summary.md`](../summary.md). Rules every agent follows:
+[`CLAUDE.md`](../CLAUDE.md) (`AGENTS.md` → symlink). History: [session log](sessions/2026-10-29-summary-and-pr.md) (sprint: [site-geometry](sessions/2026-10-26-site-geometry.md)).
 
 ## Where Mapal stands (best-of library legs and torch)
 
