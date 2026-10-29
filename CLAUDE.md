@@ -1,5 +1,20 @@
 # Mapal — rules for every agent and workflow
 
+## Source formatting
+
+- Format every Mapal source file you create or edit with `mapal fmt <files...>`;
+  verify it with `mapal fmt --check <files...>` before handing off. If the CLI is
+  not installed, use `cargo run -p mapal-cli -- fmt <files...>` (add `--check` to
+  verify). Pass only files touched by the task; do not reformat unrelated sources.
+- The formatter owns layout: four spaces, multiline brace bodies, consistent
+  spacing. Keep comments and descriptive names readable; avoid hand-aligned padding
+  or compacting generated programs onto long lines. Format generated source too.
+- Deliberately invalid syntax fixtures are exempt because formatting rejects invalid
+  input. Explain that exemption in the test; do not bypass checks for valid programs.
+- For code discovery, avoid recursive indexing of archived worktrees, vendored
+  libraries or generated bundles. Use bounded reads of known files when indexing
+  stalls; do not launch concurrent index builds for the same checkout.
+
 ## Evidence pass (mandatory for any optimization or codegen change)
 
 No keep/remove/gate decision stands on timing alone.

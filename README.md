@@ -30,6 +30,7 @@
 - [Status](#status)
 - [Scope](#scope)
 - [Trying it](#trying-it)
+  - [Formatting](#formatting)
   - [Editor support](#editor-support)
 - [What is next](#what-is-next)
 - [How the project works](#how-the-project-works)
@@ -283,15 +284,30 @@ clang -O2 fir.ll target/release/libmapal_rt.a -o fir && ./fir
 Start in [`examples/`](examples/) - `pipeline.mapal` for syntax, `sepia.mapal` for most of the
 language, `fir.mapal` for a loop.
 
+### Formatting
+
+```sh
+cargo build -p mapal-cli
+target/debug/mapal fmt path/to/program.mapal           # format in place
+target/debug/mapal fmt --check path/to/program.mapal   # check without writing
+target/debug/mapal fmt --stdout path/to/program.mapal  # preview without writing
+```
+
+The formatter uses four spaces and expands brace bodies onto multiple lines,
+preserving comments and literal spelling. `mapal fmt -` reads stdin and writes
+stdout, so editors and generators share the same style. Invalid syntax is reported
+without replacing the source. LLVM and GPU tools are not needed for formatting.
+
 ### Editor support
 
-Both editors get highlighting and a file icon. Neither is published to a registry, so both load
+Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a registry, so both load
 from disk.
 
 |                 | Neovim                                     | VS Code                                      |
 | --------------- | ------------------------------------------ | -------------------------------------------- |
 | Highlighting    | Vimscript syntax file                      | TextMate grammar                             |
 | File icon       | font glyph                                 | the real SVG logo                            |
+| Formatting      | `:MapalFormat` or `gggqG`                   | **Format Document**                          |
 | Binding vs call | resolved by scanning for `fn` declarations | lexical only - `-> name;` reads as a binding |
 | Details         | [`editors/nvim/`](editors/nvim/)           | [`editors/vscode/`](editors/vscode/)         |
 
@@ -312,12 +328,18 @@ require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.ico
 
 ```sh
 python3 editors/vscode/package-vsix.py
-code --install-extension editors/vscode/mapal-lang-0.1.0.vsix   # or `cursor`
+code --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or `cursor`
 ```
 
 Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
 `~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and
 ignores unregistered directories silently.
+
+For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`,
+or point the plugins at your built `target/debug/mapal`: set `vim.g.mapal_executable`
+in Neovim or `mapal.executablePath` in VS Code. Formatting uses unsaved buffer text
+and supports format-on-save through the editor's configuration; see the plugin
+READMEs for setup.
 
 **The logo as a terminal glyph.** The Rust and C++ marks in a file tree are font glyphs, not
 images - Nerd Fonts ships those brand logos as characters. So Mapal's mark ships as a

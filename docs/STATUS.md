@@ -1,5 +1,12 @@
 # Mapal — Global Status
 
+2026-10-28 tooling: shared source formatting is available as `mapal fmt`, with
+Neovim `:MapalFormat`/`gggqG` and VS Code **Format Document** adapters. Four spaces,
+multiline braces, token/comment preservation; check/preview modes do not write.
+See [CLI status](components/cli/STATUS.md), [syntax status](components/syntax/STATUS.md)
+and [usage](../README.md#formatting). Existing benchmark sources remain unchanged
+by this work; prior performance continuations below remain separate.
+
 Current continuation: **2026-10-23, S62 integrated on `s62-integrated` (6a0e3a0): six items merged, M16 E/C kernels 1.6–10.6× faster than 4e1102c on four parts; residual-MLP whole programs still slower than base on three. [Gap map](performance/gpu/disassembly/s62-gap-map.md) · [session](sessions/2026-10-23-s62-optimize-integrate.md) · [next](next-session.md).**
 Previous continuation: 2026-10-22, actual library capture complete (Mapal1/cuBLAS2/CUTLASS1, 4,608 numerical words checked; no timing claim).
 The [executed-image comparison](performance/gpu/disassembly/executed-library-images.md)

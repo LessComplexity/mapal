@@ -6,6 +6,7 @@
 | Object | Form / shape | Realized at | State |
 | --- | --- | --- | --- |
 | `Source` | file text | `crates/mapal-cli/src/main.rs:frontend` | built |
+| formatting `Source` | original and formatted UTF-8 text, explicit file name | `crates/mapal-cli/src/fmt.rs:Input` | built |
 | `Program` | `mapal_syntax::Program` | `crates/mapal-cli/src/main.rs:frontend` | built |
 | `CategoryIr(lowered)` | `mapal_ir::CategoryIr` | `crates/mapal-cli/src/main.rs:frontend` | built |
 | `CategoryIr(rewritten)` | `mapal_ir::CategoryIr` | `crates/mapal-cli/src/main.rs:rewritten` | built |
@@ -26,6 +27,25 @@
 | `interp` | `CategoryIr × Budget → Observable ⊕ Diverged` | `crates/mapal-cli/src/main.rs:run_cmd` (`--interp`) | built |
 | `render` | `Diagnostic → 𝕊` | `crates/mapal-cli/src/main.rs:frontend` (`report`) | built |
 | equalizer `test` | `exec∘link∘emit∘rewrite ≡ interp` | `crates/mapal-cli/src/main.rs:test_cmd` | built |
+| `fmt` | `Source × Mode → Source ⊕ Diagnostic*` | `crates/mapal-cli/src/fmt.rs:run` | built |
+| file replacement | `Source × Path → File ⊕ Error` | `crates/mapal-cli/src/fmt.rs:replace_file` | built |
+| Neovim `format_buffer` | `EditorBuffer → EditorBuffer ⊕ Error` | `editors/nvim/lua/mapal/format.lua:format` | built |
+| VS Code `format_buffer` | `EditorBuffer → TextEdit* ⊕ Error` | `editors/vscode/extension.js:createProvider` | built |
+| VS Code source transport | `Source → Source ⊕ Error` through CLI stdin/stdout | `editors/vscode/extension.js:formatText` | built |
+
+## Formatting placements and checks
+
+The pure syntax formatter executes in the CLI process. Explicit file reads and
+atomic replacement use the filesystem port; stdin/stdout transport unsaved buffer
+text between editor and CLI processes. Stderr transports diagnostics. No compiler
+toolchain, LSP, backend, or GPU is invoked. `--check` and `--stdout` never write.
+Neovim `changedtick` and VS Code document-version checks reject stale output;
+both adapters bound subprocess time/output and keep the buffer on errors.
+
+`crates/mapal-cli/tests/format.rs` verifies all modes, invalid/unreadable batch
+no-write, atomic permissions/symlink preservation and original interpreter dispatch.
+Editor tests exercise actual CLI output as well as missing executable, parse
+failure, no-op and stale-document behavior. No existing benchmark was reformatted.
 
 ## Notes / divergences
 - `libmapal_rt.a` is found via `MAPAL_RT` or next to the binary. cargo uplifts a

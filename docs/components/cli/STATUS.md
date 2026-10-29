@@ -1,5 +1,12 @@
 # Component: cli
 
+2026-10-28 tooling update: `mapal fmt` supports explicit files in place,
+`--check`, single-file `--stdout`, and stdin `-`. Eight integration tests pass,
+including invalid-input no-write, atomic replacement, permissions, symlinks and
+the existing interpreter command. Formatting runs without LLVM/GPU tools. Both
+editor plugins invoke the same CLI over stdin and guard errors/stale buffers;
+see their READMEs and tests under `editors/`.
+
 Status: implemented
 Last updated: 2026-10-22 · S62
 Spec references: architecture.md §5 (Tooling ecosystem — `mapal` CLI / build integration) + HANDOFF §6 (repository layout — the `mapal-cli` crate provides `mapal build|run|dump-ir|test`). Supporting: architecture.md §2.3 (compiler driver); architecture.md §7.1 (typical dev cycle / `mapal build`).

@@ -40,6 +40,8 @@ programs. The component models below keep those transmissions and their obligati
 | --- | --- | --- | --- |
 | `lex` | `𝕊 → LexOutput` | syntax | built |
 | `parse` | `Token* → ParseOutput` | syntax | built |
+| `format_source` | `𝕊 → 𝕊 ⊕ Diag*` | syntax; [formatter model](components/syntax/DESIGN.md#source-formatting-2026-10-28) | built |
+| `fmt`, `format_buffer` | `Source → Source ⊕ Error ⊸` | cli and editor ports; [model](components/cli/DESIGN.md#source-formatting-and-editor-ports-2026-10-28) | built |
 | `lower` | `(𝕊 × Program) ⇀ CategoryIr ⊕ Diag*` (partial — domain = Mapal-Core) | lower | built |
 | `validate` | `CategoryIr → Violation*` (independent oracle) | ir | built |
 | `eval`/`run` | `(CategoryIr × Input × Fuel) ⇀ Output ⊸` (fueled, E1) | interp | built |
@@ -61,6 +63,12 @@ the same IR transformations. Its CUDA-driver copies, launches, staging barriers 
 cross-stream events are mapped in [backend-nvptx](components/backend-nvptx/IMPLEMENTATION.md)
 (FRAMEWORK §4.2 and §4.5). This is a leg of LLVM, not a separate compiler pipeline.
 
+Source formatting adds editor and CLI process placements, with source delivered by
+stdin/stdout pipes and diagnostics by stderr. The syntax operation is pure and
+stays in the CLI process; file replacement is a separate filesystem effect. These
+ports are mapped in [cli](components/cli/IMPLEMENTATION.md), satisfying FRAMEWORK
+§4.5 placement honesty and dependency mediation without another layout policy.
+
 **Trm** — **none inside the pipeline** (every pass handoff is a same-`Loc` `Trn`). Real at
 the backend harness boundaries: the llvm differential's `stdout`/exit-code capture (S13),
 and **the first `Trm`s whose cost is real, priced, and latency-visible (S15)**: backend-cuda's
@@ -73,7 +81,7 @@ the E1 `valid/busy/done/result` handshake.
 
 | Component | Owned `Trn` | Built/active when | Model | Map |
 | --- | --- | --- | --- | --- |
-| syntax | `lex`, `parse` | built (P1) | [DESIGN](components/syntax/DESIGN.md) | [IMPL](components/syntax/IMPLEMENTATION.md) |
+| syntax | `lex`, `parse`, `format_source` | built | [DESIGN](components/syntax/DESIGN.md) | [IMPL](components/syntax/IMPLEMENTATION.md) |
 | ir | builder ops, `seal`, `validate`, `topo`/`sccs`, Mermaid dump | built (P2) | [DESIGN](components/ir/DESIGN.md) | [IMPL](components/ir/IMPLEMENTATION.md) |
 | lower | `lower` (passes A–E) | built (P2) | [DESIGN](components/lower/DESIGN.md) | [IMPL](components/lower/IMPLEMENTATION.md) |
 | check | E2 effect legality + Return exclusivity (typing at boundary; E3 vacuous-by-proof) | tested (25) | [DESIGN](components/check/DESIGN.md) | [IMPL](components/check/IMPLEMENTATION.md) |
@@ -83,7 +91,7 @@ the E1 `valid/busy/done/result` handshake.
 | backend-cuda | `F_CUDA` emit (host/device split; kernels + H↔D `Trm`s) | built (P6/M3, S15) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPL](components/backend-cuda/IMPLEMENTATION.md) |
 | backend-nvptx | LLVM GPU realization and placement over IR geometry; CUDA-driver `Trm`s | built; frozen S54 matrix passed; targeted ordering open | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPL](components/backend-nvptx/IMPLEMENTATION.md) |
 | backend-verilog | `F_Verilog` emit + done-protocol | planned (P7/M4) | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPL](components/backend-verilog/IMPLEMENTATION.md) |
-| cli | `mapal build\|run\|dump-ir\|test`, `render` | implemented (S62) | [DESIGN](components/cli/DESIGN.md) | [IMPL](components/cli/IMPLEMENTATION.md) |
+| cli | `mapal build\|run\|dump-ir\|test\|fmt`, `render`, editor formatting ports | implemented | [DESIGN](components/cli/DESIGN.md) | [IMPL](components/cli/IMPLEMENTATION.md) |
 
 Status detail: [`docs/STATUS.md`](STATUS.md) (global roll-up, HANDOFF §7.1.1).
 

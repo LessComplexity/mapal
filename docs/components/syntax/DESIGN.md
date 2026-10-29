@@ -1,5 +1,29 @@
 # Component: syntax — DESIGN
 
+## Source formatting (2026-10-28)
+
+`Dat Source` remains the original text, with lexemes deduced from existing token
+spans; comments remain source slices between tokens. No parallel syntax tree is
+introduced (FRAMEWORK §3). `Trn format_source : Source → Source ⊕ Diagnostic*`
+validates with the existing parser, lays out tokens and comments, and preserves
+token kinds and lexeme spelling. It runs in the caller's process (`Loc`), without
+I/O or diagnostic rendering. Realization: `crates/mapal-syntax/src/format.rs:format_source`.
+
+| Morphism | Signature | Partiality | Semantics |
+| --- | --- | --- | --- |
+| `format_source` | `Source → Source ⊕ Diagnostic*` | Total result; formatting partial on valid syntax | Four-space indentation, multiline braces, statement line breaks, consistent spacing; comments and literal spelling retained |
+
+```mermaid
+graph LR
+    Source -->|format_source| Result["Source ⊕ Diagnostic*"]
+```
+
+Composition laws (FRAMEWORK §4.5): formatting twice is identical to formatting
+once; the successful output parses and has the input's token kinds and lexemes;
+invalid syntax produces diagnostics, never a partial replacement. Existing parser
+depth limits bound nesting. Source rendering is a new pure operation; the existing
+prohibition on terminal/diagnostic rendering in this crate still holds.
+
 Last updated: 2026-06-11 · Session 02
 Living document per HANDOFF §7.1.5 — written before code, updated every session that touches this component.
 

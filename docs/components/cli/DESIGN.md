@@ -1,6 +1,32 @@
 # Component: cli
 
-`mapal build|run|dump-ir|test` — a driver over the existing crates. It makes no
+## Source formatting and editor ports (2026-10-28)
+
+Extend `Dat Source` and the existing driver with `Trn fmt`; share the syntax
+crate's formatting operation rather than maintaining separate editor rules
+(FRAMEWORK §3, §4.5 composition soundness).
+
+| Morphism | Signature | Partiality | Semantics |
+| --- | --- | --- | --- |
+| `fmt` | `Source × Mode → Source ⊕ Diagnostic*` | Partial on syntax and I/O success | Explicit paths are written in place; `--check` only reports drift; `-` reads stdin and writes stdout; `--stdout` previews one file |
+| `format_buffer` | `EditorBuffer → EditorBuffer ⊕ Error` | Partial on successful CLI execution | Both plugins send the complete buffer, applying output only on success and to the same buffer version |
+
+```mermaid
+graph LR
+    File["File / stdin Source"] -->|fmt| Output["File / stdout Source or diagnostics"]
+    Buffer["EditorBuffer"] -->|format_buffer| Updated["EditorBuffer or Error"]
+```
+
+`Loc` sites are the editor process, CLI process and filesystem. `Trm` stdin/stdout
+pipes carry source between editor and CLI; file reads/writes carry source between
+disk and CLI. Diagnostics use stderr. Editors do not overwrite a buffer on CLI
+failure. Realizations: `crates/mapal-cli/src/fmt.rs:run`, the `main` dispatcher,
+`editors/nvim/lua/mapal/format.lua`, and `editors/vscode/extension.js`.
+The operation requires no LLVM toolchain or GPU. File lists are explicit: no
+recursive project discovery. All inputs are validated before any requested file
+replacement; read-only preview/check modes never write files.
+
+`mapal build|run|dump-ir|test|fmt` — a driver over the existing crates. It makes no
 codegen decision: every optimization in its output is derived inside
 `mapal-backend-llvm` from the IR artifacts against the named `TargetProfile`.
 The CLI routes `EmitOpts` (the shared parser `mapal_backend_llvm::flags`, so
