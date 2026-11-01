@@ -809,7 +809,10 @@ mod tf32_tests {
         // 1 + 2^-10 is a TF32 value; 1 + 2^-11 ties to even (1.0); 1 + 3·2^-11 ties up.
         assert_eq!(round_tf32(1.0 + 2f32.powi(-10)), 1.0 + 2f32.powi(-10));
         assert_eq!(round_tf32(1.0 + 2f32.powi(-11)), 1.0);
-        assert_eq!(round_tf32(1.0 + 3.0 * 2f32.powi(-11)), 1.0 + 2.0 * 2f32.powi(-10));
+        assert_eq!(
+            round_tf32(1.0 + 3.0 * 2f32.powi(-11)),
+            1.0 + 2.0 * 2f32.powi(-10)
+        );
         assert_eq!(round_tf32(-1.0 - 2f32.powi(-12)), -1.0);
         assert!(round_tf32(f32::NAN).is_nan());
         assert_eq!(round_tf32(f32::MAX), f32::INFINITY);

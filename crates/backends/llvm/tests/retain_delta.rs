@@ -50,7 +50,11 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
             f
         }
     };
-    let mut row = if column { format!("t % {d} -> col;\n") } else { String::new() };
+    let mut row = if column {
+        format!("t % {d} -> col;\n")
+    } else {
+        String::new()
+    };
     // The column takes the fed-back output in every row, every trip: damped.
     let damp = match (column, float) {
         (false, _) => "",
@@ -73,11 +77,20 @@ fn decode_form(t_steps: u64, d: u64, elem: &str, column: bool, unrolled: bool) -
     let cells = if column { t_steps } else { d };
     for j in (0..cells).filter(|_| unrolled) {
         let (idx, v) = if column {
-            (format!("{j} * {d} + col"), cell(&format!("t * {d} + {j}"), &j.to_string()))
+            (
+                format!("{j} * {d} + col"),
+                cell(&format!("t * {d} + {j}"), &j.to_string()),
+            )
         } else {
-            (format!("t * {d} + {j}"), cell(&format!("t * {d} + {j}"), &j.to_string()))
+            (
+                format!("t * {d} + {j}"),
+                cell(&format!("t * {d} + {j}"), &j.to_string()),
+            )
         };
-        row.push_str(&format!("{v} + o[{}]{damp} -> v{j}; x[{idx}] <- v{j};\n", j % d));
+        row.push_str(&format!(
+            "{v} + o[{}]{damp} -> v{j}; x[{idx}] <- v{j};\n",
+            j % d
+        ));
     }
     let wf = |m: u64, a: u64| {
         let x = format!("(t * {m} + {a}) % 101 - 50");
@@ -291,14 +304,29 @@ fn natural_decode_moves_what_the_unrolled_one_moves() {
         for target in ["rtx-4090", "h100-pcie", "rtx-3090", "rtx-5090", "generic"] {
             let (a, b) = (emit_on(&nat, target), emit_on(&unr, target));
             assert_eq!(moves(&a), moves(&b), "{elem} column={column} {target}");
-            assert_eq!(launches(&a), launches(&b), "{elem} column={column} {target}");
+            assert_eq!(
+                launches(&a),
+                launches(&b),
+                "{elem} column={column} {target}"
+            );
         }
     }
     let nat = lower(&decode(16, 8, "f32", false));
-    assert!(deltas(&nat).contains(&Some((8, 8, 0))), "{:?}", deltas(&nat));
+    assert!(
+        deltas(&nat).contains(&Some((8, 8, 0))),
+        "{:?}",
+        deltas(&nat)
+    );
     let host = emit_on(&nat, "generic");
-    assert!(moves(&host).iter().all(|l| l.starts_with("0:512:inplace")), "{:?}", moves(&host));
-    let clipped = host.lines().filter(|l| l.contains(" = select i1 ") && l.ends_with(", i64 128")).count();
+    assert!(
+        moves(&host).iter().all(|l| l.starts_with("0:512:inplace")),
+        "{:?}",
+        moves(&host)
+    );
+    let clipped = host
+        .lines()
+        .filter(|l| l.contains(" = select i1 ") && l.ends_with(", i64 128"))
+        .count();
     assert_eq!(clipped, 1, "one row-write loop clipped to the array");
 }
 
@@ -392,7 +420,11 @@ fn decode_retains_on_the_resident_buffers() {
     assert!(d2h[0].ends_with("i64 0, i64 32)"), "{d2h:#?}");
     // The device unit gains the one-row kernel (K and V share it) and `s`'s.
     let (_, dev) = emit_s54(&ir, &["uniform"], false);
-    let (_, base) = emit_s54(&ir, &["retain-resident", "delta-h2d", "lane-stride", "uniform"], false);
+    let (_, base) = emit_s54(
+        &ir,
+        &["retain-resident", "delta-h2d", "lane-stride", "uniform"],
+        false,
+    );
     let kernels = |d: &str| d.matches("void @mapal_tile_").count();
     assert_eq!(kernels(&dev), kernels(&base) + 2);
 }
@@ -411,7 +443,11 @@ fn delta_upload_is_stride_times_elem_bytes() {
         // `by-ref` the carried `x` is reached through its pointer, so the host
         // operand no longer tells the row from the whole.)
         let h2d = calls(&host, "h2d");
-        let rows = |h: &[&str]| h.iter().filter(|l| l.ends_with(&format!("i64 {row})"))).count();
+        let rows = |h: &[&str]| {
+            h.iter()
+                .filter(|l| l.ends_with(&format!("i64 {row})")))
+                .count()
+        };
         assert_eq!(rows(&h2d), 2, "{h2d:#?}");
         assert_eq!(
             h2d.iter()
@@ -436,7 +472,10 @@ fn delta_upload_is_stride_times_elem_bytes() {
 fn uniform_q_never_crosses() {
     let ir = lower(&decode(16, 8, "f32", false));
     let (host, _) = emit_s54(&ir, &[], false);
-    let rows = calls(&host, "h2d").iter().filter(|l| l.ends_with("i64 32)")).count();
+    let rows = calls(&host, "h2d")
+        .iter()
+        .filter(|l| l.ends_with("i64 32)"))
+        .count();
     assert_eq!(rows, 1, "x's row only");
     assert_eq!(calls(&host, "launchv").len(), 1, "q's cell");
 }

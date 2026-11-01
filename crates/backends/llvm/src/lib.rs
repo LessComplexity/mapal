@@ -997,7 +997,10 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         && let profile::Machine::Gpu(g) = profile.machine
     {
         let mut p = *profile;
-        p.machine = profile::Machine::Gpu(profile::Gpu { geom: g.geom.with(&opts.geom), ..g });
+        p.machine = profile::Machine::Gpu(profile::Gpu {
+            geom: g.geom.with(&opts.geom),
+            ..g
+        });
         profile = Box::leak(Box::new(p));
     }
     if profile.gpu().is_none() {

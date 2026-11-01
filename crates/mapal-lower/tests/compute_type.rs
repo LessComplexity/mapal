@@ -36,10 +36,14 @@ fn step_form_covers_its_own_body_only() {
 
 #[test]
 fn function_form_covers_nested_steps_and_f32_restores() {
-    let body = format!("{ARR} (0.0, r) -> fold {{ acc, k -> acc + a[k] * a[k] }} -> s; s -> println;");
+    let body =
+        format!("{ARR} (0.0, r) -> fold {{ acc, k -> acc + a[k] * a[k] }} -> s; s -> println;");
     assert_eq!(sets(&format!("fn main(): tf32 | f32 {{ {body} }}")), (2, 0));
     let restored = body.replace("r -> map {", "r -> map: f32 {");
-    assert_eq!(sets(&format!("fn main(): tf32 | f32 {{ {restored} }}")), (1, 1));
+    assert_eq!(
+        sets(&format!("fn main(): tf32 | f32 {{ {restored} }}")),
+        (1, 1)
+    );
     assert_eq!(sets(&format!("fn main() {{ {body} }}")), (0, 2));
 }
 
@@ -92,7 +96,11 @@ fn precision_plan_round_at_and_cross() {
     // `u` (7.0) only feeds the tf32 product; `x` (2.0) also the f32 one, `w`.
     let rounded: Vec<_> = p.round_at.iter().map(|&o| val(o)).collect();
     assert_eq!(rounded, [Some(Value::F32(7.0))]);
-    let crossed: Vec<_> = p.cross.iter().map(|&(o, r)| (val(o), ir.morphism(r).map(|m| m.op.clone()))).collect();
+    let crossed: Vec<_> = p
+        .cross
+        .iter()
+        .map(|&(o, r)| (val(o), ir.morphism(r).map(|m| m.op.clone())))
+        .collect();
     assert_eq!(crossed, [(Some(Value::F32(2.0)), Some(Operation::Mul))]);
     assert!(p.bound.is_empty(), "no tile site");
 }

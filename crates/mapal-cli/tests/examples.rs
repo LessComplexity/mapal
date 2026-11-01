@@ -205,7 +205,12 @@ fn test_judges_the_replayable_faces() {
         let mut a = vec!["test", f, "--target=generic"];
         a.extend_from_slice(ok);
         let o = mapal(&a);
-        assert_eq!(o.status.code(), Some(0), "{ok:?}: {}", String::from_utf8_lossy(&o.stdout));
+        assert_eq!(
+            o.status.code(),
+            Some(0),
+            "{ok:?}: {}",
+            String::from_utf8_lossy(&o.stdout)
+        );
     }
     for refused in [
         &["--contract"][..],

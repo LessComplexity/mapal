@@ -171,8 +171,7 @@ impl<'a> FnEmit<'a> {
                                 // S65 `by-ref`: the result is a view of the arm.
                                 self.line(format!("store ptr {p}, ptr {dst}"));
                             } else {
-                                let llt =
-                                    lower_ty(&self.obj_ty(target)).expect("phi array lowers");
+                                let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
                                 self.emit_memcpy(&dst, &p, &llt);
                             }
                         } else {

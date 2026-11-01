@@ -198,7 +198,10 @@ pub(crate) fn nested_bodies(ir: &CategoryIr, f: FuncId) -> Vec<FuncId> {
 }
 
 /// The base launch that writes an epilogue member's physical bytes.
-pub(super) fn grouped_writer(groups: &SecondaryMap<MorphismId, Epi>, o: ObjectId) -> Option<MorphismId> {
+pub(super) fn grouped_writer(
+    groups: &SecondaryMap<MorphismId, Epi>,
+    o: ObjectId,
+) -> Option<MorphismId> {
     groups
         .iter()
         .find(|(_, g)| g.chain.iter().any(|mb| mb.out == o))
@@ -242,7 +245,10 @@ impl Cell {
     /// The arrays the kernel reads, with the product slot each sits in
     /// (`None`: the bare mapped source of a capture-free map).
     fn operands(&self) -> Vec<(ObjectId, Option<u32>)> {
-        self.args().filter(|a| !a.2).map(|(o, s, _)| (o, s)).collect()
+        self.args()
+            .filter(|a| !a.2)
+            .map(|(o, s, _)| (o, s))
+            .collect()
     }
 
     /// The kernel's arguments after its output, in [`gpu::cell_kernel_text`]'s
@@ -252,7 +258,9 @@ impl Cell {
     fn args(&self) -> impl Iterator<Item = (ObjectId, Option<u32>, bool)> + '_ {
         let k = self.caps.len() as u32;
         let mapped = self.mapped.map(|o| (o, (k > 0).then_some(k)));
-        let caps = (0..k).filter(|&s| !self.law(s)).map(|s| (self.caps[s as usize], Some(s)));
+        let caps = (0..k)
+            .filter(|&s| !self.law(s))
+            .map(|s| (self.caps[s as usize], Some(s)));
         mapped
             .into_iter()
             .chain(caps)
@@ -390,7 +398,10 @@ impl ResidentPlan {
         o: ObjectId,
     ) -> u32 {
         // A carry's views and exit are its state's: the merge's writers.
-        let state = self.carries.iter().find(|c| c.views.contains(&o) || c.exit == Some(o));
+        let state = self
+            .carries
+            .iter()
+            .find(|c| c.views.contains(&o) || c.exit == Some(o));
         let o = state.map_or(o, |c| c.merge);
         if let Some(m) = grouped_writer(groups, o) {
             return self.chain.get(m).copied().unwrap_or(0);
@@ -502,9 +513,11 @@ impl<'a> FnEmit<'a> {
                 // loading it from its device buffer.
                 Operation::Pair { slot, .. }
                     if !self.ir.out_edges(morph.target).is_empty()
-                        && self.ir.out_edges(morph.target).iter().all(|&m2| {
-                            cells.get(m2).is_some_and(|c| c.dev.contains(&slot))
-                        }) =>
+                        && self
+                            .ir
+                            .out_edges(morph.target)
+                            .iter()
+                            .all(|&m2| cells.get(m2).is_some_and(|c| c.dev.contains(&slot))) =>
                 {
                     out.push(Use::Dev)
                 }
@@ -567,139 +580,150 @@ impl<'a> FnEmit<'a> {
         // `x` row reads `o`) rides only once that carry is found — repeat
         // until no carry is added (each round only adds, so it ends).
         loop {
-        let found = out.len();
-        for scc in self.ir.loop_structure(self.f) {
-            for &merge in &scc.merges {
-                let Some(plan) = self.ir.loop_plan(self.f, merge) else {
-                    continue;
-                };
-                let Ty::Tuple(parts) = self.obj_ty(merge) else {
-                    // ponytail: a bare-array state (no counter) has no
-                    // program yet; it is the same rule without the Proj.
-                    continue;
-                };
-                let Some(state) = self.pair_source(plan.back_route, 0) else {
-                    continue;
-                };
-                let back_pair: Vec<MorphismId> = self.ir.out_edges(state).to_vec();
-                for (k, ty) in parts.iter().enumerate() {
-                    let k = k as u32;
-                    if !matches!(ty, Ty::Array { .. }) || out.iter().any(|c| c.merge == merge && c.k == k) {
-                        continue;
-                    }
-                    let Some(next) = self.pair_source(state, k) else {
+            let found = out.len();
+            for scc in self.ir.loop_structure(self.f) {
+                for &merge in &scc.merges {
+                    let Some(plan) = self.ir.loop_plan(self.f, merge) else {
                         continue;
                     };
-                    if !site_out(next) || self.pair_source(plan.init, k).is_none() {
+                    let Ty::Tuple(parts) = self.obj_ty(merge) else {
+                        // ponytail: a bare-array state (no counter) has no
+                        // program yet; it is the same rule without the Proj.
                         continue;
-                    }
-                    let views: Vec<ObjectId> = self
-                        .ir
-                        .out_edges(merge)
-                        .iter()
-                        .map(|&m| self.ir.morphism(m).expect("morphism resolves"))
-                        .filter(|mo| mo.op == Operation::Proj { index: k })
-                        .map(|mo| mo.target)
-                        .collect();
-                    // The exit payload, when it is a view: its Pair is the
-                    // carry's, and the exit object shares the slot.
-                    let exit_pair = self
-                        .ir
-                        .in_edges(plan.exit_route)
-                        .iter()
-                        .copied()
-                        .find(|&m| {
-                            let mo = self.ir.morphism(m).expect("morphism resolves");
-                            matches!(mo.op, Operation::Pair { slot: 0, .. })
-                                && views.contains(&mo.source)
-                        });
-                    let exit = exit_pair.and_then(|_| {
-                        plan.exits
-                            .first()
-                            .map(|&x| self.ir.morphism(x).expect("exit").target)
-                    });
-                    // `state` must feed only the back route, and `next` must
-                    // reach it only through `state`'s slot `k`.
-                    let next_pair: Vec<MorphismId> = self
-                        .ir
-                        .out_edges(next)
-                        .iter()
-                        .copied()
-                        .filter(|&m| self.ir.morphism(m).expect("m").target == state)
-                        .collect();
-                    if back_pair.len() != 1 || next_pair.len() != 1 {
-                        continue;
-                    }
-                    let fwd: Vec<MorphismId> =
-                        next_pair.iter().chain(exit_pair.iter()).copied().collect();
-                    let device_only = |o: ObjectId| {
-                        self.uses(sites, cells, o, &fwd)
-                            .iter()
-                            .all(|u| !matches!(u, Use::Host))
                     };
-                    let read = views
-                        .iter()
-                        .any(|&v| self.uses(sites, cells, v, &fwd).contains(&Use::Dev));
-                    // S65 `by-ref`: a state no morphism of the trip reads
-                    // (only forwarded to the exit) stays where it is produced
-                    // — the loop's products forward its pointer.
-                    let unread = self.is_view(merge, &[k])
-                        && views.iter().all(|&v| {
-                            self.uses(sites, cells, v, &fwd).iter().all(|u| *u == Use::Fwd)
-                        });
-                    if (read || unread)
-                        && !views.is_empty()
-                        && device_only(next)
-                        && views.iter().all(|&v| device_only(v))
-                    {
-                        // `range-cell`: `next` is a range cell over this
-                        // state's own view (so its buffer holds the cells off
-                        // the interval).
-                        let range = self
-                            .ir
-                            .in_edges(next)
-                            .first()
-                            .and_then(|&m| Some((m, cells.get(m)?)))
-                            .filter(|(_, c)| c.range.is_some_and(|ou| views.contains(&c.caps[ou.slot as usize])));
-                        // The state rides the device for the range cell alone
-                        // only when something else holds it there: a device
-                        // site reading the state, or an operand of the cell
-                        // made on the device (else the host keeps it).
-                        if let Some((_, c)) = range {
-                            // A site reading the state (a view, or the written
-                            // state, which shares the buffer) — a cell reader
-                            // is no support: it is on the device only because
-                            // the state is (an island the host would keep).
-                            let read_by_site = |o: ObjectId| {
-                                sites.iter().any(|(m, site)| {
-                                    let src = self.ir.morphism(m).expect("site").source;
-                                    site.reads().iter().any(|&k| self.pair_source(src, k) == Some(o))
-                                })
-                            };
-                            let other = views.iter().any(|&v| read_by_site(v)) || read_by_site(next);
-                            let fed = c.operands().iter().any(|&(o, _)| {
-                                !views.contains(&o) && (site_out(o) || out.iter().any(|x| x.views.contains(&o)))
-                            });
-                            if !other && !fed {
-                                continue;
-                            }
+                    let Some(state) = self.pair_source(plan.back_route, 0) else {
+                        continue;
+                    };
+                    let back_pair: Vec<MorphismId> = self.ir.out_edges(state).to_vec();
+                    for (k, ty) in parts.iter().enumerate() {
+                        let k = k as u32;
+                        if !matches!(ty, Ty::Array { .. })
+                            || out.iter().any(|c| c.merge == merge && c.k == k)
+                        {
+                            continue;
                         }
-                        let inplace = range.is_some();
-                        out.push(Carry {
-                            merge,
-                            k,
-                            next,
-                            views,
-                            exit,
-                            inplace,
+                        let Some(next) = self.pair_source(state, k) else {
+                            continue;
+                        };
+                        if !site_out(next) || self.pair_source(plan.init, k).is_none() {
+                            continue;
+                        }
+                        let views: Vec<ObjectId> = self
+                            .ir
+                            .out_edges(merge)
+                            .iter()
+                            .map(|&m| self.ir.morphism(m).expect("morphism resolves"))
+                            .filter(|mo| mo.op == Operation::Proj { index: k })
+                            .map(|mo| mo.target)
+                            .collect();
+                        // The exit payload, when it is a view: its Pair is the
+                        // carry's, and the exit object shares the slot.
+                        let exit_pair =
+                            self.ir
+                                .in_edges(plan.exit_route)
+                                .iter()
+                                .copied()
+                                .find(|&m| {
+                                    let mo = self.ir.morphism(m).expect("morphism resolves");
+                                    matches!(mo.op, Operation::Pair { slot: 0, .. })
+                                        && views.contains(&mo.source)
+                                });
+                        let exit = exit_pair.and_then(|_| {
+                            plan.exits
+                                .first()
+                                .map(|&x| self.ir.morphism(x).expect("exit").target)
                         });
+                        // `state` must feed only the back route, and `next` must
+                        // reach it only through `state`'s slot `k`.
+                        let next_pair: Vec<MorphismId> = self
+                            .ir
+                            .out_edges(next)
+                            .iter()
+                            .copied()
+                            .filter(|&m| self.ir.morphism(m).expect("m").target == state)
+                            .collect();
+                        if back_pair.len() != 1 || next_pair.len() != 1 {
+                            continue;
+                        }
+                        let fwd: Vec<MorphismId> =
+                            next_pair.iter().chain(exit_pair.iter()).copied().collect();
+                        let device_only = |o: ObjectId| {
+                            self.uses(sites, cells, o, &fwd)
+                                .iter()
+                                .all(|u| !matches!(u, Use::Host))
+                        };
+                        let read = views
+                            .iter()
+                            .any(|&v| self.uses(sites, cells, v, &fwd).contains(&Use::Dev));
+                        // S65 `by-ref`: a state no morphism of the trip reads
+                        // (only forwarded to the exit) stays where it is produced
+                        // — the loop's products forward its pointer.
+                        let unread = self.is_view(merge, &[k])
+                            && views.iter().all(|&v| {
+                                self.uses(sites, cells, v, &fwd)
+                                    .iter()
+                                    .all(|u| *u == Use::Fwd)
+                            });
+                        if (read || unread)
+                            && !views.is_empty()
+                            && device_only(next)
+                            && views.iter().all(|&v| device_only(v))
+                        {
+                            // `range-cell`: `next` is a range cell over this
+                            // state's own view (so its buffer holds the cells off
+                            // the interval).
+                            let range = self
+                                .ir
+                                .in_edges(next)
+                                .first()
+                                .and_then(|&m| Some((m, cells.get(m)?)))
+                                .filter(|(_, c)| {
+                                    c.range
+                                        .is_some_and(|ou| views.contains(&c.caps[ou.slot as usize]))
+                                });
+                            // The state rides the device for the range cell alone
+                            // only when something else holds it there: a device
+                            // site reading the state, or an operand of the cell
+                            // made on the device (else the host keeps it).
+                            if let Some((_, c)) = range {
+                                // A site reading the state (a view, or the written
+                                // state, which shares the buffer) — a cell reader
+                                // is no support: it is on the device only because
+                                // the state is (an island the host would keep).
+                                let read_by_site = |o: ObjectId| {
+                                    sites.iter().any(|(m, site)| {
+                                        let src = self.ir.morphism(m).expect("site").source;
+                                        site.reads()
+                                            .iter()
+                                            .any(|&k| self.pair_source(src, k) == Some(o))
+                                    })
+                                };
+                                let other =
+                                    views.iter().any(|&v| read_by_site(v)) || read_by_site(next);
+                                let fed = c.operands().iter().any(|&(o, _)| {
+                                    !views.contains(&o)
+                                        && (site_out(o) || out.iter().any(|x| x.views.contains(&o)))
+                                });
+                                if !other && !fed {
+                                    continue;
+                                }
+                            }
+                            let inplace = range.is_some();
+                            out.push(Carry {
+                                merge,
+                                k,
+                                next,
+                                views,
+                                exit,
+                                inplace,
+                            });
+                        }
                     }
                 }
             }
-        }
-        if out.len() == found {
-            break;
-        }
+            if out.len() == found {
+                break;
+            }
         }
         out
     }
@@ -903,12 +927,7 @@ impl<'a> FnEmit<'a> {
             let DevSite::Tile(site) = &sites[s] else {
                 continue;
             };
-            let l = gpu::launch(
-                site,
-                self.profile,
-                self.contract,
-                self.gpu_arms,
-            );
+            let l = gpu::launch(site, self.profile, self.contract, self.gpu_arms);
             let Some(&rs) = region.get(s) else {
                 continue;
             };
@@ -1098,9 +1117,21 @@ impl<'a> FnEmit<'a> {
         // every cell per trip); under `range-cell` it is a cell over its
         // interval, written in its state's buffer (`range_in_place`).
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        let range = if rungs.range_cell { self.range_in_place(m) } else { None };
-        let piecewise =
-            || range.is_none() && matches!(self.ir.map_law(m), Some(ElemSrc::Apply { outside: Some(_), .. }));
+        let range = if rungs.range_cell {
+            self.range_in_place(m)
+        } else {
+            None
+        };
+        let piecewise = || {
+            range.is_none()
+                && matches!(
+                    self.ir.map_law(m),
+                    Some(ElemSrc::Apply {
+                        outside: Some(_),
+                        ..
+                    })
+                )
+        };
         // `nest-cell`: a body folding over captured arrays, unless the map is
         // a tile or row-fold site (their own kernels).
         let nest = !site.nested.is_empty();
@@ -1133,12 +1164,11 @@ impl<'a> FnEmit<'a> {
         if !whole || !number(array_elem(&self.obj_ty(mapped))) {
             return None;
         }
-        let laws =
-            if !loaded && rungs.cell_law {
-                self.laws(body, site, &caps)
-            } else {
-                Vec::new()
-            };
+        let laws = if !loaded && rungs.cell_law {
+            self.laws(body, site, &caps)
+        } else {
+            Vec::new()
+        };
         let lanes = self.cell_lanes(site);
         let tag = match (range.is_some(), lanes) {
             (false, 1) => self.fnames[body].clone(),
@@ -1177,20 +1207,33 @@ impl<'a> FnEmit<'a> {
     ) -> Vec<Batch> {
         let mut out = Vec::new();
         'loops: for ts in self.ir.trip_split(self.f) {
-            let Some(p) = ts.phases.first().filter(|p| p.skip && !p.batched.is_empty()) else {
+            let Some(p) = ts
+                .phases
+                .first()
+                .filter(|p| p.skip && !p.batched.is_empty())
+            else {
                 continue;
             };
-            let Some(lp) = self.ir.loop_plan(self.f, ts.merge) else { continue };
+            let Some(lp) = self.ir.loop_plan(self.f, ts.merge) else {
+                continue;
+            };
             let in_body = |o: ObjectId| {
-                self.ir.in_edges(o).iter().any(|m| lp.decide_order.contains(m) || lp.advance_order.contains(m))
+                self.ir
+                    .in_edges(o)
+                    .iter()
+                    .any(|m| lp.decide_order.contains(m) || lp.advance_order.contains(m))
             };
             let carried = |o: ObjectId| {
-                carries.iter().any(|c| c.merge == ts.merge && c.views.contains(&o))
+                carries
+                    .iter()
+                    .any(|c| c.merge == ts.merge && c.views.contains(&o))
                     || (!lp.scc_objects.contains(&o) && !in_body(o) && at_entry(o))
             };
             let mut writes = Vec::new();
             for &(_, m) in &p.batched {
-                let Some(c) = cells.get(m) else { continue 'loops };
+                let Some(c) = cells.get(m) else {
+                    continue 'loops;
+                };
                 let Some(ou) = c.range else { continue 'loops };
                 let Some(e) = ou.e else { continue 'loops };
                 let [u] = c.uniform[..] else { continue 'loops };
@@ -1202,7 +1245,9 @@ impl<'a> FnEmit<'a> {
                     && c.laws.is_empty()
                     && c.lanes == 1
                     && (0..c.caps.len() as u32).all(|s| s == u || carried(c.caps[s as usize]))
-                    && start.zip(count).is_some_and(|(s, n)| s >= 0 && n > 0 && (s + n) as u64 <= c.n);
+                    && start
+                        .zip(count)
+                        .is_some_and(|(s, n)| s >= 0 && n > 0 && (s + n) as u64 <= c.n);
                 if !ok {
                     continue 'loops;
                 }
@@ -1210,7 +1255,12 @@ impl<'a> FnEmit<'a> {
                 let (s, n) = (start.expect("start") as u64, count.expect("count") as u64);
                 writes.push((m, id, s, n, u, ou.d, ou.b));
             }
-            out.push(Batch { merge: ts.merge, counter: ts.counter, enter: p.hi - 1, writes });
+            out.push(Batch {
+                merge: ts.merge,
+                counter: ts.counter,
+                enter: p.hi - 1,
+                writes,
+            });
         }
         out
     }
@@ -1218,7 +1268,12 @@ impl<'a> FnEmit<'a> {
     /// `trip-batch` at the loop entry (after the carries hold their init):
     /// the batched writes, then the counter set to the interval's last trip.
     pub(crate) fn trip_batch(&mut self, merge: ObjectId) {
-        let Some(b) = self.resident.as_ref().and_then(|p| p.batch.iter().find(|b| b.merge == merge)).cloned() else {
+        let Some(b) = self
+            .resident
+            .as_ref()
+            .and_then(|p| p.batch.iter().find(|b| b.merge == merge))
+            .cloned()
+        else {
             return;
         };
         for &(m, id, start, count, _, _, _) in &b.writes {
@@ -1234,10 +1289,13 @@ impl<'a> FnEmit<'a> {
             ptrs.push(count.to_string());
             let args = format!("%dv{}", self.fresh());
             let np = ptrs.len();
-            self.allocas.push_str(&format!("  {args} = alloca [{np} x i64]\n"));
+            self.allocas
+                .push_str(&format!("  {args} = alloca [{np} x i64]\n"));
             for (i, p) in ptrs.iter().enumerate() {
                 let g = self.tmp();
-                self.line(format!("{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"));
+                self.line(format!(
+                    "{g} = getelementptr [{np} x i64], ptr {args}, i64 0, i64 {i}"
+                ));
                 self.line(format!("store i64 {p}, ptr {g}"));
             }
             let (gx, block) = gpu::cell_grid(count);
@@ -1247,7 +1305,11 @@ impl<'a> FnEmit<'a> {
             ));
         }
         let (llt, ptr) = self.component_ptr(merge, b.counter).expect("counter slot");
-        self.line(format!("; mapal.batch enter={} writes={}", b.enter, b.writes.len()));
+        self.line(format!(
+            "; mapal.batch enter={} writes={}",
+            b.enter,
+            b.writes.len()
+        ));
         self.line(format!("store {llt} {}, ptr {ptr}", b.enter));
     }
 
@@ -1261,7 +1323,12 @@ impl<'a> FnEmit<'a> {
     /// ponytail: not `in_place_source` itself — this runs in the residency
     /// plan, before `prepare_storage` indexes the roots `state_death` walks.
     fn range_in_place(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
-        let Some(ElemSrc::Apply { outside: Some(ou), source, .. }) = self.ir.map_law(m) else {
+        let Some(ElemSrc::Apply {
+            outside: Some(ou),
+            source,
+            ..
+        }) = self.ir.map_law(m)
+        else {
             return None;
         };
         let arr = self.pair_source(source, ou.slot)?;
@@ -1364,18 +1431,31 @@ impl<'a> FnEmit<'a> {
         if !rungs.rowfold
             || !rungs.by_ref
             || (sites.is_empty() && !rungs.scalar_fold)
-            || (!rungs.retained_fold && !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty())
+            || (!rungs.retained_fold
+                && !retain::retained_sites(self.ir, self.f, self.profile, rungs).is_empty())
         {
             return Vec::new();
         }
         let mut out = Vec::new();
         // `scalar-fold`: a whole fold is a row fold of one row, a candidate
         // over a cell's output too (no tile site needed).
-        let whole = if rungs.scalar_fold { self.ir.whole_fold(self.f) } else { SecondaryMap::new() };
-        let rows = if sites.is_empty() { SecondaryMap::new() } else { self.ir.row_fold(self.f) };
+        let whole = if rungs.scalar_fold {
+            self.ir.whole_fold(self.f)
+        } else {
+            SecondaryMap::new()
+        };
+        let rows = if sites.is_empty() {
+            SecondaryMap::new()
+        } else {
+            self.ir.row_fold(self.f)
+        };
         for (m, site) in rows.iter().chain(whole.iter()) {
             let window = site.w > 1 || site.a.ksplit.is_some();
-            if sites.contains_key(m) || !is_float(&site.elem) || site.k == 0 || (window && !rungs.window) {
+            if sites.contains_key(m)
+                || !is_float(&site.elem)
+                || site.k == 0
+                || (window && !rungs.window)
+            {
                 continue;
             }
             sites.insert(
@@ -1462,9 +1542,10 @@ impl<'a> FnEmit<'a> {
             // guard arm walks its range through the arm's input, which
             // `nest_reads` does not attribute (causal's `s` over `krange`).
             let iota = |o: ObjectId| {
-                self.ir.in_edges(o).iter().any(|&p| {
-                    self.ir.morphism(p).is_some_and(|x| x.op == Operation::Iota)
-                })
+                self.ir
+                    .in_edges(o)
+                    .iter()
+                    .any(|&p| self.ir.morphism(p).is_some_and(|x| x.op == Operation::Iota))
             };
             let there = |o| {
                 device_only(o)
@@ -1485,7 +1566,8 @@ impl<'a> FnEmit<'a> {
                     let walked = |o| !c.nested.is_empty() && iota(o);
                     // `range-cell`: written in place, so only into an
                     // in-place carry's buffer.
-                    let homeless = c.range.is_some() && !carries.iter().any(|k| k.inplace && k.next == t);
+                    let homeless =
+                        c.range.is_some() && !carries.iter().any(|k| k.inplace && k.next == t);
                     homeless
                         || !ops.iter().all(|&(o, _)| there(o) || walked(o))
                         || !(ops.iter().any(|&(o, _)| device_only(o)) || !host())
@@ -1505,9 +1587,15 @@ impl<'a> FnEmit<'a> {
                     // are (that support is circular: the host builds it).
                     let whole = matches!(fold.op, Operation::Fold { .. });
                     let closed = |o: ObjectId| {
-                        self.ir.in_edges(o).first().and_then(|&p| cells.get(p)).is_some_and(|c| c.operands().is_empty())
+                        self.ir
+                            .in_edges(o)
+                            .first()
+                            .and_then(|&p| cells.get(p))
+                            .is_some_and(|c| c.operands().is_empty())
                     };
-                    !self.pair_source(fold.source, a).is_some_and(|o| device_only(o) && !(whole && closed(o)))
+                    !self
+                        .pair_source(fold.source, a)
+                        .is_some_and(|o| device_only(o) && !(whole && closed(o)))
                 })
                 .collect();
             (drop, unfed, carries)
@@ -1727,7 +1815,11 @@ impl<'a> FnEmit<'a> {
         if rungs.trip_batch {
             let at_entry = |o: ObjectId| {
                 plan.upload.contains_key(o)
-                    || self.ir.in_edges(o).first().is_some_and(|&p| plan.devgen.contains_key(p))
+                    || self
+                        .ir
+                        .in_edges(o)
+                        .first()
+                        .is_some_and(|&p| plan.devgen.contains_key(p))
                     || self.produced_on_device(&sites, &cells, o)
             };
             plan.batch = self.batches(&cells, &plan.carries, &at_entry);
@@ -1988,7 +2080,12 @@ impl<'a> FnEmit<'a> {
                                 readers.push(None);
                                 continue;
                             }
-                            readers.extend(self.ir.out_edges(t).iter().map(|&r| plan.chain.get(r).copied()));
+                            readers.extend(
+                                self.ir
+                                    .out_edges(t)
+                                    .iter()
+                                    .map(|&r| plan.chain.get(r).copied()),
+                            );
                         }
                         _ => readers.push(plan.chain.get(m).copied()),
                     }
@@ -2296,7 +2393,11 @@ impl<'a> FnEmit<'a> {
         let (source, target) = (morph.source, morph.target);
         let bytes = self.array_bytes(&self.obj_ty(target));
         // `range-cell`: the output is the state's carry buffer (its alias).
-        let out = if c.range.is_some() { self.dload(target) } else { self.dalloc(target, bytes) };
+        let out = if c.range.is_some() {
+            self.dload(target)
+        } else {
+            self.dalloc(target, bytes)
+        };
         let mut ptrs = vec![out];
         let mut temps = Vec::new();
         for (o, slot, uniform) in c.args() {
@@ -2345,8 +2446,14 @@ impl<'a> FnEmit<'a> {
             self.line(format!("{cnt} = udiv i64 {up}, {}", ou.step));
             ptrs.push(lo);
             ptrs.push(cnt.clone());
-            let (thr, blk, b1, z, one, gx) =
-                (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            let (thr, blk, b1, z, one, gx) = (
+                self.tmp(),
+                self.tmp(),
+                self.tmp(),
+                self.tmp(),
+                self.tmp(),
+                self.tmp(),
+            );
             self.line(format!("{thr} = mul i64 {cnt}, {}", c.lanes));
             self.line(format!("{blk} = add i64 {thr}, 255"));
             self.line(format!("{b1} = udiv i64 {blk}, 256"));
@@ -2366,7 +2473,11 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let (gx, block) = gpu::CellGeo { range: None, lanes: c.lanes }.grid(c.n);
+        let (gx, block) = gpu::CellGeo {
+            range: None,
+            lanes: c.lanes,
+        }
+        .grid(c.n);
         let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
@@ -2395,9 +2506,9 @@ impl<'a> FnEmit<'a> {
     /// Every row fold this function runs on the device (the device unit's
     /// kernels for the ones `rowfold::rowfold_sites` does not see).
     pub(crate) fn rowfold_kernels(&self) -> Vec<mapal_ir::RowFoldSite> {
-        self.resident
-            .as_ref()
-            .map_or_else(Vec::new, |p| p.rowfold.values().map(|r| r.site.clone()).collect())
+        self.resident.as_ref().map_or_else(Vec::new, |p| {
+            p.rowfold.values().map(|r| r.site.clone()).collect()
+        })
     }
 
     pub(crate) fn cell_kernels(&self) -> Vec<gpu::CellKernel> {
@@ -2419,13 +2530,21 @@ impl<'a> FnEmit<'a> {
                     .map(|&(s, _)| (s, array_parts(&self.obj_ty(c.caps[s as usize])).0))
                     .collect();
                 let name = &self.fnames[c.body];
-                let name = if vals.is_empty() { name.clone() } else { gpu::cell_variant(name) };
+                let name = if vals.is_empty() {
+                    name.clone()
+                } else {
+                    gpu::cell_variant(name)
+                };
                 // `cell-lanes`: the body's lane variant, its fold split over the warp.
                 let lanes = (c.lanes > 1)
                     .then(|| self.ir.cell_plan(self.f).get(m).and_then(|s| s.tree))
                     .flatten()
                     .map(|(g, op, _)| (self.ir.morphism(g).expect("fold").target, op, c.lanes));
-                let name = if lanes.is_some() { gpu::lanes_variant(&name) } else { name };
+                let name = if lanes.is_some() {
+                    gpu::lanes_variant(&name)
+                } else {
+                    name
+                };
                 let mut fns = vec![(name, self.body_text_with(c.body, vals.clone(), lanes))];
                 let caps: Vec<gpu::CapArg> = (0..c.caps.len() as u32)
                     .map(|s| {
@@ -2441,17 +2560,28 @@ impl<'a> FnEmit<'a> {
                             return gpu::CapArg::Ptr;
                         };
                         fns.push((self.fnames[law].clone(), self.body_text(law, Vec::new())));
-                        let t = vals.iter().find(|&&(x, _)| x == s).expect("law value").1.clone();
+                        let t = vals
+                            .iter()
+                            .find(|&&(x, _)| x == s)
+                            .expect("law value")
+                            .1
+                            .clone();
                         gpu::CapArg::Law(self.fnames[law].clone(), t)
                     })
                     .collect();
                 let laws = c.laws.iter().map(|&(_, l)| l);
-                for nb in std::iter::once(c.body).chain(laws).flat_map(|b| nested_bodies(self.ir, b)) {
+                for nb in std::iter::once(c.body)
+                    .chain(laws)
+                    .flat_map(|b| nested_bodies(self.ir, b))
+                {
                     fns.push((self.fnames[nb].clone(), self.body_text(nb, Vec::new())));
                 }
                 // The facts the kernel was built from, for its `; mapal.plan`.
                 let work = self.ir.cell_plan(self.f).get(m).map_or(1, |x| x.work);
-                let geo = gpu::CellGeo { range: c.range.map(|ou| ou.step), lanes: c.lanes };
+                let geo = gpu::CellGeo {
+                    range: c.range.map(|ou| ou.step),
+                    lanes: c.lanes,
+                };
                 let mut facts = format!("nested={} work={work}", c.nested.len());
                 if let Some(ou) = c.range {
                     facts.push_str(&format!(" range={}x{}", ou.step, ou.len.min(c.n)));
@@ -2464,20 +2594,54 @@ impl<'a> FnEmit<'a> {
                 }
                 let kernel = format!(
                     "; mapal.cell {facts}\n{}",
-                    gpu::cell_kernel_text(c.id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, geo)
+                    gpu::cell_kernel_text(
+                        c.id,
+                        &fns[0].0,
+                        c.n,
+                        &out,
+                        &arg,
+                        elem.as_deref(),
+                        &caps,
+                        geo
+                    )
                 );
                 // `trip-batch`: the same cell over a batch of trips' rows, the
                 // counter each cell's own trip.
-                let batch = plan.batch.iter().flat_map(|b| &b.writes).find(|w| w.0 == m).map(|&(_, id, _, n, u, d, b)| {
-                    let mut caps = caps.clone();
-                    let gpu::CapArg::Uniform(t) = caps[u as usize].clone() else {
-                        unreachable!("the batched counter is a by-value uniform")
-                    };
-                    caps[u as usize] = gpu::CapArg::Trip(t, d, b);
-                    let k = gpu::cell_kernel_text(id, &fns[0].0, c.n, &out, &arg, elem.as_deref(), &caps, gpu::CellGeo { range: Some(1), lanes: 1 });
-                    (fns.clone(), format!("; mapal.cell nested={} work={work} batch={n}\n{k}", c.nested.len()))
-                });
-                std::iter::once((fns, kernel)).chain(batch).collect::<Vec<_>>()
+                let batch = plan
+                    .batch
+                    .iter()
+                    .flat_map(|b| &b.writes)
+                    .find(|w| w.0 == m)
+                    .map(|&(_, id, _, n, u, d, b)| {
+                        let mut caps = caps.clone();
+                        let gpu::CapArg::Uniform(t) = caps[u as usize].clone() else {
+                            unreachable!("the batched counter is a by-value uniform")
+                        };
+                        caps[u as usize] = gpu::CapArg::Trip(t, d, b);
+                        let k = gpu::cell_kernel_text(
+                            id,
+                            &fns[0].0,
+                            c.n,
+                            &out,
+                            &arg,
+                            elem.as_deref(),
+                            &caps,
+                            gpu::CellGeo {
+                                range: Some(1),
+                                lanes: 1,
+                            },
+                        );
+                        (
+                            fns.clone(),
+                            format!(
+                                "; mapal.cell nested={} work={work} batch={n}\n{k}",
+                                c.nested.len()
+                            ),
+                        )
+                    });
+                std::iter::once((fns, kernel))
+                    .chain(batch)
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -2489,7 +2653,12 @@ impl<'a> FnEmit<'a> {
     }
 
     /// [`Self::body_text`], or (`cell-lanes`) its lane variant.
-    fn body_text_with(&self, f: FuncId, vals: Vec<(u32, String)>, lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>) -> String {
+    fn body_text_with(
+        &self,
+        f: FuncId,
+        vals: Vec<(u32, String)>,
+        lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+    ) -> String {
         let mut fe = FnEmit::new(
             self.ir,
             f,
@@ -2744,7 +2913,10 @@ impl<'a> FnEmit<'a> {
             (Some((_, g)), _) => {
                 let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout.clone()];
                 for o in g.caps() {
-                    debug_assert!(self.dvalid.contains_key(plan.alias(o)), "epilogue operand in Gmem");
+                    debug_assert!(
+                        self.dvalid.contains_key(plan.alias(o)),
+                        "epilogue operand in Gmem"
+                    );
                     ptrs.push(self.dload(o));
                 }
                 for mb in g.chain.iter().filter(|mb| mb.store) {
@@ -2808,7 +2980,14 @@ impl<'a> FnEmit<'a> {
 
     /// A copy-out on stream `s`: the legacy entry on stream 0 (the one-stream
     /// text), else queued behind the chain's kernels and waited for.
-    pub(super) fn d2h(&mut self, s: u32, h: &str, d: &str, off: &str, bytes: impl std::fmt::Display) {
+    pub(super) fn d2h(
+        &mut self,
+        s: u32,
+        h: &str,
+        d: &str,
+        off: &str,
+        bytes: impl std::fmt::Display,
+    ) {
         if s == 0 {
             self.line(format!(
                 "call void @mapal_gpu_d2h(ptr {h}, i64 {d}, i64 {off}, i64 {bytes})"
@@ -2999,7 +3178,10 @@ impl<'a> FnEmit<'a> {
             let d = self.dalloc(c.key(), bytes);
             // A `+0.0` fill (`(0.0, n) -> fill`, every byte zero) is zeroed
             // there: no host bytes cross.
-            if self.pair_source(init, c.k).is_some_and(|a| self.zero_fill(a)) {
+            if self
+                .pair_source(init, c.k)
+                .is_some_and(|a| self.zero_fill(a))
+            {
                 self.line(format!("call void @mapal_gpu_zero(i64 {d}, i64 {bytes})"));
             } else {
                 let h = self.array_operand_ptr(init, Some(c.k)).expect("init ptr");
@@ -3013,10 +3195,18 @@ impl<'a> FnEmit<'a> {
 
     /// `a` is a `Fill` of a float `+0.0`: all its bytes are zero.
     fn zero_fill(&self, a: ObjectId) -> bool {
-        let Some(m) = self.ir.in_edges(a).first().and_then(|&m| self.ir.morphism(m)) else {
+        let Some(m) = self
+            .ir
+            .in_edges(a)
+            .first()
+            .and_then(|&m| self.ir.morphism(m))
+        else {
             return false;
         };
-        let v = self.pair_source(m.source, 0).and_then(|x| self.ir.object(x)).and_then(|x| x.value.as_ref());
+        let v = self
+            .pair_source(m.source, 0)
+            .and_then(|x| self.ir.object(x))
+            .and_then(|x| x.value.as_ref());
         m.op == Operation::Fill
             && match v {
                 Some(mapal_ir::Value::F32(x)) => x.to_bits() == 0,
@@ -3064,15 +3254,17 @@ impl<'a> FnEmit<'a> {
     /// Function exit: free every buffer still held (a no-op on freed slots).
     pub(super) fn resident_teardown(&mut self) {
         let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
-        let entry = rungs.arena && rungs.entry_arena && self.resident.is_some() && self.entry_arena();
+        let entry =
+            rungs.arena && rungs.entry_arena && self.resident.is_some() && self.entry_arena();
         // `async-h2d`: every upload is enqueued without a host wait (the
         // runtime stages the source), so no upload is a sync point: the trip
         // waits only at a copy-out, which exists only where a host morphism
         // reads a device value (`upload`/`keep`/`elem` in the plan).
         if rungs.async_h2d && self.resident.is_some() {
-            self.body = self
-                .body
-                .replace("call void @mapal_gpu_h2d(", "call void @mapal_gpu_h2d_async(");
+            self.body = self.body.replace(
+                "call void @mapal_gpu_h2d(",
+                "call void @mapal_gpu_h2d_async(",
+            );
         }
         // Pins end with the frame they pinned.
         if self.body.contains("@mapal_gpu_pin(") {

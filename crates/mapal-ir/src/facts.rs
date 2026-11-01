@@ -15,8 +15,8 @@ use slotmap::SecondaryMap;
 
 use crate::algo::{
     BoundsProof, CellSite, Delta, ElemPlan, EmissionPlan, FootprintPlan, GuardSite, LastUsePlan,
-    LoopPlan, LoopScc, MovePlan, PathPlan, PrecisionPlan, RadixForm, RowFoldSite, TilePlan, TileSite,
-    TripSplit,
+    LoopPlan, LoopScc, MovePlan, PathPlan, PrecisionPlan, RadixForm, RowFoldSite, TilePlan,
+    TileSite, TripSplit,
 };
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId};
 

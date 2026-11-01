@@ -2291,7 +2291,9 @@ impl TargetProfile {
             .collect();
         let mut r = crate::GpuRungs::ALL;
         for d in GPU_RUNGS_OFF {
-            if same.contains(&d.profile) && d.fill.covers(warps_per_scheduler) && d.face.covers(face)
+            if same.contains(&d.profile)
+                && d.fill.covers(warps_per_scheduler)
+                && d.face.covers(face)
             {
                 *r.rung(d.rung).expect("a GpuRungs name") = false;
             }
@@ -2664,12 +2666,22 @@ impl TargetProfile {
     /// take falls back to the derived tile, never to another kernel class.
     pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
         let q = self.gpu()?.geom;
-        self.wgmma_tile_at(rows, c, k, q.wg_n, q.wg_groups).or_else(|| {
-            (q.wg_n + q.wg_groups > 0).then(|| self.wgmma_tile_at(rows, c, k, 0, 0)).flatten()
-        })
+        self.wgmma_tile_at(rows, c, k, q.wg_n, q.wg_groups)
+            .or_else(|| {
+                (q.wg_n + q.wg_groups > 0)
+                    .then(|| self.wgmma_tile_at(rows, c, k, 0, 0))
+                    .flatten()
+            })
     }
 
-    fn wgmma_tile_at(&self, rows: u64, c: u64, k: u64, wg_n: u64, wg_groups: u64) -> Option<GpuWgmmaTile> {
+    fn wgmma_tile_at(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wg_n: u64,
+        wg_groups: u64,
+    ) -> Option<GpuWgmmaTile> {
         let g = self.gpu()?;
         if !g.has_wgmma() {
             return None;
@@ -2693,8 +2705,12 @@ impl TargetProfile {
                 }
                 let cap = 2 * (g.regs_per_thread - frag_regs);
                 // site-geometry B4: a forced `n` that divides the rows and fits.
-                let forced_n = Some(wg_n)
-                    .filter(|&n| n > 0 && n % WGMMA_N_STEP == 0 && n <= cap.min(WGMMA_N_MAX) && rows.is_multiple_of(n));
+                let forced_n = Some(wg_n).filter(|&n| {
+                    n > 0
+                        && n % WGMMA_N_STEP == 0
+                        && n <= cap.min(WGMMA_N_MAX)
+                        && rows.is_multiple_of(n)
+                });
                 let mut n = forced_n.or_else(|| fit_n(cap))?;
                 let resident = g.regs_per_sm / regs(n, bk);
                 let per_block = (resident / wg_threads)
@@ -2702,7 +2718,10 @@ impl TargetProfile {
                     .max(1);
                 let forced_g = Some(wg_groups).filter(|&x| x.is_power_of_two() && x <= per_block);
                 let mut groups = forced_g.unwrap_or(1 << per_block.ilog2());
-                while forced_n.is_none() && forced_g.is_none() && (rows / n) * (c / (groups * WGMMA_M)) < g.sms {
+                while forced_n.is_none()
+                    && forced_g.is_none()
+                    && (rows / n) * (c / (groups * WGMMA_M)) < g.sms
+                {
                     if groups > 1 {
                         groups /= 2;
                     } else if let Some(m) = fit_n(n / 2) {
@@ -2808,7 +2827,8 @@ impl TargetProfile {
         // The rung table's rows were measured on grids this geometry keys at
         // the seed row (`resident` 2, nothing forced): a `--geom=` arm or a
         // searched table row moves the launch, never which rows apply.
-        self.with_geom(GEOM).gpu_tile_with(rows, c, k, elem, wide, r)
+        self.with_geom(GEOM)
+            .gpu_tile_with(rows, c, k, elem, wide, r)
     }
 
     /// This profile with its GPU part's geometry row replaced by `geom`.
@@ -2874,14 +2894,22 @@ impl TargetProfile {
         split: u64,
     ) -> Option<GpuTile> {
         let q = self.gpu()?.geom;
-        self.tile_split_at(rows, c, k, elem, wide, r, split).or_else(|| {
-            (q.tm + q.tn + q.warps + q.bk > 0)
-                .then(|| {
-                    let derived = Geom { tm: 0, tn: 0, warps: 0, bk: 0, ..q };
-                    self.with_geom(derived).tile_split_at(rows, c, k, elem, wide, r, split)
-                })
-                .flatten()
-        })
+        self.tile_split_at(rows, c, k, elem, wide, r, split)
+            .or_else(|| {
+                (q.tm + q.tn + q.warps + q.bk > 0)
+                    .then(|| {
+                        let derived = Geom {
+                            tm: 0,
+                            tn: 0,
+                            warps: 0,
+                            bk: 0,
+                            ..q
+                        };
+                        self.with_geom(derived)
+                            .tile_split_at(rows, c, k, elem, wide, r, split)
+                    })
+                    .flatten()
+            })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2935,7 +2963,11 @@ impl TargetProfile {
                 return None;
             }
             let twice = 2 * tm * tn * e.div_ceil(4);
-            held = if wide || twice > g.regs_per_thread { fma_held_regs(tm, tn, e) } else { 0 };
+            held = if wide || twice > g.regs_per_thread {
+                fma_held_regs(tm, tn, e)
+            } else {
+                0
+            };
             regs_est = if held > 0 { held } else { twice };
         }
         let under_warps =
@@ -2953,7 +2985,9 @@ impl TargetProfile {
 
         let threads = match q.warps {
             0 => block_threads(g, regs_est),
-            w if (w * g.warp).is_power_of_two() && w * g.warp <= g.max_threads_per_block => w * g.warp,
+            w if (w * g.warp).is_power_of_two() && w * g.warp <= g.max_threads_per_block => {
+                w * g.warp
+            }
             _ => return None,
         };
         // The block tile square-most (`ty·tm ≈ tx·tn`) for the wide or a forced
@@ -3071,8 +3105,14 @@ impl TargetProfile {
         let Some(gpu) = self.gpu() else {
             return g.blocks_per_sm;
         };
-        let regs = if g.held > 0 { g.held } else { square_register_tile(gpu, elem_bytes(elem)).1 };
-        residency(gpu, regs, g.threads().max(1)).max(g.blocks_per_sm).max(1)
+        let regs = if g.held > 0 {
+            g.held
+        } else {
+            square_register_tile(gpu, elem_bytes(elem)).1
+        };
+        residency(gpu, regs, g.threads().max(1))
+            .max(g.blocks_per_sm)
+            .max(1)
     }
 
     /// **S62/S63 split-K sizing (ADR-0040 D4, gap map M1): how many contiguous
@@ -3106,9 +3146,7 @@ impl TargetProfile {
         };
         (1..=panels.min(wave / blocks.max(1)))
             .rev()
-            .find(|&d| {
-                panels.is_multiple_of(d) && (!workspace || d * cells * elem <= g.l2_bytes)
-            })
+            .find(|&d| panels.is_multiple_of(d) && (!workspace || d * cells * elem <= g.l2_bytes))
             .unwrap_or(1)
     }
 
@@ -3740,8 +3778,17 @@ pub const GEOM: Geom = Geom {
 pub type GeomOver = [Option<u64>; Geom::NAMES.len()];
 
 impl Geom {
-    pub const NAMES: [&'static str; 9] =
-        ["resident", "split", "tm", "tn", "warps", "bk", "stages", "wg_n", "wg_groups"];
+    pub const NAMES: [&'static str; 9] = [
+        "resident",
+        "split",
+        "tm",
+        "tn",
+        "warps",
+        "bk",
+        "stages",
+        "wg_n",
+        "wg_groups",
+    ];
 
     /// The knob called `name`, `None` for an unknown name.
     pub fn knob(&mut self, name: &str) -> Option<&mut u64> {
@@ -5480,11 +5527,15 @@ mod tests {
         let mut seen = 0;
         for p in GPU_MEASURED {
             let on = crate::GpuRungs::ALL;
-            let off = crate::GpuRungs { fit_first: false, ..on };
+            let off = crate::GpuRungs {
+                fit_first: false,
+                ..on
+            };
             let t = |r| p.gpu_tile_with(64, 128 * 257, 1024, &f32, false, r);
             if let Some(o) = t(off) {
                 seen += 1;
-                let n = t(on).unwrap_or_else(|| panic!("{}: fit-first lost OFF's tile {o:?}", p.name));
+                let n =
+                    t(on).unwrap_or_else(|| panic!("{}: fit-first lost OFF's tile {o:?}", p.name));
                 assert!(64 % n.bm() == 0 && (128 * 257) % n.bn() == 0, "{}", p.name);
             }
             // tm = 3 is no power of two: the derived tile stands.
@@ -5494,14 +5545,20 @@ mod tests {
                 g.geom.resident = 4;
             }
             let r = crate::GpuRungs::default();
-            let derived = p.with_geom(Geom { resident: 4, ..GEOM });
+            let derived = p.with_geom(Geom {
+                resident: 4,
+                ..GEOM
+            });
             assert_eq!(
                 forced.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
                 derived.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
                 "{}",
                 p.name
             );
-            assert_eq!(forced.gpu_tile(4096, 4096, 4096, &f32, false, true), p.gpu_tile(4096, 4096, 4096, &f32, false, true));
+            assert_eq!(
+                forced.gpu_tile(4096, 4096, 4096, &f32, false, true),
+                p.gpu_tile(4096, 4096, 4096, &f32, false, true)
+            );
         }
         assert!(seen > 0, "OFF tiles the shape somewhere");
     }
@@ -5521,7 +5578,11 @@ mod tests {
                 .unwrap_or_else(|| panic!("knobs.json has no `{}` row", p.name));
             for n in Geom::NAMES {
                 let v = *g.knob(n).expect("a listed knob");
-                assert!(row.contains(&format!("\"{n}\": [{v}")), "{}: `{n}` must list {v} first", p.name);
+                assert!(
+                    row.contains(&format!("\"{n}\": [{v}")),
+                    "{}: `{n}` must list {v} first",
+                    p.name
+                );
             }
         }
         let mut over = GeomOver::default();

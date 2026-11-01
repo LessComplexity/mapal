@@ -18,7 +18,11 @@ mod testgen;
 
 fn lower(src: &str) -> CategoryIr {
     let po = mapal_syntax::parse(src);
-    assert!(po.diagnostics.is_empty(), "parse: {:?}\n{src}", po.diagnostics);
+    assert!(
+        po.diagnostics.is_empty(),
+        "parse: {:?}\n{src}",
+        po.diagnostics
+    );
     let ir = mapal_lower::lower(src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}\n{src}"));
     mapal_rewrite::rewrite(ir).ir
 }
@@ -34,7 +38,12 @@ fn emission(ir: &CategoryIr, target: &'static str, on: bool) -> mapal_backend_ll
     for r in ["fill-wave", "row-split"] {
         *(if on { gpu.on.rung(r) } else { gpu.off.rung(r) }).expect("rung") = true;
     }
-    let opts = EmitOpts { host: "generic", target, gpu, ..EmitOpts::default() };
+    let opts = EmitOpts {
+        host: "generic",
+        target,
+        gpu,
+        ..EmitOpts::default()
+    };
     emit_detailed(ir, &opts).expect("emits")
 }
 
@@ -42,14 +51,25 @@ fn emission(ir: &CategoryIr, target: &'static str, on: bool) -> mapal_backend_ll
 /// `; mapal.plan` line.
 fn splits(dev: Option<&str>) -> Vec<(u64, u64, u64, u64)> {
     let field = |l: &str, k: &str| -> u64 {
-        l.split(' ').find_map(|f| f.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or(0)
+        l.split(' ')
+            .find_map(|f| f.strip_prefix(k))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
     };
     dev.unwrap_or("")
         .lines()
-        .filter(|l| l.starts_with("; mapal.plan") && (l.contains("combine=atomic") || l.contains("combine=splitk")))
+        .filter(|l| {
+            l.starts_with("; mapal.plan")
+                && (l.contains("combine=atomic") || l.contains("combine=splitk"))
+        })
         .map(|l| {
             let s = field(l, "S=");
-            (field(l, "rows="), field(l, "gx=") * field(l, "gy=") * s, field(l, "block=").div_ceil(32), s)
+            (
+                field(l, "rows="),
+                field(l, "gx=") * field(l, "gy=") * s,
+                field(l, "block=").div_ceil(32),
+                s,
+            )
         })
         .collect()
 }
@@ -66,20 +86,40 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
         let (src, (m, ..)) = testgen::geom_src(&p);
         let ir = lower(&src);
         let target = targets[z % targets.len()];
-        let fill = resolve_profile(target).and_then(|t| t.gpu()).expect("a GPU part").fill_warps();
+        let fill = resolve_profile(target)
+            .and_then(|t| t.gpu())
+            .expect("a GPU part")
+            .fill_warps();
         let (on, off) = (emission(&ir, target, true), emission(&ir, target, false));
         let (s_on, s_off) = (splits(on.device.as_deref()), splits(off.device.as_deref()));
         launches_give_planned_smem(&on, &format!("#{z} {target}\n{src}"));
         // The re-sized split kernel still walks each partition's `k / S` in
         // whole panels (`fill-wave` keeps the unsplit launch otherwise).
-        for l in on.device.as_deref().unwrap_or("").lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile ")) {
-            let f = |k: &str| -> u64 { l.split(' ').find_map(|x| x.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or(0) };
+        for l in on
+            .device
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile "))
+        {
+            let f = |k: &str| -> u64 {
+                l.split(' ')
+                    .find_map(|x| x.strip_prefix(k))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0)
+            };
             if f("S=") > 1 {
-                assert!((f("k=") / f("S=")).is_multiple_of(f("bk=")), "#{z} {target}: bk | k/S\n{l}\n{src}");
+                assert!(
+                    (f("k=") / f("S=")).is_multiple_of(f("bk=")),
+                    "#{z} {target}: bk | k/S\n{l}\n{src}"
+                );
             }
         }
         // OFF never cuts a retained row: its row kernel is the ordered one.
-        assert!(!p.retained || s_off.iter().all(|s| s.0 > 1 || m == 1), "#{z} {target}\n{src}");
+        assert!(
+            !p.retained || s_off.iter().all(|s| s.0 > 1 || m == 1),
+            "#{z} {target}\n{src}"
+        );
         for &(r, grid, warps, s) in &s_on {
             assert!(s > 1, "#{z}");
             if p.retained && r == 1 {
@@ -92,7 +132,10 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
             }
             if grid * warps >= fill {
                 filled += 1;
-                assert!(s % 2 == 1 || (grid / 2) * warps < fill, "#{z} {target} S={s}\n{src}");
+                assert!(
+                    s % 2 == 1 || (grid / 2) * warps < fill,
+                    "#{z} {target} S={s}\n{src}"
+                );
             } else {
                 short += 1;
             }
@@ -102,13 +145,22 @@ fn fill_wave_and_row_split_counted_and_valued_on_unseen_programs() {
         }
         if let Some(cc) = &clang {
             let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
-            let (x, y) = (emu::run_emulated(cc, &on.text, &dev(&on)), emu::run_emulated(cc, &off.text, &dev(&off)));
-            assert_eq!(x.lines().count(), 3, "#{z}: the program printed\n{x}\n{src}");
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, &dev(&on)),
+                emu::run_emulated(cc, &off.text, &dev(&off)),
+            );
+            assert_eq!(
+                x.lines().count(),
+                3,
+                "#{z}: the program printed\n{x}\n{src}"
+            );
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
         }
     }
-    eprintln!("site-geometry: {filled} filled splits, {short} short, {rows} row splits, {same} unchanged, {valued} valued");
+    eprintln!(
+        "site-geometry: {filled} filled splits, {short} short, {rows} row splits, {same} unchanged, {valued} valued"
+    );
     assert!(filled >= 8, "the generator reaches fill-wave ({filled})");
     assert!(rows >= 4, "the generator reaches row-split ({rows})");
 }
@@ -120,14 +172,36 @@ fn launches_give_planned_smem(e: &mapal_backend_llvm::Emission, ctx: &str) {
     let dev = e.device.as_deref().unwrap_or("");
     let planned = |id: i64| {
         let name = format!("kernel=mapal_tile_{:016x} ", id as u64);
-        dev.lines().find(|l| l.starts_with("; mapal.plan") && l.contains(&name)).and_then(|l| {
-            l.split(' ').find_map(|f| f.strip_prefix("smem=")).and_then(|v| v.parse::<u64>().ok())
-        })
+        dev.lines()
+            .find(|l| l.starts_with("; mapal.plan") && l.contains(&name))
+            .and_then(|l| {
+                l.split(' ')
+                    .find_map(|f| f.strip_prefix("smem="))
+                    .and_then(|v| v.parse::<u64>().ok())
+            })
     };
-    for l in e.text.lines().filter(|l| l.contains("call void @mapal_gpu_launch")) {
-        let args = l.split('(').nth(1).unwrap_or("").split(')').next().unwrap_or("");
-        let id = args.split(", ").next().and_then(|a| a.strip_prefix("i64 ")).and_then(|v| v.parse::<i64>().ok());
-        let smem = args.rsplit(", ").next().and_then(|a| a.strip_prefix("i32 ")).and_then(|v| v.parse::<u64>().ok());
+    for l in e
+        .text
+        .lines()
+        .filter(|l| l.contains("call void @mapal_gpu_launch"))
+    {
+        let args = l
+            .split('(')
+            .nth(1)
+            .unwrap_or("")
+            .split(')')
+            .next()
+            .unwrap_or("");
+        let id = args
+            .split(", ")
+            .next()
+            .and_then(|a| a.strip_prefix("i64 "))
+            .and_then(|v| v.parse::<i64>().ok());
+        let smem = args
+            .rsplit(", ")
+            .next()
+            .and_then(|a| a.strip_prefix("i32 "))
+            .and_then(|v| v.parse::<u64>().ok());
         if let (Some(smem), Some(want)) = (smem, id.and_then(planned)) {
             assert_eq!(smem, want, "launch smem != plan smem\n{l}\n{ctx}");
         }
@@ -164,8 +238,21 @@ fn epilogue_launch_keeps_its_own_tile_beside_a_split() {
     let ir = lower(src);
     let mut split = 0;
     for target in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"] {
-        let e = emit_detailed(&ir, &EmitOpts { host: "generic", target, ..EmitOpts::default() }).expect("emits");
-        split += e.device.as_deref().unwrap_or("").matches("combine=atomic").count();
+        let e = emit_detailed(
+            &ir,
+            &EmitOpts {
+                host: "generic",
+                target,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits");
+        split += e
+            .device
+            .as_deref()
+            .unwrap_or("")
+            .matches("combine=atomic")
+            .count();
         launches_give_planned_smem(&e, target);
     }
     assert!(split > 0, "a sibling site's fold is cut somewhere");
@@ -174,15 +261,30 @@ fn epilogue_launch_keeps_its_own_tile_beside_a_split() {
 /// `(kernel, rows, blocks, block, tm, tn, ty)` of every FMA tile kernel.
 fn tiles(dev: Option<&str>) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
     let field = |l: &str, k: &str| -> u64 {
-        l.split(' ').find_map(|f| f.strip_prefix(k)).and_then(|v| v.parse().ok()).unwrap_or(0)
+        l.split(' ')
+            .find_map(|f| f.strip_prefix(k))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
     };
     dev.unwrap_or("")
         .lines()
         .filter(|l| l.starts_with("; mapal.plan") && l.contains(" kind=tile "))
         .map(|l| {
-            let name = l.split(' ').find_map(|f| f.strip_prefix("kernel=")).unwrap_or("").to_string();
+            let name = l
+                .split(' ')
+                .find_map(|f| f.strip_prefix("kernel="))
+                .unwrap_or("")
+                .to_string();
             let f = |k| field(l, k);
-            (name, f("rows="), f("gx=") * f("gy="), f("block="), f("tm="), f("tn="), f("ty="))
+            (
+                name,
+                f("rows="),
+                f("gx=") * f("gy="),
+                f("block="),
+                f("tm="),
+                f("tn="),
+                f("ty="),
+            )
         })
         .collect()
 }
@@ -194,7 +296,10 @@ fn tiles(dev: Option<&str>) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
 #[test]
 fn fit_first_counted_and_valued_on_unseen_programs() {
     let mut runner = TestRunner::deterministic();
-    let (radix, geom) = (testgen::radix_prog_strategy(), testgen::geom_prog_strategy());
+    let (radix, geom) = (
+        testgen::radix_prog_strategy(),
+        testgen::geom_prog_strategy(),
+    );
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
     let (mut moved, mut same, mut valued) = (0, 0, 0);
@@ -204,19 +309,41 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
             // (A few rows over many lanes: the shape the rule moves.)
             _ => {
                 let p = geom.new_tree(&mut runner).unwrap().current();
-                testgen::geom_src(&testgen::GeomProg { wide: true, retained: false, ..p }).0
+                testgen::geom_src(&testgen::GeomProg {
+                    wide: true,
+                    retained: false,
+                    ..p
+                })
+                .0
             }
         };
         let ir = lower(&src);
         let target = targets[z / 2 % targets.len()];
-        let sms = resolve_profile(target).and_then(|t| t.gpu()).expect("a GPU part").sms;
+        let sms = resolve_profile(target)
+            .and_then(|t| t.gpu())
+            .expect("a GPU part")
+            .sms;
         let at = |on: bool| {
             let mut gpu = GpuArms::default();
             for r in ["async", "pdl", "streams", "place"] {
                 *gpu.off.rung(r).expect("rung") = true;
             }
-            *(if on { gpu.on.rung("fit-first") } else { gpu.off.rung("fit-first") }).expect("rung") = true;
-            emit_detailed(&ir, &EmitOpts { host: "generic", target, gpu, ..EmitOpts::exact() }).expect("emits")
+            *(if on {
+                gpu.on.rung("fit-first")
+            } else {
+                gpu.off.rung("fit-first")
+            })
+            .expect("rung") = true;
+            emit_detailed(
+                &ir,
+                &EmitOpts {
+                    host: "generic",
+                    target,
+                    gpu,
+                    ..EmitOpts::exact()
+                },
+            )
+            .expect("emits")
         };
         let (on, off) = (at(true), at(false));
         if on.device == off.device {
@@ -226,21 +353,33 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
         moved += 1;
         let offs = tiles(off.device.as_deref());
         for (name, rows, grid, block, tm, tn, ty) in tiles(on.device.as_deref()) {
-            let Some(o) = offs.iter().find(|o| o.0 == name) else { continue };
+            let Some(o) = offs.iter().find(|o| o.0 == name) else {
+                continue;
+            };
             if (grid, block, ty) == (o.2, o.3, o.6) {
                 continue;
             }
-            assert!(ty * tm <= rows && grid >= sms, "#{z} {target} {name}\n{src}");
+            assert!(
+                ty * tm <= rows && grid >= sms,
+                "#{z} {target} {name}\n{src}"
+            );
             // OFF's halving lost the register tile (`cell-fill`'s 1 × 1), or
             // kept it on fewer threads a block.
             if (o.4, o.5) != (1, 1) {
-                assert_eq!((tm, tn, grid * block), (o.4, o.5, o.2 * o.3), "#{z} {target} {name}\n{src}");
+                assert_eq!(
+                    (tm, tn, grid * block),
+                    (o.4, o.5, o.2 * o.3),
+                    "#{z} {target} {name}\n{src}"
+                );
                 assert!(block > o.3, "#{z} {target} {name}: larger blocks\n{src}");
             }
         }
         if let Some(cc) = &clang {
             let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
-            let (x, y) = (emu::run_emulated(cc, &on.text, &dev(&on)), emu::run_emulated(cc, &off.text, &dev(&off)));
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, &dev(&on)),
+                emu::run_emulated(cc, &off.text, &dev(&off)),
+            );
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
         }
@@ -252,9 +391,19 @@ fn fit_first_counted_and_valued_on_unseen_programs() {
 /// The candidates `benches/gpu/knobs.json` lists for `knob` on `arch`.
 fn candidates(arch: &str, knob: &str) -> Vec<u64> {
     let json = include_str!("../../../../benches/gpu/knobs.json");
-    let row = json.split(&format!("\"{arch}\":")).nth(1).and_then(|r| r.split('}').next()).expect("an arch row");
-    let list = row.split(&format!("\"{knob}\": [")).nth(1).and_then(|r| r.split(']').next()).expect("a knob");
-    list.split(',').map(|v| v.trim().parse().expect("a count")).collect()
+    let row = json
+        .split(&format!("\"{arch}\":"))
+        .nth(1)
+        .and_then(|r| r.split('}').next())
+        .expect("an arch row");
+    let list = row
+        .split(&format!("\"{knob}\": ["))
+        .nth(1)
+        .and_then(|r| r.split(']').next())
+        .expect("a knob");
+    list.split(',')
+        .map(|v| v.trim().parse().expect("a count"))
+        .collect()
 }
 
 /// ADR-0034 D4 (site-geometry B4): every knob candidate the offline search
@@ -264,7 +413,17 @@ fn candidates(arch: &str, knob: &str) -> Vec<u64> {
 /// kernel. (A `cp.async` kernel — forced stages — is counted, not emulated.)
 #[test]
 fn knob_candidates_value_invariant_on_unseen_programs() {
-    const KNOBS: [&str; 9] = ["resident", "split", "tm", "tn", "warps", "bk", "stages", "wg_n", "wg_groups"];
+    const KNOBS: [&str; 9] = [
+        "resident",
+        "split",
+        "tm",
+        "tn",
+        "warps",
+        "bk",
+        "stages",
+        "wg_n",
+        "wg_groups",
+    ];
     let mut runner = TestRunner::deterministic();
     let strat = testgen::geom_prog_strategy();
     let clang = emu::clang();
@@ -272,21 +431,33 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
     let (mut moved, mut valued) = (0, 0);
     for z in 0..48usize {
         let p = strat.new_tree(&mut runner).unwrap().current();
-        let src = testgen::geom_src(&testgen::GeomProg { wide: false, ..p.clone() }).0;
+        let src = testgen::geom_src(&testgen::GeomProg {
+            wide: false,
+            ..p.clone()
+        })
+        .0;
         let ir = lower(&src);
         let target = targets[z % targets.len()];
         let knob = KNOBS[z / targets.len() % KNOBS.len()];
         let cands = candidates(target, knob);
-        let Some(&v) = cands.get(1 + usize::from(p.law[0]) % cands.len().saturating_sub(1).max(1)) else {
+        let Some(&v) = cands.get(1 + usize::from(p.law[0]) % cands.len().saturating_sub(1).max(1))
+        else {
             continue;
         };
         let at = |forced: bool| {
-            let mut opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            let mut opts = EmitOpts {
+                host: "generic",
+                target,
+                ..EmitOpts::default()
+            };
             for r in ["async", "pdl", "streams", "place"] {
                 *opts.gpu.off.rung(r).expect("rung") = true;
             }
             if forced {
-                assert!(mapal_backend_llvm::flags::apply(&mut opts, &format!("--geom={knob}={v}")).expect("a knob"));
+                assert!(
+                    mapal_backend_llvm::flags::apply(&mut opts, &format!("--geom={knob}={v}"))
+                        .expect("a knob")
+                );
             }
             emit_detailed(&ir, &opts).expect("emits")
         };
@@ -297,7 +468,10 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
         moved += 1;
         let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
         if let (Some(cc), false) = (&clang, dev(&on).contains("call void @llvm.nvvm.cp.async")) {
-            let (x, y) = (emu::run_emulated(cc, &on.text, &dev(&on)), emu::run_emulated(cc, &off.text, &dev(&off)));
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, &dev(&on)),
+                emu::run_emulated(cc, &off.text, &dev(&off)),
+            );
             assert_eq!(x, y, "#{z} {target} --geom={knob}={v}\n{src}");
             valued += 1;
         }
@@ -317,40 +491,86 @@ fn knob_candidates_value_invariant_on_unseen_programs() {
 fn tf32_radix_counted_on_unseen_programs() {
     let mut runner = TestRunner::deterministic();
     let strat = testgen::radix_prog_strategy();
-    let llc = std::process::Command::new("llc").arg("--version").output().is_ok();
-    let targets = [("rtx-4090", "sm_89"), ("h100-pcie", "sm_90a"), ("rtx-5090", "sm_120"), ("rtx-3090", "sm_86")];
+    let llc = std::process::Command::new("llc")
+        .arg("--version")
+        .output()
+        .is_ok();
+    let targets = [
+        ("rtx-4090", "sm_89"),
+        ("h100-pcie", "sm_90a"),
+        ("rtx-5090", "sm_120"),
+        ("rtx-3090", "sm_86"),
+    ];
     let (mut tensor, mut ffma, mut assembled) = (0, 0, 0);
     // (Few generated convolutions fit a tensor tile: `k = cin·taps` a whole
     // number of `mma` steps, `cout` whole m16 tiles.)
     for z in 0..128 {
         let p = strat.new_tree(&mut runner).unwrap().current();
-        let src = testgen::radix_src(&p).0.replacen("(0.0, k_y) -> fold {", "(0.0, k_y) -> fold: tf32 | f32 {", 1);
+        let src = testgen::radix_src(&p).0.replacen(
+            "(0.0, k_y) -> fold {",
+            "(0.0, k_y) -> fold: tf32 | f32 {",
+            1,
+        );
         let ir = lower(&src);
         let (target, sm) = targets[z % targets.len()];
         let at = |on: bool| {
             let mut gpu = GpuArms::default();
             *gpu.off.rung("place").expect("rung") = true;
-            *(if on { gpu.on.rung("tf32-radix") } else { gpu.off.rung("tf32-radix") }).expect("rung") = true;
-            emit_detailed(&ir, &EmitOpts { host: "generic", target, gpu, ..EmitOpts::default() })
-                .expect("emits")
-                .device
-                .unwrap_or_default()
+            *(if on {
+                gpu.on.rung("tf32-radix")
+            } else {
+                gpu.off.rung("tf32-radix")
+            })
+            .expect("rung") = true;
+            emit_detailed(
+                &ir,
+                &EmitOpts {
+                    host: "generic",
+                    target,
+                    gpu,
+                    ..EmitOpts::default()
+                },
+            )
+            .expect("emits")
+            .device
+            .unwrap_or_default()
         };
         let (on, off) = (at(true), at(false));
         let radix = |d: &str, kind: &str| {
-            d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" radix=") && l.contains(kind)).count()
+            d.lines()
+                .filter(|l| {
+                    l.starts_with("; mapal.plan") && l.contains(" radix=") && l.contains(kind)
+                })
+                .count()
         };
-        assert_eq!(radix(&off, " kind=mma ") + radix(&off, " kind=wgmma "), 0, "#{z} {target} OFF\n{src}");
-        assert_eq!(radix(&on, " kind=wgmma "), 0, "#{z} {target}: no wgmma radix tile\n{src}");
+        assert_eq!(
+            radix(&off, " kind=mma ") + radix(&off, " kind=wgmma "),
+            0,
+            "#{z} {target} OFF\n{src}"
+        );
+        assert_eq!(
+            radix(&on, " kind=wgmma "),
+            0,
+            "#{z} {target}: no wgmma radix tile\n{src}"
+        );
         if radix(&on, " kind=mma ") > 0 {
             tensor += 1;
-            assert!(on.contains("call void @llvm.nvvm.cp.async.ca.shared.global.4("), "#{z} {target}\n{src}");
+            assert!(
+                on.contains("call void @llvm.nvvm.cp.async.ca.shared.global.4("),
+                "#{z} {target}\n{src}"
+            );
             if llc {
                 let dir = tempfile::tempdir().unwrap();
                 let ll = dir.path().join("d.ll");
                 std::fs::write(&ll, &on).unwrap();
                 let st = std::process::Command::new("llc")
-                    .args(["-mtriple=nvptx64-nvidia-cuda", &format!("-mcpu={sm}"), "-mattr=+ptx87", "-o", "/dev/null"])
+                    .args([
+                        "-mtriple=nvptx64-nvidia-cuda",
+                        &format!("-mcpu={sm}"),
+                        "-mattr=+ptx87",
+                        "-o",
+                        "/dev/null",
+                    ])
                     .arg(&ll)
                     .status()
                     .unwrap();
@@ -365,5 +585,8 @@ fn tf32_radix_counted_on_unseen_programs() {
         }
     }
     eprintln!("tf32-radix: {tensor} tensor-core, {ffma} not, {assembled} assembled");
-    assert!(tensor >= 8, "the generator reaches the radix mma tile ({tensor})");
+    assert!(
+        tensor >= 8,
+        "the generator reaches the radix mma tile ({tensor})"
+    );
 }

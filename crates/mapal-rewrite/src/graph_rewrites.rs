@@ -360,7 +360,11 @@ fn cse_key(
     // ADR-0041 D1: a product's admitted set is part of its identity — a `tf32`
     // product and an f32 one over the same operands never merge.
     let p = ir.precision(m);
-    let p = if p == mapal_ir::Precision::F32 { String::new() } else { format!("|{p:?}") };
+    let p = if p == mapal_ir::Precision::F32 {
+        String::new()
+    } else {
+        format!("|{p:?}")
+    };
     Some(format!("{}|{ty}|{feeders:?}{p}", op_tag(morph.op, fseq)))
 }
 

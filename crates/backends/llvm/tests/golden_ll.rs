@@ -285,7 +285,14 @@ fn main() {
     };
     let mut gpu = GpuArms::default();
     *gpu.off.rung("by-ref").expect("rung") = true;
-    let s64 = emit_with_opts(&lower_src(src), &EmitOpts { gpu, ..EmitOpts::exact() }).unwrap();
+    let s64 = emit_with_opts(
+        &lower_src(src),
+        &EmitOpts {
+            gpu,
+            ..EmitOpts::exact()
+        },
+    )
+    .unwrap();
     let build = build_of(&s64);
     assert_eq!(
         build.matches("alloca [4 x i32]").count(),
@@ -928,7 +935,10 @@ fn tile_contract_flags_are_opt_in() {
     assert!(!plain.contains("fadd contract"));
     assert!(contracted.contains("fmul contract float"));
     assert!(contracted.contains("fadd contract float"));
-    assert!(!contracted.contains("reassoc"), "a sequential order never reassociates");
+    assert!(
+        !contracted.contains("reassoc"),
+        "a sequential order never reassociates"
+    );
 }
 
 /// ADR-0040 D1/D4: the default face's tiled steps carry `reassoc contract`

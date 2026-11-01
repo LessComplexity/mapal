@@ -84,7 +84,10 @@ struct Emitter<'a> {
 
 /// A body's `: compute` as the IR's set; `outer` where it has none.
 fn ir_prec(p: Option<syn::Precision>, outer: mapal_ir::Precision) -> mapal_ir::Precision {
-    p.map_or(outer, |p| mapal_ir::Precision { f32: p.f32, tf32: p.tf32 })
+    p.map_or(outer, |p| mapal_ir::Precision {
+        f32: p.f32,
+        tf32: p.tf32,
+    })
 }
 
 /// Map a builder `IrError` to an L-code diagnostic at `span`. User-diagnosable
@@ -351,7 +354,9 @@ fn build_bodies(
 /// Collect every map/fold stage with its body/params/op, in source order,
 /// recursing through statements/guards/fanouts but NOT into nested map/fold
 /// bodies (the recursion in `build_bodies` handles nesting).
-fn collect_mapfold_stages(block: &Block) -> Vec<(&Stage, &Block, &[syn::Name], CollOp, Option<syn::Precision>)> {
+fn collect_mapfold_stages(
+    block: &Block,
+) -> Vec<(&Stage, &Block, &[syn::Name], CollOp, Option<syn::Precision>)> {
     let mut out = Vec::new();
     collect_block(block, &mut out);
     out
@@ -359,7 +364,13 @@ fn collect_mapfold_stages(block: &Block) -> Vec<(&Stage, &Block, &[syn::Name], C
 
 fn collect_block<'a>(
     block: &'a Block,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp, Option<syn::Precision>)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     let start = out.len();
     for item in &block.items {
@@ -380,7 +391,13 @@ fn collect_block<'a>(
 
 fn collect_stmt<'a>(
     stmt: &'a Stmt,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp, Option<syn::Precision>)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     match &stmt.kind {
         StmtKind::Chain(c) => collect_chain(c, out),
@@ -392,7 +409,13 @@ fn collect_stmt<'a>(
 
 fn collect_arm<'a>(
     p: &'a ArmPayload,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp, Option<syn::Precision>)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     match p {
         ArmPayload::Chain(c) => collect_chain(c, out),
@@ -402,7 +425,13 @@ fn collect_arm<'a>(
 
 fn collect_chain<'a>(
     chain: &'a Chain,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp, Option<syn::Precision>)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     for stage in &chain.stages {
         match &stage.kind {

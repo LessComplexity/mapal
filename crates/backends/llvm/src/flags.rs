@@ -86,9 +86,11 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // ADR-0041 D7: `--precision=tf32` is gone — a program admits TF32
         // products with `: tf32 | f32` on the body (`-> fold: tf32 | f32 { … }`).
         "--precision=tf32" => {
-            return Err("--precision=tf32 was removed (ADR-0041 D7): write `: tf32 | f32` on the \
+            return Err(
+                "--precision=tf32 was removed (ADR-0041 D7): write `: tf32 | f32` on the \
                         fold, map, loop, seq or fn body"
-                .into());
+                    .into(),
+            );
         }
         // Measurement only: force split-K's partition count (0 = derive), on
         // `splitk` and `splitk-atomic`.

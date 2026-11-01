@@ -96,7 +96,13 @@ fn emit_face(ir: &CategoryIr, base: EmitOpts, off: &[&str]) -> mapal_backend_llv
 /// The `k` of the program's tile site (its fold's array length).
 fn ir_k(ir: &CategoryIr) -> u64 {
     ir.funcs()
-        .flat_map(|(f, _)| ir.tile_plan(f).sites.values().map(|s| s.k).collect::<Vec<_>>())
+        .flat_map(|(f, _)| {
+            ir.tile_plan(f)
+                .sites
+                .values()
+                .map(|s| s.k)
+                .collect::<Vec<_>>()
+        })
         .next()
         .unwrap_or(0)
 }
@@ -182,7 +188,10 @@ fn m16_cell_splits_as_derived_and_off_is_the_ordered_kernel() {
     let (m, n, k) = (16, 2048, 7168);
     let ir = lower(&src(m, n, k));
     let s = derived(m, n, k, true);
-    assert_eq!(s, 7, "128 blocks against 170 SMs × 6 slots, one wave, s | 7168");
+    assert_eq!(
+        s, 7,
+        "128 blocks against 170 SMs × 6 slots, one wave, s | 7168"
+    );
     let (host, dev) = emit(&ir, true, false);
     let l = launches(&host);
     assert_eq!(l.len(), 2, "split + reduce: {l:?}");
@@ -222,7 +231,11 @@ fn fixed_bits_are_the_partitioned_fold_the_oracle_replays() {
     assert!(matches!(rr.outcome, mapal_interp::Outcome::Done(_)));
     let ordered = reference(m, n, k, 1, false);
     assert_eq!(printed(&rr.output), ordered);
-    assert_eq!(derived(m, n, k, true), 12, "one block: every step its own partition");
+    assert_eq!(
+        derived(m, n, k, true),
+        12,
+        "one block: every step its own partition"
+    );
     let s = 4;
     assert_ne!(
         reference(m, n, k, s, false),
@@ -294,7 +307,10 @@ fn default_face_is_within_the_a_priori_bound() {
     let cell_m = 16_777_216.0 + (k - 1) as f64;
     for &got in &out[1..] {
         let err = (f64::from(got) - cell_m).abs();
-        assert!(err <= gamma((k + 1) as f64) * cell_m, "got {got}, |err| {err}");
+        assert!(
+            err <= gamma((k + 1) as f64) * cell_m,
+            "got {got}, |err| {err}"
+        );
     }
 }
 

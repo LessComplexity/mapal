@@ -90,7 +90,10 @@ impl<'a> FnEmit<'a> {
         if !super::gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_map {
             return None;
         }
-        let tiled = self.tile_plan.as_ref().is_some_and(|p| p.sites.contains_key(m));
+        let tiled = self
+            .tile_plan
+            .as_ref()
+            .is_some_and(|p| p.sites.contains_key(m));
         let cell = self
             .resident
             .as_ref()
@@ -142,7 +145,8 @@ impl<'a> FnEmit<'a> {
         } else {
             // `lo + step·⌈(l − lo) / step⌉` when `lo < l` (`l − lo > 0`).
             let s = ou.step;
-            let (gap, up, k, off, at) = (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            let (gap, up, k, off, at) =
+                (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
             self.line(format!("{gap} = sub i64 {l}, {lo}"));
             self.line(format!("{up} = add i64 {gap}, {}", s - 1));
             self.line(format!("{k} = udiv i64 {up}, {s}"));
@@ -363,7 +367,9 @@ impl<'a> FnEmit<'a> {
                 self.line(format!("{ln} = call i32 @llvm.nvvm.read.ptx.sreg.laneid()"));
                 self.line(format!("{l64} = zext i32 {ln} to i64"));
                 let id = match op {
-                    mapal_ir::RowFoldOp::Arith { op: Operation::Mul, .. } => "1.0".to_string(),
+                    mapal_ir::RowFoldOp::Arith {
+                        op: Operation::Mul, ..
+                    } => "1.0".to_string(),
                     mapal_ir::RowFoldOp::Arith { .. } => "-0.0".to_string(),
                     mapal_ir::RowFoldOp::Select { .. } => acc0.clone(),
                 };
@@ -453,7 +459,11 @@ impl<'a> FnEmit<'a> {
                 let code = if op == Operation::Mul { "fmul" } else { "fadd" };
                 self.line(format!("{r} = {code} float {a}, {b}"));
             }
-            mapal_ir::RowFoldOp::Select { cmp, acc_lhs, acc_if_true } => {
+            mapal_ir::RowFoldOp::Select {
+                cmp,
+                acc_lhs,
+                acc_if_true,
+            } => {
                 let pred = match cmp {
                     Operation::Lt => "olt",
                     Operation::Gt => "ogt",

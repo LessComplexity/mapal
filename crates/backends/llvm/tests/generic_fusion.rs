@@ -185,12 +185,25 @@ fn default_face_rows_are_lanes_with_tree_folds() {
             .find(|l| l.starts_with("; mapal.flow kernel="))
             .expect("a flow intent");
         assert!(field(line, "lanes").parse::<u64>().unwrap() >= 32, "{line}");
-        assert_eq!((field(line, "tree"), field(line, "onchip")), ("2", "1"), "{line}");
+        assert_eq!(
+            (field(line, "tree"), field(line, "onchip")),
+            ("2", "1"),
+            "{line}"
+        );
         assert!(dev.contains("@llvm.nvvm.barrier0()"), "{target}");
         let got = emu::run_emulated(&clang, &on.text, dev);
-        assert!(within(&got, &rr.output), "{target}: {got:?} vs {:?}", rr.output);
+        assert!(
+            within(&got, &rr.output),
+            "{target}: {got:?} vs {:?}",
+            rr.output
+        );
         let exact = emission(&ir, target, &[]);
-        let line = exact.device.as_ref().unwrap().lines().find(|l| l.starts_with("; mapal.flow kernel="));
+        let line = exact
+            .device
+            .as_ref()
+            .unwrap()
+            .lines()
+            .find(|l| l.starts_with("; mapal.flow kernel="));
         assert_eq!(line.map(|l| field(l, "tree")), Some("0"), "{target}");
     }
 }
@@ -243,7 +256,8 @@ fn tree_gate_on_generated_chains() {
         fired += 1;
         let rr = run(&ir, 400_000_000);
         for em in [&on, &off] {
-            let got = emu::run_emulated(&clang, &em.text, em.device.as_ref().expect("a device unit"));
+            let got =
+                emu::run_emulated(&clang, &em.text, em.device.as_ref().expect("a device unit"));
             if !within(&got, &rr.output) {
                 findings.push(format!("chain#{z}: {got:?} vs {:?}\n{src}", rr.output));
             }
@@ -621,14 +635,19 @@ fn generic_fusion_chains_values_launches_and_stores() {
                 // The geometry: a row of more than one cell or fold step is a
                 // block of lanes, and every associative fold of a unit is a tree.
                 for l in lines_of(da) {
-                    let w: u64 = field(&l, "unit").trim_start_matches("1x").parse().unwrap_or(1);
+                    let w: u64 = field(&l, "unit")
+                        .trim_start_matches("1x")
+                        .parse()
+                        .unwrap_or(1);
                     let lanes: u64 = field(&l, "lanes").parse().unwrap_or(0);
                     let folds = labels(field(&l, "members"))
                         .iter()
                         .filter(|m| m.contains(":rowfold:"))
                         .count();
                     if (w > 1 || folds > 0) && lanes < 32 {
-                        findings.push(format!("chain#{z}: a unit row of {w} on {lanes} lanes: {l}\n{src}"));
+                        findings.push(format!(
+                            "chain#{z}: a unit row of {w} on {lanes} lanes: {l}\n{src}"
+                        ));
                     }
                     trees += field(&l, "tree").parse::<usize>().unwrap_or(0);
                     onchip += field(&l, "onchip").parse::<usize>().unwrap_or(0);
@@ -771,7 +790,10 @@ fn launched_kernels(host: &str) -> std::collections::BTreeSet<String> {
             "gen" => "mapal_gen",
             _ => continue,
         };
-        let lit: String = args.chars().take_while(|c| *c == '-' || c.is_ascii_digit()).collect();
+        let lit: String = args
+            .chars()
+            .take_while(|c| *c == '-' || c.is_ascii_digit())
+            .collect();
         let id = lit
             .parse::<u64>()
             .unwrap_or_else(|_| lit.parse::<i64>().expect("launch id") as u64);
@@ -826,10 +848,15 @@ fn every_device_kernel_has_a_launch_site() {
 /// within a relative 1e-4 of the larger magnitude (or 1e-4 absolute below 1),
 /// the rest equal.
 fn within(got: &str, want: &str) -> bool {
-    let (g, w): (Vec<&str>, Vec<&str>) = (got.split_whitespace().collect(), want.split_whitespace().collect());
+    let (g, w): (Vec<&str>, Vec<&str>) = (
+        got.split_whitespace().collect(),
+        want.split_whitespace().collect(),
+    );
     g.len() == w.len()
-        && g.iter().zip(&w).all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
-            (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0),
-            _ => a == b,
-        })
+        && g.iter()
+            .zip(&w)
+            .all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
+                (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0),
+                _ => a == b,
+            })
 }

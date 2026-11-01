@@ -195,7 +195,10 @@ impl CategoryIr {
         };
         for m in self.topo_order(f) {
             let morph = &self.morphisms[m];
-            if !matches!(self.objects.get(morph.target).map(|o| &o.ty), Some(Ty::Int { .. })) {
+            if !matches!(
+                self.objects.get(morph.target).map(|o| &o.ty),
+                Some(Ty::Int { .. })
+            ) {
                 continue;
             }
             let arg = |slot| {
@@ -228,7 +231,11 @@ impl CategoryIr {
                 Operation::Div | Operation::Mod => lit(1).filter(|&c| c > 0).and_then(|c| {
                     let x = arg(0)?;
                     if x.digits.is_empty() {
-                        let v = if morph.op == Operation::Div { x.base / c } else { x.base % c };
+                        let v = if morph.op == Operation::Div {
+                            x.base / c
+                        } else {
+                            x.base % c
+                        };
                         return Some(RadixForm {
                             base: v,
                             digits: Vec::new(),
@@ -273,19 +280,27 @@ impl CategoryIr {
     /// lane), the other `a` (rows). `k` keeps its order: the site folds every
     /// cell in increasing `k`, the oracle's chain. Stored on the graph.
     pub fn tile_plan_radix(&self, f: FuncId) -> SecondaryMap<MorphismId, TileSite> {
-        self.fact(f, |s| &s.tile_plan_radix, || {
-            let mut out = SecondaryMap::new();
-            let strided = self.tile_plan_strided(f);
-            for &m in self.func(f).map(|fd| fd.morphisms.as_slice()).unwrap_or(&[]) {
-                if strided.sites.contains_key(m) {
-                    continue;
+        self.fact(
+            f,
+            |s| &s.tile_plan_radix,
+            || {
+                let mut out = SecondaryMap::new();
+                let strided = self.tile_plan_strided(f);
+                for &m in self
+                    .func(f)
+                    .map(|fd| fd.morphisms.as_slice())
+                    .unwrap_or(&[])
+                {
+                    if strided.sites.contains_key(m) {
+                        continue;
+                    }
+                    if let Some(s) = self.radix_site(m) {
+                        out.insert(m, s);
+                    }
                 }
-                if let Some(s) = self.radix_site(m) {
-                    out.insert(m, s);
-                }
-            }
-            out
-        })
+                out
+            },
+        )
     }
 
     fn radix_site(&self, site: MorphismId) -> Option<TileSite> {
@@ -298,7 +313,11 @@ impl CategoryIr {
             return None;
         };
         let n = self.tile_iota_size(self.pair_slot_source(map.source, map_captures)?)?;
-        let Ty::Array { size, elem: out_elem } = &self.objects.get(map.target)?.ty else {
+        let Ty::Array {
+            size,
+            elem: out_elem,
+        } = &self.objects.get(map.target)?.ty
+        else {
             return None;
         };
         // One output (`n = 1`) has no digit of `t` to tile along.
@@ -542,9 +561,15 @@ mod tests {
     #[test]
     fn basis_chains_digits_and_refuses_overlap() {
         // conv taps: k/9, k%9/3, k%3 over k < 576.
-        assert_eq!(basis(576, &[(9, 0), (3, 3), (1, 3)]), Some(vec![1, 3, 9, 576]));
+        assert_eq!(
+            basis(576, &[(9, 0), (3, 3), (1, 3)]),
+            Some(vec![1, 3, 9, 576])
+        );
         // t/56%56 and t%56 over t < 3136·8: 56 | 3136 | 25088.
-        assert_eq!(basis(25088, &[(56, 56), (1, 56)]), Some(vec![1, 56, 3136, 25088]));
+        assert_eq!(
+            basis(25088, &[(56, 56), (1, 56)]),
+            Some(vec![1, 56, 3136, 25088])
+        );
         // k%6 and k/4 overlap without chaining: 4 ∤ 6.
         assert_eq!(basis(24, &[(1, 6), (4, 0)]), None);
     }
@@ -557,11 +582,30 @@ mod tests {
         // k%9 over the basis, scaled by 58
         assert_eq!(over(&cuts, 576, 1, 9, 58), Some(vec![58, 174, 0]));
         let m = merged(vec![
-            AxisDigit { stride: 1, radix: 3, coef: 1 },
-            AxisDigit { stride: 3, radix: 3, coef: 3 },
-            AxisDigit { stride: 9, radix: 64, coef: 9 },
+            AxisDigit {
+                stride: 1,
+                radix: 3,
+                coef: 1,
+            },
+            AxisDigit {
+                stride: 3,
+                radix: 3,
+                coef: 3,
+            },
+            AxisDigit {
+                stride: 9,
+                radix: 64,
+                coef: 9,
+            },
         ]);
-        assert_eq!(m, vec![AxisDigit { stride: 1, radix: 576, coef: 1 }]);
+        assert_eq!(
+            m,
+            vec![AxisDigit {
+                stride: 1,
+                radix: 576,
+                coef: 1
+            }]
+        );
         assert_eq!(plain(&m, 576), Some(1));
     }
 }

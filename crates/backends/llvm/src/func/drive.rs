@@ -147,7 +147,11 @@ impl<'a> FnEmit<'a> {
         } else {
             gpu::cell_variant(&fname)
         };
-        let fname = if self.lanes.is_some() { gpu::lanes_variant(&fname) } else { fname };
+        let fname = if self.lanes.is_some() {
+            gpu::lanes_variant(&fname)
+        } else {
+            fname
+        };
         let param = self
             .cell_vals
             .iter()
@@ -177,7 +181,8 @@ impl<'a> FnEmit<'a> {
         arms: crate::GpuArms,
     ) -> String {
         let mut host = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
+            profile,
         );
         // The rung arms (S65 `by-ref` decides the frame's layout): the host and
         // every task read the same ones.
@@ -627,8 +632,8 @@ impl<'a> FnEmit<'a> {
             && packing_site(&site, profile, contract)
         {
             let mut slice = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
             slice.gpu_arms = arms;
             slice.par = Some(par.clone());
@@ -652,8 +657,8 @@ impl<'a> FnEmit<'a> {
             // wall — 30.2%, thread-count-independent, pure Amdahl.
             let source = ir.morphism(*m).expect("tile map resolves").source;
             let mut pack = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
             pack.gpu_arms = arms;
             pack.par = Some(par.clone());
@@ -679,8 +684,8 @@ impl<'a> FnEmit<'a> {
             }
 
             let mut emit = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
             emit.gpu_arms = arms;
             emit.par = Some(par.clone());
@@ -742,7 +747,8 @@ impl<'a> FnEmit<'a> {
         }
 
         let mut emit = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
+            profile,
         );
         emit.gpu_arms = arms;
         emit.par = Some(par.clone());
