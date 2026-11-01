@@ -756,8 +756,17 @@ fn resident_path_matches_the_oracle_emulated() {
     .text;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("c.ll"), cpu).unwrap();
+    // `contract` only permits a fused step; the device always fuses
+    // (`llvm.fma`). x86-64's baseline has no FMA, so the oracle would round
+    // twice there: give it the instruction so every step fuses, as on aarch64.
+    let fma: &[&str] = if cfg!(target_arch = "x86_64") {
+        &["-mfma"]
+    } else {
+        &[]
+    };
     let ok = Command::new(&clang)
         .args(["-O1", "-Wno-override-module"])
+        .args(fma)
         .arg(dir.path().join("c.ll"))
         .arg(rt_lib())
         .arg("-o")
