@@ -64,7 +64,9 @@ fn calls(ll: &str) -> Vec<String> {
             let last = op.rsplit("i64 ").next().unwrap_or_default();
             Some(match name {
                 // `async-h2d` enqueues the same copy without a host wait.
-                "h2d" | "h2d_async" | "d2h" => format!("{} {}", &name[..3], last.trim_end_matches(')')),
+                "h2d" | "h2d_async" | "d2h" => {
+                    format!("{} {}", &name[..3], last.trim_end_matches(')'))
+                }
                 other => other.to_owned(),
             })
         })
@@ -419,7 +421,10 @@ fn golden_devmap_device_units() {
 mod emu;
 
 fn bench(name: &str) -> String {
-    let p = format!("{}/../../../benches/algorithms/{name}.mapal", env!("CARGO_MANIFEST_DIR"));
+    let p = format!(
+        "{}/../../../benches/algorithms/{name}.mapal",
+        env!("CARGO_MANIFEST_DIR")
+    );
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{p}: {e}"))
 }
 
@@ -433,25 +438,46 @@ fn a_closed_form_of_the_trip_counter_is_a_uniform_cell() {
     let clang = emu::clang();
     // rt_mlp2 at 32² (the emulator runs a thread at a time); `async` off: the
     // emulator has no `cp.async`.
-    let mlp2 = bench("px_rt_mlp2_128").replace("16384", "1024").replace("16383", "1023").replace("128", "32");
-    for (name, src, laws, bytes) in [("decode_16_8", bench("decode_16_8"), 1, 8 * 4), ("rt_mlp2_32", mlp2, 2, 32 * 32 * 4)] {
+    let mlp2 = bench("px_rt_mlp2_128")
+        .replace("16384", "1024")
+        .replace("16383", "1023")
+        .replace("128", "32");
+    for (name, src, laws, bytes) in [
+        ("decode_16_8", bench("decode_16_8"), 1, 8 * 4),
+        ("rt_mlp2_32", mlp2, 2, 32 * 32 * 4),
+    ] {
         // `range-cell` needs `uniform` (the trip counter): isolated here.
         let on = emit(&src, &["async", "range-cell"]);
         let off = emit(&src, &["uniform", "async", "range-cell"]);
         let (c_on, c_off) = (calls(&on.text), calls(&off.text));
         let up = |c: &[String]| count(c, &format!("h2d {bytes}"));
-        assert_eq!(count(&c_on, "launchv"), count(&c_off, "launchv") + laws, "{name}: {c_on:?}");
-        assert_eq!(up(&c_on) + laws, up(&c_off), "{name}: ON {c_on:?}\nOFF {c_off:?}");
-        assert!(on.device.as_ref().is_some_and(|d| d.contains("i64 %c0")), "{name}: a by-value argument");
+        assert_eq!(
+            count(&c_on, "launchv"),
+            count(&c_off, "launchv") + laws,
+            "{name}: {c_on:?}"
+        );
+        assert_eq!(
+            up(&c_on) + laws,
+            up(&c_off),
+            "{name}: ON {c_on:?}\nOFF {c_off:?}"
+        );
+        assert!(
+            on.device.as_ref().is_some_and(|d| d.contains("i64 %c0")),
+            "{name}: a by-value argument"
+        );
         // The fact: a cell site that reads no array, its one capture a uniform.
         let ir = lower_src(&src);
         let sites = ir.cell_plan(ir.entry());
-        let closed = sites.values().filter(|s| s.reads.is_empty() && s.uniform == [0]).count();
+        let closed = sites
+            .values()
+            .filter(|s| s.reads.is_empty() && s.uniform == [0])
+            .count();
         assert_eq!(closed, laws, "{name}: {sites:?}");
         let Some(clang) = &clang else { continue };
         let rr = mapal_interp::run(&ir, 2_000_000_000);
         for (arm, em) in [("on", &on), ("off", &off)] {
-            let got = emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
+            let got =
+                emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
             assert_eq!(got, rr.output, "{name} uniform {arm}");
         }
     }
@@ -471,16 +497,26 @@ fn a_guarded_dot_product_per_cell_is_a_device_cell() {
         let off = emit(&src, &["nest-cell", "async"]);
         let ir = lower_src(&src);
         let sites = ir.cell_plan(ir.entry());
-        assert!(sites.values().filter(|s| !s.nested.is_empty()).count() >= 2, "{name}: {sites:?}");
+        assert!(
+            sites.values().filter(|s| !s.nested.is_empty()).count() >= 2,
+            "{name}: {sites:?}"
+        );
         let (c_on, c_off) = (calls(&on.text), calls(&off.text));
         // The K/V rows (16 x 8 cells) no longer come out per trip.
         let kv = |c: &[String]| count(in_loop(c), &format!("d2h {}", 16 * 8 * 4));
-        assert!(kv(&c_on) + 2 <= kv(&c_off), "{name}: ON {c_on:?}\nOFF {c_off:?}");
-        assert!(count(&c_on, "launchv") >= count(&c_off, "launchv") + 2, "{name}: {c_on:?}");
+        assert!(
+            kv(&c_on) + 2 <= kv(&c_off),
+            "{name}: ON {c_on:?}\nOFF {c_off:?}"
+        );
+        assert!(
+            count(&c_on, "launchv") >= count(&c_off, "launchv") + 2,
+            "{name}: {c_on:?}"
+        );
         let Some(clang) = &clang else { continue };
         let rr = mapal_interp::run(&ir, 2_000_000_000);
         for (arm, em) in [("on", &on), ("off", &off)] {
-            let got = emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
+            let got =
+                emu::run_emulated(clang, &em.text, em.device.as_ref().expect("a device unit"));
             assert_eq!(got, rr.output, "{name} nest-cell {arm}");
         }
     }
@@ -489,11 +525,19 @@ fn a_guarded_dot_product_per_cell_is_a_device_cell() {
     let src = bench("px_convmc_2_4_6_3");
     let on = emit(&src, &["async"]);
     let off = emit(&src, &["nest-cell", "async"]);
-    assert_eq!(count(&calls(&on.text), "launchv"), 1 + count(&calls(&off.text), "launchv"));
+    assert_eq!(
+        count(&calls(&on.text), "launchv"),
+        1 + count(&calls(&off.text), "launchv")
+    );
     if let Some(clang) = &clang {
         let rr = mapal_interp::run(&lower_src(&src), 2_000_000_000);
         let got = emu::run_emulated(clang, &on.text, on.device.as_ref().expect("a device unit"));
-        let values = |o: &str| o.lines().filter(|l| !l.starts_with("iter ms")).collect::<Vec<_>>().join("\n");
+        let values = |o: &str| {
+            o.lines()
+                .filter(|l| !l.starts_with("iter ms"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         assert_eq!(values(&got), values(&rr.output), "convmc nest-cell on");
     }
 }

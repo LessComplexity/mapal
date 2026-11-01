@@ -848,7 +848,9 @@ fn view_death_follows_projections() {
         let u = fb.update(a, z, five, Dest::Fresh(None), L).unwrap();
         let e = fb.index(x, z, Dest::Fresh(None), L).unwrap();
         let e2 = fb.index(u, z, Dest::Fresh(None), L).unwrap();
-        let t = fb.binop(Operation::Add, e, e2, Dest::Fresh(None), L).unwrap();
+        let t = fb
+            .binop(Operation::Add, e, e2, Dest::Fresh(None), L)
+            .unwrap();
         let r = fb.binop(Operation::Add, t, s, Dest::Ret { slot: None }, L);
         r.unwrap();
         fb.finish().unwrap();
@@ -856,8 +858,14 @@ fn view_death_follows_projections() {
     let ir = b.seal(f).unwrap();
     let plan = ir.last_use_plan(f);
     let at = plan.position(one_op(&ir, Operation::Update)).unwrap();
-    assert!(plan.dead_after(a, at), "copy semantics: x holds its own bytes");
-    assert!(!plan.view_dead_after(a, at), "view semantics: x is a's bytes");
+    assert!(
+        plan.dead_after(a, at),
+        "copy semantics: x holds its own bytes"
+    );
+    assert!(
+        !plan.view_dead_after(a, at),
+        "view semantics: x is a's bytes"
+    );
     assert!(plan.view_death(a) > plan.death(a));
     // The scalar's projection pins nothing: n's view death is its death.
     assert_eq!(plan.view_death(n), plan.death(n));
@@ -5005,8 +5013,17 @@ fn cell_plan_records_a_nested_folds_reads() {
     let plan = ir.cell_plan(main);
     let site = plan.values().next().expect("one cell site");
     assert_eq!(plan.len(), 1);
-    assert_eq!(site.nested.len(), 3, "a, b and the k range it walks: {site:?}");
-    assert!(site.reads.iter().all(|r| r.foot == mapal_ir::Footprint::Other), "{site:?}");
+    assert_eq!(
+        site.nested.len(),
+        3,
+        "a, b and the k range it walks: {site:?}"
+    );
+    assert!(
+        site.reads
+            .iter()
+            .all(|r| r.foot == mapal_ir::Footprint::Other),
+        "{site:?}"
+    );
     assert!(site.uniform.is_empty());
     assert_eq!(site.work, 1 + 16, "one step plus the k = 16 fold: {site:?}");
     assert_eq!(ir.tile_plan(main).sites.len(), 1);

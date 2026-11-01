@@ -668,7 +668,11 @@ fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
         // crosses whole (every copy-out left is one element).
         let e = grouped(GROUPED_ROW_FOLD, contract);
         let t = calls(&e.text);
-        assert_eq!(t.iter().filter(|x| x.starts_with("launch")).count(), 3, "{t:?}");
+        assert_eq!(
+            t.iter().filter(|x| x.starts_with("launch")).count(),
+            3,
+            "{t:?}"
+        );
         assert!(
             mapal_main(&e.text)
                 .lines()

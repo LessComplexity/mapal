@@ -43,7 +43,11 @@ pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
 /// from its seed, the others from 0 — added in partition order. The `fixed`
 /// face's oracle; `orders` comes from the emitter (`Emission::orders`), keyed
 /// on the IR it compiled.
-pub fn run_ordered(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, u64)]) -> RunResult {
+pub fn run_ordered(
+    ir: &CategoryIr,
+    budget: u64,
+    orders: &[(FuncId, MorphismId, u64)],
+) -> RunResult {
     let entry = ir.entry();
     let fd = ir.func(entry).expect("sealed graph: entry resolves");
     let input_ty = &ir
@@ -75,7 +79,11 @@ pub fn run_ordered(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, 
 /// member (ADR-0041, `mapal test --weakest`): a product whose set admits
 /// `tf32` rounds its f32 operands to TF32 (round-to-nearest-even), then
 /// multiplies in f32. The other side of D3's bound from [`run`]'s f32.
-pub fn run_weakest(ir: &CategoryIr, budget: u64, orders: &[(FuncId, MorphismId, u64)]) -> RunResult {
+pub fn run_weakest(
+    ir: &CategoryIr,
+    budget: u64,
+    orders: &[(FuncId, MorphismId, u64)],
+) -> RunResult {
     eval::WEAKEST.with(|w| w.set(true));
     let r = run_ordered(ir, budget, orders);
     eval::WEAKEST.with(|w| w.set(false));

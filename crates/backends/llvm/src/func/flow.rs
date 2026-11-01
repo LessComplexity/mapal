@@ -153,7 +153,14 @@ pub(crate) fn unit_geo(
         .unwrap_or(1);
     if extent <= 1 {
         let (gx, block) = gpu::cell_grid(u.rows);
-        return Geo { lanes: 1, gx, block, smem: 0, tree: vec![None; n], kept: vec![None; n] };
+        return Geo {
+            lanes: 1,
+            gx,
+            block,
+            smem: 0,
+            tree: vec![None; n],
+            kept: vec![None; n],
+        };
     }
     let lanes = extent.next_power_of_two().clamp(g.warp, 256);
     // ponytail: the static-launch limit; a larger row needs the opt-in attribute.
@@ -185,7 +192,14 @@ pub(crate) fn unit_geo(
             _ => {}
         }
     }
-    Geo { lanes, gx: u.rows, block: lanes, smem, tree, kept }
+    Geo {
+        lanes,
+        gx: u.rows,
+        block: lanes,
+        smem,
+        tree,
+        kept,
+    }
 }
 
 /// `consumer cells` → the producer address hull a tap-carrying affine reach
@@ -259,7 +273,11 @@ impl<'a> FnEmit<'a> {
             }
             // ponytail: a unit kernel takes no scalar argument; a cell that
             // reads a uniform runs alone. Pass uniforms to units when one pays.
-            for (m, c) in plan.cells.iter().filter(|(_, c)| c.uniform.is_empty() && c.nested.is_empty()) {
+            for (m, c) in plan
+                .cells
+                .iter()
+                .filter(|(_, c)| c.uniform.is_empty() && c.nested.is_empty())
+            {
                 cand.insert(m, Cand::Cell(c.clone()));
             }
             let fp = self.ir.footprint_plan(self.f);
@@ -709,7 +727,9 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let Geo { gx, block, smem, .. } = self.geo(u);
+        let Geo {
+            gx, block, smem, ..
+        } = self.geo(u);
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
             u.id as i64
@@ -733,12 +753,17 @@ impl<'a> FnEmit<'a> {
 
     /// The unit's geometry on this face ([`unit_geo`]).
     pub(crate) fn geo(&self, u: &Unit) -> Geo {
-        unit_geo(u, self.profile, self.order == crate::Order::Free, |mb| match &mb.kind {
-            UKind::Fold { site, .. } => crate::profile::elem_bytes(&site.elem),
-            UKind::Cell { .. } => {
-                crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)))
-            }
-        })
+        unit_geo(
+            u,
+            self.profile,
+            self.order == crate::Order::Free,
+            |mb| match &mb.kind {
+                UKind::Fold { site, .. } => crate::profile::elem_bytes(&site.elem),
+                UKind::Cell { .. } => {
+                    crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)))
+                }
+            },
+        )
     }
 
     /// This function's unit kernels for the device module.
@@ -999,7 +1024,9 @@ impl<'a> FnEmit<'a> {
             if geo.lanes > 1 {
                 "  %i = add i64 %b64, 0\n  %l = add i64 %t64, 0\n".to_string()
             } else {
-                format!("  %row0 = mul i64 %b64, {threads}\n  %i = add i64 %row0, %t64\n  %l = add i64 0, 0\n")
+                format!(
+                    "  %row0 = mul i64 %b64, {threads}\n  %i = add i64 %row0, %t64\n  %l = add i64 0, 0\n"
+                )
             },
             u.rows,
             g.out,
@@ -1327,51 +1354,67 @@ impl UnitGen<'_> {
                 // seed: that step is idempotent); an in-order fold from the seed.
                 let init = match (tree, site.op) {
                     (None, _) | (_, RowFoldOp::Select { .. }) => seed.clone(),
-                    (_, RowFoldOp::Arith { op: Operation::Mul, .. }) => "1.0".to_string(),
+                    (
+                        _,
+                        RowFoldOp::Arith {
+                            op: Operation::Mul, ..
+                        },
+                    ) => "1.0".to_string(),
                     _ => "-0.0".to_string(),
                 };
-                let walk = if tree.is_some() { ("%l", lanes, site.k) } else { ("0", 1, site.k) };
+                let walk = if tree.is_some() {
+                    ("%l", lanes, site.k)
+                } else {
+                    ("0", 1, site.k)
+                };
                 let (site, src0, op) = (site.clone(), mb.srcs[0].clone(), site.op);
                 let tt = t.clone();
                 let p = self
-                    .counted(&format!("f{k}"), walk, Some((&t, &init)), &mut |g, kv, acc| {
-                        // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
-                        let taps: Vec<String> = match site.a.ksplit {
-                            Some(ks) => vec![g.op("udiv", kv, ks.div), g.op("urem", kv, ks.div)],
-                            None => vec![kv.to_string()],
-                        };
-                        let v = match &src0 {
-                            USrc::Gmem(gm) => {
-                                // The site's own addressing (re-addressed when its
-                                // producer stores column-major).
-                                let ri = if site.w > 1 {
-                                    let q = g.op("udiv", "%i", site.w);
-                                    let l = g.op("urem", "%i", site.w);
-                                    let a = g.op("mul", &q, site.a.ci);
-                                    let b = g.op("mul", &l, site.a.clane);
-                                    g.op("add", &a, &b)
-                                } else {
-                                    g.op("mul", "%i", site.a.ci)
-                                };
-                                let rk = match site.a.ksplit {
-                                    Some(ks) => {
-                                        let a = g.op("mul", &taps[0], ks.cq);
-                                        let b = g.op("mul", &taps[1], ks.cr);
+                    .counted(
+                        &format!("f{k}"),
+                        walk,
+                        Some((&t, &init)),
+                        &mut |g, kv, acc| {
+                            // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
+                            let taps: Vec<String> = match site.a.ksplit {
+                                Some(ks) => {
+                                    vec![g.op("udiv", kv, ks.div), g.op("urem", kv, ks.div)]
+                                }
+                                None => vec![kv.to_string()],
+                            };
+                            let v = match &src0 {
+                                USrc::Gmem(gm) => {
+                                    // The site's own addressing (re-addressed when its
+                                    // producer stores column-major).
+                                    let ri = if site.w > 1 {
+                                        let q = g.op("udiv", "%i", site.w);
+                                        let l = g.op("urem", "%i", site.w);
+                                        let a = g.op("mul", &q, site.a.ci);
+                                        let b = g.op("mul", &l, site.a.clane);
                                         g.op("add", &a, &b)
-                                    }
-                                    None => g.op("mul", kv, site.a.ck),
-                                };
-                                let x = g.op("add", &ri, &rk);
-                                let x = g.op("add", &x, site.a.base);
-                                g.load(*gm, &x)
-                            }
-                            src => {
-                                let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
-                                g.read(src, "%i", &taps)
-                            }
-                        };
-                        g.step(&op, &tt, acc, &v, &format!("{acc}n"));
-                    })
+                                    } else {
+                                        g.op("mul", "%i", site.a.ci)
+                                    };
+                                    let rk = match site.a.ksplit {
+                                        Some(ks) => {
+                                            let a = g.op("mul", &taps[0], ks.cq);
+                                            let b = g.op("mul", &taps[1], ks.cr);
+                                            g.op("add", &a, &b)
+                                        }
+                                        None => g.op("mul", kv, site.a.ck),
+                                    };
+                                    let x = g.op("add", &ri, &rk);
+                                    let x = g.op("add", &x, site.a.base);
+                                    g.load(*gm, &x)
+                                }
+                                src => {
+                                    let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
+                                    g.read(src, "%i", &taps)
+                                }
+                            };
+                            g.step(&op, &tt, acc, &v, &format!("{acc}n"));
+                        },
+                    )
                     .expect("a fold carries");
                 let res = match tree {
                     None => p,

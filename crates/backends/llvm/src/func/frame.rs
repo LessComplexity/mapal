@@ -51,8 +51,11 @@ impl<'a> FnEmit<'a> {
         // at). Then the in-place `Update`s, to a fixed point (a chain's next
         // link writes in place once its source does), and the loop buffers.
         self.plan_views();
-        let exits: Vec<ObjectId> =
-            self.resident.iter().flat_map(|p| p.carries.iter().filter_map(|c| c.exit)).collect();
+        let exits: Vec<ObjectId> = self
+            .resident
+            .iter()
+            .flat_map(|p| p.carries.iter().filter_map(|c| c.exit))
+            .collect();
         for x in exits {
             if !self.host_free(x) {
                 self.ptr_resident.remove(x);
@@ -275,8 +278,16 @@ impl<'a> FnEmit<'a> {
 /// it dies at the entry) that no such position points at.
 #[derive(Clone, Debug)]
 pub(crate) enum LoopBuf {
-    Own { merge: ObjectId, path: Vec<u32> },
-    Colors { merge: ObjectId, root: ObjectId, at: Vec<Vec<u32>>, take: Option<ObjectId> },
+    Own {
+        merge: ObjectId,
+        path: Vec<u32>,
+    },
+    Colors {
+        merge: ObjectId,
+        root: ObjectId,
+        at: Vec<Vec<u32>>,
+        take: Option<ObjectId>,
+    },
 }
 
 /// A canonical loop of the function and its body (decide and advance cones).
@@ -357,18 +368,36 @@ impl<'a> FnEmit<'a> {
             return;
         }
         for scc in self.ir.loop_structure(self.f) {
-            for plan in scc.merges.iter().filter_map(|&mg| self.ir.loop_plan(self.f, mg)) {
-                let body = plan.decide_order.iter().chain(&plan.advance_order).copied().collect();
+            for plan in scc
+                .merges
+                .iter()
+                .filter_map(|&mg| self.ir.loop_plan(self.f, mg))
+            {
+                let body = plan
+                    .decide_order
+                    .iter()
+                    .chain(&plan.advance_order)
+                    .copied()
+                    .collect();
                 self.loops.push(Loop { plan, body });
             }
         }
         let fd = self.ir.func(self.f).expect("func resolves");
         let mut cand: std::collections::HashSet<Pos> = Default::default();
         for (o, kind, ty) in self.owned_objects() {
-            let op = self.ir.in_edges(o).first().map(|&m| self.ir.morphism(m).expect("m").op);
+            let op = self
+                .ir
+                .in_edges(o)
+                .first()
+                .map(|&m| self.ir.morphism(m).expect("m").op);
             let fwd = matches!(
                 op,
-                Some(Operation::Pair { .. } | Operation::Proj { .. } | Operation::Phi | Operation::LoopExit)
+                Some(
+                    Operation::Pair { .. }
+                        | Operation::Proj { .. }
+                        | Operation::Phi
+                        | Operation::LoopExit
+                )
             );
             let kept = kind == ObjectKind::LoopMerge || fwd && kind == ObjectKind::Temporary;
             if !kept || o == fd.input || o == fd.output {
@@ -376,14 +405,27 @@ impl<'a> FnEmit<'a> {
             }
             // (A bare array `Pair`s build is a literal: its own bytes.)
             let literal = matches!(op, Some(Operation::Pair { .. }));
-            cand.extend(array_paths(&ty).into_iter().filter(|p| !(literal && p.is_empty())).map(|p| (o, p)));
+            cand.extend(
+                array_paths(&ty)
+                    .into_iter()
+                    .filter(|p| !(literal && p.is_empty()))
+                    .map(|p| (o, p)),
+            );
         }
         // `eq`: one whole-value copy moves both, so both are pointers or
         // neither; `need`: a view of a field needs the field to be a pointer.
         let (mut eq, mut need): (Vec<(Pos, Pos)>, Vec<(Pos, Pos)>) = Default::default();
-        for (_, mo) in self.ir.morphisms().filter(|(_, mo)| self.ir.try_owner(mo.source) == Some(self.f)) {
+        for (_, mo) in self
+            .ir
+            .morphisms()
+            .filter(|(_, mo)| self.ir.try_owner(mo.source) == Some(self.f))
+        {
             let (s, t) = (mo.source, mo.target);
-            let nested = |o| array_paths(&self.obj_ty(o)).into_iter().filter(|q| !q.is_empty());
+            let nested = |o| {
+                array_paths(&self.obj_ty(o))
+                    .into_iter()
+                    .filter(|q| !q.is_empty())
+            };
             let pres: &[&[u32]] = match mo.op {
                 Operation::Pair { slot, .. } => {
                     eq.extend(nested(s).map(|q| ((t, ext(&[slot], &q)), (s, q))));
@@ -392,7 +434,11 @@ impl<'a> FnEmit<'a> {
                 Operation::Proj { index } => {
                     for q in array_paths(&self.obj_ty(t)) {
                         let pair = ((t, q.clone()), (s, ext(&[index], &q)));
-                        if q.is_empty() { need.push(pair) } else { eq.push(pair) }
+                        if q.is_empty() {
+                            need.push(pair)
+                        } else {
+                            eq.push(pair)
+                        }
                     }
                     &[]
                 }
@@ -414,7 +460,10 @@ impl<'a> FnEmit<'a> {
                     Operation::Map { captures, .. } => one && k <= captures,
                     Operation::Fold { captures, .. } => one && (k < captures || k == captures + 1),
                     Operation::Call(_) => one,
-                    op => !pres.is_empty() || matches!(op, Operation::Pair { .. } | Operation::Proj { .. }),
+                    op => {
+                        !pres.is_empty()
+                            || matches!(op, Operation::Pair { .. } | Operation::Proj { .. })
+                    }
                 };
                 if !address {
                     cand.remove(&(s, p));
@@ -463,14 +512,27 @@ impl<'a> FnEmit<'a> {
         while let Some((o, p)) = stack.pop() {
             steps += 1;
             let up = |k: u32| ext(&[k], &p);
-            let r = match self.ir.in_edges(o).first().map(|&m| self.ir.morphism(m).expect("m")) {
+            let r = match self
+                .ir
+                .in_edges(o)
+                .first()
+                .map(|&m| self.ir.morphism(m).expect("m"))
+            {
                 _ if steps > 4096 => Root::Other,
                 _ if alias && p.is_empty() && self.update_aliases.contains_key(o) => {
                     stack.push((self.update_aliases[o], p));
                     continue;
                 }
-                _ if !self.is_view(o, &p) => if p.is_empty() { Root::Obj(o) } else { Root::Other },
-                _ if self.ir.object(o).expect("object").kind == ObjectKind::LoopMerge => Root::Merge(o, p),
+                _ if !self.is_view(o, &p) => {
+                    if p.is_empty() {
+                        Root::Obj(o)
+                    } else {
+                        Root::Other
+                    }
+                }
+                _ if self.ir.object(o).expect("object").kind == ObjectKind::LoopMerge => {
+                    Root::Merge(o, p)
+                }
                 Some(mo) => match mo.op {
                     Operation::Pair { .. } => match self.pair_source(o, p[0]) {
                         Some(s) => {
@@ -514,13 +576,21 @@ impl<'a> FnEmit<'a> {
 
     /// Where `o` is complete: its last producing edge (a product's last `Pair`).
     fn born(&self, o: ObjectId) -> u32 {
-        self.ir.in_edges(o).iter().filter_map(|&m| self.lup.position(m)).max().unwrap_or(0)
+        self.ir
+            .in_edges(o)
+            .iter()
+            .filter_map(|&m| self.lup.position(m))
+            .max()
+            .unwrap_or(0)
     }
 
     /// The state position is carried on the device (no host bytes).
     fn device_carried(&self, merge: ObjectId, p: &[u32]) -> bool {
         p.len() == 1
-            && self.resident.as_ref().is_some_and(|r| r.carries.iter().any(|c| c.merge == merge && c.k == p[0]))
+            && self
+                .resident
+                .as_ref()
+                .is_some_and(|r| r.carries.iter().any(|c| c.merge == merge && c.k == p[0]))
     }
 
     /// Every object by the bytes its views lead to (`roots` without the
@@ -552,10 +622,15 @@ impl<'a> FnEmit<'a> {
         let mut fam: Vec<ObjectId> = self.root_index.get(root).cloned().unwrap_or_default();
         let mut set: std::collections::HashSet<ObjectId> = fam.iter().copied().collect();
         let next = |set: &std::collections::HashSet<ObjectId>| {
-            self.update_aliases.iter().find(|&(t, s)| set.contains(s) && !set.contains(&t)).map(|(t, _)| t)
+            self.update_aliases
+                .iter()
+                .find(|&(t, s)| set.contains(s) && !set.contains(&t))
+                .map(|(t, _)| t)
         };
         while let Some(t) = next(&set) {
-            for &o in std::iter::once(&t).chain(self.root_index.get(&Root::Obj(t)).into_iter().flatten()) {
+            for &o in
+                std::iter::once(&t).chain(self.root_index.get(&Root::Obj(t)).into_iter().flatten())
+            {
                 if set.insert(o) {
                     fam.push(o);
                 }
@@ -569,7 +644,9 @@ impl<'a> FnEmit<'a> {
     pub(super) fn guard_read(&self, o: ObjectId, upd: Option<MorphismId>) -> bool {
         let src = upd.map(|u| self.ir.morphism(u).expect("m").source);
         self.ir.out_edges(o).iter().any(|&e| {
-            self.gated.contains_key(e) && Some(e) != upd && Some(self.ir.morphism(e).expect("m").target) != src
+            self.gated.contains_key(e)
+                && Some(e) != upd
+                && Some(self.ir.morphism(e).expect("m").target) != src
         })
     }
 
@@ -622,9 +699,14 @@ impl<'a> FnEmit<'a> {
     /// trip, for this position alone. `Some(true)`: the init's buffer is the
     /// loop's; `Some(false)`: the entry copies the init into one.
     fn state_owner(&self, lp: &Loop, p: &[u32]) -> Option<bool> {
-        let (merge, next) = (lp.plan.merge, |q: &[u32]| self.roots(lp.plan.back_route, &ext(&[0], q), false));
-        let others: Vec<Root> =
-            array_paths(&self.obj_ty(merge)).iter().filter(|q| q.as_slice() != p).flat_map(|q| next(q)).collect();
+        let (merge, next) = (lp.plan.merge, |q: &[u32]| {
+            self.roots(lp.plan.back_route, &ext(&[0], q), false)
+        });
+        let others: Vec<Root> = array_paths(&self.obj_ty(merge))
+            .iter()
+            .filter(|q| q.as_slice() != p)
+            .flat_map(|q| next(q))
+            .collect();
         let owned = next(p).iter().all(|r| match r {
             Root::Merge(m, q) => *m == merge && q == p,
             Root::Obj(o) => self.made_in(lp, *o) && !others.contains(r),
@@ -640,9 +722,12 @@ impl<'a> FnEmit<'a> {
     /// exit in place while another task still read it.)
     pub(super) fn par_safe(&self, arr: ObjectId, m: MorphismId) -> bool {
         let Some(par) = &self.par else { return true };
-        let Some(&tw) = par.task.get(m) else { return false };
+        let Some(&tw) = par.task.get(m) else {
+            return false;
+        };
         let src = self.ir.morphism(m).expect("m").source;
-        let (mut seen, mut stack): (SecondaryMap<ObjectId, ()>, _) = (SecondaryMap::new(), vec![arr]);
+        let (mut seen, mut stack): (SecondaryMap<ObjectId, ()>, _) =
+            (SecondaryMap::new(), vec![arr]);
         while let Some(o) = stack.pop() {
             if seen.insert(o, ()).is_some() {
                 continue;
@@ -654,13 +739,21 @@ impl<'a> FnEmit<'a> {
                 }
                 // A loop's own edges run where its body does; a loop's exit
                 // object reads its final state, after the loop.
-                let loop_op = matches!(mo.op, Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit);
-                let ordered = par.task.get(e).map_or(loop_op, |&tr| tr == tw || par.before[tr][tw]);
+                let loop_op = matches!(
+                    mo.op,
+                    Operation::LoopEnter | Operation::LoopBack | Operation::LoopExit
+                );
+                let ordered = par
+                    .task
+                    .get(e)
+                    .map_or(loop_op, |&tr| tr == tw || par.before[tr][tw]);
                 if self.lup.position(e) < self.lup.position(m) && !ordered {
                     return false;
                 }
-                if matches!(mo.op, Operation::Pair { .. } | Operation::Proj { .. } | Operation::Phi)
-                    || mo.op == Operation::LoopEnter
+                if matches!(
+                    mo.op,
+                    Operation::Pair { .. } | Operation::Proj { .. } | Operation::Phi
+                ) || mo.op == Operation::LoopEnter
                 {
                     stack.push(mo.target);
                 }
@@ -675,10 +768,16 @@ impl<'a> FnEmit<'a> {
     /// read after `at` (`LastUsePlan::view_dead_after`); or a loop state's
     /// buffer the loop owns, no other view of which the trip reads again.
     pub(super) fn writes_in_place(&self, m: MorphismId, arr: ObjectId, at: u32) -> bool {
-        let loops: Vec<&Loop> = self.loops.iter().filter(|lp| lp.body.contains(&m)).collect();
+        let loops: Vec<&Loop> = self
+            .loops
+            .iter()
+            .filter(|lp| lp.body.contains(&m))
+            .collect();
         match &self.roots(arr, &[], true)[..] {
             [Root::Obj(_)] => {
-                let [Root::Obj(c)] = self.roots(arr, &[], false)[..] else { return false };
+                let [Root::Obj(c)] = self.roots(arr, &[], false)[..] else {
+                    return false;
+                };
                 self.ir.object(c).expect("object").kind == ObjectKind::Temporary
                     && !self.host_free(c)
                     && loops.iter().all(|lp| self.made_in(lp, c))
@@ -688,9 +787,15 @@ impl<'a> FnEmit<'a> {
                         .any(|o| self.born(o) < at && self.guard_read(o, Some(m)))
                     && self.lup.view_dead_after(c, at)
             }
-            [Root::Merge(merge, p)] => loops.iter().find(|lp| lp.plan.merge == *merge).is_some_and(|lp| {
-                self.state_owner(lp, p).is_some() && self.state_death(lp, p, Some((m, at))) <= at
-            }),
+            [Root::Merge(merge, p)] => {
+                loops
+                    .iter()
+                    .find(|lp| lp.plan.merge == *merge)
+                    .is_some_and(|lp| {
+                        self.state_owner(lp, p).is_some()
+                            && self.state_death(lp, p, Some((m, at))) <= at
+                    })
+            }
             _ => false,
         }
     }
@@ -713,10 +818,18 @@ impl<'a> FnEmit<'a> {
                 .collect();
             let next = |q: &[u32]| self.roots(lp.plan.back_route, &ext(&[0], q), true);
             let written = |p: &[u32]| {
-                self.sharing(&Root::Merge(merge, p.to_vec())).iter().any(|&t| self.update_aliases.contains_key(t))
+                self.sharing(&Root::Merge(merge, p.to_vec()))
+                    .iter()
+                    .any(|&t| self.update_aliases.contains_key(t))
             };
-            for p in paths.iter().filter(|p| written(p) && self.state_owner(lp, p) == Some(false)) {
-                out.push(LoopBuf::Own { merge, path: p.clone() });
+            for p in paths
+                .iter()
+                .filter(|p| written(p) && self.state_owner(lp, p) == Some(false))
+            {
+                out.push(LoopBuf::Own {
+                    merge,
+                    path: p.clone(),
+                });
             }
             let mut done: Vec<ObjectId> = Vec::new();
             for r in paths.iter().flat_map(|p| next(p)) {
@@ -725,17 +838,34 @@ impl<'a> FnEmit<'a> {
                     continue;
                 }
                 done.push(r);
-                let at: Vec<Vec<u32>> = paths.iter().filter(|q| next(q).contains(&Root::Obj(r))).cloned().collect();
+                let at: Vec<Vec<u32>> = paths
+                    .iter()
+                    .filter(|q| next(q).contains(&Root::Obj(r)))
+                    .cloned()
+                    .collect();
                 let unit = self.resident.as_ref().and_then(|p| p.unit_writer(r));
-                let w = self.ir.in_edges(r).iter().copied().chain(resident::grouped_writer(&self.groups, r)).chain(unit);
+                let w = self
+                    .ir
+                    .in_edges(r)
+                    .iter()
+                    .copied()
+                    .chain(resident::grouped_writer(&self.groups, r))
+                    .chain(unit);
                 let w = w.filter_map(|m| self.lup.position(m)).min().unwrap_or(0);
-                if at.iter().map(|q| self.state_death(lp, q, None)).max().unwrap_or(0) < w {
+                if at
+                    .iter()
+                    .map(|q| self.state_death(lp, q, None))
+                    .max()
+                    .unwrap_or(0)
+                    < w
+                {
                     continue; // one buffer: the state is dead before r is written
                 }
                 let take = match &at[..] {
                     [q] if !written(q) => match self.roots(lp.plan.init, q, false)[..] {
                         [Root::Obj(a)]
-                            if self.takeable(lp, q, a) && lower_ty(&self.obj_ty(a)) == lower_ty(&self.obj_ty(r)) =>
+                            if self.takeable(lp, q, a)
+                                && lower_ty(&self.obj_ty(a)) == lower_ty(&self.obj_ty(r)) =>
                         {
                             Some(a)
                         }
@@ -743,7 +873,12 @@ impl<'a> FnEmit<'a> {
                     },
                     _ => None,
                 };
-                out.push(LoopBuf::Colors { merge, root: r, at, take });
+                out.push(LoopBuf::Colors {
+                    merge,
+                    root: r,
+                    at,
+                    take,
+                });
             }
         }
         self.bufs = out;
@@ -755,18 +890,27 @@ impl<'a> FnEmit<'a> {
             return self.slot(merge).expect("merge slot");
         };
         let (_, mut cell) = self.component_ptr(merge, k0).expect("state field");
-        let mut ty = self.obj_ty(merge).component_ty(k0).cloned().expect("state ty");
+        let mut ty = self
+            .obj_ty(merge)
+            .component_ty(k0)
+            .cloned()
+            .expect("state ty");
         let mut paths = sub_paths(self.views.get(merge).map_or(&[][..], |v| v), k0);
         for &k in rest {
             let llt = lower_ptr_paths(&ty, &paths).expect("state lowers");
             cell = self.field_ptr(&cell, &ty, &llt, k).expect("state field");
-            (paths, ty) = (sub_paths(&paths, k), ty.component_ty(k).cloned().expect("state ty"));
+            (paths, ty) = (
+                sub_paths(&paths, k),
+                ty.component_ty(k).cloned().expect("state ty"),
+            );
         }
         cell
     }
 
     fn state_ty(&self, merge: ObjectId, p: &[u32]) -> Ty {
-        p.iter().fold(self.obj_ty(merge), |t, &k| t.component_ty(k).cloned().expect("state ty"))
+        p.iter().fold(self.obj_ty(merge), |t, &k| {
+            t.component_ty(k).cloned().expect("state ty")
+        })
     }
 
     /// A buffer a loop's state may point at: a task's frame dies when it
@@ -776,7 +920,9 @@ impl<'a> FnEmit<'a> {
         let name = format!("%ls{}", self.fresh());
         if matches!(self.guard_flavor, GuardFlavor::Task) {
             let (bytes, align) = (llt_bytes(llt), llt_align(llt));
-            self.allocas.push_str(&format!("  {name} = call ptr @mapal_rt_alloc(i64 {bytes}, i64 {align})\n"));
+            self.allocas.push_str(&format!(
+                "  {name} = call ptr @mapal_rt_alloc(i64 {bytes}, i64 {align})\n"
+            ));
         } else {
             self.entry_alloc(&name, llt, None);
         }
@@ -787,7 +933,9 @@ impl<'a> FnEmit<'a> {
     /// trip writes in place gets the loop's own copy of the init.
     pub(crate) fn loop_enter_buffers(&mut self, merge: ObjectId) {
         for b in self.bufs.clone() {
-            let LoopBuf::Own { merge: m, path } = b else { continue };
+            let LoopBuf::Own { merge: m, path } = b else {
+                continue;
+            };
             if m != merge {
                 continue;
             }
@@ -804,7 +952,15 @@ impl<'a> FnEmit<'a> {
     /// trip — the first of its slot and its spares no state position points at.
     pub(crate) fn loop_trip_buffers(&mut self, merge: ObjectId) {
         for b in self.bufs.clone() {
-            let LoopBuf::Colors { merge: m, root, at, take } = b else { continue };
+            let LoopBuf::Colors {
+                merge: m,
+                root,
+                at,
+                take,
+            } = b
+            else {
+                continue;
+            };
             if m != merge {
                 continue;
             }
@@ -877,6 +1033,10 @@ impl<'a> FnEmit<'a> {
                 format!("{}:{bytes}:{mode}", if at.is_empty() { "-".into() } else { at.join(".") })
             })
             .collect();
-        if desc.is_empty() { "-".into() } else { desc.join(",") }
+        if desc.is_empty() {
+            "-".into()
+        } else {
+            desc.join(",")
+        }
     }
 }

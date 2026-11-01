@@ -58,35 +58,77 @@ fn piecewise_maps_have_an_outside() {
     let all = u64::MAX;
     // (d, a, b, step, len)
     let cases: [(&str, Option<(u64, i64, i64, u64, u64)>); 10] = [
-        (&format!("(c / 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"), Some((8, 1, 0, 1, 8))),
-        (&format!("(r == c / 8) -> {{ -true-> {new} -false-> x[c]; }}"), Some((8, 1, 0, 1, 8))),
+        (
+            &format!("(c / 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((8, 1, 0, 1, 8)),
+        ),
+        (
+            &format!("(r == c / 8) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((8, 1, 0, 1, 8)),
+        ),
         // Swapped arms: the set is the false arm's.
-        (&format!("(c / 8 != r) -> {{ -true-> x[c]; -false-> {new} }}"), Some((8, 1, 0, 1, 8))),
-        (&format!("(c >= r * 8 && c < r * 8 + 8) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 8, 0, 1, 8))),
-        (&format!("(r * 4 - 2 <= c && r * 4 + 3 > c) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 4, -2, 1, 5))),
+        (
+            &format!("(c / 8 != r) -> {{ -true-> x[c]; -false-> {new} }}"),
+            Some((8, 1, 0, 1, 8)),
+        ),
+        (
+            &format!("(c >= r * 8 && c < r * 8 + 8) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((1, 8, 0, 1, 8)),
+        ),
+        (
+            &format!("(r * 4 - 2 <= c && r * 4 + 3 > c) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((1, 4, -2, 1, 5)),
+        ),
         // One cell.
-        (&format!("(c == r * 8 + 5) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 8, 5, 1, 1))),
+        (
+            &format!("(c == r * 8 + 5) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((1, 8, 5, 1, 1)),
+        ),
         // A column: every 8th cell from `r`.
-        (&format!("(c % 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"), Some((1, 1, 0, 8, all))),
-        (&format!("(r + 1 != c % 8) -> {{ -true-> x[c]; -false-> {new} }}"), Some((1, 1, 1, 8, all))),
+        (
+            &format!("(c % 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"),
+            Some((1, 1, 0, 8, all)),
+        ),
+        (
+            &format!("(r + 1 != c % 8) -> {{ -true-> x[c]; -false-> {new} }}"),
+            Some((1, 1, 1, 8, all)),
+        ),
         // A body reading `x` off its own cell is no piecewise law, nor is a
         // set that is not one progression.
-        ("(c / 8 == r) -> { -true-> { x[(c + 1) % 64] } -false-> x[c]; }", None),
-        (&format!("(c % 8 == r || c / 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"), None),
+        (
+            "(c / 8 == r) -> { -true-> { x[(c + 1) % 64] } -false-> x[c]; }",
+            None,
+        ),
+        (
+            &format!("(c % 8 == r || c / 8 == r) -> {{ -true-> {new} -false-> x[c]; }}"),
+            None,
+        ),
     ];
     for (body, want) in cases {
         let ir = lower(&one_map(body));
-        let got = outsides(&ir).into_iter().flatten().map(|o| (o.d, o.a, o.b, o.step, o.len)).next();
+        let got = outsides(&ir)
+            .into_iter()
+            .flatten()
+            .map(|o| (o.d, o.a, o.b, o.step, o.len))
+            .next();
         assert_eq!(got, want, "{body}");
     }
 }
 
 fn opts(target: &'static str, place: bool) -> EmitOpts {
     let mut gpu = GpuArms::default();
-    for r in ["async", "streams", "pinned", "pdl"].into_iter().chain((!place).then_some("place")) {
+    for r in ["async", "streams", "pinned", "pdl"]
+        .into_iter()
+        .chain((!place).then_some("place"))
+    {
         *gpu.off.rung(r).expect("rung") = true;
     }
-    EmitOpts { host: "generic", target, gpu, ..EmitOpts::exact() }
+    EmitOpts {
+        host: "generic",
+        target,
+        gpu,
+        ..EmitOpts::exact()
+    }
 }
 
 fn native(clang: &str, ll: &str) -> String {
@@ -104,7 +146,11 @@ fn native(clang: &str, ll: &str) -> String {
         .success();
     assert!(ok, "clang failed");
     let out = std::process::Command::new(&x).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -164,8 +210,15 @@ fn range_map_at_the_edges_matches_the_oracle() {
         "(c % 16 == t) -> { -true-> { c -> widen_f32 -> f; f / 16.0 + z[c] } -false-> x[c]; }",
     );
     // A range wider than the array: its delta is never an upload's.
-    let wide = rows.replace("(c >= t * 16 - 3 && c < t * 16 + 2)", "(c >= t * 16 && c < t * 16 + 600)");
-    for (src, want) in [(rows, Some((19, 16, -3))), (&column[..], None), (&wide[..], Some((600, 16, 0)))] {
+    let wide = rows.replace(
+        "(c >= t * 16 - 3 && c < t * 16 + 2)",
+        "(c >= t * 16 && c < t * 16 + 600)",
+    );
+    for (src, want) in [
+        (rows, Some((19, 16, -3))),
+        (&column[..], None),
+        (&wide[..], Some((600, 16, 0))),
+    ] {
         let ir = lower(src);
         // The writes union to `[16t − 3, 16t + 16)`; a column is no range.
         assert!(deltas(&ir).contains(&want), "{:?}", deltas(&ir));
@@ -257,7 +310,10 @@ fn a_fold_over_a_range_stays_in_the_cell() {
 "
         )
     };
-    let unrolled: String = (0..8).map(|i| format!("v{i} * v{i} -> v{};", i + 1)).collect::<String>() + " v8";
+    let unrolled: String = (0..8)
+        .map(|i| format!("v{i} * v{i} -> v{};", i + 1))
+        .collect::<String>()
+        + " v8";
     let natural = "8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc }";
     let (nat, unr) = (lower(&probe(natural)), lower(&probe(&unrolled)));
     let cells = |ir: &CategoryIr| ir.cell_plan(ir.entry()).len();
@@ -271,19 +327,35 @@ fn a_fold_over_a_range_stays_in_the_cell() {
             .map(|k| k.split(' ').next().unwrap_or("").to_string())
             .collect()
     };
-    let host_calls = |t: &str| t.lines().filter(|l| l.contains("call void @mapal_gpu_")).count();
+    let host_calls = |t: &str| {
+        t.lines()
+            .filter(|l| l.contains("call void @mapal_gpu_"))
+            .count()
+    };
     let Some(clang) = clang() else { return };
     let rr = mapal_interp::run(&nat, 400_000_000);
     for target in ["rtx-4090", "h100-pcie"] {
-        let (a, b) = (emit_detailed(&nat, &opts(target, false)).unwrap(), emit_detailed(&unr, &opts(target, false)).unwrap());
+        let (a, b) = (
+            emit_detailed(&nat, &opts(target, false)).unwrap(),
+            emit_detailed(&unr, &opts(target, false)).unwrap(),
+        );
         assert_eq!(kinds(&a.device), kinds(&b.device), "{target}");
         // A device cell: its own kernel, or (`flow`) a cell member of a unit.
         let dev = a.device.as_ref().unwrap();
         let unit_cell = dev.lines().any(|l| {
-            l.starts_with("; mapal.flow kernel=") && (l.contains(";ex:cell:") || l.contains("=ex:cell:"))
+            l.starts_with("; mapal.flow kernel=")
+                && (l.contains(";ex:cell:") || l.contains("=ex:cell:"))
         });
-        assert!(kinds(&a.device).iter().any(|k| k == "cell") || unit_cell, "{:?}", kinds(&a.device));
+        assert!(
+            kinds(&a.device).iter().any(|k| k == "cell") || unit_cell,
+            "{:?}",
+            kinds(&a.device)
+        );
         assert_eq!(host_calls(&a.text), host_calls(&b.text), "{target}");
-        assert_eq!(run_emulated(&clang, &a.text, a.device.as_ref().unwrap()), rr.output, "{target}");
+        assert_eq!(
+            run_emulated(&clang, &a.text, a.device.as_ref().unwrap()),
+            rr.output,
+            "{target}"
+        );
     }
 }

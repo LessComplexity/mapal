@@ -17,24 +17,35 @@ mod testgen;
 
 fn lower(src: &str) -> CategoryIr {
     let po = mapal_syntax::parse(src);
-    assert!(po.diagnostics.is_empty(), "parse: {:?}\n{src}", po.diagnostics);
+    assert!(
+        po.diagnostics.is_empty(),
+        "parse: {:?}\n{src}",
+        po.diagnostics
+    );
     let ir = mapal_lower::lower(src, &po.program).unwrap_or_else(|d| panic!("lower: {d:?}\n{src}"));
     mapal_rewrite::rewrite(ir).ir
 }
 
 fn radix_sites(ir: &CategoryIr) -> Vec<TileSite> {
-    ir.funcs().flat_map(|(f, _)| ir.tile_plan_radix(f).into_iter().map(|(_, s)| s)).collect()
+    ir.funcs()
+        .flat_map(|(f, _)| ir.tile_plan_radix(f).into_iter().map(|(_, s)| s))
+        .collect()
 }
 
 fn bench(name: &str) -> String {
-    let p = format!("{}/../../../benches/algorithms/{name}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!(
+        "{}/../../../benches/algorithms/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
     std::fs::read_to_string(p).expect("bench program")
 }
 
 #[test]
 fn convmc_is_one_implicit_gemm_site() {
     let ir = lower(&bench("pt_convmc_8_64_56_3.mapal"));
-    let [s] = &radix_sites(&ir)[..] else { panic!("one radix site") };
+    let [s] = &radix_sites(&ir)[..] else {
+        panic!("one radix site")
+    };
     // Lanes are the output's fast digits (b, i, j: B·H·W), rows the output
     // channel, k the taps (Cin·9) — weights plain, the image and output digit-affine.
     assert_eq!((s.rows, s.c, s.k), (64, 25088, 576));
@@ -50,9 +61,14 @@ fn convmc_is_one_implicit_gemm_site() {
 #[test]
 fn radix_addresses_match_the_program_everywhere() {
     let ir = lower(&bench("px_convmc_2_4_6_3.mapal"));
-    let [s] = &radix_sites(&ir)[..] else { panic!("one radix site") };
+    let [s] = &radix_sites(&ir)[..] else {
+        panic!("one radix site")
+    };
     let r = s.radix.as_deref().expect("radix");
-    let (b_, o) = (r.b.as_ref().expect("img radix"), r.out.as_ref().expect("out radix"));
+    let (b_, o) = (
+        r.b.as_ref().expect("img radix"),
+        r.out.as_ref().expect("out radix"),
+    );
     // b = img (lanes: batch, row, column), rows = output channel.
     assert_eq!((s.rows, s.c, s.k), (4, 72, 36));
     let mut seen = std::collections::BTreeSet::new();
@@ -64,7 +80,10 @@ fn radix_addresses_match_the_program_everywhere() {
             seen.insert(t);
             for k in 0..36 {
                 let (ci, q) = (k / 9, k % 9);
-                assert_eq!(b_.at(co, lane, k), ((b * 4 + ci) * 8 + i + q / 3) * 8 + j + q % 3);
+                assert_eq!(
+                    b_.at(co, lane, k),
+                    ((b * 4 + ci) * 8 + i + q / 3) * 8 + j + q % 3
+                );
                 assert_eq!(s.a.ci * co + s.a.ck * k, co * 36 + k);
             }
         }
@@ -81,18 +100,38 @@ fn emission(ir: &CategoryIr, target: &'static str, on: bool) -> mapal_backend_ll
 
 /// `contract`: the sequential contract face (`--order=sequential`), whose
 /// oracle is the host's own fold.
-fn emission_face(ir: &CategoryIr, target: &'static str, on: bool, contract: bool) -> mapal_backend_llvm::Emission {
+fn emission_face(
+    ir: &CategoryIr,
+    target: &'static str,
+    on: bool,
+    contract: bool,
+) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
     for r in ["async", "pdl", "streams", "place"] {
         *gpu.off.rung(r).expect("rung") = true;
     }
-    *(if on { gpu.on.rung("radix-tile") } else { gpu.off.rung("radix-tile") }).expect("rung") = true;
-    let opts = EmitOpts { host: "generic", target, gpu, contract, ..EmitOpts::exact() };
+    *(if on {
+        gpu.on.rung("radix-tile")
+    } else {
+        gpu.off.rung("radix-tile")
+    })
+    .expect("rung") = true;
+    let opts = EmitOpts {
+        host: "generic",
+        target,
+        gpu,
+        contract,
+        ..EmitOpts::exact()
+    };
     emit_detailed(ir, &opts).expect("emits")
 }
 
 fn radix_kernels(dev: Option<&str>) -> usize {
-    dev.map_or(0, |d| d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(" radix=")).count())
+    dev.map_or(0, |d| {
+        d.lines()
+            .filter(|l| l.starts_with("; mapal.plan") && l.contains(" radix="))
+            .count()
+    })
 }
 
 #[test]
@@ -107,24 +146,41 @@ fn radix_tile_counted_and_valued_on_unseen_programs() {
         let (src, _) = testgen::radix_src(&p);
         let ir = lower(&src);
         let admitted = !radix_sites(&ir).is_empty();
-        assert_eq!(admitted, !p.mix, "#{z}: the fact admits exactly the unmixed programs\n{src}");
+        assert_eq!(
+            admitted, !p.mix,
+            "#{z}: the fact admits exactly the unmixed programs\n{src}"
+        );
         let target = targets[z % targets.len()];
         let (on, off) = (emission(&ir, target, true), emission(&ir, target, false));
         let n_on = radix_kernels(on.device.as_deref());
-        assert_eq!(radix_kernels(off.device.as_deref()), 0, "#{z} OFF has no radix kernel");
+        assert_eq!(
+            radix_kernels(off.device.as_deref()),
+            0,
+            "#{z} OFF has no radix kernel"
+        );
         if n_on > 0 {
             tiled += 1;
             // ON takes the map from wherever OFF ran it (a nest cell or the host).
-            let cells = |d: &Option<String>| d.as_deref().map_or(0, |d| d.matches("kind=cell").count());
-            assert!(cells(&on.device) <= cells(&off.device), "#{z} {target}\n{src}");
+            let cells =
+                |d: &Option<String>| d.as_deref().map_or(0, |d| d.matches("kind=cell").count());
+            assert!(
+                cells(&on.device) <= cells(&off.device),
+                "#{z} {target}\n{src}"
+            );
         } else {
             refused += 1;
             assert_eq!(on.device, off.device, "#{z}: no site, no change\n{src}");
         }
         // (An OFF arm with no device unit runs the host alone.)
         if let (Some(cc), true) = (&clang, n_on > 0) {
-            let (a, b) = (on.device.as_deref().expect("dev"), off.device.as_deref().unwrap_or(""));
-            let (x, y) = (emu::run_emulated(cc, &on.text, a), emu::run_emulated(cc, &off.text, b));
+            let (a, b) = (
+                on.device.as_deref().expect("dev"),
+                off.device.as_deref().unwrap_or(""),
+            );
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, a),
+                emu::run_emulated(cc, &off.text, b),
+            );
             assert!(x.lines().count() == 3, "#{z}: the program printed\n{x}");
             assert_eq!(x, y, "#{z} {target} values\n{src}");
             valued += 1;
@@ -160,13 +216,29 @@ fn radix_register_tile_values() {
     let Some(cc) = emu::clang() else { return };
     // Both faces: on the sequential contract face the device-only radix tile
     // keeps the host fold's separate step (the face's oracle), as OFF's cell.
-    for (target, c) in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"].into_iter().flat_map(|t| [(t, false), (t, true)]) {
-        let (on, off) = (emission_face(&ir, target, true, c), emission_face(&ir, target, false, c));
+    for (target, c) in ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"]
+        .into_iter()
+        .flat_map(|t| [(t, false), (t, true)])
+    {
+        let (on, off) = (
+            emission_face(&ir, target, true, c),
+            emission_face(&ir, target, false, c),
+        );
         let dev = on.device.as_deref().expect("dev");
-        let plan = dev.lines().find(|l| l.contains(" radix=")).expect("a radix kernel");
-        assert!(!plan.contains(" tm=1 tn=1 "), "{target}: a register tile\n{plan}");
+        let plan = dev
+            .lines()
+            .find(|l| l.contains(" radix="))
+            .expect("a radix kernel");
+        assert!(
+            !plan.contains(" tm=1 tn=1 "),
+            "{target}: a register tile\n{plan}"
+        );
         let x = emu::run_emulated(&cc, &on.text, dev);
-        assert_eq!(x, emu::run_emulated(&cc, &off.text, off.device.as_deref().unwrap_or("")), "{target}");
+        assert_eq!(
+            x,
+            emu::run_emulated(&cc, &off.text, off.device.as_deref().unwrap_or("")),
+            "{target}"
+        );
     }
 }
 
@@ -213,16 +285,28 @@ fn radix_one_output_and_tf32_plain_operands() {
     };
     // site-geometry `tf32-radix`: a `tf32` radix site takes the `mma.sync`
     // tile (never `wgmma`); its OFF arm, the staged FFMA radix tile.
-    for (ty, off, kind) in [("", false, " kind=tile "), (": tf32 | f32", false, " kind=mma "), (": tf32 | f32", true, " kind=tile ")] {
+    for (ty, off, kind) in [
+        ("", false, " kind=tile "),
+        (": tf32 | f32", false, " kind=mma "),
+        (": tf32 | f32", true, " kind=tile "),
+    ] {
         let ir = lower(&perm(ty));
         for target in ["rtx-4090", "h100-pcie"] {
-            let mut opts = EmitOpts { host: "generic", target, ..EmitOpts::default() };
+            let mut opts = EmitOpts {
+                host: "generic",
+                target,
+                ..EmitOpts::default()
+            };
             // (ON as an arm: parts no box has value-gated it on ship it OFF.)
             opts.gpu.off.tf32_radix = off;
             opts.gpu.on.tf32_radix = !off;
             let e = emit_detailed(&ir, &opts).expect("emits");
             let tiles = e.device.as_deref().map_or(0, |d| {
-                d.lines().filter(|l| l.starts_with("; mapal.plan") && l.contains(kind) && l.contains(" radix=")).count()
+                d.lines()
+                    .filter(|l| {
+                        l.starts_with("; mapal.plan") && l.contains(kind) && l.contains(" radix=")
+                    })
+                    .count()
             });
             assert_eq!(tiles, 1, "`{ty}` off={off} {target}: the radix{kind}");
         }

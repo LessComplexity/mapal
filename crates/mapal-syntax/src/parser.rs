@@ -516,14 +516,19 @@ impl<'a> Parser<'a> {
                 (TokenKind::Ident, "f32") => p.f32 = true,
                 (TokenKind::Ident, "tf32") => p.tf32 = true,
                 _ => {
-                    self.diag("P0118", sp, "expected a precision: `f32` or `tf32` (ADR-0041)");
+                    self.diag(
+                        "P0118",
+                        sp,
+                        "expected a precision: `f32` or `tf32` (ADR-0041)",
+                    );
                     break;
                 }
             }
             self.bump();
             let bar = self.cur_span();
             if self.cur().kind == TokenKind::Error && self.text(bar) == "|" {
-                self.diagnostics.retain(|d| !(d.code.0 == "L0006" && d.span == bar));
+                self.diagnostics
+                    .retain(|d| !(d.code.0 == "L0006" && d.span == bar));
                 self.bump();
                 continue;
             }
@@ -843,7 +848,12 @@ impl<'a> Parser<'a> {
         }
         self.leave();
         let span = self.block_span(start, &items, &tail);
-        Block { items, tail, span, compute: None }
+        Block {
+            items,
+            tail,
+            span,
+            compute: None,
+        }
     }
 
     /// A block span: `[start, prev_end]` widened to cover its body (J2).
@@ -1810,7 +1820,10 @@ impl<'a> Parser<'a> {
             return StageKind::MapFold {
                 op,
                 params: Vec::new(),
-                body: Block { compute, ..self.empty_block() },
+                body: Block {
+                    compute,
+                    ..self.empty_block()
+                },
             };
         }
         let (params, mut body) = self.parse_op_block();
@@ -1899,7 +1912,15 @@ impl<'a> Parser<'a> {
         }
         self.leave();
         let span = self.block_span(start, &items, &tail);
-        (params, Block { items, tail, span, compute: None })
+        (
+            params,
+            Block {
+                items,
+                tail,
+                span,
+                compute: None,
+            },
+        )
     }
 
     /// `op-shorthand := BINOP hole-expr` — a leading binary operator after `->`.
@@ -2036,7 +2057,12 @@ impl<'a> Parser<'a> {
                 "anonymous block stage (`-> { … }` with statements/tail) is out of Mapal-Core \
                  (HANDOFF §4); user-guide §8.3 full-language form. Planned for Core+1",
             );
-            StageKind::StmtBlock(Block { items, tail, span, compute: None })
+            StageKind::StmtBlock(Block {
+                items,
+                tail,
+                span,
+                compute: None,
+            })
         }
     }
 
@@ -2241,7 +2267,12 @@ impl<'a> Parser<'a> {
         let span = self.block_span(start, &items, &tail);
         // A trailing `;` after the payload block is legal (statement form).
         self.eat(TokenKind::Semi);
-        Block { items, tail, span, compute: None }
+        Block {
+            items,
+            tail,
+            span,
+            compute: None,
+        }
     }
 
     // ======================================================================

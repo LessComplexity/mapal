@@ -24,11 +24,11 @@
 
 use super::resident::Window;
 use super::*;
-use crate::{Order, Reduced};
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
     MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
 };
+use crate::{Order, Reduced};
 use mapal_ir::{RowFoldOp, RowFoldSite};
 
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
@@ -169,7 +169,10 @@ pub(crate) const S54_DECLS: [(&str, &str); 7] = [
     ("@mapal_gpu_pin(", "declare void @mapal_gpu_pin(ptr, i64)\n"),
     ("@mapal_gpu_unpin(", "declare void @mapal_gpu_unpin()\n"),
     // S63 `splitk-atomic` / `streamk`: the output zeroed before its partials add.
-    ("@mapal_gpu_zero(", "declare void @mapal_gpu_zero(i64, i64)\n"),
+    (
+        "@mapal_gpu_zero(",
+        "declare void @mapal_gpu_zero(i64, i64)\n",
+    ),
     // cpu-gpu-boundary `async-h2d`: an upload enqueued without a host wait.
     (
         "@mapal_gpu_h2d_async(",
@@ -299,7 +302,11 @@ pub(crate) fn tile_plan(
         return ir.tile_plan(f);
     }
     let strict = ir.tile_plan(f);
-    let mut plan = if rungs.lane_stride { ir.tile_plan_strided(f) } else { strict.clone() };
+    let mut plan = if rungs.lane_stride {
+        ir.tile_plan_strided(f)
+    } else {
+        strict.clone()
+    };
     // recurrence-precision `radix-tile`: a mixed-radix site where the staged
     // tile takes it (its kernels address digits; the naive kernel too, but a
     // site the tile refuses keeps the `nest-cell` it had).
@@ -538,7 +545,15 @@ pub(crate) fn launch_split(
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
     let tiled = shaped
         .then(|| {
-            profile.gpu_tile_split(site.rows, site.c, site.k, &site.elem, rungs.wide_fma, rungs, split)
+            profile.gpu_tile_split(
+                site.rows,
+                site.c,
+                site.k,
+                &site.elem,
+                rungs.wide_fma,
+                rungs,
+                split,
+            )
         })
         .flatten()
         // S62 `cell-fill`: no register tile divides the site — one output per
@@ -709,7 +724,11 @@ fn plan_line(
     // (intent.py `radix`); no other kernel's line changes.
     if let Some(r) = site.radix.as_deref() {
         let parts = [("a", &r.a), ("b", &r.b), ("out", &r.out)];
-        let on: Vec<&str> = parts.iter().filter(|(_, x)| x.is_some()).map(|(n, _)| *n).collect();
+        let on: Vec<&str> = parts
+            .iter()
+            .filter(|(_, x)| x.is_some())
+            .map(|(n, _)| *n)
+            .collect();
         f += &format!(" radix={}", on.join(","));
     }
     // recurrence-precision `tf32-tile`: the site's product set when it admits
@@ -823,7 +842,14 @@ fn launch_for(
     arms: crate::GpuArms,
     combine: Combine,
 ) -> Launch {
-    resized(site, profile, contract, arms, launch(site, profile, contract, arms), combine)
+    resized(
+        site,
+        profile,
+        contract,
+        arms,
+        launch(site, profile, contract, arms),
+        combine,
+    )
 }
 
 /// **The chooser (ADR-0040 D4, gap map M1/G2/G6)**: how a site's `k` fold is
@@ -871,10 +897,16 @@ fn combine(
         _ => wave,
     };
     // `--splitk=` (arms) over the part's table (`Geom::split`).
-    let forced = if arms.splitk > 0 { arms.splitk } else { gpu.geom.split };
+    let forced = if arms.splitk > 0 {
+        arms.splitk
+    } else {
+        gpu.geom.split
+    };
     let count = |workspace| match forced {
         s if s > 0 && panels.is_multiple_of(s) => s,
-        _ if under => profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace),
+        _ if under => {
+            profile.split_fill(blocks, warps, cap, panels, site.rows * site.c, e, workspace)
+        }
         _ => profile.split_count(blocks, wave, panels, site.rows * site.c, e, workspace),
     };
     let s_ws = if rungs.splitk && l.raster == 1 {
@@ -981,7 +1013,9 @@ fn elem_bytes_of(elem: &Ty) -> u64 {
 /// The site as its kernel ids key it: its `Debug` text, a plain site's
 /// without the `radix` field it lacks (ids from before `radix-tile` stand).
 fn site_key(site: &TileSite) -> String {
-    format!("{site:?}").replace(", radix: None", "").replace(", tf32: false", "")
+    format!("{site:?}")
+        .replace(", radix: None", "")
+        .replace(", tf32: false", "")
 }
 
 /// ADR-0041 D6: the reduced realization a site's products admit — `tf32` in
@@ -994,11 +1028,7 @@ pub(crate) fn site_reduced(site: &TileSite) -> Option<Reduced> {
 /// A stable id for a site's kernel: FNV-1a over everything the kernel text
 /// depends on. The host passes it to the runtime, which looks the kernel up as
 /// `mapal_tile_<id>` — so the two translation units agree without sharing state.
-pub(crate) fn kernel_id(
-    site: &TileSite,
-    profile: &TargetProfile,
-    contract: bool,
-) -> u64 {
+pub(crate) fn kernel_id(site: &TileSite, profile: &TargetProfile, contract: bool) -> u64 {
     kernel_id_with(site, profile, contract, None)
 }
 
@@ -1010,7 +1040,12 @@ pub(crate) fn kernel_id_with(
     contract: bool,
     epi: Option<&EpiKernel>,
 ) -> u64 {
-    let mut key = format!("{}|{}|{contract}|{:?}", site_key(site), profile.name, site_reduced(site));
+    let mut key = format!(
+        "{}|{}|{contract}|{:?}",
+        site_key(site),
+        profile.name,
+        site_reduced(site)
+    );
     if let Some(e) = epi {
         key.push_str(&format!("|{e:?}"));
     }
@@ -1030,7 +1065,12 @@ pub(crate) fn kernel_id_col(
     if !col {
         return kernel_id(site, profile, contract);
     }
-    let key = format!("{}|{}|{contract}|{:?}|col", site_key(site), profile.name, site_reduced(site));
+    let key = format!(
+        "{}|{}|{contract}|{:?}|col",
+        site_key(site),
+        profile.name,
+        site_reduced(site)
+    );
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -1047,7 +1087,12 @@ pub(crate) fn kernel_id_split(
     contract: bool,
     part: &str,
 ) -> u64 {
-    let key = format!("{}|{}|{contract}|{:?}|{part}", site_key(site), profile.name, site_reduced(site));
+    let key = format!(
+        "{}|{}|{contract}|{:?}|{part}",
+        site_key(site),
+        profile.name,
+        site_reduced(site)
+    );
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -1166,7 +1211,11 @@ fn gen_kernel_text(id: u64, callee: &str, elem: &str) -> String {
 /// read already re-addressed for a column-major producer) and the profile.
 /// Named `mapal_tile_<id>` like a site's, so the runtime's `launch` finds it.
 pub(crate) fn rowfold_id(site: &RowFoldSite, profile: &TargetProfile, lanes: u64) -> u64 {
-    let l = if lanes > 1 { format!("|lanes={lanes}") } else { String::new() };
+    let l = if lanes > 1 {
+        format!("|lanes={lanes}")
+    } else {
+        String::new()
+    };
     format!("rowfold|{site:?}|{}{l}", profile.name)
         .bytes()
         .fold(0xcbf2_9ce4_8422_2325, |h, b| {
@@ -1194,7 +1243,10 @@ pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile, lanes: u
     let g = profile.gpu().expect("a device fold has a GPU profile");
     if lanes > 1 {
         // `fold-lanes`: a warp a row, whole warps per block.
-        return (site.rows.saturating_mul(lanes).div_ceil(NAIVE_THREADS), NAIVE_THREADS);
+        return (
+            site.rows.saturating_mul(lanes).div_ceil(NAIVE_THREADS),
+            NAIVE_THREADS,
+        );
     }
     let threads = site
         .rows
@@ -1223,9 +1275,16 @@ pub(crate) fn rowfold_lanes(
 ) -> u64 {
     let regroups = matches!(
         site.op,
-        RowFoldOp::Arith { op: Operation::Add | Operation::Mul, .. } | RowFoldOp::Select { .. }
+        RowFoldOp::Arith {
+            op: Operation::Add | Operation::Mul,
+            ..
+        } | RowFoldOp::Select { .. }
     );
-    match host_rungs(profile, contract, arms).fold_lanes && regroups && site.w == 1 && site.a.ksplit.is_none() {
+    match host_rungs(profile, contract, arms).fold_lanes
+        && regroups
+        && site.w == 1
+        && site.a.ksplit.is_none()
+    {
         true => warp_lanes(profile, order, &site.elem, site.k, site.rows),
         false => 1,
     }
@@ -1234,7 +1293,13 @@ pub(crate) fn rowfold_lanes(
 /// The lane gate `fold-lanes` and `cell-lanes` share: a warp per unit (a row,
 /// a cell) where the order is free (ADR-0040), the fold is f32 and at least a
 /// warp long, and `units` warps fit the part's resident threads. 1 otherwise.
-pub(crate) fn warp_lanes(profile: &TargetProfile, order: Order, elem: &Ty, k: u64, units: u64) -> u64 {
+pub(crate) fn warp_lanes(
+    profile: &TargetProfile,
+    order: Order,
+    elem: &Ty,
+    k: u64,
+    units: u64,
+) -> u64 {
     let Some(g) = profile.gpu() else { return 1 };
     let fits = units.saturating_mul(g.warp) <= g.sms.saturating_mul(g.max_threads_per_sm);
     match order == Order::Free && g.warp == 32 && *elem == Ty::f32() && k >= g.warp && fits {
@@ -1254,9 +1319,15 @@ fn rowfold_entry(
     let lanes = rowfold_lanes(s, profile, contract, arms, order);
     let name = kernel_name(rowfold_id(s, profile, lanes));
     let (gx, block) = rowfold_grid(s, profile, lanes);
-    let l = if lanes > 1 { format!(" lanes={lanes}") } else { String::new() };
-    let text = format!("; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}{l}\n", s.rows, s.k)
-        + &rowfold_kernel_text(&name, s, profile, lanes);
+    let l = if lanes > 1 {
+        format!(" lanes={lanes}")
+    } else {
+        String::new()
+    };
+    let text = format!(
+        "; mapal.plan kernel={name} kind=rowfold rows={} k={} gx={gx} block={block}{l}\n",
+        s.rows, s.k
+    ) + &rowfold_kernel_text(&name, s, profile, lanes);
     (name, text)
 }
 
@@ -1335,9 +1406,16 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile, lan
     let (gid, k0, acc0, kstep, fin, store) = if lanes > 1 {
         let comb = |a: &str, b: &str, r: &str| match s.op {
             RowFoldOp::Arith { op, .. } => {
-                format!("  {r} = {} {t} {a}, {b}\n", if op == Operation::Mul { "fmul" } else { "fadd" })
+                format!(
+                    "  {r} = {} {t} {a}, {b}\n",
+                    if op == Operation::Mul { "fmul" } else { "fadd" }
+                )
             }
-            RowFoldOp::Select { cmp, acc_lhs, acc_if_true } => {
+            RowFoldOp::Select {
+                cmp,
+                acc_lhs,
+                acc_if_true,
+            } => {
                 let pred = match cmp {
                     Operation::Lt => "olt",
                     Operation::Gt => "ogt",
@@ -1346,11 +1424,15 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile, lan
                 };
                 let (x, y) = if acc_lhs { (a, b) } else { (b, a) };
                 let (p, q) = if acc_if_true { (a, b) } else { (b, a) };
-                format!("  {r}c = fcmp {pred} {t} {x}, {y}\n  {r} = select i1 {r}c, {t} {p}, {t} {q}\n")
+                format!(
+                    "  {r}c = fcmp {pred} {t} {x}, {y}\n  {r} = select i1 {r}c, {t} {p}, {t} {q}\n"
+                )
             }
         };
         let (identity, seeded) = match s.op {
-            RowFoldOp::Arith { op: Operation::Mul, .. } => ("1.0".to_string(), true),
+            RowFoldOp::Arith {
+                op: Operation::Mul, ..
+            } => ("1.0".to_string(), true),
             RowFoldOp::Arith { .. } => ("-0.0".to_string(), true),
             RowFoldOp::Select { .. } => (seed.clone(), false),
         };
@@ -1367,13 +1449,25 @@ fn rowfold_kernel_text(name: &str, s: &RowFoldSite, profile: &TargetProfile, lan
             off /= 2;
         }
         if seeded {
-            let first = matches!(s.op, RowFoldOp::Arith { acc_first: true, .. });
-            let (a, b) = if first { (seed.as_str(), cur.as_str()) } else { (cur.as_str(), seed.as_str()) };
+            let first = matches!(
+                s.op,
+                RowFoldOp::Arith {
+                    acc_first: true,
+                    ..
+                }
+            );
+            let (a, b) = if first {
+                (seed.as_str(), cur.as_str())
+            } else {
+                (cur.as_str(), seed.as_str())
+            };
             tree.push_str(&comb(a, b, "%tot"));
             cur = "%tot".into();
         }
         (
-            format!("  %g = add i64 %row0, %t64\n  %i = udiv i64 %g, {lanes}\n  %ln = urem i64 %g, {lanes}\n"),
+            format!(
+                "  %g = add i64 %row0, %t64\n  %i = udiv i64 %g, {lanes}\n  %ln = urem i64 %g, {lanes}\n"
+            ),
             "%ln".to_string(),
             identity,
             lanes,
@@ -1563,16 +1657,24 @@ pub(crate) fn cell_kernel_text(
     };
     let (gid, at) = match (g.lanes, g.range) {
         (1, None) => ("%i".to_string(), String::new()),
-        (1, Some(step)) => ("%k".to_string(), format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n")),
+        (1, Some(step)) => (
+            "%k".to_string(),
+            format!("  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
+        ),
         (l, None) => ("%g".to_string(), format!("  %i = udiv i64 %g, {l}\n")),
         (l, Some(step)) => (
             "%g".to_string(),
-            format!("  %k = udiv i64 %g, {l}\n  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"),
+            format!(
+                "  %k = udiv i64 %g, {l}\n  %ks = mul i64 %k, {step}\n  %i = add i64 %rs, %ks\n"
+            ),
         ),
     };
     // Lanes: the bound test is on the cell, after the division.
     let (head, guard) = if g.lanes == 1 {
-        (String::new(), format!("  %in = icmp ult i64 {k}, {bound}\n"))
+        (
+            String::new(),
+            format!("  %in = icmp ult i64 {k}, {bound}\n"),
+        )
     } else {
         (at.clone(), format!("  %in = icmp ult i64 {k}, {bound}\n"))
     };
@@ -1640,7 +1742,10 @@ pub(crate) struct CellGeo {
 
 impl CellGeo {
     #[cfg(test)]
-    pub(crate) const ONE: CellGeo = CellGeo { range: None, lanes: 1 };
+    pub(crate) const ONE: CellGeo = CellGeo {
+        range: None,
+        lanes: 1,
+    };
 
     /// `(blocks, threads)` for `cells` cells.
     pub(crate) fn grid(self, cells: u64) -> (u64, u64) {
@@ -1654,7 +1759,9 @@ pub(crate) fn uniform_from_i64(dst: &str, src: &str, ty: &str) -> String {
     match ty {
         "i64" => format!("  {dst} = bitcast i64 {src} to i64\n"),
         "double" => format!("  {dst} = bitcast i64 {src} to double\n"),
-        "float" => format!("  {dst}.b = trunc i64 {src} to i32\n  {dst} = bitcast i32 {dst}.b to float\n"),
+        "float" => {
+            format!("  {dst}.b = trunc i64 {src} to i32\n  {dst} = bitcast i32 {dst}.b to float\n")
+        }
         t => format!("  {dst} = trunc i64 {src} to {t}\n"),
     }
 }
@@ -1665,7 +1772,9 @@ pub(crate) fn uniform_to_i64(dst: &str, val: &str, ty: &str) -> String {
     match ty {
         "i64" => format!("{dst} = bitcast i64 {val} to i64"),
         "double" => format!("{dst} = bitcast double {val} to i64"),
-        "float" => format!("{dst}.b = bitcast float {val} to i32\n  {dst} = zext i32 {dst}.b to i64"),
+        "float" => {
+            format!("{dst}.b = bitcast float {val} to i32\n  {dst} = zext i32 {dst}.b to i64")
+        }
         t => format!("{dst} = zext {t} {val} to i64"),
     }
 }
@@ -1690,7 +1799,10 @@ pub(crate) fn launched_kernels(host: &str) -> std::collections::BTreeSet<String>
             "gen" => "mapal_gen",
             _ => continue,
         };
-        let lit: String = args.chars().take_while(|c| *c == '-' || c.is_ascii_digit()).collect();
+        let lit: String = args
+            .chars()
+            .take_while(|c| *c == '-' || c.is_ascii_digit())
+            .collect();
         let id = lit
             .parse::<u64>()
             .or_else(|_| lit.parse::<i64>().map(|v| v as u64));
@@ -1796,8 +1908,10 @@ pub(crate) fn device_module(
                 if let Combine::Workspace { s } = c {
                     let red = id("reduce");
                     kernels.entry(red.clone()).or_insert_with(|| {
-                        format!("; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n", site.rows, site.c)
-                            + &reduce_kernel_text(&red, site, profile, contract, arms, s)
+                        format!(
+                            "; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n",
+                            site.rows, site.c
+                        ) + &reduce_kernel_text(&red, site, profile, contract, arms, s)
                     });
                 }
             }
@@ -1881,7 +1995,9 @@ pub(crate) fn device_module(
             out.push_str(text);
         }
         out.push('\n');
-        out.push_str(&format!("; mapal.plan kernel=mapal_gen_{id:016x} kind=gen\n"));
+        out.push_str(&format!(
+            "; mapal.plan kernel=mapal_gen_{id:016x} kind=gen\n"
+        ));
         out.push_str(&gen_kernel_text(*id, callee, elem));
     }
     // The bodies an epilogue calls (S54): the host's text, or its device
@@ -1924,7 +2040,9 @@ pub(crate) fn device_module(
             .find(|l| l.starts_with("define"))
             .map_or(0, |d| d.matches("i64 %c").count());
         out.push_str("\n; cell\n");
-        out.push_str(&format!("; mapal.plan kernel={name} kind=cell uniform={uniform} {facts}\n"));
+        out.push_str(&format!(
+            "; mapal.plan kernel={name} kind=cell uniform={uniform} {facts}\n"
+        ));
         out.push_str(kernel);
     }
     // generic-fusion: each unit's bodies once (shared with the others'), then
@@ -2099,7 +2217,13 @@ fn kernel<'s>(
 fn max_index(site: &TileSite, l: &Launch, combine: Combine) -> u64 {
     let rx = site.radix.as_deref();
     let last = |r: &mapal_ir::TileRead| {
-        let ra = rx.and_then(|x| if std::ptr::eq(r, &site.a) { x.a.as_ref() } else { x.b.as_ref() });
+        let ra = rx.and_then(|x| {
+            if std::ptr::eq(r, &site.a) {
+                x.a.as_ref()
+            } else {
+                x.b.as_ref()
+            }
+        });
         if let Some(ra) = ra {
             return ra.max();
         }
@@ -2594,7 +2718,11 @@ impl Kernel<'_> {
     fn digits(&mut self, ds: &[mapal_ir::AxisDigit], x: &str) -> String {
         let mut acc = "0".to_string();
         for d in ds {
-            let q = if d.stride == 1 { x.to_string() } else { self.op("udiv", x, d.stride) };
+            let q = if d.stride == 1 {
+                x.to_string()
+            } else {
+                self.op("udiv", x, d.stride)
+            };
             let r = self.op("urem", &q, d.radix);
             let v = self.op("mul", &r, d.coef);
             acc = self.op("add", &acc, &v);
@@ -3313,7 +3441,11 @@ impl Kernel<'_> {
                 radix.push((false, g, self.op("add", &sn, bm * lda), kr));
             }
         }
-        let a_chunks = if ra.is_some() { 0 } else { bm * bk / 4 / threads };
+        let a_chunks = if ra.is_some() {
+            0
+        } else {
+            bm * bk / 4 / threads
+        };
         for p in 0..a_chunks {
             let li = self.op("add", &tid, p * threads);
             let r = self.op("udiv", &li, ac);
@@ -3327,7 +3459,11 @@ impl Kernel<'_> {
             let sdst = self.op("add", &sr, &kc);
             copies.push((true, gsrc, sdst));
         }
-        let b_chunks = if rb.is_some() { 0 } else { bk * bn / 4 / threads };
+        let b_chunks = if rb.is_some() {
+            0
+        } else {
+            bk * bn / 4 / threads
+        };
         for p in 0..b_chunks {
             let li = self.op("add", &tid, p * threads);
             let kr = self.op("udiv", &li, bc);
@@ -3538,7 +3674,9 @@ impl Kernel<'_> {
                                 self.store_cells(&[x], &oi);
                             } else {
                                 let op = self.gep(1, "%o", &oi);
-                                self.line(format!("store float {x}, ptr addrspace(1) {op}, align 4"));
+                                self.line(format!(
+                                    "store float {x}, ptr addrspace(1) {op}, align 4"
+                                ));
                             }
                         }
                         continue;
@@ -3777,7 +3915,9 @@ impl Kernel<'_> {
         // `lanes`-aligned and every other digit moves by whole vectors.
         let out_vec = ro.is_none_or(|o| {
             let v = |c: u64| c.is_multiple_of(lanes);
-            o.lane.first().is_some_and(|d| d.stride == 1 && d.coef == 1 && v(d.radix))
+            o.lane
+                .first()
+                .is_some_and(|d| d.stride == 1 && d.coef == 1 && v(d.radix))
                 && o.i.iter().chain(&o.lane[1..]).all(|d| v(d.coef))
                 && v(o.base)
         });
@@ -3797,7 +3937,14 @@ impl Kernel<'_> {
         let b_al = if b_vec { GPU_VEC_BYTES } else { e };
         let (a_kc, b_kc) = (a_kc.into_inner(), b_kc.into_inner());
         // Copy `p`'s global index for panel `k0` (`kd` = `k0·ck` on a plain operand).
-        let gidx = |k: &mut Self, m: Option<&mapal_ir::RadixAddr>, kcs: &[String], p: usize, gsrc: &str, goff: u64, k0: &str, kd: &str| {
+        let gidx = |k: &mut Self,
+                    m: Option<&mapal_ir::RadixAddr>,
+                    kcs: &[String],
+                    p: usize,
+                    gsrc: &str,
+                    goff: u64,
+                    k0: &str,
+                    kd: &str| {
             if let Some(m) = m {
                 let kk = k.op("add", k0, &kcs[p]);
                 let kx = k.digits(&m.k, &kk);
@@ -4185,11 +4332,15 @@ impl Kernel<'_> {
         let past = self.tmp();
         self.line(format!("{past} = icmp ult {ix} {end0}, {total}"));
         let end = self.tmp();
-        self.line(format!("{end} = select i1 {past}, {ix} {end0}, {ix} {total}"));
+        self.line(format!(
+            "{end} = select i1 {past}, {ix} {end0}, {ix} {total}"
+        ));
         self.line("br label %seg");
         self.out.push_str("seg:\n");
         let it = self.tmp();
-        self.line(format!("{it} = phi {ix} [{start}, %entry], [@SEG_NEXT@, %segl]"));
+        self.line(format!(
+            "{it} = phi {ix} [{start}, %entry], [@SEG_NEXT@, %segl]"
+        ));
         let tile = self.op("udiv", &it, panels);
         let p0 = self.op("urem", &it, panels);
         let left = self.tmp();
@@ -4198,7 +4349,9 @@ impl Kernel<'_> {
         let fits = self.tmp();
         self.line(format!("{fits} = icmp ult {ix} {p1a}, {panels}"));
         let p1 = self.tmp();
-        self.line(format!("{p1} = select i1 {fits}, {ix} {p1a}, {ix} {panels}"));
+        self.line(format!(
+            "{p1} = select i1 {fits}, {ix} {p1a}, {ix} {panels}"
+        ));
         let bx = self.op("urem", &tile, gx);
         let by = self.op("udiv", &tile, gx);
         let (bx, by) = if h < 2 {
@@ -4278,20 +4431,9 @@ impl<'a> FnEmit<'a> {
             let id = if col {
                 kernel_id_col(site, self.profile, self.contract, true)
             } else {
-                kernel_id_with(
-                    site,
-                    self.profile,
-                    self.contract,
-                    epi.as_ref(),
-                )
+                kernel_id_with(site, self.profile, self.contract, epi.as_ref())
             } as i64;
-            let l = launch_in(
-                site,
-                self.profile,
-                self.contract,
-                self.gpu_arms,
-                self.order,
-            );
+            let l = launch_in(site, self.profile, self.contract, self.gpu_arms, self.order);
             let cells = site.rows * site.c;
             let bytes_o = cells * elem_bytes_of(&site.elem);
             let combined = epi.is_none() && !col && !streams;
@@ -4301,7 +4443,13 @@ impl<'a> FnEmit<'a> {
             // split below.
             let atomic = match l.combine {
                 Combine::Atomic { s } if combined => {
-                    let geom = format!("i32 {}, i32 {}, i32 {}, i32 {}", l.gx, l.gy * s, l.block, l.smem);
+                    let geom = format!(
+                        "i32 {}, i32 {}, i32 {}, i32 {}",
+                        l.gx,
+                        l.gy * s,
+                        l.block,
+                        l.smem
+                    );
                     Some(("atomic", geom, format!(" ; splitk={s} atomic")))
                 }
                 Combine::StreamK { ctas, iters } if combined => {
@@ -4311,8 +4459,7 @@ impl<'a> FnEmit<'a> {
                 _ => None,
             };
             if let Some((part, geom, tag)) = atomic {
-                let aid =
-                    kernel_id_split(site, self.profile, self.contract, part) as i64;
+                let aid = kernel_id_split(site, self.profile, self.contract, part) as i64;
                 self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], None, |ops, o| {
                     format!(
                         "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
@@ -4431,12 +4578,7 @@ impl<'a> FnEmit<'a> {
         // LLVM reads an `i64` literal as signed; the runtime prints the same
         // 64 bits back as hex, so the two units agree on the name.
         let id = kernel_id(site, self.profile, self.contract) as i64;
-        let l = launch(
-            site,
-            self.profile,
-            self.contract,
-            self.gpu_arms,
-        );
+        let l = launch(site, self.profile, self.contract, self.gpu_arms);
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_ptr}, i64 {a_bytes}, ptr {b_ptr}, \
              i64 {b_bytes}, ptr {o_ptr}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
@@ -4566,28 +4708,31 @@ impl<'a> FnEmit<'a> {
             let ws = match split {
                 Some(Combine::Workspace { s }) => {
                     let slot = format!("%d{}", self.fresh());
-                    self.allocas.push_str(&format!("  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"));
+                    self.allocas.push_str(&format!(
+                        "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
+                    ));
                     self.split_slots.push(slot.clone());
                     self.dallocs.push((slot.clone(), s * bytes_o));
                     let ws = self.tmp();
-                    self.line(format!("{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})", s * bytes_o));
+                    self.line(format!(
+                        "{ws} = call i64 @mapal_gpu_alloc(ptr {slot}, i64 {})",
+                        s * bytes_o
+                    ));
                     ws
                 }
                 _ => String::new(),
             };
             let rid = kernel_id_split(one, self.profile, self.contract, "reduce") as i64;
-            let l = launch(
-                one,
-                self.profile,
-                self.contract,
-                self.gpu_arms,
-            );
+            let l = launch(one, self.profile, self.contract, self.gpu_arms);
             let call = |a: &str, b: &str, o: &str| match split {
                 Some(Combine::Atomic { s }) => format!(
                     "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
                      call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {o}, \
                      i32 {}, i32 {}, i32 {}, i32 {}) ; splitk={s} atomic",
-                    lc.gx, lc.gy * s, lc.block, lc.smem
+                    lc.gx,
+                    lc.gy * s,
+                    lc.block,
+                    lc.smem
                 ),
                 Some(Combine::StreamK { ctas, iters }) => format!(
                     "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
@@ -4601,7 +4746,10 @@ impl<'a> FnEmit<'a> {
                         "call void @mapal_gpu_launch(i64 {id}, i64 {a}, i64 {b}, i64 {ws}, \
                          i32 {}, i32 {}, i32 {}, i32 {}) ; splitk={s}\n  \
                          call void @mapal_gpu_launch(i64 {rid}, i64 {ws}, i64 0, i64 {o}, i32 {rgx}, i32 1, i32 {rblock}, i32 0)",
-                        lc.gx, lc.gy * s, lc.block, lc.smem
+                        lc.gx,
+                        lc.gy * s,
+                        lc.block,
+                        lc.smem
                     )
                 }
                 _ => format!(
@@ -4643,12 +4791,7 @@ impl<'a> FnEmit<'a> {
         let a_bytes = ((one.k - 1) * one.a.ck + 1) * eb;
         let (b_bytes, o_bytes) = (b_len * eb, one.c * eb);
         let id = kernel_id(one, self.profile, self.contract) as i64;
-        let l = launch(
-            one,
-            self.profile,
-            self.contract,
-            self.gpu_arms,
-        );
+        let l = launch(one, self.profile, self.contract, self.gpu_arms);
         self.line(format!(
             "call void @mapal_gpu_tile(i64 {id}, ptr {a_row}, i64 {a_bytes}, ptr {b_ptr}, \
              i64 {b_bytes}, ptr {o_row}, i64 {o_bytes}, i32 {}, i32 {}, i32 {}, i32 {})",
@@ -4668,7 +4811,10 @@ mod tests {
     /// The tests' call shape from before ADR-0041 D6: `reduced` is now the
     /// site's own product set ([`TileSite::tf32`]), so it rides on the site.
     fn with_set(site: &TileSite, reduced: Option<Reduced>) -> TileSite {
-        TileSite { tf32: reduced.is_some(), ..site.clone() }
+        TileSite {
+            tf32: reduced.is_some(),
+            ..site.clone()
+        }
     }
 
     fn launch(
@@ -4704,7 +4850,16 @@ mod tests {
         epi: Option<&EpiKernel>,
         combine: Combine,
     ) -> String {
-        super::kernel_text(name, &with_set(site, reduced), p, contract, arms, col, epi, combine)
+        super::kernel_text(
+            name,
+            &with_set(site, reduced),
+            p,
+            contract,
+            arms,
+            col,
+            epi,
+            combine,
+        )
     }
 
     /// A `m × n × k` site as `benches/gpu/gen_tiles.py` writes it: `a[i·K + k]`
@@ -4788,7 +4943,15 @@ mod tests {
         let s = site(1, 256, 128, true, false, Ty::f32());
         let arms = crate::GpuArms::default();
         let text = kernel_text(
-            "strided", &s, &H100_PCIE, true, arms, None, false, None, Combine::None,
+            "strided",
+            &s,
+            &H100_PCIE,
+            true,
+            arms,
+            None,
+            false,
+            None,
+            Combine::None,
         );
         assert!(text.contains(" = fmul float ") && text.contains(" = fadd float "));
         assert!(!text.contains("call float @llvm.fma"));
@@ -4850,8 +5013,17 @@ mod tests {
                         };
                         assert_eq!(l.arithmetic, expected);
                         assert_eq!(l.tiled.is_some(), n == 256, "{} {s:?}", p.name);
-                        let text =
-                            kernel_text("scalar", &s, p, contract, arms, None, false, None, Combine::None);
+                        let text = kernel_text(
+                            "scalar",
+                            &s,
+                            p,
+                            contract,
+                            arms,
+                            None,
+                            false,
+                            None,
+                            Combine::None,
+                        );
                         assert_eq!(text.contains("@llvm.fma"), contract);
                         assert_eq!(text.contains(" = fmul "), !contract);
                         assert_eq!(text.contains(" = fadd "), !contract);
@@ -4959,8 +5131,10 @@ mod tests {
                             Combine::None,
                         );
                         // (The plan line names the site's set, `set=tf32|f32`.)
-                        let code: String =
-                            text.lines().filter(|l| !l.starts_with("; mapal.plan")).collect();
+                        let code: String = text
+                            .lines()
+                            .filter(|l| !l.starts_with("; mapal.plan"))
+                            .collect();
                         assert!(
                             !code.contains("tf32")
                                 && !code.contains("mma.sync")
@@ -5066,7 +5240,8 @@ mod tests {
                     .zip([Arithmetic::SeparateMulAdd, Arithmetic::OrderedFma])
                 {
                     assert_eq!(launch(s, p, true, arms, None).arithmetic, expected);
-                    let text = kernel_text("mixed", s, p, true, arms, None, false, None, Combine::None);
+                    let text =
+                        kernel_text("mixed", s, p, true, arms, None, false, None, Combine::None);
                     assert_eq!(text.contains("griddepcontrol.wait"), wait);
                 }
             }
@@ -5370,9 +5545,10 @@ mod tests {
                     let (blocks, wave) = (l.gx * l.gy, l.wave(g));
                     // The fill class a `GPU_RUNGS_OFF` row keys (`launch`'s `wps`).
                     let base = p.gpu_tile(m, n, k, &s.elem, false, false);
-                    let (fb, ft) = base.map_or(((m * n).div_ceil(NAIVE_THREADS), NAIVE_THREADS), |t| {
-                        ((m / t.bm()) * (n / t.bn()), t.threads())
-                    });
+                    let (fb, ft) = base
+                        .map_or(((m * n).div_ceil(NAIVE_THREADS), NAIVE_THREADS), |t| {
+                            ((m / t.bm()) * (n / t.bn()), t.threads())
+                        });
                     let fill = if g.warps_per_scheduler(fb, ft) < GPU_RESIDENT_BLOCKS {
                         "under"
                     } else {
@@ -5432,8 +5608,15 @@ mod tests {
         // `site_geometry.rs`'s).
         let s63 = off(&["fill-wave"]);
         let shipped = |p, (m, n, k)| {
-            let c = launch_in(&site(m, n, k, true, true, Ty::f32()), p, true, s63, None, Order::Free)
-                .combine;
+            let c = launch_in(
+                &site(m, n, k, true, true, Ty::f32()),
+                p,
+                true,
+                s63,
+                None,
+                Order::Free,
+            )
+            .combine;
             match c {
                 Combine::None => "none",
                 Combine::Workspace { .. } => "workspace",
@@ -5460,7 +5643,14 @@ mod tests {
         }
         // The measured table: the 3090 ships no workspace split at (filled,
         // exact) — its one split cell there lost (S62) — on the fixed face.
-        let pre = off(&["row-fit", "wave-gate", "grid-share", "panel-regs", "fill-rows", "cell-fill"]);
+        let pre = off(&[
+            "row-fit",
+            "wave-gate",
+            "grid-share",
+            "panel-regs",
+            "fill-rows",
+            "cell-fill",
+        ]);
         let l = launch_in(&s16, r3090, false, pre, None, Order::Fixed);
         assert_eq!(l.combine, Combine::None);
         let l = launch_in(&s16, r3090, true, pre, None, Order::Fixed);
@@ -5472,15 +5662,25 @@ mod tests {
     /// faces, every realization) — the intent `benches/gpu/evidence.py` checks.
     #[test]
     fn plan_line_reads_back_as_its_launch() {
-        let cells = [(16, 2048, 7168), (16, 18432, 7168), (128, 2048, 7168), (4096, 4096, 4096)];
+        let cells = [
+            (16, 2048, 7168),
+            (16, 18432, 7168),
+            (128, 2048, 7168),
+            (4096, 4096, 4096),
+        ];
         let parts = [&RTX_5090, &RTX_4090, &H100_PCIE, &crate::profile::RTX_3090];
         let arms = crate::GpuArms::default();
         for p in parts {
             for (m, n, k) in cells {
                 let s = site(m, n, k, true, true, Ty::f32());
-                for (contract, order) in [(false, Order::Sequential), (true, Order::Free), (false, Order::Fixed)] {
+                for (contract, order) in [
+                    (false, Order::Sequential),
+                    (true, Order::Free),
+                    (false, Order::Fixed),
+                ] {
                     let l = launch_in(&s, p, contract, arms, None, order);
-                    let text = kernel_text("k", &s, p, contract, arms, None, false, None, l.combine);
+                    let text =
+                        kernel_text("k", &s, p, contract, arms, None, false, None, l.combine);
                     let line = text.lines().next().expect("a plan line");
                     let f: std::collections::HashMap<&str, &str> = line
                         .strip_prefix("; mapal.plan ")
@@ -5496,7 +5696,15 @@ mod tests {
                     );
                     let g = l.tiled.expect("the FMA tile");
                     assert_eq!(
-                        (n("tm"), n("tn"), n("tx"), n("ty"), n("bk"), n("stages"), n("blocks_per_sm")),
+                        (
+                            n("tm"),
+                            n("tn"),
+                            n("tx"),
+                            n("ty"),
+                            n("bk"),
+                            n("stages"),
+                            n("blocks_per_sm")
+                        ),
                         (g.tm, g.tn, g.tx, g.ty, g.bk, g.stages, g.blocks_per_sm)
                     );
                     assert_eq!(n("S"), l.combine.splits());
@@ -5534,7 +5742,10 @@ mod tests {
         assert!(text.contains("seg:\n") && text.contains("segl:\n") && text.contains("exit:\n"));
         assert!(text.contains("label %seg, label %exit"));
         assert!(text.contains(&format!(", {iters}\n")), "start = cta·iters");
-        assert!(text.contains(", %seg], ["), "the panel loop is entered per piece");
+        assert!(
+            text.contains(", %seg], ["),
+            "the panel loop is entered per piece"
+        );
         assert!(text.contains("atomicrmw fadd ptr addrspace(1)"));
         assert!(
             !text
@@ -5583,7 +5794,10 @@ mod tests {
         }
         let p = crate::profile::resolve("rtx-4090").expect("profile");
         assert_ne!(cell_id("fn2", 16384, p), gen_id("fn2", 16384, p));
-        let caps = [CapArg::Ptr, CapArg::Law("fn3".to_string(), "float".to_string())];
+        let caps = [
+            CapArg::Ptr,
+            CapArg::Law("fn3".to_string(), "float".to_string()),
+        ];
         let k = cell_kernel_text(
             1,
             "fn2_cell",
@@ -5606,10 +5820,25 @@ mod tests {
         assert!(k.contains("icmp ult i64 %i, 300"), "{k}");
         // A uniform rides the launch's 8-byte slot and is narrowed in the cell.
         let caps = [CapArg::Uniform("i32".into()), CapArg::Ptr];
-        let k = cell_kernel_text(2, "fn4", 8, "float", "{ i32, ptr, i32 }", None, &caps, CellGeo::ONE);
-        assert!(k.contains("(ptr addrspace(1) %o, i64 %c0, ptr addrspace(1) %c1)"), "{k}");
+        let k = cell_kernel_text(
+            2,
+            "fn4",
+            8,
+            "float",
+            "{ i32, ptr, i32 }",
+            None,
+            &caps,
+            CellGeo::ONE,
+        );
+        assert!(
+            k.contains("(ptr addrspace(1) %o, i64 %c0, ptr addrspace(1) %c1)"),
+            "{k}"
+        );
         assert!(k.contains("%g0 = trunc i64 %c0 to i32"), "{k}");
-        assert!(k.contains("%a0 = insertvalue { i32, ptr, i32 } poison, i32 %g0, 0"), "{k}");
+        assert!(
+            k.contains("%a0 = insertvalue { i32, ptr, i32 } poison, i32 %g0, 0"),
+            "{k}"
+        );
     }
 
     /// `idx32`: every S52 site indexes in `i32`; an operand past 2³¹ elements
@@ -5619,7 +5848,11 @@ mod tests {
         for p in PARTS {
             for s in s52_sites() {
                 let l = launch(&s, p, false, force(GpuRungs::ALL), None);
-                assert!(max_index(&s, &l, Combine::None) < 1 << 31, "{} {s:?}", p.name);
+                assert!(
+                    max_index(&s, &l, Combine::None) < 1 << 31,
+                    "{} {s:?}",
+                    p.name
+                );
                 let k = kernel_text(
                     "k",
                     &s,
@@ -5813,7 +6046,17 @@ mod tests {
                 );
                 assert!(g.stages <= s.k / g.bk);
                 assert_eq!(l.smem, g.stages * stage);
-                let text = kernel_text("m16", &s, p, contract, arms, None, false, None, Combine::None);
+                let text = kernel_text(
+                    "m16",
+                    &s,
+                    p,
+                    contract,
+                    arms,
+                    None,
+                    false,
+                    None,
+                    Combine::None,
+                );
                 assert!(
                     text.contains("@llvm.nvvm.cp.async.cg.shared.global.16"),
                     "{}",
@@ -5868,8 +6111,9 @@ mod tests {
             for (m, n, k) in [(4096, 4096, 4096), (16, 18432, 7168)] {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
-                    let text =
-                        |arms| kernel_text("f", &s, p, contract, arms, None, false, None, Combine::None);
+                    let text = |arms| {
+                        kernel_text("f", &s, p, contract, arms, None, false, None, Combine::None)
+                    };
                     assert_eq!(
                         text(crate::GpuArms::default()),
                         text(off(&["asyncstage"])),

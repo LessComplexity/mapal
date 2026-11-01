@@ -179,7 +179,10 @@ pub struct Precision {
 }
 
 impl Precision {
-    pub const F32: Self = Self { f32: true, tf32: false };
+    pub const F32: Self = Self {
+        f32: true,
+        tf32: false,
+    };
 
     /// The weakest member admits TF32 operands.
     pub fn admits_tf32(self) -> bool {

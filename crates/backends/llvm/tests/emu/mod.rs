@@ -76,7 +76,10 @@ pub fn host_device(dev: &str) -> String {
             .replace("addrspace(1) ", "")
             .replace("addrspace(3) ", "")
             .replace("@mapal_smem", "@emu_smem")
-            .replace("call void @llvm.nvvm.barrier0()", "call void @emu_barrier()")
+            .replace(
+                "call void @llvm.nvvm.barrier0()",
+                "call void @emu_barrier()",
+            )
             .replace(" syncscope(\"device\")", "");
         for (ty, bits, c) in [("i32", 32, "r"), ("i64", 64, "l")] {
             let asm = format!("call {ty} asm \"mov.b{bits} $0, $1;\", \"={c},{c}\"({ty} ");
@@ -94,7 +97,9 @@ pub fn host_device(dev: &str) -> String {
         // `cell-lanes`: a warp's butterfly shuffle meets its 31 lanes in
         // the emulator (`emu_shfl_bfly`; the kernel runs threaded).
         if l.contains("@llvm.nvvm.shfl.sync.bfly.f32(i32 -1, ") {
-            l = l.replace("@llvm.nvvm.shfl.sync.bfly.f32(i32 -1, ", "@emu_shfl_bfly(").replace(", i32 31)", ")");
+            l = l
+                .replace("@llvm.nvvm.shfl.sync.bfly.f32(i32 -1, ", "@emu_shfl_bfly(")
+                .replace(", i32 31)", ")");
         }
         for (r, e) in [
             ("laneid", "laneid"),
@@ -111,8 +116,13 @@ pub fn host_device(dev: &str) -> String {
         out.push('\n');
     }
     // A module with shuffles runs its cell launches threaded.
-    let lanes = if out.contains("@emu_shfl_bfly(") { "@emu_threaded = global i32 1\n" } else { "" };
-    out + lanes + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
+    let lanes = if out.contains("@emu_shfl_bfly(") {
+        "@emu_threaded = global i32 1\n"
+    } else {
+        ""
+    };
+    out + lanes
+        + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
            declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n"
 }
@@ -190,7 +200,10 @@ pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64;
     let mut totals = [0u64; 5];
     if let Some(l) = err.lines().find_map(|l| l.strip_prefix("emu_total ")) {
         for (t, kv) in totals.iter_mut().zip(l.split_whitespace()) {
-            *t = kv.split_once('=').and_then(|(_, v)| v.parse().ok()).unwrap_or(0);
+            *t = kv
+                .split_once('=')
+                .and_then(|(_, v)| v.parse().ok())
+                .unwrap_or(0);
         }
     }
     (String::from_utf8_lossy(&out.stdout).into_owned(), totals)

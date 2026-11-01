@@ -1276,7 +1276,11 @@ impl CategoryIr {
     /// addresses any affine read (the GPU's one-thread-per-cell kernel) asks
     /// for this plan instead.
     pub fn tile_plan_strided(&self, f: FuncId) -> TilePlan {
-        self.fact(f, |s| &s.tile_plan_strided, || self.tile_plan_strided_compute(f))
+        self.fact(
+            f,
+            |s| &s.tile_plan_strided,
+            || self.tile_plan_strided_compute(f),
+        )
     }
 
     fn tile_plan_strided_compute(&self, f: FuncId) -> TilePlan {
@@ -1330,15 +1334,19 @@ impl CategoryIr {
     /// recurrence ([`TripSplit`]). Built from `loop_plan`, `guard_plan` (of
     /// `f` and of each map body in the trip) and `map_law`.
     pub fn trip_split(&self, f: FuncId) -> Vec<TripSplit> {
-        self.fact(f, |s| &s.trip_split, || {
-            self.loop_structure(f)
-                .iter()
-                .filter_map(|scc| match scc.merges.as_slice() {
-                    &[merge] => self.trip_split_of(f, &self.loop_plan(f, merge)?),
-                    _ => None,
-                })
-                .collect()
-        })
+        self.fact(
+            f,
+            |s| &s.trip_split,
+            || {
+                self.loop_structure(f)
+                    .iter()
+                    .filter_map(|scc| match scc.merges.as_slice() {
+                        &[merge] => self.trip_split_of(f, &self.loop_plan(f, merge)?),
+                        _ => None,
+                    })
+                    .collect()
+            },
+        )
     }
 
     fn trip_split_of(&self, f: FuncId, plan: &LoopPlan) -> Option<TripSplit> {
@@ -1369,10 +1377,16 @@ impl CategoryIr {
         // compare is normalized).
         let compare = |o: ObjectId, is_x: &dyn Fn(ObjectId) -> bool| -> Option<(Operation, i64)> {
             let m = self.morphisms.get(*self.in_edges(o).first()?)?;
-            if !matches!(m.op, Operation::Lt | Operation::Le | Operation::Gt | Operation::Ge) {
+            if !matches!(
+                m.op,
+                Operation::Lt | Operation::Le | Operation::Gt | Operation::Ge
+            ) {
                 return None;
             }
-            let (l, r) = (self.pair_slot_source(m.source, 0)?, self.pair_slot_source(m.source, 1)?);
+            let (l, r) = (
+                self.pair_slot_source(m.source, 0)?,
+                self.pair_slot_source(m.source, 1)?,
+            );
             let flip = |op| match op {
                 Operation::Lt => Operation::Gt,
                 Operation::Gt => Operation::Lt,
@@ -1396,9 +1410,13 @@ impl CategoryIr {
             let lo = int_const(self.pair_slot_source(plan.init, k)?)?;
             let nk = self.pair_slot_source(next, k)?;
             let add = self.morphisms.get(*self.in_edges(nk).first()?)?;
-            let (a, b) = (self.pair_slot_source(add.source, 0)?, self.pair_slot_source(add.source, 1)?);
+            let (a, b) = (
+                self.pair_slot_source(add.source, 0)?,
+                self.pair_slot_source(add.source, 1)?,
+            );
             let step_one = add.op == Operation::Add
-                && ((vk.contains(&a) && int_const(b) == Some(1)) || (vk.contains(&b) && int_const(a) == Some(1)));
+                && ((vk.contains(&a) && int_const(b) == Some(1))
+                    || (vk.contains(&b) && int_const(a) == Some(1)));
             let hi = match compare(cond, &|o| vk.contains(&o))? {
                 (Operation::Lt, c) => c,
                 (Operation::Le, c) => c.checked_add(1)?,
@@ -1407,8 +1425,12 @@ impl CategoryIr {
             (step_one && lo < hi).then_some((k, lo, hi))
         })?;
         let vc = views(counter);
-        let body: SecondaryMap<MorphismId, ()> =
-            plan.decide_order.iter().chain(&plan.advance_order).map(|&m| (m, ())).collect();
+        let body: SecondaryMap<MorphismId, ()> = plan
+            .decide_order
+            .iter()
+            .chain(&plan.advance_order)
+            .map(|&m| (m, ()))
+            .collect();
         let truth = |op: Operation, c: i64, t: i64| match op {
             Operation::Lt => t < c,
             Operation::Le => t <= c,
@@ -1438,7 +1460,10 @@ impl CategoryIr {
             let src = self.morphisms[m].source;
             let from_t = |o: ObjectId| {
                 self.tile_input_proj_index(o, input).is_some_and(|s| {
-                    s < captures && self.pair_slot_source(src, s).is_some_and(|x| vc.contains(&x))
+                    s < captures
+                        && self
+                            .pair_slot_source(src, s)
+                            .is_some_and(|x| vc.contains(&x))
                 })
             };
             let sites = self.guard_plan(b);
@@ -1449,16 +1474,24 @@ impl CategoryIr {
             }
             all.extend(sites);
         }
-        let mut cuts: Vec<i64> = guards.iter().map(|g| cut(g.1, g.2)).filter(|&c| lo < c && c < hi).collect();
+        let mut cuts: Vec<i64> = guards
+            .iter()
+            .map(|g| cut(g.1, g.2))
+            .filter(|&c| lo < c && c < hi)
+            .collect();
         cuts.push(lo);
         cuts.push(hi);
         cuts.sort_unstable();
         cuts.dedup();
         let effect = body.keys().any(|m| {
             let mm = &self.morphisms[m];
-            [mm.source, mm.target].iter().any(|&o| crate::ty::ty_contains_token(&self.objects[o].ty))
+            [mm.source, mm.target]
+                .iter()
+                .any(|&o| crate::ty::ty_contains_token(&self.objects[o].ty))
         });
-        let slots: Vec<u32> = (0..parts.len() as u32).filter(|&k| k != counter && !views(k).is_empty()).collect();
+        let slots: Vec<u32> = (0..parts.len() as u32)
+            .filter(|&k| k != counter && !views(k).is_empty())
+            .collect();
         let bounds = self.bounds_proof(f);
         let mut phases = Vec::new();
         for (n, w) in cuts.windows(2).enumerate() {
@@ -1466,14 +1499,24 @@ impl CategoryIr {
             // The arms this interval does not take, with every site nested in them.
             let mut dead: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
             for (site, op, c) in &guards {
-                let off = if truth(*op, *c, plo) { &site.on_false } else { &site.on_true };
+                let off = if truth(*op, *c, plo) {
+                    &site.on_false
+                } else {
+                    &site.on_true
+                };
                 dead.extend(off.own.iter().map(|&m| (m, ())));
             }
             loop {
                 let before = dead.len();
                 for s in &all {
                     if dead.contains_key(s.phi) {
-                        dead.extend(s.on_true.own.iter().chain(&s.on_false.own).map(|&m| (m, ())));
+                        dead.extend(
+                            s.on_true
+                                .own
+                                .iter()
+                                .chain(&s.on_false.own)
+                                .map(|&m| (m, ())),
+                        );
                     }
                 }
                 if dead.len() == before {
@@ -1490,7 +1533,10 @@ impl CategoryIr {
                     && self.out_edges(fd.input).iter().all(|&p| {
                         self.morphisms[p].op != (Operation::Proj { index: s })
                             || dead.contains_key(p)
-                            || self.out_edges(self.morphisms[p].target).iter().all(|&q| dead.contains_key(q))
+                            || self
+                                .out_edges(self.morphisms[p].target)
+                                .iter()
+                                .all(|&q| dead.contains_key(q))
                     })
             };
             let reach = |seeds: &[ObjectId]| -> SecondaryMap<ObjectId, ()> {
@@ -1515,7 +1561,10 @@ impl CategoryIr {
                 }
                 seen
             };
-            let nexts: Vec<Option<ObjectId>> = slots.iter().map(|&k| self.pair_slot_source(next, k)).collect();
+            let nexts: Vec<Option<ObjectId>> = slots
+                .iter()
+                .map(|&k| self.pair_slot_source(next, k))
+                .collect();
             let batched: Vec<(u32, MorphismId)> = slots
                 .iter()
                 .zip(&nexts)
@@ -1524,12 +1573,22 @@ impl CategoryIr {
                     let Operation::Map { captures, .. } = self.morphisms[m].op else {
                         return None;
                     };
-                    let Some(ElemSrc::Apply { outside: Some(ou), source, .. }) = self.map_law(m) else {
+                    let Some(ElemSrc::Apply {
+                        outside: Some(ou),
+                        source,
+                        ..
+                    }) = self.map_law(m)
+                    else {
                         return None;
                     };
                     let invariant = |o: ObjectId| vc.contains(&o) || !plan.scc_objects.contains(&o);
-                    let rows = ou.a == 1 && ou.step == 1 && ou.len <= ou.d && ou.e.is_some_and(|e| vc.contains(&e));
-                    let own = self.pair_slot_source(source, ou.slot).is_some_and(|x| views(k).contains(&x));
+                    let rows = ou.a == 1
+                        && ou.step == 1
+                        && ou.len <= ou.d
+                        && ou.e.is_some_and(|e| vc.contains(&e));
+                    let own = self
+                        .pair_slot_source(source, ou.slot)
+                        .is_some_and(|x| views(k).contains(&x));
                     let rest = (0..=captures)
                         .filter(|&s| s != ou.slot && !slot_dead(m, s))
                         .all(|s| self.pair_slot_source(source, s).is_some_and(invariant));
@@ -1537,13 +1596,15 @@ impl CategoryIr {
                 })
                 .collect();
             let is_batched = |k: u32| batched.iter().any(|b| b.0 == k);
-            let reached: Vec<SecondaryMap<ObjectId, ()>> = slots.iter().map(|&k| reach(&views(k))).collect();
+            let reached: Vec<SecondaryMap<ObjectId, ()>> =
+                slots.iter().map(|&k| reach(&views(k))).collect();
             // Slot edges `i → j`: `j`'s next reads `i`'s view.
             let n_s = slots.len();
             let mut closure = vec![vec![false; n_s]; n_s];
             for (i, row) in closure.iter_mut().enumerate() {
                 for (j, c) in row.iter_mut().enumerate() {
-                    *c = !(i == j && is_batched(slots[j])) && nexts[j].is_some_and(|nj| reached[i].contains_key(nj));
+                    *c = !(i == j && is_batched(slots[j]))
+                        && nexts[j].is_some_and(|nj| reached[i].contains_key(nj));
                 }
             }
             for k in 0..n_s {
@@ -1555,30 +1616,58 @@ impl CategoryIr {
                     }
                 }
             }
-            let recurrent: Vec<u32> = (0..n_s).filter(|&i| closure[i][i]).map(|i| slots[i]).collect();
+            let recurrent: Vec<u32> = (0..n_s)
+                .filter(|&i| closure[i][i])
+                .map(|i| slots[i])
+                .collect();
             let rec_reach = reach(&recurrent.iter().flat_map(|&k| views(k)).collect::<Vec<_>>());
             let outside: Vec<MorphismId> = plan
                 .decide_order
                 .iter()
                 .chain(&plan.advance_order)
                 .copied()
-                .filter(|&m| !dead.contains_key(m) && !rec_reach.contains_key(self.morphisms[m].target))
+                .filter(|&m| {
+                    !dead.contains_key(m) && !rec_reach.contains_key(self.morphisms[m].target)
+                })
                 .collect();
-            let unbatched: Vec<ObjectId> = slots.iter().filter(|&&k| !is_batched(k)).flat_map(|&k| views(k)).collect();
+            let unbatched: Vec<ObjectId> = slots
+                .iter()
+                .filter(|&&k| !is_batched(k))
+                .flat_map(|&k| views(k))
+                .collect();
             let from_unbatched = reach(&unbatched);
             // A skipped trip's work must be unobservable: trap-free, so the
             // interpreter's trap at an early trip is not dropped.
             let skip = n == 0
                 && phi - plo >= 2
                 && !effect
-                && body.keys().all(|m| dead.contains_key(m) || self.morph_trap_free(m, &bounds, None, 0))
-                && !reach(&slots.iter().flat_map(|&k| views(k)).collect::<Vec<_>>()).contains_key(cond)
+                && body
+                    .keys()
+                    .all(|m| dead.contains_key(m) || self.morph_trap_free(m, &bounds, None, 0))
+                && !reach(&slots.iter().flat_map(|&k| views(k)).collect::<Vec<_>>())
+                    .contains_key(cond)
                 && slots.iter().zip(&nexts).all(|(&k, &nk)| {
-                    is_batched(k) || nk.is_some_and(|nk| views(k).contains(&nk) || !from_unbatched.contains_key(nk))
+                    is_batched(k)
+                        || nk.is_some_and(|nk| {
+                            views(k).contains(&nk) || !from_unbatched.contains_key(nk)
+                        })
                 });
-            phases.push(TripPhase { lo: plo, hi: phi, recurrent, outside, batched, skip });
+            phases.push(TripPhase {
+                lo: plo,
+                hi: phi,
+                recurrent,
+                outside,
+                batched,
+                skip,
+            });
         }
-        Some(TripSplit { merge, counter, lo, hi, phases })
+        Some(TripSplit {
+            merge,
+            counter,
+            lo,
+            hi,
+            phases,
+        })
     }
 
     /// **A fold step the order may regroup** (recurrence-precision item 2):
@@ -1599,17 +1688,33 @@ impl CategoryIr {
             .map(|&p| self.morphisms[p].target)
             .collect();
         let &[acc] = accs.as_slice() else { return None };
-        let [step] = self.in_edges(fd.output) else { return None };
+        let [step] = self.in_edges(fd.output) else {
+            return None;
+        };
         let st = self.morphisms.get(*step)?;
         let (op, _) = self.fold_step(st, &|o| o == acc)?;
-        if matches!(op, RowFoldOp::Arith { op: Operation::Sub, .. }) {
+        if matches!(
+            op,
+            RowFoldOp::Arith {
+                op: Operation::Sub,
+                ..
+            }
+        ) {
             return None;
         }
         // Every use of `acc` is a slot of a product read only by the step
         // (and a running max/min's compare).
         let mut into = vec![st.source];
         if st.op == Operation::Phi {
-            into.push(self.morphisms.get(*self.in_edges(self.pair_slot_source(st.source, 2)?).first()?)?.source);
+            into.push(
+                self.morphisms
+                    .get(
+                        *self
+                            .in_edges(self.pair_slot_source(st.source, 2)?)
+                            .first()?,
+                    )?
+                    .source,
+            );
         }
         self.out_edges(acc)
             .iter()
@@ -1624,21 +1729,40 @@ impl CategoryIr {
     /// with `acc` on one side, or a running max/min (`cmp(acc, e) ? · : ·`
     /// over exactly `{acc, e}`). One classifier for [`Self::fold_core`] and
     /// [`Self::fold_tree_step`].
-    fn fold_step(&self, step: &crate::graph::Morphism, acc: &dyn Fn(ObjectId) -> bool) -> Option<(RowFoldOp, ObjectId)> {
+    fn fold_step(
+        &self,
+        step: &crate::graph::Morphism,
+        acc: &dyn Fn(ObjectId) -> bool,
+    ) -> Option<(RowFoldOp, ObjectId)> {
         let slot = |k| self.pair_slot_source(step.source, k);
         match step.op {
             Operation::Add | Operation::Sub | Operation::Mul => {
                 let (x, y) = (slot(0)?, slot(1)?);
                 match (acc(x), acc(y)) {
-                    (true, false) => Some((RowFoldOp::Arith { op: step.op, acc_first: true }, y)),
-                    (false, true) => Some((RowFoldOp::Arith { op: step.op, acc_first: false }, x)),
+                    (true, false) => Some((
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: true,
+                        },
+                        y,
+                    )),
+                    (false, true) => Some((
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: false,
+                        },
+                        x,
+                    )),
                     _ => None,
                 }
             }
             Operation::Phi => {
                 let (p, q) = (slot(0)?, slot(1)?);
                 let cmp = self.morphisms.get(*self.in_edges(slot(2)?).first()?)?;
-                if !matches!(cmp.op, Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge) {
+                if !matches!(
+                    cmp.op,
+                    Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge
+                ) {
                     return None;
                 }
                 let x = self.pair_slot_source(cmp.source, 0)?;
@@ -1646,9 +1770,17 @@ impl CategoryIr {
                 let e = if acc(x) { y } else { x };
                 // Exactly `{acc, e}` on both sides: anything else is not a
                 // running max/min of the read.
-                let one_each = |u: ObjectId, v: ObjectId| acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e);
-                (one_each(x, y) && one_each(p, q))
-                    .then_some((RowFoldOp::Select { cmp: cmp.op, acc_lhs: acc(x), acc_if_true: acc(p) }, e))
+                let one_each = |u: ObjectId, v: ObjectId| {
+                    acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e)
+                };
+                (one_each(x, y) && one_each(p, q)).then_some((
+                    RowFoldOp::Select {
+                        cmp: cmp.op,
+                        acc_lhs: acc(x),
+                        acc_if_true: acc(p),
+                    },
+                    e,
+                ))
             }
             _ => None,
         }
@@ -1660,15 +1792,19 @@ impl CategoryIr {
     /// `ci = 0`): `out = fold_k (seed, ⊕) a[base + ck·k]`. Its slot is the
     /// fold source's capture slot. A softmax's `max` and `sum` in a loop trip.
     pub fn whole_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
-        self.fact(f, |s| &s.whole_fold, || {
-            let mut sites = SecondaryMap::new();
-            for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
-                if let Some(site) = self.whole_fold_site(m) {
-                    sites.insert(m, site);
+        self.fact(
+            f,
+            |s| &s.whole_fold,
+            || {
+                let mut sites = SecondaryMap::new();
+                for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
+                    if let Some(site) = self.whole_fold_site(m) {
+                        sites.insert(m, site);
+                    }
                 }
-            }
-            sites
-        })
+                sites
+            },
+        )
     }
 
     fn whole_fold_site(&self, m: MorphismId) -> Option<RowFoldSite> {
@@ -1680,21 +1816,40 @@ impl CategoryIr {
         if !elem.is_numeric() {
             return None;
         }
-        let FoldCore { fbody, fcap, k, seed, op, array, address } = self.fold_core(m)?;
+        let FoldCore {
+            fbody,
+            fcap,
+            k,
+            seed,
+            op,
+            array,
+            address,
+        } = self.fold_core(m)?;
         let fdef = self.func(fbody)?;
         let slot = self.tile_input_proj_index(array, fdef.input)?;
         let source = self.pair_slot_source(fold.source, slot)?;
         if slot >= fcap {
             return None;
         }
-        let Ty::Array { elem: read_elem, .. } = &self.objects.get(source)?.ty else {
+        let Ty::Array {
+            elem: read_elem, ..
+        } = &self.objects.get(source)?.ty
+        else {
             return None;
         };
         if **read_elem != elem || self.objects.get(fdef.output)?.ty != elem || seed.ty() != elem {
             return None;
         }
         // No row: the fold's target stands in for the index, never a capture.
-        let aff = self.tile_affine(address, fold.source, fdef.input, fcap, None, fold.target, None)?;
+        let aff = self.tile_affine(
+            address,
+            fold.source,
+            fdef.input,
+            fcap,
+            None,
+            fold.target,
+            None,
+        )?;
         if aff.ci != 0 || aff.clane != 0 || aff.cq != 0 || aff.cr != 0 || k == 0 {
             return None;
         }
@@ -1704,7 +1859,14 @@ impl CategoryIr {
         Some(RowFoldSite {
             rows: 1,
             k,
-            a: TileRead { slot, base: aff.base, ci: 0, ck: aff.ck, clane: 0, ksplit: None },
+            a: TileRead {
+                slot,
+                base: aff.base,
+                ci: 0,
+                ck: aff.ck,
+                clane: 0,
+                ksplit: None,
+            },
             w: 1,
             op,
             seed,
@@ -2086,17 +2248,20 @@ impl CategoryIr {
         };
         let bd = self.func(body)?;
         let mut nested = Vec::new();
-        let leaf = bd.morphisms.iter().all(|&g| match self.morphisms.get(g).map(|x| x.op) {
-            Some(Operation::Map { .. } | Operation::Fold { .. }) => {
-                self.local_nest(g, bd.input, 0)
-                    || self
-                        .nest_reads(g, bd.input, captures, 0)
-                        .map(|r| nested.extend(r))
-                        .is_some()
-            }
-            Some(Operation::Call(_)) | None => false,
-            Some(_) => true,
-        });
+        let leaf = bd
+            .morphisms
+            .iter()
+            .all(|&g| match self.morphisms.get(g).map(|x| x.op) {
+                Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                    self.local_nest(g, bd.input, 0)
+                        || self
+                            .nest_reads(g, bd.input, captures, 0)
+                            .map(|r| nested.extend(r))
+                            .is_some()
+                }
+                Some(Operation::Call(_)) | None => false,
+                Some(_) => true,
+            });
         if !leaf || !self.body_is_classifiable(body) {
             return None;
         }
@@ -2152,12 +2317,20 @@ impl CategoryIr {
             .morphisms
             .iter()
             .copied()
-            .filter(|&g| matches!(self.morphisms[g].op, Operation::Map { .. } | Operation::Fold { .. }))
+            .filter(|&g| {
+                matches!(
+                    self.morphisms[g].op,
+                    Operation::Map { .. } | Operation::Fold { .. }
+                )
+            })
             .collect();
         let tree = match bulk[..] {
             [g] if !nested.is_empty() => self.fold_tree_step(g).and_then(|op| {
-                let Operation::Fold { captures: fc, .. } = self.morphisms[g].op else { return None };
-                let k = self.tile_iota_size(self.pair_slot_source(self.morphisms[g].source, fc + 1)?)?;
+                let Operation::Fold { captures: fc, .. } = self.morphisms[g].op else {
+                    return None;
+                };
+                let k =
+                    self.tile_iota_size(self.pair_slot_source(self.morphisms[g].source, fc + 1)?)?;
                 Some((g, op, k))
             }),
             _ => None,
@@ -2176,8 +2349,11 @@ impl CategoryIr {
     /// Element steps of one evaluation of `g` when it is a `Map`/`Fold`: the
     /// extent it walks times (1 + its body's nested steps); 0 otherwise.
     fn nest_steps(&self, g: MorphismId, depth: u32) -> u64 {
-        let Some(x) = self.morphisms.get(g) else { return 0 };
-        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op else {
+        let Some(x) = self.morphisms.get(g) else {
+            return 0;
+        };
+        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op
+        else {
             return 0;
         };
         let over = match x.op {
@@ -2190,7 +2366,11 @@ impl CategoryIr {
             _ => 0,
         };
         let inner = match self.func(body) {
-            Some(b) if depth < 8 => b.morphisms.iter().map(|&h| self.nest_steps(h, depth + 1)).sum(),
+            Some(b) if depth < 8 => b
+                .morphisms
+                .iter()
+                .map(|&h| self.nest_steps(h, depth + 1))
+                .sum(),
             _ => 0,
         };
         n.saturating_mul(inner.saturating_add(1))
@@ -2202,7 +2382,13 @@ impl CategoryIr {
     /// the enclosing body; an array it maps or folds over is either local or
     /// such a capture. `None` on anything else (a `Call`, an array of
     /// unknown origin). Depth-guarded (J1).
-    fn nest_reads(&self, g: MorphismId, input: ObjectId, captures: u32, depth: u32) -> Option<Vec<u32>> {
+    fn nest_reads(
+        &self,
+        g: MorphismId,
+        input: ObjectId,
+        captures: u32,
+        depth: u32,
+    ) -> Option<Vec<u32>> {
         let x = self.morphisms.get(g)?;
         let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op
         else {
@@ -2236,7 +2422,10 @@ impl CategoryIr {
                 Operation::Call(_) => return None,
                 Operation::Index => {
                     let arr = self.pair_slot_source(y.source, 0)?;
-                    vec![self.tile_input_proj_index(arr, nb.input).filter(|&s| s < nc)?]
+                    vec![
+                        self.tile_input_proj_index(arr, nb.input)
+                            .filter(|&s| s < nc)?,
+                    ]
                 }
                 Operation::Map { .. } | Operation::Fold { .. } => {
                     self.nest_reads(h, nb.input, nc, depth + 1)?
@@ -2280,13 +2469,16 @@ impl CategoryIr {
         };
         depth < 8
             && !captured
-            && nb.morphisms.iter().all(|&h| match self.morphisms.get(h).map(|y| y.op) {
-                Some(Operation::Index | Operation::Call(_)) | None => false,
-                Some(Operation::Map { .. } | Operation::Fold { .. }) => {
-                    self.local_nest(h, nb.input, depth + 1)
-                }
-                Some(_) => true,
-            })
+            && nb
+                .morphisms
+                .iter()
+                .all(|&h| match self.morphisms.get(h).map(|y| y.op) {
+                    Some(Operation::Index | Operation::Call(_)) | None => false,
+                    Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                        self.local_nest(h, nb.input, depth + 1)
+                    }
+                    Some(_) => true,
+                })
     }
 
     /// `addr` over the map index `t` (`Proj{captures}` of the body input):
@@ -3316,7 +3508,8 @@ impl CategoryIr {
             return None;
         }
         // `lo + len` must not wrap where the interval meets `[0, n)`.
-        if iv.d == 1 && iv.step == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64 {
+        if iv.d == 1 && iv.step == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64
+        {
             return None;
         }
         let e = match iv.e {
@@ -3361,9 +3554,17 @@ impl CategoryIr {
     /// `L ≤ t ∧ t < L + len` in either operand order (`t ≥ L`, `L ≤ t`,
     /// `t > L − 1`; `t < H`, `H > t`, `t ≤ H − 1`), `X`, `L` affine in one
     /// captured int scalar.
-    fn index_interval(&self, cond: ObjectId, input: ObjectId, captures: u32) -> Option<(Interval, bool)> {
+    fn index_interval(
+        &self,
+        cond: ObjectId,
+        input: ObjectId,
+        captures: u32,
+    ) -> Option<(Interval, bool)> {
         let c = self.morphisms.get(*self.in_edges(cond).first()?)?;
-        let (x, y) = (self.pair_slot_source(c.source, 0)?, self.pair_slot_source(c.source, 1)?);
+        let (x, y) = (
+            self.pair_slot_source(c.source, 0)?,
+            self.pair_slot_source(c.source, 1)?,
+        );
         let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
         match c.op {
             Operation::Eq | Operation::Neq => {
@@ -3380,8 +3581,14 @@ impl CategoryIr {
                     if !is_t(self.pair_slot_source(g.source, 0)?) {
                         return None;
                     }
-                    let k = self.tile_literal_u64(self.pair_slot_source(g.source, 1)?).filter(|&k| k > 0)?;
-                    Some(if op == Operation::Div { (k, 1, k) } else { (1, k, u64::MAX) })
+                    let k = self
+                        .tile_literal_u64(self.pair_slot_source(g.source, 1)?)
+                        .filter(|&k| k > 0)?;
+                    Some(if op == Operation::Div {
+                        (k, 1, k)
+                    } else {
+                        (1, k, u64::MAX)
+                    })
                 };
                 let ((d, step, len), other) = match split_of_t(x) {
                     Some(s) => (s, y),
@@ -3389,18 +3596,40 @@ impl CategoryIr {
                 };
                 let mut e = None;
                 let (a, b) = self.capture_affine(other, input, captures, &mut e, 0)?;
-                Some((Interval { d, a, e, b, step, len }, c.op == Operation::Eq))
+                Some((
+                    Interval {
+                        d,
+                        a,
+                        e,
+                        b,
+                        step,
+                        len,
+                    },
+                    c.op == Operation::Eq,
+                ))
             }
             Operation::And => {
-                let (bx, by) = (self.t_bound(x, input, captures)?, self.t_bound(y, input, captures)?);
+                let (bx, by) = (
+                    self.t_bound(x, input, captures)?,
+                    self.t_bound(y, input, captures)?,
+                );
                 let ((e1, a1, b1), (e2, a2, b2)) = match (bx, by) {
                     (Bound::Lo(e1, a1, b1), Bound::Hi(e2, a2, b2))
-                    | (Bound::Hi(e2, a2, b2), Bound::Lo(e1, a1, b1)) => ((e1, a1, b1), (e2, a2, b2)),
+                    | (Bound::Hi(e2, a2, b2), Bound::Lo(e1, a1, b1)) => {
+                        ((e1, a1, b1), (e2, a2, b2))
+                    }
                     _ => return None,
                 };
                 let len = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
                 (a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
-                    Interval { d: 1, a: a1, e: e1.or(e2), b: b1, step: 1, len },
+                    Interval {
+                        d: 1,
+                        a: a1,
+                        e: e1.or(e2),
+                        b: b1,
+                        step: 1,
+                        len,
+                    },
                     true,
                 ))
             }
@@ -3412,7 +3641,10 @@ impl CategoryIr {
     /// `Lo(e, a, b)`, `t < a·e + b` as `Hi(e, a, b)`.
     fn t_bound(&self, cmp: ObjectId, input: ObjectId, captures: u32) -> Option<Bound> {
         let c = self.morphisms.get(*self.in_edges(cmp).first()?)?;
-        let (x, y) = (self.pair_slot_source(c.source, 0)?, self.pair_slot_source(c.source, 1)?);
+        let (x, y) = (
+            self.pair_slot_source(c.source, 0)?,
+            self.pair_slot_source(c.source, 1)?,
+        );
         let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
         // Normalize to `t op bound`.
         let (op, bound) = if is_t(x) {
@@ -3462,9 +3694,7 @@ impl CategoryIr {
             };
         }
         if let Some(k) = self.tile_input_proj_index(o, input) {
-            return (k < captures
-                && obj.ty == Ty::i32()
-                && *e.get_or_insert(k) == k)
+            return (k < captures && obj.ty == Ty::i32() && *e.get_or_insert(k) == k)
                 .then_some((1, 0));
         }
         let mm = self.morphisms.get(*self.in_edges(o).first()?)?;
@@ -3580,24 +3810,35 @@ impl CategoryIr {
         allow_fold: Option<MorphismId>,
         depth: u32,
     ) -> bool {
-        self.func(f)
-            .is_some_and(|fd| fd.morphisms.iter().all(|&m| self.morph_trap_free(m, bounds, allow_fold, depth)))
+        self.func(f).is_some_and(|fd| {
+            fd.morphisms
+                .iter()
+                .all(|&m| self.morph_trap_free(m, bounds, allow_fold, depth))
+        })
     }
 
     /// One morphism of [`Self::trap_free_at`]: it cannot trap (a nested
     /// body only when it is classifiable — pure, trap-free, loop-free).
-    fn morph_trap_free(&self, m: MorphismId, bounds: &BoundsProof, allow_fold: Option<MorphismId>, depth: u32) -> bool {
+    fn morph_trap_free(
+        &self,
+        m: MorphismId,
+        bounds: &BoundsProof,
+        allow_fold: Option<MorphismId>,
+        depth: u32,
+    ) -> bool {
         let Some(morph) = self.morphisms.get(m) else {
             return false;
         };
         match morph.op {
-            Operation::Div | Operation::Mod => self.objects.get(morph.target).is_some_and(|target| {
-                matches!(target.ty, Ty::Float { .. })
-                    || self
-                        .pair_slot_source(morph.source, 1)
-                        .and_then(|o| self.objects.get(o))
-                        .is_some_and(safe_integer_divisor)
-            }),
+            Operation::Div | Operation::Mod => {
+                self.objects.get(morph.target).is_some_and(|target| {
+                    matches!(target.ty, Ty::Float { .. })
+                        || self
+                            .pair_slot_source(morph.source, 1)
+                            .and_then(|o| self.objects.get(o))
+                            .is_some_and(safe_integer_divisor)
+                })
+            }
             Operation::Index => bounds.proven(m),
             Operation::Update => false,
             Operation::Call { .. } => false,
@@ -5013,7 +5254,10 @@ impl CategoryIr {
                 let pins: Vec<ObjectId> = match morph.op {
                     Operation::Pair { .. } | Operation::Phi => vec![morph.target],
                     Operation::Proj { index }
-                        if self.objects[o].ty.component_ty(index).is_some_and(holds_array) =>
+                        if self.objects[o]
+                            .ty
+                            .component_ty(index)
+                            .is_some_and(holds_array) =>
                     {
                         vec![morph.target]
                     }
@@ -5310,7 +5554,10 @@ impl CategoryIr {
             let r = x.rem_euclid(m);
             (if r >= m / 2 { r - m } else { r }) as i64
         };
-        let mut bs: Vec<(i128, i128)> = bs.into_iter().map(|(b, l)| (i128::from(wrap(b)), l)).collect();
+        let mut bs: Vec<(i128, i128)> = bs
+            .into_iter()
+            .map(|(b, l)| (i128::from(wrap(b)), l))
+            .collect();
         bs.sort_unstable();
         // One contiguous union.
         let lo = bs.first()?.0;

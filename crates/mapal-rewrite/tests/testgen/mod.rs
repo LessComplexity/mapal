@@ -1352,8 +1352,15 @@ fn build_carry_loop(
     let bound = c(fb, i32::from(k % 9));
     let cond = fb.binop(Lt, i, bound, fresh.clone(), L()).unwrap();
     let mut lp = Pool {
-        arrs: views.iter().copied().chain(outer_arrs.iter().copied()).collect(),
-        i32s: [i, acc].into_iter().chain(outer_i32s.iter().copied()).collect(),
+        arrs: views
+            .iter()
+            .copied()
+            .chain(outer_arrs.iter().copied())
+            .collect(),
+        i32s: [i, acc]
+            .into_iter()
+            .chain(outer_i32s.iter().copied())
+            .collect(),
         ..Default::default()
     };
     // What the body reads; every value it makes and nothing reads joins the
@@ -1367,7 +1374,8 @@ fn build_carry_loop(
     };
     let idx = |fb: &mut mapal_ir::FnBuilder<'_>, lp: &Pool, sel: u8| {
         if ctx.trap_free || sel % 2 == 0 {
-            fb.constant(Value::I32(i32::from(sel / 2) % ARR as i32), L()).unwrap()
+            fb.constant(Value::I32(i32::from(sel / 2) % ARR as i32), L())
+                .unwrap()
         } else {
             take(&lp.i32s, sel)
         }
@@ -1399,7 +1407,8 @@ fn build_carry_loop(
             1 => {
                 let at = idx(fb, &lp, b);
                 let v = take(&lp.i32s, op / 8);
-                lp.arrs.push(fb.update(x, at, v, fresh.clone(), L()).unwrap());
+                lp.arrs
+                    .push(fb.update(x, at, v, fresh.clone(), L()).unwrap());
             }
             2 => {
                 let at = idx(fb, &lp, b);
@@ -1432,13 +1441,18 @@ fn build_carry_loop(
                 let other = take(&lp.arrs, op / 8);
                 let lim = c(fb, i32::from(b % 4));
                 let g = fb.binop(Lt, i, lim, fresh.clone(), L()).unwrap();
-                let (t, e) = if b % 2 == 0 { (arm, other) } else { (other, arm) };
+                let (t, e) = if b % 2 == 0 {
+                    (arm, other)
+                } else {
+                    (other, arm)
+                };
                 lp.arrs.push(fb.phi(t, e, g, fresh.clone(), L()).unwrap());
             }
             5 => {
                 let y = take(&lp.arrs, b);
                 let z = fb.zip(x, y, fresh.clone(), L()).unwrap();
-                lp.arrs.push(fb.map(ctx.pair_sum, z, fresh.clone(), L()).unwrap());
+                lp.arrs
+                    .push(fb.map(ctx.pair_sum, z, fresh.clone(), L()).unwrap());
             }
             6 => {
                 let cap = take(&lp.arrs, op / 8);
@@ -1454,7 +1468,8 @@ fn build_carry_loop(
                 let (a0, a1) = (idx(fb, &lp, b), idx(fb, &lp, b.wrapping_add(1)));
                 let v = take(&lp.i32s, op / 8);
                 let u = fb.update(x, a0, v, fresh.clone(), L()).unwrap();
-                lp.arrs.push(fb.update(u, a1, i, fresh.clone(), L()).unwrap());
+                lp.arrs
+                    .push(fb.update(u, a1, i, fresh.clone(), L()).unwrap());
             }
         }
     }
@@ -1659,7 +1674,10 @@ pub fn device_src(p: &DeviceProg) -> String {
     let n = if p.big { 64 } else { 32 };
     let nn = n * n;
     let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
-        format!("    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n", h = m / 2)
+        format!(
+            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n",
+            h = m / 2
+        )
     };
     let mut s = format!("fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n");
     s += &law("a0", 7, 13, 101, 8 * n);
@@ -1692,10 +1710,15 @@ pub fn device_src(p: &DeviceProg) -> String {
             0 => format!(
                 "ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {y}[k * {n} + j] }} }} -> {z};\n"
             ),
-            1 => format!("{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n"),
+            1 => format!(
+                "{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n"
+            ),
             2 => format!("{x} -> map {{ v -> v * 0.5 }} -> {z};\n"),
             3 => format!("ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n"),
-            4 => format!("(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n", b % (p.trips + 1)),
+            4 => format!(
+                "(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n",
+                b % (p.trips + 1)
+            ),
             // A closed form of the cell and the trip counter (a uniform), read
             // by a site: built where the site runs, never uploaded.
             6 => format!(
@@ -1715,7 +1738,9 @@ pub fn device_src(p: &DeviceProg) -> String {
                 // the device).
                 let j = u32::from(b) % n;
                 cur = "x".into();
-                format!("{x}[it * {n} + {j}] * 0.5 + 0.25 -> {z}v;\n{ind}x[it * {n} + {j}] <- {z}v;\n")
+                format!(
+                    "{x}[it * {n} + {j}] * 0.5 + 0.25 -> {z}v;\n{ind}x[it * {n} + {j}] <- {z}v;\n"
+                )
             }
         };
         if op != 5 {
@@ -1729,13 +1754,18 @@ pub fn device_src(p: &DeviceProg) -> String {
     if p.two {
         // `y`'s next: itself, `w`, `x`'s new value or the trip's first array.
         let first = arrs[3.min(arrs.len() - 1)].clone();
-        let ny = pick(&["y".to_string(), "w".to_string(), "x".to_string(), first], p.next[1]);
+        let ny = pick(
+            &["y".to_string(), "w".to_string(), "x".to_string(), first],
+            p.next[1],
+        );
         if ny != "y" {
             s += &format!("{ind}{ny} -> y;\n");
         }
     }
     let out = if p.exit && p.two { "y" } else { "x" };
-    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n");
+    s += &format!(
+        "{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n"
+    );
     s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", nn - 1);
     if p.whole {
         s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
@@ -1860,7 +1890,12 @@ impl ChainCtx {
 
     /// An array of shape `sh` made so far (by `pick`), else a fresh law.
     fn pick(&mut self, sh: Shape, pick: u8) -> String {
-        let have: Vec<String> = self.pool.iter().filter(|(_, s)| *s == sh).map(|(n, _)| n.clone()).collect();
+        let have: Vec<String> = self
+            .pool
+            .iter()
+            .filter(|(_, s)| *s == sh)
+            .map(|(n, _)| n.clone())
+            .collect();
         // One in four picks makes a fresh operand even when one exists.
         if have.is_empty() || pick % 4 == 3 {
             return self.law(sh, pick / 4);
@@ -1917,8 +1952,11 @@ impl Chain {
                     let a = x.pick(Shape::M, p);
                     let body = match q % 4 {
                         0 => "v * 0.5 + 0.25".to_string(),
-                        1 => "v -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> w; w".to_string(),
-                        2 => "v -> u; (u > 1.5) -> { -true-> 1.5; -false-> u; } -> w; w * 2.0".to_string(),
+                        1 => {
+                            "v -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> w; w".to_string()
+                        }
+                        2 => "v -> u; (u > 1.5) -> { -true-> 1.5; -false-> u; } -> w; w * 2.0"
+                            .to_string(),
                         _ => {
                             let kk = x.iota(3);
                             format!("(v, {kk}) -> fold {{ acc, j -> acc * 0.5 + 0.125 }}")
@@ -1972,8 +2010,16 @@ impl Chain {
                         let (al, bl) = (q % 3 == 1, q % 3 == 2);
                         let a = x.pick(Shape::A, p);
                         let b = x.pick(if bl { Shape::Bt } else { Shape::B }, p / 2);
-                        let ai = if al { format!("{a}[k * {r} + i]") } else { format!("{a}[i * {k} + k]") };
-                        let bi = if bl { format!("{b}[j * {k} + k]") } else { format!("{b}[k * {c} + j]") };
+                        let ai = if al {
+                            format!("{a}[k * {r} + i]")
+                        } else {
+                            format!("{a}[i * {k} + k]")
+                        };
+                        let bi = if bl {
+                            format!("{b}[j * {k} + k]")
+                        } else {
+                            format!("{b}[k * {c} + j]")
+                        };
                         (x.iota(k), ai, bi)
                     } else {
                         let a = x.pick(Shape::M, p);
@@ -2009,7 +2055,9 @@ impl Chain {
                     } else {
                         format!("acc + {sg}[t + k]")
                     };
-                    x.s += &format!("    {tm} -> map {{ t -> (0.0, {tt}) -> fold {{ acc, k -> {e} }} }} -> {o};\n");
+                    x.s += &format!(
+                        "    {tm} -> map {{ t -> (0.0, {tt}) -> fold {{ acc, k -> {e} }} }} -> {o};\n"
+                    );
                     Shape::M
                 }
                 10 => {
@@ -2078,7 +2126,9 @@ impl Chain {
                     // A whole fold, printed (a host reader of its operand's
                     // fold, not of the array).
                     let a = x.pick(Shape::M, p);
-                    x.s += &format!("    (zero, {a}) -> fold {{ acc, v -> acc + v * 0.5 }} -> {o};\n    {o} -> println;\n");
+                    x.s += &format!(
+                        "    (zero, {a}) -> fold {{ acc, v -> acc + v * 0.5 }} -> {o};\n    {o} -> println;\n"
+                    );
                     continue;
                 }
             };
@@ -2090,7 +2140,13 @@ impl Chain {
         }
         if printed.is_empty() {
             // The last node was a whole fold: print the last array too.
-            if let Some((o, sh)) = x.pool.iter().rev().find(|(o, _)| o.starts_with('n')).cloned() {
+            if let Some((o, sh)) = x
+                .pool
+                .iter()
+                .rev()
+                .find(|(o, _)| o.starts_with('n'))
+                .cloned()
+            {
                 x.print(&o, sh);
             }
         }
@@ -2149,7 +2205,10 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     let n: u32 = if p.big { 32 } else { 16 };
     let nn = n * n;
     let law = |name: &str, a: u32, b: u32, m: u32, scale: u32| {
-        format!("    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n", h = m / 2)
+        format!(
+            "    ta -> map {{ t -> (t * {a} + {b}) % {m} - {h} -> widen_f32 -> v; v / {scale}.0 }} -> {name};\n",
+            h = m / 2
+        )
     };
     let mut s = format!("fn main() {{\n    {nn} -> iota -> ta;\n    {n} -> iota -> krange;\n");
     s += &law("a0", 7, 13, 101, 8 * n);
@@ -2159,7 +2218,10 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     if p.two {
         s += &format!("    mut y: [f32; {nn}] <- a1;\n");
     }
-    s += &format!("    mut it: i32 <- 0;\n    loop {{\n        (it < {}) -> {{\n            -true-> {{\n", p.trips);
+    s += &format!(
+        "    mut it: i32 <- 0;\n    loop {{\n        (it < {}) -> {{\n            -true-> {{\n",
+        p.trips
+    );
     let ind = "                ";
     if check.is_some() {
         s += &format!("{ind}x -> xp;\n");
@@ -2173,9 +2235,16 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     // A write into `x`: the natural guarded map over the cells, or one
     // `Update` per cell of `cells` (the new value of cell `c` is `val(c)`,
     // an expression of the index text `c`).
-    let write = |z: &str, guard: String, cells: Vec<String>, val: &dyn Fn(&str) -> String| -> String {
+    let write = |z: &str,
+                 guard: String,
+                 cells: Vec<String>,
+                 val: &dyn Fn(&str) -> String|
+     -> String {
         if natural {
-            format!("{ind}ta -> map {{ t -> {guard} -> {{ -true-> {{ {} }} -false-> x[t]; }} }} -> x;\n", val("t"))
+            format!(
+                "{ind}ta -> map {{ t -> {guard} -> {{ -true-> {{ {} }} -false-> x[t]; }} }} -> x;\n",
+                val("t")
+            )
         } else {
             cells
                 .iter()
@@ -2192,22 +2261,34 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
         let z = format!("z{z}");
         // A row fold of the chain so far: one value per row (the vector a row
         // or column write reads).
-        let rows = format!("{ind}krange -> map {{ j -> (0.0, krange) -> fold {{ acc, k -> acc + {x}[j * {n} + k] }} }} -> {z}r;\n");
+        let rows = format!(
+            "{ind}krange -> map {{ j -> (0.0, krange) -> fold {{ acc, k -> acc + {x}[j * {n} + k] }} }} -> {z}r;\n"
+        );
         let made = match op {
             0 => Some(format!(
                 "{ind}ta -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, krange) -> fold {{ acc, k -> acc + {x}[i * {n} + k] * {y}[k * {n} + j] }} }} -> {z};\n"
             )),
-            1 => Some(format!("{ind}{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n")),
+            1 => Some(format!(
+                "{ind}{x} -> map {{ v -> v -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> r; r }} -> {z};\n"
+            )),
             2 => Some(format!("{ind}{x} -> map {{ v -> v * 0.5 }} -> {z};\n")),
-            3 => Some(format!("{ind}ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n")),
-            4 => Some(format!("{ind}(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n", b % (p.trips + 1))),
+            3 => Some(format!(
+                "{ind}ta -> map {{ t -> {x}[t] + {y}[t] }} -> {z};\n"
+            )),
+            4 => Some(format!(
+                "{ind}(it < {}) -> {{ -true-> {x}; -false-> {y}; }} -> {z};\n",
+                b % (p.trips + 1)
+            )),
             9 => {
                 // A power of the clamped cell: `2^k` by `k` squarings.
                 let k = 1 + a % 4;
                 let pow = if natural {
                     format!("{k} -> iota -> sq; (v0, sq) -> fold {{ acc, q -> acc * acc }}")
                 } else {
-                    (0..k).map(|i| format!("v{i} * v{i} -> v{};", i + 1)).collect::<String>() + &format!(" v{k}")
+                    (0..k)
+                        .map(|i| format!("v{i} * v{i} -> v{};", i + 1))
+                        .collect::<String>()
+                        + &format!(" v{k}")
                 };
                 Some(format!(
                     "{ind}{x} -> map {{ v -> v * 0.125 + 0.5 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> c; \
@@ -2227,7 +2308,11 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
             5 => {
                 // Row `it`, each cell fed by its column's row sum.
                 let val = |c: &str| {
-                    let j = if c == "t" { format!("t % {n}") } else { c.rsplit(" + ").next().unwrap().to_string() };
+                    let j = if c == "t" {
+                        format!("t % {n}")
+                    } else {
+                        c.rsplit(" + ").next().unwrap().to_string()
+                    };
                     format!("x[{c}] * 0.5 + {z}r[{j}] / {n}.0")
                 };
                 let cells = (0..n).map(|j| format!("it * {n} + {j}")).collect();
@@ -2236,7 +2321,11 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
             6 => {
                 // Column `(it + a) % n`, each cell fed by its row's sum.
                 let val = |c: &str| {
-                    let i = if c == "t" { format!("t / {n}") } else { c.split(" * ").next().unwrap().to_string() };
+                    let i = if c == "t" {
+                        format!("t / {n}")
+                    } else {
+                        c.split(" * ").next().unwrap().to_string()
+                    };
                     format!("x[{c}] * 0.5 + {z}r[{i}] / {n}.0")
                 };
                 let cells = (0..n).map(|i| format!("{i} * {n} + {z}c")).collect();
@@ -2251,13 +2340,23 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
                 let w = 1 + u32::from(b) % (2 * n - o);
                 let val = |c: &str| format!("x[{c}] * 0.5 + 0.25");
                 let cells = (o..o + w).map(|j| format!("it * {n} + {j}")).collect();
-                write(&z, format!("(t >= it * {n} + {o} && t < it * {n} + {})", o + w), cells, &val)
+                write(
+                    &z,
+                    format!("(t >= it * {n} + {o} && t < it * {n} + {})", o + w),
+                    cells,
+                    &val,
+                )
             }
             _ => {
                 // One cell of row `it`.
                 let j = u32::from(a) % n;
                 let val = |c: &str| format!("x[{c}] * 0.75 + 0.125");
-                write(&z, format!("(t == it * {n} + {j})"), vec![format!("it * {n} + {j}")], &val)
+                write(
+                    &z,
+                    format!("(t == it * {n} + {j})"),
+                    vec![format!("it * {n} + {j}")],
+                    &val,
+                )
             }
         };
         cur = "x".into();
@@ -2268,13 +2367,22 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     if p.two {
         // `y`'s next: itself, `w`, `x`'s new value or the trip's first array.
         let first = arrs[3.min(arrs.len() - 1)].clone();
-        let ny = pick(&["y".to_string(), "w".to_string(), "x".to_string(), first], p.next);
+        let ny = pick(
+            &["y".to_string(), "w".to_string(), "x".to_string(), first],
+            p.next,
+        );
         if ny != "y" {
             s += &format!("{ind}{ny} -> y;\n");
         }
     }
     if let Some((a, b, len)) = check {
-        let at = |c: i64| if c < 0 { format!("it * {a} - {}", -c) } else { format!("it * {a} + {c}") };
+        let at = |c: i64| {
+            if c < 0 {
+                format!("it * {a} - {}", -c)
+            } else {
+                format!("it * {a} + {c}")
+            }
+        };
         s += &format!(
             "{ind}ta -> map {{ t -> (x[t] == xp[t]) -> {{ -true-> 0; -false-> 1; }} -> ch; \
              (t >= {} && t < {}) -> {{ -true-> 0; -false-> ch; }} }} -> dz;\n\
@@ -2284,7 +2392,9 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
         );
     }
     let out = if p.exit && p.two { "y" } else { "x" };
-    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n");
+    s += &format!(
+        "{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> {out} -> out;\n        }}\n    }}\n"
+    );
     s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", nn - 1);
     if p.whole {
         s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
@@ -2354,7 +2464,11 @@ pub fn recur_src(p: &RecurProg) -> String {
          mut x: [f32; {nn}] <- x0;\n{}    mut o: [f32; {n}] <- o0;\n    mut it: i32 <- 0;\n    loop {{\n        \
          (it < {}) -> {{\n            -true-> {{\n",
         4 * n,
-        if p.var & 64 != 0 { format!("    (0.0, {nn}) -> fill -> y0;\n    mut y: [f32; {nn}] <- y0;\n") } else { String::new() },
+        if p.var & 64 != 0 {
+            format!("    (0.0, {nn}) -> fill -> y0;\n    mut y: [f32; {nn}] <- y0;\n")
+        } else {
+            String::new()
+        },
         p.trips
     );
     let fed = |f: &str| match p.prompt {
@@ -2368,13 +2482,19 @@ pub fn recur_src(p: &RecurProg) -> String {
     };
     let body = match p.var & 16 {
         0 => format!("{cell} {}", fed("f")),
-        _ => format!("{cell} (t % 3 == 0) -> {{ -true-> {{ {} }} -false-> f / 32.0; }}", fed("f")),
+        _ => format!(
+            "{cell} (t % 3 == 0) -> {{ -true-> {{ {} }} -false-> f / 32.0; }}",
+            fed("f")
+        ),
     };
     let row = if p.var & 2 == 0 { "it" } else { "it + 1" };
     // The row's cells the trip writes: all, or (bit 5) its first half.
     let write = |body: &str, st: &str| match p.var & 32 {
         0 => format!("{{ {body} }}"),
-        _ => format!("{{ (t % {n} < {}) -> {{ -true-> {{ {body} }} -false-> {st}[t]; }} }}", n / 2),
+        _ => format!(
+            "{{ (t % {n} < {}) -> {{ -true-> {{ {body} }} -false-> {st}[t]; }} }}",
+            n / 2
+        ),
     };
     s += &format!(
         "{ind}ta -> map {{ t -> (t / {n} == {row}) -> {{ -true-> {} -false-> x[t]; }} }} -> x;\n",
@@ -2412,7 +2532,9 @@ pub fn recur_src(p: &RecurProg) -> String {
             }
             1 => {
                 s += &if a % 2 == 0 {
-                    format!("{mat} -> map {{ v -> (v > 0.0) -> {{ -true-> v; -false-> 0.0; }} }} -> {z};\n")
+                    format!(
+                        "{mat} -> map {{ v -> (v > 0.0) -> {{ -true-> v; -false-> 0.0; }} }} -> {z};\n"
+                    )
                 } else {
                     format!("{mat} -> map {{ v -> v * 0.5 }} -> {z};\n")
                 };
@@ -2431,7 +2553,9 @@ pub fn recur_src(p: &RecurProg) -> String {
                     1 => ("-1000000.0", "(e > acc) -> { -true-> e; -false-> acc; }"),
                     _ => ("1000000.0", "(e < acc) -> { -true-> e; -false-> acc; }"),
                 };
-                s += &format!("({seed}, krange) -> fold {{ acc, r -> {vec}[r] -> e; {step} }} -> {z}m;\n");
+                s += &format!(
+                    "({seed}, krange) -> fold {{ acc, r -> {vec}[r] -> e; {step} }} -> {z}m;\n"
+                );
                 s += &format!("{ind}krange -> map {{ r -> ({vec}[r] - {z}m) / 16.0 }} -> {z};\n");
                 vec = z;
             }
@@ -2444,7 +2568,9 @@ pub fn recur_src(p: &RecurProg) -> String {
             _ => {
                 // A row fold of the matrix (a sum, or a running max).
                 s += &if a % 2 == 0 {
-                    format!("krange -> map {{ i -> (0.0, krange) -> fold {{ acc, k -> acc + {mat}[i * {n} + k] }} }} -> {z};\n")
+                    format!(
+                        "krange -> map {{ i -> (0.0, krange) -> fold {{ acc, k -> acc + {mat}[i * {n} + k] }} }} -> {z};\n"
+                    )
                 } else {
                     format!(
                         "krange -> map {{ i -> (-1000000.0, krange) -> fold {{ acc, k -> {mat}[i * {n} + k] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> {z};\n"
@@ -2454,7 +2580,11 @@ pub fn recur_src(p: &RecurProg) -> String {
             }
         }
     }
-    let last = if vec == "q" { format!("{mat}[j] * 0.5 + q[j]") } else { format!("{vec}[j]") };
+    let last = if vec == "q" {
+        format!("{mat}[j] * 0.5 + q[j]")
+    } else {
+        format!("{vec}[j]")
+    };
     if p.var & 64 != 0 {
         // `y` read by a vector·matrix cell.
         s += &format!(
@@ -2465,7 +2595,9 @@ pub fn recur_src(p: &RecurProg) -> String {
     } else {
         s += &format!("{ind}{vec} -> o;\n");
     }
-    s += &format!("{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> o -> out;\n        }}\n    }}\n");
+    s += &format!(
+        "{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> o -> out;\n        }}\n    }}\n"
+    );
     s += &format!("    out[0] -> println;\n    out[{}] -> println;\n", n - 1);
     if p.whole {
         s += "    0.0 -> zero: f32;\n    (zero, out) -> fold { acc, v -> acc + v } -> total;\n    total -> println;\n";
@@ -2499,7 +2631,13 @@ pub fn radix_prog_strategy() -> impl Strategy<Value = RadixProg> {
         any::<bool>(),
         prop::bool::weighted(0.2),
     )
-        .prop_map(|(dims, nhwc, w_kio, tap_major, mix)| RadixProg { dims, nhwc, w_kio, tap_major, mix })
+        .prop_map(|(dims, nhwc, w_kio, tap_major, mix)| RadixProg {
+            dims,
+            nhwc,
+            w_kio,
+            tap_major,
+            mix,
+        })
 }
 
 /// [`RadixProg`]'s source text and its output length.
@@ -2509,7 +2647,10 @@ pub fn radix_src(p: &RadixProg) -> (String, u64) {
     // (`mix` needs two channels: `(ci + co) % 1` folds to a constant.)
     let cin = 1u64 << (d[1] % 5).max(u8::from(p.mix));
     let cout = 4u64 << (d[2] % 5);
-    let (h, w) = ([4, 8, 6][usize::from(d[3] % 3)], [4, 8, 6][usize::from(d[4] % 3)]);
+    let (h, w) = (
+        [4, 8, 6][usize::from(d[3] % 3)],
+        [4, 8, 6][usize::from(d[4] % 3)],
+    );
     let (kh, kw) = (u64::from(d[5] % 4) + 1, u64::from(d[5] / 4 % 4) + 1);
     let (ih, iw, kk) = (h + kh - 1, w + kw - 1, kh * kw);
     let (n, k) = (b * cout * h * w, cin * kk);
@@ -2531,8 +2672,16 @@ pub fn radix_src(p: &RadixProg) -> (String, u64) {
     } else {
         format!("k / {kk} -> ci; k % {kk} -> q;")
     };
-    let wa = if p.w_kio { format!("k * {cout} + co") } else { format!("co * {k} + k") };
-    let ch = if p.mix { format!("(ci + co) % {cin}") } else { "ci".to_string() };
+    let wa = if p.w_kio {
+        format!("k * {cout} + co")
+    } else {
+        format!("co * {k} + k")
+    };
+    let ch = if p.mix {
+        format!("(ci + co) % {cin}")
+    } else {
+        "ci".to_string()
+    };
     let src = format!(
         "fn main() {{
     {wn} -> iota -> i_w;
@@ -2582,7 +2731,12 @@ pub fn tf32_prog_strategy() -> impl Strategy<Value = Tf32Prog> {
         prop::sample::select(vec![0u8, 0, 1, 1, 4, 4, 2, 3]),
         prop::array::uniform2(any::<u8>()),
     )
-        .prop_map(|(dims, bt, form, law)| Tf32Prog { dims, bt, form, law })
+        .prop_map(|(dims, bt, form, law)| Tf32Prog {
+            dims,
+            bt,
+            form,
+            law,
+        })
 }
 
 /// Whether [`Tf32Prog`]'s product `y` admits TF32.
@@ -2597,8 +2751,15 @@ pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
     let m = pick(p.dims[0], &[16, 32, 64, 128]);
     let n = pick(p.dims[1], &[8, 16, 32, 64]);
     let k = pick(p.dims[2], &[8, 16, 32, 64, 128]);
-    let (a1, a2) = (u64::from(p.law[0] % 13) * 2 + 3, u64::from(p.law[1] % 11) * 2 + 5);
-    let bi = if p.bt { format!("b[j * {k} + k]") } else { format!("b[k * {n} + j]") };
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let bi = if p.bt {
+        format!("b[j * {k} + k]")
+    } else {
+        format!("b[k * {n} + j]")
+    };
     let (fn_ty, step_ty) = match p.form {
         0 => ("", ": tf32 | f32"),
         1 => (": tf32 | f32", ""),
@@ -2608,8 +2769,15 @@ pub fn tf32_src(p: &Tf32Prog) -> (String, (u64, u64)) {
     let y = format!(
         "ic -> map {{ t -> t / {n} -> i; t % {n} -> j; (0.0, kr) -> fold{step_ty} {{ acc, k -> acc + a[i * {k} + k] * {bi} }} }}"
     );
-    let y = if p.form == 4 { format!("ic -> seq: tf32 | f32 {{ {y} }}") } else { y };
-    let (c0, c1) = (u64::from(p.law[0]) * 7 % (m * n), m * n - 1 - u64::from(p.law[1]) % n);
+    let y = if p.form == 4 {
+        format!("ic -> seq: tf32 | f32 {{ {y} }}")
+    } else {
+        y
+    };
+    let (c0, c1) = (
+        u64::from(p.law[0]) * 7 % (m * n),
+        m * n - 1 - u64::from(p.law[1]) % n,
+    );
     let src = format!(
         "fn main(){fn_ty} {{
     {mk} -> iota -> ia;
@@ -2660,17 +2828,53 @@ pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
         prop::array::uniform2(any::<u8>()),
         prop::bool::weighted(0.3),
     )
-        .prop_map(|(dims, bt, retained, law, wide)| GeomProg { dims, bt, retained, law, wide: wide && !retained })
+        .prop_map(|(dims, bt, retained, law, wide)| GeomProg {
+            dims,
+            bt,
+            retained,
+            law,
+            wide: wide && !retained,
+        })
 }
 
 /// [`GeomProg`]'s source text and its `(m, n, k)`.
 pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
     let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
-    let m = pick(p.dims[0], if p.retained { &[4, 8, 16, 64] } else if p.wide { &[16, 32, 64] } else { &[1, 2, 4, 16, 64] });
-    let n = pick(p.dims[1], if p.wide { &[16384, 32768] } else { &[32, 64, 128, 256, 512] });
-    let k = pick(p.dims[2], if p.wide { &[32, 64] } else { &[32, 64, 256, 1024] });
-    let (a1, a2) = (u64::from(p.law[0] % 13) * 2 + 3, u64::from(p.law[1] % 11) * 2 + 5);
-    let bi = if p.bt { format!("b[j * {k} + q]") } else { format!("b[q * {n} + j]") };
+    let m = pick(
+        p.dims[0],
+        if p.retained {
+            &[4, 8, 16, 64]
+        } else if p.wide {
+            &[16, 32, 64]
+        } else {
+            &[1, 2, 4, 16, 64]
+        },
+    );
+    let n = pick(
+        p.dims[1],
+        if p.wide {
+            &[16384, 32768]
+        } else {
+            &[32, 64, 128, 256, 512]
+        },
+    );
+    let k = pick(
+        p.dims[2],
+        if p.wide {
+            &[32, 64]
+        } else {
+            &[32, 64, 256, 1024]
+        },
+    );
+    let (a1, a2) = (
+        u64::from(p.law[0] % 13) * 2 + 3,
+        u64::from(p.law[1] % 11) * 2 + 5,
+    );
+    let bi = if p.bt {
+        format!("b[j * {k} + q]")
+    } else {
+        format!("b[q * {n} + j]")
+    };
     let y = |a: &str| {
         format!(
             "ic -> map {{ c -> c / {n} -> i; c % {n} -> j; (0.0, kr) -> fold {{ acc, q -> acc + {a}[i * {k} + q] * {bi} }} }} -> y;"

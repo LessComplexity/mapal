@@ -65,7 +65,6 @@ const BATCH: usize = 32;
 /// pin the default pool (`run_exe(.., None)`) keep it.
 const SWEEP_LANES: &str = "2";
 
-
 const EXAMPLES: &[&str] = &[
     "abs",
     "calc",
@@ -745,7 +744,11 @@ fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
         let name = tag.replace(['#', '/'], "_");
         std::fs::write(format!("{d}/{name}.ll"), &ll).unwrap();
         std::fs::write(format!("{d}/{name}.ir"), format!("{ir:#?}")).unwrap();
-        std::fs::write(format!("{d}/{name}.want"), format!("{want_code}\n{}", want_out.clone().unwrap_or_default())).unwrap();
+        std::fs::write(
+            format!("{d}/{name}.want"),
+            format!("{want_code}\n{}", want_out.clone().unwrap_or_default()),
+        )
+        .unwrap();
     }
     Some(Job {
         tag,
@@ -864,11 +867,16 @@ fn trip_copies(ll: &str) -> (usize, usize) {
             };
             let header = rest.split_whitespace().next().expect("header");
             let back = format!("br label %{header}");
-            let latch = (h..lines.len()).rev().find(|&i| lines[i].trim() == back).expect("latch");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
             for x in &lines[h..=latch] {
                 copies += x.contains("call void @llvm.memcpy") as usize;
                 let t = x.trim();
-                let value = (t.contains("= load [") || t.contains("= load {") || t.starts_with("store [")
+                let value = (t.contains("= load [")
+                    || t.contains("= load {")
+                    || t.starts_with("store [")
                     || t.starts_with("store {"))
                     && t.split(", ptr").next().is_some_and(|ty| ty.contains(" x "));
                 values += value as usize;
@@ -913,16 +921,28 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
         .flat_map(|s| s.merges)
         .filter_map(|m| ir.loop_plan(f, m))
         .map(|p| {
-            let body = p.decide_order.iter().chain(&p.advance_order).copied().collect();
+            let body = p
+                .decide_order
+                .iter()
+                .chain(&p.advance_order)
+                .copied()
+                .collect();
             (p, body)
         })
         .collect();
     let mo = |m| ir.morphism(m).expect("morphism");
     let pair_src = |o, k| {
-        ir.in_edges(o).iter().map(|&m| mo(m)).find(|x| matches!(x.op, Op::Pair { slot, .. } if slot == k)).map(|x| x.source)
+        ir.in_edges(o)
+            .iter()
+            .map(|&m| mo(m))
+            .find(|x| matches!(x.op, Op::Pair { slot, .. } if slot == k))
+            .map(|x| x.source)
     };
-    let objs: Vec<mapal_ir::ObjectId> =
-        ir.objects().map(|(o, _)| o).filter(|&o| ir.try_owner(o) == Some(f)).collect();
+    let objs: Vec<mapal_ir::ObjectId> = ir
+        .objects()
+        .map(|(o, _)| o)
+        .filter(|&o| ir.try_owner(o) == Some(f))
+        .collect();
     let paths = |ty: &Ty| -> Vec<Vec<u32>> {
         fn go(ty: &Ty, pre: &mut Vec<u32>, out: &mut Vec<Vec<u32>>) {
             match ty {
@@ -953,7 +973,9 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
         let mut out = Vec::new();
         let mut stack = vec![(o, p)];
         while let Some((o, p)) = stack.pop() {
-            if p.is_empty() && let Some(&s) = alias.get(&o) {
+            if p.is_empty()
+                && let Some(&s) = alias.get(&o)
+            {
                 stack.push((s, p));
                 continue;
             }
@@ -962,13 +984,15 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
                 ObjectKind::Parameter | ObjectKind::Constant => Some(Bytes::Foreign),
                 ObjectKind::LoopMerge => Some(Bytes::State(o, p.clone())),
                 _ => match ir.in_edges(o).first().map(|&m| mo(m)) {
-                    Some(x) if matches!(x.op, Op::Pair { .. }) && !p.is_empty() => match pair_src(o, p[0]) {
-                        Some(s) => {
-                            stack.push((s, p[1..].to_vec()));
-                            None
+                    Some(x) if matches!(x.op, Op::Pair { .. }) && !p.is_empty() => {
+                        match pair_src(o, p[0]) {
+                            Some(s) => {
+                                stack.push((s, p[1..].to_vec()));
+                                None
+                            }
+                            None => Some(Bytes::Foreign),
                         }
-                        None => Some(Bytes::Foreign),
-                    },
+                    }
                     Some(x) if matches!(x.op, Op::Proj { .. } | Op::LoopExit | Op::Phi) => {
                         let pre: Vec<u32> = match x.op {
                             Op::Proj { index } => vec![index],
@@ -984,7 +1008,9 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
                     _ => Some(Bytes::Foreign),
                 },
             };
-            if let Some(b) = b && !out.contains(&b) {
+            if let Some(b) = b
+                && !out.contains(&b)
+            {
                 out.push(b);
             }
         }
@@ -993,10 +1019,20 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
     let holders = |alias: &HashMap<_, _>, b: &Bytes| -> Vec<mapal_ir::ObjectId> {
         objs.iter()
             .copied()
-            .filter(|&o| paths(&ty_of(o)).into_iter().any(|q| bytes(alias, o, q).contains(b)))
+            .filter(|&o| {
+                paths(&ty_of(o))
+                    .into_iter()
+                    .any(|q| bytes(alias, o, q).contains(b))
+            })
             .collect()
     };
-    let born = |o| ir.in_edges(o).iter().filter_map(|&m| lup.position(m)).max().unwrap_or(0);
+    let born = |o| {
+        ir.in_edges(o)
+            .iter()
+            .filter_map(|&m| lup.position(m))
+            .max()
+            .unwrap_or(0)
+    };
     let made_in = |body: &HashSet<_>, o| ir.in_edges(o).iter().any(|m| body.contains(m));
     let mut updates: Vec<mapal_ir::MorphismId> = ir
         .morphisms()
@@ -1042,30 +1078,43 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
                 (0..n).all(|i| !before[i][i]).then_some((task, before))
             });
     let ordered = |hs: &[mapal_ir::ObjectId], u: mapal_ir::MorphismId| {
-        let Some((task, before)) = &par else { return true };
-        let Some(&tw) = task.get(&u) else { return false };
+        let Some((task, before)) = &par else {
+            return true;
+        };
+        let Some(&tw) = task.get(&u) else {
+            return false;
+        };
         // (A loop's exit object reads its final state, after the loop.)
         let exit = |o| ir.in_edges(o).iter().any(|&m| mo(m).op == Op::LoopExit);
-        hs.iter().filter(|&&o| !exit(o)).flat_map(|&o| ir.out_edges(o).iter().copied()).all(|e| {
-            e == u
-                || lup.position(e) >= lup.position(u)
-                || matches!(mo(e).op, Op::LoopEnter | Op::LoopBack | Op::LoopExit) && !task.contains_key(&e)
-                || task.get(&e).is_some_and(|&tr| tr == tw || before[tr][tw])
-        })
+        hs.iter()
+            .filter(|&&o| !exit(o))
+            .flat_map(|&o| ir.out_edges(o).iter().copied())
+            .all(|e| {
+                e == u
+                    || lup.position(e) >= lup.position(u)
+                    || matches!(mo(e).op, Op::LoopEnter | Op::LoopBack | Op::LoopExit)
+                        && !task.contains_key(&e)
+                    || task.get(&e).is_some_and(|&tr| tr == tw || before[tr][tw])
+            })
     };
     let mut alias: HashMap<mapal_ir::ObjectId, mapal_ir::ObjectId> = HashMap::new();
     let mut need = 0;
     for u in updates {
         let at = lup.position(u).expect("position");
         let arr = pair_src(mo(u).source, 0).expect("update array");
-        let mine: Vec<&(mapal_ir::LoopPlan, HashSet<_>)> = loops.iter().filter(|(_, b)| b.contains(&u)).collect();
+        let mine: Vec<&(mapal_ir::LoopPlan, HashSet<_>)> =
+            loops.iter().filter(|(_, b)| b.contains(&u)).collect();
         // No holder made before the update is read after it.
         let quiet = |hs: Vec<mapal_ir::ObjectId>, body: Option<&HashSet<_>>| {
-            hs.into_iter().filter(|&o| born(o) < at && body.is_none_or(|b| made_in(b, o))).all(|o| {
-                !ir.out_edges(o).iter().any(|&e| gated.contains(&e) && e != u && mo(e).target != mo(u).source)
-                    && lup.view_last_use(o).is_none_or(|p| p <= at)
-                    && (body.is_some() || (!lup.escapes(o) && lup.carried_by(o).is_none()))
-            })
+            hs.into_iter()
+                .filter(|&o| born(o) < at && body.is_none_or(|b| made_in(b, o)))
+                .all(|o| {
+                    !ir.out_edges(o)
+                        .iter()
+                        .any(|&e| gated.contains(&e) && e != u && mo(e).target != mo(u).source)
+                        && lup.view_last_use(o).is_none_or(|p| p <= at)
+                        && (body.is_some() || (!lup.escapes(o) && lup.carried_by(o).is_none()))
+                })
         };
         let ok = match &bytes(&alias, arr, vec![])[..] {
             [Bytes::Own(c)] => {
@@ -1075,18 +1124,35 @@ fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
                     && ordered(&hs, u)
                     && quiet(hs, None)
             }
-            [Bytes::State(m, p)] => mine.iter().find(|(pl, _)| pl.merge == *m).is_some_and(|(pl, body)| {
-                let next = |q: &[u32]| bytes(&HashMap::new(), pl.back_route, [0].iter().chain(q).copied().collect());
-                let others: Vec<Bytes> = paths(&ty_of(*m)).iter().filter(|q| *q != p).flat_map(|q| next(q)).collect();
-                let owned = next(p).iter().all(|b| match b {
-                    Bytes::State(m2, q) => m2 == m && q == p,
-                    Bytes::Own(o) => made_in(body, *o) && !others.contains(b),
-                    Bytes::Foreign => false,
-                });
-                let whole = ir.out_edges(*m).iter().any(|&e| !matches!(mo(e).op, Op::Proj { .. }));
-                let hs = holders(&alias, &Bytes::State(*m, p.clone()));
-                owned && !whole && ordered(&hs, u) && quiet(hs, Some(body))
-            }),
+            [Bytes::State(m, p)] => {
+                mine.iter()
+                    .find(|(pl, _)| pl.merge == *m)
+                    .is_some_and(|(pl, body)| {
+                        let next = |q: &[u32]| {
+                            bytes(
+                                &HashMap::new(),
+                                pl.back_route,
+                                [0].iter().chain(q).copied().collect(),
+                            )
+                        };
+                        let others: Vec<Bytes> = paths(&ty_of(*m))
+                            .iter()
+                            .filter(|q| *q != p)
+                            .flat_map(|q| next(q))
+                            .collect();
+                        let owned = next(p).iter().all(|b| match b {
+                            Bytes::State(m2, q) => m2 == m && q == p,
+                            Bytes::Own(o) => made_in(body, *o) && !others.contains(b),
+                            Bytes::Foreign => false,
+                        });
+                        let whole = ir
+                            .out_edges(*m)
+                            .iter()
+                            .any(|&e| !matches!(mo(e).op, Op::Proj { .. }));
+                        let hs = holders(&alias, &Bytes::State(*m, p.clone()));
+                        owned && !whole && ordered(&hs, u) && quiet(hs, Some(body))
+                    })
+            }
             _ => false,
         };
         if ok {
@@ -1140,18 +1206,40 @@ fn differential_carried_loops_values_and_movement() {
             for (arm, ll) in [("on", on), ("off", emit_by_ref(&ir, false))] {
                 if let Ok(d) = std::env::var("S65_DUMP") {
                     std::fs::write(format!("{d}/carry{n}_{arm}.ll"), &ll).unwrap();
-                    std::fs::write(format!("{d}/carry{n}.prog"), format!("{prog:#?}\n{want_code}\n{want_out:?}")).unwrap();
+                    std::fs::write(
+                        format!("{d}/carry{n}.prog"),
+                        format!("{prog:#?}\n{want_code}\n{want_out:?}"),
+                    )
+                    .unwrap();
                 }
-                jobs.push(Job { tag: format!("carry#{n}/{arm}"), ll, want_out: want_out.clone(), want_code });
+                jobs.push(Job {
+                    tag: format!("carry#{n}/{arm}"),
+                    ll,
+                    want_out: want_out.clone(),
+                    want_code,
+                });
             }
             n += 1;
         }
     }
     assert!(n >= 256, "expected ≥256 carried-loop programs, got {n}");
-    assert!(loops >= n, "every program has a carried loop: {loops} loops in {n}");
-    assert!(moved.is_empty(), "{} movement findings:\n{}", moved.len(), moved.join("\n"));
+    assert!(
+        loops >= n,
+        "every program has a carried loop: {loops} loops in {n}"
+    );
+    assert!(
+        moved.is_empty(),
+        "{} movement findings:\n{}",
+        moved.len(),
+        moved.join("\n")
+    );
     let failures = run_jobs(&clang, &jobs);
-    assert!(failures.is_empty(), "{} carried-loop divergences:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} carried-loop divergences:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
     eprintln!(
         "differential_carried_loops: {n} programs ({trips} run to the end), {loops} loops; \
          per-trip copies {copies} = required {required}; values OK on and off at -O0 and -O2"
@@ -3269,7 +3357,8 @@ fn main() {
     };
     // The only ambient profile left in this file — the host-detected default
     // is the whole point of this leg (on the exact face: the oracle's bits).
-    let ll = mapal_backend_llvm::emit_with_opts(&ir, &mapal_backend_llvm::EmitOpts::exact()).unwrap();
+    let ll =
+        mapal_backend_llvm::emit_with_opts(&ir, &mapal_backend_llvm::EmitOpts::exact()).unwrap();
     for opt in ["-O0", "-O2"] {
         let (out, code) = compile_run(&clang, &ll, &format!("native_profile/{opt}"), opt)
             .unwrap_or_else(|| panic!("native_profile/{opt}: run timed out"));
@@ -3281,7 +3370,6 @@ fn main() {
         );
     }
 }
-
 
 // --- S65 rule R on the device: generated device-sized loops, emulated --------
 
@@ -3310,13 +3398,19 @@ fn llt_array_bytes(t: &str) -> u64 {
 /// flag: once per entry) aside.
 fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [u64; 4])> {
     let last_i64 = |l: &str| -> u64 {
-        l.trim_end_matches(')').rsplit("i64 ").next().and_then(|x| x.trim().parse().ok()).unwrap_or(0)
+        l.trim_end_matches(')')
+            .rsplit("i64 ")
+            .next()
+            .and_then(|x| x.trim().parse().ok())
+            .unwrap_or(0)
     };
     let mut out = Vec::new();
     for f in ll.split("\ndefine ").skip(1) {
         let lines: Vec<&str> = f.lines().collect();
         for (h, l) in lines.iter().enumerate() {
-            let Some(rest) = l.strip_prefix("; mapal.move loop=") else { continue };
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else {
+                continue;
+            };
             let header = rest.split_whitespace().next().expect("header");
             let kv = rest
                 .split_whitespace()
@@ -3324,12 +3418,18 @@ fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
             let back = format!("br label %{header}");
-            let latch = (h..lines.len()).rev().find(|&i| lines[i].trim() == back).expect("latch");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
             // Blocks of the region: a first-pass block stores a pass flag.
             let mut moved = [0u64; 4];
             let mut block: Vec<&str> = Vec::new();
             let flush = |b: &mut Vec<&str>, m: &mut [u64; 4]| {
-                if !b.iter().any(|x| x.trim().starts_with("store i1 true, ptr %s")) {
+                if !b
+                    .iter()
+                    .any(|x| x.trim().starts_with("store i1 true, ptr %s"))
+                {
                     for x in b.iter() {
                         if x.contains("call void @llvm.memcpy") {
                             m[0] += 1;
@@ -3338,9 +3438,12 @@ fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [
                                 .nth(1)
                                 .and_then(|t| t.split(", ptr null").next())
                                 .map_or(0, llt_array_bytes);
-                        } else if x.contains("@mapal_gpu_h2d(") || x.contains("@mapal_gpu_h2d_async(") {
+                        } else if x.contains("@mapal_gpu_h2d(")
+                            || x.contains("@mapal_gpu_h2d_async(")
+                        {
                             m[2] += last_i64(x);
-                        } else if x.contains("@mapal_gpu_d2h(") || x.contains("@mapal_gpu_d2h_on(") {
+                        } else if x.contains("@mapal_gpu_d2h(") || x.contains("@mapal_gpu_d2h_on(")
+                        {
                             m[3] += last_i64(x);
                         }
                     }
@@ -3383,7 +3486,9 @@ fn differential_device_loops_values_and_movement() {
     // The programs drawn in order (one deterministic runner), then run over the
     // job slots: each is interpreter-, emitter-, clang- and emulator-bound and
     // independent of the others.
-    let progs: Vec<_> = (0..64).map(|_| strat.new_tree(&mut runner).unwrap().current()).collect();
+    let progs: Vec<_> = (0..64)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
     let work = |n: usize, p: &testgen::DeviceProg| -> (Vec<String>, [usize; 4]) {
         let (mut placed, mut carried, mut uniform, mut nests) = (0usize, 0usize, 0usize, 0usize);
         let mut findings = Vec::new();
@@ -3403,19 +3508,23 @@ fn differential_device_loops_values_and_movement() {
                 gpu,
                 ..mapal_backend_llvm::EmitOpts::exact()
             };
-            let em = match std::panic::catch_unwind(|| mapal_backend_llvm::emit_detailed(&ir, &opts)) {
-                Ok(em) => em.expect("emits"),
-                Err(_) => {
-                    findings.push(format!("device#{n} on={on}: the emitter panicked\n{src}"));
-                    continue;
-                }
-            };
+            let em =
+                match std::panic::catch_unwind(|| mapal_backend_llvm::emit_detailed(&ir, &opts)) {
+                    Ok(em) => em.expect("emits"),
+                    Err(_) => {
+                        findings.push(format!("device#{n} on={on}: the emitter panicked\n{src}"));
+                        continue;
+                    }
+                };
             // (A program whose every site the plan keeps on the host has no
             // device unit: its CPU build — the CPU leg's.)
             let Some(dev) = em.device else { continue };
             let got = emu::run_emulated(&clang, &em.text, &dev);
             if got != rr.output {
-                findings.push(format!("device#{n} on={on}: {got:?} != {:?}\n{src}", rr.output));
+                findings.push(format!(
+                    "device#{n} on={on}: {got:?} != {:?}\n{src}",
+                    rr.output
+                ));
             }
             if !on {
                 continue;
@@ -3428,13 +3537,17 @@ fn differential_device_loops_values_and_movement() {
             let fires = |rung: &str| {
                 let mut o = opts;
                 *o.gpu.off.rung(rung).expect("rung") = true;
-                mapal_backend_llvm::emit_detailed(&ir, &o).is_ok_and(|e| launches(&em.text) > launches(&e.text))
+                mapal_backend_llvm::emit_detailed(&ir, &o)
+                    .is_ok_and(|e| launches(&em.text) > launches(&e.text))
             };
             uniform += usize::from(dev.contains("i64 %c") && fires("uniform"));
             nests += usize::from(fires("nest-cell"));
             let need = required_trip_copies(&ir, ir.entry());
             let loops = gpu_trip_moves(&em.text);
-            carried += loops.iter().filter(|(kv, _)| kv["carried"].contains(":device")).count();
+            carried += loops
+                .iter()
+                .filter(|(kv, _)| kv["carried"].contains(":device"))
+                .count();
             let copies: u64 = loops.iter().map(|(_, m)| m[0]).sum();
             for (kv, [_, copy_b, h2d, d2h]) in &loops {
                 let want = |k: &str| kv[k].parse::<u64>().expect("intent field");
@@ -3445,7 +3558,9 @@ fn differential_device_loops_values_and_movement() {
                 }
             }
             if copies != need as u64 {
-                findings.push(format!("device#{n}: {copies} host copies per trip, the facts require {need}\n{src}"));
+                findings.push(format!(
+                    "device#{n}: {copies} host copies per trip, the facts require {need}\n{src}"
+                ));
             }
         }
         (findings, [placed, carried, uniform, nests])
@@ -3454,16 +3569,18 @@ fn differential_device_loops_values_and_movement() {
     let all = Mutex::new((Vec::new(), [0usize; 4]));
     std::thread::scope(|sc| {
         for _ in 0..job_slots() {
-            sc.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= progs.len() {
-                    break;
-                }
-                let (f, st) = work(i, &progs[i]);
-                let mut a = all.lock().unwrap();
-                a.0.extend(f);
-                for (x, y) in a.1.iter_mut().zip(st) {
-                    *x += y;
+            sc.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= progs.len() {
+                        break;
+                    }
+                    let (f, st) = work(i, &progs[i]);
+                    let mut a = all.lock().unwrap();
+                    a.0.extend(f);
+                    for (x, y) in a.1.iter_mut().zip(st) {
+                        *x += y;
+                    }
                 }
             });
         }
@@ -3471,7 +3588,12 @@ fn differential_device_loops_values_and_movement() {
     let n = progs.len();
     let (mut findings, [placed, carried, uniform, nests]) = all.into_inner().unwrap();
     findings.sort();
-    assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
+    assert!(
+        findings.is_empty(),
+        "{} findings:\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
     assert!(
         placed >= 48 && carried > 0 && uniform > 0 && nests > 0,
         "{placed} device programs, {carried} device-carried states, {uniform} with a uniform cell, {nests} with a nest cell"
@@ -3506,7 +3628,10 @@ fn differential_natural_twins_values_and_movement() {
         return;
     };
     let _ = emu::rt_lib();
-    let cases: usize = std::env::var("MAPAL_TWINS").ok().and_then(|v| v.parse().ok()).unwrap_or(256);
+    let cases: usize = std::env::var("MAPAL_TWINS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256);
     let mut runner = TestRunner::deterministic();
     let strat = testgen::twin_prog_strategy();
     let deltas = |ir: &CategoryIr| -> Vec<Option<(u64, i64, i64)>> {
@@ -3530,7 +3655,12 @@ fn differential_natural_twins_values_and_movement() {
         for r in off {
             *gpu.off.rung(r).expect("rung") = true;
         }
-        let opts = mapal_backend_llvm::EmitOpts { host: "generic", target, gpu, ..mapal_backend_llvm::EmitOpts::exact() };
+        let opts = mapal_backend_llvm::EmitOpts {
+            host: "generic",
+            target,
+            gpu,
+            ..mapal_backend_llvm::EmitOpts::exact()
+        };
         mapal_backend_llvm::emit_detailed(ir, &opts).expect("emits")
     };
     let moves = |t: &str| -> Vec<String> {
@@ -3539,7 +3669,10 @@ fn differential_natural_twins_values_and_movement() {
             .map(|l| l.split_once(" carried=").map_or(l, |(_, r)| r).to_string())
             .collect()
     };
-    let launches = |t: &str| t.matches("call void @mapal_gpu_launch").count() + t.matches("call void @mapal_gpu_tile(").count();
+    let launches = |t: &str| {
+        t.matches("call void @mapal_gpu_launch").count()
+            + t.matches("call void @mapal_gpu_tile(").count()
+    };
     let kinds = |d: &Option<String>| -> Vec<String> {
         let mut k: Vec<String> = d
             .iter()
@@ -3554,7 +3687,9 @@ fn differential_natural_twins_values_and_movement() {
     let range_cells = |d: &Option<String>| {
         d.iter()
             .flat_map(|d| d.lines())
-            .filter(|l| l.starts_with("; mapal.plan ") && l.contains(" kind=cell ") && l.contains(" range="))
+            .filter(|l| {
+                l.starts_with("; mapal.plan ") && l.contains(" kind=cell ") && l.contains(" range=")
+            })
             .count()
     };
     let run_on = |em: &mapal_backend_llvm::Emission| -> String {
@@ -3562,20 +3697,38 @@ fn differential_natural_twins_values_and_movement() {
             Some(dev) => emu::run_emulated(&clang, &em.text, dev),
             None => compile_run(&clang, &em.text, "twin", "-O1").map_or_else(
                 || "timeout".into(),
-                |(o, c)| format!("{}{}", String::from_utf8_lossy(&o), if c == 0 { String::new() } else { format!("[exit {c}]") }),
+                |(o, c)| {
+                    format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&o),
+                        if c == 0 {
+                            String::new()
+                        } else {
+                            format!("[exit {c}]")
+                        }
+                    )
+                },
             ),
         }
     };
-    let progs: Vec<testgen::TwinProg> = (0..cases).map(|_| strat.new_tree(&mut runner).unwrap().current()).collect();
+    let progs: Vec<testgen::TwinProg> = (0..cases)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
     // One program's checks: its findings, and `[Rows claims, probed, device
     // builds, in-place states, better builds]`.
     let work = |case: usize, p: &testgen::TwinProg| -> (Vec<String>, [usize; 5]) {
         let mut findings = Vec::new();
-        let (mut rows, mut probed, mut devices, mut inplace, mut better) = (0usize, 0usize, 0usize, 0usize, 0usize);
-        let (ns, us) = (testgen::twin_src(&p, true, None), testgen::twin_src(&p, false, None));
+        let (mut rows, mut probed, mut devices, mut inplace, mut better) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        let (ns, us) = (
+            testgen::twin_src(&p, true, None),
+            testgen::twin_src(&p, false, None),
+        );
         let tag = format!("twin#{case}");
         let (ni, ui) = (rewrite(lower_src(&ns)).ir, rewrite(lower_src(&us)).ir);
-        let oracle = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (run(&ni, 400_000_000), run(&ui, 400_000_000))));
+        let oracle = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (run(&ni, 400_000_000), run(&ui, 400_000_000))
+        }));
         let Ok((rr, ru)) = oracle else {
             findings.push(format!("{tag}: the interpreter panicked\n{ns}"));
             return (findings, [0; 5]);
@@ -3584,7 +3737,10 @@ fn differential_natural_twins_values_and_movement() {
         assert_eq!(ru.output, rr.output, "the twins' values\n{ns}\n{us}");
         let dn = deltas(&ni);
         if dn != deltas(&ui) {
-            findings.push(format!("{tag}: Δ {dn:?} != the unrolled {:?}\n{ns}", deltas(&ui)));
+            findings.push(format!(
+                "{tag}: Δ {dn:?} != the unrolled {:?}\n{ns}",
+                deltas(&ui)
+            ));
         }
         // The `Rows` claim, probed: the state's cells outside it never change.
         if let Some(&Some((stride, a, b))) = dn.iter().find(|d| d.is_some()) {
@@ -3592,17 +3748,30 @@ fn differential_natural_twins_values_and_movement() {
             let cs = testgen::twin_src(&p, true, Some((a, b, stride)));
             let ci = rewrite(lower_src(&cs)).ir;
             if deltas(&ci) != dn {
-                findings.push(format!("{tag}: the probe changed Δ: {:?}\n{cs}", deltas(&ci)));
+                findings.push(format!(
+                    "{tag}: the probe changed Δ: {:?}\n{cs}",
+                    deltas(&ci)
+                ));
             }
             let rc = run(&ci, 400_000_000);
-            let bad: Vec<&str> = rc.output.lines().filter(|l| l.starts_with("dz=") && *l != "dz=0").collect();
+            let bad: Vec<&str> = rc
+                .output
+                .lines()
+                .filter(|l| l.starts_with("dz=") && *l != "dz=0")
+                .collect();
             if !matches!(rc.outcome, Outcome::Done(_)) || !bad.is_empty() {
-                findings.push(format!("{tag}: Δ Rows {stride} at {a}·it + {b} is unsound: {bad:?}\n{cs}"));
+                findings.push(format!(
+                    "{tag}: Δ Rows {stride} at {a}·it + {b} is unsound: {bad:?}\n{cs}"
+                ));
             }
             probed += 1;
         }
         for target in [["h100-pcie", "rtx-4090"][case % 2], "generic"] {
-            let (on, off, un) = (emit(&ni, target, true, true), emit(&ni, target, false, true), emit(&ui, target, true, true));
+            let (on, off, un) = (
+                emit(&ni, target, true, true),
+                emit(&ni, target, false, true),
+                emit(&ui, target, true, true),
+            );
             // recurrence-precision `range-cell` is the natural form's alone (a
             // map written in place; an `Update` stays the host's): launches
             // and kernels are the twins' with it off, and with it on at most
@@ -3621,20 +3790,33 @@ fn differential_natural_twins_values_and_movement() {
                 // As well or better: per loop, no more bytes moved, copied or
                 // allocated per trip, no less retained.
                 let costs = |l: &str| -> Vec<i64> {
-                    let kv: std::collections::HashMap<&str, i64> =
-                        l.split_whitespace().filter_map(|x| x.split_once('=')).filter_map(|(k, v)| Some((k, v.parse().ok()?))).collect();
-                    ["h2d", "d2h", "host_copy", "alloc"].iter().map(|k| kv[k]).chain([-kv["retained"]]).collect()
+                    let kv: std::collections::HashMap<&str, i64> = l
+                        .split_whitespace()
+                        .filter_map(|x| x.split_once('='))
+                        .filter_map(|(k, v)| Some((k, v.parse().ok()?)))
+                        .collect();
+                    ["h2d", "d2h", "host_copy", "alloc"]
+                        .iter()
+                        .map(|k| kv[k])
+                        .chain([-kv["retained"]])
+                        .collect()
                 };
                 let worse = mn.len() != mu.len()
-                    || mn.iter().zip(&mu).any(|(a, b)| costs(a).iter().zip(costs(b)).any(|(x, y)| *x > y));
+                    || mn
+                        .iter()
+                        .zip(&mu)
+                        .any(|(a, b)| costs(a).iter().zip(costs(b)).any(|(x, y)| *x > y));
                 if worse {
-                    findings.push(format!("{tag} {target}: movement {mn:?} worse than the unrolled {mu:?}\n{ns}"));
+                    findings.push(format!(
+                        "{tag} {target}: movement {mn:?} worse than the unrolled {mu:?}\n{ns}"
+                    ));
                 } else {
                     better += 1;
                 }
             }
             if launches(&flat.text) > launches(&un.text)
-                || (launches(&flat.text) == launches(&un.text) && kinds(&flat.device) != kinds(&un.device))
+                || (launches(&flat.text) == launches(&un.text)
+                    && kinds(&flat.device) != kinds(&un.device))
             {
                 findings.push(format!(
                     "{tag} {target}: launches {} kinds {:?} != the unrolled {} {:?}\n{ns}",
@@ -3644,7 +3826,10 @@ fn differential_natural_twins_values_and_movement() {
                     kinds(&un.device)
                 ));
             }
-            inplace += moves(&on.text).iter().filter(|l| l.starts_with("0:") && l.contains(":inplace")).count();
+            inplace += moves(&on.text)
+                .iter()
+                .filter(|l| l.starts_with("0:") && l.contains(":inplace"))
+                .count();
             devices += on.device.is_some() as usize;
             // Realized movement = the plan's, and the host copies the facts require.
             let loops = gpu_trip_moves(&on.text);
@@ -3657,7 +3842,9 @@ fn differential_natural_twins_values_and_movement() {
             }
             let need = required_trip_copies(&ni, ni.entry()) as u64;
             if copies != need {
-                findings.push(format!("{tag} {target}: {copies} host copies per trip, the facts require {need}\n{ns}"));
+                findings.push(format!(
+                    "{tag} {target}: {copies} host copies per trip, the facts require {need}\n{ns}"
+                ));
             }
             for (arm, em) in [("on", &on), ("off", &off)] {
                 // (The CPU build's OFF arm: every other program, for time.)
@@ -3666,7 +3853,10 @@ fn differential_natural_twins_values_and_movement() {
                 }
                 let got = run_on(em);
                 if got != rr.output {
-                    findings.push(format!("{tag} {target} range-map {arm}: {got:?} != {:?}\n{ns}", rr.output));
+                    findings.push(format!(
+                        "{tag} {target} range-map {arm}: {got:?} != {:?}\n{ns}",
+                        rr.output
+                    ));
                 }
             }
         }
@@ -3697,9 +3887,17 @@ fn differential_natural_twins_values_and_movement() {
     });
     let (mut findings, [rows, probed, devices, inplace, better]) = all.into_inner().unwrap();
     findings.sort();
-    assert!(findings.is_empty(), "{} findings:\n{}", findings.len(), findings.join("\n"));
+    assert!(
+        findings.is_empty(),
+        "{} findings:\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
     // (The sweep's reach, at the default size: a small MAPAL_TWINS is a smoke run.)
-    assert!(cases < 64 || (rows > cases / 8 && devices > cases / 2), "{rows} Rows claims, {devices} device units");
+    assert!(
+        cases < 64 || (rows > cases / 8 && devices > cases / 2),
+        "{rows} Rows claims, {devices} device units"
+    );
     eprintln!(
         "differential_natural_twins: {cases} twin programs, {rows} Δ Rows claims ({probed} probed sound), \
          {devices} device builds, {inplace} in-place states; movement, launches, kernels = the unrolled twins' \

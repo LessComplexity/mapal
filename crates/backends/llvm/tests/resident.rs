@@ -447,7 +447,11 @@ fn arena_keeps_loop_scoped_and_escaping_objects_in_their_own_buffers() {
     // arena made at entry, ahead of every other device call.
     let entry = transfers(&emit(&loop_src(), off("devgen")));
     assert!(entry[0].starts_with("arena "), "{entry:?}");
-    assert_eq!(entry.iter().filter(|x| x.starts_with("arena")).count(), 1, "{entry:?}");
+    assert_eq!(
+        entry.iter().filter(|x| x.starts_with("arena")).count(),
+        1,
+        "{entry:?}"
+    );
 }
 
 #[test]
@@ -582,7 +586,10 @@ fn state_read_by_its_writer_ping_pongs_without_copies() {
     let src = state_loop(&site("x", "x", "w", 64).replacen("    ", "                ", 1));
     let on = cpu(&src, GpuArms::default());
     assert_eq!(trip_moves(&on), [("0:16384:two".to_string(), 0)], "{on}");
-    assert!(!on.contains("%ls"), "the second buffer is the init's:\n{on}");
+    assert!(
+        !on.contains("%ls"),
+        "the second buffer is the init's:\n{on}"
+    );
     let s64 = cpu(&src, off("by-ref"));
     assert_eq!(trip_moves(&s64), [("0:16384:value".to_string(), 3)]);
 }
@@ -624,11 +631,7 @@ fn row_writes_into_the_state_land_in_place() {
 #[test]
 fn device_carried_state_has_no_host_bytes() {
     let ll = emit(&loop_src(), shipped());
-    assert_eq!(
-        trip_moves(&ll),
-        [("0:16384:device".to_string(), 0)],
-        "{ll}"
-    );
+    assert_eq!(trip_moves(&ll), [("0:16384:device".to_string(), 0)], "{ll}");
     let main = mapal_main(&ll);
     assert_eq!(main.matches("alloca [4096 x float]").count(), 0, "{main}");
     assert!(main.contains("store ptr null"), "{main}");
