@@ -17,6 +17,24 @@
 // the defect. This file settles which, in plain C with no SME, no ZA, no
 // streaming mode -- just the two loop shapes over the same array.
 //
+// !! STALE SINCE S42 -- READ BEFORE QUOTING THIS FILE'S NUMBER (found S51) !!
+//
+// The claim below ("replicate the EMITTED nest exactly") was true when this was
+// written and stopped being true one session later. S42 reordered the emitted A
+// pack ROW-OUTER / k-inner (func/sme.rs:385, "ROW OUTER, k INNER -- and the
+// order is the whole point"); the loops here are k-outer / row-inner. So:
+//
+//   * this file's 8.46 ms is the cost of the PRE-S42 pack, not of what ships;
+//   * the shipping pack is ~4.9x cheaper at N=512 (0.041 ms vs 0.199);
+//   * plan-s51 §4's first draft priced the A pack from this number and was
+//     withdrawn -- see docs/performance/s51-the-pack-is-o-n-squared.md §5a.
+//
+// The file is KEPT AS IS rather than fixed, because its published verdict is
+// cited in three documents and a number's provenance includes the code that
+// produced it (ADR-0037 D3, the same rule that froze the pre-rename docs).
+// `benches/sme/packconflict.c` measures the nest that actually ships, and
+// carries the pre-S42 order as its `old` arm so the reorder has a price.
+//
 // The loops replicate the EMITTED nest exactly (func/sme.rs::emit_tiled_map_sme):
 //   unblocked   for i0        { for pk in 0..k  { for pi in 0..32 { ap[pk*32+pi] = a[(i0+pi)*N + pk]      } } }
 //   blocked     for k0 { for i0 { for pk in 0..kc { for pi in 0..32 { ap[pk*32+pi] = a[(i0+pi)*N + k0+pk] } } } }

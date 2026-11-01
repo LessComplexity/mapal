@@ -1,0 +1,10 @@
+arch	knob	default	best	gmean_s	programs	null	worst_program	worst_s	verdict	citation	machine
+h100-pcie	bk	?	?	1.000	0	-	-	-	no-site	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	resident	?	?	0.760	4	0.006	pt_convmc_8_64_56_3/default	1.241	default	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	split	?	16	0.713	3	0.006	pt_convmc_8_64_56_3/default	1.000	ship	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	stages	?	?	1.000	3	0.006	mm_16x18432x7168/default	1.000	default	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	tm	?	?	1.000	0	-	-	-	no-site	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	tn	?	?	1.000	1	0.002	mm_16x18432x7168/default	1.000	default	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	warps	?	?	0.743	3	0.006	pt_convmc_8_64_56_3/default	1.241	default	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	wg_groups	?	?	1.000	0	-	-	-	no-site	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05
+h100-pcie	wg_n	?	?	1.000	0	-	-	-	no-site	benches/results/evidence/site-geometry/sweep/h100-pcie-search/results-h100-pcie.txt	NVIDIA H100 PCIe|595.71.05

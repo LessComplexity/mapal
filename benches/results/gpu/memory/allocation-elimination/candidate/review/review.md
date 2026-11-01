@@ -1,0 +1,11 @@
+What this change does: It stops reserving a raw tile buffer when the selected fused group already computes that value entirely in registers. The kernel already receives raw pointer 0 and omits that store; stored member buffers remain allocated.
+
+No static blocker found. The three-line condition reuses the existing materialization decision in `resident.rs:FnEmit::chain_prologue:2149` and `FnEmit::emit_site_resident:1954`. `gpu.rs:Kernel::store_cells:1426` gates the raw write with the same flag. A missing group still allocates; a missing grouped launch allocates through the existing emission fallback.
+
+Ownership and ordering remain explicit. `resident.rs:grouped_writer:171` and `ResidentPlan::stream_of:301` resolve stored member reads to their physical writer. `FnEmit::chains:1321` retains the legacy-consumer veto and excludes loop/guard sites; `resident_plan:1294` excludes arena reuse when chains exist. `dslot:1619` still initializes slots to zero. Runtime `mapal_gpu.c:mapal_gpu_free:553` returns early for those zero slots, so an old incidental device wait really disappears. Correctness must rest on the unchanged events and physical-stream readbacks, including `launch_on:316` joining legacy operations.
+
+I independently rehashed 310 source files and 261 bound artifacts. All 28 before/after variants match after removing only individually proven unread allocations and renaming SSA values. This check also retains allocation types and zero-initialized slot ownership; changing i64 to i32 or zero to one fails. All 28 device LLVM modules match. The old regression fails on real unread allocations, old controls pass, and the bound fixed focused logs report 51 passes.
+
+Verdict: no static blocker; proceed to bounded GPU validation. Before production acceptance, run matched no-clock Exact/Contract cases without synchronizing tracing, including independent/diamond/MLP2, stored-raw/member/fork/capture, legacy-cell, rowfold, loop and arena controls. Measure allocation/lifetime behavior separately. Do not infer GPU correctness, actual VRAM reduction or speed from this static result.
+
+Not checked: GPU execution, executed machine images, candidate full-workspace tests or measured allocation/performance. The original textual proof is fixture-specific; prior ordering GPU passes are not this candidate’s hardware acceptance.

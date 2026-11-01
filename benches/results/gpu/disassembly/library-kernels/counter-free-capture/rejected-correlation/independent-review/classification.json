@@ -1,0 +1,34 @@
+{
+  "schema": "independent-counter-free-pilot-classification-v1",
+  "image_sass_admissions": 0,
+  "attempted_selected_capture_legs": [
+    "mapal"
+  ],
+  "not_run_selected_capture_legs": [
+    "cublas",
+    "cutlass"
+  ],
+  "harness_exit": 0,
+  "protocol_pass": true,
+  "raw_pre_post_numeric_words": 1536,
+  "raw_pre_post_numeric_pass": true,
+  "timing_admissible": false,
+  "first_attribution_rejection": "Duplicate callback site",
+  "additional_raw_predicate_rejections": [
+    "STT_FUNC devicehelper shares another function section",
+    "CONTEXT_CREATED follows two prior UID0 callbacks carrying same nonzero pointer"
+  ],
+  "implicit_deduplication": false,
+  "production_edits": false,
+  "raw_trace_repair": false,
+  "gpu_rental_by_reviewer": false,
+  "report_sha256": "3fbd749a00af6506b1f56f470209aae4dab5f48705fb954a992ff06b8f538b05",
+  "files": {
+    "duplicate-api-sites.json": "f48f84fa818e12be70190ef695541476987dad8886d01bc138c95d0cbb3cf31e",
+    "recovery-verification.json": "7c3518fda12efa03e6c3e3c8aee309760ac07d9a4a9d82c01a28344c2e989a2a",
+    "REPORT.md": "3fbd749a00af6506b1f56f470209aae4dab5f48705fb954a992ff06b8f538b05",
+    "additional-raw-predicates.json": "a72e6ca06059444c4abb43dc10bf99217dc34bfb41904fe62c0e6d271eeaa82d",
+    "boundary-details.json": "e9bd72582beabf04364f1ed077b1119d4bf7500e1bc94f301e7d5b8d5a950b57",
+    "admission.json": "90a60bf64d678ec7d3dd842d008b7686fb71cfd398556392afadc5a75d7e339e"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "approved": true,
+  "single_attempt": true,
+  "packet_sha256": "bb79fd7fdf1738296f8c92e3a48ced05a0056161e0fde224fd3f6533c9464ea2",
+  "launcher_sha256": "5ea9c5eac2ea6a60dc55cc66d3e8059beba0d08d88ad6b0e9e0964401e802729",
+  "reviewed_utc": "2026-10-21T22:42:50.655858+00:00",
+  "authorization": "User requested parallel coding/testing/disassembly agents with machines; continued within the original cumulative $1, <=$0.80/hour and aggregate $8/hour caps. This attempt has a 30-minute absolute creation-to-cleanup cap.",
+  "root_checks": [
+    "final source/adapter/launcher/hook review",
+    "2867 smallM archive members independently compared to reviewed source",
+    "frozen matrix archive exact known hash",
+    "5 capture archive source members, safe paths and exact approved hash",
+    "114 combined/isolated PTX byte identities",
+    "13 packet tests,14 adapter flow/environment tests,16 launcher/ownership guards",
+    "capture preflight negative tests and independently reviewed context/geometry rejection",
+    "selected offer identity/rate and cumulative planning reserve $0.8844200009652262"
+  ],
+  "restrictions": [
+    "one attempt; no automatic new rentals",
+    "only newly owned instance cleanup; preserve unrelated instances",
+    "any outer timeout aborts later GPU work",
+    "optional capture after ordinary work only; never timing evidence",
+    "no credentials in upload; private create response excluded from public evidence"
+  ]
+}

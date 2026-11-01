@@ -1,0 +1,35 @@
+--- v2/run_ncu.py
++++ v3/run_ncu.py
+@@ -32,9 +32,9 @@
+     need(re.fullmatch(r'mapal_tile_[A-Za-z0-9_]+',pt['entry']) is not None and all(type(pt[k]) is int and pt[k]>0 for k in ['gx','gy','block']) and type(pt['smem'])is int and pt['smem']>=0,'Invalid Mapal launch')
+     sections=a.sections.split(','); allowed={'LaunchStats','Occupancy','MemoryWorkloadAnalysis','SchedulerStats','InstructionStats','SourceCounters'}
+     need(len(sections)==len(set(sections)) and set(sections)<=allowed and 'LaunchStats'in sections,'Unsupported section request')
+-    args=[str(c[k])for k in ['M','N','K']]+[str(pathlib.Path(pt['path']).resolve()),pt['entry']]+[str(pt[k])for k in ['gx','gy','block','smem']]+['30','--values-only','--cutlass-candidate',c['cutlass_candidate'],'--oracle-file',str(pathlib.Path(oracle['text_path']).resolve()),'--oracle-sha256',oracle['text_sha256'],'--mapal-ptx-sha256',pt['sha256'],'--manifest-sha256',manifest['sha256'],'--mapal-variant',c['mapal_variant']]
++    args=[str(c[k])for k in ['M','N','K']]+[str(pathlib.Path(pt['path']).resolve()),pt['entry']]+[str(pt[k])for k in ['gx','gy','block','smem']]+['30','--cutlass-candidate',c['cutlass_candidate'],'--oracle-file',str(pathlib.Path(oracle['text_path']).resolve()),'--oracle-sha256',oracle['text_sha256'],'--mapal-ptx-sha256',pt['sha256'],'--manifest-sha256',manifest['sha256'],'--mapal-variant',c['mapal_variant']]
+     if c['face']=='contract':args+=['--contract']
+-    original=[str(harness),*[x for x in args if x!='--values-only']]
++    original=[str(harness),*args]
+     need(original==binding['original_confirmation_argv'],'Diagnostic arguments differ from admitted ordinary call')
+     if a.check_only:
+         print(json.dumps({'pass':True,'request_sha256':SHA(request_path),'input_files_verified':len(inputs),'case_id':c['id'],'mapal_variant':c['mapal_variant'],'cutlass_candidate':c['cutlass_candidate'],'gpu_executed':False,'profiling_executed':False}));return 0
+--- v2/test_run_ncu.py
++++ v3/test_run_ncu.py
+@@ -32,6 +32,7 @@
+ FAKE_HARNESS=r'''
+ import json,sys,os
+ a=sys.argv[1:];get=lambda k:a[a.index(k)+1]
++assert '--values-only' not in a and '--tuning' not in a, 'Real profile protocol forbids values-only/tuning'
+ for prefix in ['checked_value','profile_checked_value']:
+  for leg in ['mapal','cublas','cutlass']:
+   bits='3f800000' if prefix=='profile_checked_value' and leg=='cublas' and os.environ.get('FAKE_MODE')=='numeric' else '00000000'
+--- v2/README.md
++++ v3/README.md
+@@ -19,7 +19,7 @@
+ 
+ Total diagnostic budget is at most 480 seconds. Each phase first proves actual 2025.1.1 binary version/hash/options/sections and idle GPU. Discovery checks PATH, `/opt/nvidia/nsight-compute/2025.1.1/ncu`, then `/usr/local/cuda-12.8/nsight-compute-2025.1.1/ncu`; optional `--ncu PATH` selects an explicit reviewed executable. Missing sections/version/access fail separately, preserving ordinary results. Mapal profiling and complete source/numeric/import admission gates the two library legs. Counter permission is only marked demonstrated if recognized numeric hardware counters were actually exported; LaunchStats alone does not establish it.
+ 
+-Profiling uses `--config-file off --profile-from-start off --clock-control none --target-processes application-only` and explicit sections, selecting the harness's single `cudaProfilerStart/Stop` region. It never passes launch-count1; every internal library kernel is retained. Separate diagnostic processes and `timing_admissible:false` forbid ordinary timing from instrumented/replayed calls. Both pre and post raw values are independently rechecked with the sealed checker/oracle; a harness completion boolean cannot override them.
++Profiling uses `--config-file off --profile-from-start off --clock-control none --target-processes application-only` and explicit sections, selecting the harness's single `cudaProfilerStart/Stop` region. Target argv is the exact ordinary confirmation argv plus `--profile-leg NAME`; `--values-only` and `--tuning` are forbidden by the actual harness and are never added. It never passes launch-count1; every internal library kernel is retained. Separate diagnostic processes and `timing_admissible:false` forbid ordinary timing from instrumented/replayed calls. Both pre and post raw values are independently rechecked with the sealed checker/oracle; a harness completion boolean cannot override them.
+ 
+ Each leg preserves raw.ncu-rep, session/raw CSV, per-launch filtered raw and source-SASS pages from the same unchanged report, all command stdout/stderr/status, protocol and exact ordinary binary/input digests. Launch ID, process/context/stream/full kernel name/grid/block/metrics must match before source admission. Dynamic shared comparison accepts explicit base byte units only; unsupported units reject. This is authoritative NCU runtime/report attribution, not callback ELF bytes or a physical cubin SHA claim. Static SASS rows are not executed instruction counts. All dynamic counter values retain reported units and are diagnostic observations.
+ 

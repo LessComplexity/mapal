@@ -1,7 +1,7 @@
 # Plan — S30: tile accumulators as vector SSA values (kill the alloca)
 
 **Status:** written pre-build, S30. Origin: the S29 KC diagnosis
-(`docs/performance/matmul/s29.md` §1) — the KC nest is 3× slower not because of its
+(`docs/performance/matmul/history/k-panel-measurements.md` §1) — the KC nest is 3× slower not because of its
 traversal (~3% of the gap) but because `clang` stops register-promoting the accumulator
 alloca once other loops touch it: **92 `str q…,[sp]` in the hot task vs 0 in the
 baseline**. Sapir: "do the phi rewrite for the tile accumulators."

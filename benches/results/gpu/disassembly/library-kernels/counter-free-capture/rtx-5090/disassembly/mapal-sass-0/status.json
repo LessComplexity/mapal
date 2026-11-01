@@ -1,0 +1,17 @@
+{
+  "name": "mapal-sass-0",
+  "argv": [
+    "/usr/local/cuda-12.8/bin/nvdisasm",
+    "--print-code",
+    "--cuda-function-index",
+    "12",
+    "/w/trace/library-images/mapal-profile/capture/module-358.cubin"
+  ],
+  "limit_seconds": 20,
+  "pass": true,
+  "exit": 0,
+  "files": {
+    "stdout": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+    "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

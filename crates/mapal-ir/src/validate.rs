@@ -1186,8 +1186,10 @@ mod typing_table_golden {
             out_edges: SecondaryMap::new(),
             in_edges: SecondaryMap::new(),
             owner: SecondaryMap::new(),
+            facts: crate::facts::Facts::new(funcs.keys()),
             funcs,
             entry: call_f,
+            precision: SecondaryMap::new(),
         };
         Fx {
             ir,

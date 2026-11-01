@@ -1,0 +1,20 @@
+{
+  "scope": "Final evidence/publication verification after excluding duplicated packet binaries from public review directory",
+  "candidate_source_changes_since_test": false,
+  "relative_report_links_checked": 22,
+  "relative_report_links_missing": 0,
+  "openspec_strict": {
+    "passed": 7,
+    "failed": 0
+  },
+  "drift": {
+    "dead": 0,
+    "refs": 571
+  },
+  "graph_update_log_sha256": "bf59258c9f7eb73711b8fb8845dfffa443ca934997653921c2b7e436ae2dcd9b",
+  "graph_update_log": "Re-extracting code files in . (no LLM needed)...\n  AST extraction: 1217/1217 files (100%)\n[graphify watch] Rebuilt (no clustering): 9052 nodes, 19661 edges\n[graphify watch] graph.json updated in graphify-out\nCode graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.\nTip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.\n",
+  "private_duplicate_packet_preserved": true,
+  "all_worker_agents_completed": true,
+  "task_rentals_active": 0,
+  "session_indexed": true
+}

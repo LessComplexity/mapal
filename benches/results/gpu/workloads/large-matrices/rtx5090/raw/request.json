@@ -1,0 +1,11 @@
+{
+  "manifest_sha256": "426c60c61603b037cf50d312f371777d73dc9bcb784d6d5a1a07a0a71ff70cd2",
+  "runner_sha256": "199205c8139daa33216178596056079e493009791042bd109274c83dcb808096",
+  "reps": 30,
+  "timeout": 600,
+  "total_timeout": 7200,
+  "headroom_bytes": 1073741824,
+  "expected_invocations": 100,
+  "CUDA_VISIBLE_DEVICES": null,
+  "boundary": "untraced CUDA-event cold-L2 kernel timing; no process-wall speedup claim"
+}

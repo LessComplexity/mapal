@@ -12,7 +12,7 @@ TI-blocked interior `[ceil(lo/C), floor(hi/C))` via `i_fw_lo = udiv(lo + C-1, C)
 confirmed by local measurement. Measured local (`benches/matmul/tile_ab.sh`,
 min-of-3, tile vs `--no-tile`): matmul 512 f32 **12.8×**, f64 **9.8×**; 1024
 f32 **23.4×**, f64 **12.3×**; attn_256 **12.1×**; fir parity class unchanged.
-Box leg in flight (`s26_box.sh`; `docs/performance/matmul/s26.md` lands with
+Box leg in flight (`s26_box.sh`; `docs/performance/matmul/history/register-blocking.md` lands with
 it). Original text below.
 Predecessor: `plan-tile-emission.md` (shipped rung 1). Direction:
 `docs/notes/tile-ladder-direction.md` ("the emitter cashes a fact the record
@@ -106,7 +106,7 @@ exactly those paths, so new shapes are part of the change, not a follow-up:
 - TILE_I sweep 2/4/8 on matmul 512 f32/f64; shapes corpus (fir/attn) oracle pins hold.
 - Box: `s26_box.sh` from `s25_box.sh` **with clang-18 via llvm.sh** (the recorded
   gotcha fix), clang version into the CSV, `results-s26.csv` (one-box rule), report
-  `docs/performance/matmul/s26.md` matchup/conditions/verdict. Conditional on vast.ai
+  `docs/performance/matmul/history/register-blocking.md` matchup/conditions/verdict. Conditional on vast.ai
   balance (0 at S25 close).
 
 ## Ceilings (recorded, not built)

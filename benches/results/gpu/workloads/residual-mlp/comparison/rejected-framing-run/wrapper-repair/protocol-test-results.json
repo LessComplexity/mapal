@@ -1,0 +1,11 @@
+{
+  "gpu_executed": false,
+  "kind": "CPU stubs and replay of captured checked values only; no timing admission",
+  "original_single_reproduces_actual_reordering": true,
+  "patched_single_exact_expected_framing": true,
+  "patched_single_original_numeric_gate_pass": true,
+  "patched_35_final_original_parser_and_numeric_gates_pass": true,
+  "repair": "fflush(stdout) after sample identity before mapal_request; outside clock and before input generation",
+  "original_wrapper_sha256": "4d3f102ce0957d9ce2e0f2dc44cfb0cfe71f63030bab7f50cdb793b507404b1f",
+  "patched_wrapper_sha256": "4cec182e45f16c9bec5433cee28c91c0969b0a3a5677596ef992afeb570d52b8"
+}

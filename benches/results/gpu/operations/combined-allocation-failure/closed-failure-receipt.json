@@ -1,0 +1,38 @@
+{
+  "state": "single-approved-combined-attempt-closed-allocation-failure-before-upload",
+  "pass": false,
+  "instance": 57121897,
+  "confirmed_absent": true,
+  "create_success": false,
+  "source_offer": 51088733,
+  "bound_machine_id": 55337,
+  "bound_host_id": 356230,
+  "live_physical_identity_captured": false,
+  "uploaded_bytes": 0,
+  "smallm_executed": false,
+  "compiled_executed": false,
+  "optional_capture_executed": false,
+  "reservation_to_independent_absence_seconds": 14.774287939071655,
+  "elapsed_listed_cost_estimate_usd": 0.0031247162994595215,
+  "new_conservative_failure_allowance_usd": 0.11,
+  "previous_cumulative_planning_usage_usd": 0.4037255565207819,
+  "new_cumulative_planning_usage_usd": 0.5137255565207819,
+  "remaining_original_one_dollar_planning_usd": 0.4862744434792181,
+  "actual_invoice_observed": false,
+  "automatic_retries": false,
+  "additional_rentals_authorized": false,
+  "create_response_private_sha256": "ba75cc25185f3423b05284518039aeaa89eab5c425014450e0eb5331488ef21a",
+  "execution": {
+    "exit": 1,
+    "elapsed_seconds_before_independent_cleanup": 11.608181374991545,
+    "end_utc": "2026-10-21T22:43:34.229954+00:00",
+    "wrapper_cutoff_seconds_from_create": 1650,
+    "absolute_limit_seconds": 1800
+  },
+  "cleanup": {
+    "instance": 57121897,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T22:43:37.396029+00:00",
+    "method": "Independent exact-ID inventory absence"
+  }
+}

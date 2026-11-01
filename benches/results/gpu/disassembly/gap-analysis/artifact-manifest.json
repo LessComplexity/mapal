@@ -1,0 +1,434 @@
+{
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-a100-primary.txt": {
+    "bytes": 1158668,
+    "sha256": "4738d68b0c21ffef3f70d900e9b3b91c032526d59f9e556028f2324c26650c7d"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-a100-primary.json": {
+    "bytes": 7118,
+    "sha256": "5dcdc214224868279787fbd02587fa67d0398a466f4d72d6ff714ec112f42d56"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-a100-primary.verification.json": {
+    "bytes": 13093,
+    "sha256": "a5bb367b2320c8897b55561d48e88ff02c340b3763cf702a643d74411790885b"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-a100-primary-kernels.csv": {
+    "bytes": 18808,
+    "sha256": "5c75cada709ab221d166b87917412f8071d710cd701d5c9e2f63b9b9fd94ec25"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_4096_c.ptx": {
+    "bytes": 55844,
+    "sha256": "1bd2ec257846e92c256005acaff84a251fc7c74497fad1c2470ded552786a908"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_4096.ptx": {
+    "bytes": 13541,
+    "sha256": "4dbc9b9a89671e69e80fed1c54d97a6401c4558af938055f8fdac2d290600ce4"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_4096_tf.ptx": {
+    "bytes": 59168,
+    "sha256": "d9b5e4b0827d6f4f91de48e69334b29b0bfb67268c1c0c6cfcf382da57e4f67f"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_8192_c.ptx": {
+    "bytes": 55844,
+    "sha256": "4d632cb80aafdb9e912a7076d307138108b6f3bc29c83d6a63a9d1b41b1fb8ec"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_8192.ptx": {
+    "bytes": 13541,
+    "sha256": "49b43302038f446873b1c9741233792ddecab7c253904ef202949a25331c067e"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/a100/mm_8192_tf.ptx": {
+    "bytes": 59220,
+    "sha256": "b904835c1ab022bd64fbb9d56c146a00e105b203bdd69541fafdff799b3d45ab"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096.null.sass": {
+    "bytes": 81006,
+    "sha256": "f067015bbc624d941bffe09fd1fd5f99711bfda078511762cd264438a332f7da"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096.null.ptxas": {
+    "bytes": 1028,
+    "sha256": "c78cad60ba510e541f785afcbd522e15e7b0988497ac94a03c98a6d571899253"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096_c.sass": {
+    "bytes": 300030,
+    "sha256": "d82a56adc4e9b124bc9fbaf679b49104c9332dcc26c26eec5cdde7425d3e5d62"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096_c.ptxas": {
+    "bytes": 1011,
+    "sha256": "d8560bdf1769b07a38bbe160cd3f4efdab1c2b1179592201c2e97a59bf43048b"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096_tf.sass": {
+    "bytes": 251358,
+    "sha256": "55600fb7a97d3e65f243a8a026a1501f14279058e6def168ecc1e4c600a1d1cc"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/mm_4096_tf.ptxas": {
+    "bytes": 1011,
+    "sha256": "f4d397467384d5583e10c12c94a488a652427a98c1aa12001dac4c89c2bd389d"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/tile_bench.sass": {
+    "bytes": 1160097,
+    "sha256": "23a1d46d09ef8d71b479a5a2d252013c7e966306796b8bd3c8afcd73e917703e"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/run-4096.sqlite": {
+    "bytes": 520192,
+    "sha256": "8a52e0249af4c96ea91d1c1c2f524aef1a9d20558f8393212e211c94694afde7"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/run-8192.sqlite": {
+    "bytes": 524288,
+    "sha256": "cda847eff655b343d43536cba3c477a10aaef1e49f17835e904c7943a99ead02"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary/prof/run_mm_4096_tf.sqlite": {
+    "bytes": 524288,
+    "sha256": "0839e31b374948417b4d5bf3f55d45c9e24c894b2c5281a7928bbc1c96bd462c"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-4090-primary.txt": {
+    "bytes": 1166123,
+    "sha256": "6267a94c2585826ec242d6d98c34a2a01379909b0c0a00bc1a1b76469ff034f2"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-4090-primary.json": {
+    "bytes": 7101,
+    "sha256": "5c3d7c6852ac1a98dd7877a08cd0fe342e49ef42a21eeb6b8db54a87d71f65b7"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-4090-primary.verification.json": {
+    "bytes": 13080,
+    "sha256": "578230a20ffdf286d502103a8cc6c521c52d460c907b22974199879a25956fd8"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-4090-primary-kernels.csv": {
+    "bytes": 19450,
+    "sha256": "6d2b1cb5491d52a8b6ef50420962199034c7e853bcddb5ee1a8c8a1f5210238c"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_4096_c.ptx": {
+    "bytes": 107508,
+    "sha256": "28ab6384d03a3db48db8e3658ba1ff831c7843909aaf3adf911a4225b4e77285"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_4096.ptx": {
+    "bytes": 167596,
+    "sha256": "b35697c122273c14511c611f004f95c86645b3bc71c2c16181f9e1a4faacbc67"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_4096_tf.ptx": {
+    "bytes": 35346,
+    "sha256": "d9f07cb212e436e2a49a09adb0071f16bd37b8054f5eb0965ec63781346c3ef0"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_8192_c.ptx": {
+    "bytes": 107510,
+    "sha256": "13103eb1f462e59961823e13b4ff4c29d00edb7ae7b82854caf0a051dbe3975a"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_8192.ptx": {
+    "bytes": 167598,
+    "sha256": "c0560ed1c191e4ef1d53763b3c6561fa3b3878bb9b76af90e358c8d43623fe1b"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/rtx-4090/mm_8192_tf.ptx": {
+    "bytes": 35382,
+    "sha256": "0c1c9cb43a6a00ea593f20f1d1f537962a56f4568da06452fb2351d418bb0e7c"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096.null.sass": {
+    "bytes": 1043214,
+    "sha256": "10df7107939d936c5f834d46943c7b0ae86df83c72f7e28ca698c4c2df76cbe6"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096.null.ptxas": {
+    "bytes": 1012,
+    "sha256": "81c24fd555adeba0c088c7d258e14b9c5ff00fb08d70b3fb897e366da9beb78a"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096_c.sass": {
+    "bytes": 562110,
+    "sha256": "e51cc8429641de83393e5c233dbcf3f8ae43c85373ffb053197e503e2aa1fe61"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096_c.ptxas": {
+    "bytes": 1012,
+    "sha256": "824bb5a41261a2042ee1c0f20404e96f1036d524cbfb17da671ec7543463fa93"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096_tf.sass": {
+    "bytes": 163374,
+    "sha256": "6709dde57c7cb6b498df5882795a735af802812f3a26ef14fa9bddac379ce8ad"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/mm_4096_tf.ptxas": {
+    "bytes": 1011,
+    "sha256": "42665e51c77074ca42d187a52ea9aae77740df8344a1b2a805fcfe25f815a929"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/tile_bench.sass": {
+    "bytes": 1156097,
+    "sha256": "a440b99686a6202afad24e3f8b3eee1675684fa398f3a7962fa78de0719aae6d"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/run-4096.sqlite": {
+    "bytes": 516096,
+    "sha256": "3d4ccffb4a97fcd672b6239920a4ad3be238a44e652d9e101a7c9403a8596fe1"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/run-8192.sqlite": {
+    "bytes": 520192,
+    "sha256": "2a4fbf02694cd6a0530fae48d13c23a8368f718c55db4ba5e5dd9b139bbd1971"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary/prof/run_mm_4096_tf.sqlite": {
+    "bytes": 516096,
+    "sha256": "07d3d306f1eb9cc2502720c0ebdde1f54e15ace0ea61b333e6279cf292994814"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.txt": {
+    "bytes": 1218149,
+    "sha256": "568afad81b2d4b5e2d26bf7f0d44fb8267be9f08c372db60fd2e741dd5ed3ea5"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.json": {
+    "bytes": 7136,
+    "sha256": "a5c526e83d8ccb049a5f5f7222aceae47f5efe52610c975fd1b7a603517d24b4"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.verification.json": {
+    "bytes": 14300,
+    "sha256": "e438ac23bd1e9c0c6793242f82210a6b71140e284f53926e6c0dccca86b8e8d5"
+  },
+  "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-kernels.csv": {
+    "bytes": 23350,
+    "sha256": "aad2f6d369b11e3420ac31da14d586b51b0e42a055e9135a8df32987ba0b5cce"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_c.ptx": {
+    "bytes": 56145,
+    "sha256": "0ec5bf4171a415c6146bd4ea36362cf2027f95af5c90bb5b19105e77b6cd312b"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096.ptx": {
+    "bytes": 88594,
+    "sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_4096_tf.ptx": {
+    "bytes": 32892,
+    "sha256": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_c.ptx": {
+    "bytes": 56145,
+    "sha256": "6e9eada5612ef84450dca7548f3fe09413f417b5c852efb3a6f80ded8c7e6ca3"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192.ptx": {
+    "bytes": 88595,
+    "sha256": "ad65409799fc8e54fabc7e22d23d47c37333fd74ee9e0741811d42a64270830d"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/rtx-5090/mm_8192_tf.ptx": {
+    "bytes": 32909,
+    "sha256": "2bbd78b6e0b56549593ba1adecf9c7f6fbb9b0c9f2f9afcb41ab3dbab50e1c7b"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096.null.sass": {
+    "bytes": 715212,
+    "sha256": "8cf1c8b94b9622a804c80599b610365aa907e21199217d3acf6bf2508dc046b8"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096.null.ptxas": {
+    "bytes": 990,
+    "sha256": "9405588ccacd503b1522697acd1a15b46151ca9ed4ab6ef9af1d3cf64f1cf562"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096_c.sass": {
+    "bytes": 378828,
+    "sha256": "85fe4318de30353b6aa5dd3965ac6df43209474a65087794e491c8dc5ba5c032"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096_c.ptxas": {
+    "bytes": 955,
+    "sha256": "1d5bb2e85f98a2c7309d90760cdb2c5e97c922248299adb515892cbe8343342e"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096_tf.sass": {
+    "bytes": 193500,
+    "sha256": "b3b4999007949e08dbe432f9cd2b4fbe6c8982d4f5f5026e492e933119a31214"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/mm_4096_tf.ptxas": {
+    "bytes": 955,
+    "sha256": "af3f32428f5af95d803c762bff1f2780e11deabeb75faefe724029a927bfcc01"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/tile_bench.sass": {
+    "bytes": 1397836,
+    "sha256": "b853de1b08d6ab819540acbb6418d4c80c4c593a60329d8aae6b2cd35144061f"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/run-4096.sqlite": {
+    "bytes": 520192,
+    "sha256": "34558364da8b09defd15185c4a354881c522d9dfbb1e0a9d7bc274f07b0d7ae4"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/run-8192.sqlite": {
+    "bytes": 516096,
+    "sha256": "c041a5ed78ac7f647eef71d27ecbb2ce996fcc3c2e365f8343db8f2abbc26c1a"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4/prof/run_mm_4096_tf.sqlite": {
+    "bytes": 512000,
+    "sha256": "10e729e9c18f2abfd626c0d7e56a7133d87eabe8ad7b173e20023e800d409396"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/results-rtx-5090.txt": {
+    "bytes": 641582,
+    "sha256": "4aeef1a28521cf1cf8eda82c451b8a5fa5944fbcb87422adcd73fd7a075cd3cf"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/run-manifest.json": {
+    "bytes": 241648,
+    "sha256": "426c60c61603b037cf50d312f371777d73dc9bcb784d6d5a1a07a0a71ff70cd2"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_dense_m16_n18432_k7168__contract/base.ptx": {
+    "bytes": 5083,
+    "sha256": "1fe7eca6ec91ffa5c21c6fd3b0725f0076725d398074d274dc9f2e00774fc3fa"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_dense_m16_n18432_k7168__exact/base.ptx": {
+    "bytes": 5536,
+    "sha256": "40378c2952649de2a7712402c10da8f58364c20d068e358001ab9c5cbc2a5529"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_dense_m16_n18432_k7168__tf32/base.ptx": {
+    "bytes": 5083,
+    "sha256": "b4f828dfe12f79f07558ef9df1f7de63dd6d0a71ae8c9cb08fd2d6b31239ad94"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_expert_m16_n2048_k7168__contract/base.ptx": {
+    "bytes": 5257,
+    "sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_expert_m16_n2048_k7168__exact/base.ptx": {
+    "bytes": 5457,
+    "sha256": "bda12513d1e4acfba0607499d1c3c5f8a86561331eb1da199fcbc5687764643f"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/deepseek_expert_m16_n2048_k7168__tf32/base.ptx": {
+    "bytes": 8913,
+    "sha256": "d141ffff5c12b3728f32acc35c34da83b4a26b0fd8beffd6aa7e489ca5cf2450"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/qwen_expert_m16_n1024_k4096__contract/base.ptx": {
+    "bytes": 5307,
+    "sha256": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/qwen_expert_m16_n1024_k4096__exact/base.ptx": {
+    "bytes": 5507,
+    "sha256": "481d85bc1dce45586bd17c624936d83a8acbb1675b01d10d683f40c6a48ed367"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/qwen_expert_m16_n1024_k4096__tf32/base.ptx": {
+    "bytes": 8953,
+    "sha256": "12e31396026ac98cfab8d3c1ecfbda652e1be61ef28cff633934bf63bc6007b3"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/square16k_m16384_n16384_k16384__contract/base.ptx": {
+    "bytes": 56151,
+    "sha256": "8d4aa7ab1dcb9d20d1c77f632eda03ff57de3191d31deb31f41de533dc30bf03"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/square16k_m16384_n16384_k16384__exact/base.ptx": {
+    "bytes": 88604,
+    "sha256": "9e377f156e86f575756c3593781ed76460ed634389b7f206920d94d41c634a36"
+  },
+  "/private/tmp/mapal-s56-gpu/large-composed/primitive/run-bundle-rtx-5090/cases/square16k_m16384_n16384_k16384__tf32/base.ptx": {
+    "bytes": 32922,
+    "sha256": "45b497f63207c2099b5a1f8540984908f7d0e38121f5a2bd0ed0c56062819f61"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/a100-manifest.json": {
+    "bytes": 3461971,
+    "sha256": "75c3f233189a7adb955fa8a240052a64ea80c52d8e67622bb4669309db557dd9"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/a100-primary/prof-a100.tgz": {
+    "bytes": 14782220,
+    "sha256": "065e6623a19289d0b1763a9efb1e1b1ccf43e0867f3c541f9ad06efea75e3386"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/box_profile.sh": {
+    "bytes": 4111,
+    "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/tile_bench.cu": {
+    "bytes": 20136,
+    "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/cutlass/include/cutlass/numeric_conversion.h": {
+    "bytes": 293821,
+    "sha256": "0d86dc79d52635d064e8d275e97fdb37d1b06e4d1195e9a37e5b3778198c45f5"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/a100/cutlass/include/cutlass/gemm/warp/mma_tensor_op.h": {
+    "bytes": 14034,
+    "sha256": "686bcc13fab61b7506628a3c7f0d308be6d7ca3bc17e1f60df591c0f988b9e7b"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/rtx-4090-manifest.json": {
+    "bytes": 3617072,
+    "sha256": "20c0b52a12df078992d02fd7865698e609c18d62db861e8c436d6089f6429590"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/rtx-4090-primary/prof-rtx-4090.tgz": {
+    "bytes": 14665597,
+    "sha256": "287508440b51e0a13ab8b80d89a5e5985c259922eea742164eaafaf02dc26226"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/box_profile.sh": {
+    "bytes": 4111,
+    "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/tile_bench.cu": {
+    "bytes": 20136,
+    "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/cutlass/include/cutlass/numeric_conversion.h": {
+    "bytes": 293821,
+    "sha256": "0d86dc79d52635d064e8d275e97fdb37d1b06e4d1195e9a37e5b3778198c45f5"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-4090/cutlass/include/cutlass/gemm/warp/mma_tensor_op.h": {
+    "bytes": 14034,
+    "sha256": "686bcc13fab61b7506628a3c7f0d308be6d7ca3bc17e1f60df591c0f988b9e7b"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/rtx-5090-manifest.json": {
+    "bytes": 3829881,
+    "sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/prof-rtx-5090.tgz": {
+    "bytes": 14626263,
+    "sha256": "3ea980a915bf4ae61ab768c9817c93252009c55559f58a26d0d2b55bd0ad5092"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/box_profile.sh": {
+    "bytes": 4111,
+    "sha256": "e2e67cda69952584f8e74d61d56ed06dc32e800209da6c1db64f15c5daa6ba75"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/tile_bench.cu": {
+    "bytes": 20136,
+    "sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/cutlass/include/cutlass/numeric_conversion.h": {
+    "bytes": 293821,
+    "sha256": "0d86dc79d52635d064e8d275e97fdb37d1b06e4d1195e9a37e5b3778198c45f5"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/bundles/rtx-5090/cutlass/include/cutlass/gemm/warp/mma_tensor_op.h": {
+    "bytes": 14034,
+    "sha256": "686bcc13fab61b7506628a3c7f0d308be6d7ca3bc17e1f60df591c0f988b9e7b"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_dense_m16_n18432_k7168__contract/base/harness.stdout": {
+    "bytes": 1691,
+    "sha256": "8145c77ea67f33323e401ca7d6a8ce7c3d1d57e96ce3875ffd344bb6a997a3fa"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_dense_m16_n18432_k7168__exact/base/harness.stdout": {
+    "bytes": 1691,
+    "sha256": "e44af1ffb1eb39836aed66566d010a5642a57da2cc5fc76b30b8c713c650fa97"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_dense_m16_n18432_k7168__tf32/base/harness.stdout": {
+    "bytes": 1687,
+    "sha256": "966f054f21e06db986027728c95bd5cb514e4cf5d66f4150c6a442ff0039a6b8"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m16_n2048_k7168__contract/base/harness.stdout": {
+    "bytes": 1686,
+    "sha256": "3977b6170684202283867f06c53a36732f3e0a90822eda0dab1fa0d9f3c541c7"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m16_n2048_k7168__exact/base/harness.stdout": {
+    "bytes": 1686,
+    "sha256": "fc552fc9aa8ea3ac58c6a8d012af3f76f7063a7b8663d87090aa1e2481a642d9"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m16_n2048_k7168__tf32/base/harness.stdout": {
+    "bytes": 1684,
+    "sha256": "215e1d2244e66961c7434129e8a193f688aea3756eee6788c0e569297b5d4a60"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/qwen_expert_m16_n1024_k4096__contract/base/harness.stdout": {
+    "bytes": 1685,
+    "sha256": "b19c817003807044f4e811e3a23cf04139ae7a416719ab2b518daa95cb8f9c00"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/qwen_expert_m16_n1024_k4096__exact/base/harness.stdout": {
+    "bytes": 1685,
+    "sha256": "f776747e72cff501c765f99ceb1a94de3d14bcc9db289383daa45ff5cc51a44f"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/qwen_expert_m16_n1024_k4096__tf32/base/harness.stdout": {
+    "bytes": 1683,
+    "sha256": "c5b3b939477b54d7e7f31ac32f65dbc0ee73ad17856042b83adb4db11230d20c"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/square16k_m16384_n16384_k16384__contract/base/harness.stdout": {
+    "bytes": 1909,
+    "sha256": "14fd1d2fa4921a71d65c5cb972f19aba410f4ba15c9990717b5869d4928c7c1a"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/square16k_m16384_n16384_k16384__exact/base/harness.stdout": {
+    "bytes": 1909,
+    "sha256": "749653f6178b0b7d7c954e7474f29d01100e89370c1b5b2b6f2383e0a48c4ecd"
+  },
+  "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/square16k_m16384_n16384_k16384__tf32/base/harness.stdout": {
+    "bytes": 1868,
+    "sha256": "2d1735eaa183ba23c39643e867d7a36d033a5775e8d2f33249a31cc83c909e43"
+  },
+  "/Volumes/LessComplex/Personal/mapal/crates/backends/llvm/src/lib.rs": {
+    "bytes": 41526,
+    "sha256": "7558ae7a08a29f4272bb11452e9d1ee7629bcb949ee15aaeadac082b5d56be6f"
+  },
+  "/Volumes/LessComplex/Personal/mapal/docs/decisions/ADR-0032-precision-contracts-vs-backend-config.md": {
+    "bytes": 4871,
+    "sha256": "ddc86b75e400dc8e6c704ece085c07938ba391a6da6e58cd17f6db6dd86b1cc4"
+  },
+  "/Volumes/LessComplex/Personal/mapal/docs/decisions/ADR-0039-reduced-precision-formats-candidate.md": {
+    "bytes": 5447,
+    "sha256": "266df3dd903269e4a670303bfaf6ee15fcfac0e4add29435678fcb0bc4259c07"
+  },
+  "/private/tmp/mapal-s56-gpu/ptx-sass-gap/independent-review.md": {
+    "bytes": 5471,
+    "sha256": "35ad73814fc2d785ae9edbd7aa2cd37ce1e85d76fedcc34e3cdc83b9b3ff023f"
+  }
+}

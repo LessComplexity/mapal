@@ -1,0 +1,24 @@
+{
+  "approved": true,
+  "single_attempt": true,
+  "packet_sha256": "1c794167ef3e5685b2476238ece35054b302a68d1ea1d95340036038aa4645b6",
+  "launcher_sha256": "ce581ad3328277ddbcebafb801c83d4e8efec5d83a981f017668b57db160adde",
+  "reviewed_utc": "2026-10-21T22:47:46.791906+00:00",
+  "authorization": "Manual equivalent replacement under user current explicit machine/testing authorization, within unchanged original cumulative $1 and aggregate $8/hour caps. Prior root-bound attempt closed before upload. No automatic retry loop.",
+  "prior_closed_instance": 57121897,
+  "root_checks": [
+    "all six static payload files byte-identical to reviewed v61",
+    "operational diff only directory/prior-budget binding/tighter rate cap",
+    "16 launcher/ownership/price negative tests independently rerun",
+    "fresh exact RTX5090 offer56722089 machine154241 host303447 rate0.6161111111111112",
+    "1800 seconds creation-through-cleanup;1100 smallM;180 reserve",
+    "cumulative planning reservation0.9217811120763374"
+  ],
+  "restrictions": [
+    "one reviewed attempt; no automatic new rentals",
+    "no runtime/compiler/payload changes",
+    "only newly owned exact instance cleanup; protect unrelated instances",
+    "outer timeout aborts later GPU work",
+    "observed capture never ordinary timing evidence"
+  ]
+}

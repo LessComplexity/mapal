@@ -1,0 +1,34 @@
+{
+  "schema": "independent-observer-domain-delta-review-v1",
+  "pass": true,
+  "previous_review_sha256": "a5487cbb1ed39629cfc4f95beb63dc174b5c481b92929eca1f7ff58b4b7f05bf",
+  "previous_parser_sha256": "df8e9e399e3c8e43a2c4555886141e5f4834c82653e69a78d2e7c1218f8d5ae4",
+  "final_parser_sha256": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+  "capture_unchanged_sha256": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+  "independent_new_domain_cases": 8,
+  "owner_source_cases": 53,
+  "owner_binding_cases": 12,
+  "owner_full_synthetic_replay": {
+    "callback_rows": 3156,
+    "activity_rows": 1799,
+    "kernel_records": 13,
+    "images": 5,
+    "source_v1_events_preserved": true,
+    "actual_v1_image_admissions": 0
+  },
+  "findings": [],
+  "invariants": [
+    "PinnedKernel9 correlation mayidentifydriverORruntimeAPI; numeric equality never choosesdomain",
+    "Driver candidate matches actualsuccessful driverinvocation token,CBIDandcorrelation",
+    "Runtime candidate matches exactsuccessful containing runtimeparent token,CBIDandcorrelation",
+    "Uniqueeligiblecallbackinvocation required acrosswholeprocess, notonlyselectedregion",
+    "Matchedactivity/callback statuscontradictions rejectevenifotherdomainvalid",
+    "ExactlyonevalidatedAPIactivitydomain; bothvalid orneither rejects",
+    "ChosenAPIactivitybinding retained in selectedlaunch report",
+    "No change to other reviewedcontext/ELF/lifetime/numeric/clock/cap rules"
+  ],
+  "real_trace_modified": false,
+  "new_gpu_execution": false,
+  "new_image_sass_admission": false,
+  "independent_cases_receipt_sha256": "c39eed29acd1c49f81e0980e4950a989eadb381213f2f4bf223d8c3aa3a775b4"
+}

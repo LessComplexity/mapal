@@ -10,7 +10,13 @@
 //! and loop CFG are additionally covered by the `abs` / `fir` / `sum_to_n`
 //! example snapshots.
 
-use mapal_backend_llvm::{EmitError, EmitOpts, emit, emit_with_opts};
+use mapal_backend_llvm::{EmitError, EmitOpts, GpuArms, emit_with_opts};
+
+/// The goldens are the exact face's text (ADR-0040: the default face adds
+/// `reassoc contract` to the tiled steps; `default_face_flags_the_tiled_steps`).
+fn emit(ir: &mapal_ir::CategoryIr) -> Result<String, EmitError> {
+    emit_with_opts(ir, &EmitOpts::exact())
+}
 use mapal_ir::{CategoryIr, Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value};
 
 const L: SourceLoc = SourceLoc { start: 0, end: 0 };
@@ -270,17 +276,37 @@ fn main() {
     r[2] -> println;
 }
 "#;
-    let ll = emit(&lower_src(src)).unwrap();
-    let build = ll
-        .split("define internal [4 x i32] @fn")
-        .nth(1)
-        .and_then(|s| s.split("\n}\n").next())
-        .expect("build fn");
+    let build_of = |ll: &str| -> String {
+        ll.split("define internal [4 x i32] @fn")
+            .nth(1)
+            .and_then(|s| s.split("\n}\n").next())
+            .expect("build fn")
+            .to_string()
+    };
+    let mut gpu = GpuArms::default();
+    *gpu.off.rung("by-ref").expect("rung") = true;
+    let s64 = emit_with_opts(
+        &lower_src(src),
+        &EmitOpts {
+            gpu,
+            ..EmitOpts::exact()
+        },
+    )
+    .unwrap();
+    let build = build_of(&s64);
     assert_eq!(
         build.matches("alloca [4 x i32]").count(),
         3,
         "the carried Update target shares its source slot (no fourth array alloca):\n{build}"
     );
+    // S65 `by-ref`: the state is the literal's buffer (it dies at the entry),
+    // the Update writes it in place through the state's pointer, and the
+    // loop products forward that pointer — the one other array is the
+    // returned value, which the exit copies out (the caller observes it).
+    let ll = emit(&lower_src(src)).unwrap();
+    let build = build_of(&ll);
+    assert_eq!(build.matches("alloca [4 x i32]").count(), 2, "{build}");
+    assert_eq!(build.matches("@llvm.memcpy").count(), 1, "{build}");
     insta::assert_snapshot!("update_inplace_carried_loop", ll);
 }
 
@@ -543,8 +569,9 @@ fn golden_tile_map_shapes() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -674,9 +701,10 @@ fn golden_tile_map_shapes() {
     let untiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             tiling: false,
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -698,8 +726,9 @@ fn golden_tile_map_shapes() {
     let f64 = emit_with_opts(
         &f64_ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -751,12 +780,13 @@ fn golden_tile_map_shape_kc() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             kc_nest: true,
             // S46: the default target now DETECTS the machine, and a detected L2
             // changes the derived `tile_kc` that decides whether this nest fires.
             // This golden pins the nest's SHAPE, so it pins the reference profile.
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -890,12 +920,13 @@ fn golden_tile_map_shape_kc() {
 #[test]
 fn tile_contract_flags_are_opt_in() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let plain = emit_with_opts(&ir, &EmitOpts::default()).unwrap();
+    let plain = emit_with_opts(&ir, &EmitOpts::exact()).unwrap();
     let contracted = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             contract: true,
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -904,6 +935,34 @@ fn tile_contract_flags_are_opt_in() {
     assert!(!plain.contains("fadd contract"));
     assert!(contracted.contains("fmul contract float"));
     assert!(contracted.contains("fadd contract float"));
+    assert!(
+        !contracted.contains("reassoc"),
+        "a sequential order never reassociates"
+    );
+}
+
+/// ADR-0040 D1/D4: the default face's tiled steps carry `reassoc contract`
+/// (the fold's order is free, a step fuses) and nothing else — no `fast`,
+/// `nsz`, `afn`, `arcp`, `ninf`, `nnan`.
+#[test]
+fn default_face_flags_the_tiled_steps() {
+    let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
+    let opts = EmitOpts {
+        target: "generic",
+        ..EmitOpts::default()
+    };
+    let ll = emit_with_opts(&ir, &opts).unwrap();
+    assert!(ll.contains("fmul reassoc contract float"));
+    assert!(ll.contains("fadd reassoc contract float"));
+    for f in [" fast ", " nsz ", " afn ", " arcp ", " ninf ", " nnan "] {
+        assert!(!ll.contains(f), "{f}");
+    }
+    let free = EmitOpts {
+        contract: false,
+        ..opts
+    };
+    let ll = emit_with_opts(&ir, &free).unwrap();
+    assert!(ll.contains("fmul reassoc float") && !ll.contains("contract"));
 }
 
 #[test]
@@ -913,8 +972,9 @@ fn golden_tile_map_shape_1d() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1045,8 +1105,9 @@ fn golden_tile_map_shape_conv() {
     let tiled = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1653,8 +1714,9 @@ fn determinism_emit_twice_byte_equal() {
 #[test]
 fn perf_timing_golden() {
     let opts = EmitOpts {
+        host: "generic",
         perf_timing: true,
-        ..EmitOpts::default()
+        ..EmitOpts::exact()
     };
     let parallel = emit_with_opts(&build_example("abs"), &opts).unwrap();
     let main = mapal_main(&parallel);
@@ -1695,7 +1757,7 @@ fn default_opts_are_byte_identical() {
     let ir = build_example("vector_add");
     assert_eq!(
         emit(&ir).unwrap(),
-        emit_with_opts(&ir, &EmitOpts::default()).unwrap()
+        emit_with_opts(&ir, &EmitOpts::exact()).unwrap()
     );
 }
 
@@ -1794,10 +1856,11 @@ fn profile_closes_the_kc_gate_by_derivation() {
         emit_with_opts(
             &ir,
             &EmitOpts {
+                host: "generic",
                 kc_nest: true,
                 contract: true,
                 target,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .expect("emits")
@@ -1820,9 +1883,10 @@ fn profile_closes_the_kc_gate_by_derivation() {
     let generic_kc_off = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             contract: true,
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect("emits");
@@ -1842,8 +1906,9 @@ fn unknown_profile_is_an_error_not_a_silent_default() {
     let err = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "apple_m",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .expect_err("unknown profile must not emit");
@@ -1880,8 +1945,9 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
     let ll = emit_with_opts(
         &ir,
         &EmitOpts {
+            host: "generic",
             target: "generic",
-            ..EmitOpts::default()
+            ..EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1984,36 +2050,183 @@ fn packed_wrapper_dispatches_the_b_pack_across_the_pool() {
 /// The negative control is the point of the second half: a profile with no
 /// MEASURED dispatch economics must keep dispatching, so no part can be made
 /// worse by a number nobody took.
+///
+/// **The locator changed in S51.** This used to find the tile task by the
+/// `_slice` suffix, which only a PACKED site has — so it was keyed on an
+/// artifact of packing rather than on the thing under test. plan-s51 H1 made
+/// packing conditional on size, and a 4x4's working set is 192 bytes against a
+/// 16 MB L2, so on `apple-m4-sme` there is no `_slice` function any more. The
+/// region quantum is the property that actually says "this is the bulk tile
+/// task", on either profile and whether or not it packs.
 #[test]
 fn tiny_tile_site_is_inlined_when_the_part_has_measured_costs() {
     let ir = mapal_rewrite::rewrite(lower_src(TILE_MATMUL_SRC)).ir;
-    let kind_of = |target: &'static str| {
+    // The BULK TILE task, on either profile: of the registrations that carry a
+    // region quantum (argument 7 — a scalar/Seq task carries `i64 0`), the one
+    // with the largest. On `generic` that separates the matmul (64) from the
+    // b-pack task the same site registers (1); on `apple-m4-sme` the site does
+    // not pack at this size and the matmul is the only one.
+    let tile_kind = |target: &'static str| -> String {
         let ll = emit_with_opts(
             &ir,
             &EmitOpts {
+                host: "generic",
                 target,
-                ..EmitOpts::default()
+                ..EmitOpts::exact()
             },
         )
         .unwrap();
-        let call = regex_lite_find(&ll, "_slice, i64 ").expect("a registered tile task");
+        let quantum = |l: &str| -> u64 {
+            l.split(", ")
+                .nth(6)
+                .and_then(|a| a.trim_start_matches("i64 ").parse().ok())
+                .unwrap_or(0)
+        };
+        let call = ll
+            .lines()
+            .filter(|l| l.contains("call void @mapal_par_task("))
+            .max_by_key(|l| quantum(l))
+            .expect("a registered task");
+        assert!(
+            quantum(call) > 0,
+            "no task carries a region quantum, so none of them is the tile \
+             site:\n{ll}"
+        );
         call.split(", ")
             .nth(2)
             .expect("the kind argument")
             .to_string()
     };
     assert_eq!(
-        kind_of("apple-m4-sme"),
+        tile_kind("apple-m4-sme"),
         "i32 0",
         "a 4x4 matmul must not be handed to the pool on a part whose dispatch \
          cost is known"
     );
     assert_eq!(
-        kind_of("generic"),
+        tile_kind("generic"),
         "i32 1",
         "a profile with no measured dispatch economics must dispatch exactly as \
          it did before the threshold existed"
     );
+}
+
+/// plan-s53 `clock-fence` on a GPU profile: the GPU e2e program
+/// (`benches/gpu/gen_tiles.py e2e`, n = 64) brackets exactly its site. S52's
+/// host read `t1` BEFORE the tile call and `t0` before the generation, so the
+/// program's `iter ms` timed the generation. Now the generation precedes the
+/// first read, and each read waits for the device first — a launch that
+/// returns early must not let the clock close over it.
+#[test]
+fn gpu_time_bracket_is_time_tile_sync_time() {
+    let e2e = |n: u32| {
+        format!(
+            "fn main() {{
+    {nn} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {n} -> iota -> krange;
+    () -> time -> t0;
+    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }}
+    }} -> c;
+    () -> time -> t1;
+    c[0] -> println;
+    \"iter ms=\" -> print;
+    t1 - t0 -> println;
+}}
+",
+            nn = n * n
+        )
+    };
+    let at_arms = |src: &str, target: &'static str, gpu: GpuArms| {
+        let ir = mapal_rewrite::rewrite(lower_src(src)).ir;
+        emit_with_opts(
+            &ir,
+            &EmitOpts {
+                host: "generic",
+                target,
+                gpu,
+                ..EmitOpts::exact()
+            },
+        )
+        .unwrap()
+    };
+    let at = |src: &str, target: &'static str| at_arms(src, target, GpuArms::default());
+    // `resident` (shipped): the operands are built on the device and each read
+    // waits for every launch before it, so the bracket is the site's launch.
+    let ll = at(&e2e(64), "h100-pcie");
+    let host = mapal_main(&ll);
+    let calls: Vec<&str> = host
+        .lines()
+        .filter_map(|l| {
+            [
+                "@mapal_gpu_gen(",
+                "@mapal_time_ms(",
+                "@mapal_gpu_launch", // `_l2(` too: a window changes no order
+                "@mapal_gpu_sync(",
+            ]
+            .into_iter()
+            .find(|c| l.contains(c))
+        })
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            "@mapal_gpu_gen(",
+            "@mapal_gpu_gen(",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms(",
+            "@mapal_gpu_launch",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms("
+        ],
+        "gen -> sync -> time -> launch -> sync -> time:\n{host}"
+    );
+    // The S52 round trip (`resident` off): the host generation precedes t0.
+    let mut off = GpuArms::default();
+    *off.off.rung("resident").unwrap() = true;
+    let ll = at_arms(&e2e(64), "h100-pcie", off);
+    let host = mapal_main(&ll);
+    let calls: Vec<&str> = host
+        .lines()
+        .filter_map(|l| {
+            [
+                "@fn",
+                "@mapal_time_ms(",
+                "@mapal_gpu_tile(",
+                "@mapal_gpu_sync(",
+            ]
+            .into_iter()
+            .find(|c| l.contains(c))
+        })
+        .collect();
+    let first_read = calls.iter().position(|&c| c == "@mapal_time_ms(").unwrap();
+    assert!(
+        calls[..first_read].contains(&"@fn"),
+        "the generation runs before t0:\n{host}"
+    );
+    assert_eq!(
+        calls[first_read - 1..],
+        [
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms(",
+            "@mapal_gpu_tile(",
+            "@mapal_gpu_sync(",
+            "@mapal_time_ms("
+        ],
+        "time -> tile -> sync -> time:\n{host}"
+    );
+    assert!(ll.contains("declare void @mapal_gpu_sync()"), "{ll}");
+    // No device site, nothing to wait for: a CPU profile, and a GPU profile on
+    // a module whose `time` brackets host work only, emit no sync at all.
+    let host_only = "fn main() {\n    () -> time -> t0;\n    \
+                     () -> time -> t1;\n    t1 - t0 -> println;\n}\n";
+    for ll in [at(&e2e(64), "generic"), at(host_only, "h100-pcie")] {
+        assert!(!ll.contains("@mapal_gpu_sync"), "{ll}");
+    }
 }
 
 fn further_paren(c: char) -> bool {
@@ -2023,4 +2236,52 @@ fn further_paren(c: char) -> bool {
 /// The first line containing `needle`. Kept local so the test adds no dep.
 fn regex_lite_find<'a>(hay: &'a str, needle: &str) -> Option<&'a str> {
     hay.lines().find(|l| l.contains(needle))
+}
+
+/// `benches/gpu/gen_tiles.py`'s `mm_<n>` timing site.
+fn gpu_mm(n: u64) -> CategoryIr {
+    let src = format!(
+        "fn main() {{
+    {nn} -> iota -> ta;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ta -> map {{ t -> (t * 7 + 57) % 101 - 50 -> widen_f32 }} -> b;
+    {n} -> iota -> krange;
+    ta -> map {{ t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, krange) -> fold {{ acc, k -> acc + a[i * {n} + k] * b[k * {n} + j] }}
+    }} -> c;
+    c[0] -> println;
+}}
+",
+        nn = n * n
+    );
+    mapal_rewrite::rewrite(lower_src(&src)).ir
+}
+
+/// S53 `arch-rungs`: the rtx-4090's table takes `cp.async` only where the site
+/// under-fills the part (1024²: one warp per scheduler) — not at 4096², the
+/// v6 row where the async arm cost 8% — and the `arch-rungs` OFF arm restores
+/// S52's every-rung-on kernel.
+#[test]
+fn rtx_4090_streams_with_cp_async_only_under_filled() {
+    let device = |n, arms: mapal_backend_llvm::GpuArms| {
+        let opts = EmitOpts {
+            host: "generic",
+            target: "rtx-4090",
+            contract: true,
+            gpu: arms,
+            ..EmitOpts::exact()
+        };
+        mapal_backend_llvm::emit_detailed(&gpu_mm(n), &opts)
+            .expect("emit")
+            .device
+            .expect("a GPU site")
+    };
+    let streams = |d: String| d.contains("call void @llvm.nvvm.cp.async");
+    assert!(!streams(device(4096, Default::default())));
+    assert!(streams(device(1024, Default::default())));
+    let mut off = mapal_backend_llvm::GpuArms::default();
+    *off.off.rung("arch-rungs").expect("a rung") = true;
+    assert!(streams(device(4096, off)));
 }

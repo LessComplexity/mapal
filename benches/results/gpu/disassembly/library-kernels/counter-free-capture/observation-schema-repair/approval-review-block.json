@@ -1,0 +1,11 @@
+{
+  "recorded_utc": "2026-10-22T20:32:15.764996+00:00",
+  "state": "blocked_before_execution",
+  "packet_sha256": "6138fcc648e7009c435e9744eb37b178237da9d4aa99ecc21b3e865d4ed2b637",
+  "review_rejection_reason": "The launch uploads a revised observer packet and private benchmark artifacts to an untrusted Vast destination; the user approved the earlier bundle, but the repaired observer delta is not explicitly authorized for egress to that destination.",
+  "claim_exists": false,
+  "created_instance": null,
+  "upload_performed": false,
+  "retry_performed": false,
+  "next_required_action": "Root obtains explicit user approval for corrective observer delta and equivalent destination; keep frozen payload and existing-machine protections unchanged."
+}

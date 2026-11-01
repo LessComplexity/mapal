@@ -1,0 +1,162 @@
+[
+  {
+    "case": "materialized-raw",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "materialized-raw",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "capture",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "capture",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "forked-tile",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "forked-tile",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "member-cell",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "member-cell",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "base-cell",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "base-cell",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "member-rowfold",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "member-rowfold",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "base-rowfold",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "base-rowfold",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "omitted-raw",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d40",
+      "%d41"
+    ]
+  },
+  {
+    "case": "omitted-raw",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d40",
+      "%d41"
+    ]
+  },
+  {
+    "case": "pt512-indep",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d41"
+    ]
+  },
+  {
+    "case": "pt512-indep",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d41"
+    ]
+  },
+  {
+    "case": "pt512-diamond",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d54"
+    ]
+  },
+  {
+    "case": "pt512-diamond",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d54"
+    ]
+  },
+  {
+    "case": "pt512-mlp2",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d80",
+      "%d81"
+    ]
+  },
+  {
+    "case": "pt512-mlp2",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": [
+      "%d80",
+      "%d81"
+    ]
+  },
+  {
+    "case": "pt512-twin",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "pt512-twin",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "pt512-mlp",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "pt512-mlp",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "pt512-fanout",
+    "face": "exact",
+    "zero_initialized_unallocated_freed_slots": []
+  },
+  {
+    "case": "pt512-fanout",
+    "face": "contract",
+    "zero_initialized_unallocated_freed_slots": []
+  }
+]

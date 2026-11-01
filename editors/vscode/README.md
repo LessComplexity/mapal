@@ -1,9 +1,11 @@
 # Mapal — VS Code support
 
-Puts the **actual Mapal logo** on `.mapal` files, plus comment and bracket behavior.
+Source formatting, syntax highlighting, the **actual Mapal logo** on `.mapal`
+files, and comment and bracket behavior.
 
 ```
-package.json                 language registration + the file icon
+package.json                 language registration, formatter configuration + file icon
+extension.js                 document formatting through mapal fmt -
 language-configuration.json  // comments, bracket matching, auto-close
 icons/mapal.svg               the mark, square variant
 ```
@@ -23,8 +25,8 @@ Not published to the Marketplace, so build a `.vsix` and install it:
 
 ```sh
 python3 editors/vscode/package-vsix.py
-code   --install-extension editors/vscode/mapal-lang-0.1.0.vsix   # or:
-cursor --install-extension editors/vscode/mapal-lang-0.1.0.vsix
+code   --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or:
+cursor --install-extension editors/vscode/mapal-lang-0.2.0.vsix
 ```
 
 Then restart the editor. Verify it actually registered — the message alone is not proof:
@@ -55,7 +57,7 @@ A CLI install copies the files, so editing the repo afterwards changes nothing i
 Either rebuild and reinstall:
 
 ```sh
-python3 editors/vscode/package-vsix.py && code --install-extension editors/vscode/mapal-lang-0.1.0.vsix --force
+python3 editors/vscode/package-vsix.py && code --install-extension editors/vscode/mapal-lang-0.2.0.vsix --force
 ```
 
 or launch a throwaway window that loads the source directly, which is better for grammar work:
@@ -70,6 +72,48 @@ code --extensionDevelopmentPath="$(pwd)/editors/vscode" .
    Text the extension is not loaded and nothing else matters.
 2. Command palette → `Developer: Inspect Editor Tokens and Scopes`, cursor on a token — should
    show `source.mapal` and a scope such as `support.function.builtin.mapal`.
+
+## Formatting
+
+Install the CLI from the repository root:
+
+```sh
+cargo install --path crates/mapal-cli
+```
+
+Use **Format Document** in a Mapal document. The extension formats unsaved buffer
+contents through `mapal fmt -`, so the same layout is used in the CLI and Neovim.
+Syntax errors and missing executables produce a notification without editing the
+document. Cancelled requests and results for a changed document are discarded.
+
+To select Mapal as the formatter and enable formatting on save, add to settings:
+
+```json
+{
+  "[mapal]": {
+    "editor.defaultFormatter": "mapal-lang.mapal-lang",
+    "editor.formatOnSave": true
+  },
+  "mapal.executablePath": "/path/to/mapal/target/debug/mapal"
+}
+```
+
+`mapal.executablePath` defaults to `mapal` on PATH. It accepts one executable path,
+including paths with spaces, without extra arguments. In a remote VS Code window,
+the CLI must be available where the extension host runs. Formatting uses four-space
+indentation, a ten-second process timeout and a 16 MiB output limit.
+
+## Tests
+
+```sh
+cargo build -p mapal-cli # or set MAPAL_BIN to an already-built CLI
+editors/test.sh
+```
+
+The formatting adapter tests use Node's built-in modules and the actual CLI; no
+npm install or VS Code download is required. They cover unsaved documents, paths
+with spaces, diagnostics, cancellation and stale document versions. Rebuild the
+VSIX after editing the adapter so the updated JavaScript is included.
 
 ## Syntax highlighting
 

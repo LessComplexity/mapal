@@ -1,0 +1,14 @@
+[
+  {
+    "archive": "public",
+    "files_verified": 949,
+    "uncompressed_bytes": 4764382,
+    "pass": true
+  },
+  {
+    "archive": "private",
+    "files_verified": 3875,
+    "uncompressed_bytes": 71486461,
+    "pass": true
+  }
+]

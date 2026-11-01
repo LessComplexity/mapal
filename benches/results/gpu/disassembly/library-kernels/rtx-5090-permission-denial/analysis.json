@@ -1,0 +1,93 @@
+{
+  "schema": "ncu-permission-denial-analysis-v1",
+  "phase_admitted": false,
+  "ordinary_timing_invalidated": false,
+  "failure": "ERR_NVGPUCTRPERM",
+  "failure_line": 738,
+  "target_device": 0,
+  "tool_version": "NVIDIA (R) Nsight Compute Command Line Profiler\nCopyright (c) 2018-2025 NVIDIA Corporation\nVersion 2025.1.1.0 (build 35528883) (public-release)",
+  "tool_path": "/usr/local/cuda-12.8/bin/ncu",
+  "tool_path_sha256": "02fffd2174c647582a6faa3829bcab06ca66dfb026c7b0e8f863fbbfb0cca877",
+  "phase_summary_sha256": "7c85463201350dfd3cd5dc2dbaf425a1859469e4146cd47b31c95ecdb0e164d7",
+  "request_sha256": "7d3378aaf40e181844883cf5b683dc603ee321acd9e50c1f7f6f194ccb6a829d",
+  "input_output_seals_verified": 15,
+  "stdout_sha256": "4e692833e060788f4d6e89c07f6e3fb34bfebeafd57a45be85026eee0b6551b6",
+  "profile_exit": 1,
+  "timeout": false,
+  "binary_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf",
+  "selected_candidate": "m16-n64-k16",
+  "mapal_variant": "old",
+  "actual_device_receipt": "NVIDIA GeForce RTX 5090, GPU-3c6aedea-85d5-ca7f-74fd-ab2e2b99bf40, 595.91.07",
+  "CUDA_driver_API_version": 13020,
+  "raw_ncu_reports": 0,
+  "captured_SASS": false,
+  "dynamic_counters": false,
+  "harness_protocol": {
+    "schema": "s61-competitive-profile-v1",
+    "profile_only": true,
+    "leg": "mapal",
+    "M": 16,
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "cutlass_candidate": "m16-n64-k16",
+    "mapal_variant": "old",
+    "mapal_ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+    "oracle_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+    "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+    "pre_gate_all_three_pass": true,
+    "post_gate_all_three_pass": true,
+    "profiled_calls": 1,
+    "timing_admission": false
+  },
+  "independent_post_numerical": {
+    "pass": true,
+    "face": "contract",
+    "arms": {
+      "mapal": {
+        "pass": true,
+        "cells": 256,
+        "ordered_bits_required": true,
+        "ordered_bit_matches": {
+          "operationwise": 20,
+          "fmaf": 256
+        },
+        "max_abs_error_to_either_face": 3.4332275390625e-05,
+        "failures": []
+      },
+      "cublas": {
+        "pass": true,
+        "cells": 256,
+        "ordered_bits_required": false,
+        "ordered_bit_matches": {
+          "operationwise": 9,
+          "fmaf": 5
+        },
+        "max_abs_error_to_either_face": 0.000152587890625,
+        "failures": []
+      },
+      "cutlass": {
+        "pass": true,
+        "cells": 256,
+        "ordered_bits_required": false,
+        "ordered_bit_matches": {
+          "operationwise": 20,
+          "fmaf": 256
+        },
+        "max_abs_error_to_either_face": 3.4332275390625e-05,
+        "failures": []
+      }
+    },
+    "budget": "binary64 ceiling of exact rational 2*gamma(2*K)*sum(abs(Aik*Bkj))+4*K*2^-149; sum uses q/2^23 integer inputs"
+  },
+  "independent_pre_numerical": {
+    "pass": false,
+    "error": "Malformed raw checked value"
+  },
+  "limitations": [
+    "Profiler error text interleaves inside pre Mapal checked_value ordinal211; raw text retained and not reconstructed.",
+    "Post values prove only256 cells per arm in this failed diagnostic; no report/function/module/SASS joins exist.",
+    "No uid/capability/host profiling-permission inventory was captured; permission-layer cause beyond the explicit denial is unproved.",
+    "cuBLAS/CUTLASS profile legs and dynamic phase were correctly skipped; their prewarmed values do not represent profiled kernel captures."
+  ]
+}

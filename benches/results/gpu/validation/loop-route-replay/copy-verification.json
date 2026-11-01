@@ -1,0 +1,116 @@
+{
+  "utc": "2026-10-21T21:17:47.636769+00:00",
+  "verified": true,
+  "public_compact_files": [
+    {
+      "path": "PROOF.md",
+      "bytes": 7808,
+      "sha256": "8c9e15d0726db9d8598f929f03dca7f6e2abb54b717a52be89276e8a908a6a51"
+    },
+    {
+      "path": "completion.json",
+      "bytes": 1035,
+      "sha256": "3f265f51ed4dfe00dfa9e08799ecc8ed146889188e2e8c41710a6841ec15a601"
+    },
+    {
+      "path": "evidence/fix.patch",
+      "bytes": 7702,
+      "sha256": "32384fc81b26faff5006019b37d330daab9475bc2e1aa799afde2091282d8203"
+    },
+    {
+      "path": "evidence/ready-for-review.json",
+      "bytes": 4344,
+      "sha256": "79742e1afcca37b3f41f6c06562bb13b609dcfeb7f24f09be45d90a1d9936be0"
+    },
+    {
+      "path": "evidence/test-receipts.json",
+      "bytes": 4009,
+      "sha256": "fa2b59d1de617520e9cf5666a64416a412b6b0d16e58463910fa984fa38530df"
+    },
+    {
+      "path": "evidence/fixed-emission-receipts.json",
+      "bytes": 17426,
+      "sha256": "0392d82468c5aad42ec978a91a52062b20db1c835a12a115e355beecbe08511d"
+    },
+    {
+      "path": "evidence/diagnostic-runs.json",
+      "bytes": 2074,
+      "sha256": "fb3c758f91d419d88f362e024f243aee0654c32f45a00de91f58837f453e0971"
+    },
+    {
+      "path": "evidence/negative-control-final.json",
+      "bytes": 539,
+      "sha256": "9b5aa8fbccc6f7d2b69c6ce624caacd3bd93bebe542186bdaf24ac65981bbcc9"
+    },
+    {
+      "path": "evidence/negative-control-final.stdout",
+      "bytes": 2130,
+      "sha256": "b5816fd6679662362a55a5c0ddb03574512145f9e1b97961916904493a75438e"
+    },
+    {
+      "path": "evidence/negative-control-final.stderr",
+      "bytes": 357,
+      "sha256": "ebd22a5bea3e4ee549504aa6eac7f0e5f98c8c58c2f435ed6704b9e27be1579c"
+    },
+    {
+      "path": "evidence/rewrite-package-final.json",
+      "bytes": 502,
+      "sha256": "7f2a084b2592bd860c5864d77ca93588216a70d18a88e19ad5e36d23fdb9c918"
+    },
+    {
+      "path": "evidence/rewrite-package-final.stdout",
+      "bytes": 6043,
+      "sha256": "e4d665146ab91a2d832211fb7c44ce875c9b70e5b464a67c175ab9a6b36375ab"
+    },
+    {
+      "path": "evidence/rewrite-package-final.stderr",
+      "bytes": 2082,
+      "sha256": "e37a140db02b70c1b22cb4c0117ca826f679ce58155ac26867823f91cf0cf739"
+    },
+    {
+      "path": "evidence/shared-before.json",
+      "bytes": 41732,
+      "sha256": "02f0b301a44e47e86872528bf9fac267dc7c090daee976c16cbff5bbd1252345"
+    },
+    {
+      "path": "evidence/shared-after.json",
+      "bytes": 41732,
+      "sha256": "02f0b301a44e47e86872528bf9fac267dc7c090daee976c16cbff5bbd1252345"
+    },
+    {
+      "path": "evidence/shared-workspace-verification.json",
+      "bytes": 1597,
+      "sha256": "ac9af432b7166c590dbe9c384f39c4c665112d5bae9694c4b8fa188b3b914f21"
+    },
+    {
+      "path": "evidence/shared-workspace.stdout",
+      "bytes": 71299,
+      "sha256": "6ca92ef459e9a00196a1b50b5730b866457422f5693ce5fb8b2eefd8d5934a2e"
+    },
+    {
+      "path": "evidence/shared-workspace.stderr",
+      "bytes": 13363,
+      "sha256": "52393926424e468e6f831b00aaa00827b522c05a4f8b2ec905f74da086130890"
+    },
+    {
+      "path": "evidence/shared-workspace-unrestricted.stdout",
+      "bytes": 70344,
+      "sha256": "2fe7803048bc14c522bee9a90f867e9fe208c4e6966f995aa39be3d92c5daef3"
+    },
+    {
+      "path": "evidence/shared-workspace-unrestricted.stderr",
+      "bytes": 9948,
+      "sha256": "a0079b854f6667da63a5e4609ecbdc1b7f1046a61f46e1c70de3300bee865c80"
+    }
+  ],
+  "full_local_archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-loop-route-replay/mapal-replay-diagnostic-recovery-20261021.tgz",
+  "full_archive_sha256": "1d4dd8c57a71373409d39d34eff32d9b631c53507f05621dfdb7ed89877e1bf0",
+  "full_archive_regular_files": 2448,
+  "workspace_logs": {
+    "shared-workspace-verification.json": "ac9af432b7166c590dbe9c384f39c4c665112d5bae9694c4b8fa188b3b914f21",
+    "shared-workspace-unrestricted.stdout": "2fe7803048bc14c522bee9a90f867e9fe208c4e6966f995aa39be3d92c5daef3",
+    "shared-workspace.stderr": "52393926424e468e6f831b00aaa00827b522c05a4f8b2ec905f74da086130890",
+    "shared-workspace.stdout": "6ca92ef459e9a00196a1b50b5730b866457422f5693ce5fb8b2eefd8d5934a2e",
+    "shared-workspace-unrestricted.stderr": "a0079b854f6667da63a5e4609ecbdc1b7f1046a61f46e1c70de3300bee865c80"
+  }
+}

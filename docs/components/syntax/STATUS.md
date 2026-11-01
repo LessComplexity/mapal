@@ -1,5 +1,13 @@
 # Component: syntax
 
+2026-10-28 tooling update: `format_source` adds pure, token-preserving source
+formatting with four spaces and multiline brace bodies. It rejects parse errors,
+retains comments/literal spelling, and validates output tokens and parsing. Twelve
+formatter tests cover exact layout, idempotence, 192 generated whitespace variants,
+and 205 valid files from the nonrecursive example/algorithm corpus (one existing
+invalid example explicitly exempted). The full syntax suite passes 215 tests.
+No benchmark source changes or codegen changes.
+
 Status: tested
 Last updated: 2026-08-02 · **S48 B2 (review release blocker)**: a guard block mixed with statements and/or a tail is never filtered into a clean `StageKind::Guard` again — `parse_classified_block` retains the complete block as a `StmtBlock` (P0006 per mixed statement, P0006 now also names the tail case, P0115 out-of-Core), and lower rejects the stage loudly (L1000). The B2 probe `{ -true-> 1; -false-> 2; 999 }` keeps its `999`. · S29 `time` builtin: `()` now PARSES to `ExprKind::Unit` — the wire-less chain head, sole sanctioned use `() -> time` — replacing the P0001 "empty parentheses" rejection; the parser records the shape only, every other position is lower's L1301. · S22 ADR-0031: the ADR-0029 call-expression carve REMOVED — P0108 rejects every call expression uniformly again (`iota(...)`/`fill(...)` get the arrow-form teaching message: "write `n -> iota` / `(x, n) -> fill`"); `ExprKind::Call` remains as the rejection-recovery node only. S20 (carve, superseded) · S13 (ADR-0021 element-update bind `c[i] <- x`; P0013–P0015)
 Spec references: user-guide.md §3 (Syntax reference) + ADR-0005 (a flow is a statement; E4) + ADR-0009 (map/fold postfix block) + ADR-0010 (guard-arrow lexing) + ADR-0011 (Core loops are `loop` only) as amended by ADR-0012 (labeled blocks `:label { … }` / jumps `-> :label;`; `Ident {` is always a struct literal) + ADR-0019 (`seq { … }` is a statement block `StageKind::SeqBlock`, not a fanout kind; P0117) + `docs/components/lower/plans/plan-time-builtin.md` (`()` → `ExprKind::Unit`, the `() -> time` head). Supporting: architecture.md §2.2.1–§2.2.2 (lexer + recursive-descent parser, minimal parse tree), ADR-0008 (error recovery + structured diagnostics, binding), ADR-0006 (`type` keyword, `category` reserved).

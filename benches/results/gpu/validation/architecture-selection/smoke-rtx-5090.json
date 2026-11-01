@@ -1,0 +1,30 @@
+{
+  "profile": "rtx-5090",
+  "head": "e8d069cb3cb3529acbd5d72f9c0126c413d70962",
+  "instance": 57080673,
+  "offer": 55567634,
+  "machine_id": 152978,
+  "host_id": 721619,
+  "differential_pass": 66,
+  "trap_pass": 14,
+  "failures": 0,
+  "exact_inventory_match": true,
+  "results_sha256": "f3ff633f5af1a00e3e31cadef1cfd490ebd038cec27184b4418a90d0554596a4",
+  "cleanup": {
+    "destroyed_instance": 57080673,
+    "confirmed_absent": true,
+    "remaining_instances": [
+      {
+        "id": 57065574,
+        "label": "stocklab-orderflow-20261021",
+        "actual_status": "exited"
+      }
+    ]
+  },
+  "binaries": {
+    "target/release/examples/emit": "692489821a922185143d67d734112fa103a7b6513c551eef4efcc035daeef862",
+    "target/release/examples/run": "ad2c59a934134392b09e802d57d1020e7cb3a8fa8d1efef35da2a5bc736b9a63",
+    "target/release/libmapal_rt.a": "70a897fc3905c6fa982aa010352eec2a57025cf7838baaf30b49cec5399a43be",
+    "target/x86_64-unknown-linux-gnu/release/libmapal_rt.a": "5b26eea594347505cd45d7aed48b750753d812ca583b7a28698441d2594b25cb"
+  }
+}

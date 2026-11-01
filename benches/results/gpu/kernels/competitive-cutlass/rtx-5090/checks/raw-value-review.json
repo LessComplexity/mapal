@@ -1,0 +1,1302 @@
+{
+  "pass_": true,
+  "processes": 68,
+  "checked_value_words": 254976,
+  "implementation": "Independent Fraction/IEEE-word reader; imports no harness checker code",
+  "source_scope": "Pre-timing exported words against frozen dual scalar references and independently audited outward rational bounds",
+  "oracle_files": 4,
+  "records": [
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__default-control",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "2353cd834993da52017a926cfd73667240dd5ce05c7dcf83111bba8df2f46682"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__default-control",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "93ae778dbc391f24019e279810241b5c1530bcbb08bf35927ddf4bdb90e88c39"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__default-control",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "5084e87966dabd3528654d841c47661291600df20f98bb25a53878eca66559ab"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__default-control",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "a19df89e79034b36013e60e022ebc78b0bf32121a21a166457239dca4f8e660d"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "fecc88c7afddab467535cc50819be1d4abfb1e36284eea9b9a3b2e4886523447"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "f9148f31f45e13c328b3b667d1b9a6335728b5e450cad9252d49007e70f9b2a2"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "db88e1092fd9e9716649da2e8106d143c9fd5ec91efb31cb17e199d24e00326b"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "7ed6b9e03f60c4a376fba325d68996ad96ccab5b0d8c483b5d99e1722d7388e1"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__m16-n32-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "35d2049caea1d5e10a2d587a946c0c7490fc19fa23835be57d5daaae4d06ae4b"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__m16-n32-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "cf85cd18f099260ff08e0d8da845abc69110dc71810c22d864154968dca9c387"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__m16-n32-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "ba0c3d33d2dd0e8812da9060ec10ed22cad1a77f63ee79fd3dfaea03b30d8349"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__m16-n32-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "da66168a21cb19e93bedc7ccf2ca486613c0eb845a99bf815807a6d59524d881"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "702fa021e9d7368e81c33d3751cc5875945a2b331255d692ddd337b9a330cffb"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "f664cde402ea247083fd86b0309dfb40c1f46af347356a976d4e2ba845105b5c"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "c5fbc7b6ba6bd0b4ac9d8aaea979d0fb3df9d06b31cadad5600cb1539398dea8"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "8de1d4f49ae76cab15ff246ed53904d09c25fa9003d0884d274ad6ec040c2fea"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__m16-n64-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "2ee4bbeb38bb5fbd0812efeb38581f00d06a9fc99940ed4ab84a448e13dd51ee"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__m16-n64-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "1b0a1ba9527b225ce5b90cf514e253df94a2d3b91301651d03e1873645c42e08"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__m16-n64-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "e8806656222d66f21a99d37eacd9aa6314a4aca12e9bb9c397a98cd41ac60289"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__m16-n64-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "54825e14c4c499669dc76eb0fc35262059c5e2e2b140e9ad623599ac6a495182"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "8667b3d84371e77f8ad6e46491cc6aafa80eb6c593e4d1e115eb97c055e8156a"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "74427217eaa3d6cc57b58036a01ac57155c7c559bc32deb971431a10a1b1e022"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "29b02c8e023b783a5820e89ea396abbcffca65439b16eb91edc17d047700c72c"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "58bbd33b9d0e528b274b7ac74bbcb2d324386d7f925b1e6e9468e4c08dd44351"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__m16-n128-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "9996b2d88e870efb62c48df1cfd4a4e567e6c3d895422c14fad271109b8b7012"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__m16-n128-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "5891c2f8a0f4fc4e35413b0ea978dc20b2315609a1b469d4ff2c9bcc1112e2d9"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__m16-n128-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "99d59750af12485704684593ec20407241e73f68143d68b0b8b427b014543710"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__m16-n128-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "8d50bc09e9eec49f287988ee36a5bc6db199a1c7038f35b847e6bfd9067b3a91"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "03897361486adab2f4e08f49567d2036820adbee02ee6146ddd903c945e487d9"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "9733b68544887c7f6894860c06025b8063b74eb5067228befdd4541ffc9db7df"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "517eab0e686b6cb39515d71068d6490bf6e322bac735c9bbf26d258807c5632b"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "f83651af18e3f1c27c95dea158dfe17476ee411cb7ed85f03a4a0ea58728fa94"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__m16-n64-k16",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "02acc8159d73cea134cd6dec157d30829f3d20ef5b9ba4246bd84ca2ea3b5273"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__m16-n64-k16",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "70669eac59ffebe919e5829fa3ab955873f5aa573f3f6856dd4fdb9f10374fee"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__m16-n64-k16",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "c083099dc68b6eee79aa61312ec37dde16d6f70b4ccc766b3611246a473d97b0"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__m16-n64-k16",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "6c1beec3f83cce2ddc3dd4d2ce908f400b584f428c2d2a86265ec6ad67c9154b"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "9066203b645c4aefb248bcfa7d2321715e7648cec7fb89a4ae9f46d774026eb4"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "db6b6684893cf3507ad93ac4b3b0c6db2fa20d31e61483e31eff989cb39ee29e"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "94d59663881b78cd102ec57a8034f72f79bde25a4c11d112a967e691b6d17406"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "0cf8f7aba91c518928155a2ae6c0653f4ede251e6bc2833434c696d714ac236e"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__exact__m8-n32-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          4096,
+          338
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "2e19382a1a3e946a020b45aeef09999221798fbe2c84ee2f8b2e6bf3d4ba3825"
+    },
+    {
+      "path": "gate/rtx-5090__gate__deepseek_expert_m16_n256_k7168__contract__m8-n32-k8",
+      "cells_per_arm": 4096,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          338,
+          4096
+        ],
+        "cublas": [
+          78,
+          88
+        ],
+        "cutlass": [
+          338,
+          4096
+        ]
+      },
+      "stdout_sha256": "c3b6f192a64003ef7b3ee291bb3b9a83c89793c47e79ada0ad664a1d9dc87b9f"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__exact__m8-n32-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          2048,
+          194
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "4cee061004e044e7af4dec3f18be1131d784571696252cdc93a657c8a70a1160"
+    },
+    {
+      "path": "gate/rtx-5090__gate__qwen_expert_m16_n128_k4096__contract__m8-n32-k8",
+      "cells_per_arm": 2048,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          194,
+          2048
+        ],
+        "cublas": [
+          53,
+          50
+        ],
+        "cutlass": [
+          194,
+          2048
+        ]
+      },
+      "stdout_sha256": "22e80db80228347ac664d8b5cfe0f240473075db28553231dd32c5e3e9ef2a08"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "4b9d41b3a3866e21eab69fd471fa49f38c33c814330bd1da419125b57ceb6d57"
+    },
+    {
+      "path": "gate/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "e205104f761aa46d83639db51f52c9df5dc3137a6817f3173b5d67c3388e29d4"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "8b0cc6714092e03fd7cafdf624a5844a0caa967035ea181648b06ee1fc871e89"
+    },
+    {
+      "path": "gate/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "03eda537c39622ffd333c9c59b99c0ca6397c19b8fecdf476c32478c5c315880"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "121530c33d4eaf17649e26f66dc90a4312888340b6d82992c6cdb061464fff0a"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "6fdac853f8b59c391dc5e0a584b4fb9021c67650ca06cb4c34ea7a89db6c47ce"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "7ae4a9acd0aea6650ddeec42fedb056a9ac087c21fe98223a890e76bf4926d7b"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "2502f2f046d29bd089925b3d9c0655b157fb60d4cec8ce7a334e1fdbc9bbf027"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "83b5e7834c3a60f4b50f0a167cc95c18db3db0cbbdf50377ffd9c848a0b7534e"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "f1c35d043133e86f297b6c6830e9349e34c50d13fca8037feb6489434db245d5"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "6aba09162b79a824de35b7ecff988c03c9704e7530f1cb95e98e5e33da3fd03e"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "4c4a26ff023768ccde1b6d00512363eb174d4112a73c188bf024390a5db5c93f"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n64-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "0d6f2b400313edd51828b61bec5bef361b73e8e95e4976e5a96734fb35448f3a"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n128-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "eb91558225993c1e353375c3681ce30ac8d46a4cc8703da83dc5007d54bbefa6"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "dca2652897a9b5d362769a4ad6579d6edce770326e1377f43763323381743fbb"
+    },
+    {
+      "path": "tuning/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m8-n32-k8",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "c78ef753ee71faadf751600ddb9962a9a96bebb2ec94cd0bceaf8e2725a89d6e"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "3075ef081932d1381add641518de7c04ebc822f30c060d168ee4121d3d7b32f0"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          20
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "62b15348ce17e644b8a51d5d5a5914a27b46bf2ebf55de72c5d9257dc7755cbd"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "0dc826adabd30510587316500a9fcca3425e50638c99a057ae509fea141bfe68"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          20,
+          256
+        ],
+        "cublas": [
+          9,
+          5
+        ],
+        "cutlass": [
+          20,
+          256
+        ]
+      },
+      "stdout_sha256": "879450e66c6f47280ab49e0f49ed092af231f0f2dbcf4347f28987df5b213b6a"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "5b4030d15628a61a01d7f4d493b693c36184355fefef9cec851d3a39a2863628"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          256,
+          22
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "d67fb8b52403ed8b6c9a4587487c4fa367d228a1f77ea42187f4c541c6b2a61d"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__default-control",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "30a32c8d90fe26e86d5129298982df34dea7adbf6b01b0d39dc497febd30c1e5"
+    },
+    {
+      "path": "confirmation/rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract__m16-n64-k16",
+      "cells_per_arm": 256,
+      "matches_operationwise_fmaf": {
+        "mapal": [
+          22,
+          256
+        ],
+        "cublas": [
+          4,
+          5
+        ],
+        "cutlass": [
+          22,
+          256
+        ]
+      },
+      "stdout_sha256": "952ada0d812effe5622588b611aedb2321e4392a7456acc905e5bb621ae979ed"
+    }
+  ]
+}

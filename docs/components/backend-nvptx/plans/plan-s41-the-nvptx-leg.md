@@ -11,6 +11,64 @@ Prior: `sessions/2026-07-27-s38-trap-order-is-source-order.md` §6 (the probe) �
 
 ---
 
+## S52 revision (2026-10-20) — what changed, and why
+
+Sapir, S52: *"translate this to PTX to beat cuBLAS/CUTLASS"*, test on Blackwell, Ada and Hopper.
+The ratified model (§1) stands: the GPU tile kernel is the same `Trn` at a second `Loc`, no
+`mapal-ir` edit. Ten amendments; the rest of this document is unchanged and read through them.
+
+1. **§2.1's field re-reading is withdrawn.** It proposed `vec_bytes` → per-thread registers,
+   `l2_bytes` → shared memory, `vec_regs` → threads per block. One field with two readings is the
+   `l2_bytes` per-core/shared ambiguity that cost S45 a session (`profile.rs`, `l2_cores`). Every
+   GPU quantity is now its own `Gpu` field, each a `cuDeviceGetAttribute` value: `sms`,
+   `regs_per_thread`, `regs_per_sm`, `smem_per_sm`, `smem_per_block`, `smem_reserved_per_block`,
+   `max_threads_per_sm`, `max_blocks_per_sm`. The CPU fields on a GPU profile describe the host.
+2. **Step 4 is two levels, not one.** A shared-memory panel without a register tile has
+   nothing to amortize it over. `TargetProfile::gpu_tile` derives both, from the same budgets
+   the CPU rungs read: register tile from `regs_per_thread / 2` (`tile_i`'s half-the-file rule),
+   threads from `regs_per_sm` over two resident blocks, block count ≥ `sms`, panel depth `bk`
+   from a block's share of `smem_per_sm` (`tile_kc`'s half-of-L2 rule at its GPU location).
+   Pinned in `gpu_tile_geometry_is_derived_from_device_facts`.
+3. **The site is the general tile site, not GEMM.** The staged kernel takes any site with the
+   separable shape the CPU's register-blocked rung takes (`a.clane == 0`, `b.ci == 0`), any
+   strides: vector staging where an operand's fast axis is unit-stride and aligned, element
+   staging otherwise. Every other float site takes one-thread-per-cell. Matmul is an instance.
+4. **Packaging decided: C, as §2 defaulted.** `func/gpu.rs` is the whole realization, selected
+   once in `emit_tiled_map`. The device kernel is a second translation unit
+   (`Emission::device`, `emit --device-out=`), the host side one runtime call
+   (`mapal_gpu_tile`, `crates/mapal-rt/gpu/mapal_gpu.c`, driver API, kernel found by a 64-bit
+   site id). On a GPU profile the host emits sequentially — the device is the parallelism.
+5. **Faces.** Conformance: separate `fmul`/`fadd` → PTX `mul.rn`/`add.rn` (ptxas may not fuse
+   them); `llc -nvptx-fma-level=0` as the belt. Contract: `llvm.fma` per step. Each cell folds
+   its own `k` in order in one register, so both faces are the CPU's values bit for bit.
+6. **Step 6 needs no toolchain on the box beyond CUDA.** Everything is built on the Mac:
+   `opt`/`llc` (Homebrew LLVM 22, `nvptx64`) emit PTX for `sm_89`/`sm_90`/`sm_120`; the host
+   object and `libmapal_rt.a` are cross-built for `x86_64-unknown-linux-gnu`. The box links
+   with `cc … -lcuda` (`benches/gpu/bundle.sh`, `box_run.sh`, `vast_run.sh`).
+7. **The done-bar is raised.** Step 8's "smem vs untiled, either sign" becomes: the emitted
+   kernel against **cuBLAS `sgemm`** (default math — TF32 is opt-in) and **CUTLASS's stock SIMT
+   f32 GEMM**, on Ada (RTX 4090), Hopper (H100) and consumer Blackwell (RTX 5090,
+   `sm_120`), 1024–8192, both faces; values bit-exact to the in-order fold on sampled cells
+   (`benches/gpu/tile_bench.cu`) and the program differential against the oracle.
+   Note: the RTX 4090 is **Ada (`sm_89`)**, not Ampere — Ampere is `sm_80`/`sm_86`.
+8. **GPU measurement protocol** (rules 14/19/27 applied to a device): cudaEvent per launch,
+   legs interleaved round-robin, 256 MB L2 flush before every timed launch, warmup 3, min /
+   median / max reported with every sample; device facts and clocks printed per run; a rented
+   part is the target itself, not a stand-in (rule 29 does not apply).
+9. **Fusion is a placement consequence, not a pass** (Sapir, S52). A kernel boundary exists
+   only where a value must cross a `Trm` the block cannot hold — a consumer whose read
+   footprint spans more than one block's tile needs `gmem` and a grid-wide wait. Everything
+   else stays where it is: per-cell consumers of a tile site (a bias, an activation) fold into
+   the store; a chain keeps its intermediates device-resident; independent sites launch
+   together (the GPU form of the CPU's two-nets-at-once 1.63×). The next milestone after the
+   tile kernel is measured; it replaces §7's "region emission is a second thesis".
+10. **Float reductions** (the `sum` shape, NumPy 5.4× ahead today) are blocked by semantics,
+    not geometry: ADR-0028 D4 pins float folds to a left-fold chain. The fix is ADR-0028's own
+    deferred option — a canonical, machine-independent tree the interpreter also computes —
+    after which the reduction is placed by the same deduction. Its own ADR amendment.
+
+---
+
 ## 0. The one-line claim this leg tests
 
 > One geometric deduction on the graph pays out on every backend.
@@ -371,7 +429,7 @@ construction; only the rounding count differs.
 
 Sapir: *"I want to see results against the tests we already ran in performance folder … if we can
 beat numpy on here this is a huge result."* So the bar is not invented — it is the existing M4 Pro
-matmul table, `docs/performance/matmul/s33.md:150-158`, f32, numpy → Accelerate → the coprocessor:
+matmul table, `docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md:150-158`, f32, numpy → Accelerate → the coprocessor:
 
 | N | flow-fma-1t (ms) | numpy-1t (ms) | 1t gap | flow-fma-par (ms) | numpy-thr (ms) | par gap |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

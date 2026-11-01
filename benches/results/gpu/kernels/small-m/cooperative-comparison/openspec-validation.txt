@@ -1,0 +1,9 @@
+- Validating...
+✓ change/benchmark-large-composed-gpu-workloads
+✓ change/capture-executed-cuda-images
+✓ change/eliminate-unmaterialized-gpu-allocations
+✓ spec/emitter-examples
+✓ spec/gpu-validation
+✓ change/optimize-ordered-smallm-gpu
+✓ spec/rewrite-equivalence
+Totals: 7 passed, 0 failed (7 items)

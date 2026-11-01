@@ -1,0 +1,74 @@
+[
+  {
+    "family": "dense",
+    "arm": "old",
+    "grid_blocks": 1152,
+    "threads": 256,
+    "registers_per_thread": 40,
+    "shared_bytes": 0,
+    "simultaneously_active_sms_upper": 170,
+    "resident_blocks_per_sm_upper": 6,
+    "whole_grid_warps": 9216,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  },
+  {
+    "family": "dense",
+    "arm": "candidate",
+    "grid_blocks": 576,
+    "threads": 32,
+    "registers_per_thread": 79,
+    "shared_bytes": 1664,
+    "simultaneously_active_sms_upper": 170,
+    "resident_blocks_per_sm_upper": 24,
+    "whole_grid_warps": 576,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  },
+  {
+    "family": "deepseek_expert",
+    "arm": "old",
+    "grid_blocks": 128,
+    "threads": 256,
+    "registers_per_thread": 40,
+    "shared_bytes": 0,
+    "simultaneously_active_sms_upper": 128,
+    "resident_blocks_per_sm_upper": 6,
+    "whole_grid_warps": 1024,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  },
+  {
+    "family": "deepseek_expert",
+    "arm": "candidate",
+    "grid_blocks": 64,
+    "threads": 32,
+    "registers_per_thread": 79,
+    "shared_bytes": 1664,
+    "simultaneously_active_sms_upper": 64,
+    "resident_blocks_per_sm_upper": 24,
+    "whole_grid_warps": 64,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  },
+  {
+    "family": "qwen_expert",
+    "arm": "old",
+    "grid_blocks": 64,
+    "threads": 256,
+    "registers_per_thread": 40,
+    "shared_bytes": 0,
+    "simultaneously_active_sms_upper": 64,
+    "resident_blocks_per_sm_upper": 6,
+    "whole_grid_warps": 512,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  },
+  {
+    "family": "qwen_expert",
+    "arm": "candidate",
+    "grid_blocks": 32,
+    "threads": 32,
+    "registers_per_thread": 79,
+    "shared_bytes": 1664,
+    "simultaneously_active_sms_upper": 32,
+    "resident_blocks_per_sm_upper": 24,
+    "whole_grid_warps": 32,
+    "limits": "Derived ceiling only: ignores register/shared allocation granularity and scheduler placement; not measured occupancy, traffic or cause."
+  }
+]

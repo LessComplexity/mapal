@@ -1,0 +1,7 @@
+
+WARNING: Existing SQLite export found: out/nsys/prog_pt_rm_m128_d256_h512_c.sqlite
+         File is older than input file: out/nsys/prog_pt_rm_m128_d256_h512_c.nsys-rep
+         Use --force-export=true to update export file.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.

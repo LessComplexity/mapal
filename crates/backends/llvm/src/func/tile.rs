@@ -40,6 +40,31 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
         packed: Option<PackedBuffer>,
     ) {
+        // S53 retention (`func/retain.rs`): before any realization is chosen —
+        // the restricted pass picks its own by the same gates below.
+        if let Some(r) = self.retain.get(target).cloned() {
+            self.emit_retained(source, target, site, packed, &r);
+            return;
+        }
+        self.emit_tiled_map_realize(source, target, site, packed);
+    }
+
+    /// The realization ladder: the first rung whose gate admits the site.
+    pub(super) fn emit_tiled_map_realize(
+        &mut self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        packed: Option<PackedBuffer>,
+    ) {
+        // S52 GPU realization (plan-s41 steps 2–5): on a GPU profile, a float
+        // site with plain affine reads runs on the device (`func/gpu.rs` — the
+        // whole realization, selected here and nowhere else).
+        if self.on_device(target) {
+            self.emit_tiled_map_gpu(source, target, site);
+            return;
+        }
+
         // S41 SME rung: on a part with a streaming matrix unit, on the contract
         // face, a matmul-shaped f32 site's leaf becomes one ZA outer product
         // per k instead of TI×TJ FMAs (`func/sme.rs` — the whole realization,
@@ -94,11 +119,7 @@ impl<'a> FnEmit<'a> {
         let mul_op = if is_float(&site.elem) { "fmul" } else { "mul" };
         let add_op = if is_float(&site.elem) { "fadd" } else { "add" };
         let tile_j = self.profile.tile_j(&site.elem);
-        let contract_flag = if self.contract && is_float(&site.elem) {
-            " contract"
-        } else {
-            ""
-        };
+        let contract_flag = self.fp_flags(&site.elem);
 
         let a_ptr = self
             .array_operand_ptr(source, Some(site.a.slot))
@@ -460,11 +481,7 @@ impl<'a> FnEmit<'a> {
             tile_i,
             tile_kc,
             packed,
-            contract_flag: if self.contract && is_float(&site.elem) {
-                " contract"
-            } else {
-                ""
-            },
+            contract_flag: self.fp_flags(&site.elem),
         };
         let (lo, hi) = self.bulk_bounds(n);
 

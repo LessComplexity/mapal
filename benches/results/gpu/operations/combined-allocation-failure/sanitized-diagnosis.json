@@ -1,0 +1,10 @@
+{
+  "create_response_success": false,
+  "assigned_instance": 57121897,
+  "provider_error_detail_present": false,
+  "wrapper_intended_stopped": true,
+  "wrapper_start_error_marker": true,
+  "ssh_attempted": false,
+  "payload_upload_completed": false,
+  "concrete_provider_cause_proved": false
+}

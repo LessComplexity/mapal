@@ -1,0 +1,31 @@
+full fixed gate CPU stub status 0  
+0 {
+  "pass": true,
+  "ordinary_processes": 640,
+  "counter_processes": 28,
+  "timing_admissible": false,
+  "ordinary": [
+    {
+      "pass": true,
+      "ordinary_processes": 320,
+      "case_face_cells": 16,
+      "manifest_sha256": "fea6498b197363c050644ec7c7c33df4bda66e82013cabd33cbeae813c9ccc53",
+      "summary_sha256": "9f9db0a5f8c5015b1156d75dd14b734bb06e618f8f2943f52c8d03f4f23c368e",
+      "runs_sha256": "49c9d4778e27d3c823605724938a76e6cf82c10f7f1a98765827f5ec567b67b1",
+      "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+    },
+    {
+      "pass": true,
+      "ordinary_processes": 320,
+      "case_face_cells": 16,
+      "manifest_sha256": "51078ffef9411cd229d2b2c276f27b766e321b6173cf89f67798c9d57e117f34",
+      "summary_sha256": "0306d1afa292006baee77b03db7324b26c087d257c40e7ae4bc9a6c2784fc640",
+      "runs_sha256": "ca80068744e9e6410028237d8d72d27ce0e5a4cfb8ac78c041730987ebccd8b5",
+      "scope": "exact observed ordinary outputs/statuses only; no universal ordering-safety proof"
+    }
+  ],
+  "scope": "Observed outputs and unchanged-runtime allocation counters; no universal race proof or speedup"
+}
+ 
+forged counter rejection 1
+PASS 640 ordinary +28 counter CPU stub processes; no GPU or compiler execution

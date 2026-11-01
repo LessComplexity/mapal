@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/w/trace/primitive-results/tile_bench",
+    "1",
+    "2048",
+    "7168",
+    "/w/run-bundle-rtx-5090/cases/deepseek_expert_m1_n2048_k7168__contract/null.ptx",
+    "mapal_tile_538afa580cc851c9",
+    "8",
+    "1",
+    "256",
+    "0",
+    "30",
+    "--contract"
+  ],
+  "exit": 0,
+  "seconds": 0.817,
+  "stdout_sha256": "3941c7d98b3cbd0a4611c465221777da4addaa72b3b4e19747493f0e5196a741",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

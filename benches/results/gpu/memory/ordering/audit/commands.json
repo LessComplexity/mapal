@@ -1,0 +1,41 @@
+[
+  {
+    "face": "exact",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/stored-member-ordering.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/exact.device.ll"
+    ],
+    "exit": 0
+  },
+  {
+    "face": "contract",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/stored-member-ordering.mapal",
+      "-",
+      "--rewrite",
+      "--target=rtx-5090",
+      "--gpu-on=streams,epilogue",
+      "--gpu-off=stream-gate",
+      "--device-out=/private/tmp/mapal-s56-gpu/ordering-audit/contract.device.ll",
+      "--contract"
+    ],
+    "exit": 0
+  },
+  {
+    "tool": "interpreter",
+    "command": [
+      "/Volumes/LessComplex/Personal/mapal/target/release/examples/run",
+      "/private/tmp/mapal-s56-gpu/ordering-audit/stored-member-ordering.mapal",
+      "--budget",
+      "200000000"
+    ],
+    "exit": 0
+  }
+]

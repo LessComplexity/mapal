@@ -1,0 +1,8 @@
+arch	knob	default	best	gmean_s	programs	null	worst_program	worst_s	verdict	citation	machine
+rtx-5090	bk	0	0	1.019	1	0.029	pt_mlp_512/default	1.019	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	resident	2	2	0.972	5	0.029	pt_convmc_8_64_56_3/default	1.110	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	split	0	0	0.985	4	0.029	mm_1x18432x7168/default	1.031	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	stages	0	0	0.959	4	0.029	mm_128x1024x4096/default	1.057	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	tm	0	0	1.135	4	0.029	pt_mlp_512/default	1.608	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	tn	0	0	0.935	4	0.029	pt_mlp_512/default	1.798	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03
+rtx-5090	warps	0	0	0.838	4	0.029	pt_mlp_512/default	1.570	default	benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt	NVIDIA GeForce RTX 5090|580.159.03

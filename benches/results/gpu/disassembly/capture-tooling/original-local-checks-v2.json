@@ -1,0 +1,87 @@
+{
+  "scope": "real CUDA12.8 headers; macOS stub execution only",
+  "results": [
+    {
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_runtime/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_nvcc/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_cupti/include",
+        "-fsyntax-only",
+        "$CAPTURE_WORK/source/capture.cpp"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_runtime/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_nvcc/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_cupti/include",
+        "-c",
+        "$CAPTURE_WORK/source/capture.cpp",
+        "-o",
+        "$CAPTURE_WORK/evidence/capture-macos-v2.o"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_runtime/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_nvcc/include",
+        "-I",
+        "$CAPTURE_WORK/headers/unpacked/nvidia/cuda_cupti/include",
+        "$CAPTURE_WORK/source/test_callback.cpp",
+        "-o",
+        "$CAPTURE_WORK/evidence/test_callback"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python3",
+        "$CAPTURE_WORK/source/test_capture.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "test_artifact_corruption (__main__.CaptureTests.test_artifact_corruption) ... ok\ntest_callback_partiality (__main__.CaptureTests.test_callback_partiality) ... ok\ntest_elf_partiality (__main__.CaptureTests.test_elf_partiality) ... ok\ntest_exact_launch_contract (__main__.CaptureTests.test_exact_launch_contract) ... ok\ntest_launch_contract_required_and_typed (__main__.CaptureTests.test_launch_contract_required_and_typed) ... ok\ntest_manifest_corruption (__main__.CaptureTests.test_manifest_corruption) ... ok\ntest_real_header_stub_happy_and_callback_lifetime (__main__.CaptureTests.test_real_header_stub_happy_and_callback_lifetime) ... ok\ntest_resource_context_and_exit_correlation_log (__main__.CaptureTests.test_resource_context_and_exit_correlation_log) ... ok\ntest_runner_missing_injection_and_no_overwrite (__main__.CaptureTests.test_runner_missing_injection_and_no_overwrite) ... ok\ntest_symlink_rejected (__main__.CaptureTests.test_symlink_rejected) ... ok\ntest_unlinked_launch_and_bad_chronology (__main__.CaptureTests.test_unlinked_launch_and_bad_chronology) ... ok\n\n----------------------------------------------------------------------\nRan 11 tests in 0.675s\n\nOK\n"
+    },
+    {
+      "command": [
+        "bash",
+        "-n",
+        "$CAPTURE_WORK/source/build.sh"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

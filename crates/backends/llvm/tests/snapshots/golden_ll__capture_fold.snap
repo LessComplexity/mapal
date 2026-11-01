@@ -25,7 +25,7 @@ declare void @mapal_par_watermark(i64)
 declare void @mapal_par_run_pinned(ptr, i32)
 declare void @mapal_par_finish(ptr)
 
-%Frame = type { [3 x i32], { i32, [3 x i32] }, i32, [3 x i32], { i32, i32, ptr }, i32, i32 }
+%Frame = type { [3 x i32], { i32, ptr }, i32, ptr, { i32, i32, ptr }, i32, i32 }
 
 @ckpt0_entries = private unnamed_addr constant [1 x i64] [i64 8589934591]
 
@@ -44,60 +44,62 @@ entry:
   store i32 2, ptr %t2
   %t3 = getelementptr [3 x i32], ptr %o2, i64 0, i64 2
   store i32 3, ptr %t3
-  %t4 = getelementptr { i32, [3 x i32] }, ptr %o3, i32 0, i32 1
-  call void @llvm.memcpy.p0.p0.i64(ptr %t4, ptr %o2, i64 ptrtoint (ptr getelementptr ([3 x i32], ptr null, i64 1) to i64), i1 false)
-  %t5 = getelementptr { i32, [3 x i32] }, ptr %o3, i32 0, i32 0
+  %t4 = getelementptr { i32, ptr }, ptr %o3, i32 0, i32 1
+  store ptr %o2, ptr %t4
+  %t5 = getelementptr { i32, ptr }, ptr %o3, i32 0, i32 0
   store i32 0, ptr %t5
-  %t6 = getelementptr { i32, [3 x i32] }, ptr %o3, i32 0, i32 0
+  %t6 = getelementptr { i32, ptr }, ptr %o3, i32 0, i32 0
   %t7 = load i32, ptr %t6
   store i32 %t7, ptr %o4
-  call void @llvm.memcpy.p0.p0.i64(ptr %o5, ptr %o2, i64 ptrtoint (ptr getelementptr ([3 x i32], ptr null, i64 1) to i64), i1 false)
+  store ptr %o2, ptr %o5
   %t8 = load i32, ptr %o4
   %t9 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 1
   store i32 %t8, ptr %t9
-  %t10 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 2
-  store ptr %o5, ptr %t10
+  %t10 = load ptr, ptr %o5
+  %t11 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 2
+  store ptr %t10, ptr %t11
   ret void
 }
 
 define internal void @task1(i64 %lo, i64 %hi, ptr %frame) {
 entry:
-  %s2 = alloca i32
-  %s3 = alloca i64
-  %s12 = alloca { i32, i32, i32 }
+  %s3 = alloca i32
+  %s4 = alloca i64
+  %s13 = alloca { i32, i32, i32 }
   %o6 = getelementptr %Frame, ptr %frame, i32 0, i32 4
   %o5 = getelementptr %Frame, ptr %frame, i32 0, i32 3
   %o7 = getelementptr %Frame, ptr %frame, i32 0, i32 5
   %t0 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 1
   %t1 = load i32, ptr %t0
-  store i32 %t1, ptr %s2
-  store i64 0, ptr %s3
-  br label %bb4
-bb4:
-  %t7 = load i64, ptr %s3
-  %t8 = icmp uge i64 %t7, 3
-  br i1 %t8, label %bb6, label %bb5
+  %t2 = load ptr, ptr %o5
+  store i32 %t1, ptr %s3
+  store i64 0, ptr %s4
+  br label %bb5
 bb5:
-  %t9 = getelementptr [3 x i32], ptr %o5, i64 0, i64 %t7
-  %t10 = load i32, ptr %t9
-  %t11 = load i32, ptr %s2
-  %t13 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 0
-  %t14 = load i32, ptr %t13
-  %t15 = getelementptr { i32, i32, i32 }, ptr %s12, i32 0, i32 0
-  store i32 %t14, ptr %t15
-  %t16 = getelementptr { i32, i32, i32 }, ptr %s12, i32 0, i32 1
-  store i32 %t11, ptr %t16
-  %t17 = getelementptr { i32, i32, i32 }, ptr %s12, i32 0, i32 2
-  store i32 %t10, ptr %t17
-  %t18 = load { i32, i32, i32 }, ptr %s12
-  %t19 = call i32 @fn1({ i32, i32, i32 } %t18)
-  store i32 %t19, ptr %s2
-  %t20 = add i64 %t7, 1
-  store i64 %t20, ptr %s3
-  br label %bb4
+  %t8 = load i64, ptr %s4
+  %t9 = icmp uge i64 %t8, 3
+  br i1 %t9, label %bb7, label %bb6
 bb6:
-  %t21 = load i32, ptr %s2
-  store i32 %t21, ptr %o7
+  %t10 = getelementptr [3 x i32], ptr %t2, i64 0, i64 %t8
+  %t11 = load i32, ptr %t10
+  %t12 = load i32, ptr %s3
+  %t14 = getelementptr { i32, i32, ptr }, ptr %o6, i32 0, i32 0
+  %t15 = load i32, ptr %t14
+  %t16 = getelementptr { i32, i32, i32 }, ptr %s13, i32 0, i32 0
+  store i32 %t15, ptr %t16
+  %t17 = getelementptr { i32, i32, i32 }, ptr %s13, i32 0, i32 1
+  store i32 %t12, ptr %t17
+  %t18 = getelementptr { i32, i32, i32 }, ptr %s13, i32 0, i32 2
+  store i32 %t11, ptr %t18
+  %t19 = load { i32, i32, i32 }, ptr %s13
+  %t20 = call i32 @fn1({ i32, i32, i32 } %t19)
+  store i32 %t20, ptr %s3
+  %t21 = add i64 %t8, 1
+  store i64 %t21, ptr %s4
+  br label %bb5
+bb7:
+  %t22 = load i32, ptr %s3
+  store i32 %t22, ptr %o7
   ret void
 }
 

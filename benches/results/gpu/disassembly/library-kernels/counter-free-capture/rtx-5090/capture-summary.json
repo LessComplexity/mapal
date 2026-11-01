@@ -1,0 +1,556 @@
+{
+  "schema": "library-image-results-v1",
+  "pass": true,
+  "request_sha256": "ad6d739a88890e8d74323b0a14240f4cc4f968621d0bc48c0135cd94dbdeb1cb",
+  "harness_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf",
+  "case": {
+    "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "M": 16,
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "mapal_variant": "old",
+    "cutlass_candidate": "m16-n64-k16",
+    "ptx": {
+      "path": "/w/competitive-reference/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/old/kernel.ptx",
+      "sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+      "entry": "mapal_tile_37c5043169cbcc55",
+      "gx": 128,
+      "gy": 1,
+      "block": 256,
+      "smem": 0
+    },
+    "oracle": {
+      "text_path": "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.txt",
+      "text_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+      "json_path": "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+      "json_sha256": "ba7b4bba346852a4ce624877db13d8804a73fcb13c4c21fd43a56d69cdb89e3a"
+    },
+    "manifest": {
+      "path": "/w/competitive-reference/manifest.json",
+      "sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f"
+    }
+  },
+  "timing_admissible": false,
+  "performance_counters_requested": false,
+  "live_smoke_pass": true,
+  "commands": [
+    {
+      "name": "decoder-version",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvdisasm",
+        "--version"
+      ],
+      "limit_seconds": 10,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "c2e563923bea4513ae1fcd9bc2b28ca02ae20c638ff346439c3220cc89fa27f9",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "nvcc-version",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvcc",
+        "--version"
+      ],
+      "limit_seconds": 10,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "gpu-version",
+      "argv": [
+        "nvidia-smi",
+        "--query-gpu=name,uuid,driver_version",
+        "--format=csv,noheader"
+      ],
+      "limit_seconds": 10,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "2598de6a1028e75655c702f7b5e1efd3c78df41bf31fd0846c0c67a41e4183aa",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "observer-build",
+      "argv": [
+        "/usr/bin/c++",
+        "-std=c++17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fPIC",
+        "-shared",
+        "-I",
+        "/usr/local/cuda-12.8/targets/x86_64-linux/include",
+        "/w/library-image-capture/capture.cpp",
+        "-L",
+        "/usr/local/cuda-12.8/targets/x86_64-linux/lib",
+        "-Wl,-rpath,/usr/local/cuda-12.8/targets/x86_64-linux/lib",
+        "-lcupti",
+        "-pthread",
+        "-o",
+        "/w/trace/library-images/capture.so"
+      ],
+      "limit_seconds": 60,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "mapal-profile",
+      "argv": [
+        "/w/trace/competitive-ordinary/build/m16-n64-k16/checked",
+        "16",
+        "2048",
+        "7168",
+        "/w/competitive-reference/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/old/kernel.ptx",
+        "mapal_tile_37c5043169cbcc55",
+        "128",
+        "1",
+        "256",
+        "0",
+        "30",
+        "--cutlass-candidate",
+        "m16-n64-k16",
+        "--oracle-file",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.txt",
+        "--oracle-sha256",
+        "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "--mapal-ptx-sha256",
+        "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "--manifest-sha256",
+        "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "--mapal-variant",
+        "old",
+        "--contract",
+        "--profile-leg",
+        "mapal"
+      ],
+      "limit_seconds": 120,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "dc6fc6050e5145fd18fe5d9f264a8a919a2d1607d4ad7bc423930b9576086e98",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "mapal-pre-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/mapal-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "pre",
+        "--out",
+        "/w/trace/library-images/mapal-pre-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "fb4d12ff8525d1e606613d943adbffba74857cb6bf485de67f2758b21fabaaae",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "mapal-post-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/mapal-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "post",
+        "--out",
+        "/w/trace/library-images/mapal-post-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "52e314ca4b3f41cfbf1ab98c937bdcd9e07de98210d46b435638b66bd72c2d64",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "mapal-sass-0",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvdisasm",
+        "--print-code",
+        "--cuda-function-index",
+        "12",
+        "/w/trace/library-images/mapal-profile/capture/module-358.cubin"
+      ],
+      "limit_seconds": 20,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cublas-profile",
+      "argv": [
+        "/w/trace/competitive-ordinary/build/m16-n64-k16/checked",
+        "16",
+        "2048",
+        "7168",
+        "/w/competitive-reference/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/old/kernel.ptx",
+        "mapal_tile_37c5043169cbcc55",
+        "128",
+        "1",
+        "256",
+        "0",
+        "30",
+        "--cutlass-candidate",
+        "m16-n64-k16",
+        "--oracle-file",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.txt",
+        "--oracle-sha256",
+        "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "--mapal-ptx-sha256",
+        "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "--manifest-sha256",
+        "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "--mapal-variant",
+        "old",
+        "--contract",
+        "--profile-leg",
+        "cublas"
+      ],
+      "limit_seconds": 120,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "3006bcef4d7f27641c8cd397f3317efc29f0be37ae3fc5a721daa484a10436c6",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cublas-pre-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/cublas-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "pre",
+        "--out",
+        "/w/trace/library-images/cublas-pre-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "0bee8915e92bfb6c5835e5b4c036c52609f5dd824c97871d25492e649e8ad855",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cublas-post-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/cublas-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "post",
+        "--out",
+        "/w/trace/library-images/cublas-post-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "46ebd2809801fcf51ee7f863b5c9d1697ff69de7c2b965d7021c5704c40ec7eb",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cublas-sass-0",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvdisasm",
+        "--print-code",
+        "--cuda-function-index",
+        "62",
+        "/w/trace/library-images/cublas-profile/capture/module-2987.cubin"
+      ],
+      "limit_seconds": 20,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cublas-sass-1",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvdisasm",
+        "--print-code",
+        "--cuda-function-index",
+        "604",
+        "/w/trace/library-images/cublas-profile/capture/module-3012.cubin"
+      ],
+      "limit_seconds": 20,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "7065cf357bc13beb7e6eaf1d2bc0a30c31122412538eb70acc0e2704b34636cb",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cutlass-profile",
+      "argv": [
+        "/w/trace/competitive-ordinary/build/m16-n64-k16/checked",
+        "16",
+        "2048",
+        "7168",
+        "/w/competitive-reference/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/old/kernel.ptx",
+        "mapal_tile_37c5043169cbcc55",
+        "128",
+        "1",
+        "256",
+        "0",
+        "30",
+        "--cutlass-candidate",
+        "m16-n64-k16",
+        "--oracle-file",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.txt",
+        "--oracle-sha256",
+        "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "--mapal-ptx-sha256",
+        "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "--manifest-sha256",
+        "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "--mapal-variant",
+        "old",
+        "--contract",
+        "--profile-leg",
+        "cutlass"
+      ],
+      "limit_seconds": 120,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "aeb4e55b479a28346de3fc622a5d97245105637d632a55368b8a1061f3244d40",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cutlass-pre-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/cutlass-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "pre",
+        "--out",
+        "/w/trace/library-images/cutlass-pre-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "6802aabac3b9da7a91b2c9fe09d43d12c49879cdb447f664fd3a59a779651359",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cutlass-post-numeric",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/competitive-reference/numerical_gate.py",
+        "--reference",
+        "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+        "--stdout",
+        "/w/trace/library-images/cutlass-profile/stdout",
+        "--face",
+        "contract",
+        "--phase",
+        "post",
+        "--out",
+        "/w/trace/library-images/cutlass-post-numeric.json"
+      ],
+      "limit_seconds": 15,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "e143af53faf73e662e681e450725490559530b9fc98525b9067ca47d85b559e2",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cutlass-sass-0",
+      "argv": [
+        "/usr/local/cuda-12.8/bin/nvdisasm",
+        "--print-code",
+        "--cuda-function-index",
+        "1",
+        "/w/trace/library-images/cutlass-profile/capture/module-2759.cubin"
+      ],
+      "limit_seconds": 20,
+      "pass": true,
+      "exit": 0,
+      "files": {
+        "stdout": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "legs": {
+    "mapal": {
+      "pass": true,
+      "status": "complete",
+      "kernel_count": 1,
+      "sass_functions": 1
+    },
+    "cublas": {
+      "pass": true,
+      "status": "complete",
+      "kernel_count": 2,
+      "sass_functions": 2
+    },
+    "cutlass": {
+      "pass": true,
+      "status": "complete",
+      "kernel_count": 1,
+      "sass_functions": 1
+    }
+  },
+  "decoder_limit": "Actual module producer/JIT and decoder versions retained separately; decoder compatibility must be assessed, never inferred from binary hash.",
+  "tool_paths": {
+    "cuda_home": "/usr/local/cuda-12.8",
+    "cupti_library": {
+      "path": "/usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+      "sha256": "fccdc5fcc7c32f8cf4b3ed9b17f7f187a185a6fa0a5bcc06e3434cbd1687c808"
+    },
+    "nvdisasm": {
+      "path": "/usr/local/cuda-12.8/bin/nvdisasm",
+      "sha256": "250ebe97dd86617574a30daf8d8ee433e6c5d9d10bafff922078779d1ba36073"
+    },
+    "cxx": "/usr/bin/c++"
+  },
+  "files": {
+    "capture.so": "8624292c0bf4e4eb603ed9701e66bf8314b779f956f28d23404c39480f30f274",
+    "mapal-pre-numeric.json": "fa118a09f3c96a04015e3f69f57652e0a550369b0176f6b8f08b9d3f8fd5d87e",
+    "mapal-post-numeric.json": "621a78ff41df8f40f428f09053a0539f41dc900479896c4c35e4e0d14c44600a",
+    "mapal-admission.json": "c82289043ab611d10380e270977dcdce81905cef5c824a3016e105c49ea63bba",
+    "cublas-pre-numeric.json": "fee8b9628d474c15c792f49641248deb2f5e0266287c747cb4002d994aa56798",
+    "cublas-post-numeric.json": "2f2c4c2ee42d54bb1f11ea8f1b637cb4ec41eab36ddc264fa5fbffe7ca91d861",
+    "cublas-admission.json": "31cfd5c95192cb498d45fcaf5409cfd3abe2b464daafd6db4f972f0f34eba5eb",
+    "cutlass-pre-numeric.json": "e558845d8f3601d549bf221b342d31f955b751c4a347c9777c4d757ad19e2933",
+    "cutlass-post-numeric.json": "d6799081f48f999b2cae918ed1a8f475e31b00779114c480fbb80b1598be46a0",
+    "cutlass-admission.json": "bc659b04f806a5285423f079d88692025b2ef39490f3f69fdee154db6230ac18",
+    "decoder-version/stdout": "c2e563923bea4513ae1fcd9bc2b28ca02ae20c638ff346439c3220cc89fa27f9",
+    "decoder-version/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "decoder-version/status.json": "f613704ec30150bb308792cea89e3840003768820d7a8937a2b3020c56334f78",
+    "nvcc-version/stdout": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+    "nvcc-version/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nvcc-version/status.json": "ae9c801fe4f087922ef51b979baa09cc503f362025a87bee50a888b1dde4f6b4",
+    "gpu-version/stdout": "2598de6a1028e75655c702f7b5e1efd3c78df41bf31fd0846c0c67a41e4183aa",
+    "gpu-version/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-version/status.json": "e3ac27acdf433e083afdfc80270cfa7e714252ce43379642e37c22c6978416a4",
+    "observer-build/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "observer-build/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "observer-build/status.json": "e54ea59a3b5d9654bce56cb500db2d29904da4c1bc6cd1acaba2c6ed87d739f5",
+    "mapal-profile/stdout": "dc6fc6050e5145fd18fe5d9f264a8a919a2d1607d4ad7bc423930b9576086e98",
+    "mapal-profile/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mapal-profile/status.json": "32a38a3d705e1ce81037400605cebc67cf978e74581eaf9f5ba85a96204efe58",
+    "mapal-profile/capture/events.tsv": "14909a4be67b7aa64be60a9a796da1bc56525b8bc5b251bddb8309125a085b8f",
+    "mapal-profile/capture/input.ptx": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+    "mapal-profile/capture/module-358.cubin": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+    "mapal-profile/capture/module-2654.cubin": "2e8c744ccc4a3456fce7ecc5a7a060761c33ab4e07156fefe5730a873c52403f",
+    "mapal-profile/capture/module-2759.cubin": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+    "mapal-profile/capture/module-2987.cubin": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+    "mapal-profile/capture/module-3012.cubin": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+    "mapal-pre-numeric/stdout": "fb4d12ff8525d1e606613d943adbffba74857cb6bf485de67f2758b21fabaaae",
+    "mapal-pre-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mapal-pre-numeric/status.json": "0f68f2de29627ef7b318f335687a6a3bcd6ffa6329ed5b4fbb8d6868f107a5f7",
+    "mapal-post-numeric/stdout": "52e314ca4b3f41cfbf1ab98c937bdcd9e07de98210d46b435638b66bd72c2d64",
+    "mapal-post-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mapal-post-numeric/status.json": "146f48f956adbc1ab24e0a957f2a8dc0102a978c4cc8a0b8fd398fadd54aa85b",
+    "mapal-sass-0/stdout": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+    "mapal-sass-0/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mapal-sass-0/status.json": "aa6ba9e2decb7c127909a2a6f7e022f5bf20a1d5e8f2c424709aff39d40e8a46",
+    "cublas-profile/stdout": "3006bcef4d7f27641c8cd397f3317efc29f0be37ae3fc5a721daa484a10436c6",
+    "cublas-profile/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cublas-profile/status.json": "f907b395ac16430798fecfbb33deec67cc6dc03bcef2377e3f31724dba98eb1e",
+    "cublas-profile/capture/events.tsv": "86e0065b6af1046790f697e9260572e6b0d675c31408f16ebd4e96be375a5a90",
+    "cublas-profile/capture/input.ptx": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+    "cublas-profile/capture/module-358.cubin": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+    "cublas-profile/capture/module-2654.cubin": "2e8c744ccc4a3456fce7ecc5a7a060761c33ab4e07156fefe5730a873c52403f",
+    "cublas-profile/capture/module-2759.cubin": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+    "cublas-profile/capture/module-2987.cubin": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+    "cublas-profile/capture/module-3012.cubin": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+    "cublas-pre-numeric/stdout": "0bee8915e92bfb6c5835e5b4c036c52609f5dd824c97871d25492e649e8ad855",
+    "cublas-pre-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cublas-pre-numeric/status.json": "ab1e0567d6c0b39f9ba8182a6c2322757b2f634ec75f7e014c6be0c4490383a6",
+    "cublas-post-numeric/stdout": "46ebd2809801fcf51ee7f863b5c9d1697ff69de7c2b965d7021c5704c40ec7eb",
+    "cublas-post-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cublas-post-numeric/status.json": "f585c9de0b92a2dbc5ad58af755bed2632eb327d9162eaa14e9d2d47a16e6f86",
+    "cublas-sass-0/stdout": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+    "cublas-sass-0/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cublas-sass-0/status.json": "ac19a68326a848d02941a2bbf38e737752481bfa3f20a8391921c7fdaa216763",
+    "cublas-sass-1/stdout": "7065cf357bc13beb7e6eaf1d2bc0a30c31122412538eb70acc0e2704b34636cb",
+    "cublas-sass-1/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cublas-sass-1/status.json": "4b6277c0c38d6e91935ff049f110d1c8a34f945b9be541201d4f8322c32c72f5",
+    "cutlass-profile/stdout": "aeb4e55b479a28346de3fc622a5d97245105637d632a55368b8a1061f3244d40",
+    "cutlass-profile/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cutlass-profile/status.json": "a893323929e3c507e862fb1cf47680c1c68782486cc54bee26df62acc3446cfd",
+    "cutlass-profile/capture/events.tsv": "89a343feef0c739cec94eb47fbcaf5784b9e6357b5c4b980021307206dc73874",
+    "cutlass-profile/capture/input.ptx": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+    "cutlass-profile/capture/module-358.cubin": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+    "cutlass-profile/capture/module-2654.cubin": "2e8c744ccc4a3456fce7ecc5a7a060761c33ab4e07156fefe5730a873c52403f",
+    "cutlass-profile/capture/module-2759.cubin": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+    "cutlass-profile/capture/module-2987.cubin": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+    "cutlass-profile/capture/module-3012.cubin": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+    "cutlass-pre-numeric/stdout": "6802aabac3b9da7a91b2c9fe09d43d12c49879cdb447f664fd3a59a779651359",
+    "cutlass-pre-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cutlass-pre-numeric/status.json": "d0d13f27db43675b02342639702bf3a3a51b2f85a3069e9ec74581aead6ed2a5",
+    "cutlass-post-numeric/stdout": "e143af53faf73e662e681e450725490559530b9fc98525b9067ca47d85b559e2",
+    "cutlass-post-numeric/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cutlass-post-numeric/status.json": "e456774051035bdce243cc5b07920cd0ab51f02ac9991e2845d896b2d45cd1aa",
+    "cutlass-sass-0/stdout": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+    "cutlass-sass-0/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cutlass-sass-0/status.json": "39b370cac7aa83f13949939e1f2dec34ba5d57079ac76bd56f1fd94111be721a"
+  },
+  "observer_sha256": "8624292c0bf4e4eb603ed9701e66bf8314b779f956f28d23404c39480f30f274"
+}

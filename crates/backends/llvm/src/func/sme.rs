@@ -23,6 +23,44 @@
 
 use super::*;
 use crate::PanelWrite;
+use crate::profile::TargetProfile;
+
+/// Clauses 1–7 of [`FnEmit::sme_tile_site`] — everything about the site's own
+/// shape, and nothing about whether `b` will be packed.
+///
+/// **Split out to break a cycle, and the cycle is worth naming.** Clause 8 asks
+/// "if we pack, is the packed width the kernel's load width?", so it consults
+/// [`packing_site`]; and since plan-s51 H1, `packing_site` needs to know whether
+/// this site takes the SME rung, because the pack threshold was measured on
+/// that kernel and on no other. Asking the whole predicate from inside itself
+/// does not terminate. The shape half is what the threshold actually needs to
+/// know, it cannot depend on packing, and so it is the natural cut.
+///
+/// The residue is stated rather than hidden: a site with `sme_shape` that fails
+/// clause 8 does not take the SME rung, yet the threshold still applies to it.
+/// That can only happen when the site is big enough to pack AND the profile's
+/// `tile_j` differs from its SME tile side — and in that case the threshold says
+/// "pack", which is what would have happened anyway. On this part the two widths
+/// are both 16, so the case is unreachable here.
+pub(crate) fn sme_shape(site: &TileSite, profile: &TargetProfile, contract: bool) -> bool {
+    let (Some(t), Some((ti, tj))) = (
+        profile.sme_tile_side(&site.elem),
+        profile.sme_block(&site.elem),
+    ) else {
+        return false;
+    };
+    contract
+        && site.elem == Ty::f32()
+        && site.a.ksplit.is_none()
+        && site.b.ksplit.is_none()
+        && site.a.clane == 0
+        && site.b.clane == 1
+        && site.b.ci == 0
+        && matches!(&site.seed, Value::F32(z) if z.to_bits() == 0)
+        && site.rows.is_multiple_of(ti * t)
+        && site.c.is_multiple_of(tj * t)
+        && site.k >= t
+}
 
 impl<'a> FnEmit<'a> {
     /// Is this tile site legal for, and shaped for, the SME rung?
@@ -73,24 +111,12 @@ impl<'a> FnEmit<'a> {
     ///    **portability** item, not a performance one: S42 measured that the rung
     ///    already takes the packed path on this profile (1.560× at 2048).
     pub(super) fn sme_tile_site(&self, site: &TileSite) -> bool {
-        let (Some(t), Some((ti, tj))) = (
-            self.profile.sme_tile_side(&site.elem),
-            self.profile.sme_block(&site.elem),
-        ) else {
+        let Some(t) = self.profile.sme_tile_side(&site.elem) else {
             return false;
         };
-        self.contract
-            && site.elem == Ty::f32()
-            && site.a.ksplit.is_none()
-            && site.b.ksplit.is_none()
-            && site.a.clane == 0
-            && site.b.clane == 1
-            && site.b.ci == 0
-            && matches!(&site.seed, Value::F32(z) if z.to_bits() == 0)
-            && site.rows.is_multiple_of(ti * t)
-            && site.c.is_multiple_of(tj * t)
-            && site.k >= t
-            && (!(self.packing && packing_site(site)) || self.profile.tile_j(&site.elem) == t)
+        sme_shape(site, self.profile, self.contract)
+            && (!(self.packing && packing_site(site, self.profile, self.contract))
+                || self.profile.tile_j(&site.elem) == t)
     }
 
     /// The panel height in output rows — `ti · t`, the quantum every i-grid
@@ -305,6 +331,16 @@ impl<'a> FnEmit<'a> {
         let pi_ctr = self.scratch("i64");
         let k0_ctr = blocked.then(|| self.scratch("i64"));
 
+        // plan-s51 H2: how deep a k block the A pack copies at a time. `None`
+        // when `ap` already fits L1D, and then not one slot or label below is
+        // minted — the pack emits exactly the text it emitted before this
+        // existed, which is what makes the change reviewable and what keeps
+        // every site at k <= 1024 byte-identical.
+        let pack_block = self.profile.pack_block(panel_rows, kc, &site.elem);
+        let pb_ctr = pack_block.map(|_| self.scratch("i64"));
+        let pb_hi = pack_block.map(|_| self.scratch("i64"));
+        let pb_labels = pack_block.map(|_| (self.label(), self.label(), self.label()));
+
         let (i_head, i_body, i_done) = (self.label(), self.label(), self.label());
         let (pk_head, pk_body, pk_done) = (self.label(), self.label(), self.label());
         let (pi_head, pi_body, pi_done) = (self.label(), self.label(), self.label());
@@ -405,7 +441,45 @@ impl<'a> FnEmit<'a> {
         // contiguously, which is also the form a vectorizer can do something with.
         // The store side becomes `panel_rows`-strided, which is why `ap` being
         // small matters: blocked it is `ti·t·kc·4` = 64 KB and L1-resident.
+        //
+        // **And the store side is why this loop can be blocked (plan-s51 H2).**
+        // `ap[pk·panel_rows + pi]` puts consecutive `pk` one cache line apart, so
+        // each store writes 4 of a line's 128 bytes and the next row returns for
+        // the next 4. Free while `ap` fits L1D; past that every line is evicted
+        // before its other rows fill it. `TargetProfile::pack_block` decides,
+        // and when it declines everything below is the pre-S51 text exactly.
         self.label_line(&i_body);
+        if let (Some(block), Some(pb_ctr), Some((pb_head, pb_body, _))) =
+            (pack_block, pb_ctr.as_ref(), pb_labels.as_ref())
+        {
+            // for pk0 in (0..kc).step(block) — the row loop nests INSIDE it, so
+            // one line's worth of k is consumed by all `panel_rows` rows while it
+            // is still resident.
+            self.line(format!("store i64 0, ptr {pb_ctr}"));
+            self.line(format!("br label %{pb_head}"));
+
+            self.label_line(pb_head);
+            let pb = self.tmp();
+            self.line(format!("{pb} = load i64, ptr {pb_ctr}"));
+            let pb_end = self.tmp();
+            self.line(format!("{pb_end} = icmp uge i64 {pb}, {kc}"));
+            let (_, _, pb_done) = pb_labels.as_ref().expect("blocked pack");
+            self.line(format!(
+                "br i1 {pb_end}, label %{pb_done}, label %{pb_body}"
+            ));
+
+            // The block's exclusive end, clamped so a ragged final block copies
+            // only what is there. `kc` need not be a multiple of `block`.
+            self.label_line(pb_body);
+            let raw_hi = self.tmp();
+            self.line(format!("{raw_hi} = add i64 {pb}, {block}"));
+            let over = self.tmp();
+            self.line(format!("{over} = icmp ugt i64 {raw_hi}, {kc}"));
+            let hi = self.tmp();
+            self.line(format!("{hi} = select i1 {over}, i64 {kc}, i64 {raw_hi}"));
+            let pb_hi = pb_hi.as_ref().expect("blocked pack");
+            self.line(format!("store i64 {hi}, ptr {pb_hi}"));
+        }
         self.line(format!("store i64 0, ptr {pi_ctr}"));
         self.line(format!("br label %{pi_head}"));
 
@@ -423,7 +497,15 @@ impl<'a> FnEmit<'a> {
         self.label_line(&pi_body);
         let row = self.tmp();
         self.line(format!("{row} = add i64 {i0}, {pi}"));
-        self.line(format!("store i64 0, ptr {pk_ctr}"));
+        // Blocked, the inner walk starts at this block's base rather than 0.
+        match pb_ctr.as_ref() {
+            Some(pb_ctr) => {
+                let pb = self.tmp();
+                self.line(format!("{pb} = load i64, ptr {pb_ctr}"));
+                self.line(format!("store i64 {pb}, ptr {pk_ctr}"));
+            }
+            None => self.line(format!("store i64 0, ptr {pk_ctr}")),
+        }
         self.line(format!("br label %{pk_head}"));
 
         self.label_line(&pk_head);
@@ -431,7 +513,17 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{pk} = load i64, ptr {pk_ctr}"));
         let pk_end = self.tmp();
         // `kc`, not `site.k`: one k block deep. Equal when unblocked.
-        self.line(format!("{pk_end} = icmp uge i64 {pk}, {kc}"));
+        // Blocked further by plan-s51 H2, the bound is this pack block's
+        // clamped end instead.
+        let pk_bound = match pb_hi.as_ref() {
+            Some(pb_hi) => {
+                let hi = self.tmp();
+                self.line(format!("{hi} = load i64, ptr {pb_hi}"));
+                hi
+            }
+            None => kc.to_string(),
+        };
+        self.line(format!("{pk_end} = icmp uge i64 {pk}, {pk_bound}"));
         self.line(format!(
             "br i1 {pk_end}, label %{pk_done}, label %{pk_body}"
         ));
@@ -479,8 +571,23 @@ impl<'a> FnEmit<'a> {
         self.line(format!("store i64 {pi_next}, ptr {pi_ctr}"));
         self.line(format!("br label %{pi_head}"));
 
-        // --- one panel call per j
+        // Blocked, the row loop finishing means this k block is done: advance to
+        // the next one. The j loop then hangs off `pb_done` instead of `pi_done`,
+        // which is the only place the two shapes differ structurally.
         self.label_line(&pi_done);
+        if let (Some(block), Some(pb_ctr), Some((pb_head, _, pb_done))) =
+            (pack_block, pb_ctr.as_ref(), pb_labels.as_ref())
+        {
+            let pb = self.tmp();
+            self.line(format!("{pb} = load i64, ptr {pb_ctr}"));
+            let pb_next = self.tmp();
+            self.line(format!("{pb_next} = add i64 {pb}, {block}"));
+            self.line(format!("store i64 {pb_next}, ptr {pb_ctr}"));
+            self.line(format!("br label %{pb_head}"));
+            self.label_line(pb_done);
+        }
+
+        // --- one panel call per j
         let out_row = self.tmp();
         self.line(format!("{out_row} = mul i64 {i0}, {}", site.c));
         self.line(format!("store i64 0, ptr {j0_ctr}"));

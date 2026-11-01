@@ -1,0 +1,31 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_a43f9c31c556755b' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_a43f9c31c556755b
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 9.301 ms
+ptxas info    : Compiling entry function 'mapal_gen_ee7272a293da9fca' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_ee7272a293da9fca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 8.187 ms
+ptxas info    : Compiling entry function 'mapal_gen_b295782a5fe8e45b' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_b295782a5fe8e45b
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 7.552 ms
+ptxas info    : Compiling entry function 'mapal_gen_341f54a750563d9e' for 'sm_89'
+ptxas info    : Function properties for mapal_gen_341f54a750563d9e
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 15 registers, used 0 barriers, 368 bytes cmem[0]
+ptxas info    : Compile time = 7.603 ms
+ptxas info    : Compiling entry function 'mapal_tile_ca6855adaa8af7e1' for 'sm_89'
+ptxas info    : Function properties for mapal_tile_ca6855adaa8af7e1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 63 registers, used 1 barriers, 392 bytes cmem[0]
+ptxas info    : Compile time = 41.279 ms
+ptxas info    : Compiling entry function 'mapal_tile_04a12a5dbcc910f1' for 'sm_89'
+ptxas info    : Function properties for mapal_tile_04a12a5dbcc910f1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 392 bytes cmem[0]
+ptxas info    : Compile time = 39.869 ms

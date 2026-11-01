@@ -20,7 +20,7 @@ mod eval;
 mod loops;
 mod value;
 
-use mapal_ir::{CategoryIr, FuncId, Ty};
+use mapal_ir::{CategoryIr, FuncId, MorphismId, Ty};
 
 pub use value::{Outcome, RValue, TrapKind, render};
 
@@ -35,6 +35,19 @@ pub struct RunResult {
 /// Run a program: seed the entry function, walk the graph, collect output
 /// (interp DESIGN §7). `budget` is the global step counter (E1).
 pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
+    run_ordered(ir, budget, &[])
+}
+
+/// [`run`] with the compiled program's split folds replayed (ADR-0040 D3):
+/// each `(func, fold, S)` folds in `S` contiguous partitions — partition 0
+/// from its seed, the others from 0 — added in partition order. The `fixed`
+/// face's oracle; `orders` comes from the emitter (`Emission::orders`), keyed
+/// on the IR it compiled.
+pub fn run_ordered(
+    ir: &CategoryIr,
+    budget: u64,
+    orders: &[(FuncId, MorphismId, u64)],
+) -> RunResult {
     let entry = ir.entry();
     let fd = ir.func(entry).expect("sealed graph: entry resolves");
     let input_ty = &ir
@@ -50,7 +63,11 @@ pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
         _ => (RValue::Unit, false),
     };
 
-    let outcome = eval_call(ir, entry, arg, budget);
+    let mut fuel = budget;
+    let outcome = match eval::eval_fn(ir, entry, arg, &mut fuel, orders) {
+        Ok(v) => Outcome::Done(v),
+        Err(abort) => abort.into_outcome(),
+    };
     let output = match (&outcome, is_token) {
         (Outcome::Done(RValue::Token(log)), true) => log.clone(),
         _ => String::new(),
@@ -58,12 +75,54 @@ pub fn run(ir: &CategoryIr, budget: u64) -> RunResult {
     RunResult { outcome, output }
 }
 
+/// [`run_ordered`] with every product evaluated by its weakest admitted
+/// member (ADR-0041, `mapal test --weakest`): a product whose set admits
+/// `tf32` rounds its f32 operands to TF32 (round-to-nearest-even), then
+/// multiplies in f32. The other side of D3's bound from [`run`]'s f32.
+pub fn run_weakest(
+    ir: &CategoryIr,
+    budget: u64,
+    orders: &[(FuncId, MorphismId, u64)],
+) -> RunResult {
+    eval::WEAKEST.with(|w| w.set(true));
+    let r = run_ordered(ir, budget, orders);
+    eval::WEAKEST.with(|w| w.set(false));
+    r
+}
+
 /// Call one function directly with an argument (interp DESIGN §8). The public
 /// lift of the internal `Result<RValue, Abort>` at the entry boundary.
 pub fn eval_call(ir: &CategoryIr, f: FuncId, arg: RValue, budget: u64) -> Outcome {
     let mut budget = budget;
-    match eval::eval_fn(ir, f, arg, &mut budget) {
+    match eval::eval_fn(ir, f, arg, &mut budget, &[]) {
         Ok(v) => Outcome::Done(v),
         Err(abort) => abort.into_outcome(),
+    }
+}
+
+/// The observable a compiled program must reproduce (L1 / BL8 `@main`
+/// protocol) — a public contract: the backend differential suite and
+/// `mapal test` both judge the native arm against it. `None` for a Diverged
+/// run (no verdict). `Some((None, 101))` for a trap (stdout ignored).
+/// `Some((Some(stdout), 0))` for a Done program — the entry protocol decides
+/// the stdout: an `IoToken` entry's is the token log; a closed `Unit → scalar`
+/// entry's is the wrapper-printed return.
+pub fn native_observable(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<String>, i32)> {
+    match &rr.outcome {
+        Outcome::Diverged => None,
+        Outcome::Trapped(_) => Some((None, 101)),
+        Outcome::Done(v) => {
+            let entry = ir.entry();
+            let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
+            let stdout = if *in_ty == Ty::IoToken {
+                rr.output.clone()
+            } else if let RValue::Scalar(sv) = v {
+                // The @main wrapper prints the scalar return with a newline.
+                format!("{}\n", render(sv))
+            } else {
+                String::new() // non-printable return: wrapper prints nothing
+            };
+            Some((Some(stdout), 0))
+        }
     }
 }

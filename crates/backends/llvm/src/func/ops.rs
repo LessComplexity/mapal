@@ -6,8 +6,20 @@ use super::*;
 
 impl<'a> FnEmit<'a> {
     /// Emit one morphism (DESIGN §2 op table). Called by the straight-line walk
-    /// and by the loop driver for decide/advance cones.
+    /// and by the loop driver for decide/advance cones. Under `resident` a
+    /// producer may be built on the device instead, and its device copy is
+    /// placed and freed around it (`func/resident.rs`).
     pub(crate) fn emit_morphism(&mut self, m: MorphismId) {
+        if self.resident.is_none() {
+            return self.emit_op(m);
+        }
+        if !self.resident_instead(m) {
+            self.emit_op(m);
+        }
+        self.resident_after(m);
+    }
+
+    fn emit_op(&mut self, m: MorphismId) {
         self.emit_checkpoint(m);
         let morph = self.ir.morphism(m).expect("morphism resolves");
         let op = morph.op;
@@ -16,7 +28,20 @@ impl<'a> FnEmit<'a> {
 
         match op {
             Operation::Pair { slot, .. } => {
-                if matches!(self.obj_ty(source), Ty::Array { .. }) {
+                if self.host_free(source) {
+                    // S54 `arena`: the field of a device-only array is never
+                    // read on the host (device sites take the device copy).
+                    let (llt, dst) = self
+                        .component_ptr(target, slot)
+                        .expect("Pair array target ptr");
+                    // `scalar-fold`: a device-only number's field is read by
+                    // cells from its device buffer — nothing to store.
+                    if !matches!(self.obj_ty(source), Ty::Array { .. }) {
+                        return;
+                    }
+                    assert_eq!(llt, "ptr", "a device-only array rides a pointer-only field");
+                    self.line(format!("store ptr null, ptr {dst}"));
+                } else if matches!(self.obj_ty(source), Ty::Array { .. }) {
                     let sllt = lower_ty(&self.obj_ty(source)).expect("array lowers");
                     let src = self
                         .array_operand_ptr(source, None)
@@ -29,6 +54,12 @@ impl<'a> FnEmit<'a> {
                     } else {
                         self.emit_memcpy(&dst, &src, &sllt);
                     }
+                } else if let Some(llt) = self.big_aggregate(source)
+                    && let Some((cllt, dst)) = self.component_ptr(target, slot)
+                {
+                    debug_assert_eq!(cllt, llt, "a product field lowers as its type");
+                    let src = self.slots[source].clone();
+                    self.emit_memcpy(&dst, &src, &llt);
                 } else if let Some((sllt, sval)) = self.load_whole(source)
                     && let Some((_, ptr)) = self.component_ptr(target, slot)
                 {
@@ -36,7 +67,9 @@ impl<'a> FnEmit<'a> {
                 }
             }
             Operation::Proj { index } => {
-                if matches!(
+                if self.host_free(target) {
+                    // S65 `by-ref`: a device-carried view has no host bytes.
+                } else if matches!(
                     self.obj_ty(source).component_ty(index),
                     Some(Ty::Array { .. })
                 ) {
@@ -134,8 +167,13 @@ impl<'a> FnEmit<'a> {
                                 .array_operand_ptr(source, Some(slot))
                                 .expect("phi arm array ptr");
                             let dst = self.slot(target).expect("phi array target slot");
-                            let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
-                            self.emit_memcpy(&dst, &p, &llt);
+                            if self.ptr_resident.contains_key(target) {
+                                // S65 `by-ref`: the result is a view of the arm.
+                                self.line(format!("store ptr {p}, ptr {dst}"));
+                            } else {
+                                let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
+                                self.emit_memcpy(&dst, &p, &llt);
+                            }
                         } else {
                             let (tllt, v) =
                                 self.load_component(source, slot).expect("phi arm value");
@@ -157,8 +195,12 @@ impl<'a> FnEmit<'a> {
                     let r = self.tmp();
                     self.line(format!("{r} = select i1 {c}, ptr {t}, ptr {e}"));
                     let dst = self.slot(target).expect("phi array target slot");
-                    let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
-                    self.emit_memcpy(&dst, &r, &llt);
+                    if self.ptr_resident.contains_key(target) {
+                        self.line(format!("store ptr {r}, ptr {dst}"));
+                    } else {
+                        let llt = lower_ty(&self.obj_ty(target)).expect("phi array lowers");
+                        self.emit_memcpy(&dst, &r, &llt);
+                    }
                 } else {
                     let (tllt, t) = self.load_component(source, 0).expect("phi then");
                     let (_, e) = self.load_component(source, 1).expect("phi else");
@@ -499,7 +541,15 @@ impl<'a> FnEmit<'a> {
     /// IS its component) — so the call result is the target object's value and
     /// no pair is materialized. Emission position in the block IS the ordering
     /// the token models.
+    ///
+    /// On a GPU profile the read first waits for the device (plan-s53
+    /// `clock-fence`): a launch returns before its kernel ends, so without the
+    /// sync the clock would close over work still running. `lib.rs` drops the
+    /// call again from a module with no GPU site — nothing to wait for.
     pub(super) fn emit_time_ms(&mut self, target: ObjectId) {
+        if self.profile.gpu().is_some() {
+            self.line(gpu::GPU_SYNC);
+        }
         let r = self.tmp();
         self.line(format!("{r} = call double @mapal_time_ms()"));
         self.store_obj(target, "double", &r);
@@ -518,6 +568,21 @@ impl<'a> FnEmit<'a> {
         None
     }
 
+    /// `cell-law`'s device variant: the value standing for `source`'s array
+    /// read — `%cv<s>` when the array is capture view `s` of the input and the
+    /// slot arrives by value.
+    fn cell_val(&self, source: ObjectId) -> Option<String> {
+        let arr = self.pair_source(source, 0)?;
+        let &p = self.ir.in_edges(arr).first()?;
+        let morph = self.ir.morphism(p)?;
+        let Operation::Proj { index } = morph.op else {
+            return None;
+        };
+        (morph.source == self.ir.func(self.f)?.input
+            && self.cell_vals.iter().any(|&(s, _)| s == index))
+        .then(|| format!("%cv{index}"))
+    }
+
     /// Rule 4's in-place legality for the `Update` morphism `m` (plan-last-use
     /// §2; suggestions #2): the source array object, when the plan proves it
     /// `dead_after` this Update — every use ranked at/before it under rule 1's
@@ -529,18 +594,33 @@ impl<'a> FnEmit<'a> {
     /// never eligible — the store would land in caller memory (the plan's
     /// rule 2 already marks borrowed inputs escaping; this check is the
     /// emitted-text-level second line). `None` keeps the fresh-alloca copy.
-    pub(super) fn update_in_place_source(&self, m: MorphismId) -> Option<ObjectId> {
+    ///
+    /// A piecewise map (generic-fusion natural forms, [`mapal_ir::Outside`]:
+    /// outside an index interval each cell is its capture's own, which the
+    /// body reads at that cell only) is the same write at a range: under the
+    /// same legality it runs in place over the interval ([`Self::range_map`]).
+    pub(super) fn in_place_source(&self, m: MorphismId) -> Option<ObjectId> {
         let morph = self.ir.morphism(m).expect("morphism resolves");
-        if morph.op != Operation::Update {
-            return None;
-        }
-        let arr = self.pair_source(morph.source, 0)?;
-        if self.ptr_resident.contains_key(arr)
-            || self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant
-        {
+        let arr = match morph.op {
+            Operation::Update => self.pair_source(morph.source, 0)?,
+            Operation::Map { .. } => self.pair_source(morph.source, self.range_map(m)?.slot)?,
+            _ => return None,
+        };
+        if self.ir.object(arr).expect("object resolves").kind == ObjectKind::Constant {
             return None;
         }
         let idx = self.lup.position(m)?;
+        // S65 `by-ref`: a view's bytes are written where they live, when the
+        // facts say no other view of them is read again (`frame.rs`).
+        if !self.par_safe(arr, m) {
+            return None;
+        }
+        if self.by_ref {
+            return self.writes_in_place(m, arr, idx).then_some(arr);
+        }
+        if self.ptr_resident.contains_key(arr) {
+            return None;
+        }
         self.lup.dead_after(arr, idx).then_some(arr)
     }
 
@@ -548,12 +628,44 @@ impl<'a> FnEmit<'a> {
         let src_ty = self.obj_ty(source);
         let arr_ty = src_ty.component_ty(0).cloned().expect("index array");
         let (elem_llt, size) = array_parts(&arr_ty);
+        if let Some(v) = self.cell_val(source) {
+            self.store_obj(target, &elem_llt, &v);
+            return;
+        }
         let arr_llt = lower_ty(&arr_ty).expect("array lowers");
+        let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
+        // S54 `arena`: a device-only array's element is copied out into a
+        // scratch cell (its reads are proven, so no guard).
+        if self
+            .pair_source(source, 0)
+            .is_some_and(|a| self.host_free(a))
+        {
+            assert!(
+                self.bp.proven(m)
+                    && self
+                        .resident
+                        .as_ref()
+                        .is_some_and(|p| p.elem.contains_key(m)),
+                "a device-only array's reads are proven one-element copy-outs"
+            );
+            let i64idx = self.load_index(source, 1, &idx_ty);
+            let ep = self.scratch(&elem_llt);
+            self.resident_elem(m, source, &ep, &i64idx);
+            let v = self.tmp();
+            self.line(format!("{v} = load {elem_llt}, ptr {ep}"));
+            self.store_obj(target, &elem_llt, &v);
+            return;
+        }
         let arr_ptr = self
             .array_operand_ptr(source, Some(0))
             .expect("index array ptr");
-        let idx_ty = src_ty.component_ty(1).cloned().expect("index i");
         let i64idx = self.load_index(source, 1, &idx_ty);
+        // A body's device variant (S54): a one-cell buffer holds cell `t`.
+        let i64idx = if self.cell_read(source) {
+            "0".to_string()
+        } else {
+            i64idx
+        };
         // Guard elision (S20 `bounds_proof`; the vectorization unlock): the
         // plan proves the index statically inside `[0, size)` — the trap is
         // dead, so a proven `Index` emits just the GEP+load. Everything
@@ -590,6 +702,7 @@ impl<'a> FnEmit<'a> {
         self.line(format!(
             "{ep} = getelementptr {arr_llt}, ptr {arr_ptr}, i64 0, i64 {i64idx}"
         ));
+        self.resident_elem(m, source, &ep, &i64idx);
         let v = self.tmp();
         self.line(format!("{v} = load {elem_llt}, ptr {ep}"));
         self.store_obj(target, &elem_llt, &v);
@@ -605,11 +718,19 @@ impl<'a> FnEmit<'a> {
         // source shares its slot with the target — the memcpy is skipped and
         // the element store below lands in place. The copy path emits
         // byte-identical text to before.
-        let (tgt_slot, copy_from) = match self.update_in_place_source(m) {
+        // The decision `prepare_storage` made (and laid the frame out by).
+        let (tgt_slot, copy_from) = match self.update_aliases.get(target).copied() {
             Some(arr) => {
                 let slot = self.slot(arr).expect("in-place update source slot");
                 self.slots.insert(target, slot.clone());
-                (slot, None)
+                if self.ptr_resident.contains_key(arr) {
+                    // A loop-owned view: the write lands through its pointer.
+                    let p = self.tmp();
+                    self.line(format!("{p} = load ptr, ptr {slot}"));
+                    (p, None)
+                } else {
+                    (slot, None)
+                }
             }
             None => (
                 self.slot(target).expect("update target slot"),

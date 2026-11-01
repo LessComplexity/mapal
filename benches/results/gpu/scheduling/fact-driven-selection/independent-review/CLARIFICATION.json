@@ -1,0 +1,13 @@
+{
+  "clarifies": "FINAL-REVIEW.json and FINAL-REVIEW.md; original artifacts retained unchanged",
+  "affected_policy_cases": 5,
+  "exact_comparison_scope": "Raw device LLVM counts fmul/fadd/FMA/MMA/WGMMA and module PDL waits; PTX only fma.rn counts were compared by that inventory",
+  "not_claimed": "All PTX arithmetic opcode counts or virtual-register counts unchanged",
+  "concrete_root_examples": [
+    "Strided Contract PTX loop unroll4\u21928 and virtualregisters22\u219235",
+    "Layoutfallbackadds .minnctapersm16"
+  ],
+  "source_correctness_review_pass_unchanged": true,
+  "new_gpu_execution": false,
+  "speedup_claim": false
+}

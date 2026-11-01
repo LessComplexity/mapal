@@ -291,13 +291,17 @@ fn reconstruct_loop(
         .loop_plan(ir.owner(merge), merge)
         .expect("canonical loop (is_canonical gated)");
 
-    // The SCC set: its objects are body objects (plus the merge and back route).
-    let scc: SecondaryMap<ObjectId, bool> = {
-        let mut m = SecondaryMap::new();
-        for &s in &lp.scc_objects {
-            m.insert(s, true);
+    // Route payloads can leave the SCC (for example a token/value exit pack).
+    // Rebuild the complete canonical driver region before wiring its routes.
+    let body: SecondaryMap<ObjectId, bool> = {
+        let mut members = SecondaryMap::new();
+        for &o in &lp.scc_objects {
+            members.insert(o, true);
         }
-        m
+        for &m in lp.decide_order.iter().chain(&lp.advance_order) {
+            members.insert(ir.morphism(m).expect("loop body edge").target, true);
+        }
+        members
     };
 
     // init → begin_loop. The init is loop-invariant (topo defers LoopEnter), so
@@ -309,26 +313,17 @@ fn reconstruct_loop(
     remap.insert(merge, fb.merge_of(&lh));
     done.insert(merge, true);
 
-    // Body objects, in the global topo suborder restricted to this SCC.
+    // Body objects, in the global topo suborder of the canonical driver region.
     for &o in obj_order {
         if o == merge || done.get(o).copied().unwrap_or(false) {
             continue;
         }
-        if !scc.contains_key(o) {
+        if !body.contains_key(o) {
             continue;
         }
-        if plan.drop.contains_key(o) || plan.alias.contains_key(o) {
-            done.insert(o, true);
-            continue;
-        }
-        if is_internal_pack(ir, o) {
-            // The back/exit route objects live here — rebuilt by loop_back /
-            // loop_exit from their slot feeders.
-            done.insert(o, true);
-            continue;
-        }
-        reconstruct_temp(fb, ir, plan, fmap, fused, lifted, remap, o);
-        done.insert(o, true);
+        reconstruct_a(
+            fb, ir, plan, fmap, fused, lifted, remap, done, obj_order, o, ret_obj, ret_dest,
+        );
     }
 
     // Back edge: the LoopBack route packs (next_state, cond).
@@ -547,14 +542,20 @@ fn emit_op(
     match op {
         Add | Sub | Mul | Div | Mod | Eq | Neq | Lt | Gt | Le | Ge | And | Or => {
             let f = slot_feeders(ir, src);
-            fb.binop(
-                op,
-                feed(plan, remap, f[0]),
-                feed(plan, remap, f[1]),
-                dest,
-                loc,
-            )
-            .expect("replay: binop")
+            let new = fb
+                .binop(
+                    op,
+                    feed(plan, remap, f[0]),
+                    feed(plan, remap, f[1]),
+                    dest,
+                    loc,
+                )
+                .expect("replay: binop");
+            // ADR-0041 D1: a product keeps its admitted set wherever it lands.
+            if let Some(&m) = ir.in_edges(target).first() {
+                fb.admit(new, ir.precision(m));
+            }
+            new
         }
         Neg | Not => fb
             .unop(op, feed(plan, remap, src), dest, loc)

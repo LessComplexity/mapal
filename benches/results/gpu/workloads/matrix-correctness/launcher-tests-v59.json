@@ -1,0 +1,21 @@
+{
+  "pass": true,
+  "tests": [
+    "valid",
+    "denied",
+    "wrong-renewal",
+    "changed-launcher",
+    "policy-unresolved",
+    "stale",
+    "changed-offer",
+    "over-budget",
+    "over-transfer",
+    "active-rate",
+    "active-machine",
+    "owned-destroy-independent-absence",
+    "identity-mismatch-no-destroy"
+  ],
+  "no_api_or_rental": true,
+  "launcher_sha256": "34b5bd4177fa51ea435850860a9b6b9db76b54d9c39896eac99f715d9c88156d",
+  "renewal_sha256": "8eb5a434e95bf54e6fd2428fe2e76729f741427720f2bc609b2454559413b20a"
+}

@@ -1,0 +1,49 @@
+{
+  "input": {
+    "lines": 4795,
+    "alloca": 697,
+    "defined_functions": 28,
+    "gpu_call_sites": {
+      "mapal_gpu_alloc": 16,
+      "mapal_gpu_gen": 7,
+      "mapal_gpu_h2d": 3,
+      "mapal_gpu_launch": 4,
+      "mapal_gpu_launchv": 3,
+      "mapal_gpu_d2h": 1,
+      "mapal_gpu_free": 16,
+      "mapal_gpu_init": 1
+    }
+  },
+  "optimized": {
+    "lines": 532,
+    "alloca": 22,
+    "defined_functions": 1,
+    "gpu_call_sites": {
+      "mapal_gpu_init": 1,
+      "mapal_gpu_alloc": 16,
+      "mapal_gpu_gen": 7,
+      "mapal_gpu_h2d": 3,
+      "mapal_gpu_launch": 4,
+      "mapal_gpu_launchv": 3,
+      "mapal_gpu_d2h": 1,
+      "mapal_gpu_free": 16
+    }
+  },
+  "same_gpu_callsite_counts": true,
+  "same_static_launch_ids_in_function_order": true,
+  "before_source_loop": [
+    1820,
+    1843
+  ],
+  "after_vector_query": [
+    403,
+    422
+  ],
+  "module_count_limit": "Module-wide counts include unused fallback helper bodies; not executed instruction counts or performance estimates.",
+  "files": {
+    "host.emitted.ll": "49d79c826244cb63ac6c1daa088b307b814f79e115bbc7676446d7f5a3a22c7d",
+    "host.O2.ll": "25bbaf95aa420672e821ad25d28874552fcd71fb2f627b81d7a4a2f4e091a924",
+    "host.O2.o": "ce1151e0301e2b4a75a8a7e6df74667af696d22f4276cae179f8ca9a4040cc3d",
+    "host.O2.s": "27a15006e4b804f0998e318d66efce0c65e70f9139657cf35b7681883fb40b96"
+  }
+}

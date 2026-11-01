@@ -1,0 +1,127 @@
+{
+  "title": "Counter-free executed-image pilot operator outcome",
+  "pass": false,
+  "timing_admissible": false,
+  "performance_counters_requested": false,
+  "phase_boundary": "First Mapal smoke; callback attribution parser rejected Duplicate callback site before any decoder invocation.",
+  "completed_prerequisites": [
+    "exact337-file ordinary restore at original paths",
+    "sealed source/observer checks",
+    "actual CUPTI target layout/version/hash receipt",
+    "request-builder and capture-check-only",
+    "CUDA/C++/decoder version receipts",
+    "observer shared-library build",
+    "Mapal injected profile process exit0",
+    "independent pre-value numerical check",
+    "independent post-value numerical check"
+  ],
+  "commands": [
+    {
+      "name": "decoder-version",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 10
+    },
+    {
+      "name": "nvcc-version",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 10
+    },
+    {
+      "name": "gpu-version",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 10
+    },
+    {
+      "name": "observer-build",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 60
+    },
+    {
+      "name": "mapal-profile",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 120
+    },
+    {
+      "name": "mapal-pre-numeric",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 15
+    },
+    {
+      "name": "mapal-post-numeric",
+      "pass": true,
+      "exit": 0,
+      "limit_seconds": 15
+    }
+  ],
+  "live_smoke_pass": false,
+  "library_legs": {
+    "mapal": {
+      "pass": false,
+      "status": "failed",
+      "error": "ValueError: Duplicate callback site"
+    },
+    "cublas": {
+      "pass": false,
+      "status": "not_run"
+    },
+    "cutlass": {
+      "pass": false,
+      "status": "not_run"
+    }
+  },
+  "saved_raw_capture_files": 7,
+  "saved_cubin_named_files": 5,
+  "artifact_limit": "Raw bytes are preserved; callback/image/SASS admission is not granted. cuBLAS/CUTLASS were never executed in the diagnostic phase.",
+  "actual_diagnostic_device": "NVIDIA GeForce RTX 5090, GPU-dbe43abe-e81d-c8da-9e7c-1c431cc25be5, 595.71.05",
+  "capture_software": {
+    "cuda_home": "/usr/local/cuda-12.8",
+    "cupti_library": {
+      "path": "/usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+      "sha256": "fccdc5fcc7c32f8cf4b3ed9b17f7f187a185a6fa0a5bcc06e3434cbd1687c808"
+    },
+    "nvdisasm": {
+      "path": "/usr/local/cuda-12.8/bin/nvdisasm",
+      "sha256": "250ebe97dd86617574a30daf8d8ee433e6c5d9d10bafff922078779d1ba36073"
+    },
+    "cxx": "/usr/bin/c++"
+  },
+  "private_recovery": {
+    "trace_root": "/private/tmp/mapal-s61-gpu/attempt-11/retrieved/trace",
+    "trace_archive": "/private/tmp/mapal-s61-gpu/attempt-11/results/trace-rtx-5090.tgz",
+    "trace_archive_sha256": "26453f6d0cfbdba31c111f4eee9824204f123e0d919d0e2b8304f7f723b82a80",
+    "trace_archive_bytes": 7003841,
+    "recovered_files": 453,
+    "recovery_receipt_sha256": "26645b9bf2d5b0195bb9aa55ab95d1530d8e72e6203fbe07132dbb1bb7d7b611",
+    "request_sha256": "ad6d739a88890e8d74323b0a14240f4cc4f968621d0bc48c0135cd94dbdeb1cb",
+    "outer_summary_sha256": "7d31ab7065f63948faf6c4e0476424e6655534d601203be204f748c34dc43783",
+    "capture_summary_sha256": "7975a2b42a14f72eabbdb16a0020621b038d40d6a6d12c809061bf52e7e792e2"
+  },
+  "ownership": {
+    "exact_owned_id": 57265999,
+    "machine_id": 135433,
+    "host_id": 346497,
+    "create_utc": "2026-10-22T20:03:13.056272+00:00",
+    "protected_preexisting_ids": [
+      57065574,
+      57100404,
+      57126023,
+      57133432
+    ],
+    "cleanup": {
+      "instance": 57265999,
+      "confirmed_absent": true,
+      "verified_utc": "2026-10-22T20:05:14.534589+00:00",
+      "method": "Independent exact-ID inventory absence"
+    },
+    "cleanup_receipt_sha256": "ba79513d49bd400b678ebdb1c4257283a47c90c469785323cb5401c371ee9915",
+    "absence_before_absolute_deadline": true
+  },
+  "next_action": "Root-owned independent raw callback diagnosis; no retry, rebuild, trace mutation or new rental.",
+  "redaction": "Provider/API/account/endpoint/credential data excluded. Full trace and recovery archive remain private. Exact raw artifacts unchanged."
+}

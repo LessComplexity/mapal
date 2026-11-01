@@ -110,7 +110,7 @@ Packing changes only **where** the kernel reads b from — a new `DataLoc` over 
   **2048/4096 rows on every table** (S26c directive — verify `ulimit -s unlimited`
   holds for 3×134 MB f64 allocas at 4096; if not, heap lowering becomes the recorded
   enabler and 4096 ships cuda-only), 1t-on-1t + par-on-par framing only (S26b
-  standing). Report `docs/performance/matmul/s27.md`. Budget ~1–2 h box time
+  standing). Report `docs/performance/matmul/history/fma-packing-and-loop-lifting.md`. Budget ~1–2 h box time
   (naive 1t baselines at 4096 ≈ 8 min/run — run them once, min-of-1, labeled).
 
 ## Ceilings (recorded, not built)

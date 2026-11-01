@@ -1,0 +1,15 @@
+{
+  "offer": 56722089,
+  "machine_id": 154241,
+  "host_id": 303447,
+  "listed_dph": 0.6161111111111112,
+  "active": false,
+  "accepted": false,
+  "prelaunch_ids": [
+    57065574,
+    57100404
+  ],
+  "create_started_utc": "2026-10-21T22:48:04.314363+00:00",
+  "instance": 57122410,
+  "cleanup_confirmed": true
+}

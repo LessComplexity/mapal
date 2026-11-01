@@ -1,0 +1,576 @@
+Warning: Permanently added '[194.26.196.174]:11544' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+== rtx-3090 sm_86 2026-10-23T05:02:20Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA GeForce RTX 3090, 590.48.01, 2100 MHz, 210 MHz, 325.00 W, 42, Enabled
+lscpu: CPU(s):                                  64
+lscpu: Model name:                              AMD EPYC 7452 32-Core Processor
+lscpu: Thread(s) per core:                      2
+lscpu: Core(s) per socket:                      32
+lscpu: Socket(s):                               1
+lscpu: CPU max MHz:                             2350.0000
+lscpu: L1d cache:                               1 MiB (32 instances)
+lscpu: L2 cache:                                16 MiB (32 instances)
+lscpu: L3 cache:                                128 MiB (8 instances)
+cpu_flags  64 avx2 64 fma  nproc=64
+cache index0 size=32K line=64 sets=64 shared=0,32
+cache index2 size=512K line=64 sets=1024 shared=0,32
+-- differential (GPU stdout vs oracle)
+differential: 0 pass, 0 fail
+traps: 0 pass, 0 fail
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)
+value-bound prog=pt_rm_m128_d1024_h2048 face=_default arm=on K=2048 within got=[-2342.9165 -568.33 ] exact=[-2342.9185 -568.328 ]
+value-bound prog=pt_rm_m128_d1024_h2048 face=_default arm=null K=2048 within got=[-2342.9165 -568.33 ] exact=[-2342.9185 -568.328 ]
+value-gate prog=pt_rm_m128_d1024_h2048 arms=4 pass
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=1 wall_us=486027 out=[-2342.9165 -568.33 iter ms=0.36058799999999996 ] mapal_gpu_trace_total flags=1 load_ms=376.470 lead_ms=0.115 init_ms=65.865 ctx_ms=310.033 module_ms=0.441 alloc_ms=0.436 h2d_ms=0.000 kernel_ms=0.323 gen_ms=0.104 d2h_ms=0.059 free_ms=0.212 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=1 c23775111f88d1b3 ms=0.112 af3ed03a29cfbd57 ms=0.211 
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=1 wall_us=502745 out=[-2342.9165 -568.33 iter ms=0.36378900000000003 ] mapal_gpu_trace_total flags=1 load_ms=373.341 lead_ms=0.111 init_ms=66.391 ctx_ms=306.329 module_ms=0.459 alloc_ms=0.293 h2d_ms=0.000 kernel_ms=0.324 gen_ms=0.088 d2h_ms=0.046 free_ms=0.202 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=1 c23775111f88d1b3 ms=0.113 af3ed03a29cfbd57 ms=0.210 
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=1 wall_us=500564 out=[-2342.9185 -568.328 iter ms=0.368959 ] mapal_gpu_trace_total flags=1 load_ms=372.724 lead_ms=0.106 init_ms=66.784 ctx_ms=304.755 module_ms=1.061 alloc_ms=0.479 h2d_ms=0.000 kernel_ms=0.195 gen_ms=0.106 d2h_ms=0.070 free_ms=0.313 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=1 2efd1f268909f30c ms=0.072 20e4b6334e45c18a ms=0.122 
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=1 wall_us=469404 out=[-2342.9165 -568.33 iter ms=0.34506899999999996 ] mapal_gpu_trace_total flags=1 load_ms=363.664 lead_ms=0.114 init_ms=65.732 ctx_ms=297.392 module_ms=0.450 alloc_ms=0.454 h2d_ms=0.000 kernel_ms=0.326 gen_ms=0.129 d2h_ms=0.067 free_ms=0.237 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=1 c23775111f88d1b3 ms=0.114 af3ed03a29cfbd57 ms=0.212 
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=2 wall_us=489077 out=[-2342.9165 -568.33 iter ms=0.374859 ] mapal_gpu_trace_total flags=1 load_ms=400.759 lead_ms=0.102 init_ms=65.227 ctx_ms=334.259 module_ms=1.138 alloc_ms=0.465 h2d_ms=0.000 kernel_ms=0.324 gen_ms=0.108 d2h_ms=0.068 free_ms=0.214 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=2 c23775111f88d1b3 ms=0.113 af3ed03a29cfbd57 ms=0.211 
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=2 wall_us=759607 out=[-2342.9185 -568.328 iter ms=0.30590900000000004 ] mapal_gpu_trace_total flags=1 load_ms=484.826 lead_ms=0.134 init_ms=82.483 ctx_ms=401.189 module_ms=1.041 alloc_ms=12.102 h2d_ms=0.000 kernel_ms=0.194 gen_ms=0.098 d2h_ms=0.059 free_ms=7.994 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=2 2efd1f268909f30c ms=0.072 20e4b6334e45c18a ms=0.122 
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=2 wall_us=598116 out=[-2342.9165 -568.33 iter ms=0.37466900000000003 ] mapal_gpu_trace_total flags=1 load_ms=370.751 lead_ms=0.088 init_ms=66.314 ctx_ms=303.631 module_ms=0.445 alloc_ms=0.427 h2d_ms=0.000 kernel_ms=0.324 gen_ms=0.106 d2h_ms=0.060 free_ms=0.207 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=2 c23775111f88d1b3 ms=0.113 af3ed03a29cfbd57 ms=0.211 
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=2 wall_us=494458 out=[-2342.9165 -568.33 iter ms=0.374728 ] mapal_gpu_trace_total flags=1 load_ms=364.059 lead_ms=0.133 init_ms=64.911 ctx_ms=298.603 module_ms=0.456 alloc_ms=0.460 h2d_ms=0.000 kernel_ms=0.325 gen_ms=0.112 d2h_ms=0.059 free_ms=0.211 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=2 c23775111f88d1b3 ms=0.114 af3ed03a29cfbd57 ms=0.211 
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=3 wall_us=486872 out=[-2342.9165 -568.33 iter ms=0.371898 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=3 wall_us=491295 out=[-2342.9165 -568.33 iter ms=0.375368 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=3 wall_us=665433 out=[-2342.9185 -568.328 iter ms=0.37877800000000006 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=3 wall_us=479001 out=[-2342.9165 -568.33 iter ms=0.364348 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=4 wall_us=506433 out=[-2342.9165 -568.33 iter ms=0.362709 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=4 wall_us=484562 out=[-2342.9185 -568.328 iter ms=0.324259 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=4 wall_us=511764 out=[-2342.9165 -568.33 iter ms=0.357439 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=4 wall_us=514417 out=[-2342.9165 -568.33 iter ms=0.363379 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=5 wall_us=537208 out=[-2342.9165 -568.33 iter ms=0.358478 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=5 wall_us=517375 out=[-2342.9165 -568.33 iter ms=0.372539 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=5 wall_us=530023 out=[-2342.9185 -568.328 iter ms=0.34533899999999995 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=5 wall_us=510130 out=[-2342.9165 -568.33 iter ms=0.358308 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=6 wall_us=451341 out=[-2342.9165 -568.33 iter ms=0.35854800000000003 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=6 wall_us=470733 out=[-2342.9185 -568.328 iter ms=0.25865900000000003 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=6 wall_us=479845 out=[-2342.9165 -568.33 iter ms=0.370378 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=6 wall_us=490685 out=[-2342.9165 -568.33 iter ms=0.370289 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=7 wall_us=502355 out=[-2342.9165 -568.33 iter ms=0.36667900000000003 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=7 wall_us=504842 out=[-2342.9165 -568.33 iter ms=0.36775899999999995 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=7 wall_us=480519 out=[-2342.9185 -568.328 iter ms=0.310158 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=7 wall_us=484825 out=[-2342.9165 -568.33 iter ms=0.367969 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=8 wall_us=484664 out=[-2342.9165 -568.33 iter ms=0.372409 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=8 wall_us=547814 out=[-2342.9185 -568.328 iter ms=0.29185900000000004 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=8 wall_us=520777 out=[-2342.9165 -568.33 iter ms=0.369438 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=8 wall_us=514480 out=[-2342.9165 -568.33 iter ms=0.367788 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=9 wall_us=495893 out=[-2342.9165 -568.33 iter ms=0.35925799999999997 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=9 wall_us=496967 out=[-2342.9165 -568.33 iter ms=0.35695799999999994 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=9 wall_us=492524 out=[-2342.9185 -568.328 iter ms=0.333448 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=9 wall_us=539260 out=[-2342.9165 -568.33 iter ms=0.38815800000000006 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_c arm=on rep=10 wall_us=562572 out=[-2342.9165 -568.33 iter ms=0.361499 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_x arm=on rep=10 wall_us=553538 out=[-2342.9185 -568.328 iter ms=0.31460899999999997 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=null rep=10 wall_us=493544 out=[-2342.9165 -568.33 iter ms=0.369438 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d1024_h2048 face=_default arm=on rep=10 wall_us=491091 out=[-2342.9165 -568.33 iter ms=0.376909 ]  rc=0 trace_rc=0
+value-bound prog=pt_rm_m128_d256_h512 face=_default arm=on K=512 within got=[1612.2351 1322.6967 ] exact=[1612.2343 1322.6953 ]
+value-bound prog=pt_rm_m128_d256_h512 face=_default arm=null K=512 within got=[1612.2351 1322.6967 ] exact=[1612.2343 1322.6953 ]
+value-gate prog=pt_rm_m128_d256_h512 arms=4 pass
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=1 wall_us=483505 out=[1612.2351 1322.6967 iter ms=0.15671899999999997 ] mapal_gpu_trace_total flags=1 load_ms=357.190 lead_ms=0.222 init_ms=67.408 ctx_ms=289.156 module_ms=0.474 alloc_ms=0.545 h2d_ms=0.000 kernel_ms=0.081 gen_ms=0.094 d2h_ms=0.073 free_ms=0.190 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_default arm=on rep=1 2eaecbf650907e33 ms=0.030 334082f39157e45b ms=0.051 
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=1 wall_us=483466 out=[1612.2351 1322.6967 iter ms=0.14441900000000002 ] mapal_gpu_trace_total flags=1 load_ms=352.892 lead_ms=0.119 init_ms=70.033 ctx_ms=282.242 module_ms=0.499 alloc_ms=0.640 h2d_ms=0.000 kernel_ms=0.085 gen_ms=0.082 d2h_ms=0.071 free_ms=0.273 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_default arm=null rep=1 2eaecbf650907e33 ms=0.032 334082f39157e45b ms=0.054 
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=1 wall_us=465824 out=[1612.2343 1322.6953 iter ms=0.20604899999999998 ] mapal_gpu_trace_total flags=1 load_ms=362.547 lead_ms=0.138 init_ms=66.338 ctx_ms=295.099 module_ms=0.969 alloc_ms=0.417 h2d_ms=0.000 kernel_ms=0.051 gen_ms=0.082 d2h_ms=0.066 free_ms=0.197 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_x arm=on rep=1 85724698d914108c ms=0.023 fd4d939fbf516666 ms=0.029 
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=1 wall_us=447949 out=[1612.2351 1322.6967 iter ms=0.13591899999999998 ] mapal_gpu_trace_total flags=1 load_ms=339.789 lead_ms=0.131 init_ms=69.044 ctx_ms=270.121 module_ms=0.436 alloc_ms=0.447 h2d_ms=0.000 kernel_ms=0.080 gen_ms=0.075 d2h_ms=0.053 free_ms=0.197 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_c arm=on rep=1 2eaecbf650907e33 ms=0.030 334082f39157e45b ms=0.050 
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=2 wall_us=454344 out=[1612.2351 1322.6967 iter ms=0.140819 ] mapal_gpu_trace_total flags=1 load_ms=338.672 lead_ms=0.120 init_ms=62.902 ctx_ms=275.194 module_ms=0.438 alloc_ms=0.316 h2d_ms=0.000 kernel_ms=0.083 gen_ms=0.081 d2h_ms=0.060 free_ms=0.199 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_c arm=on rep=2 2eaecbf650907e33 ms=0.030 334082f39157e45b ms=0.053 
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=2 wall_us=467135 out=[1612.2343 1322.6953 iter ms=0.24159899999999998 ] mapal_gpu_trace_total flags=1 load_ms=360.013 lead_ms=0.115 init_ms=66.498 ctx_ms=292.458 module_ms=0.961 alloc_ms=0.421 h2d_ms=0.000 kernel_ms=0.052 gen_ms=0.099 d2h_ms=0.067 free_ms=0.182 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_x arm=on rep=2 85724698d914108c ms=0.023 fd4d939fbf516666 ms=0.029 
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=2 wall_us=470612 out=[1612.2351 1322.6967 iter ms=0.13735999999999998 ] mapal_gpu_trace_total flags=1 load_ms=341.321 lead_ms=0.131 init_ms=64.640 ctx_ms=276.163 module_ms=0.441 alloc_ms=0.455 h2d_ms=0.000 kernel_ms=0.080 gen_ms=0.079 d2h_ms=0.058 free_ms=0.195 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_default arm=null rep=2 2eaecbf650907e33 ms=0.030 334082f39157e45b ms=0.050 
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=2 wall_us=473959 out=[1612.2351 1322.6967 iter ms=0.134279 ] mapal_gpu_trace_total flags=1 load_ms=345.082 lead_ms=0.118 init_ms=65.251 ctx_ms=279.300 module_ms=0.432 alloc_ms=0.429 h2d_ms=0.000 kernel_ms=0.080 gen_ms=0.070 d2h_ms=0.056 free_ms=0.207 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=2 gens=4 allocs=1 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=0 pdl=0 rc=0 trace_rc=0
+probe_kernels prog=pt_rm_m128_d256_h512 face=_default arm=on rep=2 2eaecbf650907e33 ms=0.030 334082f39157e45b ms=0.050 
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=3 wall_us=451880 out=[1612.2351 1322.6967 iter ms=0.1282 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=3 wall_us=444993 out=[1612.2351 1322.6967 iter ms=0.146999 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=3 wall_us=484909 out=[1612.2343 1322.6953 iter ms=0.196789 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=3 wall_us=462767 out=[1612.2351 1322.6967 iter ms=0.128389 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=4 wall_us=448626 out=[1612.2351 1322.6967 iter ms=0.130249 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=4 wall_us=468458 out=[1612.2343 1322.6953 iter ms=0.239909 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=4 wall_us=460739 out=[1612.2351 1322.6967 iter ms=0.127949 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=4 wall_us=442718 out=[1612.2351 1322.6967 iter ms=0.14782999999999996 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=5 wall_us=456201 out=[1612.2351 1322.6967 iter ms=0.134079 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=5 wall_us=485425 out=[1612.2351 1322.6967 iter ms=0.15064 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=5 wall_us=467680 out=[1612.2343 1322.6953 iter ms=0.18913 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=5 wall_us=467055 out=[1612.2351 1322.6967 iter ms=0.12705999999999998 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=6 wall_us=461913 out=[1612.2351 1322.6967 iter ms=0.13371 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=6 wall_us=477516 out=[1612.2343 1322.6953 iter ms=0.20172900000000002 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=6 wall_us=475920 out=[1612.2351 1322.6967 iter ms=0.155879 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=6 wall_us=488893 out=[1612.2351 1322.6967 iter ms=0.12943 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=7 wall_us=475499 out=[1612.2351 1322.6967 iter ms=0.152239 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=7 wall_us=456212 out=[1612.2351 1322.6967 iter ms=0.14769 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=7 wall_us=455669 out=[1612.2343 1322.6953 iter ms=0.23662899999999998 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=7 wall_us=461614 out=[1612.2351 1322.6967 iter ms=0.156499 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=8 wall_us=470597 out=[1612.2351 1322.6967 iter ms=0.130369 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=8 wall_us=481430 out=[1612.2343 1322.6953 iter ms=0.230159 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=8 wall_us=488269 out=[1612.2351 1322.6967 iter ms=0.128599 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=8 wall_us=463789 out=[1612.2351 1322.6967 iter ms=0.13552 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=9 wall_us=468057 out=[1612.2351 1322.6967 iter ms=0.13253 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=9 wall_us=476399 out=[1612.2351 1322.6967 iter ms=0.138079 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=9 wall_us=468384 out=[1612.2343 1322.6953 iter ms=0.18531 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=9 wall_us=465927 out=[1612.2351 1322.6967 iter ms=0.169829 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_c arm=on rep=10 wall_us=434738 out=[1612.2351 1322.6967 iter ms=0.139 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_x arm=on rep=10 wall_us=446175 out=[1612.2343 1322.6953 iter ms=0.21558899999999998 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=null rep=10 wall_us=456430 out=[1612.2351 1322.6967 iter ms=0.128919 ]  rc=0 trace_rc=0
+probe prog=pt_rm_m128_d256_h512 face=_default arm=on rep=10 wall_us=451061 out=[1612.2351 1322.6967 iter ms=0.12955999999999998 ]  rc=0 trace_rc=0
+probe value gate: 0 program(s) failed
+-- mlp: residual MLP kernels vs cuBLAS / cuBLASLt / CUTLASS (mlp_bench, reps=30)
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_c23775111f88d1b3 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_af3ed03a29cfbd57 grid=32x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_c23775111f88d1b3 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_af3ed03a29cfbd57 grid=32x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_x kernel=mapal_tile_2efd1f268909f30c grid=64x2 block=128 smem=6400 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_x kernel=mapal_tile_20e4b6334e45c18a grid=32x4 block=64 smem=34816 regs=196 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d1024_h2048 lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=4 reduction=4 workspace=4194304 waves=0.520
+pass=1 mlp=pt_rm_m128_d1024_h2048 lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=1 tile=13 stages=0 splitk=2 reduction=1 workspace=256 waves=0.780
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass_tuned wall_ms=0.2072
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass wall_ms=0.3571
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=lt wall_ms=20.2957
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=cublas wall_ms=2.0907
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_x wall_ms=0.1858
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.3151
+pass=1 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.3132
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_x cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cublas cells=256 maxrel_vs_f64=9.797e-05 y0=-2342.91455 ylast=-568.334961
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=lt cells=256 maxrel_vs_f64=9.788e-05 y0=-2342.91479 ylast=-568.334961
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c M=128 d=1024 h=2048 n=30 event_min_ms=0.3072 event_med_ms=0.3091 wall_min_ms=0.3136 wall_med_ms=0.3149 wall_max_ms=0.3186
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.null M=128 d=1024 h=2048 n=30 event_min_ms=0.3082 event_med_ms=0.3092 wall_min_ms=0.3140 wall_med_ms=0.3148 wall_max_ms=0.3188
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_x M=128 d=1024 h=2048 n=30 event_min_ms=0.1792 event_med_ms=0.1802 wall_min_ms=0.1857 wall_med_ms=0.1867 wall_max_ms=0.1874
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cublas M=128 d=1024 h=2048 n=30 event_min_ms=0.1014 event_med_ms=0.1024 wall_min_ms=0.1076 wall_med_ms=0.1088 wall_max_ms=0.1113
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=lt M=128 d=1024 h=2048 n=30 event_min_ms=0.0932 event_med_ms=0.0942 wall_min_ms=0.0994 wall_med_ms=0.1000 wall_max_ms=0.1048
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass M=128 d=1024 h=2048 n=30 event_min_ms=0.3523 event_med_ms=0.3533 wall_min_ms=0.3584 wall_med_ms=0.3591 wall_max_ms=0.3610
+pass=1 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass_tuned M=128 d=1024 h=2048 n=30 event_min_ms=0.1720 event_med_ms=0.1731 wall_min_ms=0.1782 wall_med_ms=0.1791 wall_max_ms=0.1815
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c event=0.3103,0.3082,0.3092,0.3092,0.3092,0.3092,0.3082,0.3082,0.3082,0.3103,0.3091,0.3072,0.3092,0.3092,0.3092,0.3092,0.3082,0.3082,0.3082,0.3082,0.3092,0.3092,0.3092,0.3082,0.3082,0.3082,0.3082,0.3092,0.3082,0.3072 wall=0.3168,0.3146,0.3151,0.3147,0.3158,0.3151,0.3146,0.3143,0.3140,0.3159,0.3154,0.3138,0.3152,0.3158,0.3153,0.3152,0.3141,0.3145,0.3145,0.3186,0.3153,0.3154,0.3153,0.3142,0.3142,0.3142,0.3144,0.3149,0.3147,0.3136
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.null event=0.3092,0.3082,0.3092,0.3082,0.3092,0.3092,0.3082,0.3092,0.3092,0.3082,0.3082,0.3092,0.3092,0.3092,0.3082,0.3092,0.3092,0.3092,0.3092,0.3082,0.3082,0.3124,0.3082,0.3092,0.3092,0.3082,0.3092,0.3092,0.3082,0.3092 wall=0.3155,0.3141,0.3149,0.3140,0.3159,0.3148,0.3143,0.3145,0.3151,0.3144,0.3146,0.3150,0.3148,0.3147,0.3148,0.3147,0.3154,0.3152,0.3161,0.3142,0.3145,0.3186,0.3148,0.3153,0.3150,0.3142,0.3155,0.3145,0.3146,0.3188
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_x event=0.1802,0.1802,0.1812,0.1801,0.1812,0.1802,0.1802,0.1802,0.1812,0.1802,0.1812,0.1802,0.1812,0.1802,0.1812,0.1802,0.1802,0.1802,0.1802,0.1792,0.1802,0.1802,0.1802,0.1802,0.1812,0.1792,0.1802,0.1792,0.1802,0.1792 wall=0.1868,0.1863,0.1868,0.1859,0.1872,0.1858,0.1867,0.1869,0.1871,0.1863,0.1872,0.1860,0.1868,0.1864,0.1871,0.1861,0.1865,0.1863,0.1867,0.1861,0.1867,0.1867,0.1867,0.1866,0.1874,0.1858,0.1863,0.1857,0.1873,0.1857
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cublas event=0.1024,0.1034,0.1014,0.1034,0.1024,0.1024,0.1014,0.1055,0.1014,0.1034,0.1024,0.1034,0.1014,0.1034,0.1024,0.1044,0.1023,0.1034,0.1024,0.1034,0.1014,0.1024,0.1024,0.1034,0.1014,0.1034,0.1014,0.1024,0.1024,0.1034 wall=0.1084,0.1101,0.1082,0.1101,0.1082,0.1088,0.1081,0.1113,0.1082,0.1092,0.1082,0.1095,0.1076,0.1098,0.1080,0.1098,0.1080,0.1100,0.1076,0.1096,0.1076,0.1088,0.1078,0.1099,0.1078,0.1091,0.1076,0.1089,0.1082,0.1095
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=lt event=0.0952,0.0932,0.0942,0.0932,0.0942,0.0942,0.0942,0.0941,0.0951,0.0932,0.0942,0.0932,0.0942,0.0932,0.0942,0.0942,0.0942,0.0932,0.0942,0.0942,0.0942,0.0932,0.0942,0.0932,0.0942,0.0942,0.0942,0.0942,0.0942,0.0932 wall=0.1013,0.0996,0.1002,0.0999,0.1008,0.0998,0.1008,0.0998,0.1048,0.0994,0.1001,0.1002,0.1002,0.0999,0.1002,0.1000,0.1003,0.0999,0.1002,0.0996,0.1004,0.1000,0.1005,0.0999,0.1003,0.0997,0.1000,0.1000,0.1000,0.1000
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass event=0.3532,0.3543,0.3523,0.3523,0.3523,0.3543,0.3523,0.3543,0.3532,0.3533,0.3523,0.3543,0.3523,0.3533,0.3533,0.3533,0.3532,0.3543,0.3532,0.3543,0.3523,0.3533,0.3523,0.3533,0.3533,0.3533,0.3523,0.3543,0.3533,0.3533 wall=0.3590,0.3601,0.3586,0.3591,0.3589,0.3603,0.3588,0.3599,0.3588,0.3598,0.3590,0.3601,0.3584,0.3596,0.3589,0.3595,0.3586,0.3610,0.3584,0.3597,0.3589,0.3598,0.3584,0.3599,0.3591,0.3596,0.3584,0.3602,0.3589,0.3596
+pass=1 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass_tuned event=0.1741,0.1730,0.1720,0.1731,0.1731,0.1720,0.1720,0.1741,0.1731,0.1731,0.1730,0.1731,0.1731,0.1731,0.1730,0.1731,0.1731,0.1720,0.1731,0.1731,0.1731,0.1731,0.1741,0.1720,0.1720,0.1731,0.1731,0.1730,0.1731,0.1730 wall=0.1813,0.1788,0.1786,0.1791,0.1789,0.1788,0.1789,0.1794,0.1788,0.1793,0.1790,0.1793,0.1796,0.1787,0.1792,0.1791,0.1792,0.1782,0.1788,0.1788,0.1791,0.1790,0.1795,0.1787,0.1791,0.1815,0.1794,0.1792,0.1789,0.1789
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_c23775111f88d1b3 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c kernel=mapal_tile_af3ed03a29cfbd57 grid=32x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_c23775111f88d1b3 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_c.null kernel=mapal_tile_af3ed03a29cfbd57 grid=32x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_x kernel=mapal_tile_2efd1f268909f30c grid=64x2 block=128 smem=6400 regs=80 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d1024_h2048 arm stem=pt_rm_m128_d1024_h2048_x kernel=mapal_tile_20e4b6334e45c18a grid=32x4 block=64 smem=34816 regs=196 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d1024_h2048 lt site=up+bias+relu api_mnk=2048,128,1024 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=20 tile=18 stages=28 splitk=4 reduction=4 workspace=4194304 waves=0.520
+pass=2 mlp=pt_rm_m128_d1024_h2048 lt site=down+residual api_mnk=1024,128,2048 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=1 tile=13 stages=0 splitk=2 reduction=1 workspace=256 waves=0.780
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x16x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x8x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x32x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x16x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass_tuned wall_ms=0.2073
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cutlass wall_ms=0.3567
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=lt wall_ms=11.9375
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=cublas wall_ms=1.0659
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_x wall_ms=0.1861
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c.null wall_ms=0.3205
+pass=2 mlp=pt_rm_m128_d1024_h2048 cold leg=pt_rm_m128_d1024_h2048_c wall_ms=0.3143
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_c.null cells=256 maxrel_vs_f64=1.731e-04 bit_exact_vs_ordered=yes y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=pt_rm_m128_d1024_h2048_x cells=256 maxrel_vs_f64=2.700e-04 bit_exact_vs_ordered=yes y0=-2342.91846 ylast=-568.328003
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cublas cells=256 maxrel_vs_f64=9.797e-05 y0=-2342.91455 ylast=-568.334961
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=lt cells=256 maxrel_vs_f64=9.788e-05 y0=-2342.91479 ylast=-568.334961
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.731e-04 y0=-2342.9165 ylast=-568.330017
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c M=128 d=1024 h=2048 n=30 event_min_ms=0.3072 event_med_ms=0.3082 wall_min_ms=0.3132 wall_med_ms=0.3149 wall_max_ms=0.3171
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_c.null M=128 d=1024 h=2048 n=30 event_min_ms=0.3072 event_med_ms=0.3082 wall_min_ms=0.3128 wall_med_ms=0.3149 wall_max_ms=0.3883
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=pt_rm_m128_d1024_h2048_x M=128 d=1024 h=2048 n=30 event_min_ms=0.1792 event_med_ms=0.1802 wall_min_ms=0.1858 wall_med_ms=0.1872 wall_max_ms=0.1953
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cublas M=128 d=1024 h=2048 n=30 event_min_ms=0.1014 event_med_ms=0.1024 wall_min_ms=0.1074 wall_med_ms=0.1089 wall_max_ms=0.1175
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=lt M=128 d=1024 h=2048 n=30 event_min_ms=0.0932 event_med_ms=0.0942 wall_min_ms=0.0998 wall_med_ms=0.1004 wall_max_ms=0.1113
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass M=128 d=1024 h=2048 n=30 event_min_ms=0.3512 event_med_ms=0.3533 wall_min_ms=0.3582 wall_med_ms=0.3592 wall_max_ms=0.3616
+pass=2 mlp=pt_rm_m128_d1024_h2048 time leg=cutlass_tuned M=128 d=1024 h=2048 n=30 event_min_ms=0.1720 event_med_ms=0.1740 wall_min_ms=0.1787 wall_med_ms=0.1797 wall_max_ms=0.1846
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c event=0.3092,0.3082,0.3103,0.3082,0.3092,0.3082,0.3103,0.3072,0.3092,0.3092,0.3103,0.3072,0.3092,0.3072,0.3092,0.3072,0.3092,0.3082,0.3092,0.3092,0.3082,0.3082,0.3082,0.3072,0.3092,0.3072,0.3082,0.3072,0.3082,0.3082 wall=0.3146,0.3140,0.3158,0.3144,0.3151,0.3145,0.3171,0.3133,0.3150,0.3149,0.3156,0.3136,0.3159,0.3137,0.3150,0.3140,0.3159,0.3141,0.3160,0.3150,0.3142,0.3141,0.3152,0.3132,0.3155,0.3142,0.3153,0.3147,0.3149,0.3150
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_c.null event=0.3101,0.3082,0.3092,0.3082,0.3092,0.3082,0.3082,0.3072,0.3092,0.3072,0.3082,0.3072,0.3082,0.3091,0.3144,0.3082,0.3082,0.3092,0.3082,0.3082,0.3092,0.3082,0.3092,0.3092,0.3092,0.3082,0.3092,0.3820,0.3092,0.3082 wall=0.3156,0.3140,0.3150,0.3143,0.3156,0.3144,0.3154,0.3141,0.3165,0.3128,0.3145,0.3136,0.3149,0.3164,0.3204,0.3143,0.3139,0.3147,0.3151,0.3141,0.3159,0.3162,0.3172,0.3154,0.3157,0.3145,0.3144,0.3883,0.3147,0.3138
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=pt_rm_m128_d1024_h2048_x event=0.1802,0.1802,0.1802,0.1812,0.1812,0.1802,0.1812,0.1812,0.1833,0.1802,0.1802,0.1792,0.1823,0.1792,0.1884,0.1802,0.1823,0.1802,0.1802,0.1792,0.1812,0.1802,0.1812,0.1802,0.1812,0.1802,0.1812,0.1802,0.1812,0.1802 wall=0.1869,0.1870,0.1873,0.1869,0.1871,0.1858,0.1875,0.1875,0.1897,0.1859,0.1877,0.1861,0.1921,0.1874,0.1953,0.1868,0.1878,0.1865,0.1872,0.1864,0.1880,0.1905,0.1923,0.1864,0.1876,0.1859,0.1872,0.1859,0.1865,0.1864
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cublas event=0.1024,0.1034,0.1024,0.1034,0.1014,0.1034,0.1023,0.1044,0.1024,0.1024,0.1014,0.1044,0.1014,0.1044,0.1014,0.1024,0.1014,0.1024,0.1014,0.1024,0.1014,0.1024,0.1014,0.1075,0.1014,0.1034,0.1096,0.1034,0.1024,0.1024 wall=0.1093,0.1100,0.1083,0.1105,0.1077,0.1097,0.1087,0.1107,0.1090,0.1085,0.1089,0.1105,0.1079,0.1100,0.1079,0.1089,0.1077,0.1088,0.1074,0.1097,0.1083,0.1092,0.1083,0.1136,0.1075,0.1095,0.1175,0.1102,0.1088,0.1083
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=lt event=0.0961,0.0932,0.1044,0.0942,0.0972,0.0942,0.0963,0.0940,0.0942,0.0932,0.0942,0.0942,0.0942,0.0942,0.0942,0.0983,0.0942,0.0942,0.0941,0.0942,0.0963,0.0932,0.0952,0.0932,0.0932,0.0942,0.0942,0.0942,0.0932,0.0952 wall=0.1018,0.1000,0.1113,0.1014,0.1036,0.0998,0.1024,0.0998,0.1008,0.1000,0.1004,0.1004,0.1000,0.1001,0.1009,0.1046,0.1007,0.0999,0.1003,0.1005,0.1028,0.1001,0.1016,0.0998,0.1000,0.1000,0.1004,0.1000,0.1005,0.1007
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass event=0.3532,0.3533,0.3523,0.3543,0.3512,0.3543,0.3523,0.3543,0.3533,0.3523,0.3523,0.3533,0.3514,0.3533,0.3523,0.3533,0.3523,0.3533,0.3523,0.3523,0.3523,0.3533,0.3523,0.3542,0.3523,0.3543,0.3533,0.3543,0.3523,0.3553 wall=0.3589,0.3596,0.3584,0.3604,0.3586,0.3603,0.3598,0.3616,0.3593,0.3592,0.3586,0.3602,0.3591,0.3592,0.3589,0.3596,0.3585,0.3600,0.3583,0.3592,0.3585,0.3608,0.3585,0.3599,0.3582,0.3607,0.3589,0.3598,0.3585,0.3606
+pass=2 mlp=pt_rm_m128_d1024_h2048 samples leg=cutlass_tuned event=0.1741,0.1731,0.1741,0.1731,0.1741,0.1741,0.1731,0.1731,0.1731,0.1741,0.1741,0.1731,0.1731,0.1741,0.1732,0.1731,0.1740,0.1730,0.1741,0.1731,0.1731,0.1720,0.1751,0.1741,0.1740,0.1741,0.1741,0.1731,0.1740,0.1740 wall=0.1846,0.1790,0.1798,0.1789,0.1802,0.1803,0.1797,0.1792,0.1799,0.1797,0.1812,0.1791,0.1801,0.1802,0.1793,0.1790,0.1796,0.1787,0.1792,0.1796,0.1799,0.1795,0.1806,0.1807,0.1795,0.1832,0.1796,0.1789,0.1799,0.1802
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_2eaecbf650907e33 grid=16x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_334082f39157e45b grid=8x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_2eaecbf650907e33 grid=16x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_334082f39157e45b grid=8x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_x kernel=mapal_tile_85724698d914108c grid=32x4 block=32 smem=13312 regs=185 local_bytes=0 args=x,w1,0,bias,hh
+pass=1 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_x kernel=mapal_tile_fd4d939fbf516666 grid=16x4 block=32 smem=13312 regs=185 local_bytes=0 args=hh,w2,0,x,y
+pass=1 mlp=pt_rm_m128_d256_h512 lt site=up+bias+relu api_mnk=512,128,256 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=1 tile=11 stages=0 splitk=1 reduction=0 workspace=0 waves=0.260
+pass=1 mlp=pt_rm_m128_d256_h512 lt site=down+residual api_mnk=256,128,512 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=1 tile=11 stages=0 splitk=4 reduction=2 workspace=524288 waves=0.520
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x4x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x2x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x8x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x4x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cutlass_tuned wall_ms=0.0630
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cutlass wall_ms=0.1023
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=lt wall_ms=21.1674
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=cublas wall_ms=1.0789
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_x wall_ms=0.0452
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.null wall_ms=0.0732
+pass=1 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c wall_ms=0.0733
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.null cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_x cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cublas cells=256 maxrel_vs_f64=2.338e-04 y0=1612.23303 ylast=1322.6969
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=lt cells=256 maxrel_vs_f64=2.338e-04 y0=1612.23303 ylast=1322.6969
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cutlass cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 values leg=cutlass_tuned cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c M=128 d=256 h=512 n=30 event_min_ms=0.0676 event_med_ms=0.0686 wall_min_ms=0.0739 wall_med_ms=0.0745 wall_max_ms=0.0780
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.null M=128 d=256 h=512 n=30 event_min_ms=0.0676 event_med_ms=0.0686 wall_min_ms=0.0737 wall_med_ms=0.0745 wall_max_ms=0.0752
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_x M=128 d=256 h=512 n=30 event_min_ms=0.0389 event_med_ms=0.0399 wall_min_ms=0.0446 wall_med_ms=0.0460 wall_max_ms=0.0497
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cublas M=128 d=256 h=512 n=30 event_min_ms=0.0287 event_med_ms=0.0297 wall_min_ms=0.0350 wall_med_ms=0.0358 wall_max_ms=0.0397
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=lt M=128 d=256 h=512 n=30 event_min_ms=0.0246 event_med_ms=0.0256 wall_min_ms=0.0312 wall_med_ms=0.0316 wall_max_ms=0.0375
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cutlass M=128 d=256 h=512 n=30 event_min_ms=0.0973 event_med_ms=0.0983 wall_min_ms=0.1036 wall_med_ms=0.1047 wall_max_ms=0.1081
+pass=1 mlp=pt_rm_m128_d256_h512 time leg=cutlass_tuned M=128 d=256 h=512 n=30 event_min_ms=0.0276 event_med_ms=0.0287 wall_min_ms=0.0340 wall_med_ms=0.0350 wall_max_ms=0.0397
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c event=0.0686,0.0686,0.0686,0.0686,0.0686,0.0686,0.0686,0.0676,0.0696,0.0676,0.0686,0.0727,0.0686,0.0676,0.0686,0.0686,0.0696,0.0686,0.0686,0.0686,0.0686,0.0676,0.0686,0.0676,0.0686,0.0676,0.0686,0.0686,0.0686,0.0686 wall=0.0746,0.0745,0.0744,0.0740,0.0749,0.0743,0.0745,0.0739,0.0755,0.0740,0.0749,0.0780,0.0745,0.0741,0.0745,0.0744,0.0748,0.0740,0.0748,0.0739,0.0746,0.0739,0.0746,0.0739,0.0751,0.0740,0.0760,0.0743,0.0748,0.0740
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.null event=0.0696,0.0686,0.0686,0.0676,0.0696,0.0676,0.0686,0.0686,0.0696,0.0685,0.0696,0.0677,0.0686,0.0686,0.0686,0.0686,0.0686,0.0677,0.0686,0.0676,0.0686,0.0686,0.0696,0.0676,0.0696,0.0686,0.0686,0.0686,0.0686,0.0676 wall=0.0751,0.0747,0.0749,0.0737,0.0748,0.0739,0.0746,0.0741,0.0752,0.0740,0.0746,0.0739,0.0748,0.0739,0.0747,0.0743,0.0746,0.0742,0.0747,0.0742,0.0745,0.0739,0.0749,0.0741,0.0746,0.0744,0.0746,0.0738,0.0745,0.0738
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_x event=0.0399,0.0389,0.0399,0.0399,0.0409,0.0398,0.0410,0.0399,0.0410,0.0389,0.0399,0.0389,0.0410,0.0399,0.0399,0.0399,0.0400,0.0389,0.0399,0.0399,0.0410,0.0389,0.0399,0.0389,0.0399,0.0389,0.0399,0.0389,0.0399,0.0398 wall=0.0463,0.0446,0.0461,0.0458,0.0464,0.0452,0.0468,0.0450,0.0461,0.0449,0.0462,0.0446,0.0465,0.0497,0.0460,0.0454,0.0461,0.0458,0.0461,0.0451,0.0464,0.0449,0.0460,0.0446,0.0464,0.0448,0.0459,0.0451,0.0460,0.0455
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cublas event=0.0307,0.0307,0.0297,0.0297,0.0287,0.0307,0.0338,0.0307,0.0296,0.0307,0.0297,0.0297,0.0297,0.0306,0.0297,0.0307,0.0297,0.0297,0.0287,0.0328,0.0297,0.0297,0.0297,0.0297,0.0297,0.0297,0.0297,0.0306,0.0297,0.0307 wall=0.0361,0.0367,0.0351,0.0358,0.0354,0.0371,0.0397,0.0363,0.0352,0.0367,0.0354,0.0361,0.0353,0.0364,0.0355,0.0364,0.0353,0.0361,0.0351,0.0392,0.0353,0.0355,0.0353,0.0358,0.0360,0.0358,0.0350,0.0364,0.0353,0.0360
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=lt event=0.0266,0.0246,0.0266,0.0256,0.0256,0.0256,0.0255,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0266,0.0256,0.0256,0.0256,0.0256,0.0256,0.0256,0.0246,0.0266,0.0256,0.0256,0.0246,0.0256,0.0256 wall=0.0325,0.0315,0.0323,0.0314,0.0317,0.0317,0.0315,0.0315,0.0315,0.0315,0.0321,0.0320,0.0318,0.0317,0.0320,0.0313,0.0317,0.0312,0.0318,0.0315,0.0316,0.0316,0.0318,0.0315,0.0375,0.0315,0.0316,0.0313,0.0313,0.0314
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cutlass event=0.0983,0.0993,0.0974,0.0993,0.0973,0.0993,0.0973,0.0993,0.0983,0.1004,0.0983,0.0993,0.0983,0.0993,0.0973,0.0993,0.0983,0.1004,0.0983,0.0993,0.0983,0.1004,0.0983,0.0993,0.0983,0.0995,0.0973,0.0983,0.0983,0.1004 wall=0.1038,0.1059,0.1045,0.1050,0.1039,0.1058,0.1039,0.1055,0.1037,0.1054,0.1038,0.1053,0.1041,0.1056,0.1036,0.1048,0.1042,0.1056,0.1038,0.1049,0.1038,0.1059,0.1081,0.1047,0.1038,0.1061,0.1040,0.1047,0.1041,0.1056
+pass=1 mlp=pt_rm_m128_d256_h512 samples leg=cutlass_tuned event=0.0297,0.0287,0.0287,0.0296,0.0287,0.0297,0.0287,0.0287,0.0276,0.0297,0.0287,0.0297,0.0276,0.0287,0.0287,0.0297,0.0287,0.0287,0.0287,0.0338,0.0287,0.0297,0.0297,0.0297,0.0287,0.0287,0.0287,0.0296,0.0276,0.0287 wall=0.0362,0.0355,0.0348,0.0352,0.0343,0.0367,0.0349,0.0354,0.0343,0.0357,0.0350,0.0359,0.0342,0.0348,0.0346,0.0355,0.0343,0.0350,0.0348,0.0397,0.0341,0.0352,0.0357,0.0354,0.0340,0.0346,0.0349,0.0357,0.0340,0.0346
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_2eaecbf650907e33 grid=16x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c kernel=mapal_tile_334082f39157e45b grid=8x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_2eaecbf650907e33 grid=16x2 block=32 smem=1536 regs=128 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_c.null kernel=mapal_tile_334082f39157e45b grid=8x2 block=32 smem=1536 regs=128 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_x kernel=mapal_tile_85724698d914108c grid=32x4 block=32 smem=13312 regs=185 local_bytes=0 args=x,w1,0,bias,hh
+pass=2 mlp=pt_rm_m128_d256_h512 arm stem=pt_rm_m128_d256_h512_x kernel=mapal_tile_fd4d939fbf516666 grid=16x4 block=32 smem=13312 regs=185 local_bytes=0 args=hh,w2,0,x,y
+pass=2 mlp=pt_rm_m128_d256_h512 lt site=up+bias+relu api_mnk=512,128,256 epilogue=6 beta=0 heuristics=8 chosen=0 algo_id=1 tile=11 stages=0 splitk=1 reduction=0 workspace=0 waves=0.260
+pass=2 mlp=pt_rm_m128_d256_h512 lt site=down+residual api_mnk=256,128,512 epilogue=1 beta=1 heuristics=8 chosen=0 algo_id=1 tile=11 stages=0 splitk=4 reduction=2 workspace=524288 waves=0.520
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=up+bias+relu tb=128x128x8 warp=32x64x8 threads=256 grid=1x4x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass site=down+residual tb=128x128x8 warp=32x64x8 threads=256 grid=1x2x1 dyn_smem=16640 regs=122 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=up+bias+relu tb=16x64x16 warp=8x32x16 threads=128 grid=8x8x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 libfacts leg=cutlass_tuned site=down+residual tb=16x64x16 warp=8x32x16 threads=128 grid=8x4x1 dyn_smem=10496 regs=56 local_bytes=0 static_smem=0
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cutlass_tuned wall_ms=0.0733
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cutlass wall_ms=0.1021
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=lt wall_ms=16.9762
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=cublas wall_ms=1.1772
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_x wall_ms=0.0443
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c.null wall_ms=0.0735
+pass=2 mlp=pt_rm_m128_d256_h512 cold leg=pt_rm_m128_d256_h512_c wall_ms=0.0745
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_c.null cells=256 maxrel_vs_f64=5.420e-05 bit_exact_vs_ordered=yes y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=pt_rm_m128_d256_h512_x cells=256 maxrel_vs_f64=1.095e-04 bit_exact_vs_ordered=yes y0=1612.23425 ylast=1322.69531
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cublas cells=256 maxrel_vs_f64=2.338e-04 y0=1612.23303 ylast=1322.6969
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=lt cells=256 maxrel_vs_f64=2.338e-04 y0=1612.23303 ylast=1322.6969
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cutlass cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 values leg=cutlass_tuned cells=256 maxrel_vs_f64=5.420e-05 y0=1612.23511 ylast=1322.69666
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c M=128 d=256 h=512 n=30 event_min_ms=0.0676 event_med_ms=0.0686 wall_min_ms=0.0732 wall_med_ms=0.0747 wall_max_ms=0.0779
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_c.null M=128 d=256 h=512 n=30 event_min_ms=0.0676 event_med_ms=0.0686 wall_min_ms=0.0736 wall_med_ms=0.0749 wall_max_ms=0.0773
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=pt_rm_m128_d256_h512_x M=128 d=256 h=512 n=30 event_min_ms=0.0388 event_med_ms=0.0399 wall_min_ms=0.0444 wall_med_ms=0.0462 wall_max_ms=0.0492
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cublas M=128 d=256 h=512 n=30 event_min_ms=0.0286 event_med_ms=0.0297 wall_min_ms=0.0348 wall_med_ms=0.0360 wall_max_ms=0.0402
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=lt M=128 d=256 h=512 n=30 event_min_ms=0.0236 event_med_ms=0.0256 wall_min_ms=0.0313 wall_med_ms=0.0321 wall_max_ms=0.0344
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cutlass M=128 d=256 h=512 n=30 event_min_ms=0.0973 event_med_ms=0.0993 wall_min_ms=0.1037 wall_med_ms=0.1050 wall_max_ms=0.1199
+pass=2 mlp=pt_rm_m128_d256_h512 time leg=cutlass_tuned M=128 d=256 h=512 n=30 event_min_ms=0.0276 event_med_ms=0.0287 wall_min_ms=0.0337 wall_med_ms=0.0350 wall_max_ms=0.0393
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c event=0.0686,0.0685,0.0686,0.0676,0.0696,0.0686,0.0686,0.0686,0.0686,0.0686,0.0696,0.0717,0.0686,0.0686,0.0686,0.0676,0.0686,0.0686,0.0696,0.0676,0.0707,0.0686,0.0696,0.0676,0.0696,0.0685,0.0686,0.0676,0.0686,0.0676 wall=0.0749,0.0739,0.0744,0.0737,0.0750,0.0741,0.0741,0.0737,0.0744,0.0749,0.0763,0.0779,0.0763,0.0736,0.0743,0.0732,0.0755,0.0753,0.0754,0.0746,0.0762,0.0752,0.0753,0.0747,0.0756,0.0741,0.0767,0.0735,0.0744,0.0740
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_c.null event=0.0696,0.0686,0.0696,0.0686,0.0696,0.0686,0.0696,0.0695,0.0696,0.0676,0.0696,0.0676,0.0686,0.0686,0.0696,0.0676,0.0686,0.0696,0.0686,0.0686,0.0696,0.0695,0.0686,0.0676,0.0686,0.0686,0.0696,0.0686,0.0686,0.0676 wall=0.0753,0.0748,0.0763,0.0737,0.0753,0.0749,0.0756,0.0773,0.0761,0.0743,0.0752,0.0737,0.0749,0.0750,0.0747,0.0739,0.0747,0.0756,0.0753,0.0740,0.0750,0.0748,0.0744,0.0736,0.0745,0.0749,0.0760,0.0738,0.0750,0.0739
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=pt_rm_m128_d256_h512_x event=0.0410,0.0389,0.0410,0.0399,0.0409,0.0389,0.0399,0.0389,0.0410,0.0389,0.0399,0.0389,0.0399,0.0399,0.0399,0.0389,0.0399,0.0399,0.0399,0.0389,0.0410,0.0389,0.0410,0.0389,0.0409,0.0389,0.0389,0.0389,0.0399,0.0388 wall=0.0462,0.0445,0.0482,0.0458,0.0472,0.0447,0.0466,0.0454,0.0477,0.0446,0.0463,0.0444,0.0460,0.0492,0.0455,0.0449,0.0465,0.0467,0.0475,0.0452,0.0483,0.0466,0.0462,0.0444,0.0471,0.0450,0.0454,0.0445,0.0462,0.0447
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cublas event=0.0297,0.0317,0.0297,0.0297,0.0287,0.0297,0.0297,0.0307,0.0287,0.0338,0.0297,0.0307,0.0286,0.0297,0.0297,0.0317,0.0287,0.0317,0.0296,0.0297,0.0297,0.0297,0.0297,0.0297,0.0287,0.0297,0.0287,0.0297,0.0297,0.0297 wall=0.0354,0.0384,0.0367,0.0361,0.0350,0.0374,0.0354,0.0373,0.0363,0.0402,0.0358,0.0364,0.0358,0.0359,0.0357,0.0377,0.0362,0.0373,0.0355,0.0360,0.0361,0.0358,0.0357,0.0357,0.0355,0.0364,0.0348,0.0362,0.0357,0.0357
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=lt event=0.0276,0.0256,0.0256,0.0256,0.0257,0.0256,0.0256,0.0256,0.0276,0.0256,0.0266,0.0255,0.0256,0.0256,0.0266,0.0256,0.0266,0.0276,0.0266,0.0276,0.0266,0.0265,0.0266,0.0256,0.0266,0.0256,0.0256,0.0236,0.0256,0.0266 wall=0.0337,0.0314,0.0319,0.0321,0.0317,0.0322,0.0318,0.0314,0.0329,0.0330,0.0327,0.0315,0.0317,0.0317,0.0319,0.0323,0.0344,0.0337,0.0333,0.0334,0.0325,0.0322,0.0319,0.0313,0.0326,0.0321,0.0316,0.0313,0.0320,0.0315
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cutlass event=0.0983,0.1004,0.0992,0.1003,0.0983,0.0993,0.0993,0.0993,0.0983,0.0993,0.0983,0.0993,0.0983,0.0983,0.0973,0.0983,0.0983,0.1002,0.0983,0.1004,0.0983,0.1004,0.1004,0.0993,0.0993,0.1004,0.0983,0.0993,0.0983,0.0983 wall=0.1042,0.1073,0.1045,0.1051,0.1037,0.1052,0.1061,0.1051,0.1039,0.1057,0.1042,0.1063,0.1037,0.1054,0.1038,0.1053,0.1039,0.1053,0.1038,0.1059,0.1041,0.1072,0.1199,0.1050,0.1043,0.1067,0.1046,0.1049,0.1040,0.1050
+pass=2 mlp=pt_rm_m128_d256_h512 samples leg=cutlass_tuned event=0.0297,0.0287,0.0287,0.0287,0.0287,0.0297,0.0287,0.0287,0.0287,0.0297,0.0286,0.0297,0.0287,0.0276,0.0276,0.0297,0.0287,0.0287,0.0276,0.0338,0.0276,0.0307,0.0297,0.0285,0.0287,0.0297,0.0287,0.0286,0.0276,0.0287 wall=0.0368,0.0344,0.0348,0.0354,0.0357,0.0352,0.0346,0.0342,0.0343,0.0354,0.0354,0.0368,0.0343,0.0343,0.0340,0.0354,0.0346,0.0350,0.0350,0.0393,0.0337,0.0384,0.0384,0.0343,0.0343,0.0360,0.0347,0.0354,0.0346,0.0344
+-- splitk: mm_MxNxK cells, every arm in one process, two processes ABBA (reps=30)
+# splitk cell=mm_128x2048x7168 M=128 N=2048 K=7168 arms=mm_128x2048x7168 mm_128x2048x7168.null mm_128x2048x7168.off-streamk+splitk-atomic+splitk mm_128x2048x7168.off-streamk+splitk-atomic mm_128x2048x7168.off-streamk mm_128x2048x7168_c mm_128x2048x7168_r mm_128x2048x7168_rc mm_128x2048x7168_x 
+pass=1 cell=mm_128x2048x7168 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=1 cell=mm_128x2048x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=1 cell=mm_128x2048x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=1 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168 face=default+fma kernel=mapal_tile_6032266203f23ad8 grid=1311x1 block=32 smem=1536 regs=127 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168.null face=default+fma kernel=mapal_tile_6032266203f23ad8 grid=1311x1 block=32 smem=1536 regs=127 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168.off-streamk+splitk-atomic+splitk face=default+fma kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168.off-streamk+splitk-atomic face=default+fma kernel=mapal_tile_c0fb0b9aae64bb6e grid=64x8 block=32 smem=1536 regs=128 local_bytes=24 S=4 combine=workspace reduce=mapal_tile_d84fe61ea997c70d rgrid=1024x1 rblock=256 rregs=12
+SPLITK GATE FAILED cell=mm_128x2048x7168 pass=1
+pass=2 cell=mm_128x2048x7168 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=2 cell=mm_128x2048x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=2 cell=mm_128x2048x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=2 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168_x face=separate kernel=mapal_tile_3e8de735cd7b9c26 grid=64x2 block=128 smem=6400 regs=77 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168_rc face=fixed+fma kernel=mapal_tile_c0fb0b9aae64bb6e grid=64x8 block=32 smem=1536 regs=128 local_bytes=24 S=4 combine=workspace reduce=mapal_tile_d84fe61ea997c70d rgrid=1024x1 rblock=256 rregs=12
+pass=2 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168_r face=fixed+separate kernel=mapal_tile_3e8de735cd7b9c26 grid=64x2 block=128 smem=6400 regs=77 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_128x2048x7168 arm stem=mm_128x2048x7168_c face=fma kernel=mapal_tile_853a6d1f9bcfa375 grid=64x2 block=32 smem=1536 regs=128 local_bytes=0 S=1 combine=none
+SPLITK GATE FAILED cell=mm_128x2048x7168 pass=2
+splitk_program prog=mm_128x2048x7168 rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_6032266203f23ad8 1311 1 32 1536 1 streamk] within
+splitk_program prog=mm_128x2048x7168.off-streamk+splitk-atomic+splitk rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_853a6d1f9bcfa375 64 2 32 1536] within
+splitk_program prog=mm_128x2048x7168.off-streamk+splitk-atomic rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_c0fb0b9aae64bb6e 64 8 32 1536 4 mapal_tile_d84fe61ea997c70d 1024 1 256 0] within
+splitk_program prog=mm_128x2048x7168.off-streamk rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_e7730fc4294aa20e 64 16 32 1536 8 atomic] within
+splitk_program prog=mm_128x2048x7168_c rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_853a6d1f9bcfa375 64 2 32 1536] within
+splitk_program prog=mm_128x2048x7168_r rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_3e8de735cd7b9c26 64 2 128 6400] within
+splitk_program prog=mm_128x2048x7168_rc rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_c0fb0b9aae64bb6e 64 8 32 1536 4 mapal_tile_d84fe61ea997c70d 1024 1 256 0] within
+# splitk cell=mm_16x1024x4096 M=16 N=1024 K=4096 arms=mm_16x1024x4096 mm_16x1024x4096.null mm_16x1024x4096.off-streamk+splitk-atomic+splitk mm_16x1024x4096.off-streamk+splitk-atomic mm_16x1024x4096.off-streamk mm_16x1024x4096_c mm_16x1024x4096_r mm_16x1024x4096_rc mm_16x1024x4096_x 
+pass=1 cell=mm_16x1024x4096 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=1 cell=mm_16x1024x4096 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=1 cell=mm_16x1024x4096 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=1 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096 face=default+fma kernel=mapal_tile_62a63560df4ff424 grid=456x1 block=256 smem=9216 regs=39 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096.null face=default+fma kernel=mapal_tile_62a63560df4ff424 grid=456x1 block=256 smem=9216 regs=39 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096.off-streamk+splitk-atomic+splitk face=default+fma kernel=mapal_tile_2d055d5fed4dabb1 grid=64x1 block=256 smem=9216 regs=38 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096.off-streamk+splitk-atomic face=default+fma kernel=mapal_tile_06f14c85529f6d4a grid=64x4 block=256 smem=9216 regs=40 local_bytes=0 S=4 combine=workspace reduce=mapal_tile_6e6985860e613e49 rgrid=64x1 rblock=256 rregs=12
+SPLITK GATE FAILED cell=mm_16x1024x4096 pass=1
+pass=2 cell=mm_16x1024x4096 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=2 cell=mm_16x1024x4096 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=2 cell=mm_16x1024x4096 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=2 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096_x face=separate kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=28672 regs=255 local_bytes=144 S=1 combine=none
+pass=2 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096_rc face=fixed+fma kernel=mapal_tile_06f14c85529f6d4a grid=64x4 block=256 smem=9216 regs=40 local_bytes=0 S=4 combine=workspace reduce=mapal_tile_6e6985860e613e49 rgrid=64x1 rblock=256 rregs=12
+pass=2 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096_r face=fixed+separate kernel=mapal_tile_3d77fd564d0f444a grid=64x2 block=32 smem=28672 regs=255 local_bytes=144 S=1 combine=none
+pass=2 cell=mm_16x1024x4096 arm stem=mm_16x1024x4096_c face=fma kernel=mapal_tile_2d055d5fed4dabb1 grid=64x1 block=256 smem=9216 regs=38 local_bytes=0 S=1 combine=none
+SPLITK GATE FAILED cell=mm_16x1024x4096 pass=2
+splitk_program prog=mm_16x1024x4096 rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_62a63560df4ff424 456 1 256 9216 1 streamk] within
+splitk_program prog=mm_16x1024x4096.off-streamk+splitk-atomic+splitk rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_2d055d5fed4dabb1 64 1 256 9216] within
+splitk_program prog=mm_16x1024x4096.off-streamk+splitk-atomic rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_06f14c85529f6d4a 64 4 256 9216 4 mapal_tile_6e6985860e613e49 64 1 256 0] within
+splitk_program prog=mm_16x1024x4096.off-streamk rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_f407925cc90c0372 64 4 256 9216 4 atomic] within
+splitk_program prog=mm_16x1024x4096_c rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_2d055d5fed4dabb1 64 1 256 9216] within
+splitk_program prog=mm_16x1024x4096_r rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_3d77fd564d0f444a 64 2 32 28672] within
+splitk_program prog=mm_16x1024x4096_rc rc=0 out=[65617 ] exact=[65617 ] launch=[mapal_tile_06f14c85529f6d4a 64 4 256 9216 4 mapal_tile_6e6985860e613e49 64 1 256 0] within
+# splitk cell=mm_16x18432x7168 M=16 N=18432 K=7168 arms=mm_16x18432x7168 mm_16x18432x7168.null mm_16x18432x7168.off-streamk mm_16x18432x7168_c mm_16x18432x7168_r mm_16x18432x7168_rc mm_16x18432x7168_x 
+pass=1 cell=mm_16x18432x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=1 cell=mm_16x18432x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168 face=default+fma kernel=mapal_tile_401299c4ed6c0908 grid=655x1 block=64 smem=3328 regs=85 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168.null face=default+fma kernel=mapal_tile_401299c4ed6c0908 grid=655x1 block=64 smem=3328 regs=85 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168.off-streamk face=default+fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_c face=fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_r face=fixed+separate kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=3328 regs=64 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_rc face=fixed+fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_x face=separate kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=3328 regs=64 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168 cells=256 maxrel_vs_f64=7.654e-05 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=2.060e-04 within_bound=yes fnv=ad508db5035dd68f
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168.null cells=256 maxrel_vs_f64=7.654e-05 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=2.060e-04 within_bound=yes fnv=ebcc9f041153c93f
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168.off-streamk cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_c cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_r cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=727d98f67fd563de
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_rc cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_x cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=727d98f67fd563de
+pass=1 cell=mm_16x18432x7168 values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+pass=1 cell=mm_16x18432x7168 values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+pass=1 cell=mm_16x18432x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.082e-04
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168 M=16 N=18432 K=7168 n=30 min_ms=0.6380 med_ms=0.6390 max_ms=0.6441
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168.null M=16 N=18432 K=7168 n=30 min_ms=0.6369 med_ms=0.6400 max_ms=0.6420
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168.off-streamk M=16 N=18432 K=7168 n=30 min_ms=0.6226 med_ms=0.6298 max_ms=0.6369
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_c M=16 N=18432 K=7168 n=30 min_ms=0.6236 med_ms=0.6308 max_ms=0.6441
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_r M=16 N=18432 K=7168 n=30 min_ms=0.6400 med_ms=0.6584 max_ms=0.6881
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_rc M=16 N=18432 K=7168 n=30 min_ms=0.6205 med_ms=0.6287 max_ms=0.6441
+pass=1 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_x M=16 N=18432 K=7168 n=30 min_ms=0.6359 med_ms=0.6584 max_ms=0.6748
+pass=1 cell=mm_16x18432x7168 time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6226 med_ms=0.6246 max_ms=0.6267
+pass=1 cell=mm_16x18432x7168 time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5411 med_ms=1.5841 max_ms=1.5862
+pass=1 cell=mm_16x18432x7168 time leg=cutlass_tuned M=16 N=18432 K=7168 n=30 min_ms=0.6113 med_ms=0.6145 max_ms=0.6185
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168 same_output=NO(info) fnv=060b3efd7d432a11
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168.null same_output=NO(info) fnv=c5f29f46596f1321
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168.off-streamk same_output=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_c same_output=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_r same_output=yes fnv=727d98f67fd563de
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_rc same_output=yes fnv=92218cb48bb37f90
+pass=1 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_x same_output=yes fnv=727d98f67fd563de
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168 0.6400,0.6400,0.6390,0.6390,0.6390,0.6400,0.6400,0.6390,0.6380,0.6380,0.6400,0.6390,0.6390,0.6400,0.6410,0.6390,0.6380,0.6400,0.6400,0.6390,0.6380,0.6431,0.6441,0.6390,0.6401,0.6390,0.6410,0.6400,0.6380,0.6380
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168.null 0.6390,0.6369,0.6400,0.6420,0.6390,0.6400,0.6390,0.6420,0.6400,0.6400,0.6390,0.6380,0.6390,0.6410,0.6400,0.6390,0.6400,0.6400,0.6369,0.6400,0.6390,0.6390,0.6400,0.6400,0.6410,0.6420,0.6410,0.6420,0.6400,0.6400
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168.off-streamk 0.6236,0.6369,0.6246,0.6226,0.6359,0.6369,0.6277,0.6277,0.6267,0.6257,0.6308,0.6298,0.6308,0.6349,0.6298,0.6349,0.6267,0.6246,0.6369,0.6257,0.6369,0.6257,0.6277,0.6308,0.6318,0.6318,0.6276,0.6267,0.6318,0.6257
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_c 0.6441,0.6400,0.6257,0.6328,0.6287,0.6277,0.6246,0.6277,0.6359,0.6328,0.6339,0.6339,0.6287,0.6308,0.6236,0.6308,0.6318,0.6431,0.6246,0.6339,0.6257,0.6257,0.6267,0.6287,0.6287,0.6287,0.6380,0.6359,0.6308,0.6298
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_r 0.6543,0.6523,0.6534,0.6615,0.6584,0.6553,0.6758,0.6595,0.6585,0.6584,0.6851,0.6431,0.6676,0.6482,0.6400,0.6564,0.6523,0.6881,0.6656,0.6513,0.6574,0.6635,0.6697,0.6615,0.6554,0.6554,0.6595,0.6666,0.6748,0.6513
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_rc 0.6349,0.6328,0.6298,0.6236,0.6226,0.6277,0.6267,0.6287,0.6308,0.6359,0.6277,0.6257,0.6370,0.6257,0.6267,0.6267,0.6277,0.6308,0.6277,0.6441,0.6359,0.6287,0.6328,0.6205,0.6328,0.6390,0.6267,0.6308,0.6236,0.6328
+pass=1 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_x 0.6574,0.6625,0.6482,0.6451,0.6502,0.6595,0.6625,0.6615,0.6728,0.6533,0.6514,0.6748,0.6543,0.6636,0.6687,0.6584,0.6625,0.6554,0.6502,0.6359,0.6605,0.6492,0.6533,0.6441,0.6431,0.6697,0.6482,0.6728,0.6666,0.6605
+pass=1 cell=mm_16x18432x7168 samples leg=cublas 0.6226,0.6246,0.6236,0.6236,0.6236,0.6257,0.6257,0.6226,0.6236,0.6246,0.6246,0.6246,0.6246,0.6246,0.6236,0.6246,0.6236,0.6246,0.6246,0.6236,0.6246,0.6267,0.6236,0.6236,0.6246,0.6236,0.6257,0.6246,0.6246,0.6246
+pass=1 cell=mm_16x18432x7168 samples leg=cutlass 1.5431,1.5432,1.5442,1.5411,1.5688,1.5708,1.5852,1.5831,1.5841,1.5852,1.5852,1.5852,1.5555,1.5811,1.5852,1.5841,1.5852,1.5852,1.5821,1.5841,1.5862,1.5831,1.5852,1.5841,1.5821,1.5841,1.5831,1.5841,1.5852,1.5862
+pass=1 cell=mm_16x18432x7168 samples leg=cutlass_tuned 0.6124,0.6144,0.6144,0.6124,0.6113,0.6164,0.6154,0.6154,0.6113,0.6154,0.6185,0.6154,0.6154,0.6185,0.6144,0.6144,0.6164,0.6134,0.6134,0.6144,0.6154,0.6134,0.6155,0.6175,0.6144,0.6143,0.6154,0.6185,0.6145,0.6144
+pass=2 cell=mm_16x18432x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=2 cell=mm_16x18432x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_x face=separate kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=3328 regs=64 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_rc face=fixed+fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_r face=fixed+separate kernel=mapal_tile_0834d4c11240c736 grid=576x1 block=64 smem=3328 regs=64 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168_c face=fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168.off-streamk face=default+fma kernel=mapal_tile_3b7a9e0a4eec2665 grid=576x1 block=64 smem=3328 regs=77 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168.null face=default+fma kernel=mapal_tile_401299c4ed6c0908 grid=655x1 block=64 smem=3328 regs=85 local_bytes=0 S=1 combine=streamk
+pass=2 cell=mm_16x18432x7168 arm stem=mm_16x18432x7168 face=default+fma kernel=mapal_tile_401299c4ed6c0908 grid=655x1 block=64 smem=3328 regs=85 local_bytes=0 S=1 combine=streamk
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_x cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=727d98f67fd563de
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_rc cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_r cells=256 maxrel_vs_f64=1.407e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=727d98f67fd563de
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168_c cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168.off-streamk cells=256 maxrel_vs_f64=1.082e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168.null cells=256 maxrel_vs_f64=7.654e-05 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=2.060e-04 within_bound=yes fnv=be4ddcaeade9870c
+pass=2 cell=mm_16x18432x7168 values leg=mm_16x18432x7168 cells=256 maxrel_vs_f64=7.654e-05 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=2.060e-04 within_bound=yes fnv=5328b00845ed71ee
+pass=2 cell=mm_16x18432x7168 values leg=cublas cells=256 maxrel_vs_f64=5.955e-05
+pass=2 cell=mm_16x18432x7168 values leg=cutlass cells=256 maxrel_vs_f64=1.082e-04
+pass=2 cell=mm_16x18432x7168 values leg=cutlass_tuned cells=256 maxrel_vs_f64=1.082e-04
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_x M=16 N=18432 K=7168 n=30 min_ms=0.6380 med_ms=0.6533 max_ms=0.6810
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_rc M=16 N=18432 K=7168 n=30 min_ms=0.6236 med_ms=0.6277 max_ms=0.6441
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_r M=16 N=18432 K=7168 n=30 min_ms=0.6400 med_ms=0.6605 max_ms=0.6851
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168_c M=16 N=18432 K=7168 n=30 min_ms=0.6216 med_ms=0.6287 max_ms=0.6410
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168.off-streamk M=16 N=18432 K=7168 n=30 min_ms=0.6227 med_ms=0.6308 max_ms=0.6400
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168.null M=16 N=18432 K=7168 n=30 min_ms=0.6380 med_ms=0.6400 max_ms=0.6441
+pass=2 cell=mm_16x18432x7168 time leg=mm_16x18432x7168 M=16 N=18432 K=7168 n=30 min_ms=0.6369 med_ms=0.6390 max_ms=0.6431
+pass=2 cell=mm_16x18432x7168 time leg=cublas M=16 N=18432 K=7168 n=30 min_ms=0.6226 med_ms=0.6246 max_ms=0.6276
+pass=2 cell=mm_16x18432x7168 time leg=cutlass M=16 N=18432 K=7168 n=30 min_ms=1.5432 med_ms=1.5698 max_ms=1.5729
+pass=2 cell=mm_16x18432x7168 time leg=cutlass_tuned M=16 N=18432 K=7168 n=30 min_ms=0.6113 med_ms=0.6144 max_ms=0.6205
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_x same_output=yes fnv=727d98f67fd563de
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_rc same_output=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_r same_output=yes fnv=727d98f67fd563de
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168_c same_output=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168.off-streamk same_output=yes fnv=92218cb48bb37f90
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168.null same_output=NO(info) fnv=e3db553b84a275d5
+pass=2 cell=mm_16x18432x7168 determinism leg=mm_16x18432x7168 same_output=NO(info) fnv=b4495ec370f65931
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_x 0.6441,0.6380,0.6728,0.6564,0.6513,0.6492,0.6625,0.6513,0.6810,0.6799,0.6728,0.6523,0.6492,0.6410,0.6595,0.6584,0.6533,0.6461,0.6666,0.6615,0.6502,0.6492,0.6410,0.6523,0.6615,0.6482,0.6636,0.6656,0.6431,0.6615
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_rc 0.6267,0.6349,0.6257,0.6359,0.6277,0.6359,0.6257,0.6308,0.6328,0.6277,0.6287,0.6267,0.6257,0.6236,0.6277,0.6298,0.6317,0.6420,0.6318,0.6236,0.6257,0.6400,0.6236,0.6267,0.6267,0.6328,0.6349,0.6441,0.6267,0.6267
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_r 0.6400,0.6554,0.6769,0.6666,0.6666,0.6605,0.6482,0.6748,0.6482,0.6574,0.6441,0.6564,0.6564,0.6636,0.6676,0.6636,0.6451,0.6502,0.6605,0.6851,0.6410,0.6840,0.6574,0.6646,0.6636,0.6830,0.6707,0.6523,0.6595,0.6584
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168_c 0.6246,0.6308,0.6267,0.6287,0.6287,0.6246,0.6267,0.6287,0.6308,0.6246,0.6267,0.6216,0.6359,0.6298,0.6298,0.6226,0.6246,0.6296,0.6287,0.6359,0.6410,0.6339,0.6246,0.6298,0.6257,0.6246,0.6236,0.6226,0.6277,0.6328
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168.off-streamk 0.6246,0.6298,0.6390,0.6298,0.6257,0.6277,0.6328,0.6339,0.6277,0.6287,0.6400,0.6308,0.6318,0.6287,0.6277,0.6298,0.6236,0.6257,0.6247,0.6349,0.6227,0.6369,0.6369,0.6390,0.6318,0.6318,0.6308,0.6257,0.6400,0.6349
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168.null 0.6390,0.6400,0.6420,0.6420,0.6420,0.6441,0.6390,0.6400,0.6380,0.6390,0.6410,0.6410,0.6390,0.6390,0.6431,0.6380,0.6390,0.6390,0.6409,0.6400,0.6410,0.6380,0.6390,0.6399,0.6380,0.6410,0.6380,0.6410,0.6400,0.6400
+pass=2 cell=mm_16x18432x7168 samples leg=mm_16x18432x7168 0.6379,0.6390,0.6369,0.6380,0.6412,0.6400,0.6400,0.6390,0.6431,0.6380,0.6380,0.6380,0.6390,0.6410,0.6431,0.6400,0.6400,0.6390,0.6380,0.6390,0.6400,0.6380,0.6410,0.6400,0.6400,0.6390,0.6410,0.6390,0.6390,0.6390
+pass=2 cell=mm_16x18432x7168 samples leg=cublas 0.6236,0.6235,0.6236,0.6236,0.6246,0.6257,0.6257,0.6236,0.6246,0.6246,0.6246,0.6246,0.6226,0.6236,0.6246,0.6236,0.6236,0.6236,0.6236,0.6226,0.6246,0.6246,0.6246,0.6257,0.6236,0.6276,0.6257,0.6236,0.6236,0.6246
+pass=2 cell=mm_16x18432x7168 samples leg=cutlass 1.5432,1.5432,1.5432,1.5555,1.5555,1.5698,1.5688,1.5708,1.5688,1.5708,1.5729,1.5708,1.5698,1.5707,1.5708,1.5688,1.5698,1.5698,1.5708,1.5718,1.5698,1.5708,1.5698,1.5698,1.5729,1.5698,1.5698,1.5708,1.5708,1.5698
+pass=2 cell=mm_16x18432x7168 samples leg=cutlass_tuned 0.6113,0.6134,0.6134,0.6144,0.6154,0.6124,0.6144,0.6134,0.6154,0.6143,0.6134,0.6154,0.6164,0.6134,0.6125,0.6144,0.6144,0.6175,0.6113,0.6144,0.6164,0.6144,0.6154,0.6134,0.6175,0.6154,0.6164,0.6205,0.6164,0.6164
+splitk_program prog=mm_16x18432x7168 rc=0 out=[665862 ] exact=[665862 ] launch=[mapal_tile_401299c4ed6c0908 655 1 64 3328 1 streamk] within
+splitk_program prog=mm_16x18432x7168.off-streamk rc=0 out=[665862 ] exact=[665862 ] launch=[mapal_tile_3b7a9e0a4eec2665 576 1 64 3328] within
+splitk_program prog=mm_16x18432x7168_c rc=0 out=[665862 ] exact=[665862 ] launch=[mapal_tile_3b7a9e0a4eec2665 576 1 64 3328] within
+splitk_program prog=mm_16x18432x7168_r rc=0 out=[665862 ] exact=[665862 ] launch=[mapal_tile_0834d4c11240c736 576 1 64 3328] within
+splitk_program prog=mm_16x18432x7168_rc rc=0 out=[665862 ] exact=[665862 ] launch=[mapal_tile_3b7a9e0a4eec2665 576 1 64 3328] within
+# splitk cell=mm_16x2048x7168 M=16 N=2048 K=7168 arms=mm_16x2048x7168 mm_16x2048x7168.null mm_16x2048x7168.off-streamk+splitk-atomic+splitk mm_16x2048x7168.off-streamk+splitk-atomic mm_16x2048x7168.off-streamk mm_16x2048x7168_c mm_16x2048x7168_r mm_16x2048x7168_rc mm_16x2048x7168_x 
+pass=1 cell=mm_16x2048x7168 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=1 cell=mm_16x2048x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=1 cell=mm_16x2048x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=1 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168 face=default+fma kernel=mapal_tile_2ae87a3cb89b56c6 grid=652x1 block=64 smem=5632 regs=105 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168.null face=default+fma kernel=mapal_tile_2ae87a3cb89b56c6 grid=652x1 block=64 smem=5632 regs=105 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168.off-streamk+splitk-atomic+splitk face=default+fma kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=5632 regs=96 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168.off-streamk+splitk-atomic face=default+fma kernel=mapal_tile_aabc3f35b5cd6bd4 grid=64x8 block=64 smem=5632 regs=99 local_bytes=0 S=4 combine=workspace reduce=mapal_tile_164c6cf40f1b1523 rgrid=128x1 rblock=256 rregs=12
+SPLITK GATE FAILED cell=mm_16x2048x7168 pass=1
+pass=2 cell=mm_16x2048x7168 cuModuleGetFunction(&a.red, mod, rname): named symbol not found
+pass=2 cell=mm_16x2048x7168 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=2 cell=mm_16x2048x7168 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=2 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168_x face=separate kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=5632 regs=72 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168_rc face=fixed+fma kernel=mapal_tile_aabc3f35b5cd6bd4 grid=64x8 block=64 smem=5632 regs=99 local_bytes=0 S=4 combine=workspace reduce=mapal_tile_164c6cf40f1b1523 rgrid=128x1 rblock=256 rregs=12
+pass=2 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168_r face=fixed+separate kernel=mapal_tile_54458cf19a31e8f8 grid=64x2 block=64 smem=5632 regs=72 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_16x2048x7168 arm stem=mm_16x2048x7168_c face=fma kernel=mapal_tile_b35f14c2b9584d57 grid=64x2 block=64 smem=5632 regs=96 local_bytes=0 S=1 combine=none
+SPLITK GATE FAILED cell=mm_16x2048x7168 pass=2
+splitk_program prog=mm_16x2048x7168 rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_2ae87a3cb89b56c6 652 1 64 5632 1 streamk] within
+splitk_program prog=mm_16x2048x7168.off-streamk+splitk-atomic+splitk rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_b35f14c2b9584d57 64 2 64 5632] within
+splitk_program prog=mm_16x2048x7168.off-streamk+splitk-atomic rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_aabc3f35b5cd6bd4 64 8 64 5632 4 mapal_tile_164c6cf40f1b1523 128 1 256 0] within
+splitk_program prog=mm_16x2048x7168.off-streamk rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_1c381956ff36b504 64 8 64 5632 4 atomic] within
+splitk_program prog=mm_16x2048x7168_c rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_b35f14c2b9584d57 64 2 64 5632] within
+splitk_program prog=mm_16x2048x7168_r rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_54458cf19a31e8f8 64 2 64 5632] within
+splitk_program prog=mm_16x2048x7168_rc rc=0 out=[27231 ] exact=[27231 ] launch=[mapal_tile_aabc3f35b5cd6bd4 64 8 64 5632 4 mapal_tile_164c6cf40f1b1523 128 1 256 0] within
+# splitk cell=mm_4096x4096x4096 M=4096 N=4096 K=4096 arms=mm_4096x4096x4096 mm_4096x4096x4096.null mm_4096x4096x4096.off-streamk mm_4096x4096x4096_c mm_4096x4096x4096_r mm_4096x4096x4096_rc mm_4096x4096x4096_x 
+pass=1 cell=mm_4096x4096x4096 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=1 cell=mm_4096x4096x4096 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096 face=default+fma kernel=mapal_tile_86a1499561c1f3d0 grid=164x1 block=128 smem=16640 regs=231 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096.null face=default+fma kernel=mapal_tile_86a1499561c1f3d0 grid=164x1 block=128 smem=16640 regs=231 local_bytes=0 S=1 combine=streamk
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096.off-streamk face=default+fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_c face=fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_r face=fixed+separate kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_rc face=fixed+fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_x face=separate kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1 combine=none
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096 cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=3.433e-05 within_bound=yes fnv=979deb98351a73a3
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096.null cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=3.433e-05 within_bound=yes fnv=979deb98351a73a3
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096.off-streamk cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_c cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_r cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=54485620f4ac4077
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_rc cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_x cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=54485620f4ac4077
+pass=1 cell=mm_4096x4096x4096 values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+pass=1 cell=mm_4096x4096x4096 values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+pass=1 cell=mm_4096x4096x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.735e-04
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096 M=4096 N=4096 K=4096 n=30 min_ms=6.1368 med_ms=6.3846 max_ms=6.8137
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096.null M=4096 N=4096 K=4096 n=30 min_ms=6.2075 med_ms=6.3580 max_ms=7.0748
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096.off-streamk M=4096 N=4096 K=4096 n=30 min_ms=5.5707 med_ms=6.2843 max_ms=7.3441
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_c M=4096 N=4096 K=4096 n=30 min_ms=5.5562 med_ms=6.2853 max_ms=7.6063
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_r M=4096 N=4096 K=4096 n=30 min_ms=9.0358 med_ms=10.7254 max_ms=12.8522
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_rc M=4096 N=4096 K=4096 n=30 min_ms=5.9965 med_ms=6.3539 max_ms=7.5223
+pass=1 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_x M=4096 N=4096 K=4096 n=30 min_ms=10.6701 med_ms=11.0633 max_ms=12.8584
+pass=1 cell=mm_4096x4096x4096 time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=6.1245 med_ms=6.3252 max_ms=7.3820
+pass=1 cell=mm_4096x4096x4096 time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=6.2740 med_ms=6.4123 max_ms=7.0543
+pass=1 cell=mm_4096x4096x4096 time leg=cutlass_tuned M=4096 N=4096 K=4096 n=30 min_ms=16.4577 med_ms=16.7485 max_ms=17.2083
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096 same_output=yes(info) fnv=979deb98351a73a3
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096.null same_output=yes(info) fnv=979deb98351a73a3
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096.off-streamk same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_c same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_r same_output=yes fnv=54485620f4ac4077
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_rc same_output=yes fnv=0d8343251b74ad4d
+pass=1 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_x same_output=yes fnv=54485620f4ac4077
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096 6.1368,6.3683,6.3058,6.3447,6.4451,6.3846,6.3764,6.4410,6.5475,6.4072,6.5577,6.2208,6.7338,6.3222,6.3980,6.3478,6.3508,6.3990,6.3898,6.4041,6.4625,6.2792,6.6785,6.2484,6.8137,6.3119,6.5874,6.2852,6.3283,6.3416
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096.null 6.2075,6.4061,6.7492,6.3007,6.4492,6.3027,6.3580,6.3488,6.5700,6.2822,6.5679,6.2618,6.8229,6.2904,7.0083,6.3365,6.9181,6.3119,6.6765,6.3037,6.4584,6.3017,6.6673,6.2893,6.8854,6.2771,7.0748,6.3386,6.9612,6.3396
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096.off-streamk 5.5707,6.2843,6.9632,6.1471,7.2315,6.2095,7.1936,6.2054,7.0144,6.1501,6.9530,6.1071,6.7267,6.1665,6.9069,6.1573,7.2673,6.1500,7.3441,6.1573,7.0523,6.1460,6.8301,6.1532,6.7953,6.1460,6.9673,6.1512,7.1005,6.2106
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_c 5.5562,6.2853,6.9509,6.1747,7.5181,6.2218,7.6063,6.2403,7.4322,6.1809,7.4312,6.1481,7.3380,6.1665,7.0001,6.1460,7.2591,6.1512,7.3472,6.1778,7.5162,6.1972,7.5244,6.2085,7.3748,6.1604,7.0636,6.1501,7.1035,6.2126
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_r 9.0358,10.7254,11.7504,10.5882,12.8522,10.7028,12.4898,10.6967,12.6935,10.5912,12.3464,10.5011,12.5522,10.5933,12.1518,10.6230,12.4170,10.5841,12.1016,10.5953,12.3812,10.5923,12.6740,10.6220,12.6392,10.5205,12.1610,10.6220,11.9931,10.6926
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_rc 5.9965,6.2822,6.8741,6.2116,7.5223,6.2720,7.1045,6.2751,7.4107,6.2403,6.8762,6.2351,6.7953,6.3539,6.9376,6.2689,7.2653,6.2034,7.0246,6.2126,6.9478,6.2638,6.9489,6.3355,6.8833,6.3293,6.9110,6.2679,7.0328,6.2730
+pass=1 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_x 11.0633,10.6834,11.2148,10.6844,12.8584,10.8012,11.7187,10.8001,12.5696,10.8104,11.6634,10.6957,11.6163,10.7950,11.3930,10.7438,12.0617,10.6701,11.4770,10.6956,11.5937,10.8052,11.7740,10.8411,11.7443,10.8104,11.4033,10.7080,11.2538,10.7049
+pass=1 cell=mm_4096x4096x4096 samples leg=cublas 6.3252,6.1245,6.4102,6.1583,7.3820,6.2177,6.5505,6.2208,7.0646,6.2218,6.4174,6.1594,6.3570,6.1583,6.4952,6.2167,6.7697,6.1594,6.4819,6.1614,6.4809,6.2198,6.5147,6.2403,6.4143,6.1604,6.4502,6.1614,6.4788,6.1553
+pass=1 cell=mm_4096x4096x4096 samples leg=cutlass 6.3857,6.2740,6.4891,6.3027,7.0543,6.3662,6.6796,6.3662,6.9171,6.4123,6.5638,6.3037,6.4942,6.3017,6.4307,6.3662,6.6028,6.3017,6.5536,6.3355,6.6335,6.3662,6.6877,6.4020,6.5608,6.3017,6.4614,6.3037,6.5106,6.3109
+pass=1 cell=mm_4096x4096x4096 samples leg=cutlass_tuned 16.6656,16.4577,16.6881,16.5253,17.0803,16.6973,16.8571,16.7096,17.2083,16.9052,16.7885,16.5847,16.7578,16.5284,16.7485,16.5396,17.1100,16.6922,16.8643,16.6984,16.7598,16.6973,17.0650,16.8550,16.8755,16.6144,16.8110,16.5540,16.8397,16.6902
+pass=2 cell=mm_4096x4096x4096 device name="NVIDIA GeForce RTX 3090" cc=8.6 driver=13010
+pass=2 cell=mm_4096x4096x4096 facts sms=82 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=16 max_threads_per_block=1024 warp=32 l2_bytes=6291456 sm_clock_khz=1695000 mem_clock_khz=9751000 l2_persist_bytes=4325376 l2_window_max=134213632
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_x face=separate kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_rc face=fixed+fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_r face=fixed+separate kernel=mapal_tile_57ba01f1fbd2b36e grid=32x32 block=256 smem=16640 regs=128 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096_c face=fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096.off-streamk face=default+fma kernel=mapal_tile_2a54d22fbd9beb3d grid=32x32 block=128 smem=16640 regs=218 local_bytes=0 S=1 combine=none
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096.null face=default+fma kernel=mapal_tile_86a1499561c1f3d0 grid=164x1 block=128 smem=16640 regs=231 local_bytes=0 S=1 combine=streamk
+pass=2 cell=mm_4096x4096x4096 arm stem=mm_4096x4096x4096 face=default+fma kernel=mapal_tile_86a1499561c1f3d0 grid=164x1 block=128 smem=16640 regs=231 local_bytes=0 S=1 combine=streamk
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_x cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=54485620f4ac4077
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_rc cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_r cells=256 maxrel_vs_f64=4.291e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_adr0040_bound=yes within_bound=yes fnv=54485620f4ac4077
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096_c cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096.off-streamk cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=yes maxabs_vs_ordered=0.000e+00 within_bound=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096.null cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=3.433e-05 within_bound=yes fnv=979deb98351a73a3
+pass=2 cell=mm_4096x4096x4096 values leg=mm_4096x4096x4096 cells=256 maxrel_vs_f64=7.735e-04 S=1 bit_exact_vs_reference=NO(info) maxabs_vs_ordered=3.433e-05 within_bound=yes fnv=979deb98351a73a3
+pass=2 cell=mm_4096x4096x4096 values leg=cublas cells=256 maxrel_vs_f64=7.735e-04
+pass=2 cell=mm_4096x4096x4096 values leg=cutlass cells=256 maxrel_vs_f64=7.735e-04
+pass=2 cell=mm_4096x4096x4096 values leg=cutlass_tuned cells=256 maxrel_vs_f64=7.735e-04
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_x M=4096 N=4096 K=4096 n=30 min_ms=8.9897 med_ms=11.1473 max_ms=11.3060
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_rc M=4096 N=4096 K=4096 n=30 min_ms=5.5460 med_ms=6.5137 max_ms=6.9970
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_r M=4096 N=4096 K=4096 n=30 min_ms=8.9989 med_ms=11.1380 max_ms=12.0054
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096_c M=4096 N=4096 K=4096 n=30 min_ms=6.1215 med_ms=6.3918 max_ms=6.8761
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096.off-streamk M=4096 N=4096 K=4096 n=30 min_ms=6.1501 med_ms=6.3283 max_ms=6.5608
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096.null M=4096 N=4096 K=4096 n=30 min_ms=6.2556 med_ms=6.4338 max_ms=6.5464
+pass=2 cell=mm_4096x4096x4096 time leg=mm_4096x4096x4096 M=4096 N=4096 K=4096 n=30 min_ms=6.2843 med_ms=6.4553 max_ms=6.6335
+pass=2 cell=mm_4096x4096x4096 time leg=cublas M=4096 N=4096 K=4096 n=30 min_ms=6.0406 med_ms=6.2843 max_ms=6.5536
+pass=2 cell=mm_4096x4096x4096 time leg=cutlass M=4096 N=4096 K=4096 n=30 min_ms=6.1828 med_ms=6.4952 max_ms=6.9489
+pass=2 cell=mm_4096x4096x4096 time leg=cutlass_tuned M=4096 N=4096 K=4096 n=30 min_ms=16.2120 med_ms=17.4510 max_ms=18.3316
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_x same_output=yes fnv=54485620f4ac4077
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_rc same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_r same_output=yes fnv=54485620f4ac4077
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096_c same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096.off-streamk same_output=yes fnv=0d8343251b74ad4d
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096.null same_output=yes(info) fnv=979deb98351a73a3
+pass=2 cell=mm_4096x4096x4096 determinism leg=mm_4096x4096x4096 same_output=yes(info) fnv=979deb98351a73a3
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_x 8.9897,11.1473,11.0551,11.2599,10.9251,11.0264,10.7981,11.2466,11.1084,11.1780,11.0294,11.1903,10.8083,11.2486,10.8564,11.2640,11.1565,11.2681,11.1360,11.2364,10.9117,11.3060,10.9394,11.2579,10.9568,11.2609,11.0653,11.2845,11.0982,11.2230
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_rc 5.5460,6.5249,6.3877,6.5946,6.3969,6.5137,6.2679,6.9868,6.3406,6.7973,6.2935,6.5874,6.3109,6.6099,6.3283,6.9970,6.3959,6.8844,6.2679,6.6540,6.3375,6.6253,6.4184,6.6888,6.3386,6.9171,6.3283,6.8700,6.2700,6.7277
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_r 8.9989,11.1380,10.6967,11.5528,10.6414,11.4842,10.6281,12.0054,10.7858,11.4299,10.7069,11.2589,10.5021,11.7494,10.6845,11.9931,10.8872,11.5579,10.7028,11.2435,10.5984,11.5927,10.6916,11.8661,10.7059,11.9900,10.7602,11.6777,10.7018,11.3295
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096_c 6.1215,6.5249,6.2700,6.7942,6.2085,6.7154,6.1532,6.4553,6.2075,6.3939,6.2433,6.5956,6.1522,6.8761,6.2054,6.5055,6.2659,6.3918,6.2249,6.5219,6.2116,6.8045,6.2208,6.8393,6.2177,6.5055,6.2106,6.3990,6.2259,6.5270
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096.off-streamk 6.2136,6.5219,6.1522,6.5608,6.2054,6.4072,6.1583,6.3283,6.2177,6.3969,6.2075,6.5567,6.1501,6.3611,6.2003,6.3918,6.2648,6.3969,6.2116,6.5229,6.1532,6.5178,6.2249,6.3437,6.2116,6.3949,6.2147,6.3959,6.2075,6.5198
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096.null 6.3345,6.5434,6.3048,6.5014,6.3324,6.5464,6.2607,6.4338,6.3273,6.4993,6.3621,6.4614,6.3037,6.4563,6.2934,6.5044,6.4082,6.5116,6.3457,6.4829,6.2556,6.4778,6.3631,6.4666,6.3027,6.5024,6.3652,6.5188,6.3672,6.5157
+pass=2 cell=mm_4096x4096x4096 samples leg=mm_4096x4096x4096 6.4256,6.4983,6.3447,6.5024,6.3928,6.6335,6.3078,6.4696,6.3775,6.4870,6.4471,6.4553,6.3283,6.4625,6.2843,6.6161,6.4389,6.4870,6.4594,6.5096,6.2945,6.5075,6.3457,6.4461,6.2863,6.5413,6.3898,6.4932,6.4123,6.4942
+pass=2 cell=mm_4096x4096x4096 samples leg=cublas 6.2863,6.2822,6.5516,6.3293,6.3089,6.4164,6.0416,6.2834,6.1594,6.2822,6.3508,6.2341,6.4420,6.2781,6.0406,6.4164,6.1583,6.2812,6.2884,6.2833,6.5536,6.3263,6.2976,6.2843,6.0416,6.3437,6.1594,6.2863,6.2208,6.2833
+pass=2 cell=mm_4096x4096x4096 samples leg=cutlass 6.4297,6.5464,6.7021,6.4952,6.9171,6.6109,6.7031,6.4297,6.3990,6.5137,6.4973,6.4952,6.8434,6.4287,6.1828,6.7185,6.4502,6.4758,6.4287,6.5608,6.8424,6.4952,6.9489,6.4307,6.8362,6.4942,6.4369,6.4748,6.3683,6.5372
+pass=2 cell=mm_4096x4096x4096 samples leg=cutlass_tuned 17.6732,17.3189,17.4694,17.1981,17.7930,17.3844,18.1678,17.3568,18.1340,17.4039,17.4510,17.1786,17.6374,17.1930,16.2120,17.0209,18.1320,17.2093,17.5575,17.3302,17.7070,17.3353,17.8330,17.2431,18.3316,17.5196,18.2856,17.3865,17.8412,17.3640
+splitk_program prog=mm_4096x4096x4096 rc=0 out=[-1264.8281 214.55547 -211.84154 ] exact=[-1317.7256 214.55537 -211.84142 ] launch=[mapal_tile_86a1499561c1f3d0 164 1 128 16640 1 streamk] OUTSIDE -1264.8281 vs -1317.7256: rel 4.014e-02 > 4.885e-04
+SPLITK PROGRAM FAILED prog=mm_4096x4096x4096
+splitk_program prog=mm_4096x4096x4096.off-streamk rc=0 out=[-1207.8242 214.55547 -211.84154 ] exact=[-1317.7256 214.55537 -211.84142 ] launch=[mapal_tile_2a54d22fbd9beb3d 32 32 128 16640] OUTSIDE -1207.8242 vs -1317.7256: rel 8.340e-02 > 4.885e-04
+SPLITK PROGRAM FAILED prog=mm_4096x4096x4096.off-streamk
+splitk_program prog=mm_4096x4096x4096_c rc=0 out=[-1207.8242 214.55547 -211.84154 ] exact=[-1317.7256 214.55537 -211.84142 ] launch=[mapal_tile_2a54d22fbd9beb3d 32 32 128 16640] OUTSIDE -1207.8242 vs -1317.7256: rel 8.340e-02 > 4.885e-04
+SPLITK PROGRAM FAILED prog=mm_4096x4096x4096_c
+splitk_program prog=mm_4096x4096x4096_r rc=0 out=[-1317.7256 214.55537 -211.84142 ] exact=[-1317.7256 214.55537 -211.84142 ] launch=[mapal_tile_57ba01f1fbd2b36e 32 32 256 16640] within
+splitk_program prog=mm_4096x4096x4096_rc rc=0 out=[-1207.8242 214.55547 -211.84154 ] exact=[-1317.7256 214.55537 -211.84142 ] launch=[mapal_tile_2a54d22fbd9beb3d 32 32 128 16640] OUTSIDE -1207.8242 vs -1317.7256: rel 8.340e-02 > 4.885e-04
+SPLITK PROGRAM FAILED prog=mm_4096x4096x4096_rc
+== done

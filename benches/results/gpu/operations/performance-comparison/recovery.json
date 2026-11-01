@@ -1,0 +1,23 @@
+{
+  "private_directory": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s61-performance-analysis",
+  "raw_attempt02_trace": {
+    "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s61-performance-analysis/attempt02-trace.tgz",
+    "sha256": "6c7e943bc17c2caaa1b31e436314bc54e1d50ecf649c11786feae3cfef600958",
+    "bytes": 118871980
+  },
+  "composed_v4": {
+    "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s61-performance-analysis/composed-v4.tgz",
+    "sha256": "c6435b82ea682b8f392e9f2302e7d56a28eab61d5ac50c5a852e33fe52e7ff29"
+  },
+  "scope": "Full raw GPU evidence including binaries/disassemblies preserved privately; public summaries do not replace complete inventory. Provider API/create/wrapper diagnostics excluded from public files. More remaining-phase evidence pending.",
+  "raw_attempt03_trace": {
+    "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s61-performance-analysis/attempt03-trace.tgz",
+    "sha256": "b2bdb8f5268834ad7a1bc3f346229df9c2fdd42cd1e884218e53086ef5aa1ba4",
+    "bytes": 435243
+  },
+  "raw_attempt05_trace": {
+    "path": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s61-performance-analysis/attempt05-trace.tgz",
+    "sha256": "2f0af412e3e63c52515c9e66aab6f72a6195f21d7bd6fbff0e9c1ccc073d81dc",
+    "bytes": 14626423
+  }
+}

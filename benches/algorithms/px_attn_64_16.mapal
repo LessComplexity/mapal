@@ -1,0 +1,31 @@
+fn main() {
+    1024 -> iota -> i_q;
+    i_q -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> q;
+    1024 -> iota -> i_kk;
+    i_kk -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> kk;
+    1024 -> iota -> i_vv;
+    i_vv -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> vv;
+    4096 -> iota -> o_s;
+    16 -> iota -> k_d;
+    64 -> iota -> k_t;
+    o_s -> map { e ->
+        e / 64 -> i;
+        e % 64 -> j;
+        (0.0, k_d) -> fold { acc, k -> acc + q[i * 16 + k] * kk[j * 16 + k] }
+    } -> s;
+    k_t -> map { i -> (-1000000000.0, k_t) -> fold { acc, j -> s[i * 64 + j] -> e; (e > acc) -> { -true-> e; -false-> acc; } } } -> mx;
+    o_s -> map { t -> (s[t] - mx[t / 64]) / 4.0 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; 8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc } } -> ex;
+    k_t -> map { i -> (0.0, k_t) -> fold { acc, j -> acc + ex[i * 64 + j] } } -> den;
+    o_s -> map { t -> ex[t] / den[t / 64] } -> p;
+    1024 -> iota -> o_o;
+    o_o -> map { e ->
+        e / 16 -> i;
+        e % 16 -> j;
+        (0.0, k_t) -> fold { acc, u -> acc + p[i * 64 + u] * vv[u * 16 + j] }
+    } -> o;
+    0.0 -> zero: f32;
+    (zero, o) -> fold { acc, v -> acc + v } -> s_o;
+    s_o -> println;
+    o[0] -> println;
+    o[1023] -> println;
+}

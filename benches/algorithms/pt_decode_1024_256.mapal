@@ -1,0 +1,45 @@
+fn main() {
+    65536 -> iota -> tw;
+    tw -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> x; x / 4096.0 } -> wk;
+    tw -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> x; x / 4096.0 } -> wv;
+    262144 -> iota -> tc;
+    256 -> iota -> krange;
+    1024 -> iota -> rrange;
+    (0.0, 262144) -> fill -> x0;
+    (0.0, 256) -> fill -> o0;
+    mut x: [f32; 262144] <- x0;
+    mut o: [f32; 256] <- o0;
+    mut t: i32 <- 0;
+    () -> time -> t0;
+    loop {
+        (t < 1024) -> {
+            -true-> {
+                tc -> map { c -> (c / 256 == t) -> { -true-> { (c * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 64.0 + o[c % 256] } -false-> x[c]; } } -> x;
+                tc -> map { c ->
+                    c / 256 -> i;
+                    c % 256 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + x[i * 256 + k] * wk[k * 256 + j] }
+                } -> kk;
+                tc -> map { c ->
+                    c / 256 -> i;
+                    c % 256 -> j;
+                    (0.0, krange) -> fold { acc, k -> acc + x[i * 256 + k] * wv[k * 256 + j] }
+                } -> vv;
+                krange -> map { k -> ((t * 256 + k) * 5 + 3) % 97 - 48 -> widen_f32 -> qv; qv / 4096.0 } -> q;
+                rrange -> map { r -> (0.0, krange) -> fold { acc, k -> acc + q[k] * kk[r * 256 + k] } } -> s;
+                krange -> map { j -> (0.0, rrange) -> fold { acc, r -> acc + s[r] * vv[r * 256 + j] } } -> o;
+                t + 1 -> t;
+                -> loop;
+            }
+            -false-> o -> out;
+        }
+    }
+    () -> time -> t1;
+    out[0] -> println;
+    out[255] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold { acc, v -> acc + v } -> total;
+    total -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

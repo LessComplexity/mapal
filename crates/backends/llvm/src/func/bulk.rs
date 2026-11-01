@@ -83,6 +83,93 @@ impl<'a> FnEmit<'a> {
         out
     }
 
+    /// The set of a host map whose law is piecewise ([`mapal_ir::Outside`]):
+    /// the plain body-call loop (no tile site, no device unit), under the
+    /// `range-map` rung.
+    pub(super) fn range_map(&self, m: MorphismId) -> Option<mapal_ir::Outside> {
+        if !super::gpu::host_rungs(self.profile, self.contract, self.gpu_arms).range_map {
+            return None;
+        }
+        let tiled = self
+            .tile_plan
+            .as_ref()
+            .is_some_and(|p| p.sites.contains_key(m));
+        let cell = self
+            .resident
+            .as_ref()
+            .is_some_and(|p| p.cells.contains_key(m) || p.devgen.contains_key(m));
+        if tiled || cell || self.device.contains_key(m) || self.member_src(m, 0).is_some() {
+            return None;
+        }
+        if let Some(&ou) = self.outside_memo.borrow().get(m) {
+            return ou;
+        }
+        let ou = match self.ir.map_law(m) {
+            Some(ElemSrc::Apply { outside, .. }) => outside,
+            _ => None,
+        };
+        self.outside_memo.borrow_mut().insert(m, ou);
+        ou
+    }
+
+    /// The cells `lo + step·k` met with the loop's own bounds `[l, h)`: the
+    /// first at or past `l`, up to `min(lo + step·len, h)` — `lo = d·(a·e +
+    /// b)`, `a·e + b` in `e`'s wrapping width (the program's value), then
+    /// exact in `i64`. A step of 1 is the interval `[max(lo, l), …)`.
+    pub(super) fn range_bounds(&mut self, ou: &mapal_ir::Outside, n: u64) -> (String, String) {
+        let (l, h) = self.bulk_bounds(n);
+        let x = match ou.e.and_then(|e| self.load_whole(e)) {
+            Some((wllt, ev)) => self.affine_cell(
+                &wllt,
+                &ev,
+                &mapal_ir::Affine {
+                    var: ou.e.expect("e"),
+                    a: ou.a,
+                    b: ou.b,
+                },
+            ),
+            None if ou.e.is_none() => ou.b.to_string(),
+            // Unloadable: the whole map, in place (outside cells are their own).
+            None => return (l, h),
+        };
+        let lo = self.tmp();
+        self.line(format!("{lo} = mul i64 {x}, {}", ou.d));
+        let pick = |s: &mut Self, cmp: &str, p: &str, q: &str| {
+            let (c, t) = (s.tmp(), s.tmp());
+            s.line(format!("{c} = icmp {cmp} i64 {p}, {q}"));
+            s.line(format!("{t} = select i1 {c}, i64 {p}, i64 {q}"));
+            t
+        };
+        let start = if ou.step == 1 {
+            pick(self, "sgt", &lo, &l)
+        } else {
+            // `lo + step·⌈(l − lo) / step⌉` when `lo < l` (`l − lo > 0`).
+            let s = ou.step;
+            let (gap, up, k, off, at) =
+                (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{gap} = sub i64 {l}, {lo}"));
+            self.line(format!("{up} = add i64 {gap}, {}", s - 1));
+            self.line(format!("{k} = udiv i64 {up}, {s}"));
+            self.line(format!("{off} = mul i64 {k}, {s}"));
+            self.line(format!("{at} = add i64 {lo}, {off}"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp slt i64 {lo}, {l}"));
+            let t = self.tmp();
+            self.line(format!("{t} = select i1 {c}, i64 {at}, i64 {lo}"));
+            t
+        };
+        let end = match ou.step.checked_mul(ou.len).filter(|&w| w <= n) {
+            Some(w) => {
+                let hi = self.tmp();
+                self.line(format!("{hi} = add i64 {lo}, {w}"));
+                pick(self, "slt", &hi, &h)
+            }
+            None => h,
+        };
+        let end = pick(self, "sgt", &end, &start);
+        (start, end)
+    }
+
     pub(super) fn emit_map(
         &mut self,
         m: MorphismId,
@@ -102,7 +189,10 @@ impl<'a> FnEmit<'a> {
             .filter(|site| (site.a.ksplit.is_none() && site.b.ksplit.is_none()) || conv_site(site))
             .cloned()
         {
-            let packed = if self.packing && packing_site(&site) {
+            let packed = if self.packing
+                && !self.device.contains_key(m)
+                && packing_site(&site, self.profile, self.contract)
+            {
                 let needs_pack = self
                     .frame
                     .as_ref()
@@ -138,10 +228,34 @@ impl<'a> FnEmit<'a> {
         let tgt_ty = self.obj_ty(target);
         let (ullt, _) = array_parts(&tgt_ty);
         let tgt_arr_llt = lower_ty(&tgt_ty).expect("map tgt lowers");
-        let tgt_slot = self.slot(target).expect("map tgt slot");
+        // A piecewise map written in place (`in_place_source`): the capture's
+        // buffer is the output's, and only the interval is computed — every
+        // other cell already holds its value.
+        let range = self
+            .update_aliases
+            .get(target)
+            .copied()
+            .zip(self.range_map(m));
+        let tgt_slot = match range {
+            Some((arr, _)) => {
+                let slot = self.slot(arr).expect("in-place map source slot");
+                self.slots.insert(target, slot.clone());
+                if self.ptr_resident.contains_key(arr) {
+                    let p = self.tmp();
+                    self.line(format!("{p} = load ptr, ptr {slot}"));
+                    p
+                } else {
+                    slot
+                }
+            }
+            None => self.slot(target).expect("map tgt slot"),
+        };
         let callee = self.fnames[body].clone();
         let ctr = self.scratch("i64");
-        let (lo, hi) = self.bulk_bounds(n);
+        let (lo, hi) = match range {
+            Some((_, ou)) => self.range_bounds(&ou, n),
+            None => self.bulk_bounds(n),
+        };
 
         let (lh, lb, ld) = (self.label(), self.label(), self.label());
         self.line(format!("store i64 {lo}, ptr {ctr}"));
@@ -156,7 +270,7 @@ impl<'a> FnEmit<'a> {
         // S44/S45: the index this trip stands for. A declined site — no record,
         // or a profile that prices it as no win — returns `iv` itself, so the
         // text below is character-identical to what it has always been.
-        let ix = match self.move_panel_of(m) {
+        let ix = match self.move_panel_of(m).filter(|_| range.is_none()) {
             Some((w, b)) => self.move_panel_index(&iv, n, w, b),
             None => iv.clone(),
         };
@@ -209,7 +323,8 @@ impl<'a> FnEmit<'a> {
         ));
         self.line(format!("store {ullt} {r}, ptr {dp}"));
         let iv1 = self.tmp();
-        self.line(format!("{iv1} = add i64 {iv}, 1"));
+        let step = range.map_or(1, |(_, ou)| ou.step);
+        self.line(format!("{iv1} = add i64 {iv}, {step}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
         self.line(format!("br label %{lh}"));
         self.label_line(&ld);
@@ -243,7 +358,26 @@ impl<'a> FnEmit<'a> {
         let accslot = self.scratch(&acc_llt);
         let ctr = self.scratch("i64");
         let (lo, hi) = self.bulk_bounds(n);
-        self.line(format!("store {acc_llt} {acc0}, ptr {accslot}"));
+        // `cell-lanes`: this lane walks every `l`-th step from its lane id,
+        // from the step's identity (a max/min from the seed: idempotent).
+        let lane = self.lanes.filter(|l| l.0 == target && acc_llt == "float");
+        let (init, lo, stride) = match lane {
+            Some((_, op, l)) => {
+                let (ln, l64) = (self.tmp(), self.tmp());
+                self.line(format!("{ln} = call i32 @llvm.nvvm.read.ptx.sreg.laneid()"));
+                self.line(format!("{l64} = zext i32 {ln} to i64"));
+                let id = match op {
+                    mapal_ir::RowFoldOp::Arith {
+                        op: Operation::Mul, ..
+                    } => "1.0".to_string(),
+                    mapal_ir::RowFoldOp::Arith { .. } => "-0.0".to_string(),
+                    mapal_ir::RowFoldOp::Select { .. } => acc0.clone(),
+                };
+                (id, l64, l)
+            }
+            None => (acc0.clone(), lo, 1),
+        };
+        self.line(format!("store {acc_llt} {init}, ptr {accslot}"));
         self.line(format!("store i64 {lo}, ptr {ctr}"));
 
         let (lh, lb, ld) = (self.label(), self.label(), self.label());
@@ -292,13 +426,58 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{na} = call {acc_llt} @{callee}({arg})"));
         self.line(format!("store {acc_llt} {na}, ptr {accslot}"));
         let iv1 = self.tmp();
-        self.line(format!("{iv1} = add i64 {iv}, 1"));
+        self.line(format!("{iv1} = add i64 {iv}, {stride}"));
         self.line(format!("store i64 {iv1}, ptr {ctr}"));
         self.line(format!("br label %{lh}"));
         self.label_line(&ld);
-        let fin = self.tmp();
+        let mut fin = self.tmp();
         self.line(format!("{fin} = load {acc_llt}, ptr {accslot}"));
+        if let Some((_, op, l)) = lane {
+            // The lanes' partials: a butterfly of warp shuffles, `⊕` at each
+            // level (every lane ends with the total), then the seed once.
+            let mut off = l / 2;
+            while off >= 1 {
+                let o = self.tmp();
+                self.line(format!(
+                    "{o} = call float @llvm.nvvm.shfl.sync.bfly.f32(i32 -1, float {fin}, i32 {off}, i32 31)"
+                ));
+                fin = self.lane_step(op, &fin, &o);
+                off /= 2;
+            }
+            if let mapal_ir::RowFoldOp::Arith { .. } = op {
+                fin = self.lane_step(op, &acc0, &fin);
+            }
+        }
         self.store_obj(target, &acc_llt, &fin);
+    }
+
+    /// `cell-lanes`: `a ⊕ b` for two `float` partials of a fold step.
+    fn lane_step(&mut self, op: mapal_ir::RowFoldOp, a: &str, b: &str) -> String {
+        let r = self.tmp();
+        match op {
+            mapal_ir::RowFoldOp::Arith { op, .. } => {
+                let code = if op == Operation::Mul { "fmul" } else { "fadd" };
+                self.line(format!("{r} = {code} float {a}, {b}"));
+            }
+            mapal_ir::RowFoldOp::Select {
+                cmp,
+                acc_lhs,
+                acc_if_true,
+            } => {
+                let pred = match cmp {
+                    Operation::Lt => "olt",
+                    Operation::Gt => "ogt",
+                    Operation::Le => "ole",
+                    _ => "oge",
+                };
+                let (x, y) = if acc_lhs { (a, b) } else { (b, a) };
+                let (p, q) = if acc_if_true { (a, b) } else { (b, a) };
+                let c = self.tmp();
+                self.line(format!("{c} = fcmp {pred} float {x}, {y}"));
+                self.line(format!("{r} = select i1 {c}, float {p}, float {q}"));
+            }
+        }
+        r
     }
 
     pub(super) fn emit_zip(&mut self, source: ObjectId, target: ObjectId) {
@@ -484,7 +663,17 @@ impl<'a> FnEmit<'a> {
                 .array_operand_ptr(from, None)
                 .expect("array copy source ptr");
             let dst = self.slot(to).expect("array copy target slot");
+            if self.ptr_resident.contains_key(to) {
+                // S65 `by-ref`: the state is a view of the init's bytes.
+                self.line(format!("store ptr {src}, ptr {dst}"));
+                return;
+            }
             let llt = lower_ty(&self.obj_ty(from)).expect("array copy lowers");
+            self.emit_memcpy(&dst, &src, &llt);
+        } else if let Some(llt) = self.big_aggregate(from)
+            && self.big_aggregate(to).as_ref() == Some(&llt)
+        {
+            let (dst, src) = (self.slots[to].clone(), self.slots[from].clone());
             self.emit_memcpy(&dst, &src, &llt);
         } else if let Some((llt, val)) = self.load_whole(from) {
             self.store_obj(to, &llt, &val);
@@ -495,11 +684,32 @@ impl<'a> FnEmit<'a> {
     /// (exit payload → exit object). No-op if erased.
     pub(crate) fn copy_component(&mut self, route: ObjectId, k: u32, to: ObjectId) {
         if matches!(self.obj_ty(route).component_ty(k), Some(Ty::Array { .. })) {
+            // S65 `by-ref`: a device carry's exit is filled on the device (the
+            // host's state holds no bytes), and a host-carried one takes the
+            // state's pointer.
+            let device = self.by_ref
+                && self
+                    .resident
+                    .as_ref()
+                    .is_some_and(|p| p.carries.iter().any(|c| c.exit == Some(to)));
+            if device || self.host_free(to) {
+                return;
+            }
             let src = self
                 .array_operand_ptr(route, Some(k))
                 .expect("array route source ptr");
             let dst = self.slot(to).expect("array route target slot");
+            if self.ptr_resident.contains_key(to) {
+                self.line(format!("store ptr {src}, ptr {dst}"));
+                return;
+            }
             let llt = lower_ty(&self.obj_ty(to)).expect("array route lowers");
+            self.emit_memcpy(&dst, &src, &llt);
+        } else if let Some(llt) = self.big_aggregate(to)
+            && self.obj_ty(route).component_ty(k) == Some(&self.obj_ty(to))
+            && let Some((_, src)) = self.component_ptr(route, k)
+        {
+            let dst = self.slots[to].clone();
             self.emit_memcpy(&dst, &src, &llt);
         } else if let Some((llt, val)) = self.load_component(route, k) {
             self.store_obj(to, &llt, &val);

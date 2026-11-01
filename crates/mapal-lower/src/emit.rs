@@ -77,6 +77,17 @@ struct Emitter<'a> {
     /// a rebind of the shared capture (D2b — a rebind after a read is already
     /// the typing walk's teaching L1108).
     captures: std::collections::BTreeSet<String>,
+    /// ADR-0041 D2: the precisions this scope's products admit (the innermost
+    /// `: compute` around it; `{f32}` without one).
+    prec: mapal_ir::Precision,
+}
+
+/// A body's `: compute` as the IR's set; `outer` where it has none.
+fn ir_prec(p: Option<syn::Precision>, outer: mapal_ir::Precision) -> mapal_ir::Precision {
+    p.map_or(outer, |p| mapal_ir::Precision {
+        f32: p.f32,
+        tf32: p.tf32,
+    })
 }
 
 /// Map a builder `IrError` to an L-code diagnostic at `span`. User-diagnosable
@@ -178,6 +189,7 @@ pub fn lower_program(
 
             // D2: declare + build every map/fold body, innermost-first.
             let mut body_ids: BTreeMap<(u32, u32), FuncId> = BTreeMap::new();
+            let prec = ir_prec(fd.body.compute, mapal_ir::Precision::F32);
             build_bodies(
                 source,
                 types,
@@ -189,6 +201,7 @@ pub fn lower_program(
                 &fd.body,
                 &mut b,
                 &mut body_ids,
+                prec,
             )
             .map_err(|d| vec![d])?;
 
@@ -212,6 +225,7 @@ pub fn lower_program(
                 enclosing_token_loop: false,
                 outer_carried: std::collections::BTreeSet::new(),
                 captures: std::collections::BTreeSet::new(),
+                prec,
             };
             let fb = b.build_fn(fid).map_err(|e| vec![ir_err(e, fd.span)])?;
             em.emit_fn(fd, fb).map_err(|d| vec![d])?;
@@ -268,14 +282,17 @@ fn build_bodies(
     block: &Block,
     b: &mut IrBuilder,
     out: &mut BTreeMap<(u32, u32), FuncId>,
+    outer: mapal_ir::Precision,
 ) -> ER<()> {
     // Find every MapFold stage by walking the tree; for each, recurse into its
     // body first (innermost-first), then declare+build it.
     let stages = collect_mapfold_stages(block);
-    for (stage, body, params, op) in stages {
+    for (stage, body, params, op, around) in stages {
+        // ADR-0041 D2: innermost wins — the step's own, a block's around it, then `outer`.
+        let prec = ir_prec(body.compute, ir_prec(around, outer));
         // Recurse into nested map/fold inside this body first.
         build_bodies(
-            source, types, effects, fn_ids, fn_sigs, info, owner, body, b, out,
+            source, types, effects, fn_ids, fn_sigs, info, owner, body, b, out, prec,
         )?;
 
         let sig = info
@@ -318,6 +335,7 @@ fn build_bodies(
             enclosing_token_loop: false,
             outer_carried: std::collections::BTreeSet::new(),
             captures: std::collections::BTreeSet::new(),
+            prec,
         };
         let fb = b.build_fn(bid).map_err(|e| ir_err(e, stage.span))?;
         em.emit_body(
@@ -336,7 +354,9 @@ fn build_bodies(
 /// Collect every map/fold stage with its body/params/op, in source order,
 /// recursing through statements/guards/fanouts but NOT into nested map/fold
 /// bodies (the recursion in `build_bodies` handles nesting).
-fn collect_mapfold_stages(block: &Block) -> Vec<(&Stage, &Block, &[syn::Name], CollOp)> {
+fn collect_mapfold_stages(
+    block: &Block,
+) -> Vec<(&Stage, &Block, &[syn::Name], CollOp, Option<syn::Precision>)> {
     let mut out = Vec::new();
     collect_block(block, &mut out);
     out
@@ -344,8 +364,15 @@ fn collect_mapfold_stages(block: &Block) -> Vec<(&Stage, &Block, &[syn::Name], C
 
 fn collect_block<'a>(
     block: &'a Block,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
+    let start = out.len();
     for item in &block.items {
         match item {
             BlockItem::Stmt(s) => collect_stmt(s, out),
@@ -355,11 +382,22 @@ fn collect_block<'a>(
     if let Some(t) = &block.tail {
         collect_chain(t, out);
     }
+    // ADR-0041 D2: a `loop: c { … }` / `seq: c { … }` covers the steps inside
+    // it that no inner block already claimed (innermost wins).
+    for e in &mut out[start..] {
+        e.4 = e.4.or(block.compute);
+    }
 }
 
 fn collect_stmt<'a>(
     stmt: &'a Stmt,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     match &stmt.kind {
         StmtKind::Chain(c) => collect_chain(c, out),
@@ -371,7 +409,13 @@ fn collect_stmt<'a>(
 
 fn collect_arm<'a>(
     p: &'a ArmPayload,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     match p {
         ArmPayload::Chain(c) => collect_chain(c, out),
@@ -381,12 +425,18 @@ fn collect_arm<'a>(
 
 fn collect_chain<'a>(
     chain: &'a Chain,
-    out: &mut Vec<(&'a Stage, &'a Block, &'a [syn::Name], CollOp)>,
+    out: &mut Vec<(
+        &'a Stage,
+        &'a Block,
+        &'a [syn::Name],
+        CollOp,
+        Option<syn::Precision>,
+    )>,
 ) {
     for stage in &chain.stages {
         match &stage.kind {
             StageKind::MapFold { op, params, body } => {
-                out.push((stage, body, params.as_slice(), *op));
+                out.push((stage, body, params.as_slice(), *op, None));
             }
             StageKind::Guard(arms) => {
                 for arm in arms {
@@ -689,7 +739,14 @@ impl Emitter<'_> {
                 self.bind_new(&bn, v, ty, bnd.mut_span.is_some());
                 Ok(())
             }
-            StmtKind::Loop(l) => self.emit_loop(fb, l),
+            StmtKind::Loop(l) => {
+                // ADR-0041 D2: `loop: c { … }` — the body's products admit `c`.
+                let outer = self.prec;
+                self.prec = ir_prec(l.body.compute, outer);
+                let r = self.emit_loop(fb, l);
+                self.prec = outer;
+                r
+            }
             StmtKind::Error => Err(diag(LCode::UncleanTree, stmt.span, "error node")),
         }
     }
@@ -985,7 +1042,11 @@ impl Emitter<'_> {
             }
             StageKind::SeqBlock(body) => {
                 let wire = cur.ok_or_else(|| diag(LCode::HeadlessChain, sp, "seq with no wire"))?;
-                self.emit_seq_block(fb, body, wire, next, ctx, sp)
+                let outer = self.prec;
+                self.prec = ir_prec(body.compute, outer);
+                let r = self.emit_seq_block(fb, body, wire, next, ctx, sp);
+                self.prec = outer;
+                r
             }
             StageKind::StmtBlock(_) | StageKind::Error(_) => {
                 Err(diag(LCode::UncleanTree, sp, "unclean stage"))
@@ -3404,6 +3465,7 @@ impl Emitter<'_> {
         let o = fb
             .binop(op, l, r, dest, ir_loc(sp))
             .map_err(|e| ir_err(e, sp))?;
+        fb.admit(o, self.prec);
         self.prop(o, &[l, r]);
         Ok(self.record(o, out))
     }

@@ -1,0 +1,148 @@
+{
+  "scope": "Static PTX text only, no actual register allocation or speed claim; raw LLVM arithmetic inventory equality does not imply equal PTX instruction counts after optimization.",
+  "cases": [
+    {
+      "case": "strided-contract",
+      "before": {
+        "ptx_sha256": "1ca36d938597af496bf7e0a06bdff82f18fe8b72ced627858f4956d0f01dc53f",
+        "mul_rn_f32_static": 4,
+        "add_rn_f32_static": 4,
+        "fma_rn_static": 0,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "22",
+          "5",
+          "5"
+        ]
+      },
+      "after": {
+        "ptx_sha256": "9ec196fd857a373d5b087b9ece098fc08bd82135f45d1f9bb8072781b459fc7c",
+        "mul_rn_f32_static": 8,
+        "add_rn_f32_static": 8,
+        "fma_rn_static": 0,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "35",
+          "5",
+          "5"
+        ]
+      }
+    },
+    {
+      "case": "layout-fallback",
+      "before": {
+        "ptx_sha256": "81eec1674c89a20fdf9166c02902921058a6bfb6a3bb3d1e2060b61cca092b75",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 256,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "337",
+          "14",
+          "14"
+        ]
+      },
+      "after": {
+        "ptx_sha256": "190e176e6772616dd2849ea33489dd9d013c43715b048e35f8a8ac22bc73f5d5",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 256,
+        "minnctapersm": [
+          "16"
+        ],
+        "b32_virtual_register_declarations": [
+          "337",
+          "14",
+          "14"
+        ]
+      }
+    },
+    {
+      "case": "type-fallback",
+      "before": {
+        "ptx_sha256": "84caac67302d963ac0c8b377c85af928a558823255fbe5b40729ed6c5437e5d0",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 64,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "4",
+          "12",
+          "12"
+        ]
+      },
+      "after": {
+        "ptx_sha256": "5bcbfc2545b7af1b7882164b386624be772970649bbe7658e35b09695d9ad145",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 64,
+        "minnctapersm": [
+          "16"
+        ],
+        "b32_virtual_register_declarations": [
+          "4",
+          "12",
+          "12"
+        ]
+      }
+    },
+    {
+      "case": "mma-off-fallback",
+      "before": {
+        "ptx_sha256": "fc9b7550d0ee915d9d743a6789572c661e8715400d3893b4beb6de9cb4553025",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 512,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "656",
+          "13",
+          "13"
+        ]
+      },
+      "after": {
+        "ptx_sha256": "c2baad41d1ef4034d177463a361b02b85ba673dc03e2fb85f5de96ed2e9e62bc",
+        "mul_rn_f32_static": 0,
+        "add_rn_f32_static": 0,
+        "fma_rn_static": 512,
+        "minnctapersm": [
+          "4"
+        ],
+        "b32_virtual_register_declarations": [
+          "656",
+          "13",
+          "13"
+        ]
+      }
+    },
+    {
+      "case": "mixed-pdl",
+      "before": {
+        "ptx_sha256": "60b35d48a102ff601330595dd88ac3aa04f47b4ff4f02a4015ff32f4051355b3",
+        "mul_rn_f32_static": 4,
+        "add_rn_f32_static": 4,
+        "fma_rn_static": 0,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "22",
+          "269",
+          "12",
+          "12"
+        ]
+      },
+      "after": {
+        "ptx_sha256": "9fe8e18bb43463fc0e2382712961cd2dd77b2232a1869096e01d5569161e0d68",
+        "mul_rn_f32_static": 8,
+        "add_rn_f32_static": 8,
+        "fma_rn_static": 0,
+        "minnctapersm": [],
+        "b32_virtual_register_declarations": [
+          "35",
+          "269",
+          "12",
+          "12"
+        ]
+      }
+    }
+  ]
+}

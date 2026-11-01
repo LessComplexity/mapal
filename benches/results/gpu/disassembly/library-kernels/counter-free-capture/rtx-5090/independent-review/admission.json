@@ -1,0 +1,740 @@
+{
+  "schema": "independent-library-image-admission-v1",
+  "pass": true,
+  "gpu_executed_by_reader": false,
+  "timing_admissible": false,
+  "legs": {
+    "mapal": {
+      "pass": true,
+      "raw_status": {
+        "pass": true,
+        "status": "complete",
+        "kernel_count": 1,
+        "sass_functions": 1
+      },
+      "timing_admissible": false,
+      "partial_numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "observer_errors": [],
+      "observer_final_rows": [
+        "api-activity\t5003\t5\t165\t1426\t0\t748\t4260552704",
+        "api-activity\t5004\t5\t172\t1427\t0\t748\t4260552704",
+        "api-activity\t5005\t5\t31\t1428\t0\t748\t4260552704",
+        "api-activity\t5006\t5\t31\t1429\t0\t748\t4260552704",
+        "api-activity\t5007\t5\t31\t1430\t0\t748\t4260552704",
+        "buffer\t5008\t1048576\t71296\t0\t12\t0",
+        "final-drop\t5009\t0\t0",
+        "finish\t5010\t0\t0\t1\t1\t5\t11260736\t0"
+      ],
+      "stderr_tail": "",
+      "protocol": {
+        "schema": "s61-competitive-profile-v1",
+        "profile_only": true,
+        "leg": "mapal",
+        "M": 16,
+        "N": 2048,
+        "K": 7168,
+        "face": "contract",
+        "cutlass_candidate": "m16-n64-k16",
+        "mapal_variant": "old",
+        "mapal_ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "oracle_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "pre_gate_all_three_pass": true,
+        "post_gate_all_three_pass": true,
+        "profiled_calls": 1,
+        "timing_admission": false
+      },
+      "numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "kernel_count": 1,
+      "all_kernel_records": 13,
+      "image_count": 5,
+      "activity_buffers": 1,
+      "cupti_version": 26,
+      "selected_launches": [
+        {
+          "event": 3187,
+          "cbid": 307,
+          "parent": 0,
+          "pointer": 97837272601600,
+          "uid": 1,
+          "opaque_launch_handle": 97837293424016,
+          "stream": 0,
+          "grid": [
+            128,
+            1,
+            1
+          ],
+          "block": [
+            256,
+            1,
+            1
+          ],
+          "smem": 0,
+          "active": 1,
+          "code": 0,
+          "symbol": "mapal_tile_37c5043169cbcc55",
+          "correlation": 1425,
+          "invocation": 1568,
+          "parent_invocation": 0,
+          "image_event": 358,
+          "module": 21,
+          "module_sha256": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+          "text_sha256": "80361779c5fafe1a36b4e0b5988e7a572a013ea31affecf451e999a5c1c61ac9",
+          "elf_symbol_index": 12,
+          "join": "direct-loader-function",
+          "launch_handle_kind": "CUfunction returned by cuModuleGetFunction",
+          "direct_GetFunction_event": 363,
+          "FUNCTION_metadata": null,
+          "API_activity_binding": {
+            "kind": 4,
+            "correlation": 1425,
+            "cbid": 307,
+            "code": 0,
+            "pid": 748,
+            "tid": 4260552704
+          },
+          "context_creation_event": 241
+        }
+      ],
+      "decoded": [
+        {
+          "symbol": "mapal_tile_37c5043169cbcc55",
+          "sass_sha256": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+          "decoder_unknown_annotations_present": true,
+          "dynamic_metrics_claimed": false,
+          "module_sha256": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+          "text_sha256": "80361779c5fafe1a36b4e0b5988e7a572a013ea31affecf451e999a5c1c61ac9",
+          "elf_symbol_index": 12
+        }
+      ]
+    },
+    "cublas": {
+      "pass": true,
+      "raw_status": {
+        "pass": true,
+        "status": "complete",
+        "kernel_count": 2,
+        "sass_functions": 2
+      },
+      "timing_admissible": false,
+      "partial_numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "observer_errors": [],
+      "observer_final_rows": [
+        "api-activity\t5060\t5\t165\t1441\t0\t758\t2729185280",
+        "api-activity\t5061\t5\t172\t1442\t0\t758\t2729185280",
+        "api-activity\t5062\t5\t31\t1443\t0\t758\t2729185280",
+        "api-activity\t5063\t5\t31\t1444\t0\t758\t2729185280",
+        "api-activity\t5064\t5\t31\t1445\t0\t758\t2729185280",
+        "buffer\t5065\t1048576\t72104\t0\t12\t0",
+        "final-drop\t5066\t0\t0",
+        "finish\t5067\t0\t0\t1\t1\t5\t11260736\t0"
+      ],
+      "stderr_tail": "",
+      "protocol": {
+        "schema": "s61-competitive-profile-v1",
+        "profile_only": true,
+        "leg": "cublas",
+        "M": 16,
+        "N": 2048,
+        "K": 7168,
+        "face": "contract",
+        "cutlass_candidate": "m16-n64-k16",
+        "mapal_variant": "old",
+        "mapal_ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "oracle_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "pre_gate_all_three_pass": true,
+        "post_gate_all_three_pass": true,
+        "profiled_calls": 1,
+        "timing_admission": false
+      },
+      "numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "kernel_count": 2,
+      "all_kernel_records": 14,
+      "image_count": 5,
+      "activity_buffers": 1,
+      "cupti_version": 26,
+      "selected_launches": [
+        {
+          "event": 3205,
+          "cbid": 307,
+          "parent": 0,
+          "pointer": 108430351393792,
+          "uid": 1,
+          "opaque_launch_handle": 108430406832176,
+          "stream": 0,
+          "grid": [
+            8,
+            2,
+            32
+          ],
+          "block": [
+            128,
+            1,
+            1
+          ],
+          "smem": 25600,
+          "active": 1,
+          "code": 0,
+          "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+          "correlation": 1432,
+          "invocation": 1577,
+          "parent_invocation": 0,
+          "image_event": 2987,
+          "module": 24,
+          "module_sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+          "text_sha256": "d89bdf7b2c451c2f8014e8240b9f75be3d206398322cf1bfa781b1001bcfb04f",
+          "elf_symbol_index": 62,
+          "join": "unique-active-ELF-plus-FUNCTION",
+          "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+          "direct_GetFunction_event": null,
+          "FUNCTION_metadata": {
+            "id": 17,
+            "index": 62,
+            "module": 24,
+            "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+            "uid": 1
+          },
+          "API_activity_binding": {
+            "kind": 4,
+            "correlation": 1432,
+            "cbid": 307,
+            "code": 0,
+            "pid": 758,
+            "tid": 2729185280
+          },
+          "context_creation_event": 241
+        },
+        {
+          "event": 3213,
+          "cbid": 307,
+          "parent": 1434,
+          "pointer": 108430351393792,
+          "uid": 1,
+          "opaque_launch_handle": 108430505806048,
+          "stream": 0,
+          "grid": [
+            64,
+            1,
+            1
+          ],
+          "block": [
+            32,
+            16,
+            1
+          ],
+          "smem": 0,
+          "active": 1,
+          "code": 0,
+          "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+          "correlation": 1434,
+          "invocation": 1580,
+          "parent_invocation": 1579,
+          "image_event": 3012,
+          "module": 25,
+          "module_sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+          "text_sha256": "309480c49a36d39b6052eff8eaadb16ca87b99e7e63715708c2869b8c0abd201",
+          "elf_symbol_index": 604,
+          "join": "unique-active-ELF-plus-FUNCTION",
+          "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+          "direct_GetFunction_event": null,
+          "FUNCTION_metadata": {
+            "id": 159,
+            "index": 604,
+            "module": 25,
+            "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+            "uid": 1
+          },
+          "API_activity_binding": {
+            "kind": 5,
+            "correlation": 1434,
+            "cbid": 211,
+            "code": 0,
+            "pid": 758,
+            "tid": 2729185280
+          },
+          "context_creation_event": 241
+        }
+      ],
+      "decoded": [
+        {
+          "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+          "sass_sha256": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+          "decoder_unknown_annotations_present": true,
+          "dynamic_metrics_claimed": false,
+          "module_sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+          "text_sha256": "d89bdf7b2c451c2f8014e8240b9f75be3d206398322cf1bfa781b1001bcfb04f",
+          "elf_symbol_index": 62
+        },
+        {
+          "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+          "sass_sha256": "7065cf357bc13beb7e6eaf1d2bc0a30c31122412538eb70acc0e2704b34636cb",
+          "decoder_unknown_annotations_present": true,
+          "dynamic_metrics_claimed": false,
+          "module_sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+          "text_sha256": "309480c49a36d39b6052eff8eaadb16ca87b99e7e63715708c2869b8c0abd201",
+          "elf_symbol_index": 604
+        }
+      ]
+    },
+    "cutlass": {
+      "pass": true,
+      "raw_status": {
+        "pass": true,
+        "status": "complete",
+        "kernel_count": 1,
+        "sass_functions": 1
+      },
+      "timing_admissible": false,
+      "partial_numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "observer_errors": [],
+      "observer_final_rows": [
+        "api-activity\t5008\t5\t165\t1427\t0\t769\t1544744960",
+        "api-activity\t5009\t5\t172\t1428\t0\t769\t1544744960",
+        "api-activity\t5010\t5\t31\t1429\t0\t769\t1544744960",
+        "api-activity\t5011\t5\t31\t1430\t0\t769\t1544744960",
+        "api-activity\t5012\t5\t31\t1431\t0\t769\t1544744960",
+        "buffer\t5013\t1048576\t71336\t0\t12\t0",
+        "final-drop\t5014\t0\t0",
+        "finish\t5015\t0\t0\t1\t1\t5\t11260736\t0"
+      ],
+      "stderr_tail": "",
+      "protocol": {
+        "schema": "s61-competitive-profile-v1",
+        "profile_only": true,
+        "leg": "cutlass",
+        "M": 16,
+        "N": 2048,
+        "K": 7168,
+        "face": "contract",
+        "cutlass_candidate": "m16-n64-k16",
+        "mapal_variant": "old",
+        "mapal_ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+        "oracle_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+        "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+        "pre_gate_all_three_pass": true,
+        "post_gate_all_three_pass": true,
+        "profiled_calls": 1,
+        "timing_admission": false
+      },
+      "numerical": {
+        "pre": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        },
+        "post": {
+          "mapal": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          },
+          "cublas": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 9,
+              "fmaf": 5
+            },
+            "pass": true
+          },
+          "cutlass": {
+            "words": 256,
+            "ordered_bit_matches": {
+              "operationwise": 20,
+              "fmaf": 256
+            },
+            "pass": true
+          }
+        }
+      },
+      "kernel_count": 1,
+      "all_kernel_records": 13,
+      "image_count": 5,
+      "activity_buffers": 1,
+      "cupti_version": 26,
+      "selected_launches": [
+        {
+          "event": 3188,
+          "cbid": 307,
+          "parent": 1425,
+          "pointer": 103908995507200,
+          "uid": 1,
+          "opaque_launch_handle": 103909018551616,
+          "stream": 0,
+          "grid": [
+            1,
+            32,
+            1
+          ],
+          "block": [
+            128,
+            1,
+            1
+          ],
+          "smem": 10496,
+          "active": 1,
+          "code": 0,
+          "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+          "correlation": 1425,
+          "invocation": 1569,
+          "parent_invocation": 1568,
+          "image_event": 2759,
+          "module": 23,
+          "module_sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+          "text_sha256": "7c69d24bed4d8d6e0e748572f4e94368c1a03a2d7c4c5c815eddf30a3f96968d",
+          "elf_symbol_index": 1,
+          "join": "unique-active-ELF-plus-FUNCTION",
+          "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+          "direct_GetFunction_event": null,
+          "FUNCTION_metadata": {
+            "id": 9,
+            "index": 1,
+            "module": 23,
+            "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+            "uid": 1
+          },
+          "API_activity_binding": {
+            "kind": 5,
+            "correlation": 1425,
+            "cbid": 211,
+            "code": 0,
+            "pid": 769,
+            "tid": 1544744960
+          },
+          "context_creation_event": 241
+        }
+      ],
+      "decoded": [
+        {
+          "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+          "sass_sha256": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+          "decoder_unknown_annotations_present": true,
+          "dynamic_metrics_claimed": false,
+          "module_sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+          "text_sha256": "7c69d24bed4d8d6e0e748572f4e94368c1a03a2d7c4c5c815eddf30a3f96968d",
+          "elf_symbol_index": 1
+        }
+      ]
+    }
+  },
+  "failures": [],
+  "packet_seals": 198,
+  "primitive_seals": 983,
+  "ordinary_seals": 336,
+  "request_sha256": "ad6d739a88890e8d74323b0a14240f4cc4f968621d0bc48c0135cd94dbdeb1cb",
+  "result_seals": 82,
+  "raw_summary_pass": true,
+  "raw_error": null,
+  "tools": {
+    "cuda_home": "/usr/local/cuda-12.8",
+    "cupti_library": {
+      "path": "/usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+      "sha256": "fccdc5fcc7c32f8cf4b3ed9b17f7f187a185a6fa0a5bcc06e3434cbd1687c808"
+    },
+    "nvdisasm": {
+      "path": "/usr/local/cuda-12.8/bin/nvdisasm",
+      "sha256": "250ebe97dd86617574a30daf8d8ee433e6c5d9d10bafff922078779d1ba36073"
+    },
+    "cxx": "/usr/bin/c++"
+  },
+  "outer_seals": 81,
+  "outer_pass": true,
+  "device_identity": "NVIDIA GeForce RTX 5090, GPU-6f5a16b4-bef2-c3b0-6c58-c80edb2eed53, 610.43.02",
+  "command_count": 17,
+  "admitted_legs": [
+    "mapal",
+    "cublas",
+    "cutlass"
+  ],
+  "decoder_unknown_annotations_present": true,
+  "reader_sha256": "116d07c61ec1bf6ae60c8ead7d851aef24c42301d821b7c00ecc8be29b6ff820"
+}

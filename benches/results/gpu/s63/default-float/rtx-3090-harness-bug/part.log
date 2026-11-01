@@ -1,0 +1,37 @@
+[2026-10-23T04:54:38Z] start rtx-3090
+[00:54:38] try RTX_3090 offer=54025930 dph=0.193 pcie=19.7 cpu_ghz=2.4 cpu=AMD_EPYC_7532_32-Core_Processor host=483833 machine=153150 geo=California, US
+[00:54:39 rtx-3090] instance 57323688 from offer 54025930
+[00:56:12 rtx-3090] ssh 104.233.209.157:11159 up
+Warning: Permanently added '[104.233.209.157]:11159' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+Connection to 104.233.209.157 closed by remote host.
+client_loop: send disconnect: Broken pipe
+tar: Write error
+Warning: Permanently added '[104.233.209.157]:11159' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+Read from remote host 104.233.209.157: Connection reset by peer
+client_loop: send disconnect: Broken pipe
+: Write errorWarning: Permanently added '[104.233.209.157]:11159' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[01:00:59 rtx-3090] bundle uploaded
+[01:01:27 rtx-3090] box_run exit 255
+[01:01:27 rtx-3090] results retrieval failed
+[01:01:28 rtx-3090] results fetched: 0 lines
+[01:01:29 rtx-3090] destroyed 57323688
+[01:01:29] no complete results from offer=54025930
+/Volumes/LessComplex/Personal/mapal/.claude/worktrees/wf_2d840a98-6c0-2/benches/gpu/vast_part.sh: line 42: [: 0
+0: integer expression expected
+[01:01:29] try RTX_3090 offer=56697347 dph=0.255 pcie=19.6 cpu_ghz=2.35 cpu=AMD_EPYC_7452_32-Core_Processor host=151822 machine=58766 geo=Czechia, CZ
+[01:01:29 rtx-3090] instance 57324280 from offer 56697347
+[01:02:13 rtx-3090] ssh 194.26.196.174:11544 up
+Warning: Permanently added '[194.26.196.174]:11544' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[01:02:19 rtx-3090] bundle uploaded
+[01:05:03 rtx-3090] results fetched: 573 lines
+[01:05:04 rtx-3090] destroyed 57324280
+[01:05:04] DONE RTX_3090 offer=56697347 host=151822 machine=58766
+[2026-10-23T05:05:04Z] exit 0 rtx-3090

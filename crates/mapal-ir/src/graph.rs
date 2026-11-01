@@ -167,6 +167,35 @@ pub struct Morphism {
     pub loc: SourceLoc,
 }
 
+/// ADR-0041 D1: the product precisions a float `Mul` admits — a set, not a
+/// preference. `{f32}` is the default face (ADR-0040); `tf32` admits operands
+/// rounded to 10 explicit significand bits (accumulation stays f32). A set's
+/// semantics is its weakest member's bound (D3); stronger members are always
+/// admitted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Precision {
+    pub f32: bool,
+    pub tf32: bool,
+}
+
+impl Precision {
+    pub const F32: Self = Self {
+        f32: true,
+        tf32: false,
+    };
+
+    /// The weakest member admits TF32 operands.
+    pub fn admits_tf32(self) -> bool {
+        self.tf32
+    }
+}
+
+impl Default for Precision {
+    fn default() -> Self {
+        Self::F32
+    }
+}
+
 /// The kind of a [`FuncDef`] (DESIGN §6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FuncKind {
@@ -193,7 +222,6 @@ pub struct FuncDef {
 
 /// The sealed category (DESIGN §2). Append-only during construction, then
 /// immutable; produced only by [`crate::IrBuilder::seal`].
-#[derive(Debug)]
 pub struct CategoryIr {
     pub(crate) objects: SlotMap<ObjectId, Object>,
     pub(crate) morphisms: SlotMap<MorphismId, Morphism>,
@@ -202,6 +230,24 @@ pub struct CategoryIr {
     pub(crate) owner: SecondaryMap<ObjectId, FuncId>,
     pub(crate) funcs: SlotMap<FuncId, FuncDef>,
     pub(crate) entry: FuncId,
+    /// Stored facts ([`crate::facts`]); not part of the graph's identity.
+    pub(crate) facts: crate::facts::Facts,
+    /// ADR-0041 D1: each float product's admitted set, where it is not `{f32}`.
+    pub(crate) precision: SecondaryMap<MorphismId, Precision>,
+}
+
+impl std::fmt::Debug for CategoryIr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CategoryIr")
+            .field("objects", &self.objects)
+            .field("morphisms", &self.morphisms)
+            .field("out_edges", &self.out_edges)
+            .field("in_edges", &self.in_edges)
+            .field("owner", &self.owner)
+            .field("funcs", &self.funcs)
+            .field("entry", &self.entry)
+            .finish()
+    }
 }
 
 impl CategoryIr {
@@ -213,6 +259,12 @@ impl CategoryIr {
     /// The morphism for `id`, or `None`.
     pub fn morphism(&self, id: MorphismId) -> Option<&Morphism> {
         self.morphisms.get(id)
+    }
+
+    /// The precisions product `m` admits (ADR-0041 D1); `{f32}` for every
+    /// morphism no `: compute` covers.
+    pub fn precision(&self, m: MorphismId) -> Precision {
+        self.precision.get(m).copied().unwrap_or_default()
     }
 
     /// All objects, in deterministic (insertion) order.

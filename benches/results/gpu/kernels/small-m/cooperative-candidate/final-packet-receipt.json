@@ -1,0 +1,21 @@
+{
+  "manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+  "archive": "/private/tmp/mapal-s58-smallm-bench-payload.tgz",
+  "archive_sha256": "6f4535d08a49cc92ad8ffdd7863e814e7343cbbf6a916105ad864bc85a48b9b3",
+  "archive_bytes": 5686832,
+  "files": 2867,
+  "candidate_emitter_sha256": "ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307",
+  "source_manifest_sha256": "b4a7bbecacd477e2720965e31de87ce526f7f66c0ecdf51856c5a9d65a5ad185",
+  "corrected_combined_ptx_identity": {
+    "cases": 114,
+    "byte_identical_to_isolated": 114
+  },
+  "check_only": {
+    "cases": 114,
+    "files_checked": 2866,
+    "pass": true
+  },
+  "local_tests": 13,
+  "run_command": "python3 -B run_packet.py --profile rtx-5090 --results /ABS/OUTSIDE_PACKET --host-hourly-rate REVIEWED_RATE --total-timeout 1100",
+  "no_rental_or_upload": true
+}

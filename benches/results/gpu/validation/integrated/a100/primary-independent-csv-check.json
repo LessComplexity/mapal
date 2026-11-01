@@ -1,0 +1,549 @@
+{
+  "pass": true,
+  "method": "New stdlib-only source-line/raw-sample parser; does not import summarizer/exporter/validators",
+  "checker_sha256": "792142267a6a24eca51d52b9c385acbb5f894a0a042185cf3f91056f782d45a8",
+  "raw": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-a100-primary.txt",
+  "raw_sha256": "4738d68b0c21ffef3f70d900e9b3b91c032526d59f9e556028f2324c26650c7d",
+  "tables": {
+    "programs": "4a6118399ce7edee2de600bc2bef80d45572ba7f6cc6a743b0145105baf1082f",
+    "kernels": "5c75cada709ab221d166b87917412f8071d710cd701d5c9e2f63b9b9fd94ec25",
+    "libraries": "36bad2a46131535482cbd450450a63e4e4aa23ba13d8ece3673d5344552097ae",
+    "losses": "3d7557da9bd3651e7488567176d568d95f864dbed7c6c9ef0a7cfabe793fd382",
+    "nulls": "e84738fc1ed50b6ed7b79256f2976256915b729de9e0bf95448d720053446ea0"
+  },
+  "counts": {
+    "programs_rows": 284,
+    "numeric_fields": 7575,
+    "kernels_rows": 42,
+    "nulls_rows": 12,
+    "libraries_rows": 118,
+    "losses_rows": 725
+  },
+  "errors": [],
+  "all_nulls": [
+    {
+      "n": "1024",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.0,
+      "shipped_mapal_ms": [
+        0.2109,
+        0.2109,
+        0.212
+      ],
+      "repeat_mapal_ms": [
+        0.2099,
+        0.2109,
+        0.212
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "1024",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 0.9945117154586197,
+      "shipped_mapal_ms": [
+        0.3942,
+        0.3953,
+        0.3963
+      ],
+      "repeat_mapal_ms": [
+        0.4362,
+        0.4372,
+        0.4383
+      ],
+      "raw_mapal_ranges_overlap": false
+    },
+    {
+      "n": "1024",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 1.028735632183908,
+      "shipped_mapal_ms": [
+        0.0594,
+        0.0604,
+        0.0614
+      ],
+      "repeat_mapal_ms": [
+        0.0594,
+        0.0604,
+        0.0614
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.0,
+      "shipped_mapal_ms": [
+        1.2012,
+        1.2042,
+        1.2063
+      ],
+      "repeat_mapal_ms": [
+        1.2012,
+        1.2042,
+        1.2063
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 1.001934968141106,
+      "shipped_mapal_ms": [
+        2.3255,
+        2.5723,
+        2.5733
+      ],
+      "repeat_mapal_ms": [
+        2.3255,
+        2.3276,
+        2.3286
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "2048",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 0.9985908443383514,
+      "shipped_mapal_ms": [
+        0.2468,
+        0.2478,
+        0.2488
+      ],
+      "repeat_mapal_ms": [
+        0.2714,
+        0.2734,
+        0.2744
+      ],
+      "raw_mapal_ranges_overlap": false
+    },
+    {
+      "n": "4096",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 0.9997329975947964,
+      "shipped_mapal_ms": [
+        7.7722,
+        7.7763,
+        7.7814
+      ],
+      "repeat_mapal_ms": [
+        7.7742,
+        7.7773,
+        7.7824
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "4096",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 0.9997758028949167,
+      "shipped_mapal_ms": [
+        15.2945,
+        15.2975,
+        15.3016
+      ],
+      "repeat_mapal_ms": [
+        15.2955,
+        15.2986,
+        15.3027
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "4096",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 1.001134879409875,
+      "shipped_mapal_ms": [
+        1.5237,
+        1.6466,
+        1.6671
+      ],
+      "repeat_mapal_ms": [
+        1.5247,
+        1.6292,
+        1.6691
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_c",
+      "normalized_shipped_over_repeat": 1.0000146238495102,
+      "shipped_mapal_ms": [
+        58.5349,
+        58.5492,
+        58.5656
+      ],
+      "repeat_mapal_ms": [
+        58.5339,
+        58.5462,
+        58.7612
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_exact",
+      "normalized_shipped_over_repeat": 1.0000639992235922,
+      "shipped_mapal_ms": [
+        115.6045,
+        115.6106,
+        115.8728
+      ],
+      "repeat_mapal_ms": [
+        115.6096,
+        115.6157,
+        115.8441
+      ],
+      "raw_mapal_ranges_overlap": true
+    },
+    {
+      "n": "8192",
+      "face": "_tf",
+      "normalized_shipped_over_repeat": 1.0000426320286022,
+      "shipped_mapal_ms": [
+        11.4811,
+        13.5311,
+        15.2443
+      ],
+      "repeat_mapal_ms": [
+        11.4883,
+        13.5322,
+        14.3698
+      ],
+      "raw_mapal_ranges_overlap": true
+    }
+  ],
+  "null_max_absolute_deviation": 0.028735632183908066,
+  "overlap_table": "/private/tmp/mapal-s56-gpu/integrated/results/a100-primary/independent-overlap-check.csv",
+  "overlap_table_sha256": "47cae0722ef5a35bbd95017eb8b4676a5c77a703d63d1b523b6db593ff365619",
+  "control_comparisons": 728,
+  "overlapping_control_comparisons": 404,
+  "largest_median_control_gains_with_overlap": [
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 7.641904,
+      "arm_median": 7.825155999999999,
+      "arm_max": 12.581315,
+      "shipped_min": 8.048505,
+      "shipped_median": 10.542956,
+      "shipped_max": 11.532129999999999,
+      "arm_over_shipped": 0.7422165092977717,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0938232123893905
+    },
+    {
+      "kind": "decode",
+      "program": "decode_1024_256",
+      "face": "_c",
+      "arm": "off-retain-resident+delta-h2d+lane-stride",
+      "metric": "traced_kernel_ms",
+      "arm_min": 108.033,
+      "arm_median": 114.378,
+      "arm_max": 140.113,
+      "shipped_min": 120.505,
+      "shipped_median": 120.708,
+      "shipped_max": 124.693,
+      "arm_over_shipped": 0.9475593995426981,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0330135533684595
+    },
+    {
+      "kind": "probe",
+      "program": "pt_indep_512",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "traced_kernel_ms",
+      "arm_min": 0.139,
+      "arm_median": 0.14,
+      "arm_max": 0.145,
+      "shipped_min": 0.131,
+      "shipped_median": 0.147,
+      "shipped_max": 0.152,
+      "arm_over_shipped": 0.9523809523809526,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.034013605442177
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_4096",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 387.7,
+      "arm_median": 402.023,
+      "arm_max": 832.275,
+      "shipped_min": 396.912,
+      "shipped_median": 418.806,
+      "shipped_max": 460.094,
+      "arm_over_shipped": 0.959926553105734,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0985850250473967
+    },
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_4096",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 424.806,
+      "arm_median": 430.893,
+      "arm_max": 817.703,
+      "shipped_min": 423.124,
+      "shipped_median": 448.776,
+      "shipped_max": 594.156,
+      "arm_over_shipped": 0.960151612385689,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.323947804695438
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_512",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "traced_wall_ms",
+      "arm_min": 360.171,
+      "arm_median": 370.667,
+      "arm_max": 391.095,
+      "shipped_min": 376.79,
+      "shipped_median": 384.423,
+      "shipped_max": 386.387,
+      "arm_over_shipped": 0.964216501093847,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.005108955499541
+    },
+    {
+      "kind": "probe",
+      "program": "pt_indep_512",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 368.855,
+      "arm_median": 373.736,
+      "arm_max": 392.711,
+      "shipped_min": 373.243,
+      "shipped_median": 387.495,
+      "shipped_max": 409.94,
+      "arm_over_shipped": 0.9644924450638073,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0579233280429425
+    },
+    {
+      "kind": "probe",
+      "program": "pt_indep_1024",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 362.332,
+      "arm_median": 367.256,
+      "arm_max": 379.023,
+      "shipped_min": 365.059,
+      "shipped_median": 379.807,
+      "shipped_max": 473.328,
+      "arm_over_shipped": 0.9669542688786672,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.2462329551588043
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_2048",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 59.86747,
+      "arm_median": 60.675613,
+      "arm_max": 64.168315,
+      "shipped_min": 59.02638400000001,
+      "shipped_median": 62.716666,
+      "shipped_max": 70.851592,
+      "arm_over_shipped": 0.9674559709535581,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.1297091589658161
+    },
+    {
+      "kind": "probe",
+      "program": "pt_mlp_1024",
+      "face": "_c",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "traced_wall_ms",
+      "arm_min": 373.343,
+      "arm_median": 376.063,
+      "arm_max": 389.208,
+      "shipped_min": 375.729,
+      "shipped_median": 387.864,
+      "shipped_max": 401.701,
+      "arm_over_shipped": 0.9695743868985005,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0356748757296372
+    },
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_2048",
+      "face": "_c",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 390.803,
+      "arm_median": 393.396,
+      "arm_max": 398.426,
+      "shipped_min": 380.103,
+      "shipped_median": 405.051,
+      "shipped_max": 494.861,
+      "arm_over_shipped": 0.9712258456342535,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.22172516547299
+    },
+    {
+      "kind": "probe",
+      "program": "pt_loop_4096",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "iter_ms",
+      "arm_min": 160.543513,
+      "arm_median": 161.335928,
+      "arm_max": 172.871964,
+      "shipped_min": 160.046312,
+      "shipped_median": 165.74738000000002,
+      "shipped_max": 173.465356,
+      "arm_over_shipped": 0.9733844842675642,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.046564693812958
+    },
+    {
+      "kind": "probe",
+      "program": "pt_diamond_4096",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 390.155,
+      "arm_median": 404.979,
+      "arm_max": 1179.11,
+      "shipped_min": 400.244,
+      "shipped_median": 416.042,
+      "shipped_max": 581.758,
+      "arm_over_shipped": 0.9734089346748646,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.3983155546795758
+    },
+    {
+      "kind": "probe",
+      "program": "pt_diamond_512",
+      "face": "_exact",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "wall_ms",
+      "arm_min": 375.657,
+      "arm_median": 380.487,
+      "arm_max": 446.182,
+      "shipped_min": 377.721,
+      "shipped_median": 389.888,
+      "shipped_max": 455.891,
+      "arm_over_shipped": 0.9758879473079449,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.169287077314511
+    },
+    {
+      "kind": "probe",
+      "program": "pt_epi_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "wall_ms",
+      "arm_min": 373.962,
+      "arm_median": 381.517,
+      "arm_max": 773.906,
+      "shipped_min": 372.732,
+      "shipped_median": 390.899,
+      "shipped_max": 491.941,
+      "arm_over_shipped": 0.9759989153208374,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.258486207434657
+    },
+    {
+      "kind": "probe",
+      "program": "pt_rowsum_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 372.865,
+      "arm_median": 374.677,
+      "arm_max": 387.48,
+      "shipped_min": 373.871,
+      "shipped_median": 383.564,
+      "shipped_max": 389.261,
+      "arm_over_shipped": 0.9768304637557227,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0148528016185043
+    },
+    {
+      "kind": "probe",
+      "program": "pt_residual_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 365.225,
+      "arm_median": 381.909,
+      "arm_max": 389.768,
+      "shipped_min": 368.639,
+      "shipped_median": 390.79,
+      "shipped_max": 399.63,
+      "arm_over_shipped": 0.9772742393612938,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0226208449550909
+    },
+    {
+      "kind": "probe",
+      "program": "pt_softmax_rows_2048",
+      "face": "_c",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 381.131,
+      "arm_median": 387.775,
+      "arm_max": 404.043,
+      "shipped_min": 373.18,
+      "shipped_median": 396.577,
+      "shipped_max": 398.522,
+      "arm_over_shipped": 0.9778050668596514,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0049044700020424
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_512",
+      "face": "_c",
+      "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+      "metric": "traced_kernel_ms",
+      "arm_min": 0.088,
+      "arm_median": 0.089,
+      "arm_max": 0.093,
+      "shipped_min": 0.089,
+      "shipped_median": 0.091,
+      "shipped_max": 0.092,
+      "arm_over_shipped": 0.978021978021978,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.010989010989011
+    },
+    {
+      "kind": "probe",
+      "program": "pt_twin_4096",
+      "face": "_exact",
+      "arm": "off-arch-rungs",
+      "metric": "traced_wall_ms",
+      "arm_min": 404.404,
+      "arm_median": 431.169,
+      "arm_max": 450.958,
+      "shipped_min": 399.698,
+      "shipped_median": 440.332,
+      "shipped_max": 441.569,
+      "arm_over_shipped": 0.979190701561549,
+      "ranges_overlap": true,
+      "shipped_max_over_median": 1.0028092439341225
+    }
+  ],
+  "limits": [
+    "Program distributions recomputed from all raw repetition records; kernel distributions independently recomputed from all saved raw samples using upper-middle median.",
+    "Chain/decode library harness supplies printed summaries without raw samples; checked source summaries/gates/identities and derived ratios, cannot reconstruct unrecorded library samples.",
+    "1e-12 comparison tolerance only accommodates binary floating arithmetic/CSV serialization, not measurement acceptance. No confidence intervals or performance tolerance invented."
+  ]
+}

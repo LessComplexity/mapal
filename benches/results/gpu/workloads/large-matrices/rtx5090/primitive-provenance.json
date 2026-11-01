@@ -1,0 +1,53 @@
+{
+  "profile": "rtx-5090",
+  "phase": "primitive-extension",
+  "tag": "primitive-rtx-5090",
+  "offer": 28247752,
+  "machine_id": 40773,
+  "host_id": 214845,
+  "listed_dph": 1.0933333333333335,
+  "active": false,
+  "accepted": false,
+  "manifest_sha256": "426c60c61603b037cf50d312f371777d73dc9bcb784d6d5a1a07a0a71ff70cd2",
+  "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "reserved_utc": "2026-10-21T19:21:17.492569+00:00",
+  "runner_sha256": "c532cbe53dea74baedeb638b60240448d725edb4717d5bdd8ca5191e699907ca",
+  "offer_snapshot": "/private/tmp/mapal-s56-gpu/integrated/operations/offers-20261021T191953Z.json",
+  "offer_snapshot_sha256": "1943e40d37e2f0436feb8b538fc443dc01383da5f740ad9cacfc5377c6f9933e",
+  "staging_manifest_sha256": "12e839c06edec4fa625cfb30b1aae0c21570ec54e206ad068b2d16ccd78bdcca",
+  "prelaunch_instance_ids": [
+    57065574
+  ],
+  "prelaunch_inventory_utc": "2026-10-21T19:21:17.938589+00:00",
+  "instance": 57100331,
+  "cleanup_confirmed": true,
+  "execution": {
+    "profile": "rtx-5090",
+    "tag": "primitive-rtx-5090",
+    "exit": 1,
+    "stage": "rental-wrapper",
+    "rental_started": true,
+    "results_directory_created": true,
+    "timed_out": false,
+    "timeout_seconds": 7500,
+    "seconds": 354.6,
+    "results": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090",
+    "end_utc": "2026-10-21T19:27:12.577359+00:00"
+  },
+  "cleanup": {
+    "instance": 57100331,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T19:28:13.830755+00:00",
+    "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+    "allocation_recovery": null
+  },
+  "verification_sha256": "43bb3366f2203247721a934ee1d9053dfa62c0139211a1307a8d8c87856dd17d",
+  "results_sha256": "4aeef1a28521cf1cf8eda82c451b8a5fa5944fbcb87422adcd73fd7a075cd3cf",
+  "trace_archive_sha256": "fe61fa915eb92d365587fb53b181d960babd48f2b9bb665f85ef56063705900a",
+  "operation_request_sha256": "495ed75a6f41c30b4d767a98d55e636e5a663797a2150316fe42ee557d15d902",
+  "approval_sha256": "78a042154f180a1dc1dbaab72adf0be50da978053e7a52e7f804998570fcec02",
+  "approved_destination_refresh_sha256": "9502581c1366e05312d95cd09d382258df5a68867b662b85f2c1cceae0228fb6",
+  "integrity_pass": true,
+  "all_values_pass": false,
+  "scope": "Supplementary primitive measurements; not a final integrated pass"
+}

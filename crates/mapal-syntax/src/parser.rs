@@ -473,12 +473,15 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let body = if self.at(TokenKind::LBrace) {
+        // ADR-0041 D2: the compute type follows the output (`-> T: tf32 | f32`).
+        let compute = self.parse_compute();
+        let mut body = if self.at(TokenKind::LBrace) {
             self.parse_block()
         } else {
             self.diag("P0001", self.cur_span(), "expected `{` for function body");
             self.empty_block()
         };
+        body.compute = compute;
         let span = self.node_span_covering(start, body.span);
         FnDecl {
             name,
@@ -487,6 +490,52 @@ impl<'a> Parser<'a> {
             body,
             span,
         }
+    }
+
+    /// `compute := ':' member ('|' member)*` when the cursor is at `:` before
+    /// a member (ADR-0041 D2) — on whatever opens a body; members `f32`,
+    /// `tf32`. The lone `|` the lexer flags (L0006) is this type's separator.
+    fn parse_compute(&mut self) -> Option<Precision> {
+        let member = |t: &str| t == "f32" || t == "tf32";
+        if !(self.at(TokenKind::Colon)
+            && self.peek_kind(1) == TokenKind::Ident
+            && member(self.text(self.peek(1).span)))
+        {
+            return None;
+        }
+        let start = self.cur_span().start;
+        self.bump(); // `:`
+        let mut p = Precision {
+            f32: false,
+            tf32: false,
+            span: self.cur_span(),
+        };
+        loop {
+            let sp = self.cur_span();
+            match (self.cur().kind, self.text(sp)) {
+                (TokenKind::Ident, "f32") => p.f32 = true,
+                (TokenKind::Ident, "tf32") => p.tf32 = true,
+                _ => {
+                    self.diag(
+                        "P0118",
+                        sp,
+                        "expected a precision: `f32` or `tf32` (ADR-0041)",
+                    );
+                    break;
+                }
+            }
+            self.bump();
+            let bar = self.cur_span();
+            if self.cur().kind == TokenKind::Error && self.text(bar) == "|" {
+                self.diagnostics
+                    .retain(|d| !(d.code.0 == "L0006" && d.span == bar));
+                self.bump();
+                continue;
+            }
+            break;
+        }
+        p.span = self.span(start, self.prev_end());
+        Some(p)
     }
 
     /// `params := param (',' param)* ','?` — caller has checked the `(`.
@@ -772,6 +821,7 @@ impl<'a> Parser<'a> {
             items: Vec::new(),
             tail: None,
             span: self.here(),
+            compute: None,
         }
     }
 
@@ -786,6 +836,7 @@ impl<'a> Parser<'a> {
                 items: Vec::new(),
                 tail: None,
                 span: self.node_span(start),
+                compute: None,
             };
         }
         self.bump(); // `{`
@@ -797,7 +848,12 @@ impl<'a> Parser<'a> {
         }
         self.leave();
         let span = self.block_span(start, &items, &tail);
-        Block { items, tail, span }
+        Block {
+            items,
+            tail,
+            span,
+            compute: None,
+        }
     }
 
     /// A block span: `[start, prev_end]` widened to cover its body (J2).
@@ -1268,12 +1324,14 @@ impl<'a> Parser<'a> {
     fn parse_loop_stmt(&mut self) -> Stmt {
         let start = self.cur_span().start;
         let kw = self.bump().span; // `loop`
-        let body = if self.at(TokenKind::LBrace) {
+        let compute = self.parse_compute();
+        let mut body = if self.at(TokenKind::LBrace) {
             self.parse_block()
         } else {
             self.diag("P0001", self.cur_span(), "expected `{` for loop body");
             self.empty_block()
         };
+        body.compute = compute;
         let span = self.node_span_covering(start, body.span);
         Stmt {
             kind: StmtKind::Loop(LoopStmt {
@@ -1598,12 +1656,14 @@ impl<'a> Parser<'a> {
                 // the ordinary block production, not a fanout. Guard arms stay
                 // illegal in it (a clean guard token → stray-guard P0004).
                 self.bump(); // `seq`
-                let body = if self.at(TokenKind::LBrace) {
+                let compute = self.parse_compute();
+                let mut body = if self.at(TokenKind::LBrace) {
                     self.parse_block()
                 } else {
                     self.diag("P0001", self.cur_span(), "expected `{` for seq block");
                     self.empty_block()
                 };
+                body.compute = compute;
                 StageKind::SeqBlock(body)
             }
             TokenKind::KwVoid => {
@@ -1750,6 +1810,7 @@ impl<'a> Parser<'a> {
 
     /// `('map' | 'fold') op-block` — caller consumed the keyword.
     fn parse_map_fold(&mut self, op: CollOp) -> StageKind {
+        let compute = self.parse_compute();
         if !self.at(TokenKind::LBrace) {
             self.diag(
                 "P0001",
@@ -1759,10 +1820,14 @@ impl<'a> Parser<'a> {
             return StageKind::MapFold {
                 op,
                 params: Vec::new(),
-                body: self.empty_block(),
+                body: Block {
+                    compute,
+                    ..self.empty_block()
+                },
             };
         }
-        let (params, body) = self.parse_op_block();
+        let (params, mut body) = self.parse_op_block();
+        body.compute = compute;
         StageKind::MapFold { op, params, body }
     }
 
@@ -1847,7 +1912,15 @@ impl<'a> Parser<'a> {
         }
         self.leave();
         let span = self.block_span(start, &items, &tail);
-        (params, Block { items, tail, span })
+        (
+            params,
+            Block {
+                items,
+                tail,
+                span,
+                compute: None,
+            },
+        )
     }
 
     /// `op-shorthand := BINOP hole-expr` — a leading binary operator after `->`.
@@ -1984,7 +2057,12 @@ impl<'a> Parser<'a> {
                 "anonymous block stage (`-> { … }` with statements/tail) is out of Mapal-Core \
                  (HANDOFF §4); user-guide §8.3 full-language form. Planned for Core+1",
             );
-            StageKind::StmtBlock(Block { items, tail, span })
+            StageKind::StmtBlock(Block {
+                items,
+                tail,
+                span,
+                compute: None,
+            })
         }
     }
 
@@ -2189,7 +2267,12 @@ impl<'a> Parser<'a> {
         let span = self.block_span(start, &items, &tail);
         // A trailing `;` after the payload block is legal (statement form).
         self.eat(TokenKind::Semi);
-        Block { items, tail, span }
+        Block {
+            items,
+            tail,
+            span,
+            compute: None,
+        }
     }
 
     // ======================================================================

@@ -1,0 +1,171 @@
+{
+  "pass": true,
+  "tests": [
+    {
+      "mode": "success",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering",
+        "candidate-ordering-verify",
+        "apt-update",
+        "apt-python-venv",
+        "venv",
+        "pip-before-upgrade",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "python-torch-cuda-versions",
+        "pip-freeze",
+        "system-packages",
+        "matrix"
+      ]
+    },
+    {
+      "mode": "ordering-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering"
+      ]
+    },
+    {
+      "mode": "ordering-summary-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering"
+      ]
+    },
+    {
+      "mode": "ordering-timeout",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering"
+      ]
+    },
+    {
+      "mode": "ordering-verify-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify"
+      ]
+    },
+    {
+      "mode": "candidate-ordering-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering"
+      ]
+    },
+    {
+      "mode": "candidate-ordering-summary-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering"
+      ]
+    },
+    {
+      "mode": "candidate-ordering-timeout",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering"
+      ]
+    },
+    {
+      "mode": "candidate-ordering-verify-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering",
+        "candidate-ordering-verify"
+      ]
+    },
+    {
+      "mode": "candidate-ordering-payload-check-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check"
+      ]
+    },
+    {
+      "mode": "matrix-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering",
+        "candidate-ordering-verify",
+        "apt-update",
+        "apt-python-venv",
+        "venv",
+        "pip-before-upgrade",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "python-torch-cuda-versions",
+        "pip-freeze",
+        "system-packages",
+        "matrix"
+      ]
+    },
+    {
+      "mode": "torch-install-failure",
+      "pass": true,
+      "stages": [
+        "ordering-payload-check",
+        "matrix-payload-check",
+        "ordering",
+        "ordering-verify",
+        "candidate-ordering-payload-check",
+        "candidate-ordering",
+        "candidate-ordering-verify",
+        "apt-update",
+        "apt-python-venv",
+        "venv",
+        "pip-before-upgrade",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install"
+      ]
+    }
+  ],
+  "no_gpu_network_rental_install": true
+}

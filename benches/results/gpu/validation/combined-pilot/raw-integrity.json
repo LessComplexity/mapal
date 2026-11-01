@@ -1,0 +1,19 @@
+{
+  "raw_integrity_pass": true,
+  "files_verified": 180,
+  "adapter_sha256": "3b8e87db4ac071bfb55e287d4cc911ddb037449adbcb41e618146e5a07779d73",
+  "trace_sha256": "eedda3447849d271e9ba0bcf7fe03de9d1e3cc78b70b1f4617ab4c7af0e6b386",
+  "results_sha256": "583303f73165086508f5629234963f107d2fe8745ca1e2b43bdae60475641577",
+  "smallm_reported_pass": false,
+  "compiled_reported_pass": true,
+  "compiled_state": "passed",
+  "optional_capture_status": "unvalidated",
+  "error": null,
+  "timing_admitted_by_this_verifier": false,
+  "cleanup": {
+    "instance": 57122410,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T23:02:58.733747+00:00",
+    "method": "Independent exact-ID inventory absence"
+  }
+}

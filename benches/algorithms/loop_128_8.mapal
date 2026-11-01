@@ -1,0 +1,27 @@
+fn main() {
+    16384 -> iota -> ta;
+    128 -> iota -> krange;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> x0;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 1024.0 } -> w;
+    mut x: [f32; 16384] <- x0;
+    mut it: i32 <- 0;
+    loop {
+        (it < 8) -> {
+            -true-> {
+                ta -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + x[i * 128 + k] * w[k * 128 + j] }
+    } -> x;
+                it + 1 -> it;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    0.0 -> z: f32;
+    (z, out) -> fold { acc, v -> acc + v } -> total;
+    total -> println;
+    out[0] -> println;
+    out[16383] -> println;
+}

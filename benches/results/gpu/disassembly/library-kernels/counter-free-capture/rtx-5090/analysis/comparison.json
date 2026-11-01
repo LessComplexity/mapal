@@ -1,0 +1,1279 @@
+{
+  "schema": "admitted-selected-sass-comparison-v1",
+  "pass": true,
+  "timing_admissible": false,
+  "dynamic_metrics_measured": false,
+  "case": {
+    "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+    "M": 16,
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "mapal_variant": "old",
+    "cutlass_candidate": "m16-n64-k16",
+    "ptx": {
+      "path": "/w/competitive-reference/ptx/rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract/old/kernel.ptx",
+      "sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+      "entry": "mapal_tile_37c5043169cbcc55",
+      "gx": 128,
+      "gy": 1,
+      "block": 256,
+      "smem": 0
+    },
+    "oracle": {
+      "text_path": "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.txt",
+      "text_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+      "json_path": "/w/competitive-reference/oracles/m16-n2048-k7168-sampled.json",
+      "json_sha256": "ba7b4bba346852a4ce624877db13d8804a73fcb13c4c21fd43a56d69cdb89e3a"
+    },
+    "manifest": {
+      "path": "/w/competitive-reference/manifest.json",
+      "sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f"
+    }
+  },
+  "harness_sha256": "867c144e307df68648957730e196247413c279336f181b09bb75b4d834f5fcbf",
+  "independent_admission": {
+    "path": "/private/tmp/mapal-library-image-review/repair-review/live-admission-v2/attempt13/admission.json",
+    "sha256": "79ff56dbb5c6cc015351c3fba3f7808c381367caa74f61ce25e5be63af87d9a4",
+    "pass": true
+  },
+  "host": "NVIDIA GeForce RTX 5090, GPU-6f5a16b4-bef2-c3b0-6c58-c80edb2eed53, 610.43.02",
+  "driver_api_version": 13030,
+  "tool_paths": {
+    "cuda_home": "/usr/local/cuda-12.8",
+    "cupti_library": {
+      "path": "/usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+      "sha256": "fccdc5fcc7c32f8cf4b3ed9b17f7f187a185a6fa0a5bcc06e3434cbd1687c808"
+    },
+    "nvdisasm": {
+      "path": "/usr/local/cuda-12.8/bin/nvdisasm",
+      "sha256": "250ebe97dd86617574a30daf8d8ee433e6c5d9d10bafff922078779d1ba36073"
+    },
+    "cxx": "/usr/bin/c++"
+  },
+  "tool_versions": {
+    "decoder-version": "nvdisasm: NVIDIA (R) CUDA disassembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Thu_Feb_13_02:14:45_PST_2025\nCuda compilation tools, release 12.8, V12.8.90\nBuild cuda_12.8.r12.8/compiler.35538042_0",
+    "nvcc-version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:23:50_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0"
+  },
+  "selected_kernel_inventory": {
+    "mapal": 1,
+    "cublas": 2,
+    "cutlass": 1
+  },
+  "rows": [
+    {
+      "label": "mapal-independent-output",
+      "leg": "mapal",
+      "launch": {
+        "event": 3187,
+        "cbid": 307,
+        "parent": 0,
+        "pointer": 97837272601600,
+        "uid": 1,
+        "opaque_launch_handle": 97837293424016,
+        "stream": 0,
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "smem": 0,
+        "active": 1,
+        "code": 0,
+        "symbol": "mapal_tile_37c5043169cbcc55",
+        "correlation": 1425,
+        "invocation": 1568,
+        "parent_invocation": 0,
+        "image_event": 358,
+        "module": 21,
+        "module_sha256": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+        "text_sha256": "80361779c5fafe1a36b4e0b5988e7a572a013ea31affecf451e999a5c1c61ac9",
+        "elf_symbol_index": 12,
+        "join": "direct-loader-function",
+        "launch_handle_kind": "CUfunction returned by cuModuleGetFunction",
+        "direct_GetFunction_event": 363,
+        "FUNCTION_metadata": null,
+        "API_activity_binding": {
+          "kind": 4,
+          "correlation": 1425,
+          "cbid": 307,
+          "code": 0,
+          "pid": 748,
+          "tid": 4260552704
+        },
+        "context_creation_event": 241
+      },
+      "decoded": {
+        "symbol": "mapal_tile_37c5043169cbcc55",
+        "sass_sha256": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+        "decoder_unknown_annotations_present": true,
+        "dynamic_metrics_claimed": false,
+        "module_sha256": "4568e8bcb8273e3a30a48a11a43d3ec0f51c545ca264f7e67f42e37ee17d5c1a",
+        "text_sha256": "80361779c5fafe1a36b4e0b5988e7a572a013ea31affecf451e999a5c1c61ac9",
+        "elf_symbol_index": 12
+      },
+      "text_bytes": 3712,
+      "instruction_rows": 232,
+      "opcode_counts": {
+        "BRA": 1,
+        "BRA.U": 1,
+        "EXIT": 2,
+        "FFMA": 64,
+        "HFMA2": 1,
+        "IADD": 1,
+        "IADD.64": 3,
+        "IMAD.WIDE.U32": 2,
+        "ISETP.GT.U32.AND": 1,
+        "LDC": 1,
+        "LDC.64": 1,
+        "LDCU.64": 3,
+        "LDG.E.CONSTANT": 128,
+        "LEA": 2,
+        "LEA.HI.X": 2,
+        "LOP3.LUT": 2,
+        "MOV": 1,
+        "NOP": 8,
+        "S2R": 2,
+        "SHF.R.U64": 1,
+        "STG.E": 1,
+        "UIADD3.64": 1,
+        "UISETP.NE.U64.AND": 1,
+        "UMOV": 1,
+        "UMOV.64": 1
+      },
+      "constant_false_opcode_counts": {},
+      "family_counts": {
+        "fma": 64,
+        "add": 0,
+        "mul": 0,
+        "global_load": 128,
+        "global_store": 1,
+        "shared_load": 0,
+        "shared_store": 0,
+        "global_to_shared": 0,
+        "dependency_barrier": 0,
+        "block_barrier": 0,
+        "warp_sync": 0,
+        "shuffle": 0,
+        "call": 0,
+        "tensor_mnemonics": 0
+      },
+      "anchors": {
+        "fma": [
+          {
+            "line": 61,
+            "address": "0x02d0",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R10, R10, R12, R37                      &req={3}        ?WAIT3_END_GROUP;",
+            "raw": "/*02d0*/                   FFMA R10, R10, R12, R37                      &req={3}        ?WAIT3_END_GROUP;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 232,
+            "address": "0x0d80",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R37, R30, R37, R23                                      ?trans1;",
+            "raw": "/*0d80*/                   FFMA R37, R30, R37, R23                                      ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_load": [
+          {
+            "line": 37,
+            "address": "0x0150",
+            "predicate": null,
+            "opcode": "LDG.E.CONSTANT",
+            "operands_and_annotations": "R19, desc[UR6][R6.64+-0x6000] &wr=0x2         ?trans4;",
+            "raw": "/*0150*/                   LDG.E.CONSTANT R19, desc[UR6][R6.64+-0x6000] &wr=0x2         ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 217,
+            "address": "0x0c90",
+            "predicate": null,
+            "opcode": "LDG.E.CONSTANT",
+            "operands_and_annotations": "R26, desc[UR6][R8.64+0xf8]    &wr=0x4         ?trans1;",
+            "raw": "/*0c90*/                   LDG.E.CONSTANT R26, desc[UR6][R8.64+0xf8]    &wr=0x4         ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_store": [
+          {
+            "line": 237,
+            "address": "0x0dd0",
+            "predicate": null,
+            "opcode": "STG.E",
+            "operands_and_annotations": "desc[UR6][R2.64], R37                                  ?trans1;",
+            "raw": "/*0dd0*/                   STG.E desc[UR6][R2.64], R37                                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ]
+      },
+      "decoded_unknown_annotations": {
+        "?trans1": 68,
+        "?trans2": 5,
+        "?WAIT13_END_GROUP": 1,
+        "?trans5": 2,
+        "?WAIT3_END_GROUP": 53,
+        "?WAIT4_END_GROUP": 16,
+        "?WAIT8_END_GROUP": 1,
+        "?trans4": 75,
+        "?trans6": 1,
+        "?WAIT5_END_GROUP": 1
+      },
+      "resource_queries": {
+        "registers_per_thread": 40,
+        "local_bytes": 0,
+        "static_shared_bytes": null,
+        "dynamic_shared_bytes": 0,
+        "source": "profile stdout lines5 and7 for explicit Mapal/CUTLASS function attribute queries; selected cuBLAS internal attributes not recorded",
+        "no_max_register_name_inference": true
+      },
+      "sass_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/mapal-sass-0/stdout",
+      "sass_public_name": "mapal-independent-output.sass",
+      "sass_sha256": "9483b28da69fe0e5ba584e427fe20a5754cd8eab8bdc49b46e7d4718dcf3fe37",
+      "status_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/mapal-sass-0/status.json",
+      "status_sha256": "aa6ba9e2decb7c127909a2a6f7e022f5bf20a1d5e8f2c424709aff39d40e8a46",
+      "text_section_range_complete_in_listing": true
+    },
+    {
+      "label": "cublas-gemm",
+      "leg": "cublas",
+      "launch": {
+        "event": 3205,
+        "cbid": 307,
+        "parent": 0,
+        "pointer": 108430351393792,
+        "uid": 1,
+        "opaque_launch_handle": 108430406832176,
+        "stream": 0,
+        "grid": [
+          8,
+          2,
+          32
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "smem": 25600,
+        "active": 1,
+        "code": 0,
+        "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+        "correlation": 1432,
+        "invocation": 1577,
+        "parent_invocation": 0,
+        "image_event": 2987,
+        "module": 24,
+        "module_sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+        "text_sha256": "d89bdf7b2c451c2f8014e8240b9f75be3d206398322cf1bfa781b1001bcfb04f",
+        "elf_symbol_index": 62,
+        "join": "unique-active-ELF-plus-FUNCTION",
+        "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+        "direct_GetFunction_event": null,
+        "FUNCTION_metadata": {
+          "id": 17,
+          "index": 62,
+          "module": 24,
+          "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+          "uid": 1
+        },
+        "API_activity_binding": {
+          "kind": 4,
+          "correlation": 1432,
+          "cbid": 307,
+          "code": 0,
+          "pid": 758,
+          "tid": 2729185280
+        },
+        "context_creation_event": 241
+      },
+      "decoded": {
+        "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x32_8x5_nn_align1EEvNT_6ParamsE",
+        "sass_sha256": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+        "decoder_unknown_annotations_present": true,
+        "dynamic_metrics_claimed": false,
+        "module_sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+        "text_sha256": "d89bdf7b2c451c2f8014e8240b9f75be3d206398322cf1bfa781b1001bcfb04f",
+        "elf_symbol_index": 62
+      },
+      "text_bytes": 26880,
+      "instruction_rows": 1680,
+      "opcode_counts": {
+        "B2R.RESULT": 2,
+        "BAR.RED.AND.DEFER_BLOCKING": 2,
+        "BAR.SYNC.DEFER_BLOCKING": 22,
+        "BRA": 23,
+        "BSSY.RECONVERGENT": 1,
+        "BSYNC.RECONVERGENT": 1,
+        "CCTL.IVALL": 2,
+        "CGAERRBAR": 1,
+        "CS2R": 19,
+        "DEPBAR.LE": 3,
+        "ERRBAR": 1,
+        "EXIT": 4,
+        "FFMA": 288,
+        "FMNMX": 64,
+        "FMUL": 64,
+        "FSETP.NEU.AND": 1,
+        "HFMA2": 2,
+        "IADD.64": 73,
+        "IADD3": 49,
+        "IMAD": 25,
+        "IMAD.SHL.U32": 12,
+        "IMAD.WIDE": 2,
+        "IMAD.WIDE.U32": 12,
+        "ISETP.GE.AND": 24,
+        "ISETP.GE.OR": 1,
+        "ISETP.GT.U32.AND": 1,
+        "ISETP.LT.AND": 44,
+        "ISETP.NE.AND": 18,
+        "ISETP.NE.OR": 1,
+        "ISETP.NE.S64.AND": 2,
+        "ISETP.NE.U32.AND": 94,
+        "LDC": 5,
+        "LDC.64": 8,
+        "LDCU": 17,
+        "LDCU.64": 39,
+        "LDG.E": 2,
+        "LDG.E.64": 4,
+        "LDG.E.LTC128B": 32,
+        "LDG.E.STRONG.GPU": 2,
+        "LDGDEPBAR": 7,
+        "LDGSTS.E.LTC128B": 50,
+        "LDS": 86,
+        "LDS.128": 27,
+        "LEA": 10,
+        "LEA.HI": 4,
+        "LEA.HI.X": 4,
+        "LOP3.LUT": 21,
+        "MEMBAR.ALL.GPU": 1,
+        "MOV": 15,
+        "MOV.64": 7,
+        "NOP": 11,
+        "P2R": 9,
+        "P2R.B1": 2,
+        "PLOP3.LUT": 28,
+        "PRMT": 12,
+        "R2P": 16,
+        "R2UR": 6,
+        "S2R": 8,
+        "S2UR": 7,
+        "SEL": 118,
+        "SHF.L.U32": 2,
+        "SHF.L.U64.HI": 5,
+        "SHF.R.S32.HI": 7,
+        "SHF.R.U32.HI": 13,
+        "SHFL.IDX": 1,
+        "STG.E": 64,
+        "STG.E.STRONG.GPU": 1,
+        "STS": 64,
+        "UFSEL": 2,
+        "UIADD3": 21,
+        "UIADD3.64": 6,
+        "UIMAD": 8,
+        "UIMAD.U32": 1,
+        "UIMAD.WIDE": 1,
+        "UIMAD.WIDE.U32": 7,
+        "UISETP.GE.AND": 4,
+        "UISETP.GE.U32.AND": 4,
+        "UISETP.GT.AND": 1,
+        "UISETP.NE.AND": 11,
+        "UISETP.NE.OR": 1,
+        "UISETP.NE.S64.AND": 2,
+        "ULEA": 5,
+        "ULEA.HI": 2,
+        "ULEA.HI.X": 2,
+        "ULOP3.LUT": 2,
+        "UMOV": 12,
+        "USEL": 4,
+        "USHF.L.U32": 2,
+        "USHF.R.S32.HI": 4,
+        "USHF.R.U32.HI": 1,
+        "UVIMNMX.S32": 1,
+        "WARPSYNC.ALL": 2,
+        "YIELD": 1
+      },
+      "constant_false_opcode_counts": {
+        "LDS": 22
+      },
+      "family_counts": {
+        "fma": 288,
+        "add": 0,
+        "mul": 64,
+        "global_load": 40,
+        "global_store": 65,
+        "shared_load": 113,
+        "shared_store": 64,
+        "global_to_shared": 50,
+        "dependency_barrier": 10,
+        "block_barrier": 24,
+        "warp_sync": 2,
+        "shuffle": 1,
+        "call": 0,
+        "tensor_mnemonics": 0
+      },
+      "anchors": {
+        "fma": [
+          {
+            "line": 482,
+            "address": "0x1cf0",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R31, R36.reuse, R40.reuse, R31               &req={1}                 ?trans1;",
+            "raw": "/*1cf0*/                   FFMA R31, R36.reuse, R40.reuse, R31               &req={1}                 ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1412,
+            "address": "0x5680",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R15, R44, UR12, R33                                                   ?WAIT5_END_GROUP;",
+            "raw": "/*5680*/                   FFMA R15, R44, UR12, R33                                                   ?WAIT5_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "mul": [
+          {
+            "line": 1099,
+            "address": "0x42f0",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R16, R53, UR13                               &req={1}                 ?trans1;",
+            "raw": "/*42f0*/                   FMUL R16, R53, UR13                               &req={1}                 ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1666,
+            "address": "0x6650",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R7, R7, UR13                                                          ?WAIT5_END_GROUP;",
+            "raw": "/*6650*/                   FMUL R7, R7, UR13                                                          ?WAIT5_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_load": [
+          {
+            "line": 69,
+            "address": "0x0340",
+            "predicate": null,
+            "opcode": "LDG.E.64",
+            "operands_and_annotations": "R4, [RZ.U32+UR8]                         &wr=0x2                  ?trans4;",
+            "raw": "/*0340*/                   LDG.E.64 R4, [RZ.U32+UR8]                         &wr=0x2                  ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1345,
+            "address": "0x5250",
+            "predicate": "@P0",
+            "opcode": "LDG.E.LTC128B",
+            "operands_and_annotations": "R44, [R52.64+UR8+0x180]             &wr=0x5                  ?trans1;",
+            "raw": "/*5250*/               @P0 LDG.E.LTC128B R44, [R52.64+UR8+0x180]             &wr=0x5                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_store": [
+          {
+            "line": 1111,
+            "address": "0x43b0",
+            "predicate": "@P4",
+            "opcode": "STG.E",
+            "operands_and_annotations": "[R40], R3                                   &rd=0x2                  ?trans1;",
+            "raw": "/*43b0*/               @P4 STG.E [R40], R3                                   &rd=0x2                  ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1699,
+            "address": "0x6840",
+            "predicate": null,
+            "opcode": "STG.E.STRONG.GPU",
+            "operands_and_annotations": "[RZ.U32+UR18], R0                                         ?trans1;",
+            "raw": "/*6840*/                   STG.E.STRONG.GPU [RZ.U32+UR18], R0                                         ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "shared_load": [
+          {
+            "line": 181,
+            "address": "0x0a30",
+            "predicate": "@!PT",
+            "opcode": "LDS",
+            "operands_and_annotations": "RZ, [RZ]                                                               ?trans1;",
+            "raw": "/*0a30*/              @!PT LDS RZ, [RZ]                                                               ?trans1;",
+            "constant_false_predicate": true
+          },
+          {
+            "line": 1695,
+            "address": "0x6800",
+            "predicate": "@!PT",
+            "opcode": "LDS",
+            "operands_and_annotations": "RZ, [RZ]                                                               ?trans1;",
+            "raw": "/*6800*/              @!PT LDS RZ, [RZ]                                                               ?trans1;",
+            "constant_false_predicate": true
+          }
+        ],
+        "shared_store": [
+          {
+            "line": 1079,
+            "address": "0x41b0",
+            "predicate": null,
+            "opcode": "STS",
+            "operands_and_annotations": "[R43], R31                                                             ?trans4;",
+            "raw": "/*41b0*/                   STS [R43], R31                                                             ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1627,
+            "address": "0x63e0",
+            "predicate": null,
+            "opcode": "STS",
+            "operands_and_annotations": "[R33+0x8c], R6                                &rd=0x3                  ?trans1;",
+            "raw": "/*63e0*/                   STS [R33+0x8c], R6                                &rd=0x3                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_to_shared": [
+          {
+            "line": 184,
+            "address": "0x0a60",
+            "predicate": null,
+            "opcode": "LDGSTS.E.LTC128B",
+            "operands_and_annotations": "[R3+0x40], [R20.64+UR22], P1     &req={4} &rd=0x2         ?trans4;",
+            "raw": "/*0a60*/                   LDGSTS.E.LTC128B [R3+0x40], [R20.64+UR22], P1     &req={4} &rd=0x2         ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 722,
+            "address": "0x2bf0",
+            "predicate": "@P3",
+            "opcode": "LDGSTS.E.LTC128B",
+            "operands_and_annotations": "[R72+0x2200], [R74.64+UR22]      &rd=0x1                  ?trans1;",
+            "raw": "/*2bf0*/               @P3 LDGSTS.E.LTC128B [R72+0x2200], [R74.64+UR22]      &rd=0x1                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "dependency_barrier": [
+          {
+            "line": 219,
+            "address": "0x0c90",
+            "predicate": null,
+            "opcode": "LDGDEPBAR",
+            "operands_and_annotations": "&wr=0x0                  ?trans1;",
+            "raw": "/*0c90*/                   LDGDEPBAR                                         &wr=0x0                  ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 843,
+            "address": "0x3370",
+            "predicate": null,
+            "opcode": "DEPBAR.LE",
+            "operands_and_annotations": "SB0, 0x0                                                         ?WAIT4_END_GROUP;",
+            "raw": "/*3370*/                   DEPBAR.LE SB0, 0x0                                                         ?WAIT4_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "block_barrier": [
+          {
+            "line": 168,
+            "address": "0x0960",
+            "predicate": null,
+            "opcode": "BAR.SYNC.DEFER_BLOCKING",
+            "operands_and_annotations": "0x0                                                ?trans1;",
+            "raw": "/*0960*/                   BAR.SYNC.DEFER_BLOCKING 0x0                                                ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1686,
+            "address": "0x6770",
+            "predicate": null,
+            "opcode": "BAR.SYNC.DEFER_BLOCKING",
+            "operands_and_annotations": "0x0                                                ?trans3;",
+            "raw": "/*6770*/                   BAR.SYNC.DEFER_BLOCKING 0x0                                                ?trans3;",
+            "constant_false_predicate": false
+          }
+        ],
+        "warp_sync": [
+          {
+            "line": 1012,
+            "address": "0x3da0",
+            "predicate": null,
+            "opcode": "WARPSYNC.ALL",
+            "operands_and_annotations": "?trans5;",
+            "raw": "/*3da0*/                   WARPSYNC.ALL                                                               ?trans5;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 1018,
+            "address": "0x3df0",
+            "predicate": null,
+            "opcode": "WARPSYNC.ALL",
+            "operands_and_annotations": "?trans5;",
+            "raw": "/*3df0*/                   WARPSYNC.ALL                                                               ?trans5;",
+            "constant_false_predicate": false
+          }
+        ],
+        "shuffle": [
+          {
+            "line": 160,
+            "address": "0x08e0",
+            "predicate": null,
+            "opcode": "SHFL.IDX",
+            "operands_and_annotations": "PT, R6, R6, RZ, 0x1f                     &wr=0x1                  ?trans1;",
+            "raw": "/*08e0*/                   SHFL.IDX PT, R6, R6, RZ, 0x1f                     &wr=0x1                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ]
+      },
+      "decoded_unknown_annotations": {
+        "?trans1": 1140,
+        "?trans7": 2,
+        "?trans2": 135,
+        "?WAIT2_END_GROUP": 41,
+        "?WAIT5_END_GROUP": 32,
+        "?WAIT13_END_GROUP": 12,
+        "?trans5": 28,
+        "?trans6": 13,
+        "?WAIT11_END_GROUP": 1,
+        "?WAIT12_END_GROUP": 4,
+        "?WAIT3_END_GROUP": 71,
+        "?trans11": 4,
+        "?WAIT8_END_GROUP": 6,
+        "?trans4": 106,
+        "?WAIT15_END_GROUP": 1,
+        "?trans3": 13,
+        "?WAIT4_END_GROUP": 38,
+        "?WAIT7_END_GROUP": 5,
+        "?trans9": 1,
+        "?WAIT9_END_GROUP": 3,
+        "?WAIT6_END_GROUP": 4,
+        "?trans8": 8,
+        "?trans10": 1
+      },
+      "resource_queries": {
+        "registers_per_thread": null,
+        "local_bytes": null,
+        "static_shared_bytes": null,
+        "dynamic_shared_bytes": 25600,
+        "source": "profile stdout lines5 and7 for explicit Mapal/CUTLASS function attribute queries; selected cuBLAS internal attributes not recorded",
+        "no_max_register_name_inference": true
+      },
+      "sass_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cublas-sass-0/stdout",
+      "sass_public_name": "cublas-gemm.sass",
+      "sass_sha256": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+      "status_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cublas-sass-0/status.json",
+      "status_sha256": "ac19a68326a848d02941a2bbf38e737752481bfa3f20a8391921c7fdaa216763",
+      "text_section_range_complete_in_listing": true
+    },
+    {
+      "label": "cublas-reduction",
+      "leg": "cublas",
+      "launch": {
+        "event": 3213,
+        "cbid": 307,
+        "parent": 1434,
+        "pointer": 108430351393792,
+        "uid": 1,
+        "opaque_launch_handle": 108430505806048,
+        "stream": 0,
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          16,
+          1
+        ],
+        "smem": 0,
+        "active": 1,
+        "code": 0,
+        "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+        "correlation": 1434,
+        "invocation": 1580,
+        "parent_invocation": 1579,
+        "image_event": 3012,
+        "module": 25,
+        "module_sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+        "text_sha256": "309480c49a36d39b6052eff8eaadb16ca87b99e7e63715708c2869b8c0abd201",
+        "elf_symbol_index": 604,
+        "join": "unique-active-ELF-plus-FUNCTION",
+        "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+        "direct_GetFunction_event": null,
+        "FUNCTION_metadata": {
+          "id": 159,
+          "index": 604,
+          "module": 25,
+          "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+          "uid": 1
+        },
+        "API_activity_binding": {
+          "kind": 5,
+          "correlation": 1434,
+          "cbid": 211,
+          "code": 0,
+          "pid": 758,
+          "tid": 2729185280
+        },
+        "context_creation_event": 241
+      },
+      "decoded": {
+        "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+        "sass_sha256": "7065cf357bc13beb7e6eaf1d2bc0a30c31122412538eb70acc0e2704b34636cb",
+        "decoder_unknown_annotations_present": true,
+        "dynamic_metrics_claimed": false,
+        "module_sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+        "text_sha256": "309480c49a36d39b6052eff8eaadb16ca87b99e7e63715708c2869b8c0abd201",
+        "elf_symbol_index": 604
+      },
+      "text_bytes": 14080,
+      "instruction_rows": 880,
+      "opcode_counts": {
+        "BRA": 73,
+        "BSSY.RECONVERGENT": 2,
+        "BSYNC.RECONVERGENT": 2,
+        "EXIT": 4,
+        "FADD": 127,
+        "FFMA": 11,
+        "FMUL": 21,
+        "FSETP.NEU.AND": 7,
+        "HFMA2": 6,
+        "IADD.64": 1,
+        "IADD3": 60,
+        "IMAD": 33,
+        "IMAD.WIDE": 143,
+        "IMAD.WIDE.U32": 3,
+        "ISETP.GE.AND": 16,
+        "ISETP.GE.U32.AND": 13,
+        "ISETP.GE.U64.AND": 1,
+        "ISETP.NE.AND": 24,
+        "ISETP.NE.S64.AND": 1,
+        "LDC": 24,
+        "LDC.64": 37,
+        "LDCU": 34,
+        "LDCU.64": 8,
+        "LDG.E": 1,
+        "LDG.E.CONSTANT": 133,
+        "LEA": 4,
+        "LEA.HI.X": 3,
+        "LOP3.LUT": 16,
+        "MOV": 28,
+        "MUFU.TANH": 2,
+        "NOP": 11,
+        "S2R": 2,
+        "S2UR": 2,
+        "SHF.L.U32": 4,
+        "SHF.R.S32.HI": 2,
+        "STG.E": 14,
+        "UIADD3": 1,
+        "ULOP3.LUT": 4,
+        "USHF.R.S32.HI": 2
+      },
+      "constant_false_opcode_counts": {},
+      "family_counts": {
+        "fma": 11,
+        "add": 127,
+        "mul": 21,
+        "global_load": 134,
+        "global_store": 14,
+        "shared_load": 0,
+        "shared_store": 0,
+        "global_to_shared": 0,
+        "dependency_barrier": 0,
+        "block_barrier": 0,
+        "warp_sync": 0,
+        "shuffle": 0,
+        "call": 0,
+        "tensor_mnemonics": 0
+      },
+      "anchors": {
+        "fma": [
+          {
+            "line": 215,
+            "address": "0x0c20",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R11, R11, R0, R8                                                    ?trans1;",
+            "raw": "/*0c20*/                   FFMA R11, R11, R0, R8                                                    ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 905,
+            "address": "0x34a0",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R11, R11, R16, 1                                                    ?WAIT4_END_GROUP;",
+            "raw": "/*34a0*/                   FFMA R11, R11, R16, 1                                                    ?WAIT4_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "add": [
+          {
+            "line": 112,
+            "address": "0x05f0",
+            "predicate": null,
+            "opcode": "FADD",
+            "operands_and_annotations": "R10, R10, R11                              &req={2}                 ?WAIT4_END_GROUP;",
+            "raw": "/*05f0*/                   FADD R10, R10, R11                              &req={2}                 ?WAIT4_END_GROUP;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 908,
+            "address": "0x34d0",
+            "predicate": null,
+            "opcode": "FADD",
+            "operands_and_annotations": "R12, R10, 1                                &req={0}                 ?WAIT4_END_GROUP;",
+            "raw": "/*34d0*/                   FADD R12, R10, 1                                &req={0}                 ?WAIT4_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "mul": [
+          {
+            "line": 214,
+            "address": "0x0c10",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R8, R12, R3                                &req={4}                 ?WAIT4_END_GROUP;",
+            "raw": "/*0c10*/                   FMUL R8, R12, R3                                &req={4}                 ?WAIT4_END_GROUP;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 909,
+            "address": "0x34e0",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R15, R15, R12                                                       ?WAIT7_END_GROUP;",
+            "raw": "/*34e0*/                   FMUL R15, R15, R12                                                       ?WAIT7_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_load": [
+          {
+            "line": 31,
+            "address": "0x0100",
+            "predicate": "@P0",
+            "opcode": "LDG.E.CONSTANT",
+            "operands_and_annotations": "R0, desc[UR8][R6.64]             &req={0} &rd=0x0 &wr=0x5 ?trans4;",
+            "raw": "/*0100*/               @P0 LDG.E.CONSTANT R0, desc[UR8][R6.64]             &req={0} &rd=0x0 &wr=0x5 ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 882,
+            "address": "0x3340",
+            "predicate": null,
+            "opcode": "LDG.E",
+            "operands_and_annotations": "R15, desc[UR8][R12.64]                    &req={5} &rd=0x0 &wr=0x5 ?trans1;",
+            "raw": "/*3340*/                   LDG.E R15, desc[UR8][R12.64]                    &req={5} &rd=0x0 &wr=0x5 ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_store": [
+          {
+            "line": 217,
+            "address": "0x0c40",
+            "predicate": null,
+            "opcode": "STG.E",
+            "operands_and_annotations": "desc[UR8][R14.64], R11                    &rd=0x1                  ?trans1;",
+            "raw": "/*0c40*/                   STG.E desc[UR8][R14.64], R11                    &rd=0x1                  ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 926,
+            "address": "0x35e0",
+            "predicate": null,
+            "opcode": "STG.E",
+            "operands_and_annotations": "desc[UR8][R12.64], R16                    &rd=0x1                  ?trans2;",
+            "raw": "/*35e0*/                   STG.E desc[UR8][R12.64], R16                    &rd=0x1                  ?trans2;",
+            "constant_false_predicate": false
+          }
+        ]
+      },
+      "decoded_unknown_annotations": {
+        "?trans1": 260,
+        "?trans5": 70,
+        "?WAIT5_END_GROUP": 50,
+        "?trans8": 4,
+        "?trans4": 19,
+        "?WAIT12_END_GROUP": 15,
+        "?WAIT13_END_GROUP": 19,
+        "?trans2": 182,
+        "?WAIT11_END_GROUP": 5,
+        "?trans11": 6,
+        "?WAIT4_END_GROUP": 119,
+        "?WAIT6_END_GROUP": 9,
+        "?WAIT7_END_GROUP": 21,
+        "?WAIT2_END_GROUP": 16,
+        "?trans6": 9,
+        "?WAIT3_END_GROUP": 51,
+        "?trans3": 4,
+        "?trans7": 3,
+        "?trans10": 5,
+        "?WAIT14_END_GROUP": 1
+      },
+      "resource_queries": {
+        "registers_per_thread": null,
+        "local_bytes": null,
+        "static_shared_bytes": null,
+        "dynamic_shared_bytes": 0,
+        "source": "profile stdout lines5 and7 for explicit Mapal/CUTLASS function attribute queries; selected cuBLAS internal attributes not recorded",
+        "no_max_register_name_inference": true
+      },
+      "sass_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cublas-sass-1/stdout",
+      "sass_public_name": "cublas-reduction.sass",
+      "sass_sha256": "7065cf357bc13beb7e6eaf1d2bc0a30c31122412538eb70acc0e2704b34636cb",
+      "status_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cublas-sass-1/status.json",
+      "status_sha256": "4b6277c0c38d6e91935ff049f110d1c8a34f945b9be541201d4f8322c32c72f5",
+      "text_section_range_complete_in_listing": true
+    },
+    {
+      "label": "cutlass-16x64x16",
+      "leg": "cutlass",
+      "launch": {
+        "event": 3188,
+        "cbid": 307,
+        "parent": 1425,
+        "pointer": 103908995507200,
+        "uid": 1,
+        "opaque_launch_handle": 103909018551616,
+        "stream": 0,
+        "grid": [
+          1,
+          32,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "smem": 10496,
+        "active": 1,
+        "code": 0,
+        "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+        "correlation": 1425,
+        "invocation": 1569,
+        "parent_invocation": 1568,
+        "image_event": 2759,
+        "module": 23,
+        "module_sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+        "text_sha256": "7c69d24bed4d8d6e0e748572f4e94368c1a03a2d7c4c5c815eddf30a3f96968d",
+        "elf_symbol_index": 1,
+        "join": "unique-active-ELF-plus-FUNCTION",
+        "launch_handle_kind": "CUfunction-or-CUkernel launch argument; underlying handle kind unproved",
+        "direct_GetFunction_event": null,
+        "FUNCTION_metadata": {
+          "id": 9,
+          "index": 1,
+          "module": 23,
+          "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+          "uid": 1
+        },
+        "API_activity_binding": {
+          "kind": 5,
+          "correlation": 1425,
+          "cbid": 211,
+          "code": 0,
+          "pid": 769,
+          "tid": 1544744960
+        },
+        "context_creation_event": 241
+      },
+      "decoded": {
+        "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+        "sass_sha256": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+        "decoder_unknown_annotations_present": true,
+        "dynamic_metrics_claimed": false,
+        "module_sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+        "text_sha256": "7c69d24bed4d8d6e0e748572f4e94368c1a03a2d7c4c5c815eddf30a3f96968d",
+        "elf_symbol_index": 1
+      },
+      "text_bytes": 11776,
+      "instruction_rows": 736,
+      "opcode_counts": {
+        "BAR.SYNC.DEFER_BLOCKING": 10,
+        "BRA": 14,
+        "CS2R": 4,
+        "EXIT": 5,
+        "FFMA": 136,
+        "FMUL": 16,
+        "FSETP.NEU.AND": 1,
+        "HFMA2": 11,
+        "IADD.64": 39,
+        "IADD3": 45,
+        "IMAD": 15,
+        "IMAD.SHL.U32": 8,
+        "IMAD.WIDE": 2,
+        "IMAD.WIDE.U32": 4,
+        "ISETP.GE.AND": 13,
+        "ISETP.LT.AND": 27,
+        "ISETP.NE.S64.AND": 10,
+        "ISETP.NE.U32.AND": 6,
+        "LD.E": 2,
+        "LDC": 3,
+        "LDC.64": 4,
+        "LDCU": 8,
+        "LDCU.128": 1,
+        "LDCU.64": 28,
+        "LDG.E": 2,
+        "LDG.E.64": 2,
+        "LDG.E.LTC128B": 28,
+        "LDS": 16,
+        "LDS.128": 17,
+        "LDS.64": 17,
+        "LEA": 4,
+        "LEA.HI": 3,
+        "LOP3.LUT": 25,
+        "MOV": 23,
+        "NOP": 13,
+        "PLOP3.LUT": 6,
+        "PRMT": 4,
+        "S2R": 2,
+        "S2UR": 6,
+        "SEL": 22,
+        "SHF.L.U64.HI": 2,
+        "SHF.R.S32.HI": 7,
+        "SHF.R.U32.HI": 21,
+        "SHFL.IDX": 1,
+        "STG.E": 16,
+        "STS": 36,
+        "UIADD3": 9,
+        "UIADD3.64": 4,
+        "UIMAD": 4,
+        "UIMAD.WIDE.U32": 2,
+        "UISETP.GE.AND": 2,
+        "UISETP.GE.OR": 1,
+        "UISETP.GT.AND": 3,
+        "UISETP.NE.AND": 2,
+        "ULEA": 4,
+        "ULEA.HI": 1,
+        "ULEA.HI.X": 1,
+        "ULOP3.LUT": 3,
+        "UMOV": 5,
+        "USEL": 1,
+        "USHF.L.U32": 3,
+        "USHF.R.S32.HI": 2,
+        "USHF.R.U32.HI": 2,
+        "UVIMNMX.S32": 2
+      },
+      "constant_false_opcode_counts": {},
+      "family_counts": {
+        "fma": 136,
+        "add": 0,
+        "mul": 16,
+        "global_load": 32,
+        "global_store": 16,
+        "shared_load": 50,
+        "shared_store": 36,
+        "global_to_shared": 0,
+        "dependency_barrier": 0,
+        "block_barrier": 10,
+        "warp_sync": 0,
+        "shuffle": 1,
+        "call": 0,
+        "tensor_mnemonics": 0
+      },
+      "anchors": {
+        "fma": [
+          {
+            "line": 276,
+            "address": "0x1050",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R7, R10.reuse, R12.reuse, R7                 &req={3,2,0}               ?trans1;",
+            "raw": "/*1050*/                   FFMA R7, R10.reuse, R12.reuse, R7                 &req={3,2,0}               ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 680,
+            "address": "0x2920",
+            "predicate": null,
+            "opcode": "FFMA",
+            "operands_and_annotations": "R19, R12, R9, R19                            &req={5}                   ?WAIT3_END_GROUP;",
+            "raw": "/*2920*/                   FFMA R19, R12, R9, R19                            &req={5}                   ?WAIT3_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "mul": [
+          {
+            "line": 631,
+            "address": "0x2610",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R5, R29, R10.reuse                           &req={1}                   ?trans1;",
+            "raw": "/*2610*/                   FMUL R5, R29, R10.reuse                           &req={1}                   ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 740,
+            "address": "0x2cd0",
+            "predicate": null,
+            "opcode": "FMUL",
+            "operands_and_annotations": "R3, R3, R10                                  &req={3}                   ?WAIT3_END_GROUP;",
+            "raw": "/*2cd0*/                   FMUL R3, R3, R10                                  &req={3}                   ?WAIT3_END_GROUP;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_load": [
+          {
+            "line": 113,
+            "address": "0x0630",
+            "predicate": "@P0",
+            "opcode": "LDG.E.LTC128B",
+            "operands_and_annotations": "R2, desc[UR26][R30.64]              &req={0} &wr=0x2           ?trans1;",
+            "raw": "/*0630*/               @P0 LDG.E.LTC128B R2, desc[UR26][R30.64]              &req={0} &wr=0x2           ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 654,
+            "address": "0x2780",
+            "predicate": "@P6",
+            "opcode": "LDG.E.LTC128B",
+            "operands_and_annotations": "R12, desc[UR26][R24.64+0x80]        &wr=0x5                    ?trans1;",
+            "raw": "/*2780*/               @P6 LDG.E.LTC128B R12, desc[UR26][R24.64+0x80]        &wr=0x5                    ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "global_store": [
+          {
+            "line": 638,
+            "address": "0x2680",
+            "predicate": "@P3",
+            "opcode": "STG.E",
+            "operands_and_annotations": "desc[UR26][R20.64], R5                                                 ?trans1;",
+            "raw": "/*2680*/               @P3 STG.E desc[UR26][R20.64], R5                                                 ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 743,
+            "address": "0x2d00",
+            "predicate": null,
+            "opcode": "STG.E",
+            "operands_and_annotations": "desc[UR26][R12.64+0x80], R3                                            ?trans1;",
+            "raw": "/*2d00*/                   STG.E desc[UR26][R12.64+0x80], R3                                            ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "shared_load": [
+          {
+            "line": 229,
+            "address": "0x0d70",
+            "predicate": null,
+            "opcode": "LDS.128",
+            "operands_and_annotations": "R12, [R9+0x900]                           &rd=0x1 &wr=0x2            ?trans1;",
+            "raw": "/*0d70*/                   LDS.128 R12, [R9+0x900]                           &rd=0x1 &wr=0x2            ?trans1;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 734,
+            "address": "0x2c70",
+            "predicate": null,
+            "opcode": "LDS",
+            "operands_and_annotations": "R3, [R17+UR5+0x308]                           &wr=0x3                    ?trans1;",
+            "raw": "/*2c70*/                   LDS R3, [R17+UR5+0x308]                           &wr=0x3                    ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "shared_store": [
+          {
+            "line": 200,
+            "address": "0x0ba0",
+            "predicate": null,
+            "opcode": "STS",
+            "operands_and_annotations": "[R45+0x20], R2                                &req={2} &rd=0x0           ?trans4;",
+            "raw": "/*0ba0*/                   STS [R45+0x20], R2                                &req={2} &rd=0x0           ?trans4;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 728,
+            "address": "0x2c10",
+            "predicate": null,
+            "opcode": "STS",
+            "operands_and_annotations": "[R13+0xc], R2                                 &rd=0x0                    ?trans1;",
+            "raw": "/*2c10*/                   STS [R13+0xc], R2                                 &rd=0x0                    ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "block_barrier": [
+          {
+            "line": 224,
+            "address": "0x0d20",
+            "predicate": null,
+            "opcode": "BAR.SYNC.DEFER_BLOCKING",
+            "operands_and_annotations": "0x0                                                  ?trans6;",
+            "raw": "/*0d20*/                   BAR.SYNC.DEFER_BLOCKING 0x0                                                  ?trans6;",
+            "constant_false_predicate": false
+          },
+          {
+            "line": 729,
+            "address": "0x2c20",
+            "predicate": null,
+            "opcode": "BAR.SYNC.DEFER_BLOCKING",
+            "operands_and_annotations": "0x0                                                  ?trans1;",
+            "raw": "/*2c20*/                   BAR.SYNC.DEFER_BLOCKING 0x0                                                  ?trans1;",
+            "constant_false_predicate": false
+          }
+        ],
+        "shuffle": [
+          {
+            "line": 160,
+            "address": "0x0920",
+            "predicate": null,
+            "opcode": "SHFL.IDX",
+            "operands_and_annotations": "PT, R31, R28, RZ, 0x1f                   &req={0} &wr=0x1           ?trans1;",
+            "raw": "/*0920*/                   SHFL.IDX PT, R31, R28, RZ, 0x1f                   &req={0} &wr=0x1           ?trans1;",
+            "constant_false_predicate": false
+          }
+        ]
+      },
+      "decoded_unknown_annotations": {
+        "?trans8": 3,
+        "?trans1": 480,
+        "?trans6": 7,
+        "?WAIT3_END_GROUP": 18,
+        "?WAIT4_END_GROUP": 15,
+        "?WAIT6_END_GROUP": 1,
+        "?WAIT13_END_GROUP": 1,
+        "?trans5": 17,
+        "?trans4": 53,
+        "?trans3": 7,
+        "?WAIT2_END_GROUP": 21,
+        "?trans2": 85,
+        "?WAIT5_END_GROUP": 5,
+        "?WAIT11_END_GROUP": 1,
+        "?WAIT14_END_GROUP": 6,
+        "?WAIT10_END_GROUP": 1,
+        "?trans10": 1
+      },
+      "resource_queries": {
+        "registers_per_thread": 56,
+        "local_bytes": 0,
+        "static_shared_bytes": 0,
+        "dynamic_shared_bytes": 10496,
+        "source": "profile stdout lines5 and7 for explicit Mapal/CUTLASS function attribute queries; selected cuBLAS internal attributes not recorded",
+        "no_max_register_name_inference": true
+      },
+      "sass_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cutlass-sass-0/stdout",
+      "sass_public_name": "cutlass-16x64x16.sass",
+      "sass_sha256": "6037584e4a357a089853f38d4dd62a0ab01f56b1cb9827431deb3e4d6bd2eb88",
+      "status_file": "/private/tmp/mapal-s61-gpu/attempt-13/retrieved/trace/library-images/cutlass-sass-0/status.json",
+      "status_sha256": "39b370cac7aa83f13949939e1f2dec34ba5d57079ac76bd56f1fd94111be721a",
+      "text_section_range_complete_in_listing": true
+    }
+  ],
+  "limits": [
+    "Instruction counts are static decoded listing counts including padding/constant-false instructions; not runtime cost, executed instruction/traffic counts or occupancy.",
+    "All four listings have unknown decoder annotations. Decoded mnemonic presence remains a narrower observation; full scheduling annotation compatibility is not claimed.",
+    "cuBLAS internal function resource attributes and exact K-partition extents/order are unrecorded. GridZ32 and exact reduction symbol are observed independently.",
+    "Frozen old Mapal executable/PTX predates source fix50a57e5; these images do not validate or time that fix."
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "gpu_executed": false,
+  "pinned_header_packages": [
+    {
+      "filename": "cuda-crt-12-8_12.8.93-1_amd64.deb",
+      "sha256": "92a3c8eda8d3a3a8f3de71e0acf4edb8be568b20792e5bf7618898a72ffd6d10",
+      "bytes": 81126,
+      "url": "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-crt-12-8_12.8.93-1_amd64.deb"
+    },
+    {
+      "filename": "cuda-cudart-dev-12-8_12.8.90-1_amd64.deb",
+      "sha256": "b9e927a530535631f789098080e5e59bcc3bc2ac368d7c7af51ea4fbfe8ad7eb",
+      "bytes": 1256992,
+      "url": "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-cudart-dev-12-8_12.8.90-1_amd64.deb"
+    },
+    {
+      "filename": "cuda-cupti-dev-12-8_12.8.90-1_amd64.deb",
+      "sha256": "a7dc61e7b18dc48b3a2fb180c67ef4efa80bf874b6079ce5fe4183f4f2dc5102",
+      "bytes": 4075388,
+      "url": "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-cupti-dev-12-8_12.8.90-1_amd64.deb",
+      "reuse": "existing previously downloaded official archive"
+    }
+  ],
+  "actual_library_image_admission": false,
+  "existing_Mapal_image_source": "attempt05 successful Mapal-only capture retained separately",
+  "ordinary_image_replay": "Exact selected ordinary executable/argv retained; new-host library execution is a separate diagnostic run, no retroactive timing-cause claim",
+  "limits": {
+    "per_image_bytes": 67108864,
+    "images_aggregate_per_process_bytes": 268435456,
+    "image_count": 128,
+    "records": 65536,
+    "selected_kernels_per_leg": 512,
+    "output_admission_bytes": 536870912,
+    "per_process_seconds": 120,
+    "adapter_seconds": 480
+  },
+  "legacy_NCU_failure": "ERR_NVGPUCTRPERM; no raw report/SASS/counter admission"
+}

@@ -1,0 +1,4 @@
+[22:37:12] try RTX_4090 offer=53867752 dph=0.508 pcie=17.5 cpu_ghz=2.6 cpu=AMD_EPYC_7K62_48-Core_Processor host=371998 machine=152108 geo=Zhejiang, CN
+[22:50:04] no complete results from offer=53867752
+[22:50:04] try RTX_4090 offer=47377536 dph=0.536 pcie=24.7 cpu_ghz=4.4261709 cpu=AMD_Ryzen_7_3700X_8-Core_Processor host=264868 machine=146572 geo=Missouri, US
+[22:59:03] DONE RTX_4090 offer=47377536 host=264868 machine=146572

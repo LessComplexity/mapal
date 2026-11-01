@@ -823,6 +823,76 @@ fn last_use_two_sequential_loops_own_carried_sets() {
     );
 }
 
+/// S65 `view_death`: a projection of a product re-exposes the bytes the
+/// product holds. `a` packed into `p`, `x = p.0` read after `a` is updated:
+/// `dead_after` (copy semantics — `x` is its own bytes) lets the update write
+/// `a` in place, `view_dead_after` (view semantics — `x` is `a`'s bytes) does
+/// not. A projection of a scalar component is no view.
+#[test]
+fn view_death_follows_projections() {
+    let mut b = IrBuilder::new();
+    let f = b
+        .declare(FuncKind::Named, "main", Ty::i32(), Ty::i32(), L)
+        .unwrap();
+    let (a, n);
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let four = fb.constant(Value::I32(4), L).unwrap();
+        a = fb.iota(four, Dest::Fresh(None), L).unwrap();
+        n = fb.input();
+        let p = fb.pack(&[a, n], Dest::Fresh(None), L).unwrap();
+        let x = fb.proj(p, 0, Dest::Fresh(None), L).unwrap();
+        let s = fb.proj(p, 1, Dest::Fresh(None), L).unwrap();
+        let z = fb.constant(Value::I32(0), L).unwrap();
+        let five = fb.constant(Value::I32(5), L).unwrap();
+        let u = fb.update(a, z, five, Dest::Fresh(None), L).unwrap();
+        let e = fb.index(x, z, Dest::Fresh(None), L).unwrap();
+        let e2 = fb.index(u, z, Dest::Fresh(None), L).unwrap();
+        let t = fb
+            .binop(Operation::Add, e, e2, Dest::Fresh(None), L)
+            .unwrap();
+        let r = fb.binop(Operation::Add, t, s, Dest::Ret { slot: None }, L);
+        r.unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    let plan = ir.last_use_plan(f);
+    let at = plan.position(one_op(&ir, Operation::Update)).unwrap();
+    assert!(
+        plan.dead_after(a, at),
+        "copy semantics: x holds its own bytes"
+    );
+    assert!(
+        !plan.view_dead_after(a, at),
+        "view semantics: x is a's bytes"
+    );
+    assert!(plan.view_death(a) > plan.death(a));
+    // The scalar's projection pins nothing: n's view death is its death.
+    assert_eq!(plan.view_death(n), plan.death(n));
+}
+
+/// S65 `view_death` through a loop: the init array dies at the `LoopEnter`
+/// under copy semantics, but its bytes are the merge's first state and,
+/// through the exit, the exit object's — so they live as long as the exit
+/// object is read.
+#[test]
+fn view_death_init_lives_through_the_loop_exit() {
+    let (ir, f) = carried_array_loop();
+    let plan = ir.last_use_plan(f);
+    let enter_m = one_op(&ir, Operation::LoopEnter);
+    let init = ir.morphism(enter_m).unwrap().source;
+    let exit_m = one_op(&ir, Operation::LoopExit);
+    let merge = ir.morphism(enter_m).unwrap().target;
+    // The exit object is the fn's return: escaping, so the init's bytes do
+    // too (the zero-trip path returns them) — the plan's escape agrees.
+    assert!(plan.escapes(init) && plan.view_death(init).is_none());
+    // The merge's own bytes die in the trip: its exit is no pin.
+    let upd = plan.position(one_op(&ir, Operation::Update)).unwrap();
+    assert_eq!(plan.view_death(merge), plan.death(merge));
+    assert!(plan.view_death(merge).unwrap() <= upd);
+    assert!(plan.position(exit_m).unwrap() < upd);
+}
+
 #[test]
 fn last_use_determinism_run_twice_equal() {
     let (ir, f) = carried_array_loop();
@@ -1618,6 +1688,8 @@ fn tile_matmul_site_recognized() {
             elem: Ty::f64(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
+            tf32: false,
         }
     );
 }
@@ -1809,6 +1881,8 @@ fn tile_fir_site_recognized() {
             elem: Ty::f32(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
+            tf32: false,
         }
     );
 }
@@ -2115,6 +2189,8 @@ fn tile_conv2d_site_recognized() {
             elem: Ty::f32(),
             mul_a_first: true,
             add_acc_first: true,
+            radix: None,
+            tf32: false,
         }
     );
 }
@@ -2991,6 +3067,102 @@ fn path_plan_is_deterministic() {
     assert_eq!(ir.path_plan(f), ir.path_plan(f));
     let (ir, f) = time_bracket_fixture();
     assert_eq!(ir.path_plan(f), ir.path_plan(f));
+}
+
+/// plan-s53 `clock-fence`, the GPU e2e shape (`benches/gpu/gen_tiles.py e2e`):
+/// generate `a` and `b` from `ta`, `t0`, the site `ta -> map {a[t]}` with `a`
+/// and `b` captured, `t1`, print. The site's source is the capture pack, written
+/// on the site's line, so Kahn releases `t1` (its token is ready one line
+/// earlier) BEFORE the site — and `t0` before the generation. That was S52's
+/// `e2e_4096_c.host.ll`: `t1 - t0` timed the generation, and nothing of the site.
+#[test]
+fn topo_order_puts_the_site_between_the_clock_reads_and_the_generation_before() {
+    let at = |line: u32| SourceLoc {
+        start: line * 10,
+        end: line * 10 + 9,
+    };
+    let arr = Ty::Array {
+        elem: Box::new(Ty::i32()),
+        size: 8,
+    };
+    let mut b = IrBuilder::new();
+    let gen_body = identity_map_body(&mut b);
+    let site_body = b
+        .declare(
+            FuncKind::MapBody,
+            "site",
+            Ty::Tuple(vec![arr.clone(), arr.clone(), Ty::i32()]),
+            Ty::i32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(site_body).unwrap();
+        let input = fb.input();
+        let a = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let t = fb.proj(input, 2, Dest::Fresh(None), L).unwrap();
+        let cell = fb.index(a, t, Dest::Fresh(None), L).unwrap();
+        fb.output(cell, None, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let f = b
+        .declare(FuncKind::Named, "e2e", Ty::IoToken, Ty::IoToken, at(0))
+        .unwrap();
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let token = fb.input();
+        let eight = fb.constant(Value::I32(8), at(1)).unwrap();
+        let ta = fb.iota(eight, Dest::Fresh(None), at(1)).unwrap();
+        let a = fb.map(gen_body, ta, Dest::Fresh(None), at(2)).unwrap();
+        let bb = fb.map(gen_body, ta, Dest::Fresh(None), at(3)).unwrap();
+        let start = fb.time_ms(token, at(4)).unwrap();
+        let token = fb.proj(start, 0, Dest::Fresh(None), at(4)).unwrap();
+        let t0 = fb.proj(start, 1, Dest::Fresh(None), at(4)).unwrap();
+        let c = fb
+            .map_captured(site_body, &[a, bb], ta, Dest::Fresh(None), at(5))
+            .unwrap();
+        let stop = fb.time_ms(token, at(6)).unwrap();
+        let token = fb.proj(stop, 0, Dest::Fresh(None), at(6)).unwrap();
+        let t1 = fb.proj(stop, 1, Dest::Fresh(None), at(6)).unwrap();
+        let zero = fb.constant(Value::I32(0), at(7)).unwrap();
+        let head = fb.index(c, zero, Dest::Fresh(None), at(7)).unwrap();
+        let token = fb.print(token, head, at(7)).unwrap();
+        let elapsed = fb
+            .binop(Operation::Sub, t1, t0, Dest::Fresh(None), at(8))
+            .unwrap();
+        let token = fb.print(token, elapsed, at(8)).unwrap();
+        fb.output(token, None, at(9)).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    assert!(validate(&ir).is_empty(), "{:?}", validate(&ir));
+
+    let order = ir.topo_order(f);
+    let at_line = |line: u32| -> Vec<u32> {
+        order
+            .iter()
+            .enumerate()
+            .filter(|&(_, &m)| ir.morphism(m).unwrap().loc.start == line * 10)
+            .map(|(i, _)| i as u32)
+            .collect()
+    };
+    let reads = func_ops(&ir, f, |op| op == Operation::TimeMs);
+    let (r0, r1) = (topo_pos(&ir, f, reads[0]), topo_pos(&ir, f, reads[1]));
+    // The site: its capture pack and the Map itself, every one inside.
+    let site = at_line(5);
+    assert!(site.len() >= 2, "pack edges and the map: {site:?}");
+    assert!(
+        site.iter().all(|&p| r0 < p && p < r1),
+        "the site lies between t0 ({r0}) and t1 ({r1}): {site:?}"
+    );
+    // The generation is written above t0, so it is outside the bracket.
+    let generation: Vec<u32> = [1, 2, 3].into_iter().flat_map(at_line).collect();
+    assert!(
+        generation.iter().all(|&p| p < r0),
+        "the generation precedes t0 ({r0}): {generation:?}"
+    );
+    // The readout is written below t1.
+    assert!(at_line(7).iter().all(|&p| r1 < p), "the readout follows t1");
 }
 
 #[test]
@@ -4143,4 +4315,756 @@ fn guard_plan_gates_arm_inside_loop_body() {
             );
         }
     }
+}
+
+// --- write_delta (S53 `retain-delta`) ----------------------------------------
+
+/// A canonical loop carrying `(x: [i32; n], t: i32)` that writes `x[idx(t, j)]
+/// <- 1` for `j < d`, then `t + 1`. Returns the graph, the fn, and the `x` and
+/// `t` merge views.
+fn update_loop(
+    n: u64,
+    d: i32,
+    idx: impl Fn(&mut mapal_ir::FnBuilder<'_>, ObjectId, i32) -> ObjectId,
+) -> (mapal_ir::CategoryIr, mapal_ir::FuncId, ObjectId, ObjectId) {
+    let arr = Ty::Array {
+        elem: Box::new(Ty::i32()),
+        size: n,
+    };
+    let mut b = IrBuilder::new();
+    let f = b.declare(FuncKind::Named, "w", Ty::i32(), arr, L).unwrap();
+    let (xv, tv);
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let z = fb.constant(Value::I32(0), L).unwrap();
+        let x0 = fb
+            .pack_array(&vec![z; n as usize], Dest::Fresh(None), L)
+            .unwrap();
+        let init = fb.pack(&[x0, z], Dest::Fresh(None), L).unwrap();
+        let lh = fb.begin_loop(init, L).unwrap();
+        let merge = fb.merge_of(&lh);
+        xv = fb.proj(merge, 0, Dest::Fresh(None), L).unwrap();
+        tv = fb.proj(merge, 1, Dest::Fresh(None), L).unwrap();
+        let lim = fb.constant(Value::I32(4), L).unwrap();
+        let cond = fb
+            .binop(Operation::Lt, tv, lim, Dest::Fresh(None), L)
+            .unwrap();
+        let one = fb.constant(Value::I32(1), L).unwrap();
+        let mut cur = xv;
+        for j in 0..d {
+            let i = idx(&mut fb, tv, j);
+            cur = fb.update(cur, i, one, Dest::Fresh(None), L).unwrap();
+        }
+        let t1 = fb
+            .binop(Operation::Add, tv, one, Dest::Fresh(None), L)
+            .unwrap();
+        let next = fb.pack(&[cur, t1], Dest::Fresh(None), L).unwrap();
+        fb.loop_back(&lh, next, cond, L).unwrap();
+        fb.loop_exit(&lh, xv, cond, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.end_loop(lh).unwrap();
+        fb.finish().unwrap();
+    }
+    (b.seal(f).unwrap(), f, xv, tv)
+}
+
+/// `c·t + k` as builder morphisms.
+fn affine_ix(fb: &mut mapal_ir::FnBuilder<'_>, t: ObjectId, c: i32, k: i32) -> ObjectId {
+    let c = fb.constant(Value::I32(c), L).unwrap();
+    let k = fb.constant(Value::I32(k), L).unwrap();
+    let ct = fb
+        .binop(Operation::Mul, t, c, Dest::Fresh(None), L)
+        .unwrap();
+    fb.binop(Operation::Add, ct, k, Dest::Fresh(None), L)
+        .unwrap()
+}
+
+fn rows(d: mapal_ir::Delta) -> Option<(u64, ObjectId, i64, i64)> {
+    match d {
+        mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.var, start.a, start.b)),
+        mapal_ir::Delta::Top => None,
+    }
+}
+
+#[test]
+fn write_delta_matmul4_cell_is_rows_1_t() {
+    // matmul4_loop's `c[t] <- v`: one cell, at the counter.
+    let (ir, f, xv, tv) = update_loop(16, 1, |_, t, _| t);
+    let wd = ir.write_delta(f);
+    assert_eq!(wd.len(), 1);
+    assert_eq!(rows(wd[xv]), Some((1, tv, 1, 0)));
+}
+
+#[test]
+fn write_delta_decode_row_is_rows_d_td() {
+    // The decode loop's row write: `x[t·d + j] <- …` for `j < d`.
+    let (ir, f, xv, tv) = update_loop(32, 8, |fb, t, j| affine_ix(fb, t, 8, j));
+    assert_eq!(rows(ir.write_delta(f)[xv]), Some((8, tv, 8, 0)));
+}
+
+#[test]
+fn write_delta_column_write_is_top() {
+    // loop_rewrite: `x[j·d + t]` — d cells a stride apart, not one range.
+    let (ir, f, xv, _) = update_loop(64, 8, |fb, t, j| affine_ix(fb, t, 1, 8 * j));
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}
+
+#[test]
+fn write_delta_non_affine_index_is_top() {
+    // `x[t·t]`: the index is not affine in the counter.
+    let (ir, f, xv, _) = update_loop(16, 1, |fb, t, _| {
+        fb.binop(Operation::Mul, t, t, Dest::Fresh(None), L)
+            .unwrap()
+    });
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}
+
+#[test]
+fn write_delta_unwritten_carry_is_top() {
+    // The array crosses the back edge unchanged: nothing to retain from.
+    let (ir, f, xv, _) = update_loop(16, 0, |_, t, _| t);
+    assert_eq!(ir.write_delta(f)[xv], mapal_ir::Delta::Top);
+}
+
+// --- footprint_plan (generic-fusion: every consumer's read edges) ----------
+
+fn affine(w: u64, base: u64, cq: u64, cr: u64, taps: &[(u64, u64)]) -> mapal_ir::Reach {
+    mapal_ir::Reach::Affine {
+        w,
+        base,
+        cq,
+        cr,
+        taps: taps
+            .iter()
+            .map(|&(coef, ext)| mapal_ir::Tap { coef, ext })
+            .collect(),
+    }
+}
+
+/// The `(slot, reach)` of every direct edge of `m` (no seen-through law).
+fn reaches(
+    ir: &mapal_ir::CategoryIr,
+    f: mapal_ir::FuncId,
+    m: MorphismId,
+) -> Vec<(u32, mapal_ir::Reach)> {
+    ir.footprint_plan(f)
+        .of(m)
+        .iter()
+        .filter(|e| e.law.is_none())
+        .map(|e| (e.slot, e.reach.clone()))
+        .collect()
+}
+
+fn the_site(ir: &mapal_ir::CategoryIr, f: mapal_ir::FuncId) -> MorphismId {
+    let plan = ir.tile_plan_strided(f);
+    assert_eq!(plan.sites.len(), 1);
+    plan.sites.iter().next().unwrap().0
+}
+
+#[test]
+fn footprint_tile_reads_and_the_a_panel_rect() {
+    // c[i·N + j] = Σ_k a[i·K + k]·b[k·N + j]: a is `w = N, cq = K, tap (1, K)`,
+    // b `w = N, cr = 1, tap (N, K)`; a BM×BN block reads a BM×K panel of a.
+    let (ir, main, _) = tile_matmul_fixture(64, 48, 32);
+    let m = the_site(&ir, main);
+    let r = reaches(&ir, main, m);
+    assert_eq!(
+        r,
+        vec![
+            (1, affine(48, 0, 32, 0, &[(1, 32)])),
+            (2, affine(48, 0, 0, 1, &[(48, 32)]))
+        ]
+    );
+    assert_eq!(r[0].1.rect(32, 16..32, 0..16), Some([16..32, 0..32]));
+    // b's panel for the same block: all K rows, the block's BN columns.
+    assert_eq!(r[1].1.rect(48, 16..32, 16..32), Some([0..32, 16..32]));
+}
+
+#[test]
+fn footprint_fir_window_is_bn_plus_taps_minus_one() {
+    let (ir, main, _) = tile_fir_fixture(64, 16, 1);
+    let m = the_site(&ir, main);
+    let r = reaches(&ir, main, m);
+    assert_eq!(r[1], (1, affine(64, 0, 0, 1, &[(1, 16)])));
+    // A block of 32 lanes reads 32 + 15 signal cells (one producer row).
+    let x_len = 63 + 16;
+    assert_eq!(r[1].1.rect(x_len, 0..1, 32..64), Some([0..1, 32..79]));
+}
+
+#[test]
+fn footprint_conv_ksplit_halo() {
+    // 5×5 taps over a 20-wide image: a BM×BN block reads (BM+4)×(BN+4).
+    let (ir, main, _) = tile_conv2d_fixture_with(Conv2dFixture {
+        side: 16,
+        div: 5,
+        mod_div: 5,
+        depth: 25,
+        mix_raw_k: false,
+    });
+    let m = the_site(&ir, main);
+    let r = reaches(&ir, main, m);
+    assert_eq!(r[1], (2, affine(16, 0, 20, 1, &[(20, 5), (1, 5)])));
+    assert_eq!(r[1].1.rect(20, 4..8, 8..16), Some([4..12, 8..20]));
+}
+
+#[test]
+fn footprint_cell_reads_same_row_col_const_affine() {
+    // `c[t] + bias[t % 64]`.
+    let (ir, main, m) = cell_fixture(256, 256, 64, |fb, x, y, t| {
+        let j = cell_t(fb, Operation::Mod, t, 64);
+        cell_sum(fb, x, t, y, j)
+    });
+    assert_eq!(
+        reaches(&ir, main, m),
+        vec![(0, affine(1, 0, 1, 0, &[])), (1, affine(64, 0, 0, 1, &[]))]
+    );
+    // `x[t / 16] + y[3]`.
+    let (ir, main, m) = cell_fixture(256, 16, 8, |fb, x, y, t| {
+        let i = cell_t(fb, Operation::Div, t, 16);
+        let k = fb.constant(Value::I32(3), L).unwrap();
+        cell_sum(fb, x, i, y, k)
+    });
+    assert_eq!(
+        reaches(&ir, main, m),
+        vec![(0, affine(16, 0, 1, 0, &[])), (1, affine(1, 3, 0, 0, &[]))]
+    );
+    // `x[t + 1] + y[t]`: affine where `Footprint` says `Other`.
+    let (ir, main, m) = cell_fixture(256, 257, 256, |fb, x, y, t| {
+        let s = cell_t(fb, Operation::Add, t, 1);
+        cell_sum(fb, x, s, y, t)
+    });
+    assert_eq!(
+        reaches(&ir, main, m),
+        vec![(0, affine(1, 1, 1, 0, &[])), (1, affine(1, 0, 1, 0, &[]))]
+    );
+    assert_eq!(
+        ir.cell_plan(main)[m].reads[0].foot,
+        mapal_ir::Footprint::Other
+    );
+    // `x[2·(t / 16)] + y[t % 16 + 4·(t / 16)]`: one divisor, both axes.
+    let (ir, main, m) = cell_fixture(256, 32, 76, |fb, x, y, t| {
+        let i = cell_t(fb, Operation::Div, t, 16);
+        let two = fb.constant(Value::I32(2), L).unwrap();
+        let xi = fb
+            .binop(Operation::Mul, i, two, Dest::Fresh(None), L)
+            .unwrap();
+        let j = cell_t(fb, Operation::Mod, t, 16);
+        let i2 = cell_t(fb, Operation::Div, t, 16);
+        let four = fb.constant(Value::I32(4), L).unwrap();
+        let i4 = fb
+            .binop(Operation::Mul, i2, four, Dest::Fresh(None), L)
+            .unwrap();
+        let yi = fb
+            .binop(Operation::Add, j, i4, Dest::Fresh(None), L)
+            .unwrap();
+        cell_sum(fb, x, xi, y, yi)
+    });
+    assert_eq!(
+        reaches(&ir, main, m),
+        vec![(0, affine(16, 0, 2, 0, &[])), (1, affine(16, 0, 4, 1, &[]))]
+    );
+}
+
+/// `rows -> map { i -> (0.0, kr) -> fold { acc, k -> acc + a[i·ci + k] } }`.
+fn row_fold_fixture(
+    rows: u64,
+    k: u64,
+    ci: u64,
+) -> (mapal_ir::CategoryIr, mapal_ir::FuncId, MorphismId) {
+    let a_ty = f32_arr((rows - 1) * ci + k);
+    let mut b = IrBuilder::new();
+    let step = b
+        .declare(
+            FuncKind::FoldBody,
+            "rf_step",
+            Ty::Tuple(vec![a_ty.clone(), Ty::i32(), Ty::f32(), Ty::i32()]),
+            Ty::f32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(step).unwrap();
+        let input = fb.input();
+        let a = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let i = fb.proj(input, 1, Dest::Fresh(None), L).unwrap();
+        let acc = fb.proj(input, 2, Dest::Fresh(None), L).unwrap();
+        let kk = fb.proj(input, 3, Dest::Fresh(None), L).unwrap();
+        let c = fb.constant(Value::I32(ci as i32), L).unwrap();
+        let ic = fb
+            .binop(Operation::Mul, i, c, Dest::Fresh(None), L)
+            .unwrap();
+        let ix = fb
+            .binop(Operation::Add, ic, kk, Dest::Fresh(None), L)
+            .unwrap();
+        let v = fb.index(a, ix, Dest::Fresh(None), L).unwrap();
+        fb.binop(Operation::Add, acc, v, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let row = b
+        .declare(
+            FuncKind::MapBody,
+            "rf_row",
+            Ty::Tuple(vec![a_ty.clone(), i32_arr(k), Ty::i32()]),
+            Ty::f32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(row).unwrap();
+        let input = fb.input();
+        let a = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let kr = fb.proj(input, 1, Dest::Fresh(None), L).unwrap();
+        let i = fb.proj(input, 2, Dest::Fresh(None), L).unwrap();
+        let z = fb.constant(Value::F32(0.0), L).unwrap();
+        fb.fold_captured(step, &[a, i], z, kr, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let main = b
+        .declare(FuncKind::Named, "main", Ty::Unit, f32_arr(rows), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(main).unwrap();
+        let one = fb.constant(Value::F32(1.0), L).unwrap();
+        let n = fb.constant(tile_count((rows - 1) * ci + k), L).unwrap();
+        let a = fb.fill(one, n, Dest::Fresh(None), L).unwrap();
+        let ck = fb.constant(tile_count(k), L).unwrap();
+        let kr = fb.iota(ck, Dest::Fresh(None), L).unwrap();
+        let cr = fb.constant(tile_count(rows), L).unwrap();
+        let rr = fb.iota(cr, Dest::Fresh(None), L).unwrap();
+        fb.map_captured(row, &[a, kr], rr, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(main).unwrap();
+    assert!(validate(&ir).is_empty(), "{:?}", validate(&ir));
+    let m = one_op(
+        &ir,
+        Operation::Map {
+            body: row,
+            captures: 2,
+        },
+    );
+    (ir, main, m)
+}
+
+#[test]
+fn footprint_row_fold_reads_its_row() {
+    let (ir, main, m) = row_fold_fixture(8, 16, 16);
+    assert_eq!(ir.row_fold(main).len(), 1);
+    let r = reaches(&ir, main, m);
+    assert_eq!(r, vec![(0, affine(1, 0, 16, 0, &[(1, 16)]))]);
+    // Rows 2..4 of the fold read rows 2..4 of a 16-wide producer, whole.
+    assert_eq!(r[0].1.rect(16, 2..4, 0..1), Some([2..4, 0..16]));
+}
+
+/// `fn m(a: [i32; 16])`: `y = a -> map {v -> v + 1}` (a law over a load),
+/// `z = y -> map {v -> v * 2}`, `ix = iota 16 -> map {t -> t + 1}`,
+/// `w = ix -> map {v -> v * 2}`, `s = (0, a) -> fold`, `a[3]`.
+fn law_fixture() -> (mapal_ir::CategoryIr, mapal_ir::FuncId, Vec<ObjectId>) {
+    let mut b = IrBuilder::new();
+    let unary = |b: &mut IrBuilder, name: &str, op: Operation, k: i32| {
+        let f = b
+            .declare(FuncKind::MapBody, name, Ty::i32(), Ty::i32(), L)
+            .unwrap();
+        let mut fb = b.build_fn(f).unwrap();
+        let v = fb.input();
+        let c = fb.constant(Value::I32(k), L).unwrap();
+        fb.binop(op, v, c, Dest::Ret { slot: None }, L).unwrap();
+        fb.finish().unwrap();
+        f
+    };
+    let inc = unary(&mut b, "inc", Operation::Add, 1);
+    let dbl = unary(&mut b, "dbl", Operation::Mul, 2);
+    let sum = b
+        .declare(
+            FuncKind::FoldBody,
+            "sum",
+            Ty::Tuple(vec![Ty::i32(), Ty::i32()]),
+            Ty::i32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(sum).unwrap();
+        let input = fb.input();
+        let acc = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let v = fb.proj(input, 1, Dest::Fresh(None), L).unwrap();
+        fb.binop(Operation::Add, acc, v, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let f = b
+        .declare(
+            FuncKind::Named,
+            "m",
+            Ty::Tuple(vec![i32_arr(16), Ty::Unit]),
+            Ty::i32(),
+            L,
+        )
+        .unwrap();
+    let out;
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let inp = fb.input();
+        let a = fb.proj(inp, 0, Dest::Fresh(None), L).unwrap();
+        let y = fb.map(inc, a, Dest::Fresh(None), L).unwrap();
+        let z = fb.map(dbl, y, Dest::Fresh(None), L).unwrap();
+        let n = fb.constant(Value::I32(16), L).unwrap();
+        let it = fb.iota(n, Dest::Fresh(None), L).unwrap();
+        let ix = fb.map(inc, it, Dest::Fresh(None), L).unwrap();
+        let w = fb.map(dbl, ix, Dest::Fresh(None), L).unwrap();
+        let zero = fb.constant(Value::I32(0), L).unwrap();
+        let s = fb
+            .fold_captured(sum, &[], zero, a, Dest::Fresh(None), L)
+            .unwrap();
+        let three = fb.constant(Value::I32(3), L).unwrap();
+        let a3 = fb.index(a, three, Dest::Fresh(None), L).unwrap();
+        let z0 = fb.index(z, zero, Dest::Fresh(None), L).unwrap();
+        let w0 = fb.index(w, zero, Dest::Fresh(None), L).unwrap();
+        let p = fb
+            .binop(Operation::Add, s, a3, Dest::Fresh(None), L)
+            .unwrap();
+        let q = fb
+            .binop(Operation::Add, z0, w0, Dest::Fresh(None), L)
+            .unwrap();
+        fb.binop(Operation::Add, p, q, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+        out = vec![a, y, z, ix, w, s, a3];
+    }
+    let ir = b.seal(f).unwrap();
+    assert!(validate(&ir).is_empty(), "{:?}", validate(&ir));
+    (ir, f, out)
+}
+
+#[test]
+fn footprint_laws_folds_and_host_reads() {
+    let (ir, f, o) = law_fixture();
+    let (a, y, z, ix, w, s, a3) = (o[0], o[1], o[2], o[3], o[4], o[5], o[6]);
+    let plan = ir.footprint_plan(f);
+    let writer = |x: ObjectId| *ir.in_edges(x).first().unwrap();
+    // `z` reads `y` at `t`, and through `y`'s law the parameter `a` at `t`.
+    let ez = plan.of(writer(z));
+    assert!(ez.contains(&mapal_ir::Edge {
+        consumer: writer(z),
+        slot: 0,
+        producer: y,
+        reach: affine(1, 0, 1, 0, &[]),
+        law: None,
+    }));
+    assert!(ez.contains(&mapal_ir::Edge {
+        consumer: writer(z),
+        slot: 0,
+        producer: a,
+        reach: affine(1, 0, 1, 0, &[]),
+        law: Some(y),
+    }));
+    // `w` reads `ix`, whose element is a closed form of the index.
+    assert_eq!(plan.of(writer(w))[0].producer, ix);
+    assert_eq!(plan.of(writer(w))[0].reach, mapal_ir::Reach::Law);
+    // A whole fold reads every cell; `a[3]` one.
+    let es = plan.of(writer(s));
+    assert_eq!(
+        (es[0].producer, es[0].reach.clone()),
+        (a, affine(1, 0, 0, 0, &[(1, 16)]))
+    );
+    assert_eq!(es[0].reach.rect(16, 0..1, 0..1), Some([0..1, 0..16]));
+    assert_eq!(plan.of(writer(a3))[0].reach, affine(1, 3, 0, 0, &[]));
+}
+
+#[test]
+fn footprint_rect_of_ranges_and_laws() {
+    use mapal_ir::Reach;
+    assert_eq!(
+        Reach::Range { lo: 5, hi: 9 }.rect(16, 0..1, 0..1),
+        Some([0..1, 5..9])
+    );
+    assert_eq!(
+        Reach::Range { lo: 5, hi: 40 }.rect(16, 0..1, 0..1),
+        Some([0..3, 0..16])
+    );
+    assert_eq!(Reach::Law.rect(16, 0..4, 0..4), Some([0..0, 0..0]));
+    assert_eq!(Reach::Whole.rect(16, 0..4, 0..4), None);
+    // A column term that leaves the producer row has no rectangle.
+    assert_eq!(affine(4, 0, 0, 3, &[]).rect(8, 0..1, 0..4), None);
+}
+
+proptest! {
+    /// `rect` is the tight hull of the enumerated addresses — never smaller,
+    /// never larger — whenever it answers.
+    #[test]
+    fn footprint_rect_is_the_tight_hull(
+        pw in 1u64..24,
+        base in 0u64..64,
+        cq in 0u64..40,
+        cr in 0u64..6,
+        taps in prop::collection::vec((0u64..30, 1u64..5), 0..3),
+        r0 in 0u64..5, rn in 1u64..4,
+        c0 in 0u64..5, cn in 1u64..4,
+    ) {
+        let reach = affine(8, base, cq, cr, &taps);
+        let (rows, cols) = (r0..r0 + rn, c0..c0 + cn);
+        let mut addrs = Vec::new();
+        for q in rows.clone() {
+            for r in cols.clone() {
+                let mut acc = vec![base + cq * q + cr * r];
+                for &(coef, ext) in &taps {
+                    acc = acc.iter().flat_map(|&a| (0..ext).map(move |k| a + coef * k)).collect();
+                }
+                addrs.extend(acc);
+            }
+        }
+        let lo = |f: &dyn Fn(u64) -> u64| addrs.iter().map(|&a| f(a)).min().unwrap();
+        let hi = |f: &dyn Fn(u64) -> u64| addrs.iter().map(|&a| f(a)).max().unwrap();
+        let (rlo, rhi) = (lo(&|a| a / pw), hi(&|a| a / pw));
+        let (clo, chi) = (lo(&|a| a % pw), hi(&|a| a % pw));
+        if let Some([rr, cc]) = reach.rect(pw, rows, cols) {
+            prop_assert_eq!(rr, rlo..rhi + 1);
+            prop_assert_eq!(cc, clo..chi + 1);
+        }
+    }
+}
+
+// --- cell_plan (S54: per-cell morphisms and their read footprints) ----------
+
+fn f32_arr(n: u64) -> Ty {
+    Ty::Array {
+        elem: Box::new(Ty::f32()),
+        size: n,
+    }
+}
+
+/// `ta -> map { t -> body(x, y, t) } -> out` over `n` cells, `x: [f32; nx]`,
+/// `y: [f32; ny]` captured (both `fill`s). Returns the IR, `main` and the map.
+fn cell_fixture(
+    n: u64,
+    nx: u64,
+    ny: u64,
+    body: impl FnOnce(&mut mapal_ir::FnBuilder<'_>, ObjectId, ObjectId, ObjectId) -> ObjectId,
+) -> (mapal_ir::CategoryIr, mapal_ir::FuncId, MorphismId) {
+    let mut b = IrBuilder::new();
+    let cell = b
+        .declare(
+            FuncKind::MapBody,
+            "cell",
+            Ty::Tuple(vec![f32_arr(nx), f32_arr(ny), Ty::i32()]),
+            Ty::f32(),
+            L,
+        )
+        .unwrap();
+    {
+        let mut fb = b.build_fn(cell).unwrap();
+        let input = fb.input();
+        let x = fb.proj(input, 0, Dest::Fresh(None), L).unwrap();
+        let y = fb.proj(input, 1, Dest::Fresh(None), L).unwrap();
+        let t = fb.proj(input, 2, Dest::Fresh(None), L).unwrap();
+        let v = body(&mut fb, x, y, t);
+        let z = fb.constant(Value::F32(0.0), L).unwrap();
+        fb.binop(Operation::Add, v, z, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let main = b
+        .declare(FuncKind::Named, "main", Ty::Unit, f32_arr(n), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(main).unwrap();
+        let one = fb.constant(Value::F32(1.0), L).unwrap();
+        let cx = fb.constant(tile_count(nx), L).unwrap();
+        let x = fb.fill(one, cx, Dest::Fresh(None), L).unwrap();
+        let cy = fb.constant(tile_count(ny), L).unwrap();
+        let y = fb.fill(one, cy, Dest::Fresh(None), L).unwrap();
+        let cn = fb.constant(tile_count(n), L).unwrap();
+        let ta = fb.iota(cn, Dest::Fresh(None), L).unwrap();
+        fb.map_captured(cell, &[x, y], ta, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(main).unwrap();
+    assert!(validate(&ir).is_empty(), "{:?}", validate(&ir));
+    let m = one_op(
+        &ir,
+        Operation::Map {
+            body: cell,
+            captures: 2,
+        },
+    );
+    (ir, main, m)
+}
+
+/// `t op c` for a literal `c`.
+fn cell_t(fb: &mut mapal_ir::FnBuilder<'_>, op: Operation, t: ObjectId, c: i32) -> ObjectId {
+    let k = fb.constant(Value::I32(c), L).unwrap();
+    fb.binop(op, t, k, Dest::Fresh(None), L).unwrap()
+}
+
+/// `x[ix] + y[iy]`.
+fn cell_sum(
+    fb: &mut mapal_ir::FnBuilder<'_>,
+    x: ObjectId,
+    ix: ObjectId,
+    y: ObjectId,
+    iy: ObjectId,
+) -> ObjectId {
+    let a = fb.index(x, ix, Dest::Fresh(None), L).unwrap();
+    let b = fb.index(y, iy, Dest::Fresh(None), L).unwrap();
+    fb.binop(Operation::Add, a, b, Dest::Fresh(None), L)
+        .unwrap()
+}
+
+fn cell_reads(
+    n: u64,
+    nx: u64,
+    ny: u64,
+    body: impl FnOnce(&mut mapal_ir::FnBuilder<'_>, ObjectId, ObjectId, ObjectId) -> ObjectId,
+) -> Option<Vec<mapal_ir::CellRead>> {
+    let (ir, main, m) = cell_fixture(n, nx, ny, body);
+    let plan = ir.cell_plan(main);
+    plan.get(m).map(|s| {
+        assert_eq!(s.extent, n);
+        s.reads.clone()
+    })
+}
+
+#[test]
+fn cell_plan_same_and_col_a_bias() {
+    use mapal_ir::{CellRead, Footprint};
+    // `c[t] + bias[t % 64]` — the bias probe's shape.
+    let r = cell_reads(256, 256, 64, |fb, x, y, t| {
+        let j = cell_t(fb, Operation::Mod, t, 64);
+        cell_sum(fb, x, t, y, j)
+    });
+    assert_eq!(
+        r,
+        Some(vec![
+            CellRead {
+                slot: 0,
+                foot: Footprint::Same
+            },
+            CellRead {
+                slot: 1,
+                foot: Footprint::Col { c: 64 }
+            },
+        ])
+    );
+}
+
+#[test]
+fn cell_plan_row_and_const() {
+    use mapal_ir::{CellRead, Footprint};
+    // `x[t / 16] + y[3]`: a per-row scale and one fixed cell.
+    let r = cell_reads(256, 16, 8, |fb, x, y, t| {
+        let i = cell_t(fb, Operation::Div, t, 16);
+        let k = fb.constant(Value::I32(3), L).unwrap();
+        cell_sum(fb, x, i, y, k)
+    });
+    assert_eq!(
+        r,
+        Some(vec![
+            CellRead {
+                slot: 0,
+                foot: Footprint::Row { c: 16 }
+            },
+            CellRead {
+                slot: 1,
+                foot: Footprint::Const(3)
+            },
+        ])
+    );
+}
+
+#[test]
+fn cell_plan_other_address() {
+    use mapal_ir::{CellRead, Footprint};
+    // `x[t + 1]`: proven (x has n + 1 cells), but not a cell-only footprint.
+    let r = cell_reads(256, 257, 256, |fb, x, y, t| {
+        let s = cell_t(fb, Operation::Add, t, 1);
+        cell_sum(fb, x, s, y, t)
+    });
+    assert_eq!(
+        r,
+        Some(vec![
+            CellRead {
+                slot: 0,
+                foot: Footprint::Other
+            },
+            CellRead {
+                slot: 1,
+                foot: Footprint::Same
+            },
+        ])
+    );
+}
+
+#[test]
+fn cell_plan_refuses_a_trap_capable_body() {
+    // `x[t]` with x one cell short: the read is not proven, the cell can trap.
+    let r = cell_reads(256, 255, 256, |fb, x, y, t| cell_sum(fb, x, t, y, t));
+    assert_eq!(r, None);
+}
+
+#[test]
+fn cell_plan_records_a_nested_folds_reads() {
+    // A tile site's cell holds a fold over its captures (cpu-gpu-boundary
+    // `nested`): a, b and its k range read at any proven address, `Other`.
+    let (ir, main, _) = tile_matmul_fixture(16, 16, 16);
+    let plan = ir.cell_plan(main);
+    let site = plan.values().next().expect("one cell site");
+    assert_eq!(plan.len(), 1);
+    assert_eq!(
+        site.nested.len(),
+        3,
+        "a, b and the k range it walks: {site:?}"
+    );
+    assert!(
+        site.reads
+            .iter()
+            .all(|r| r.foot == mapal_ir::Footprint::Other),
+        "{site:?}"
+    );
+    assert!(site.uniform.is_empty());
+    assert_eq!(site.work, 1 + 16, "one step plus the k = 16 fold: {site:?}");
+    assert_eq!(ir.tile_plan(main).sites.len(), 1);
+}
+
+#[test]
+fn cell_plan_capture_free_map_reads_its_element_same() {
+    use mapal_ir::{CellRead, Footprint};
+    // `x -> map { v -> v + 0.0 }`: the epilogue shape — the element is `x[t]`.
+    let mut b = IrBuilder::new();
+    let body = b
+        .declare(FuncKind::MapBody, "epi", Ty::f32(), Ty::f32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(body).unwrap();
+        let v = fb.input();
+        let z = fb.constant(Value::F32(0.0), L).unwrap();
+        fb.binop(Operation::Add, v, z, Dest::Ret { slot: None }, L)
+            .unwrap();
+        fb.finish().unwrap();
+    }
+    let main = b
+        .declare(FuncKind::Named, "main", Ty::Unit, f32_arr(64), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(main).unwrap();
+        let one = fb.constant(Value::F32(1.0), L).unwrap();
+        let n = fb.constant(tile_count(64), L).unwrap();
+        let x = fb.fill(one, n, Dest::Fresh(None), L).unwrap();
+        fb.map(body, x, Dest::Ret { slot: None }, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(main).unwrap();
+    let m = one_op(&ir, Operation::Map { body, captures: 0 });
+    let site = &ir.cell_plan(main)[m];
+    assert_eq!(site.extent, 64);
+    assert_eq!(
+        site.reads,
+        vec![CellRead {
+            slot: 0,
+            foot: Footprint::Same
+        }]
+    );
 }

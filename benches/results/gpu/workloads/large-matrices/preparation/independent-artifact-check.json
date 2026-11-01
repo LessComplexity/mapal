@@ -1,0 +1,21 @@
+{
+  "scope": "Root independent artifact hash checks and recovery snapshot; no independent numerical recomputation or GPU validation claimed",
+  "manifests": {
+    "primitive/manifest.json": {
+      "sha256": "e6036d6418f3a66a48a3434cb11ab769ed4f14092d3421f85c167637af3e4e5e",
+      "files_checked": 1464
+    },
+    "composition/certification-01/manifest.json": {
+      "sha256": "e65b89fba065ea650b19298d1e820a7845ad767478715af192107e8a8318cf0a",
+      "files_checked": 206
+    },
+    "composition/certification-02/manifest.json": {
+      "sha256": "5427f8c834c223c2d729147583711aac51987c01601b8fe8e4bf2b8513ee7185",
+      "files_checked": 10
+    }
+  },
+  "recovery_archive": ".claude/worktrees/_archive-s54-20261021/large-composed-preparation",
+  "recovery_files": 2970,
+  "recovery_bytes": 159284379,
+  "copy_receipt_sha256": "c6f64736ed820488d8d8eca78dff5e20fb9f2ced44d307e33b033acbaf69a100"
+}

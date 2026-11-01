@@ -1,0 +1,40 @@
+{
+  "scope": "relocated repository source; no binary artifacts",
+  "files": [
+    {
+      "path": "benches/gpu/capture_images/README.md",
+      "bytes": 8183,
+      "sha256": "014a9b64a5cb0e9555ca9d994d609ad8200bfeb559793c8e315d6cd49991a32d"
+    },
+    {
+      "path": "benches/gpu/capture_images/build.sh",
+      "bytes": 499,
+      "sha256": "f2b3d9ac6b34aadeae949a77e866219c6242ebeb427acaa04d6afe7ce6538479"
+    },
+    {
+      "path": "benches/gpu/capture_images/capture.cpp",
+      "bytes": 7440,
+      "sha256": "b0d6413fa4ad5850ec798129364a10eae24e1ff7b4cd4d7abe99be454db3412e"
+    },
+    {
+      "path": "benches/gpu/capture_images/run_capture.py",
+      "bytes": 3490,
+      "sha256": "054c4457453f7acd62721debd230e9319e216c93c82c0030b0d80c0fdb3e66b6"
+    },
+    {
+      "path": "benches/gpu/capture_images/test_callback.cpp",
+      "bytes": 3116,
+      "sha256": "7c403d270bc4d9f9bbbc9302234ae333c3b4f7dce1264cbe7426d27b3a3725fd"
+    },
+    {
+      "path": "benches/gpu/capture_images/test_capture.py",
+      "bytes": 6386,
+      "sha256": "4fc96f24a26d19f7fff1ce2ebb8cf354a65fe1681a3f340f5b1cc074270b428c"
+    },
+    {
+      "path": "benches/gpu/capture_images/validate.py",
+      "bytes": 6890,
+      "sha256": "56492381db1dc62f02d8010c0636478fe948a6ec0015ba868bc1d9f65e14d9c0"
+    }
+  ]
+}

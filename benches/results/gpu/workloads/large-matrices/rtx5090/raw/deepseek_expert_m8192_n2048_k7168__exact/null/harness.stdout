@@ -1,0 +1,11 @@
+device name="NVIDIA GeForce RTX 5090" cc=12.0 driver=13030
+facts sms=170 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=102400 smem_per_block=101376 smem_reserved_per_block=1024 max_threads_per_sm=1536 max_blocks_per_sm=24 max_threads_per_block=1024 warp=32 l2_bytes=100663296 sm_clock_khz=2467000 mem_clock_khz=14001000 l2_persist_bytes=62914560 l2_window_max=134217728
+mapal kernel=mapal_tile_00b6145235d18049 grid=16x64 block=256 smem=33792 regs=128 local_bytes=8
+values leg=cutlass cells=256 maxrel_vs_f64=2.706e-05
+values leg=cublas cells=256 maxrel_vs_f64=8.215e-05
+values leg=mapal cells=256 maxrel_vs_f64=3.265e-05 bit_exact_vs_in_order_fold=yes
+time leg=mapal M=8192 N=2048 K=7168 n=30 min_ms=6.5597 med_ms=7.1260 max_ms=7.5233 tflops_med=33.75
+time leg=cublas M=8192 N=2048 K=7168 n=30 min_ms=3.7663 med_ms=4.1759 max_ms=4.3110 tflops_med=57.60
+time leg=cutlass M=8192 N=2048 K=7168 n=30 min_ms=4.3725 med_ms=4.8671 max_ms=5.0279 tflops_med=49.42
+ratio mapal_vs_cublas=0.586 mapal_vs_cutlass=0.683 (>1 = mapal faster, medians)
+samples mapal=6.5597,6.5874,6.6089,6.8403,6.8250,6.8209,6.8516,6.8332,6.8413,6.8291,6.8567,6.8649,6.8342,7.0155,7.0318,7.1260,7.2612,7.3370,7.3779,7.3861,7.3738,7.3861,7.4035,7.4087,7.4301,7.4588,7.4803,7.4598,7.4660,7.5233 cublas=3.7663,3.7878,3.7970,3.9311,3.9219,3.9444,3.9404,3.9158,3.9455,3.9526,3.9526,3.9383,3.9168,4.0171,4.0960,4.1759,4.1789,4.2188,4.2353,4.2363,4.2353,4.2486,4.2558,4.2608,4.2865,4.2721,4.2957,4.2783,4.3110,4.2916 cutlass=4.3725,4.4022,4.3909,4.5609,4.5527,4.5732,4.5527,4.5466,4.5793,4.5732,4.5855,4.5701,4.5629,4.6756,4.7585,4.8671,4.9193,4.9295,4.9469,4.9490,4.9511,4.9695,4.9838,5.0033,5.0279,4.9961,5.0145,5.0094,5.0278,5.0125

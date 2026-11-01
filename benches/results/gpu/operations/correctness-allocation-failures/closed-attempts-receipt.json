@@ -1,0 +1,131 @@
+{
+  "state": "two-approved-attempts-failed-before-upload-closed-no-further-authorization",
+  "pass": false,
+  "attempts": [
+    {
+      "tag": "correctness-pair-rtx-5090",
+      "instance": 57110891,
+      "offer": 56695170,
+      "machine_id": 54112,
+      "host_id": 146915,
+      "wrapper_seconds": 2.1,
+      "exit": 1,
+      "intended_stopped": true,
+      "provider_detailed_reason_available": false,
+      "benchmark_upload_bytes": 0,
+      "ordering_executed": false,
+      "matrix_executed": false,
+      "pass": false,
+      "cleanup": {
+        "instance": 57110891,
+        "confirmed_absent": true,
+        "verified_utc": "2026-10-21T21:02:29.680546+00:00",
+        "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+        "allocation_recovery": null
+      },
+      "listed_rate_usd_per_hour": 0.6777777777777777,
+      "reservation_to_absence_seconds": 27.960297,
+      "listed_time_estimate_usd": 0.00526412999074074,
+      "per_attempt_conservative_total_allowance_usd": 0.11,
+      "files": {
+        "request.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/request.json",
+          "bytes": 3298,
+          "sha256": "79ae9eb9397ac05abe770a72d0846416273935465fdb6e723dfa16da3171d973"
+        },
+        "execution.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/execution.json",
+          "bytes": 375,
+          "sha256": "d156a49dfe884644497f3be4a8405ce675ec280aaf54d66ba1d93d58a39c2411"
+        },
+        "cleanup.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/cleanup.json",
+          "bytes": 240,
+          "sha256": "5cea21cfa5ad2b4b8989c5d58ce70fc622c337cf68a96ba12b65862f5fe0c7ca"
+        },
+        "verification.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/verification.json",
+          "bytes": 1027,
+          "sha256": "8b78f727a3901b22190165d253163e53be83d6b8c5cf372016477865d1705616"
+        },
+        "wrapper.log": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/wrapper.log",
+          "bytes": 150,
+          "sha256": "2cb3823fc664d3edf3c5ed5f7103c3f5b67a3b9c7a58630c5574ed0e7fe941f7"
+        },
+        "create-response.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/create-response.json",
+          "bytes": 138,
+          "sha256": "798ed0a3f85f2cfc32d14473ba4d8386fafe318753909956602acc93ce56c1fa"
+        }
+      }
+    },
+    {
+      "tag": "correctness-pair-rtx-5090-retry2",
+      "instance": 57111469,
+      "offer": 51669617,
+      "machine_id": 143204,
+      "host_id": 556515,
+      "wrapper_seconds": 2.3,
+      "exit": 1,
+      "intended_stopped": true,
+      "provider_detailed_reason_available": false,
+      "benchmark_upload_bytes": 0,
+      "ordering_executed": false,
+      "matrix_executed": false,
+      "pass": false,
+      "cleanup": {
+        "instance": 57111469,
+        "confirmed_absent": true,
+        "verified_utc": "2026-10-21T21:07:38.823038+00:00",
+        "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+        "allocation_recovery": null
+      },
+      "listed_rate_usd_per_hour": 0.6607407407407407,
+      "reservation_to_absence_seconds": 21.418402,
+      "listed_time_estimate_usd": 0.003931114111934157,
+      "per_attempt_conservative_total_allowance_usd": 0.11,
+      "files": {
+        "request.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/request.json",
+          "bytes": 3617,
+          "sha256": "41630e76aed53c19617be8901ffc0f86de36417041101a0f4999348ace4e05e1"
+        },
+        "execution.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/execution.json",
+          "bytes": 389,
+          "sha256": "79c55a5245cf284174dce06bdd61933add21f79615ea1995561cdaefc3751740"
+        },
+        "cleanup.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/cleanup.json",
+          "bytes": 240,
+          "sha256": "aa50ca18a3cf6ab31341f299455c275e3eb33b50d9a4a14b0398e0cc545953e3"
+        },
+        "verification.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/verification.json",
+          "bytes": 1041,
+          "sha256": "2ddb251e5dc910e20e1a398eb70074d8b7926aef5499857b837c1d0e17caa3c1"
+        },
+        "wrapper.log": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/wrapper.log",
+          "bytes": 150,
+          "sha256": "d40041860a306b7f17c22c5fc80c89b77af6d0bc9deb4ed5b89fe9ad33e5b204"
+        },
+        "create-response.json": {
+          "path": "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090-retry2/create-response.json",
+          "bytes": 138,
+          "sha256": "93be2c2091e8ab1d9ff680adf595a2b1ea4c115d63a4192ef23a49f86b12b00a"
+        }
+      }
+    }
+  ],
+  "benchmark_upload_bytes": 0,
+  "gpu_executions": 0,
+  "task_instances_active": 0,
+  "cumulative_listed_time_estimate_usd": 0.009195244102674896,
+  "cumulative_conservative_failure_allowance_usd": 0.22,
+  "actual_invoice_observed": false,
+  "provider_image_transfer_bytes_observed": null,
+  "transfer_caveat": "No benchmark upload occurred; initial provider image traffic/account billing was not observable. Each $0.11 allowance covers observed reservation-through-absence listed time plus a $0.10 transfer reserve at <=$0.00390625/GB (25.6GB, exceeding the known complete image). This is planning evidence, not a formal cap or invoice.",
+  "private_diagnostics": "Raw create-response contains instance API keys and remains0600. Archive only privately; public/repository receipts preserve hashes and safe metadata."
+}

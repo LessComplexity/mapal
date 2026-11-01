@@ -5,7 +5,7 @@
 //! fallback is **silent** — `lib.rs` does `tile_plan(f).sites.get(m)` and simply
 //! emits the untiled form when the site is absent, with no diagnostic and
 //! byte-identical output. The measured cost of that fall
-//! (`docs/performance/matmul/s25.md:46-48`) is matmul f32 N=1024 238.3 ms tiled
+//! (`docs/performance/matmul/history/bit-exact-simd-tiles.md:46-48`) is matmul f32 N=1024 238.3 ms tiled
 //! vs 947.6 ms untiled — **4.0x**, f64 3.5x, attn 4.6x.
 //!
 //! So recognition needs a tripwire, and it has to exist *before* anything
@@ -118,7 +118,7 @@ fn tile_sites_recognized_per_bench_source() {
         PINNED,
         "\ntile-site recognition changed. A count going DOWN is a BLOCKER: the \
          affected kernel now emits the scalar fallback silently (4.0x on matmul \
-         1024, docs/performance/matmul/s25.md:46-48). A count going UP is a win \
+         1024, docs/performance/matmul/history/bit-exact-simd-tiles.md:46-48). A count going UP is a win \
          — re-pin with the measurement that justifies it.\n"
     );
 }

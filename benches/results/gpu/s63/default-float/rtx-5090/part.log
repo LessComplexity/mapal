@@ -1,0 +1,12 @@
+[2026-10-23T05:05:31Z] start rtx-5090
+[01:05:31] try RTX_5090 offer=48248628 dph=0.629 pcie=26.6 cpu_ghz=3.7207029 cpu=AMD_EPYC_7C13_64-Core_Processor host=34742 machine=45511 geo=Utah, US
+[01:05:32 rtx-5090] instance 57324643 from offer 48248628
+[01:06:15 rtx-5090] ssh 136.59.129.136:35034 up
+Warning: Permanently added '[136.59.129.136]:35034' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[01:06:20 rtx-5090] bundle uploaded
+[01:08:35 rtx-5090] results fetched: 791 lines
+[01:08:36 rtx-5090] destroyed 57324643
+[01:08:36] DONE RTX_5090 offer=48248628 host=34742 machine=45511
+[2026-10-23T05:08:36Z] exit 0 rtx-5090

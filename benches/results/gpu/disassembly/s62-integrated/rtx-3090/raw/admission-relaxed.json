@@ -1,0 +1,1504 @@
+{
+ "128x2048x7168/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 4,
+  "all_kernel_records": 1,
+  "events_sha256": "6109a8ed740778507582c1c64954e822c547f825d1452803c16fa98829b5f95a",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x64_8x5_nn_align1EEvNT_6ParamsE",
+    "grid": [
+     16,
+     2,
+     5
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 30720,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "bf35af9a10aac88977f4f19d54b42c9fe984f43dc48c8b9323a87f23510f333a",
+    "text_sha256": "88d4f5f164cb4b3eda4d7e82d019593ca9917c471a96180675281d4c6f66eb4d",
+    "elf_symbol_index": 125,
+    "correlation": 1373,
+    "image": "module-3020.cubin"
+   }
+  ]
+ },
+ "128x2048x7168/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "a5a29db700461ee77e50334815fb22d4a762f8f849680153e4e8a3a6ea1c80d6",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     16,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "128x2048x7168/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "a30d8f6144d43bdd35e36a12b16bb0729ea6d68222cb0866fbdb93a10a91b9dd",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     8,
+     32,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "128x2048x7168/mm_128x2048x7168": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "4fa9e6d353699f064dc1deda714105d6c75cdcf5f386fb64dbe93e7fdbe03f3b",
+  "selected": [
+   {
+    "symbol": "mapal_tile_3e8de735cd7b9c26",
+    "grid": [
+     64,
+     2,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 6400,
+    "join": "direct-loader-function",
+    "module_sha256": "d0f41da2fd75faeef8b7cbb14ac623e9d2e394d252f82eaf52e320f1c40422cd",
+    "text_sha256": "c2164eb9d8a49967ec779c3f5e193044c0d8747bfcb7e448a945f3703f1a52ab",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "128x2048x7168/mm_128x2048x7168_c": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "bc110cd6dc0a0b6b85a9fd0cc46fb5d1016fba31cef508906e272b3f76cb9b4c",
+  "selected": [
+   {
+    "symbol": "mapal_tile_853a6d1f9bcfa375",
+    "grid": [
+     64,
+     2,
+     1
+    ],
+    "block": [
+     32,
+     1,
+     1
+    ],
+    "smem": 1536,
+    "join": "direct-loader-function",
+    "module_sha256": "8bebfcac1771510da3603067fac059e59cb2eab8bfaad38bbc98d5dcc881bbfb",
+    "text_sha256": "7c2bf6770ef7052a003f9b6ec0a3cb170c30de87ce405eb5ea94206e6812db47",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "128x2048x7168/mm_128x2048x7168_rc": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 2,
+  "events_sha256": "ca942e892a235288d52c01fca158650df6dcb47a1e5cabfa2b535081b2e8efb8",
+  "selected": [
+   {
+    "symbol": "mapal_tile_85b056d96ed8355f",
+    "grid": [
+     64,
+     8,
+     1
+    ],
+    "block": [
+     32,
+     1,
+     1
+    ],
+    "smem": 1536,
+    "join": "direct-loader-function",
+    "module_sha256": "9aa7fb01b5e5634e4edc6051b730ce5154e933f522059bd04d42971e3631418f",
+    "text_sha256": "0ef618d0250f9953f63af4c8e3c419f309222a72def97497ae0673a6e9c34bd5",
+    "elf_symbol_index": 18,
+    "correlation": 1286,
+    "image": "module-358.cubin"
+   },
+   {
+    "symbol": "mapal_tile_30e90e4351df5ffc",
+    "grid": [
+     1024,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "direct-loader-function",
+    "module_sha256": "9aa7fb01b5e5634e4edc6051b730ce5154e933f522059bd04d42971e3631418f",
+    "text_sha256": "42673cb44b3d1415793af26503eb7e00f633da089acbf8133f9fff67a1060d3a",
+    "elf_symbol_index": 19,
+    "correlation": 1287,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 5,
+  "all_kernel_records": 2,
+  "events_sha256": "0dd5cd6a167e7d74795e63f8fe42082eb207b8598ee365bcf04d1e6adeefd02c",
+  "selected": [
+   {
+    "symbol": "ampere_sgemm_32x32_sliced1x4_nn",
+    "grid": [
+     32,
+     1,
+     7
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "c83f53fc58a2bd3559e90d4dec2ae616f8ace76d94365acd81a6d884364b5e84",
+    "elf_symbol_index": 1261,
+    "correlation": 1369,
+    "image": "module-3013.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+    "grid": [
+     32,
+     1,
+     1
+    ],
+    "block": [
+     32,
+     16,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "c56e143008f4c5438ea36aee86e7d58d12e70b9c45ec6d859f98763ca31e25f0",
+    "text_sha256": "5394fa21873a6958f77026c2913debab70033b8898c49ff6e0d3c875990c2ac2",
+    "elf_symbol_index": 964,
+    "correlation": 1372,
+    "image": "module-3054.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "17fd923861705973da55d4a80f2669755c2207ef8ca83218bfa5a7bc6dbfd8f9",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     8,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "7abf3b41605ce3990f044c0f46574c2dab24270c161bea521235cdaf335a4bd7",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     16,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/mm_16x1024x4096": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "6c56d8defd29f683ef544193d57cad6ffb693769766633f05d3e4f5b4512f4c1",
+  "selected": [
+   {
+    "symbol": "mapal_tile_3d77fd564d0f444a",
+    "grid": [
+     64,
+     2,
+     1
+    ],
+    "block": [
+     32,
+     1,
+     1
+    ],
+    "smem": 28672,
+    "join": "direct-loader-function",
+    "module_sha256": "beb3cffc562a50b806c999ddd846d50ee8e4a773e2f4528c295de5da27f1a92d",
+    "text_sha256": "ae0a238e03b4e6350a01dd0fdb003f27f13de7714fed0b6f5a7d49719f46c737",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/mm_16x1024x4096_c": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "71cbb7a26cb31f7036933cc144d1d49cbe555d8d66d2b21e0bd5214d6c3fb238",
+  "selected": [
+   {
+    "symbol": "mapal_tile_2d055d5fed4dabb1",
+    "grid": [
+     64,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 9216,
+    "join": "direct-loader-function",
+    "module_sha256": "264aafb085225ba0d4a0e667bbe18926977a8f36beefcec56b9a4f97e7a77dae",
+    "text_sha256": "3f54a1fc1c2a6154d265f492525fc68a8e27a98ada7261bb202bc99cc6c6bed8",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x1024x4096/mm_16x1024x4096_rc": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 2,
+  "events_sha256": "632eec516803055d1ecb68520d1cd05984777dc763df59e2c0b9fb0bc33e6348",
+  "selected": [
+   {
+    "symbol": "mapal_tile_8e20e2ebd81b16db",
+    "grid": [
+     64,
+     8,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 9216,
+    "join": "direct-loader-function",
+    "module_sha256": "d53d18489cf0d9b345cde143d3e4aab9a85d844d8bd01aed1889d70decaec312",
+    "text_sha256": "5bb6a3f93b54855b6f4ca6f48061938b986a296d92cfc003d91db323296c1e6d",
+    "elf_symbol_index": 19,
+    "correlation": 1286,
+    "image": "module-358.cubin"
+   },
+   {
+    "symbol": "mapal_tile_db4fc9a9f2c3b5b8",
+    "grid": [
+     64,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "direct-loader-function",
+    "module_sha256": "d53d18489cf0d9b345cde143d3e4aab9a85d844d8bd01aed1889d70decaec312",
+    "text_sha256": "686810ac6333e98066f552c23ea6587b8b5e9fc54db1536f7f87f8fd3c544882",
+    "elf_symbol_index": 18,
+    "correlation": 1287,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 4,
+  "all_kernel_records": 1,
+  "events_sha256": "5526413a44511623e6924690a2a11bab49014690d5cc8d4da14b539f6b91f6bc",
+  "selected": [
+   {
+    "symbol": "ampere_sgemm_128x32_sliced1x4_nn",
+    "grid": [
+     144,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "59b69e4e21213bd081b9badf18d13b68f6c85bd4747e013d03889a9879cd8ce5",
+    "elf_symbol_index": 1233,
+    "correlation": 1365,
+    "image": "module-3013.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "dbe35cd797edd39709305b1cf75ef2a5626b26b9a8f6a017969fef17ba0fe001",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     144,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "2af97ac87b9efe36c4a00383e4b5bd5ef9d69b1681926892336d92655a024eb7",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     288,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/mm_16x18432x7168": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "4dec6a39be866a68d9471608a767d222110b786c9068ccaeda1ff6332486f38f",
+  "selected": [
+   {
+    "symbol": "mapal_tile_0834d4c11240c736",
+    "grid": [
+     576,
+     1,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 3328,
+    "join": "direct-loader-function",
+    "module_sha256": "ed985d591784ee49550b39ffc7ec6fe935e8c92af9731828fe246be2a36b7a51",
+    "text_sha256": "04af6069b3d106d0161e74de3936e141d3539627689093c7db397d316eac82a5",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/mm_16x18432x7168_c": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "b7fbebc1d8f8a2ab48743bb29ff351015a45a70850d16d7367339fab4a1594f4",
+  "selected": [
+   {
+    "symbol": "mapal_tile_3b7a9e0a4eec2665",
+    "grid": [
+     576,
+     1,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 3328,
+    "join": "direct-loader-function",
+    "module_sha256": "d82c16ee1306cb953ca97beab274a03d01dcf2e9fb7e7fcdc2ca620772b12896",
+    "text_sha256": "e036d1e59c7481e7f105ea6052066690905a94568055b91130f536884de22ca2",
+    "elf_symbol_index": 15,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x18432x7168/mm_16x18432x7168_rc": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 2,
+  "events_sha256": "3d9697f123dbd555f11eb39fa473c6d6634c59c60e548d6caae6ad06ffe31c6d",
+  "selected": [
+   {
+    "symbol": "mapal_tile_f9f4a7b7cc83d1cf",
+    "grid": [
+     576,
+     2,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 3328,
+    "join": "direct-loader-function",
+    "module_sha256": "1dfc5ccc7bf353a91c07c968155d606a84f0b3acbc6cc64425fa1a412ffc1c18",
+    "text_sha256": "e29b6c103ead499b7a5cf7875ebd713b888ce28fdd9193c53a4407d5835b5e7b",
+    "elf_symbol_index": 20,
+    "correlation": 1286,
+    "image": "module-358.cubin"
+   },
+   {
+    "symbol": "mapal_tile_f7e42b26893fd0cc",
+    "grid": [
+     1152,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "direct-loader-function",
+    "module_sha256": "1dfc5ccc7bf353a91c07c968155d606a84f0b3acbc6cc64425fa1a412ffc1c18",
+    "text_sha256": "f0a9aab919215bac3439571a3fcd0be7f649262bdb5ed5c66a03d106f873c2ef",
+    "elf_symbol_index": 21,
+    "correlation": 1287,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 4,
+  "all_kernel_records": 1,
+  "events_sha256": "11ebe5703dbde488a400bef606f2868fc68202daf9b07915ff5e4326d0ff5941",
+  "selected": [
+   {
+    "symbol": "ampere_sgemm_64x32_sliced1x4_nn",
+    "grid": [
+     32,
+     1,
+     4
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "7a0df9fa7a225f4b98448f6ff9102cb432c499d819fd7b0a2037a3d56278b1cb",
+    "elf_symbol_index": 1269,
+    "correlation": 1369,
+    "image": "module-3013.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "39442716d9a74465afad5e037bdedfc16084bef623108b0f9fa5d400a41101f4",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     16,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "e7031782dede8d31b0a985427c114f7f6888851f807b17b6c81157259b232e2a",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     32,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/mm_16x2048x7168": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "a55cf4e1abf564bb99a0ff3402c1bcc1bdc8c52b7c44ce48cfcb5e6a762a4283",
+  "selected": [
+   {
+    "symbol": "mapal_tile_54458cf19a31e8f8",
+    "grid": [
+     64,
+     2,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 5632,
+    "join": "direct-loader-function",
+    "module_sha256": "3efa0e443d76b9370da82a6ae01ccaa15725a7ba648005ea0b261f1e193878b7",
+    "text_sha256": "fdb31b6e1ee846e57814881674aac6cb20484273cd82fabdd75bc196abb07e48",
+    "elf_symbol_index": 14,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/mm_16x2048x7168_c": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "bc5bba8b04e0fb8ef6959ccfe801992de2ea75a77f37e2314d2fbaee549dd69a",
+  "selected": [
+   {
+    "symbol": "mapal_tile_b35f14c2b9584d57",
+    "grid": [
+     64,
+     2,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 5632,
+    "join": "direct-loader-function",
+    "module_sha256": "9beefd87cbc59d2c9069c0b3d057bc572452d9bcc8d04f203459019806e02584",
+    "text_sha256": "2b90f7ccf2e1b90cb9cf065d7dfbe29ccd26b33190d887fe8d77595886b64dd7",
+    "elf_symbol_index": 15,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "16x2048x7168/mm_16x2048x7168_rc": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 2,
+  "events_sha256": "8e8f30eb1293681b7d603e6a1b042b6cbed3a768c3e06aa3b82482bdd7cdc54c",
+  "selected": [
+   {
+    "symbol": "mapal_tile_70117975b8022581",
+    "grid": [
+     64,
+     16,
+     1
+    ],
+    "block": [
+     64,
+     1,
+     1
+    ],
+    "smem": 5632,
+    "join": "direct-loader-function",
+    "module_sha256": "67f50bac245030e7c5e09afc2d1db4ecccd3d2a2c9c972af363db77fd1b7245d",
+    "text_sha256": "f2086b72602b47e2198dcc87870e78bef71980c0580a844910b2ab6dac7d0399",
+    "elf_symbol_index": 22,
+    "correlation": 1286,
+    "image": "module-358.cubin"
+   },
+   {
+    "symbol": "mapal_tile_86dfb537b1f33ebe",
+    "grid": [
+     128,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "direct-loader-function",
+    "module_sha256": "67f50bac245030e7c5e09afc2d1db4ecccd3d2a2c9c972af363db77fd1b7245d",
+    "text_sha256": "54aa99df73c297ac1d087d5e582f668cdd6b6efcce785b6812933d80c2b5bead",
+    "elf_symbol_index": 21,
+    "correlation": 1287,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 4,
+  "all_kernel_records": 1,
+  "events_sha256": "85ff6f0625867038a9e5ead42220f10d0ac6db49fd36cda4a24f2d54332c55c2",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass7Kernel2I43cutlass_80_simt_sgemm_256x128_8x4_nn_align1EEvNT_6ParamsE",
+    "grid": [
+     256,
+     2,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 49152,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "bf35af9a10aac88977f4f19d54b42c9fe984f43dc48c8b9323a87f23510f333a",
+    "text_sha256": "bfe81ffd8f00a763c7efa4226e2cd829b8059d6b534e05f27e6ef6db9c7840a3",
+    "elf_symbol_index": 128,
+    "correlation": 1370,
+    "image": "module-3012.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "c581120fa2ed54bd1c4ad9436e24f068639939db4eefb0ee5de18c2d289abeb5",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     32,
+     32,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "259cdafb6ad482ba49d3e3610e231648c5ded42afe6ac44867bbd9bdc9b886b7",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     256,
+     64,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "019e6a7ad5b070d26b19ffa4137709ae4b24ee8a695d8750267c6ed1d8a15cea",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-2761.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/mm_4096x4096x4096": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "1c490ff96843582ad501979284ec3cef03021ae5b5c732b916d407464781e489",
+  "selected": [
+   {
+    "symbol": "mapal_tile_57ba01f1fbd2b36e",
+    "grid": [
+     32,
+     32,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "direct-loader-function",
+    "module_sha256": "266a27c05b3d210dd2378cbd67ddc2f5ac38b3302fedcc30a04bd2b16df68571",
+    "text_sha256": "22777c15f0e9c96665608b62108b55ffe183837ef4dbfa7fac3f00a1a052a031",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/mm_4096x4096x4096_c": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "0e7ddfc315a43d8edee15ac35a5098fe1b6890b9c984b6396d22d973a763b31a",
+  "selected": [
+   {
+    "symbol": "mapal_tile_2a54d22fbd9beb3d",
+    "grid": [
+     32,
+     32,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "direct-loader-function",
+    "module_sha256": "28531a9d3c161f652016b587ad6a9d6a0603708c55735a36a2392ca57d0efbc0",
+    "text_sha256": "6a033b42dd7bd82f3caf6ccae1559b98ee877859049ff676115a892036c9c47b",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "4096x4096x4096/mm_4096x4096x4096_rc": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 1,
+  "events_sha256": "3be3d2ef065dfbab41c94bd7bf6fd4ef45c4c1689ceeaada6dde6f71ec659e0d",
+  "selected": [
+   {
+    "symbol": "mapal_tile_b0e9b070e5793eb6",
+    "grid": [
+     32,
+     32,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "direct-loader-function",
+    "module_sha256": "e8d061ae2d6904bfe1707b57ed9a480d85d41adf923e3a63087dbe1ee05b1d3d",
+    "text_sha256": "6a033b42dd7bd82f3caf6ccae1559b98ee877859049ff676115a892036c9c47b",
+    "elf_symbol_index": 16,
+    "correlation": 1283,
+    "image": "module-358.cubin"
+   }
+  ]
+ },
+ "rm_1024/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 5,
+  "all_kernel_records": 8,
+  "events_sha256": "4b36c31cb83253e5f736b6d1715b072fc051b0b66d424677b6f5151175edfaa7",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x64_8x5_nn_align1EEvNT_6ParamsE",
+    "grid": [
+     16,
+     2,
+     4
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 30720,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "bf35af9a10aac88977f4f19d54b42c9fe984f43dc48c8b9323a87f23510f333a",
+    "text_sha256": "88d4f5f164cb4b3eda4d7e82d019593ca9917c471a96180675281d4c6f66eb4d",
+    "elf_symbol_index": 125,
+    "correlation": 1353,
+    "image": "module-2913.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+    "grid": [
+     64,
+     8,
+     1
+    ],
+    "block": [
+     32,
+     16,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "c56e143008f4c5438ea36aee86e7d58d12e70b9c45ec6d859f98763ca31e25f0",
+    "text_sha256": "5394fa21873a6958f77026c2913debab70033b8898c49ff6e0d3c875990c2ac2",
+    "elf_symbol_index": 964,
+    "correlation": 1355,
+    "image": "module-2938.cubin"
+   },
+   {
+    "symbol": "_Z9bias_reluPfPKfS1_xi",
+    "grid": [
+     1024,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "a935b8971512985ec1af4468ad764e329ff8dac2e68dd6b0e7b00b70a5a954c7",
+    "elf_symbol_index": 34,
+    "correlation": 1357,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "ampere_sgemm_64x32_sliced1x4_nn",
+    "grid": [
+     16,
+     4,
+     2
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "7a0df9fa7a225f4b98448f6ff9102cb432c499d819fd7b0a2037a3d56278b1cb",
+    "elf_symbol_index": 1269,
+    "correlation": 1361,
+    "image": "module-2893.cubin"
+   }
+  ]
+ },
+ "rm_1024/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 6,
+  "events_sha256": "2b6dea17a893415b2c60c24653ed82d9f14fef0894bacb5a807cc9579aef8573",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     16,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "734872931dfb2e2e6c046d2baa87307d77aeaece9ec6ce8fda1da94baa26ea88",
+    "elf_symbol_index": 22,
+    "correlation": 1347,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     8,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1349,
+    "image": "module-296.cubin"
+   }
+  ]
+ },
+ "rm_1024/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 6,
+  "events_sha256": "cc19493a60cb1b49886d10da4f87533111779b22bded8eebab93a85c818e2ca4",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     8,
+     32,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "d112514823b397df820ee961a94702bed99614080bb29fd2457d55c598e018db",
+    "elf_symbol_index": 16,
+    "correlation": 1347,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     8,
+     16,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 1,
+    "correlation": 1349,
+    "image": "module-296.cubin"
+   }
+  ]
+ },
+ "rm_1024/lt": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 5,
+  "all_kernel_records": 7,
+  "events_sha256": "ad2d52f80e74732be82fa1ff21f2cd8b0deb7144dfa2f2fd914e31d511d9e901",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass7Kernel2I42cutlass_80_simt_sgemm_128x64_8x5_nn_align1EEvNT_6ParamsE",
+    "grid": [
+     16,
+     2,
+     4
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 30720,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "bf35af9a10aac88977f4f19d54b42c9fe984f43dc48c8b9323a87f23510f333a",
+    "text_sha256": "88d4f5f164cb4b3eda4d7e82d019593ca9917c471a96180675281d4c6f66eb4d",
+    "elf_symbol_index": 125,
+    "correlation": 1353,
+    "image": "module-2913.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb1ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+    "grid": [
+     64,
+     8,
+     1
+    ],
+    "block": [
+     32,
+     16,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "c56e143008f4c5438ea36aee86e7d58d12e70b9c45ec6d859f98763ca31e25f0",
+    "text_sha256": "6f2a3865ecc9277949e1c71ecbc550d0d1e41c87cfd40a6d2405bde38508cec1",
+    "elf_symbol_index": 966,
+    "correlation": 1355,
+    "image": "module-2938.cubin"
+   },
+   {
+    "symbol": "ampere_sgemm_64x32_sliced1x4_nn",
+    "grid": [
+     16,
+     4,
+     2
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "7a0df9fa7a225f4b98448f6ff9102cb432c499d819fd7b0a2037a3d56278b1cb",
+    "elf_symbol_index": 1269,
+    "correlation": 1359,
+    "image": "module-2893.cubin"
+   }
+  ]
+ },
+ "rm_256/cublas": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 4,
+  "all_kernel_records": 8,
+  "events_sha256": "ee06822b4af63d647035527d9663bc25e5410812183379f9fa19f9ebcf75fc10",
+  "selected": [
+   {
+    "symbol": "ampere_sgemm_32x32_sliced1x4_nn",
+    "grid": [
+     16,
+     4,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "c83f53fc58a2bd3559e90d4dec2ae616f8ace76d94365acd81a6d884364b5e84",
+    "elf_symbol_index": 1261,
+    "correlation": 1350,
+    "image": "module-2893.cubin"
+   },
+   {
+    "symbol": "_Z9bias_reluPfPKfS1_xi",
+    "grid": [
+     256,
+     1,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "a935b8971512985ec1af4468ad764e329ff8dac2e68dd6b0e7b00b70a5a954c7",
+    "elf_symbol_index": 34,
+    "correlation": 1352,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "ampere_sgemm_32x32_sliced1x4_nn",
+    "grid": [
+     8,
+     4,
+     4
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "c83f53fc58a2bd3559e90d4dec2ae616f8ace76d94365acd81a6d884364b5e84",
+    "elf_symbol_index": 1261,
+    "correlation": 1356,
+    "image": "module-2893.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+    "grid": [
+     8,
+     8,
+     1
+    ],
+    "block": [
+     32,
+     16,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "c56e143008f4c5438ea36aee86e7d58d12e70b9c45ec6d859f98763ca31e25f0",
+    "text_sha256": "5394fa21873a6958f77026c2913debab70033b8898c49ff6e0d3c875990c2ac2",
+    "elf_symbol_index": 964,
+    "correlation": 1359,
+    "image": "module-2964.cubin"
+   }
+  ]
+ },
+ "rm_256/cutlass": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 6,
+  "events_sha256": "0a0dffb6640a181e2a7e7fc5b28550b5e04690a2629f78c74b3c58170f5491a8",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     4,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "734872931dfb2e2e6c046d2baa87307d77aeaece9ec6ce8fda1da94baa26ea88",
+    "elf_symbol_index": 22,
+    "correlation": 1348,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi128ELi128ELi8EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi128ELi8EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi8ELi128EEELi256ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi8ELi128EEEfSE_Li0ENSF_INSG_ILi128ELi8EEELi256ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi32ELi64ELi8EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi2EEENS6_ILi4ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi4ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi4ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEES1F_bEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1I_22PredicatedTileIteratorINS1I_26OutputTileOptimalThreadMapINS1I_15OutputTileShapeILi128ELi1ELi4ELi4ELi1EEENS1M_ILi1ELi4ELi2ELi1ELi8EEELi256ELi1ELi32EEEfLb0ESJ_Lb0EEENS1H_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaINS6_ILi8ELi8ELi1EEEfSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1R_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1I_18SharedLoadIteratorINS1P_18CompactedThreadMapEfLi4EEENS1H_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     1,
+     2,
+     1
+    ],
+    "block": [
+     256,
+     1,
+     1
+    ],
+    "smem": 16640,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "20301b1cbc6b291de661663696e8f3fee691190f9a2acc5c5a16f6b22ef21e1a",
+    "elf_symbol_index": 19,
+    "correlation": 1350,
+    "image": "module-296.cubin"
+   }
+  ]
+ },
+ "rm_256/cutlass_tuned": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 3,
+  "all_kernel_records": 6,
+  "events_sha256": "5216f9e96e5e3926d7f54a704372ac07ef65a861fbe481d6083f9d4379e9ec4c",
+  "selected": [
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread21LinearCombinationReluIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     8,
+     8,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "d112514823b397df820ee961a94702bed99614080bb29fd2457d55c598e018db",
+    "elf_symbol_index": 16,
+    "correlation": 1348,
+    "image": "module-296.cubin"
+   },
+   {
+    "symbol": "_ZN7cutlass6KernelINS_4gemm6kernel4GemmINS1_11threadblock12MmaPipelinedINS1_9GemmShapeILi16ELi64ELi16EEENS_9transform11threadblock22PredicatedTileIteratorINS_11MatrixShapeILi16ELi16EEEfNS_6layout8RowMajorELi1ENS8_30PitchLinearStripminedThreadMapINS_16PitchLinearShapeILi16ELi16EEELi128ELi1EEELi1ELb0ENSD_9NoPermuteEEENS9_19RegularTileIteratorISC_fNSD_11ColumnMajorELi1ENS8_33TransposePitchLinearThreadMapSimtISI_EELi4EEENSA_INSB_ILi16ELi64EEEfSE_Li0ENSF_INSG_ILi64ELi16EEELi128ELi1EEELi1ELb0ESJ_EENSL_ISQ_fSE_Li0ESS_Li4EEEfSE_NS4_9MmaPolicyINS1_4warp7MmaSimtINS6_ILi8ELi32ELi16EEEfSM_fSE_fSE_NSW_13MmaSimtPolicyINSB_ILi4ELi8EEENSD_19RowMajorInterleavedILi1EEENS6_ILi2ELi4ELi1EEEEELi1ELNS_16ComplexTransformE0ELS15_0EbEENSB_ILi2ELi0EEENSB_ILi0ELi0EEELi1EEENS_21NumericArrayConverterIffLi2ELNS_15FloatRoundStyleE2ENS8_6thread14UnaryTransform8IdentityEEENS1A_IffLi8ELS1B_2ES1E_EEbEENS_8epilogue11threadblock8EpilogueIS7_S16_Li1ENS1J_22PredicatedTileIteratorINS1J_26OutputTileOptimalThreadMapINS1J_15OutputTileShapeILi64ELi1ELi4ELi2ELi1EEENS1N_ILi1ELi2ELi1ELi1ELi2EEELi128ELi1ELi32EEEfLb0ESJ_Lb0EEENS1I_4warp20FragmentIteratorSimtISY_NS1_6thread3MmaIS13_fSM_fSE_fSE_NS_4arch13OpMultiplyAddEbEESE_S14_EENS1S_16TileIteratorSimtISY_S1Y_fSE_S14_EENS1J_18SharedLoadIteratorINS1Q_18CompactedThreadMapEfLi4EEENS1I_6thread17LinearCombinationIfLi1EffLNS25_9ScaleType4KindE0ELS1B_2EfEENSB_ILi0ELi17EEELi1ELi1EEENS4_30GemmIdentityThreadblockSwizzleILi1EEELb0EEEEEvNT_6ParamsE",
+    "grid": [
+     8,
+     4,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 10496,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "9863b5610e48648ffaf268da9cdc370f89f20ed0076e7d92f0b10bf05b6d2314",
+    "text_sha256": "f08222c8a642b261a0cabfa6e160ce54b614196624f88af3023154c981789441",
+    "elf_symbol_index": 1,
+    "correlation": 1350,
+    "image": "module-296.cubin"
+   }
+  ]
+ },
+ "rm_256/lt": {
+  "pass": true,
+  "cupti_version": 26,
+  "images": 5,
+  "all_kernel_records": 8,
+  "events_sha256": "c6dd5dfcdc4a32d602e064e2b0adc5131654a074e710246ef6a4d7ac15ed75fc",
+  "selected": [
+   {
+    "symbol": "ampere_sgemm_32x32_sliced1x4_nn",
+    "grid": [
+     16,
+     4,
+     1
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "c83f53fc58a2bd3559e90d4dec2ae616f8ace76d94365acd81a6d884364b5e84",
+    "elf_symbol_index": 1261,
+    "correlation": 1349,
+    "image": "module-2893.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt8epilogue4impl12globalKernelILi8ELi32EfffLb1ELb1ELi1EEEviilPT1_18cublasLtEpilogue_tiPT2_lPvlllPT3_lPi",
+    "grid": [
+     64,
+     4,
+     1
+    ],
+    "block": [
+     8,
+     32,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "fab6f19df826316d4aeea8aebb5ff07c1af0a4a0677157ad0e2eb58366d98cfb",
+    "text_sha256": "e40fef42a4e13bed62c92dd827a2fdab0ce3b29c5f6dde2b0d94d8afd6b40a6c",
+    "elf_symbol_index": 537,
+    "correlation": 1352,
+    "image": "module-2931.cubin"
+   },
+   {
+    "symbol": "ampere_sgemm_32x32_sliced1x4_nn",
+    "grid": [
+     8,
+     4,
+     4
+    ],
+    "block": [
+     128,
+     1,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "298c9d58a9619cb408ac2bf3fe7bcdb6778ef03063bc0671addba3d66d1d017e",
+    "text_sha256": "c83f53fc58a2bd3559e90d4dec2ae616f8ace76d94365acd81a6d884364b5e84",
+    "elf_symbol_index": 1261,
+    "correlation": 1356,
+    "image": "module-2893.cubin"
+   },
+   {
+    "symbol": "_ZN8cublasLt19splitKreduce_kernelILi32ELi16EiffffLb0EfffLb1ELb0ELb0EEEvNS_18cublasSplitKParamsIT4_EEPKT2_PKT8_PT7_PT3_PKS2_SF_PKT9_S6_PSG_PvlPS2_PiSL_SL_SF_SF_SF_SF_SF_",
+    "grid": [
+     8,
+     8,
+     1
+    ],
+    "block": [
+     32,
+     16,
+     1
+    ],
+    "smem": 0,
+    "join": "unique-active-ELF-plus-FUNCTION",
+    "module_sha256": "c56e143008f4c5438ea36aee86e7d58d12e70b9c45ec6d859f98763ca31e25f0",
+    "text_sha256": "5394fa21873a6958f77026c2913debab70033b8898c49ff6e0d3c875990c2ac2",
+    "elf_symbol_index": 964,
+    "correlation": 1359,
+    "image": "module-2969.cubin"
+   }
+  ]
+ }
+}

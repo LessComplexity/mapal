@@ -15,7 +15,7 @@ ZIP with three things in it, so this builds one directly:
     extension/...            the extension itself
 
     python3 editors/vscode/package-vsix.py
-    code --install-extension editors/vscode/mapal-lang-0.1.0.vsix
+    code --install-extension editors/vscode/mapal-lang-0.2.0.vsix
 """
 
 import json
@@ -29,6 +29,7 @@ HERE = pathlib.Path(__file__).parent
 # a .vsix should not carry the packaging script or scratch files.
 PAYLOAD = [
     "package.json",
+    "extension.js",
     "language-configuration.json",
     "syntaxes/mapal.tmLanguage.json",
     "icons/mapal.svg",
@@ -65,6 +66,7 @@ VSIXMANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 CONTENT_TYPES = """<?xml version="1.0" encoding="utf-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension=".json" ContentType="application/json" />
+  <Default Extension=".js" ContentType="application/javascript" />
   <Default Extension=".vsixmanifest" ContentType="text/xml" />
   <Default Extension=".xml" ContentType="text/xml" />
   <Default Extension=".svg" ContentType="image/svg+xml" />
@@ -102,7 +104,8 @@ def main():
     # Assert the archive is what an installer expects, rather than trusting it.
     with zipfile.ZipFile(out) as z:
         names = set(z.namelist())
-        for required in ("extension.vsixmanifest", "[Content_Types].xml", "extension/package.json"):
+        entrypoint = "extension/" + manifest["main"].removeprefix("./")
+        for required in ("extension.vsixmanifest", "[Content_Types].xml", "extension/package.json", entrypoint):
             assert required in names, f"{required} missing from the vsix"
         bad = z.testzip()
         assert bad is None, f"corrupt entry: {bad}"

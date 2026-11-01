@@ -1,0 +1,44 @@
+{
+  "review_kind": "independent_local_saved_evidence_only",
+  "review_utc": "2026-10-21T21:07:46.363435+00:00",
+  "finding": "Confirmed allocation/start failure before benchmark upload or harness execution; neither ordering nor matrix has GPU evidence or acceptance.",
+  "classification": "allocation_failure_before_upload",
+  "ordering_accepted": false,
+  "matrix_accepted": false,
+  "gpu_values_observed": false,
+  "checks": {
+    "all_receipt_file_hashes_match": true,
+    "wrapper_request_hash_matches": true,
+    "provider_create_explicitly_false": true,
+    "allocated_identifier_bound": true,
+    "wrapper_failed_early": true,
+    "log_has_stopped_start_and_destroy": true,
+    "log_has_no_ssh_upload_or_run": true,
+    "script_stopped_branch_precedes_ssh_upload_execution": true,
+    "independent_cleanup_receipt_absent": true,
+    "no_results_trace_run_or_phase_artifacts": true,
+    "acceptance_explicitly_false": true
+  },
+  "independent_cleanup_receipt": {
+    "instance": 57110891,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T21:02:29.680546+00:00",
+    "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+    "allocation_recovery": null
+  },
+  "limitations": [
+    "No API call or remote observation performed by reviewer; independently captured absence is checked from saved cleanup receipt.",
+    "Provider image-transfer bytes and actual invoice unknown; no zero-cost claim.",
+    "Private create-response bytes were read only for success/new_contract and SHA binding; API key omitted."
+  ],
+  "bindings": {
+    "/private/tmp/mapal-s56-gpu/correctness-pair/failure-receipt.json": "eb433df461c18865f9ce995567448ce9115f518997e27565296830878998fa98",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/request.json": "79ae9eb9397ac05abe770a72d0846416273935465fdb6e723dfa16da3171d973",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/execution.json": "d156a49dfe884644497f3be4a8405ce675ec280aaf54d66ba1d93d58a39c2411",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/cleanup.json": "5cea21cfa5ad2b4b8989c5d58ce70fc622c337cf68a96ba12b65862f5fe0c7ca",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/verification.json": "8b78f727a3901b22190165d253163e53be83d6b8c5cf372016477865d1705616",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/wrapper.log": "2cb3823fc664d3edf3c5ed5f7103c3f5b67a3b9c7a58630c5574ed0e7fe941f7",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/vast_run.sh": "3e2d67a015810bdd98be23d9cac17c8f438c0b4d83d96563e4ae504b0ea6c487",
+    "/private/tmp/mapal-s56-gpu/integrated/results/correctness-pair-rtx-5090/create-response.json": "798ed0a3f85f2cfc32d14473ba4d8386fafe318753909956602acc93ce56c1fa"
+  }
+}

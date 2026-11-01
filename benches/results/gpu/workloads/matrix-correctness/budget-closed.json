@@ -1,0 +1,20 @@
+{
+  "instance": 57118557,
+  "reservation_utc": "2026-10-21T22:13:57.423365+00:00",
+  "confirmed_absent_utc": "2026-10-21T22:21:34.236393+00:00",
+  "reservation_to_independent_absence_seconds": 456.813028,
+  "listed_rate_usd_per_hour": 0.6598148148148149,
+  "elapsed_listed_cost_estimate_usd": 0.0837255565207819,
+  "prior_conservative_allowance_usd": 0.22,
+  "this_transfer_reserve_usd": 0.1,
+  "cumulative_conservative_planning_usage_usd": 0.4037255565207819,
+  "remaining_original_one_dollar_usd": 0.5962744434792181,
+  "later_30min_plus_120sec_cleanup_same_rate_and_10cent_transfer_reserve_usd": 0.4519012345679012,
+  "later_30min_fits_remaining_planning_cap": true,
+  "transfer_reserve_capacity_bytes_at_max_approved_direction_price": 25600000000,
+  "uploaded_payload_bytes": 19638289,
+  "retrieved_trace_bytes": 76600382,
+  "actual_provider_invoice_observed": false,
+  "provider_image_and_pip_wire_bytes_measured": false,
+  "no_new_run_authorized_by_this_calculation": true
+}

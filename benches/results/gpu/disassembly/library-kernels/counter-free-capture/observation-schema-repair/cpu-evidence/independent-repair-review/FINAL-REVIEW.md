@@ -1,0 +1,11 @@
+# Observer invocation repair final independent review
+
+PASS for sealing the reviewed v2 candidate. Exact production hashes are in FINAL-REVIEW.json: capture.cpp b1dd934a… and admit.py df8e9e39…. No blocking finding; reviewer changed no production source, sealed v1 packet or failed real trace.
+
+The pinned SDK explicitly supports invocation-local64bit correlationData shared between corresponding entry/exit callbacks. The observer assigns that identity separately from activity correlation and rejects missing, active-aliasing or corrupted storage. Exact token/API interval/context binding and complete supported load/launch inventories prevent a same-CBID/correlation payload from being rebound to a distinct invocation. Repeated/ambiguous activity or kernel correlation still rejects; no deduplication is introduced.
+
+ELF helpers remain defined executable bounded symbols inside a unique owning entry range. Only the authoritative own-section entry is exported/resolved/decoded; helper/CUPTI function indices never substitute for its true ELF symbol ordinal. Independent8range cases pass, including overlap/fullrange alias containment without promoting a helper and negative zero/out-of-range/duplicate/nonexec boundaries. All5actual immutable image bytes parse statically; that is no launch/image/SASS admission.
+
+Only observed UID0 initialization callback metadata may precede its later authoritative creation. The provisional prefix establishes no initialized context or device-work identity. Independent9actual-source fixture cases pass, including missingcreation, positiveUID or unknownUID0 precreation, zero/mismatchedtokens and tokenrebinding;3honest paths pass. The owner's49actual callback/admission plus9binding cases bind the same final bytes and pass. Generic callback replay uses synthetic storage and is compatibility preparation, not retroactive v1 admission.
+
+Enclosing runner/request/protocol sources retain their reviewed hashes, so numerical gates, ordinary binary identity, diagnostic-only clocks, caps and process cleanup remain unchanged. A new immutable seal and fresh live smoke remain required. Actual v1 stays0/3; no GPU run, rental or upload occurred during this review.

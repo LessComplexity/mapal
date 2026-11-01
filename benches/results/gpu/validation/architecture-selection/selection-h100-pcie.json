@@ -1,0 +1,119 @@
+{
+  "profile": "h100-pcie",
+  "head": "4c93c8a37a34518370c6b4b5888e476367c25f74",
+  "offer": 46716858,
+  "machine_id": 81035,
+  "host_id": 415974,
+  "instance": 57081803,
+  "independence": "Repeated physical host from prior retain-resident confirm; not a third host",
+  "results_sha256": "0fe30fac0dc4447d802bf1752153fee11124e1642ef2c800b1858d1f3cb1ce83",
+  "manifest_sha256": "da24b9af45c6c539ed94335397f4b8435bd5700549c976f06a5c20b4f5068c72",
+  "request_sha256": "17ff6752a37935750221735c80240d372b4f4cc2256b448b6d919724d3e36da8",
+  "verification_sha256": "ebfea21014dfdf326a9cdab0c33594455698006cc904be535bb5dd747aabe7fa",
+  "profiling": {
+    "supplied": true,
+    "resources_pass": true,
+    "nsys_complete": true,
+    "nsys_missing": [],
+    "resource_aliases": {
+      "mm_4096": "mm_4096.null"
+    },
+    "nsys_validation": "Container signatures and parsed numeric CSV exports; binary reports are not re-exported locally",
+    "archive_sha256": "f9d73ea390b23305a75c30db450463a581cf29e67d2063b603eb530a0f772cdb"
+  },
+  "hardware": {
+    "gpus": [
+      {
+        "name": "NVIDIA H100 PCIe",
+        "driver_version": "595.71.05",
+        "clocks.max.sm [MHz]": "1755 MHz",
+        "clocks.current.sm [MHz]": "345 MHz",
+        "power.limit [W]": "350.00 W",
+        "temperature.gpu": "32",
+        "persistence_mode": "Enabled"
+      }
+    ],
+    "csv_columns": [
+      "name",
+      "driver_version",
+      "clocks.max.sm [MHz]",
+      "clocks.current.sm [MHz]",
+      "power.limit [W]",
+      "temperature.gpu",
+      "persistence_mode"
+    ]
+  },
+  "counts": {
+    "PASS": {
+      "expected": 82,
+      "observed": 82
+    },
+    "TRAP-PASS": {
+      "expected": 14,
+      "observed": 14
+    },
+    "probe": {
+      "expected": 630,
+      "observed": 630
+    },
+    "probe_kernels": {
+      "expected": 630,
+      "observed": 630
+    },
+    "decode": {
+      "expected": 60,
+      "observed": 60
+    },
+    "chain_values": {
+      "expected": 26,
+      "observed": 26
+    },
+    "kernel sections": {
+      "expected": 45,
+      "observed": 45
+    }
+  },
+  "warnings": [
+    "Frozen older runner omitted process statuses; output/trace/inventory gates cannot prove every exit code"
+  ],
+  "run_env": {
+    "DIFFERENTIAL_ONLY": "0",
+    "PROBE_REPS": "15",
+    "E2E_REPS": "1",
+    "PROBE_ARMS": "on off-streams on-streams off-l2-window on-l2-window off-raster on-raster off-l2-gate on-l2-gate off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+    "PROFILE": "1",
+    "START_TRIES": "36",
+    "PROF_PROBES": "pt_mlp2_2048_c pt_mlp2_4096_c pt_diamond_4096_c"
+  },
+  "binaries": {
+    "target/release/examples/emit": "692489821a922185143d67d734112fa103a7b6513c551eef4efcc035daeef862",
+    "target/release/examples/run": "ad2c59a934134392b09e802d57d1020e7cb3a8fa8d1efef35da2a5bc736b9a63",
+    "target/release/libmapal_rt.a": "70a897fc3905c6fa982aa010352eec2a57025cf7838baaf30b49cec5399a43be",
+    "target/x86_64-unknown-linux-gnu/release/libmapal_rt.a": "5b26eea594347505cd45d7aed48b750753d812ca583b7a28698441d2594b25cb"
+  },
+  "cutlass": {
+    "commit": "91843b71d90737e0a9b86f7d9df213cff5a3526f",
+    "cache": "/private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/5796dddd-f57b-41ae-ba33-9afb66b7242d/scratchpad/arch-select/b1/cutlass"
+  },
+  "execution": {
+    "profile": "h100-pcie",
+    "tag": "selection-h100-a",
+    "exit": 0,
+    "seconds": 1211.1,
+    "results": "/private/tmp/mapal-s56-gpu/selection-h100-a",
+    "end_utc": "2026-10-21T16:46:39Z"
+  },
+  "cleanup": {
+    "instance": 57081803,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T16:48:41.910107+00:00",
+    "method": "Vast instance inventory"
+  },
+  "validator": "/private/tmp/mapal-s56-gpu/verify_selection.py",
+  "validator_sha256": "db2a5f9b4c941a7eb35f619fd5696a51cf86c6f72b8764f09f4f5d919ab0799a",
+  "missing_process_status_fields": {
+    "probe.rc": 630,
+    "probe.trace_rc": 630,
+    "decode.wall_rc": 60
+  }
+}

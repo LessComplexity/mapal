@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "verified_utc": "2026-10-22T20:50:35.417335+00:00",
+  "trace_files": 504,
+  "archive_bytes": 10938433,
+  "archive_sha256": "dab5bbba2e0f6c57d1b60289b442cd496c2f5e8f26c4f37ded6cabb42586dec6",
+  "recovery_sha256": "c1bd46b5ee57ebed7c559acdf5de057c184dbf978fa6da033b93cf4ac386df45",
+  "persistent_archive": ".benchmark-artifacts/gpu/library-images/counter-free/rtx-5090/2026-10-22/admitted-library-kernels/trace.tar.gz",
+  "cleanup": {
+    "instance": 57271085,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-22T20:48:03.025162+00:00",
+    "method": "Independent exact-ID inventory absence"
+  }
+}

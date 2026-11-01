@@ -1,0 +1,98 @@
+--- reference/tile_bench.cu
++++ harness/tile_bench_checked.cu
+@@ -311,8 +311,18 @@
+   const unsigned gx = atoi(argv[6]), gy = atoi(argv[7]), block = atoi(argv[8]),
+                  smem = atoi(argv[9]);
+   const int reps = atoi(argv[10]);
+-  const bool tf32 = argc > 11 && !strcmp(argv[11], "--tf32");
+-  const bool contract = tf32 || (argc > 11 && !strcmp(argv[11], "--contract"));
++  bool tf32 = false, contract = false, full_values = false, values_only = false;
++  for (int arg = 11; arg < argc; ++arg) {
++    if (!strcmp(argv[arg], "--tf32")) tf32 = contract = true;
++    else if (!strcmp(argv[arg], "--contract")) contract = true;
++    else if (!strcmp(argv[arg], "--full-values")) full_values = true;
++    else if (!strcmp(argv[arg], "--values-only")) values_only = true;
++    else { fprintf(stderr, "unknown argument: %s\n", argv[arg]); return 2; }
++  }
++  if (M <= 0 || N <= 0 || K <= 0 || reps != 30 || !gx || !gy || !block ||
++      (full_values && ((uint64_t)M*N > 524288 || (uint64_t)M*N*K > 150000000))) {
++    fprintf(stderr, "invalid shape/repetitions/bounded full-value request\n"); return 2;
++  }
+ 
+   CUDA(cudaFree(0));  // primary context, shared by the runtime and driver legs
+   device_facts();
+@@ -347,14 +357,22 @@
+   if (smem > 48 * 1024)
+     CU(cuFuncSetAttribute(fn, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, smem));
+   int regs = 0, spill = 0;
+-  cuFuncGetAttribute(&regs, CU_FUNC_ATTRIBUTE_NUM_REGS, fn);
+-  cuFuncGetAttribute(&spill, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, fn);
++  CU(cuFuncGetAttribute(&regs, CU_FUNC_ATTRIBUTE_NUM_REGS, fn));
++  CU(cuFuncGetAttribute(&spill, CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES, fn));
+   printf("mapal kernel=%s grid=%ux%u block=%u smem=%u regs=%d local_bytes=%d\n",
+          kname, gx, gy, block, smem, regs, spill);
+ 
+   cublasHandle_t h;
+-  cublasCreate(&h);
+-  cublasSetMathMode(h, tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH);
++  if (cublasCreate(&h) != CUBLAS_STATUS_SUCCESS) return 103;
++  if (cublasSetMathMode(h, tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH) != CUBLAS_STATUS_SUCCESS) return 103;
++  int cublas_version = 0, runtime_version = 0;
++  cublasMath_t reported_math_mode;
++  if (cublasGetVersion(h, &cublas_version) != CUBLAS_STATUS_SUCCESS ||
++      cublasGetMathMode(h, &reported_math_mode) != CUBLAS_STATUS_SUCCESS) return 103;
++  CUDA(cudaRuntimeGetVersion(&runtime_version));
++  if (reported_math_mode != (tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH)) return 103;
++  printf("libraries cublas_version=%d cuda_runtime_version=%d requested_math_mode=%s reported_math_mode=%d\n",
++         cublas_version, runtime_version, tf32 ? "tf32" : "default", (int)reported_math_mode);
+   CutlassGemm cutlass_gemm;
+   CutlassGemm::Arguments cargs({M, N, K}, {dA, K}, {dB, N}, {dC[2], N}, {dC[2], N},
+                                {1.0f, 0.0f});
+@@ -380,11 +398,11 @@
+       CU(cuLaunchKernel(fn, gx, gy, 1, block, 1, 1, smem, 0, args, 0));
+     } else if (leg == 1) {
+       // Row-major C = A·B is column-major Cᵀ = Bᵀ·Aᵀ: the same flops.
+-      cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, dB, N, dA, K, &zero, dC[1], N);
++      if (cublasSgemm(h, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &one, dB, N, dA, K, &zero, dC[1], N) != CUBLAS_STATUS_SUCCESS) exit(103);
+     } else if (tf32) {
+-      cutlass_tf32();
++      if (cutlass_tf32() != cutlass::Status::kSuccess) exit(103);
+     } else {
+-      cutlass_gemm();
++      if (cutlass_gemm() != cutlass::Status::kSuccess) exit(103);
+     }
+   };
+   const char *names[3] = {"mapal", "cublas", "cutlass"};
+@@ -400,6 +418,12 @@
+     cs = cs * 6364136223846793005ull + 1;
+     cells.push_back({(int)((cs >> 33) % M), (int)((cs >> 13) % N)});
+   }
++  if (full_values) {
++    cells.clear();
++    for (int i = 0; i < M; ++i)
++      for (int j = 0; j < N; ++j) cells.push_back({i, j});
++  }
++  printf("validation scope=%s outputs=%zu\n", full_values ? "full" : "sampled", cells.size());
+   double leg_maxrel[3] = {0, 0, 0};
+   for (int leg = 2; leg >= 0; --leg) {  // libraries first: their error bounds Mapal's on --tf32
+     CUDA(cudaMemcpy(C.data(), dC[leg], C.size() * 4, cudaMemcpyDeviceToHost));
+@@ -414,6 +438,10 @@
+         ref += (double)a * b;
+       }
+       float got = C[(size_t)i * N + j];
++      if (!std::isfinite(got) || !std::isfinite(acc) || !std::isfinite(ref)) {
++        fprintf(stderr, "NONFINITE leg=%s row=%d col=%d\n", names[leg], i, j);
++        return 104;
++      }
+       if (leg == 0 && !tf32 && memcmp(&got, &acc, 4) != 0) ++mismatches;
+       maxrel = std::max(maxrel, std::fabs(got - ref) / std::max(std::fabs(ref), 1e-3));
+     }
+@@ -432,6 +460,8 @@
+       return 1;
+     }
+   }
++
++  if (values_only) { printf("%s_VALUES_PASSED\n", full_values ? "FULL" : "SAMPLED"); return 0; }
+ 
+   // --- timing
+   cudaEvent_t t0, t1;

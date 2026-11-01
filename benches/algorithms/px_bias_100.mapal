@@ -1,0 +1,18 @@
+fn main() {
+    10000 -> iota -> ta;
+    100 -> iota -> krange;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    krange -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> bias;
+    ta -> map { t ->
+        t / 100 -> i;
+        t % 100 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 100 + k] * b[k * 100 + j] }
+    } -> c;
+    ta -> map { t -> c[t] + bias[t % 100] } -> d;
+    0.0 -> zero: f32;
+    (zero, d) -> fold { acc, v -> acc + v } -> s_d;
+    s_d -> println;
+    d[0] -> println;
+    d[9999] -> println;
+}

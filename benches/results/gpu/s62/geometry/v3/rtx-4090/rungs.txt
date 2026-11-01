@@ -1,0 +1,14 @@
+EPS = 0.0695 (max of 1% and the null arms' deviation)
+
+| rung | fill | face | shipped | rule (2 sessions) | ships | status | OFF/ON speedup per size, per session (`*` disjoint) |
+|---|---|---|---|---|---|---|---|
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Contract | OFF/ON | ON | OFF/ON | composite | _c 16x18432x7168: 0.962* 5.050*; _c 16x2048x7168: 5.222* 5.171* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Filled | Exact | OFF/ON | ON | OFF/ON | composite | _exact 16x18432x7168: 0.963* 4.696*; _exact 16x2048x7168: 4.812* 4.867* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Contract | ON | ON | ON | composite | _c 1024: 0.994 1.015; _c 128x1024x4096: 1.877* 1.960*; _c 128x2048x7168: 1.147* 1.133*; _c 16x1024x4096: 3.469* 3.501*; rmlp_128x1024x2048_c: 0.698*; rmlp_128x256x512_c: 0.498* |
+| row-fit+wave-gate+grid-share+panel-regs+fill-rows | Under | Exact | OFF/ON | ON | OFF/ON | composite | _exact 1024: 0.978 1.000; _exact 128x1024x4096: 1.005 1.025; _exact 128x2048x7168: 1.109* 1.103*; _exact 16x1024x4096: 0.973 4.193* |
+
+null A/B (shipped vs itself), results-rtx-4090.txt: max |s-1| = 0.020; _c 1024: 0.980; _c 128x1024x4096: 0.999; _c 128x18432x7168: 0.998; _c 128x2048x7168: 1.000; _c 16x1024x4096: 0.997; _c 16x18432x7168: 1.000; _c 16x2048x7168: 1.000; _c 1x1024x4096: 1.000; _c 1x18432x7168: 1.000; _c 1x2048x7168: 1.004; _c 4096: 0.998; _exact 1024: 1.000; _exact 128x1024x4096: 1.011; _exact 128x18432x7168: 1.016; _exact 128x2048x7168: 0.993; _exact 16x1024x4096: 1.010; _exact 16x18432x7168: 1.000; _exact 16x2048x7168: 1.000; _exact 1x1024x4096: 1.000; _exact 1x18432x7168: 1.000; _exact 1x2048x7168: 0.996; _exact 4096: 1.002; _tf 1024: 1.003; _tf 4096: 1.000
+
+null A/B (shipped vs itself), results-rtx-4090-pass2.txt: max |s-1| = 0.070; _c 1024: 1.000; _c 128x1024x4096: 1.000; _c 128x18432x7168: 1.002; _c 128x2048x7168: 0.994; _c 16x1024x4096: 1.031; _c 16x18432x7168: 1.000; _c 16x2048x7168: 0.990; _c 1x1024x4096: 1.000; _c 1x18432x7168: 1.000; _c 1x2048x7168: 1.014; _c 4096: 1.000; _exact 1024: 1.000; _exact 128x1024x4096: 0.992; _exact 128x18432x7168: 0.930; _exact 128x2048x7168: 0.993; _exact 16x1024x4096: 1.000; _exact 16x18432x7168: 1.002; _exact 16x2048x7168: 0.999; _exact 1x1024x4096: 1.000; _exact 1x18432x7168: 1.002; _exact 1x2048x7168: 1.010; _exact 4096: 1.004; _tf 1024: 1.017; _tf 4096: 1.002
+
+// GPU_RUNGS_OFF rows that ship on rtx-4090 (new = a class that ships ON today)

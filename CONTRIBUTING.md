@@ -28,6 +28,7 @@ measured, not argued with.
 - [Proving a correctness change](#proving-a-correctness-change)
 - [Proving a performance change](#proving-a-performance-change)
 - [Tests](#tests)
+- [Source formatting](#source-formatting)
 - [Docs you update in the same change](#docs-you-update-in-the-same-change)
 - [Setup and the gates](#setup-and-the-gates)
 - [Commits, PRs, licensing](#commits-prs-licensing)
@@ -188,6 +189,29 @@ scope-matching suite where a passing assertion may be matching something else en
 Editor grammars have their own suite (`sh editors/test.sh`, 61 assertions) and opposite
 precedence rules between Vim and TextMate — a rule added at one end of one goes at the other
 end of the other.
+
+## Source formatting
+
+Use the same formatter for hand-written and generated Mapal source:
+
+```sh
+cargo build -p mapal-cli
+target/debug/mapal fmt path/to/program.mapal
+target/debug/mapal fmt --check path/to/program.mapal
+target/debug/mapal fmt --stdout path/to/program.mapal
+```
+
+Pass only the files you changed. `fmt` writes explicit paths in place; `--check`
+never writes and exits 1 if formatting is needed; `--stdout` previews one file.
+`mapal fmt -` reads stdin and writes formatted source to stdout for editor tools.
+Invalid input produces diagnostics without replacing the source. Deliberately
+invalid parser fixtures are exempt from formatting checks.
+
+The style is four spaces, expanded brace bodies, separate statements and record
+fields, and consistent spacing. Comments and literal spelling are preserved.
+Use descriptive names and short, useful comments: layout alone does not make code
+readable. The [Neovim](editors/nvim/README.md) and
+[VS Code](editors/vscode/README.md) plugins use this same CLI.
 
 ## Docs you update in the same change
 

@@ -1,0 +1,694 @@
+{
+  "input_files_rehashed": 924,
+  "output_files_rehashed": 69,
+  "ordinary_timing_admissible": false,
+  "all_four_captures_independently_joined": true,
+  "observations": [
+    {
+      "runtime_device": "device name=\"NVIDIA GeForce RTX 5090\" cc=12.0 driver=13030",
+      "runtime_device_facts": {
+        "sms": "170",
+        "regs_per_sm": "65536",
+        "regs_per_block": "65536",
+        "smem_per_sm": "102400",
+        "smem_per_block": "101376",
+        "smem_reserved_per_block": "1024",
+        "max_threads_per_sm": "1536",
+        "max_blocks_per_sm": "24",
+        "max_threads_per_block": "1024",
+        "warp": "32",
+        "l2_bytes": "100663296",
+        "sm_clock_khz": "2467000",
+        "mem_clock_khz": "14001000",
+        "l2_persist_bytes": "62914560",
+        "l2_window_max": "134217728"
+      },
+      "id": "dense-old",
+      "admitted": true,
+      "timing_admissible": false,
+      "kernel": "mapal_tile_698a8374c90a15e7",
+      "ptx_sha256": "1fe7eca6ec91ffa5c21c6fd3b0725f0076725d398074d274dc9f2e00774fc3fa",
+      "ptx_static_counts": {
+        "fma.rn.f32": 4,
+        "mul.rn.f32": 0,
+        "add.rn.f32": 0,
+        "bar.sync": 0,
+        "mma.sync": 0,
+        "cp.async": 0,
+        "cvt.rna.tf32.f32": 0
+      },
+      "runtime_resources": {
+        "kernel": "mapal_tile_698a8374c90a15e7",
+        "grid": "1152x1",
+        "block": "256",
+        "smem": "0",
+        "regs": "40",
+        "local_bytes": "0"
+      },
+      "receipt_sha256": "54b83b817d4b62f31a575379c2297552136d618cbf89e7c183ff344150e09b00",
+      "events_sha256": "e6cf5c9ab6e90d8623b33e14b28ec843497265cd88158d4f16125392eea3aef0",
+      "images": [
+        {
+          "load_event": 1,
+          "actual_context": "0x63dc20f92fe0",
+          "context_uid": "1",
+          "load_correlation_id": "1",
+          "module_id": "21",
+          "cubin_file": "module-1.cubin",
+          "cubin_sha256": "91798c909409f8f544d4579ed1a608ac8d420865fbafb5a7b0dd9af5d19ad8ac",
+          "cubin_bytes": 16120,
+          "kernel_text": {
+            "bytes": 4480,
+            "sha256": "404043decf389c8611b9939608a43837eb20b5f4b07731b3b02df7f141879a69"
+          },
+          "launches": [
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x63dc22368aa0",
+              "correlation_id": 3,
+              "grid": [
+                1152,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x63dc22368aa0",
+              "correlation_id": 4,
+              "grid": [
+                1152,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x63dc22368aa0",
+              "correlation_id": 5,
+              "grid": [
+                1152,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            }
+          ],
+          "sass_sha256": "391ccb9c049e150ef7f3ffeff5c115554de1e496755b5efbc18f03afeb5f55aa",
+          "sass_static_counts": {
+            "instruction_total": 280,
+            "mnemonics": {
+              "LDC": 1,
+              "S2R": 2,
+              "ISETP.GT.U32.AND": 1,
+              "EXIT": 2,
+              "SHF.L.U32": 1,
+              "LDC.64": 3,
+              "LDCU.64": 1,
+              "LOP3.LUT": 1,
+              "IMAD.HI.U32": 2,
+              "SHF.R.U32.HI": 1,
+              "IMAD": 1,
+              "IADD": 39,
+              "IMAD.WIDE.U32": 50,
+              "LDG.E.CONSTANT": 96,
+              "FFMA": 48,
+              "HFMA2": 1,
+              "IADD.64": 2,
+              "IADD3": 9,
+              "ISETP.NE.U32.AND": 1,
+              "BRA": 2,
+              "STG.E": 1,
+              "NOP": 15
+            },
+            "base_mnemonics": {
+              "LDC": 4,
+              "S2R": 2,
+              "ISETP": 2,
+              "EXIT": 2,
+              "SHF": 2,
+              "LDCU": 1,
+              "LOP3": 1,
+              "IMAD": 53,
+              "IADD": 41,
+              "LDG": 96,
+              "FFMA": 48,
+              "HFMA2": 1,
+              "IADD3": 9,
+              "BRA": 2,
+              "STG": 1,
+              "NOP": 15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "runtime_device": "device name=\"NVIDIA GeForce RTX 5090\" cc=12.0 driver=13030",
+      "runtime_device_facts": {
+        "sms": "170",
+        "regs_per_sm": "65536",
+        "regs_per_block": "65536",
+        "smem_per_sm": "102400",
+        "smem_per_block": "101376",
+        "smem_reserved_per_block": "1024",
+        "max_threads_per_sm": "1536",
+        "max_blocks_per_sm": "24",
+        "max_threads_per_block": "1024",
+        "warp": "32",
+        "l2_bytes": "100663296",
+        "sm_clock_khz": "2467000",
+        "mem_clock_khz": "14001000",
+        "l2_persist_bytes": "62914560",
+        "l2_window_max": "134217728"
+      },
+      "id": "dense-candidate",
+      "admitted": true,
+      "timing_admissible": false,
+      "kernel": "mapal_tile_698a8374c90a15e7",
+      "ptx_sha256": "d5dd8ad5b1b0bc14f20c1364cb790a7c42f8192c017cc242bb89396b388ae004",
+      "ptx_static_counts": {
+        "fma.rn.f32": 128,
+        "mul.rn.f32": 0,
+        "add.rn.f32": 0,
+        "bar.sync": 2,
+        "mma.sync": 0,
+        "cp.async": 0,
+        "cvt.rna.tf32.f32": 0
+      },
+      "runtime_resources": {
+        "kernel": "mapal_tile_698a8374c90a15e7",
+        "grid": "576x1",
+        "block": "32",
+        "smem": "1664",
+        "regs": "79",
+        "local_bytes": "0"
+      },
+      "receipt_sha256": "822fa2e9d390598ff13e521c47ae2d96235536992c0623b67e67e28b3db29068",
+      "events_sha256": "34222a8546bb107a77c067abf30b79307971db0d0c44661c7e6dcaa4923cf2e1",
+      "images": [
+        {
+          "load_event": 1,
+          "actual_context": "0x56fcf638db70",
+          "context_uid": "1",
+          "load_correlation_id": "1",
+          "module_id": "21",
+          "cubin_file": "module-1.cubin",
+          "cubin_sha256": "0dd8129b58075642497091482ef17ba0d438a09209a67778d8cbb22481b156d0",
+          "cubin_bytes": 16304,
+          "kernel_text": {
+            "bytes": 3840,
+            "sha256": "eb7e985af7cb00cadd5fa8c64b291379254eac063188b8791e3f3b0d67c6a165"
+          },
+          "launches": [
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x56fcf775e900",
+              "correlation_id": 3,
+              "grid": [
+                576,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x56fcf775e900",
+              "correlation_id": 4,
+              "grid": [
+                576,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x56fcf775e900",
+              "correlation_id": 5,
+              "grid": [
+                576,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            }
+          ],
+          "sass_sha256": "8d1f9b21e99e8e4c4a61225b929c0f0cd5c8ea2d300de18c9e53ef81333bf76f",
+          "sass_static_counts": {
+            "instruction_total": 240,
+            "mnemonics": {
+              "LDC": 1,
+              "S2R": 3,
+              "S2UR": 1,
+              "LDCU.64": 1,
+              "UMOV": 1,
+              "LDC.64": 3,
+              "UIMAD.WIDE.U32": 1,
+              "UIMAD": 1,
+              "SHF.R.U64": 2,
+              "LOP3.LUT": 6,
+              "SHF.L.U32": 3,
+              "IMAD.WIDE.U32": 6,
+              "IADD": 5,
+              "LEA": 7,
+              "LEA.HI.X": 3,
+              "LDG.E.128.CONSTANT": 6,
+              "MOV": 1,
+              "CS2R": 8,
+              "SHF.L.U64.HI": 2,
+              "IMAD": 3,
+              "MOV.64": 2,
+              "STS": 4,
+              "ISETP.GE.U64.AND": 1,
+              "IADD.64": 2,
+              "SEL.64": 1,
+              "STS.128": 2,
+              "BAR.SYNC.DEFER_BLOCKING": 2,
+              "LDS.128": 16,
+              "FFMA": 128,
+              "ISETP.NE.U64.AND": 1,
+              "BRA": 2,
+              "STG.E.128": 4,
+              "EXIT": 1,
+              "NOP": 10
+            },
+            "base_mnemonics": {
+              "LDC": 4,
+              "S2R": 3,
+              "S2UR": 1,
+              "LDCU": 1,
+              "UMOV": 1,
+              "UIMAD": 2,
+              "SHF": 7,
+              "LOP3": 6,
+              "IMAD": 9,
+              "IADD": 7,
+              "LEA": 10,
+              "LDG": 6,
+              "MOV": 3,
+              "CS2R": 8,
+              "STS": 6,
+              "ISETP": 2,
+              "SEL": 1,
+              "BAR": 2,
+              "LDS": 16,
+              "FFMA": 128,
+              "BRA": 2,
+              "STG": 4,
+              "EXIT": 1,
+              "NOP": 10
+            }
+          }
+        }
+      ]
+    },
+    {
+      "runtime_device": "device name=\"NVIDIA GeForce RTX 5090\" cc=12.0 driver=13030",
+      "runtime_device_facts": {
+        "sms": "170",
+        "regs_per_sm": "65536",
+        "regs_per_block": "65536",
+        "smem_per_sm": "102400",
+        "smem_per_block": "101376",
+        "smem_reserved_per_block": "1024",
+        "max_threads_per_sm": "1536",
+        "max_blocks_per_sm": "24",
+        "max_threads_per_block": "1024",
+        "warp": "32",
+        "l2_bytes": "100663296",
+        "sm_clock_khz": "2467000",
+        "mem_clock_khz": "14001000",
+        "l2_persist_bytes": "62914560",
+        "l2_window_max": "134217728"
+      },
+      "id": "qwen_expert-old",
+      "admitted": true,
+      "timing_admissible": false,
+      "kernel": "mapal_tile_fee0e120457e2f5b",
+      "ptx_sha256": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c",
+      "ptx_static_counts": {
+        "fma.rn.f32": 8,
+        "mul.rn.f32": 0,
+        "add.rn.f32": 0,
+        "bar.sync": 0,
+        "mma.sync": 0,
+        "cp.async": 0,
+        "cvt.rna.tf32.f32": 0
+      },
+      "runtime_resources": {
+        "kernel": "mapal_tile_fee0e120457e2f5b",
+        "grid": "64x1",
+        "block": "256",
+        "smem": "0",
+        "regs": "40",
+        "local_bytes": "0"
+      },
+      "receipt_sha256": "679dcf86793b836c82b20ff680f272fb372da2c79b0493c945bfcec16ca08078",
+      "events_sha256": "cbe0f21fb1fa43328f747736ffa7c1d58c8711923bfb814efabb7f537b864b02",
+      "images": [
+        {
+          "load_event": 1,
+          "actual_context": "0x55fb4a4d40c0",
+          "context_uid": "1",
+          "load_correlation_id": "1",
+          "module_id": "21",
+          "cubin_file": "module-1.cubin",
+          "cubin_sha256": "27d7ab2d3cac5ef445298a5ff7d54f8bbb969a7ac65f60c20ae819d902016f43",
+          "cubin_bytes": 15256,
+          "kernel_text": {
+            "bytes": 3712,
+            "sha256": "226dbdf03a40a18d77dd5c41817604d645195d8e0d8dea8067c4866b772eb84f"
+          },
+          "launches": [
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x55fb4b86f2e0",
+              "correlation_id": 3,
+              "grid": [
+                64,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x55fb4b86f2e0",
+              "correlation_id": 4,
+              "grid": [
+                64,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x55fb4b86f2e0",
+              "correlation_id": 5,
+              "grid": [
+                64,
+                1,
+                1
+              ],
+              "block": [
+                256,
+                1,
+                1
+              ],
+              "shared_bytes": 0
+            }
+          ],
+          "sass_sha256": "3c904465cc43331d1fe540c81ddfa38746eb418acde0321ff3794691af532e10",
+          "sass_static_counts": {
+            "instruction_total": 232,
+            "mnemonics": {
+              "LDC": 1,
+              "S2R": 2,
+              "ISETP.GT.U32.AND": 1,
+              "EXIT": 2,
+              "LDCU.64": 3,
+              "LDC.64": 1,
+              "IMAD.WIDE.U32": 2,
+              "SHF.R.U32.HI": 1,
+              "HFMA2": 1,
+              "SGXT.U32": 1,
+              "LOP3.LUT": 2,
+              "LEA": 2,
+              "LEA.HI.X": 2,
+              "UMOV.64": 1,
+              "IADD.64": 3,
+              "LDG.E.CONSTANT": 128,
+              "FFMA": 64,
+              "UIADD3.64": 1,
+              "UISETP.NE.U64.AND": 1,
+              "BRA.U": 1,
+              "STG.E": 1,
+              "BRA": 1,
+              "NOP": 10
+            },
+            "base_mnemonics": {
+              "LDC": 2,
+              "S2R": 2,
+              "ISETP": 1,
+              "EXIT": 2,
+              "LDCU": 3,
+              "IMAD": 2,
+              "SHF": 1,
+              "HFMA2": 1,
+              "SGXT": 1,
+              "LOP3": 2,
+              "LEA": 4,
+              "UMOV": 1,
+              "IADD": 3,
+              "LDG": 128,
+              "FFMA": 64,
+              "UIADD3": 1,
+              "UISETP": 1,
+              "BRA": 2,
+              "STG": 1,
+              "NOP": 10
+            }
+          }
+        }
+      ]
+    },
+    {
+      "runtime_device": "device name=\"NVIDIA GeForce RTX 5090\" cc=12.0 driver=13030",
+      "runtime_device_facts": {
+        "sms": "170",
+        "regs_per_sm": "65536",
+        "regs_per_block": "65536",
+        "smem_per_sm": "102400",
+        "smem_per_block": "101376",
+        "smem_reserved_per_block": "1024",
+        "max_threads_per_sm": "1536",
+        "max_blocks_per_sm": "24",
+        "max_threads_per_block": "1024",
+        "warp": "32",
+        "l2_bytes": "100663296",
+        "sm_clock_khz": "2467000",
+        "mem_clock_khz": "14001000",
+        "l2_persist_bytes": "62914560",
+        "l2_window_max": "134217728"
+      },
+      "id": "qwen_expert-candidate",
+      "admitted": true,
+      "timing_admissible": false,
+      "kernel": "mapal_tile_fee0e120457e2f5b",
+      "ptx_sha256": "d80594ae32c898c9b63f6c92e870858b21b0b358fb9f8732a8ffac169176c41b",
+      "ptx_static_counts": {
+        "fma.rn.f32": 128,
+        "mul.rn.f32": 0,
+        "add.rn.f32": 0,
+        "bar.sync": 2,
+        "mma.sync": 0,
+        "cp.async": 0,
+        "cvt.rna.tf32.f32": 0
+      },
+      "runtime_resources": {
+        "kernel": "mapal_tile_fee0e120457e2f5b",
+        "grid": "32x1",
+        "block": "32",
+        "smem": "1664",
+        "regs": "79",
+        "local_bytes": "0"
+      },
+      "receipt_sha256": "16e26bc0df656ffc1fb7a388e0b7cb5ebd8ec6551b994db15c82cecc3073eeab",
+      "events_sha256": "595856cbc4994ed5eb07f623d6f09f7a7717d55faac876a97666be00a1b319a1",
+      "images": [
+        {
+          "load_event": 1,
+          "actual_context": "0x5fcf6c631bb0",
+          "context_uid": "1",
+          "load_correlation_id": "1",
+          "module_id": "21",
+          "cubin_file": "module-1.cubin",
+          "cubin_sha256": "0833f5370004aef443c1c7d50b1f4cc07620e00fda3c2b0ed647f0e3b51f3fdd",
+          "cubin_bytes": 16256,
+          "kernel_text": {
+            "bytes": 3840,
+            "sha256": "9164a50069f359a088634e29d09eb4c0431f6b3bd68bb1dc80edbc53b4510956"
+          },
+          "launches": [
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x5fcf6d9d16e0",
+              "correlation_id": 3,
+              "grid": [
+                32,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x5fcf6d9d16e0",
+              "correlation_id": 4,
+              "grid": [
+                32,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            },
+            {
+              "context_uid": "1",
+              "module_id": "21",
+              "function_handle": "0x5fcf6d9d16e0",
+              "correlation_id": 5,
+              "grid": [
+                32,
+                1,
+                1
+              ],
+              "block": [
+                32,
+                1,
+                1
+              ],
+              "shared_bytes": 1664
+            }
+          ],
+          "sass_sha256": "10ea5d02ba01be08ed48824870171699527c844046f47a210294d52d8d5b0649",
+          "sass_static_counts": {
+            "instruction_total": 240,
+            "mnemonics": {
+              "LDC": 1,
+              "S2R": 4,
+              "LDCU.128": 1,
+              "LDCU.64": 2,
+              "IMAD.WIDE.U32": 3,
+              "SHF.R.U64": 2,
+              "LOP3.LUT": 6,
+              "SHF.L.U32": 3,
+              "LEA": 11,
+              "LEA.HI.X": 7,
+              "LDG.E.128.CONSTANT": 6,
+              "MOV": 1,
+              "MOV.64": 2,
+              "CS2R": 8,
+              "SHF.L.U64.HI": 2,
+              "IMAD": 1,
+              "IADD": 1,
+              "STS": 4,
+              "ISETP.GE.U64.AND": 1,
+              "IADD.64": 2,
+              "SEL.64": 1,
+              "STS.128": 2,
+              "BAR.SYNC.DEFER_BLOCKING": 2,
+              "LDS.128": 16,
+              "FFMA": 128,
+              "ISETP.NE.U64.AND": 1,
+              "BRA": 2,
+              "STG.E.128": 4,
+              "EXIT": 1,
+              "NOP": 15
+            },
+            "base_mnemonics": {
+              "LDC": 1,
+              "S2R": 4,
+              "LDCU": 3,
+              "IMAD": 4,
+              "SHF": 7,
+              "LOP3": 6,
+              "LEA": 18,
+              "LDG": 6,
+              "MOV": 3,
+              "CS2R": 8,
+              "IADD": 3,
+              "STS": 6,
+              "ISETP": 2,
+              "SEL": 1,
+              "BAR": 2,
+              "LDS": 16,
+              "FFMA": 128,
+              "BRA": 2,
+              "STG": 4,
+              "EXIT": 1,
+              "NOP": 15
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "s59_manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+    "harness_source_sha256": "017b02b5f856e686a712eb4a4a22f23402b77da889737147ae59095aec1c71a5",
+    "ordinary_packet_required": true,
+    "cases": "Frozen S59 PTX, not an S60 refinement; representative measured win and loss; diagnostics never admit timing."
+  },
+  "limits": [
+    "Only exact Mapal driver-PTX images; no cuBLAS/CUTLASS executed-image claim.",
+    "SASS/PTX counts are static instructions in the captured function, not dynamic instruction count, DRAM traffic, achieved occupancy or timing cause.",
+    "Instrumented completion/value gates are diagnostic; ordinary timings must come from separate uninstrumented processes.",
+    "First missing/failed observer boundary is an explicit non-admission, not inferred success."
+  ]
+}

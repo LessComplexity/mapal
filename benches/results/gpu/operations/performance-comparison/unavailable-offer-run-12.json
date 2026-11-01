@@ -1,0 +1,28 @@
+{
+  "instance": null,
+  "confirmed_absent": true,
+  "verified_utc": "2026-10-22T20:43:57.118330+00:00",
+  "method": "Explicit CLI unavailable-offer rejection with empty create response; independent full inventory has no IDs beyond prelaunch set",
+  "prelaunch_ids": [
+    57065574,
+    57100404,
+    57126023,
+    57133432
+  ],
+  "current_ids": [
+    57065574,
+    57100404,
+    57126023,
+    57133432
+  ],
+  "new_ids": [],
+  "provider_error_codes": [
+    {
+      "http": 404,
+      "provider": 3603
+    }
+  ],
+  "ownership_inference_or_deletion_performed": false,
+  "raw_diagnostic_sha256": "be7631ab6e06e965371d769e32d1b65662875780bf9be891078b5f06bc568359",
+  "empty_create_response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

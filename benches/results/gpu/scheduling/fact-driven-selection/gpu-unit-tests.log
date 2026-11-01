@@ -1,0 +1,21 @@
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/backends/llvm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running unittests src/lib.rs (target/debug/deps/mapal_backend_llvm-c9aca5ddd0fff219)
+
+running 13 tests
+test func::gpu::tests::cell_grid_covers_the_extent_one_thread_per_cell ... ok
+test func::gpu::tests::actual_arithmetic_strided_contract_selects_exact_policy ... ok
+test func::gpu::tests::actual_arithmetic_rejected_tf32_selects_scalar_policy ... ok
+test func::gpu::tests::raster_fires_where_one_blocks_panels_leave_the_l2 ... ok
+test func::gpu::tests::raster_block_is_a_bijection_on_the_grid ... ok
+test func::gpu::tests::actual_arithmetic_mixed_sites_keep_module_pdl_agreement ... ok
+test func::gpu::tests::actual_arithmetic_scalar_modes_preserve_order_and_geometry ... ok
+test func::gpu::tests::actual_arithmetic_supported_tensor_controls_keep_tf32_policy ... ok
+test func::gpu::tests::sync_a_store_is_conflict_free_under_pad ... ok
+test func::gpu::tests::idx32_takes_i32_exactly_when_every_index_fits ... ok
+test func::gpu::tests::affine_decomposition_equals_udiv_urem_for_every_copy_and_thread ... ok
+test func::gpu::tests::power_of_two_lane_maps_are_affine ... ok
+test func::gpu::tests::actual_arithmetic_tensor_rejections_use_complete_scalar_plan ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.15s
+

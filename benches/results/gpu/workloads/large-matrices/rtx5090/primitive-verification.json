@@ -1,0 +1,60 @@
+{
+  "scope": "Separate primitive extension; existing sampled value gates and CUDA-event device kernel timing only",
+  "integrity_pass": true,
+  "pass": false,
+  "errors": [],
+  "failed_cases": [
+    {
+      "case": "deepseek_expert_m1_n2048_k7168__tf32",
+      "arm": "base",
+      "exit": 1,
+      "gate_error": "Expected one 'samples ' row",
+      "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+      "stderr_sha256": "179bbfd799b7ae5430330e1e935c7d51d95ff64c32516946e880188398b0b2a8",
+      "reported_value_rows": [
+        "values leg=cutlass cells=256 maxrel_vs_f64=2.652e-01",
+        "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04",
+        "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 within_4x_cublas_tf32=NO"
+      ],
+      "reported_stderr": "MAPAL VALUES WRONG: 1 of 256 cells differ from the in-order fold",
+      "failure_stage": "existing sampled Mapal value gate, before timing samples"
+    },
+    {
+      "case": "deepseek_expert_m1_n2048_k7168__tf32",
+      "arm": "null",
+      "exit": 1,
+      "gate_error": "Expected one 'samples ' row",
+      "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+      "stderr_sha256": "179bbfd799b7ae5430330e1e935c7d51d95ff64c32516946e880188398b0b2a8",
+      "reported_value_rows": [
+        "values leg=cutlass cells=256 maxrel_vs_f64=2.652e-01",
+        "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04",
+        "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 within_4x_cublas_tf32=NO"
+      ],
+      "reported_stderr": "MAPAL VALUES WRONG: 1 of 256 cells differ from the in-order fold",
+      "failure_stage": "existing sampled Mapal value gate, before timing samples"
+    }
+  ],
+  "expected_invocations": 100,
+  "observed_invocations": 100,
+  "independently_validated": 98,
+  "manifest_sha256": "426c60c61603b037cf50d312f371777d73dc9bcb784d6d5a1a07a0a71ff70cd2",
+  "results_sha256": "4aeef1a28521cf1cf8eda82c451b8a5fa5944fbcb87422adcd73fd7a075cd3cf",
+  "trace_archive_sha256": "fe61fa915eb92d365587fb53b181d960babd48f2b9bb665f85ef56063705900a",
+  "remote_request_sha256": "7b4da68455bbb81d1db2664abcac050b986bccf9cf26a1c49ff7a04244917d34",
+  "runner_sha256": "199205c8139daa33216178596056079e493009791042bd109274c83dcb808096",
+  "operation_request_sha256": "495ed75a6f41c30b4d767a98d55e636e5a663797a2150316fe42ee557d15d902",
+  "cleanup": {
+    "instance": 57100331,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-21T19:28:13.830755+00:00",
+    "method": "Independent Vast inventory; destroy retried only after live physical ownership check",
+    "allocation_recovery": null
+  },
+  "limitations": [
+    "256 sampled cells per leg, not every output cell",
+    "cuBLAS/CUTLASS f64 errors retained as diagnostics; no added tolerance",
+    "Requested TF32 M1 records are explicit FP32-FMA fallback",
+    "No process-wall or composed-model speedup inference"
+  ]
+}

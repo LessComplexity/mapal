@@ -14,6 +14,7 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
@@ -53,6 +54,11 @@ impl<'a> FnEmit<'a> {
             runtime_write: false,
             perf_timing: false,
             tile_plan: tiling.then(|| ir.tile_plan(f)),
+            device: if tiling {
+                gpu::placement(ir, f, &ir.tile_plan(f), profile, true)
+            } else {
+                SecondaryMap::new()
+            },
             // Only `Deduce` consults it, so `Off` and `Force` do not pay for
             // the scan — and `Off` is provably the same work it was before S45.
             move_sites: matches!(move_panel, MovePanel::Deduce)
@@ -62,12 +68,120 @@ impl<'a> FnEmit<'a> {
             elided_arrays: SecondaryMap::new(),
             packing,
             contract,
+            order,
+            orders: Vec::new(),
             kc_nest,
             move_panel,
             profile,
             heap_ok: false,
             heap_used: false,
+            gpu_arms: crate::GpuArms::default(),
+            resident: None,
+            dslots: SecondaryMap::new(),
+            dvalid: SecondaryMap::new(),
+            retain: SecondaryMap::new(),
+            retain_flags: SecondaryMap::new(),
+            row_bounds: None,
+            groups: SecondaryMap::new(),
+            cell_slots: Vec::new(),
+            cell_suffix: "_cell".into(),
+            cell_vals: Vec::new(),
+            lanes: None,
+            path_plan: None,
+            split_slots: Vec::new(),
+            dallocs: Vec::new(),
+            views: SecondaryMap::new(),
+            views_done: false,
+            outside_memo: Default::default(),
+            by_ref: false,
+            bufs: Vec::new(),
+            loops: Vec::new(),
+            root_index: Default::default(),
+            par: None,
         }
+    }
+
+    /// The fast-math flags a tiled float step carries (ADR-0040 D1, D4):
+    /// `contract` lets a step fuse (one rounding), `reassoc` lets the fold's
+    /// order move (the `free` order). Never `afn`, `arcp`, `ninf`, `nnan` or
+    /// `nsz`: order may move, a step's rounding may not. Host sites are never
+    /// split, so `fixed` is `sequential` here.
+    pub(super) fn fp_flags(&self, elem: &Ty) -> &'static str {
+        match (is_float(elem), self.contract, self.order) {
+            (false, _, _) => "",
+            (true, false, crate::Order::Free) => " reassoc",
+            (true, false, _) => "",
+            (true, true, crate::Order::Free) => " reassoc contract",
+            (true, true, _) => " contract",
+        }
+    }
+
+    /// The site writing `target` runs on the device (S62 `place`).
+    pub(super) fn on_device(&self, target: ObjectId) -> bool {
+        self.ir
+            .in_edges(target)
+            .first()
+            .is_some_and(|&m| self.device.contains_key(m))
+    }
+
+    /// S54 `streams`: device sites read independence off the path plan; the
+    /// host itself stays sequential on a GPU profile.
+    pub(crate) fn set_path_plan(&mut self, plan: Option<&'a PathPlan>) {
+        self.path_plan = plan;
+    }
+
+    pub(crate) fn set_gpu_arms(&mut self, arms: crate::GpuArms) {
+        self.gpu_arms = arms;
+        // S65 `by-ref`: the products' layout, which the residency plan reads.
+        self.plan_views();
+        let rungs = super::gpu::host_rungs(self.profile, self.contract, arms);
+        if self.tile_plan.is_some() {
+            let plan = super::gpu::tile_plan(self.ir, self.f, self.profile, self.contract, arms);
+            self.device = super::gpu::placement(self.ir, self.f, &plan, self.profile, rungs.window);
+            self.tile_plan = Some(plan);
+            self.retain = retain::retained_sites(self.ir, self.f, self.profile, rungs);
+        }
+        // A function with a retained site stays resident under
+        // `retain-resident` (the retained output is its resident buffer);
+        // without it, it keeps the S52 round trips `retain-delta` measured on.
+        let resident = rungs.resident
+            && self.profile.gpu().is_some()
+            && (self.retain.is_empty() || rungs.retain_resident);
+        // S54 `epilogue`: the per-cell groups, before the plan that reads them.
+        if resident {
+            self.groups = self.epilogues();
+        }
+        self.resident = resident.then(|| self.resident_plan(rungs)).flatten();
+        // generic-fusion: the host intent line, in the entry block.
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.flow_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.flow_line));
+        }
+        // A carried state's next lives in the buffer the back edge swaps with
+        // the merge's: last iteration's rows are not in it, so it is not retained.
+        if let Some(p) = &self.resident {
+            self.retain
+                .retain(|y, _| !p.is_carry_next(y) && p.alias(y) == y);
+        }
+        if self.arena_slot() {
+            self.allocas
+                .push_str("  %darena = alloca i64\n  store i64 0, ptr %darena\n");
+        }
+    }
+
+    /// The producers this function computes on the device (`devgen`): kernel
+    /// id, the body it calls, and the element type it stores.
+    pub(crate) fn gen_kernels(&self) -> Vec<(u64, FuncId, String)> {
+        let Some(plan) = &self.resident else {
+            return Vec::new();
+        };
+        plan.devgen
+            .iter()
+            .map(|(m, g)| {
+                let t = self.ir.morphism(m).expect("gen morphism").target;
+                let (llt, _) = array_parts(&self.obj_ty(t));
+                (g.id, g.body, llt)
+            })
+            .collect()
     }
 
     pub(crate) fn set_perf_timing(&mut self, perf_timing: bool) {
@@ -142,7 +256,10 @@ impl<'a> FnEmit<'a> {
                 Some(v) => Some((lower_ty(&obj.ty)?, const_literal(v))),
             };
         }
-        let llt = lower_ty(&obj.ty)?;
+        let llt = match self.views.get(o) {
+            Some(paths) => lower_ptr_paths(&obj.ty, paths)?,
+            None => lower_ty(&obj.ty)?,
+        };
         let slot = self.slot(o)?;
         if self.ptr_resident.contains_key(o) {
             // By-ref capture: load the array through the forwarded pointer.
@@ -204,7 +321,9 @@ impl<'a> FnEmit<'a> {
                         text.clone(),
                     ),
                     _ => (
-                        if self.pointer_only_array_component(agg, k) {
+                        if let Some(paths) = self.views.get(agg) {
+                            lower_ptr_paths(comp_ty, &sub_paths(paths, k))?
+                        } else if self.pointer_only_array_component(agg, k) {
                             "ptr".into()
                         } else {
                             lower_ty(comp_ty)?
@@ -362,6 +481,7 @@ impl<'a> FnEmit<'a> {
                 captures,
                 inner,
                 array: _,
+                outside: _,
             } => {
                 let src_ty = self.obj_ty(*source);
                 let inner_arr_ty = if *captures == 0 {
@@ -385,6 +505,32 @@ impl<'a> FnEmit<'a> {
                 Some((out_llt, v))
             }
         }
+    }
+
+    /// A by-value product copied as bytes (`memcpy`) rather than as an SSA
+    /// aggregate, because it is at least [`TargetProfile::heap_min_bytes`]
+    /// long — the size at which its storage already leaves the stack. An SSA
+    /// aggregate that size is one whole-array value to the code generator:
+    /// clang's SelectionDAG crashed on the 4 MB `{ [1048576 x float], i32 }`
+    /// loop state of `loop_mm_1024_8` (S53). Smaller products keep their
+    /// load/store, so every smaller program's text is unchanged.
+    ///
+    /// `Some(llt)` for a plain by-value product (not a forwarded pointer, not
+    /// the by-ref input) laid out as its type lowers. Decided from types
+    /// alone, so asking emits nothing.
+    pub(super) fn big_aggregate(&self, o: ObjectId) -> Option<String> {
+        let ty = self.obj_ty(o);
+        if self.ptr_resident.contains_key(o)
+            || self.byref.as_ref().is_some_and(|(input, _, _)| *input == o)
+            || !matches!(ty, Ty::Tuple(_) | Ty::Struct { .. })
+            || !self.slots.contains_key(o)
+        {
+            return None;
+        }
+        let llt = lower_ty(&ty)?;
+        (self.lower_slot_ty(o, &ty).as_deref() == Some(llt.as_str())
+            && llt_bytes(&llt) >= self.profile.heap_min_bytes)
+            .then_some(llt)
     }
 
     /// Store `(llt, val)` into object `o`'s slot, if it has one.
@@ -504,7 +650,7 @@ impl<'a> FnEmit<'a> {
         site: &TileSite,
         packed: &PackedBuffer,
     ) {
-        debug_assert!(packing_site(site));
+        debug_assert!(packing_site(site, self.profile, self.contract));
         let source_ty = self.obj_ty(source);
         let b_ty = source_ty
             .component_ty(site.b.slot)
@@ -631,6 +777,9 @@ impl<'a> FnEmit<'a> {
     /// consumed only as addresses by collection/index/call ops are `ptr`
     /// fields (S20 #6/#8); value-observable components retain their ABI type.
     pub(super) fn lower_slot_ty(&self, o: ObjectId, ty: &Ty) -> Option<String> {
+        if let Some(paths) = self.views.get(o) {
+            return lower_ptr_paths(ty, paths);
+        }
         let components: Vec<&Ty> = match ty {
             Ty::Tuple(ts) => ts.iter().collect(),
             Ty::Struct { fields, .. } => fields.iter().map(|(_, ty)| ty).collect(),
@@ -739,6 +888,12 @@ impl<'a> FnEmit<'a> {
             None => Some(source),
             Some(k) => self.pair_source(source, k),
         };
+        // S54 `arena`: a device-only array has no host address. Every host
+        // use of one is a pointer-only field or an element copy-out, which
+        // ask before coming here; anything else stops the emission.
+        if feeder.is_some_and(|f| self.host_free(f)) {
+            return None;
+        }
         if let Some(f) = feeder
             && self.ptr_resident.contains_key(f)
         {
@@ -760,7 +915,8 @@ impl<'a> FnEmit<'a> {
                     if *input == source
                         && k < *bk
                         && matches!(self.obj_ty(source).component_ty(k), Some(Ty::Array { .. })));
-                if byref_field {
+                // S65 `by-ref`: a view field holds the pointer.
+                if byref_field || self.is_view(source, &[k]) {
                     let (_, fp) = self.component_ptr(source, k)?;
                     let p = self.tmp();
                     self.line(format!("{p} = load ptr, ptr {fp}"));
@@ -911,6 +1067,9 @@ impl<'a> FnEmit<'a> {
     }
 
     pub(super) fn bulk_bounds(&self, n: u64) -> (String, String) {
+        if let Some((lo, hi)) = &self.row_bounds {
+            return (lo.clone(), hi.clone());
+        }
         if self.split_range {
             ("%lo".into(), "%hi".into())
         } else {

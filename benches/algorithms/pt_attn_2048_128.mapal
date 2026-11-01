@@ -1,0 +1,32 @@
+fn main() {
+    262144 -> iota -> i_q;
+    i_q -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> q;
+    262144 -> iota -> i_kk;
+    i_kk -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> kk;
+    262144 -> iota -> i_vv;
+    i_vv -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> vv;
+    () -> time -> t0;
+    4194304 -> iota -> o_s;
+    128 -> iota -> k_d;
+    2048 -> iota -> k_t;
+    o_s -> map { e ->
+        e / 2048 -> i;
+        e % 2048 -> j;
+        (0.0, k_d) -> fold { acc, k -> acc + q[i * 128 + k] * kk[j * 128 + k] }
+    } -> s;
+    k_t -> map { i -> (-1000000000.0, k_t) -> fold { acc, j -> s[i * 2048 + j] -> e; (e > acc) -> { -true-> e; -false-> acc; } } } -> mx;
+    o_s -> map { t -> (s[t] - mx[t / 2048]) / 11.3 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; 8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc } } -> ex;
+    k_t -> map { i -> (0.0, k_t) -> fold { acc, j -> acc + ex[i * 2048 + j] } } -> den;
+    o_s -> map { t -> ex[t] / den[t / 2048] } -> p;
+    262144 -> iota -> o_o;
+    o_o -> map { e ->
+        e / 128 -> i;
+        e % 128 -> j;
+        (0.0, k_t) -> fold { acc, u -> acc + p[i * 2048 + u] * vv[u * 128 + j] }
+    } -> o;
+    () -> time -> t1;
+    o[0] -> println;
+    o[262143] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

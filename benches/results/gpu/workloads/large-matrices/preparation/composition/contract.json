@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "bounded-fp32-composition",
+  "dtype": "f32",
+  "index_limit": 2147483647,
+  "weight_code": "(((index % 17) * a + b) % 17) - 8",
+  "seeds": {
+    "Wk": [3, 1], "Wv": [5, 3], "Wo": [7, 5],
+    "Wup": [11, 7], "Wdown": [13, 9],
+    "q": [5, 3], "b1": [3, 1], "b2": [7, 2], "X": [7, 13]
+  },
+  "scales": {
+    "weight_divisor_per_input_width": 32,
+    "query_divisor_per_d": 32,
+    "b1_divisor": 128,
+    "b2_divisor": 256,
+    "matrix_X_divisor": 16,
+    "token_divisor": 64,
+    "residual_multiplier": 0.25
+  },
+  "token_code": "(((index % 101) * 7 + 13) % 101) - 50",
+  "equations": {
+    "matrix": ["p=X*Wo", "hraw=p*Wup", "h=ReLU(hraw+b1)", "mraw=h*Wdown", "m=mraw+b2", "y=0.25*(p+m)"],
+    "recurrent": ["X[t,j]=token(t*d+j)/64+y_previous[j]", "K=X*Wk", "V=X*Wv", "q[j]=code(t*d+j;5,3)/(32*d)", "sraw[r]=left_fold_k(q[k]*K[r,k])", "s=sraw/T", "a[j]=left_fold_r(s[r]*V[r,j])", "p=a*Wo", "hraw=p*Wup", "h=ReLU(hraw+b1)", "mraw=h*Wdown", "m=mraw+b2", "y=0.25*(p+m)"]
+  },
+  "reset": {
+    "recurrent": "Fresh sequence: X, K, V and y are zero, t=0. Mapal writes whole K/V formulas; explicit-reference incremental mode initializes zero K/V then updates only row t. No state survives sequences.",
+    "matrix": "Same immutable generated inputs and weights for each invocation; no output aliases an input.",
+    "first_pass": "Compiler-derived retention may compute all K/V rows on its first pass; this work difference must remain visible against explicit zero-initialized caches."
+  },
+  "arithmetic": {
+    "exact_reference": "Round every scalar multiply, add and divide to binary32; dot products are left folds in increasing k/r order.",
+    "fma_reference": "Use a real C fmaf(a,b,acc) per dot step; all other operations have the same binary32 rounding. If fmaf is unavailable, this reference is unsupported, never emulated by multiply+add.",
+    "status": "Scalar references are not yet certified Mapal Exact/Contract oracles; frozen interpreter/CPU comparisons are required before claiming equivalence.",
+    "association": "m=(h*Wdown)+b2 is computed before y=0.25*(p+m); do not reassociate bias/residual adds.",
+    "external": "Parallel library/PyTorch GEMMs may reduce in another order; their numeric gate must be declared independently before timing. No TF32/autocast substitution in FP32 cases."
+  },
+  "sources": {
+    "check": "Print all inputs and every intermediate checkpoint; these host observations can change placement and must not be timed as the optimized realization.",
+    "run": "Same equations/seeds/reset, print final full y only after all work; no intermediate host observations or time reads. Must pass final-full-output gate before any later timed variant is accepted."
+  },
+  "small_cases": [
+    {"id": "recurrent-t16-d8-h16", "kind": "recurrent", "T": 16, "d": 8, "h": 16},
+    {"id": "matrix-m16-d8-h16", "kind": "matrix", "M": 16, "d": 8, "h": 16}
+  ],
+  "planned_cases_not_generated": [
+    {"kind": "recurrent", "T": 1024, "d": 256, "h": 512},
+    {"kind": "matrix", "M": 128, "d": 256, "h": 512},
+    {"kind": "matrix", "M": 2048, "d": 512, "h": 2048}
+  ],
+  "admission": "Larger cases require separate capacity, oracle, emitted-placement and timing-policy approval. These are synthetic dimensions, not verified full-model executions.",
+  "real_arithmetic_bound": "Recurrent: if |y_previous|<=1/16 then |X|<1, |a|<=1/64, |p|<=1/256, |y|<=17/16384+3/256<0.013. Verify finite FP32 intermediates and nontrivial signals independently.",
+  "retention_control": ["--gpu-off=retain-delta,retain-resident"],
+  "freeze": "No compiler/runtime/repository source change, compiler emission, build, rental or GPU execution is performed by this preparation."
+}

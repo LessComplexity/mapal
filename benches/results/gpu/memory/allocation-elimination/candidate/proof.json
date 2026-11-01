@@ -1,0 +1,3626 @@
+[
+  {
+    "case": "materialized-raw",
+    "face": "exact",
+    "source_sha256": "8728dc8f12ca48f54dd6cb5bd4a2ac811f1ebaa71b7418a93955ff57d1cdedcb",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "b502001898c87d14b68807e5b5f48daece47723163f1344c30a383622be0b3ec",
+        "device_sha256": "a13a309a7011611401d01171594c5348840cc3cbab570053dc5d1adf2eb4f0ee",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "b502001898c87d14b68807e5b5f48daece47723163f1344c30a383622be0b3ec",
+        "device_sha256": "a13a309a7011611401d01171594c5348840cc3cbab570053dc5d1adf2eb4f0ee",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "materialized-raw",
+    "face": "contract",
+    "source_sha256": "8728dc8f12ca48f54dd6cb5bd4a2ac811f1ebaa71b7418a93955ff57d1cdedcb",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "6aa3648f50f0f2030a2686fea7f10f736a87ae6ae5cab453dc8b10e7b9c9edbd",
+        "device_sha256": "9b2ff9364824f675e0b50399a25068b5968f4e38bbfe354ba446abed63e5ef06",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/materialized-raw/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "6aa3648f50f0f2030a2686fea7f10f736a87ae6ae5cab453dc8b10e7b9c9edbd",
+        "device_sha256": "9b2ff9364824f675e0b50399a25068b5968f4e38bbfe354ba446abed63e5ef06",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "capture",
+    "face": "exact",
+    "source_sha256": "d445ff01727568a892946495e9cf75deaf043cf8887b9acd94ba25cb4d25a563",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/capture/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/capture/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "a24fda235c750ad47a7e71bb5d95a8a6f6f2dbeb2901619705fdfdd82928942d",
+        "device_sha256": "3b35830cee6c68c2e86be8d4b8e2de476d0dc2fd41997caf71da053698b78418",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/capture/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/capture/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "a24fda235c750ad47a7e71bb5d95a8a6f6f2dbeb2901619705fdfdd82928942d",
+        "device_sha256": "3b35830cee6c68c2e86be8d4b8e2de476d0dc2fd41997caf71da053698b78418",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "capture",
+    "face": "contract",
+    "source_sha256": "d445ff01727568a892946495e9cf75deaf043cf8887b9acd94ba25cb4d25a563",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/capture/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/capture/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "6dd7ee01f57f1168a2181e54588844e6948b796a1221a776c5aab833370c23bd",
+        "device_sha256": "925f1d29f538c17ebd6be36cbe14832e6b304c05b5cf000a1173d0cac812ea1c",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/capture/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/capture/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "6dd7ee01f57f1168a2181e54588844e6948b796a1221a776c5aab833370c23bd",
+        "device_sha256": "925f1d29f538c17ebd6be36cbe14832e6b304c05b5cf000a1173d0cac812ea1c",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "forked-tile",
+    "face": "exact",
+    "source_sha256": "d78b1e66527c13ad6b2ba92ecbba77bf44ca00fe59ca2d10ea55f153aea6ffaa",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "3055d3805f8dad444c83b3cd573ad040c11574002ea2eece588ef8cf596d4377",
+        "device_sha256": "7fe1f4e4f6a88fe230f6b4154a951f92a46f34cd36b31dcd049e545dc540fc1a",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 11,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "3055d3805f8dad444c83b3cd573ad040c11574002ea2eece588ef8cf596d4377",
+        "device_sha256": "7fe1f4e4f6a88fe230f6b4154a951f92a46f34cd36b31dcd049e545dc540fc1a",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 11,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "forked-tile",
+    "face": "contract",
+    "source_sha256": "d78b1e66527c13ad6b2ba92ecbba77bf44ca00fe59ca2d10ea55f153aea6ffaa",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "1d32a5a265beee29565647e5eb9f9be002d937d9655e74f006a19c224cbbd165",
+        "device_sha256": "61d093df0acefc14cfde2703a55eb60375620cd51e31465d6d9dc30696970ccf",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 11,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/forked-tile/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "1d32a5a265beee29565647e5eb9f9be002d937d9655e74f006a19c224cbbd165",
+        "device_sha256": "61d093df0acefc14cfde2703a55eb60375620cd51e31465d6d9dc30696970ccf",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 11,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "member-cell",
+    "face": "exact",
+    "source_sha256": "8711d6de0f165c5ed5c8d2b5037a30cbd739251b5b784d1eddbbe01e05cce0ff",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "c315687ff273cab27e81382f409c4988cdb91310672a7aeffed43ba02584cfc7",
+        "device_sha256": "0b194d54af85fe179191216e667d00986b9784a00dec0747cf276949ec2a2211",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "c315687ff273cab27e81382f409c4988cdb91310672a7aeffed43ba02584cfc7",
+        "device_sha256": "0b194d54af85fe179191216e667d00986b9784a00dec0747cf276949ec2a2211",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "member-cell",
+    "face": "contract",
+    "source_sha256": "8711d6de0f165c5ed5c8d2b5037a30cbd739251b5b784d1eddbbe01e05cce0ff",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "477e1563e2557951e024d3fd02caa261eeccdc227b618d611b0b7dba99844acd",
+        "device_sha256": "926f13260e9c1f22f13356e692ef24d0deaaa7016decafeffd3aaaf2474bfba1",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-cell/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "477e1563e2557951e024d3fd02caa261eeccdc227b618d611b0b7dba99844acd",
+        "device_sha256": "926f13260e9c1f22f13356e692ef24d0deaaa7016decafeffd3aaaf2474bfba1",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "base-cell",
+    "face": "exact",
+    "source_sha256": "f4510520e9143313ef77d988b0ed4acaf4f6fabfea38bc58325592885d688d00",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "9073f1ba2d70f00b7084438aaf81027094720427708555a34de97406bb57c76d",
+        "device_sha256": "0b194d54af85fe179191216e667d00986b9784a00dec0747cf276949ec2a2211",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "9073f1ba2d70f00b7084438aaf81027094720427708555a34de97406bb57c76d",
+        "device_sha256": "0b194d54af85fe179191216e667d00986b9784a00dec0747cf276949ec2a2211",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "base-cell",
+    "face": "contract",
+    "source_sha256": "f4510520e9143313ef77d988b0ed4acaf4f6fabfea38bc58325592885d688d00",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "5631bfe6939074a725b05801ab3b25a75ab3839c6634513af09ef9536dcbd4d7",
+        "device_sha256": "926f13260e9c1f22f13356e692ef24d0deaaa7016decafeffd3aaaf2474bfba1",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-cell/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "5631bfe6939074a725b05801ab3b25a75ab3839c6634513af09ef9536dcbd4d7",
+        "device_sha256": "926f13260e9c1f22f13356e692ef24d0deaaa7016decafeffd3aaaf2474bfba1",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "member-rowfold",
+    "face": "exact",
+    "source_sha256": "6fa0b71edbc111f5c6bafcbeee3f41b72e65eed525294fab7a35861cf273b734",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "a10453267c5e51e3761263532d354e13654931a3041cc2e13660f40dc89a8f7e",
+        "device_sha256": "a13a309a7011611401d01171594c5348840cc3cbab570053dc5d1adf2eb4f0ee",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "a10453267c5e51e3761263532d354e13654931a3041cc2e13660f40dc89a8f7e",
+        "device_sha256": "a13a309a7011611401d01171594c5348840cc3cbab570053dc5d1adf2eb4f0ee",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "member-rowfold",
+    "face": "contract",
+    "source_sha256": "6fa0b71edbc111f5c6bafcbeee3f41b72e65eed525294fab7a35861cf273b734",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "a1661f7904114f34bb6fb12cb0ad3f8ea9184e886847dd41d56cf7f78c6ce994",
+        "device_sha256": "9b2ff9364824f675e0b50399a25068b5968f4e38bbfe354ba446abed63e5ef06",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/member-rowfold/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "a1661f7904114f34bb6fb12cb0ad3f8ea9184e886847dd41d56cf7f78c6ce994",
+        "device_sha256": "9b2ff9364824f675e0b50399a25068b5968f4e38bbfe354ba446abed63e5ef06",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "base-rowfold",
+    "face": "exact",
+    "source_sha256": "524fb74c9860058bc4e94f9ebfba99335ca7d0201ea161aa3f2be3bfca258244",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "c8f754fe7db34b0a29103fa1b3ca14ce7e4e0e315291a93cb8b4e1b8a7557b81",
+        "device_sha256": "6238099e550c4ba0f603dcdab28244f8d5afb2142e21601957bd86e9bf9663d6",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "c8f754fe7db34b0a29103fa1b3ca14ce7e4e0e315291a93cb8b4e1b8a7557b81",
+        "device_sha256": "6238099e550c4ba0f603dcdab28244f8d5afb2142e21601957bd86e9bf9663d6",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "base-rowfold",
+    "face": "contract",
+    "source_sha256": "524fb74c9860058bc4e94f9ebfba99335ca7d0201ea161aa3f2be3bfca258244",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "b6ee901644379a0e9c32f9517c67f40aa206acc66ef7af3f05dfc55b7f690802",
+        "device_sha256": "fd1911715aced046615aa8259314d2b85c87ae88eac36a37f7c53393d33027df",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/base-rowfold/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "b6ee901644379a0e9c32f9517c67f40aa206acc66ef7af3f05dfc55b7f690802",
+        "device_sha256": "fd1911715aced046615aa8259314d2b85c87ae88eac36a37f7c53393d33027df",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "omitted-raw",
+    "face": "exact",
+    "source_sha256": "5fc10fd7cb13630078e0afd4c639111227a9fd3d0ffcb6b544516dcef8aae1a0",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 32768,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "3a9dc578e821b4f3754c26e2696418961e1691485fa4fb986cfc75c7b8596f26",
+        "device_sha256": "80de2d7ebcc11958cf8af2581885f38ae51bcbf5b4cc8747280ee2e6c385bda6",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 16,
+        "dead": [
+          [
+            "%t23",
+            "%d22",
+            16384
+          ],
+          [
+            "%t25",
+            "%d24",
+            16384
+          ]
+        ],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "fb2307eff1c155860b449544aced963ffd1f5391b28069f5836cd3891c29b26a",
+        "device_sha256": "80de2d7ebcc11958cf8af2581885f38ae51bcbf5b4cc8747280ee2e6c385bda6",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 6,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "omitted-raw",
+    "face": "contract",
+    "source_sha256": "5fc10fd7cb13630078e0afd4c639111227a9fd3d0ffcb6b544516dcef8aae1a0",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 32768,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "272cdfd9cf9e402a4fb2a651475f53f78f35656e2501e565136d733f4ca18778",
+        "device_sha256": "fec3440e9d48fa4a910fb5f11b9cc311cba482bfec074aefef7f95e55a193e29",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 16,
+        "dead": [
+          [
+            "%t23",
+            "%d22",
+            16384
+          ],
+          [
+            "%t25",
+            "%d24",
+            16384
+          ]
+        ],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/omitted-raw/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "57d35665fe0b267ca38017490488505de469b1da32480d95678b023437b6d9e9",
+        "device_sha256": "fec3440e9d48fa4a910fb5f11b9cc311cba482bfec074aefef7f95e55a193e29",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 6,
+        "free_calls": 16,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-indep",
+    "face": "exact",
+    "source_sha256": "a738e9c4556c241d33fc6577d85cb445cd373ae5c185ec2436c83d9c68d9c949",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 1048576,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "36b3ca52002ad8a7ac2fb8ccf017bc810c32d44cafdd566ef7fee2f8c3772b94",
+        "device_sha256": "a3b359c4f96e28801b0ec5d749d1e69510898814becfb8c140c997ea70aa6741",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 14,
+        "dead": [
+          [
+            "%t24",
+            "%d23",
+            1048576
+          ]
+        ],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "4badf8dfc2de69faaa551452286c2a89f9b73962f996b283b8a58ec2155ea330",
+        "device_sha256": "a3b359c4f96e28801b0ec5d749d1e69510898814becfb8c140c997ea70aa6741",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 7,
+        "free_calls": 14,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-indep",
+    "face": "contract",
+    "source_sha256": "a738e9c4556c241d33fc6577d85cb445cd373ae5c185ec2436c83d9c68d9c949",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 1048576,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "621bab926a8cc892cfbbbc99afa21b903790323fca11ffdffd8d18a77a9359f8",
+        "device_sha256": "44d9da8a7da9876d5aef498e0ba452ea8ec6c2ace2778172af0e9c0a2ff7f5fc",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 14,
+        "dead": [
+          [
+            "%t24",
+            "%d23",
+            1048576
+          ]
+        ],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-indep/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "2dbaf47cba9fbb26f8b132aa9d73fe8efa28d612065484014d17515b380a241b",
+        "device_sha256": "44d9da8a7da9876d5aef498e0ba452ea8ec6c2ace2778172af0e9c0a2ff7f5fc",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 7,
+        "free_calls": 14,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-diamond",
+    "face": "exact",
+    "source_sha256": "cb544b28e87cbe3aae49f4fbb3d67cef51a851d26a7132607c8ec6d1c8a2b97d",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 1048576,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "8f9be07d98342d3f7baf7480149b2dfeb773a743ceca754c1e98e3d9f18cc1ba",
+        "device_sha256": "1f60aa1985ede0cf1d34c744de4f8c935c02c0e4b6c0d3cbec32bf3ece592d13",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [
+          [
+            "%t28",
+            "%d27",
+            1048576
+          ]
+        ],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "3800492a2503579b61d9f4a456626e0398ff80d89c1b9fa36804f5219a9d8d5f",
+        "device_sha256": "1f60aa1985ede0cf1d34c744de4f8c935c02c0e4b6c0d3cbec32bf3ece592d13",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 9,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-diamond",
+    "face": "contract",
+    "source_sha256": "cb544b28e87cbe3aae49f4fbb3d67cef51a851d26a7132607c8ec6d1c8a2b97d",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 1048576,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "c284c2d6cb68cca0683dcfe2979aa8cc82a5f4f0e84d6c6630028a3425e167c3",
+        "device_sha256": "802799ad36d359ed7f83f13f40075e02a5d50efca4a030faff568750f23d0a00",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 10,
+        "free_calls": 16,
+        "dead": [
+          [
+            "%t28",
+            "%d27",
+            1048576
+          ]
+        ],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-diamond/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "66076f69230149c4e4b5c686860640980c66178965836faa21719db3996b5979",
+        "device_sha256": "802799ad36d359ed7f83f13f40075e02a5d50efca4a030faff568750f23d0a00",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 9,
+        "free_calls": 16,
+        "dead": [],
+        "events": [
+          "call void @mapal_gpu_event(i32 1, i32 2)"
+        ],
+        "readback_streams": [
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-mlp2",
+    "face": "exact",
+    "source_sha256": "0ad96ab8208599480d960732f30758793bceb149a23719084834f96f48ab3a36",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 2097152,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "f7cc4651a00fb05cd679eb16659d1a4646ec178a6fa61ff8a391d2100f8636bb",
+        "device_sha256": "38e6d1c67352263161846379e275d44d8649602a35e5c56f27e33cd71f795fff",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 16,
+        "free_calls": 28,
+        "dead": [
+          [
+            "%t39",
+            "%d38",
+            1048576
+          ],
+          [
+            "%t43",
+            "%d42",
+            1048576
+          ]
+        ],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "aa8cdc5fa62a170e72fd74dd149ea5a2ec48961034d1939441f2b073223f64e3",
+        "device_sha256": "38e6d1c67352263161846379e275d44d8649602a35e5c56f27e33cd71f795fff",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 14,
+        "free_calls": 28,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-mlp2",
+    "face": "contract",
+    "source_sha256": "0ad96ab8208599480d960732f30758793bceb149a23719084834f96f48ab3a36",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 2097152,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "01a8d8aaac02b7b58b5d1c75965cbf634459dc1bbb77eb091179d9239219e0cd",
+        "device_sha256": "b65cdd6bd44ad5e19c1ce84603e6119101f0a105208c4b593e0330201df601cb",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 16,
+        "free_calls": 28,
+        "dead": [
+          [
+            "%t39",
+            "%d38",
+            1048576
+          ],
+          [
+            "%t43",
+            "%d42",
+            1048576
+          ]
+        ],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp2/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "17b8f73d5c557ba2f82b6389e6592e854bd1aa82c26030268bfa6cea37823ad6",
+        "device_sha256": "b65cdd6bd44ad5e19c1ce84603e6119101f0a105208c4b593e0330201df601cb",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 14,
+        "free_calls": 28,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-twin",
+    "face": "exact",
+    "source_sha256": "1fe45ef310db06afa00fe7f308ca9cedbd79c1ddfab4c1b38a6b1499080ddfe6",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "ecbb4c131bc744939650322bf7a859cde6af9a9bb2a502fc3af3d9ef9572b95f",
+        "device_sha256": "022eab38ac9666dd8fe935f612c4ab14cb0cbcd0f702ad8019e434bd6a984939",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 12,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "ecbb4c131bc744939650322bf7a859cde6af9a9bb2a502fc3af3d9ef9572b95f",
+        "device_sha256": "022eab38ac9666dd8fe935f612c4ab14cb0cbcd0f702ad8019e434bd6a984939",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 12,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-twin",
+    "face": "contract",
+    "source_sha256": "1fe45ef310db06afa00fe7f308ca9cedbd79c1ddfab4c1b38a6b1499080ddfe6",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "034c758fc0979278d897ac4b9a18bd0dca2569868f3bf7840868324e934cd7f4",
+        "device_sha256": "99c09ab1d58901199c7e1d0d5b25763b7d73fd122bfc448479df4663f3209ad9",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 12,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-twin/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "034c758fc0979278d897ac4b9a18bd0dca2569868f3bf7840868324e934cd7f4",
+        "device_sha256": "99c09ab1d58901199c7e1d0d5b25763b7d73fd122bfc448479df4663f3209ad9",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 8,
+        "free_calls": 12,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "1"
+          ],
+          [
+            "_on",
+            "2"
+          ],
+          [
+            "_on",
+            "2"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-mlp",
+    "face": "exact",
+    "source_sha256": "931f1162b938748766a826931cc768871d70d975fdf2f40dc7bf7f9f6df5415c",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "9efd81a568fdf504d0eb86e6979be3cdb2612cbae9658a99c6d8f692c8c7b9eb",
+        "device_sha256": "050c55b3cf1ddc4f73da8a1bc6e207f7ac58b9224fe80c9dc893f524b801ab60",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "9efd81a568fdf504d0eb86e6979be3cdb2612cbae9658a99c6d8f692c8c7b9eb",
+        "device_sha256": "050c55b3cf1ddc4f73da8a1bc6e207f7ac58b9224fe80c9dc893f524b801ab60",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-mlp",
+    "face": "contract",
+    "source_sha256": "931f1162b938748766a826931cc768871d70d975fdf2f40dc7bf7f9f6df5415c",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "18c7db7a3e28d3e2da627dc2fb7c4da65c5a539e50437119e413458271262916",
+        "device_sha256": "107d533159c62624c8c7b3ae3ccc8e620958f71aa37882a7c86aa69bad4fb8d2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-mlp/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "18c7db7a3e28d3e2da627dc2fb7c4da65c5a539e50437119e413458271262916",
+        "device_sha256": "107d533159c62624c8c7b3ae3ccc8e620958f71aa37882a7c86aa69bad4fb8d2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-fanout",
+    "face": "exact",
+    "source_sha256": "dbbf136af141e64ec0881adb85c9f285df1fc801e93acfb9731e792de9337070",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/exact.before.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "ed393a9ce54619e9a91ebd3a355ae0ae6ff1b31b0a617c4263f40ce71e239779",
+        "device_sha256": "1ed2431b0ebf18dfda8a6efd1f7be831318b0f07dd2f18a2592aa2e2e626da39",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/exact.after.device.ll"
+        ],
+        "exit": 0,
+        "host_sha256": "ed393a9ce54619e9a91ebd3a355ae0ae6ff1b31b0a617c4263f40ce71e239779",
+        "device_sha256": "1ed2431b0ebf18dfda8a6efd1f7be831318b0f07dd2f18a2592aa2e2e626da39",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "case": "pt512-fanout",
+    "face": "contract",
+    "source_sha256": "dbbf136af141e64ec0881adb85c9f285df1fc801e93acfb9731e792de9337070",
+    "device_unchanged": true,
+    "only_dead_allocs_removed_body_equal": true,
+    "events_unchanged": true,
+    "readback_streams_unchanged": true,
+    "requested_bytes_removed": 0,
+    "records": [
+      {
+        "label": "before",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/evidence/emit-before",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/contract.before.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "feb8aa16f17f81db26fac4ffb27b9f2b1eecd12b91ccfe878d33b3aaf8255651",
+        "device_sha256": "885861b3aa5a247e4f2368f5f446b4fb96ea45fec1be83750ae2cd4a9507c0f0",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after",
+        "argv": [
+          "/private/tmp/mapal-s58-allocation/target/release/examples/emit",
+          "/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/source.mapal",
+          "-",
+          "--rewrite",
+          "--target=rtx-5090",
+          "--gpu-on=streams,epilogue",
+          "--gpu-off=stream-gate",
+          "--device-out=/private/tmp/mapal-s58-allocation/evidence/emissions/pt512-fanout/contract.after.device.ll",
+          "--contract"
+        ],
+        "exit": 0,
+        "host_sha256": "feb8aa16f17f81db26fac4ffb27b9f2b1eecd12b91ccfe878d33b3aaf8255651",
+        "device_sha256": "885861b3aa5a247e4f2368f5f446b4fb96ea45fec1be83750ae2cd4a9507c0f0",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "alloc_calls": 0,
+        "free_calls": 1,
+        "dead": [],
+        "events": [],
+        "readback_streams": [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      }
+    ]
+  }
+]

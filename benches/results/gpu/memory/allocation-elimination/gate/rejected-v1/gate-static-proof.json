@@ -1,0 +1,246 @@
+[
+  {
+    "case": "diamond",
+    "face": "exact",
+    "removed_raw_allocations": [
+      {
+        "result": "%t55",
+        "slot": "%d54",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d81"
+    ]
+  },
+  {
+    "case": "diamond",
+    "face": "contract",
+    "removed_raw_allocations": [
+      {
+        "result": "%t55",
+        "slot": "%d54",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d81"
+    ]
+  },
+  {
+    "case": "forked-tile",
+    "face": "exact",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "forked-tile",
+    "face": "contract",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "independent",
+    "face": "exact",
+    "removed_raw_allocations": [
+      {
+        "result": "%t51",
+        "slot": "%d50",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d68"
+    ]
+  },
+  {
+    "case": "independent",
+    "face": "contract",
+    "removed_raw_allocations": [
+      {
+        "result": "%t51",
+        "slot": "%d50",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d68"
+    ]
+  },
+  {
+    "case": "loop",
+    "face": "exact",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "loop",
+    "face": "contract",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "materialized-raw",
+    "face": "exact",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "materialized-raw",
+    "face": "contract",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "mlp2",
+    "face": "exact",
+    "removed_raw_allocations": [
+      {
+        "result": "%t29",
+        "slot": "%d28",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      },
+      {
+        "result": "%t33",
+        "slot": "%d32",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d66",
+      "%d67"
+    ]
+  },
+  {
+    "case": "mlp2",
+    "face": "contract",
+    "removed_raw_allocations": [
+      {
+        "result": "%t29",
+        "slot": "%d28",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      },
+      {
+        "result": "%t33",
+        "slot": "%d32",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d66",
+      "%d67"
+    ]
+  },
+  {
+    "case": "omitted-raw",
+    "face": "exact",
+    "removed_raw_allocations": [
+      {
+        "result": "%t23",
+        "slot": "%d22",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      },
+      {
+        "result": "%t25",
+        "slot": "%d24",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d40",
+      "%d41"
+    ]
+  },
+  {
+    "case": "omitted-raw",
+    "face": "contract",
+    "removed_raw_allocations": [
+      {
+        "result": "%t23",
+        "slot": "%d22",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      },
+      {
+        "result": "%t25",
+        "slot": "%d24",
+        "bytes": 16384,
+        "old_live_free_calls": 2
+      }
+    ],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": [
+      "%d40",
+      "%d41"
+    ]
+  },
+  {
+    "case": "single-chain",
+    "face": "exact",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  },
+  {
+    "case": "single-chain",
+    "face": "contract",
+    "removed_raw_allocations": [],
+    "body_equivalent_after_only_dead_alloc_removal": true,
+    "deviceLLVM_unchanged": true,
+    "PTX_unchanged": true,
+    "after_zero_initialized_free_only_slots": []
+  }
+]

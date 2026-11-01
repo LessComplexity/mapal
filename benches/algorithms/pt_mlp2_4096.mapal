@@ -1,0 +1,42 @@
+fn main() {
+    16777216 -> iota -> ta;
+    4096 -> iota -> krange;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    ta -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> e;
+    ta -> map { t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v; v / 13.0 } -> f;
+    ta -> map { t -> (t * 13 + 7) % 107 - 53 -> widen_f32 -> v; v / 15.0 } -> g;
+    ta -> map { t -> (t * 17 + 29) % 109 - 54 -> widen_f32 -> v; v / 17.0 } -> p;
+    () -> time -> t0;
+    krange -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> bias;
+    krange -> map { t -> t % 11 - 5 -> widen_f32 -> v; v / 4.0 } -> bias2;
+    ta -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 4096 + k] * b[k * 4096 + j] }
+    } -> c1;
+    ta -> map { t -> c1[t] + bias[t % 4096] -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> h1;
+    ta -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + h1[i * 4096 + k] * e[k * 4096 + j] }
+    } -> d1;
+    ta -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + f[i * 4096 + k] * g[k * 4096 + j] }
+    } -> c2;
+    ta -> map { t -> c2[t] + bias2[t % 4096] -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> h2;
+    ta -> map { t ->
+        t / 4096 -> i;
+        t % 4096 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + h2[i * 4096 + k] * p[k * 4096 + j] }
+    } -> d2;
+    () -> time -> t1;
+    d1[0] -> println;
+    d1[16777215] -> println;
+    d2[0] -> println;
+    d2[16777215] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

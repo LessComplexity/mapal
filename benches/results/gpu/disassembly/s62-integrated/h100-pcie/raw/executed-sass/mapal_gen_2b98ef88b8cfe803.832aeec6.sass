@@ -1,0 +1,174 @@
+//--------------------- .text.mapal_gen_2b98ef88b8cfe803 --------------------------
+	.section	.text.mapal_gen_2b98ef88b8cfe803,"ax",@progbits
+	.align	128
+        .global         mapal_gen_2b98ef88b8cfe803
+        .type           mapal_gen_2b98ef88b8cfe803,@function
+        .size           mapal_gen_2b98ef88b8cfe803,(.L_x_67 - mapal_gen_2b98ef88b8cfe803)
+        .other          mapal_gen_2b98ef88b8cfe803,@"STO_CUDA_ENTRY STV_DEFAULT"
+mapal_gen_2b98ef88b8cfe803:
+.text.mapal_gen_2b98ef88b8cfe803:
+        /*0000*/                   LDC R1, c[0x0][0x28] ;
+        /*0010*/                   S2R R2, SR_CTAID.X ;
+        /*0020*/                   ULDC.64 UR4, c[0x0][0x218] ;
+        /*0030*/                   S2R R5, SR_TID.X ;
+        /*0040*/                   IMAD.WIDE.U32 R2, R2, 0x100, RZ ;
+        /*0050*/                   LOP3.LUT R5, R2, R5, RZ, 0xfc, !PT ;
+        /*0060*/                   ISETP.GE.U32.AND P0, PT, R5, UR4, PT ;
+        /*0070*/                   ISETP.GE.U32.AND.EX P0, PT, R3, UR5, PT, P0 ;
+        /*0080*/               @P0 EXIT ;
+        /*0090*/                   IMAD.MOV.U32 R0, RZ, RZ, 0x7 ;
+        /*00a0*/                   ULDC.64 UR6, c[0x0][0x208] ;
+        /*00b0*/                   IMAD.MOV.U32 R9, RZ, RZ, 0x3e124925 ;
+        /*00c0*/                   BSSY B1, `(.L_x_45) ;
+        /*00d0*/                   IMAD R0, R5, R0, 0xd ;
+        /*00e0*/                   IMAD.HI R4, R0, 0x288df0cb, RZ ;
+        /*00f0*/                   SHF.R.U32.HI R7, RZ, 0x1f, R4 ;
+        /*0100*/                   LEA.HI.SX32 R7, R4, R7, 0x1c ;
+        /*0110*/                   IMAD.MOV.U32 R4, RZ, RZ, 0x40e00000 ;
+        /*0120*/                   IMAD R7, R7, -0x65, R0 ;
+        /*0130*/                   FFMA R4, R9, -R4, 1 ;
+        /*0140*/                   VIADD R0, R7, 0xffffffce ;
+        /*0150*/                   FFMA R7, R4, R9, 0.14285714924335479736 ;
+        /*0160*/                   I2FP.F32.S32 R0, R0 ;
+        /*0170*/                   FCHK P0, R0, 7 ;
+        /*0180*/                   FFMA R4, R0, R7, RZ ;
+        /*0190*/                   FFMA R6, R4, -7, R0 ;
+        /*01a0*/                   FFMA R7, R7, R6, R4 ;
+        /*01b0*/              @!P0 BRA `(.L_x_46) ;
+        /*01c0*/                   MOV R4, 0x1e0 ;
+        /*01d0*/                   CALL.REL.NOINC `($__internal_3_$__cuda_sm3x_div_rn_noftz_f32_slowpath) ;
+        /*01e0*/                   IMAD.MOV.U32 R7, RZ, RZ, R0 ;
+.L_x_46:
+        /*01f0*/                   BSYNC B1 ;
+.L_x_45:
+        /*0200*/                   ULDC.64 UR4, c[0x0][0x210] ;
+        /*0210*/                   LEA R2, P0, R5, UR4, 0x2 ;
+        /*0220*/                   LEA.HI.X R3, R5, UR5, R3, 0x2, P0 ;
+        /*0230*/                   STG.E desc[UR6][R2.64], R7 ;
+        /*0240*/                   EXIT ;
+        .type           $__internal_3_$__cuda_sm3x_div_rn_noftz_f32_slowpath,@function
+        .size           $__internal_3_$__cuda_sm3x_div_rn_noftz_f32_slowpath,(.L_x_67 - $__internal_3_$__cuda_sm3x_div_rn_noftz_f32_slowpath)
+$__internal_3_$__cuda_sm3x_div_rn_noftz_f32_slowpath:
+        /*0250*/                   SHF.R.U32.HI R6, RZ, 0x17, R0.reuse ;
+        /*0260*/                   BSSY B0, `(.L_x_47) ;
+        /*0270*/                   BSSY B2, `(.L_x_48) ;
+        /*0280*/                   IMAD.MOV.U32 R7, RZ, RZ, R0 ;
+        /*0290*/                   LOP3.LUT R6, R6, 0xff, RZ, 0xc0, !PT ;
+        /*02a0*/                   VIADD R9, R6, 0xffffffff ;
+        /*02b0*/                   ISETP.GT.U32.OR P0, PT, R9, 0xfd, !PT ;
+        /*02c0*/              @!P0 IMAD.MOV.U32 R8, RZ, RZ, RZ ;
+        /*02d0*/              @!P0 BRA `(.L_x_49) ;
+        /*02e0*/                   FSETP.GTU.FTZ.AND P0, PT, |R0|, +INF , PT ;
+        /*02f0*/               @P0 BREAK B2 ;
+        /*0300*/               @P0 BRA `(.L_x_50) ;
+        /*0310*/                   IMAD.MOV.U32 R8, RZ, RZ, 0x40e00000 ;
+        /*0320*/                   LOP3.LUT P0, RZ, R8, 0x7fffffff, R7, 0xc8, !PT ;
+        /*0330*/              @!P0 BREAK B2 ;
+        /*0340*/              @!P0 BRA `(.L_x_51) ;
+        /*0350*/                   LOP3.LUT P0, RZ, R7, 0x7fffffff, RZ, 0xc0, !PT ;
+        /*0360*/              @!P0 BREAK B2 ;
+        /*0370*/              @!P0 BRA `(.L_x_52) ;
+        /*0380*/                   FSETP.NEU.FTZ.AND P0, PT, |R0|, +INF , PT ;
+        /*0390*/                   LOP3.LUT P1, RZ, R8, 0x7fffffff, RZ, 0xc0, !PT ;
+        /*03a0*/                   PLOP3.LUT P0, PT, P0, P1, PT, 0x2a, 0x0 ;
+        /*03b0*/               @P0 BREAK B2 ;
+        /*03c0*/               @P0 BRA `(.L_x_53) ;
+        /*03d0*/                   ISETP.GE.AND P0, PT, R9, RZ, PT ;
+        /*03e0*/               @P0 IMAD.MOV.U32 R8, RZ, RZ, RZ ;
+        /*03f0*/              @!P0 FFMA R7, R0, 1.84467440737095516160e+19, RZ ;
+        /*0400*/              @!P0 IMAD.MOV.U32 R8, RZ, RZ, -0x40 ;
+.L_x_49:
+        /*0410*/                   BSYNC B2 ;
+.L_x_48:
+        /*0420*/                   UMOV UR4, 0x40e00000 ;
+        /*0430*/                   VIADD R6, R6, 0xffffff81 ;
+        /*0440*/                   UIADD3 UR4, UR4, -0x1000000, URZ ;
+        /*0450*/                   BSSY B2, `(.L_x_54) ;
+        /*0460*/                   IMAD R0, R6, -0x800000, R7 ;
+        /*0470*/                   IADD3 R8, R8, -0x2, R6 ;
+        /*0480*/                   FADD.FTZ R11, -RZ, -UR4 ;
+        /*0490*/                   MUFU.RCP R9, UR4 ;
+        /*04a0*/                   FFMA R10, R9, R11, 1 ;
+        /*04b0*/                   FFMA R9, R9, R10, R9 ;
+        /*04c0*/                   FFMA R10, R0, R9, RZ ;
+        /*04d0*/                   FFMA R7, R11, R10, R0 ;
+        /*04e0*/                   FFMA R10, R9, R7, R10 ;
+        /*04f0*/                   FFMA R11, R11, R10, R0 ;
+        /*0500*/                   FFMA R0, R9, R11, R10 ;
+        /*0510*/                   SHF.R.U32.HI R7, RZ, 0x17, R0 ;
+        /*0520*/                   LOP3.LUT R7, R7, 0xff, RZ, 0xc0, !PT ;
+        /*0530*/                   IMAD.IADD R12, R7, 0x1, R8 ;
+        /*0540*/                   VIADD R6, R12, 0xffffffff ;
+        /*0550*/                   ISETP.GE.U32.AND P0, PT, R6, 0xfe, PT ;
+        /*0560*/              @!P0 BRA `(.L_x_55) ;
+        /*0570*/                   ISETP.GT.AND P0, PT, R12, 0xfe, PT ;
+        /*0580*/               @P0 BRA `(.L_x_56) ;
+        /*0590*/                   ISETP.GE.AND P0, PT, R12, 0x1, PT ;
+        /*05a0*/               @P0 BRA `(.L_x_57) ;
+        /*05b0*/                   ISETP.GE.AND P0, PT, R12, -0x18, PT ;
+        /*05c0*/                   LOP3.LUT R0, R0, 0x80000000, RZ, 0xc0, !PT ;
+        /*05d0*/              @!P0 BRA `(.L_x_57) ;
+        /*05e0*/                   FFMA.RZ R6, R9.reuse, R11.reuse, R10.reuse ;
+        /*05f0*/                   VIADD R8, R12.reuse, 0x20 ;
+        /*0600*/                   ISETP.NE.AND P2, PT, R12.reuse, RZ, PT ;
+        /*0610*/                   ISETP.NE.AND P1, PT, R12, RZ, PT ;
+        /*0620*/                   LOP3.LUT R7, R6, 0x7fffff, RZ, 0xc0, !PT ;
+        /*0630*/                   FFMA.RP R6, R9.reuse, R11.reuse, R10.reuse ;
+        /*0640*/                   FFMA.RM R9, R9, R11, R10 ;
+        /*0650*/                   IMAD.MOV R10, RZ, RZ, -R12 ;
+        /*0660*/                   LOP3.LUT R7, R7, 0x800000, RZ, 0xfc, !PT ;
+        /*0670*/                   FSETP.NEU.FTZ.AND P0, PT, R6, R9, PT ;
+        /*0680*/                   SHF.L.U32 R8, R7, R8, RZ ;
+        /*0690*/                   SEL R6, R10, RZ, P2 ;
+        /*06a0*/                   ISETP.NE.AND P1, PT, R8, RZ, P1 ;
+        /*06b0*/                   SHF.R.U32.HI R6, RZ, R6, R7 ;
+        /*06c0*/                   PLOP3.LUT P0, PT, P0, P1, PT, 0xa8, 0x0 ;
+        /*06d0*/                   SHF.R.U32.HI R8, RZ, 0x1, R6 ;
+        /*06e0*/                   SEL R7, RZ, 0x1, !P0 ;
+        /*06f0*/                   LOP3.LUT R7, R7, 0x1, R8, 0xf8, !PT ;
+        /*0700*/                   LOP3.LUT R7, R7, R6, RZ, 0xc0, !PT ;
+        /*0710*/                   IMAD.IADD R7, R8, 0x1, R7 ;
+        /*0720*/                   LOP3.LUT R0, R7, R0, RZ, 0xfc, !PT ;
+        /*0730*/                   BRA `(.L_x_57) ;
+.L_x_56:
+        /*0740*/                   LOP3.LUT R0, R0, 0x80000000, RZ, 0xc0, !PT ;
+        /*0750*/                   LOP3.LUT R0, R0, 0x7f800000, RZ, 0xfc, !PT ;
+        /*0760*/                   BRA `(.L_x_57) ;
+.L_x_55:
+        /*0770*/                   IMAD R0, R8, 0x800000, R0 ;
+.L_x_57:
+        /*0780*/                   BSYNC B2 ;
+.L_x_54:
+        /*0790*/                   BRA `(.L_x_58) ;
+.L_x_53:
+        /*07a0*/                   LOP3.LUT R0, R8, 0x80000000, R7, 0x48, !PT ;
+        /*07b0*/                   LOP3.LUT R0, R0, 0x7f800000, RZ, 0xfc, !PT ;
+        /*07c0*/                   BRA `(.L_x_58) ;
+.L_x_52:
+        /*07d0*/                   LOP3.LUT R0, R8, 0x80000000, R7, 0x48, !PT ;
+        /*07e0*/                   BRA `(.L_x_58) ;
+.L_x_51:
+        /*07f0*/                   MUFU.RSQ R0, -QNAN  ;
+        /*0800*/                   BRA `(.L_x_58) ;
+.L_x_50:
+        /*0810*/                   FADD.FTZ R0, R0, 7 ;
+.L_x_58:
+        /*0820*/                   BSYNC B0 ;
+.L_x_47:
+        /*0830*/                   IMAD.MOV.U32 R6, RZ, RZ, R4 ;
+        /*0840*/                   IMAD.MOV.U32 R7, RZ, RZ, 0x0 ;
+        /*0850*/                   RET.REL.NODEC R6 `(mapal_gen_2b98ef88b8cfe803) ;
+.L_x_59:
+        /*0860*/                   BRA `(.L_x_59);
+        /*0870*/                   NOP;
+        /*0880*/                   NOP;
+        /*0890*/                   NOP;
+        /*08a0*/                   NOP;
+        /*08b0*/                   NOP;
+        /*08c0*/                   NOP;
+        /*08d0*/                   NOP;
+        /*08e0*/                   NOP;
+        /*08f0*/                   NOP;
+.L_x_67:
+
+

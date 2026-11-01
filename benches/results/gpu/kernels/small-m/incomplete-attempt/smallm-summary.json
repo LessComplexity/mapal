@@ -1,0 +1,108 @@
+{
+  "pass": false,
+  "records": [
+    {
+      "id": "rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old",
+      "stage": "full_gate",
+      "case": "rtx-5090__gate__dense_m1_n512_k7168__exact",
+      "arm": "old",
+      "pass": false
+    }
+  ],
+  "manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+  "profile": "rtx-5090",
+  "instrumented": false,
+  "deadline_seconds": 912,
+  "declared_host_hourly_rate": 0.6161111111111112,
+  "max_new_host_charge_usd": 0.15608148148148152,
+  "large_value_scope": "256 sampled cells; bounded gates are every-cell only for their exact recorded shapes",
+  "initial_capacity": {
+    "gpu_free_bytes": 33654046720,
+    "host_available_bytes": 485066809344
+  },
+  "binaries": {
+    "checked": "3c323e521a2c810668da3653f325a6d4adfee29b6ec17342804d358a5807a5a5",
+    "reference": "e8ec085ad27e0fd59b57393ca5fe6ef85f82efec9d82a159bfee000ae756d128"
+  },
+  "negative_controls": [
+    {
+      "name": "reference_nan",
+      "expected_exit": 0,
+      "process": {
+        "argv": [
+          "/w/trace/combined-v61/smallm-values/reference",
+          "16",
+          "128",
+          "4096",
+          "/w/smallm-packet/ptx/nonfinite_nan.ptx",
+          "nonfinite_nan",
+          "8",
+          "1",
+          "256",
+          "0",
+          "30",
+          "--tf32"
+        ],
+        "exit": 0,
+        "wall_seconds": 1.318084,
+        "stdout_sha256": "c81b942f0b91a97d4e56d66335076026f893fd702cd9b52e3e020c221c0f08a2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "checked_nan",
+      "expected_exit": 104,
+      "process": {
+        "argv": [
+          "/w/trace/combined-v61/smallm-values/checked",
+          "16",
+          "128",
+          "4096",
+          "/w/smallm-packet/ptx/nonfinite_nan.ptx",
+          "nonfinite_nan",
+          "8",
+          "1",
+          "256",
+          "0",
+          "30",
+          "--tf32",
+          "--full-values",
+          "--values-only"
+        ],
+        "exit": 104,
+        "wall_seconds": 0.567071,
+        "stdout_sha256": "5dd863c1246d1c40650c2b5665e47c5e5b82788bf62d904c535863948325b09c",
+        "stderr_sha256": "e6973be1c6785cf0bda5d57106ecfe08dbb6093572f41d36a18df37a9933cbd8"
+      }
+    },
+    {
+      "name": "checked_wrong",
+      "expected_exit": 1,
+      "process": {
+        "argv": [
+          "/w/trace/combined-v61/smallm-values/checked",
+          "16",
+          "128",
+          "4096",
+          "/w/smallm-packet/ptx/wrong_zero.ptx",
+          "wrong_zero",
+          "8",
+          "1",
+          "256",
+          "0",
+          "30",
+          "--full-values",
+          "--values-only"
+        ],
+        "exit": 1,
+        "wall_seconds": 0.716556,
+        "stdout_sha256": "536865b73777e0e0aef45c732c0c3dba817fff179439cf66920f224fe1c97c33",
+        "stderr_sha256": "3af6a769c32b0864a70bf454476188623f5d21c14200470535c5b82cedd82259"
+      }
+    }
+  ],
+  "fatal_error": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+  "elapsed_seconds": 22.07,
+  "expected_records": 234,
+  "completed_records": 1
+}

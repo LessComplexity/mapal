@@ -117,7 +117,7 @@ scalars, guards, loop driving, `mapal-rt` IO.)
 
 ```sh
 # Mapal programs (any N): python3 benches/matmul/gen_flow.py <N> benches/matmul/matmul<N>.mapal
-cargo run -p mapal-backend-cuda --example emit -- benches/matmul/matmul64.mapal   # → .cu
+cargo run -p mapal-backend-cuda --example emit_cuda -- benches/matmul/matmul64.mapal   # → .cu
 cargo run -p mapal-backend-llvm --example emit -- benches/matmul/matmul64.mapal   # → .ll
 clang -O2 benches/matmul/matmul64.ll target/debug/libmapal_rt.a -o /tmp/mm       # local llvm leg
 # New legs (harness, no numbers recorded here yet):
@@ -131,7 +131,7 @@ clang -O2 benches/matmul/matmul64.ll target/debug/libmapal_rt.a -o /tmp/mm      
 #     native-codegen parity with rust_naive's -C target-cpu=native)
 #   perf-instrumented kernels (legs flow-cuda-cap-kernel-f64/-f32, per-iteration compute =
 #     sum of the MAPAL_PERF launch= CUDA-event lines, min of 3 process runs):
-#     cargo run -p mapal-backend-cuda --example emit -- <file.mapal> - --perf > benches/matmul/<base>_perf.cu
+#     cargo run -p mapal-backend-cuda --example emit_cuda -- <file.mapal> - --perf > benches/matmul/<base>_perf.cu
 #   All bench .cu/.ll artifacts are checked in, emitted from the W1+W2 tree (by-ref llvm
 #     captures, deduped kernels — 3 __global__ for 4 launches, one arena cudaMalloc per
 #     capture mapal_main) — rsync benches/matmul to the box as usual.
