@@ -1,0 +1,18 @@
+{
+  "utc": "2026-10-21T21:20:47.716178+00:00",
+  "pass": true,
+  "command": "CARGO_TARGET_DIR=/private/tmp/mapal-replay-shared-host-target cargo build --offline --locked --workspace --release --examples",
+  "exit": 0,
+  "logs": {
+    "shared-examples.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "shared-examples.stderr": "9576f1f7e73fc2bb1ec2336aae60cb485c591eadc60a1b998573411c34057e08"
+  },
+  "current_emit": {
+    "path": "/private/tmp/mapal-replay-shared-host-target/release/examples/emit",
+    "sha256": "b8de9090d5f3ddcdc9a36543e5385f665440134f85a4a9985d5aecc3a58bd759"
+  },
+  "frozen_four_inputs_unchanged": true,
+  "frozen_three_llvm_tools_unchanged": true,
+  "frozen_manifest_sha256": "afdb6d16c0fbeb31789d2760a82ec48ffacd206d9f957af8d0cac72608e62133",
+  "source_patch_sha256": "32384fc81b26faff5006019b37d330daab9475bc2e1aa799afde2091282d8203"
+}

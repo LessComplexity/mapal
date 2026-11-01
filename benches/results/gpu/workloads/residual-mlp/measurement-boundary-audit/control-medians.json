@@ -1,0 +1,112 @@
+[
+  {
+    "case": "matrix",
+    "arm": "mapal",
+    "wall_upper_median_ms": 0.07308999999999344,
+    "event_upper_median_ms": 0.0669760033,
+    "n": 30,
+    "wall_min_ms": 0.05771699999999669,
+    "wall_max_ms": 0.28896599999999495,
+    "event_min_ms": 0.0525440015,
+    "event_max_ms": 0.281567991
+  },
+  {
+    "case": "matrix",
+    "arm": "naive",
+    "wall_upper_median_ms": 0.054452,
+    "event_upper_median_ms": 0.0497919992,
+    "n": 30,
+    "wall_min_ms": 0.051748,
+    "wall_max_ms": 0.056875,
+    "event_min_ms": 0.0470080003,
+    "event_max_ms": 0.0521599986
+  },
+  {
+    "case": "matrix",
+    "arm": "cublas",
+    "wall_upper_median_ms": 0.039069,
+    "event_upper_median_ms": 0.0347840004,
+    "n": 30,
+    "wall_min_ms": 0.037126,
+    "wall_max_ms": 0.043275,
+    "event_min_ms": 0.0328960009,
+    "event_max_ms": 0.0390399992
+  },
+  {
+    "case": "matrix",
+    "arm": "torch-eager",
+    "wall_upper_median_ms": 0.115423929,
+    "event_upper_median_ms": 0.10182400047779083,
+    "n": 30,
+    "wall_min_ms": 0.112238806,
+    "wall_max_ms": 0.128423795,
+    "event_min_ms": 0.09839999675750732,
+    "event_max_ms": 0.11231999844312668
+  },
+  {
+    "case": "matrix",
+    "arm": "torch-compiled",
+    "wall_upper_median_ms": 0.178658869,
+    "event_upper_median_ms": 0.1634880006313324,
+    "n": 30,
+    "wall_min_ms": 0.171188265,
+    "wall_max_ms": 0.206942204,
+    "event_min_ms": 0.15718400478363037,
+    "event_max_ms": 0.1918720006942749
+  },
+  {
+    "case": "matrix-large",
+    "arm": "mapal",
+    "wall_upper_median_ms": 0.12893499999999847,
+    "event_upper_median_ms": 0.123007998,
+    "n": 30,
+    "wall_min_ms": 0.11975100000000793,
+    "wall_max_ms": 0.29938200000000137,
+    "event_min_ms": 0.114816003,
+    "event_max_ms": 0.291999996
+  },
+  {
+    "case": "matrix-large",
+    "arm": "naive",
+    "wall_upper_median_ms": 0.333153,
+    "event_upper_median_ms": 0.328671992,
+    "n": 30,
+    "wall_min_ms": 0.326944,
+    "wall_max_ms": 0.34484,
+    "event_min_ms": 0.322432011,
+    "event_max_ms": 0.340992004
+  },
+  {
+    "case": "matrix-large",
+    "arm": "cublas",
+    "wall_upper_median_ms": 0.09289,
+    "event_upper_median_ms": 0.0882880017,
+    "n": 30,
+    "wall_min_ms": 0.091919,
+    "wall_max_ms": 0.095304,
+    "event_min_ms": 0.0872960016,
+    "event_max_ms": 0.0906239972
+  },
+  {
+    "case": "matrix-large",
+    "arm": "torch-eager",
+    "wall_upper_median_ms": 0.140601769,
+    "event_upper_median_ms": 0.12355200201272964,
+    "n": 30,
+    "wall_min_ms": 0.134783331,
+    "wall_max_ms": 72.4742287,
+    "event_min_ms": 0.11798399686813354,
+    "event_max_ms": 72.45337677001953
+  },
+  {
+    "case": "matrix-large",
+    "arm": "torch-compiled",
+    "wall_upper_median_ms": 0.208714977,
+    "event_upper_median_ms": 0.19139200448989868,
+    "n": 30,
+    "wall_min_ms": 0.191928819,
+    "wall_max_ms": 0.483048614,
+    "event_min_ms": 0.17481599748134613,
+    "event_max_ms": 0.4455359876155853
+  }
+]

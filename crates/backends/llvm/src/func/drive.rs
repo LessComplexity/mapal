@@ -42,23 +42,29 @@ impl<'a> FnEmit<'a> {
         let Some(record) = self.tile_plan.as_ref().and_then(|p| p.sites.get(*site)) else {
             return false;
         };
-        let width = crate::profile::elem_bytes(&record.elem);
         // `k` multiply-adds per output element; each operand panel and the
-        // output walked once.
+        // output walked once (the roofline S62 `place` reads too).
         let flops = 2u64.saturating_mul(n).saturating_mul(record.k);
-        let bytes = (record.rows.saturating_mul(record.k)
-            + record.k.saturating_mul(record.c)
-            + record.rows.saturating_mul(record.c))
-        .saturating_mul(width);
-        let ns = (flops / cost.flops_per_ns.max(1)).max(bytes / cost.bytes_per_ns.max(1));
+        let bytes = crate::profile::tile_bytes(record.rows, record.c, record.k, &record.elem);
+        let ns = crate::profile::roofline_ns(flops, bytes, cost.flops_per_ns, cost.bytes_per_ns);
         ns < cost.dispatch_ns
     }
 
     /// Emit the function body: prologue store, the topo walk, epilogue return.
-    pub fn emit(mut self) -> String {
+    pub fn emit(self) -> String {
+        self.emit_ordered().0
+    }
+
+    /// [`Self::emit`] and the split folds it compiled under
+    /// [`crate::Order::Fixed`] (ADR-0040 D3).
+    pub fn emit_ordered(mut self) -> (String, Vec<crate::FoldOrder>) {
         let fd = self.ir.func(self.f).expect("func resolves");
         let ret_ty = self.obj_ty(fd.output);
-        let fname = self.fnames[self.f].clone();
+        let fname = if self.cell_slots.is_empty() {
+            self.fnames[self.f].clone()
+        } else {
+            format!("{}{}", self.fnames[self.f], self.cell_suffix)
+        };
 
         // Only the entry function's frame is once-per-program (plan-s29
         // composition rule 4); the parallel entry goes through `emit_parallel`,
@@ -87,6 +93,7 @@ impl<'a> FnEmit<'a> {
                 if self.perf_timing {
                     self.line("call void @mapal_perf_end()");
                 }
+                self.resident_teardown();
                 self.heap_teardown();
                 self.line(format!("ret {t} {v}"));
                 t
@@ -95,6 +102,7 @@ impl<'a> FnEmit<'a> {
                 if self.perf_timing {
                     self.line("call void @mapal_perf_end()");
                 }
+                self.resident_teardown();
                 self.heap_teardown();
                 self.line("ret void");
                 "void".to_string()
@@ -115,7 +123,11 @@ impl<'a> FnEmit<'a> {
             Some(t) => format!("{t} %arg"),
             None => String::new(),
         };
-        let fn_attrs = if clean {
+        // `cell-lanes`: the lane variant meets its warp in shuffles — a
+        // convergent call no optimizer may sink under the lane-0 store.
+        let fn_attrs = if self.lanes.is_some() {
+            " convergent nounwind"
+        } else if clean {
             if self.attrs.loopy(self.f) {
                 " readonly nounwind"
             } else {
@@ -129,10 +141,26 @@ impl<'a> FnEmit<'a> {
         } else {
             ""
         };
-        format!(
+        // `cell-law`'s device variant: its own name, the values after `%arg`.
+        let fname = if self.cell_vals.is_empty() {
+            fname
+        } else {
+            gpu::cell_variant(&fname)
+        };
+        let fname = if self.lanes.is_some() {
+            gpu::lanes_variant(&fname)
+        } else {
+            fname
+        };
+        let param = self
+            .cell_vals
+            .iter()
+            .fold(param, |p, (s, t)| format!("{p}, {t} %cv{s}"));
+        let text = format!(
             "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n",
             perf_begin, self.allocas, self.body
-        )
+        );
+        (text, self.orders)
     }
 
     pub(crate) fn emit_parallel(
@@ -146,13 +174,21 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
+        arms: crate::GpuArms,
     ) -> String {
         let mut host = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
+            profile,
         );
+        // The rung arms (S65 `by-ref` decides the frame's layout): the host and
+        // every task read the same ones.
+        host.gpu_arms = arms;
+        let par = std::rc::Rc::new(super::frame::ParOrder::new(plan));
+        host.par = Some(par.clone());
         host.perf_timing = perf_timing;
         // The host runs once per program, so its blocks may go to the arena.
         host.heap_ok = true;
@@ -326,7 +362,7 @@ impl<'a> FnEmit<'a> {
                     return None;
                 }
                 let record = host.tile_plan.as_ref()?.sites.get(*site)?;
-                if !packing_site(record) {
+                if !packing_site(record, profile, host.contract) {
                     return None;
                 }
                 // The pack's range is j-tiles, a different axis in different
@@ -545,10 +581,13 @@ impl<'a> FnEmit<'a> {
                 tiling,
                 packing,
                 contract,
+                order,
                 kc_nest,
                 move_panel,
                 profile,
                 pack_task_of.contains_key(&task_id),
+                arms,
+                &par,
             ));
             out.push('\n');
         }
@@ -577,22 +616,27 @@ impl<'a> FnEmit<'a> {
         tiling: bool,
         packing: bool,
         contract: bool,
+        order: crate::Order,
         kc_nest: bool,
         move_panel: MovePanel,
         profile: &'static TargetProfile,
         outer_pack: bool,
+        arms: crate::GpuArms,
+        par: &std::rc::Rc<super::frame::ParOrder>,
     ) -> String {
         if let TaskKind::Split { site: m, n } = &task.kind
             && let Some(site) = tiling
                 .then(|| ir.tile_plan(f))
                 .and_then(|plan| plan.sites.get(*m).cloned())
             && packing
-            && packing_site(&site)
+            && packing_site(&site, profile, contract)
         {
             let mut slice = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
+            slice.gpu_arms = arms;
+            slice.par = Some(par.clone());
             slice.guard_flavor = GuardFlavor::Task;
             slice.split_range = true;
             slice.prepare_storage();
@@ -613,9 +657,11 @@ impl<'a> FnEmit<'a> {
             // wall — 30.2%, thread-count-independent, pure Amdahl.
             let source = ir.morphism(*m).expect("tile map resolves").source;
             let mut pack = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
+            pack.gpu_arms = arms;
+            pack.par = Some(par.clone());
             pack.guard_flavor = GuardFlavor::Task;
             pack.split_range = true;
             pack.prepare_storage();
@@ -638,9 +684,11 @@ impl<'a> FnEmit<'a> {
             }
 
             let mut emit = FnEmit::new(
-                ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel,
-                profile,
+                ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest,
+                move_panel, profile,
             );
+            emit.gpu_arms = arms;
+            emit.par = Some(par.clone());
             emit.guard_flavor = GuardFlavor::Task;
             emit.prepare_storage();
             emit.frame = Some(frame.clone());
@@ -699,10 +747,19 @@ impl<'a> FnEmit<'a> {
         }
 
         let mut emit = FnEmit::new(
-            ir, f, fnames, strings, attrs, tiling, packing, contract, kc_nest, move_panel, profile,
+            ir, f, fnames, strings, attrs, tiling, packing, contract, order, kc_nest, move_panel,
+            profile,
         );
+        emit.gpu_arms = arms;
+        emit.par = Some(par.clone());
         emit.guard_flavor = GuardFlavor::Task;
         emit.split_range = matches!(task.kind, TaskKind::Split { .. });
+        // A sequential task runs once per program (its registration is
+        // `kind = 0`), so its big blocks may live in the arena the entry
+        // releases after `mapal_par_finish` — not on a worker's stack (S65:
+        // `pt_loop_4096`'s in-loop 64 MB pack overflowed it, rc 139). No
+        // teardown here: the entry's frees everything.
+        emit.heap_ok = matches!(task.kind, TaskKind::Seq { .. });
         emit.watermark = match &task.kind {
             TaskKind::Split { .. } => false,
             TaskKind::Seq { morphisms } => !morphisms.iter().any(|&m| {

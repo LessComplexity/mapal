@@ -1,0 +1,20 @@
+{
+  "local_task": "isolated replay diagnosis, repair and proof",
+  "ready": true,
+  "patch_sha256": "32384fc81b26faff5006019b37d330daab9475bc2e1aa799afde2091282d8203",
+  "proof_sha256": "8c9e15d0726db9d8598f929f03dca7f6e2abb54b717a52be89276e8a908a6a51",
+  "artifact_manifest_sha256": "e817e37ce5a464c4180726b89a8d520e980e4a085574b3bf9ba0dc2c7cf40039",
+  "recovery_archive": "/private/tmp/mapal-replay-diagnostic-recovery-20261021.tgz",
+  "recovery_archive_sha256": "1d4dd8c57a71373409d39d34eff32d9b631c53507f05621dfdb7ed89877e1bf0",
+  "recovery_archive_bytes": 24287298,
+  "recovery_regular_files": 2448,
+  "archive_hashes_rechecked": true,
+  "shared_integration": "root owns; source applied after pre-integration hash receipt; full shared workspace result not included",
+  "limits": [
+    "No GPU execution or performance claim",
+    "Original native emission timeouts preserved",
+    "Cargo target excluded from recovery archive",
+    "No copying of growing shared workspace logs"
+  ],
+  "root_owned_workspace_logs_excluded": true
+}

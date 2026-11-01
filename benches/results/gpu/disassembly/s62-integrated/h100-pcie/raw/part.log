@@ -1,0 +1,10 @@
+[2026-10-23T03:00:48Z] start offer=57077524
+[23:00:49 h100-pcie] instance 57311997 from offer 57077524
+[23:01:51 h100-pcie] ssh 102.210.171.67:34570 up
+Warning: Permanently added '[102.210.171.67]:34570' (ED25519) to the list of known hosts.
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+[23:02:10 h100-pcie] bundle uploaded
+[23:11:40 h100-pcie] results fetched: 1091 lines
+[23:11:41 h100-pcie] destroyed 57311997
+[2026-10-23T03:11:41Z] exit 0

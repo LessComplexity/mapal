@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/private/tmp/mapal-s58-allocation-gate/source/test_gate_cpu_v2.py", line 4, in <module>
+    G=Path(__file__).resolve().parent.parent;P=G/'packet-v2';E=G/'evidence';tools=E/'fake-tools-v2';tools.mkdir(exist_ok=False)
+                                                                                                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 1011, in mkdir
+    os.mkdir(self, mode)
+    ~~~~~~~~^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: '/private/tmp/mapal-s58-allocation-gate/evidence/fake-tools-v2'

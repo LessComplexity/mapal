@@ -1,0 +1,154 @@
+{
+ "128x2048x7168/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "128x2048x7168/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "128x2048x7168/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "128x2048x7168/mm_128x2048x7168": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "128x2048x7168/mm_128x2048x7168_c": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "128x2048x7168/mm_128x2048x7168_rc": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/mm_16x1024x4096": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/mm_16x1024x4096_c": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x1024x4096/mm_16x1024x4096_rc": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/mm_16x18432x7168": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/mm_16x18432x7168_c": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x18432x7168/mm_16x18432x7168_rc": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/mm_16x2048x7168": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/mm_16x2048x7168_c": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "16x2048x7168/mm_16x2048x7168_rc": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/mm_4096x4096x4096": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/mm_4096x4096x4096_c": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "4096x4096x4096/mm_4096x4096x4096_rc": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_1024/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_1024/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_1024/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_1024/lt": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_256/cublas": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_256/cutlass": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_256/cutlass_tuned": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ },
+ "rm_256/lt": {
+  "pass": false,
+  "error": "ValueError: Bad CUDA ELF header"
+ }
+}

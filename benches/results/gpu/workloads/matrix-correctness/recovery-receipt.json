@@ -1,0 +1,146 @@
+{
+  "state": "closed-matrix-compiled-bootstrap-failure-no-retry",
+  "instance": 57118557,
+  "cleanup_confirmed_absent": true,
+  "ordering_frozen_processes": 200,
+  "ordering_candidate_processes": 200,
+  "ordering_both_independent_verifiers_pass": true,
+  "matrix_numeric_pass": false,
+  "matrix_failure": "Compiled PyTorch generated cuda_utils.c failed: Python.h missing; no compiled numeric verdict",
+  "raw_create_response_private_sha256": "1f1fddd413dc57d7131029ed3feffef68aa9feb7495dba0a1a5a9d29721111ad",
+  "raw_create_response_not_copied": true,
+  "recovery": ".claude/worktrees/_archive-s54-20261021/s58-correctness-20261021",
+  "files": {
+    "box_run.sh.v59.diff": {
+      "bytes": 792,
+      "sha256": "6ce466dc69e320cc73376e0e64f9442a7d299bc3b8a3570e2c19e06a8d2cb57b"
+    },
+    "run_checks.py.v59.diff": {
+      "bytes": 3574,
+      "sha256": "8e23405953a9fea2f7378e33b673108746d9ac9e72729d2d00369da8e913fa1c"
+    },
+    "test_adapter_v59.py": {
+      "bytes": 3242,
+      "sha256": "5ca935b38ba52f1024176274e0c6c6c756fb61bd3de78f8e89cd3d4790f58d89"
+    },
+    "run_once_v59.py": {
+      "bytes": 4928,
+      "sha256": "34b5bd4177fa51ea435850860a9b6b9db76b54d9c39896eac99f715d9c88156d"
+    },
+    "root-review-v59.json": {
+      "bytes": 1555,
+      "sha256": "4ed734542977232c0258115ea882b483f8fde8277a5083abfe4e96989d7f6ff1"
+    },
+    "renewal-v59.json": {
+      "bytes": 39222,
+      "sha256": "8eb5a434e95bf54e6fd2428fe2e76729f741427720f2bc609b2454559413b20a"
+    },
+    "adapter-tests-v59.json": {
+      "bytes": 3962,
+      "sha256": "e72ed81db60f1c879d3c04d8ec021c0ac04cbd7eb650a6e80077d2d34be778be"
+    },
+    "pytorch-compiled-stderr.txt": {
+      "bytes": 982,
+      "sha256": "c6b8ecba65b66428143f129425a6531c5bb63e5f6c4c9ccc3d3f29a18ce5ca65"
+    },
+    "later-performance-proof.md": {
+      "bytes": 3120,
+      "sha256": "9ddf7914107d481cab68af927cbd6c88ef16b7b7ba1ec7216048b16c41d01a89"
+    },
+    "launch-claim.json": {
+      "bytes": 392,
+      "sha256": "a27c9b27925d0bb35a59fdff8302fc57f2f3cd3b2ab9802c86a13dd9127a9251"
+    },
+    "test_launcher_v59.py": {
+      "bytes": 3149,
+      "sha256": "6145e75fe7523b98baa4c6a26769f03babb2bd7003414922fd6774e4f6d84f36"
+    },
+    "vast_run.sh": {
+      "bytes": 4634,
+      "sha256": "3e2d67a015810bdd98be23d9cac17c8f438c0b4d83d96563e4ae504b0ea6c487"
+    },
+    "launcher-tests-v59.json": {
+      "bytes": 530,
+      "sha256": "49618a5efe6beb1bdd6816b9e1483d2366456013468ac2ac1605782c2ffb74a1"
+    },
+    "verify_collected.py": {
+      "bytes": 2684,
+      "sha256": "3f9bfb3b45c34efc3ff357709f8cc7598456fcbfe6d5d5f388e8d246ab62bf67"
+    },
+    "offers-sanitized.json": {
+      "bytes": 876,
+      "sha256": "7bf25e110fa9c013cbf59bdf4c18f9a8e7ae2223e544dce1a7027941854be0ed"
+    },
+    "staging-v59/ordering-candidate.tgz": {
+      "bytes": 6235132,
+      "sha256": "5368c35b5328dea218158ccbfeb1aaf880c5982c6159cec2f9e3ee570fffb321"
+    },
+    "staging-v59/box_run.sh": {
+      "bytes": 965,
+      "sha256": "751dfcfea98045612bf879087a347e70bde8cba8b84b1a58f0950ab0ac5d57df"
+    },
+    "staging-v59/verify_ordering.py": {
+      "bytes": 5450,
+      "sha256": "f4c7d2225f42ff477c754efd8836347dfa74aaa96219e08695a51c7339319ab2"
+    },
+    "staging-v59/matrix-upload.tgz": {
+      "bytes": 7152268,
+      "sha256": "c460670f667f43dc255085574934aae3b6ea7780d1a878309179c6709a5aa056"
+    },
+    "staging-v59/run_checks.py": {
+      "bytes": 10093,
+      "sha256": "c7306a38fdaa0ca109a00e48bc6dae36ad699855526cf121ce35f60b36ee8a7a"
+    },
+    "staging-v59/ordering.tgz": {
+      "bytes": 6234381,
+      "sha256": "2892f59e49b11cfbc46f54ad355aa8b9bd010073787dfe1ace112ad734e900ce"
+    },
+    "results/request.json": {
+      "bytes": 41153,
+      "sha256": "76d63faf5ec931f0686267728302b9735c106873331aa90f4c3b72ff4c4fb915"
+    },
+    "results/wrapper.log": {
+      "bytes": 474,
+      "sha256": "7eb35fbb29b665bdea917d885a6a26273fa64709f88de801f9589d45b114bdb5"
+    },
+    "results/matrix-partial-recheck.json": {
+      "bytes": 1411,
+      "sha256": "1f02b05d1b9bdf5cf5f650d72d673cbd952ec6724f6e3b64c93370de041259c3"
+    },
+    "results/run-rtx-5090.out": {
+      "bytes": 1298,
+      "sha256": "16580b450c9346ecb98e6ab1c528bb15d47c3a449ee638a872ec22a64cfeceb8"
+    },
+    "results/budget-closed.json": {
+      "bytes": 981,
+      "sha256": "15f8a546f63d9d36a461710a52f066f4c99de6c626ec1a4369cf779cd5d535c3"
+    },
+    "results/trace-rtx-5090.tgz": {
+      "bytes": 76600382,
+      "sha256": "0dec29a2e5c4f4fc505c93b02f74e87bae8c9c19ef1dac5a836a230cb6033215"
+    },
+    "results/instance-identity.json": {
+      "bytes": 208,
+      "sha256": "b5c6f0e75b95f775e58336f5665d2896882cbe255cb1c4524f70cb10e747cd65"
+    },
+    "results/cleanup.json": {
+      "bytes": 240,
+      "sha256": "733355f9e24e9911ddb2c6038a2e04f66dc31e95d8b2bcc5c9c495bf5dcbcf3a"
+    },
+    "results/local-verification.json": {
+      "bytes": 1786,
+      "sha256": "a52fc500aa768de424bbcca250db59331298f3bec316e859b70179eaa4d46892"
+    },
+    "results/results-rtx-5090.txt": {
+      "bytes": 290278,
+      "sha256": "bdce6a359b8154dcaaee107b3b6c03637c71cdc705d5c2c433d5d38f316d57f8"
+    },
+    "results/execution.json": {
+      "bytes": 139,
+      "sha256": "39a48eb97d7efa8eb923a3b493c623863a6e42813e4db77272fd5ca8e1e7b1c6"
+    }
+  },
+  "total_files": 32,
+  "total_bytes": 96650281,
+  "timing_admitted": false
+}

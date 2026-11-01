@@ -1,0 +1,23 @@
+{
+  "pass": true,
+  "tests": [
+    "valid",
+    "review-denied",
+    "wrong-review",
+    "consumed",
+    "stale",
+    "changed-offer",
+    "rate-over-cap",
+    "transfer-over-cap",
+    "payload-changed",
+    "prior-budget-changed",
+    "aggregate-over-cap",
+    "machine-reserved",
+    "owned-destroy-independent-absence",
+    "unrelated",
+    "identity-mismatch",
+    "missing-cli-before-claim-no-write"
+  ],
+  "no_api_rental_upload": true,
+  "launcher_sha256": "6d3f206ac084fca7f96ce604a1be8c9e94e4c203b575efd0ba053307c1e14fc0"
+}

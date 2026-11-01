@@ -1,0 +1,16 @@
+{
+  "scope": "narrow current allocation diff review; no tests rerun",
+  "frozen_candidate_patch_sha256": "2c8cdc1964abbd0516a46c5da1e02a76ba59e214e205275c8e478dc23e85ffd5",
+  "normalized_current_diff_matches_frozen_patch": true,
+  "changed_code_files": [
+    "crates/backends/llvm/src/func/resident.rs",
+    "crates/backends/llvm/tests/streams.rs"
+  ],
+  "reviewed_source_hashes": {
+    "crates/backends/llvm/src/func/resident.rs": "af817704dec9cc42775ec959c7311cb5102421e0ba6ff3d11b31dbe35dfa4995",
+    "crates/backends/llvm/tests/streams.rs": "89d1ae927e3b3de988edbcbcc182d911dc74d89318488fc5bd2eafa8d73ab431",
+    "crates/mapal-rt/gpu/mapal_gpu.c": "640f671b57b6edb03038eceea4c8e68ba95026ca5a7d8565848456f652b25565"
+  },
+  "observed_gate_verification_sha256": "1ad53036099ddadedf3bbd011c9a2bb29017adca6178a3777ca07febc3425223",
+  "verdict": "No static blocker found within the store_out-based allocation omission boundary; gate establishes observed executions/counters only, not universal race safety or latency gain."
+}

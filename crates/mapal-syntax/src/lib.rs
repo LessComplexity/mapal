@@ -20,6 +20,7 @@
 
 mod ast;
 mod diag;
+mod format;
 mod lexer;
 mod loc;
 mod parser;
@@ -27,6 +28,7 @@ mod token;
 
 pub use ast::*;
 pub use diag::{DiagCode, Diagnostic, Severity, SuggestedFix};
+pub use format::format_source;
 pub use lexer::{LexOutput, lex};
 pub use loc::{LineCol, LineIndex, SourceLoc};
 pub use parser::{ParseOutput, parse};

@@ -1,0 +1,10 @@
+test_real_detached_child_terminated_and_reaped (__main__.Boundaries.test_real_detached_child_terminated_and_reaped) ... ok
+test_real_outer_sigterm_cascades_to_detached_child (__main__.Boundaries.test_real_outer_sigterm_cascades_to_detached_child) ... ok
+test_real_outer_timeout_cascades_to_detached_child (__main__.Boundaries.test_real_outer_timeout_cascades_to_detached_child) ... ok
+test_real_uncooperative_phase_killed_after_bounded_grace (__main__.Boundaries.test_real_uncooperative_phase_killed_after_bounded_grace) ... ok
+test_resolved_equal_nested_ancestor_and_symlink_before_writes (__main__.Boundaries.test_resolved_equal_nested_ancestor_and_symlink_before_writes) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.602s
+
+OK

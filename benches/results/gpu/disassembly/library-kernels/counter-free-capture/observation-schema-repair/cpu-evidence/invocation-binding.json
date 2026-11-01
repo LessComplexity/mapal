@@ -1,0 +1,73 @@
+{
+  "pass": true,
+  "gpu_executed": false,
+  "cases": {
+    "same-cbid-corr-loader-token-rebinding": {
+      "pass": true,
+      "accepted": false,
+      "error": "Loader/API invocation differs"
+    },
+    "api-name-changed": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unpaired API callback"
+    },
+    "cross-domain-token-reuse": {
+      "pass": true,
+      "accepted": false,
+      "error": "Invocation identity reused across domains"
+    },
+    "api-dispatch-without-metadata": {
+      "pass": true,
+      "accepted": false,
+      "error": "Incomplete driver launch callback inventory"
+    },
+    "uid0-arbitrary-prefix": {
+      "pass": true,
+      "accepted": false,
+      "error": "Context creation/full initial inventory unproved"
+    },
+    "positive-uid-prefix": {
+      "pass": true,
+      "accepted": false,
+      "error": "Context creation/full initial inventory unproved"
+    },
+    "uid0-construction-after-create": {
+      "pass": true,
+      "accepted": false,
+      "error": "Provisional context callback outside creation prefix"
+    },
+    "zero-api-token": {
+      "pass": true,
+      "accepted": false,
+      "error": "Invalid invocation identity"
+    },
+    "stream-token-rebinding": {
+      "pass": true,
+      "accepted": false,
+      "error": "Unproved stream/context mapping"
+    },
+    "runtime-parent-callback-failed": {
+      "pass": true,
+      "accepted": false,
+      "error": "Correlated API status differs/failed"
+    },
+    "runtime-parent-activity-cbid-differs": {
+      "pass": true,
+      "accepted": false,
+      "error": "Missing/ambiguous correlated API activity domain"
+    },
+    "runtime-parent-token-differs": {
+      "pass": true,
+      "accepted": false,
+      "error": "Runtime parent invocation differs"
+    }
+  },
+  "sources": {
+    "capture.cpp": "b1dd934aa291cebefc1199b8e5010be022195d2a0797ae9be85a712d309f71bd",
+    "admit.py": "ce12b7813335b55bfe4445681eaf8a38e0dbfa49dc2e0e0cf37b66627db90af8",
+    "test_callback.cpp": "6c845b1f13e4ec778c11890152b72c58a99c5f1fbf60dff4aa37095e4787cf5d",
+    "test_admission.py": "24fcbf5488c2e4057a73cba385097b3d533a7b810b5e99c12098760df119fea3",
+    "test_invocation_binding.py": "9b609cf266115de08321b5e062c09ee2611125cf0bb9eb0dd13228a42888cc67"
+  }
+}

@@ -13,6 +13,11 @@ use slotmap::SecondaryMap;
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, Value, ty_contains_token};
 
+mod precision;
+mod radix;
+pub use precision::{PrecisionPlan, bound_coef, gamma};
+pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
+
 /// A non-trivial loop SCC and its merge objects (DESIGN §7; the backend
 /// capability predicate). One entry per non-trivial SCC.
 #[derive(Clone, Debug, PartialEq)]
@@ -72,6 +77,36 @@ impl BoundsProof {
     pub fn proven(&self, m: MorphismId) -> bool {
         self.proven.contains_key(m)
     }
+}
+
+/// Which cells of a loop-carried array one iteration writes (S53 `retain-delta`,
+/// [`CategoryIr::write_delta`]): where the value crossing the back edge can
+/// differ from the merge value it started the iteration as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Delta {
+    /// Only cells `[start, start + stride)` can differ. `next` is the object
+    /// whose value crosses the back edge into this carried slot (the last
+    /// write of the chain) — it differs from its own previous-iteration value
+    /// only there too. A claim about cells: an interval a piecewise map
+    /// writes ([`Outside`]) may reach past `[0, n)` (on a trip that writes
+    /// nothing, anywhere), so a consumer moves or recomputes `[start, start +
+    /// stride)` only when it lies inside the array (else the whole array).
+    Rows {
+        stride: u64,
+        start: Affine,
+        next: ObjectId,
+    },
+    /// Anything else: the whole array may differ (the status quo).
+    Top,
+}
+
+/// `a·var + b` in the wrapping arithmetic of `var`'s int type, `var` an int
+/// view of the loop's merge — the counter, as this iteration reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Affine {
+    pub var: ObjectId,
+    pub a: i64,
+    pub b: i64,
 }
 
 /// A [`PathPlan`] task identifier. Task ids are indices into
@@ -287,6 +322,51 @@ impl TileAffine {
     }
 }
 
+/// A cell address over the map index `t`: `base + cq·(t÷w) + cr·(t%w)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CellAff {
+    w: u64,
+    base: u64,
+    cq: u64,
+    cr: u64,
+}
+
+/// [`CellAff`] mid-walk: raw `t` (`ct`) apart, the divisor once one is seen.
+#[derive(Clone, Copy, Default)]
+struct CellAffRaw {
+    w: Option<u64>,
+    base: u64,
+    ct: u64,
+    cq: u64,
+    cr: u64,
+}
+
+impl CellAffRaw {
+    fn add(self, o: Self) -> Option<Self> {
+        let w = match (self.w, o.w) {
+            (Some(a), Some(b)) if a != b => return None,
+            (a, b) => a.or(b),
+        };
+        Some(Self {
+            w,
+            base: self.base.checked_add(o.base)?,
+            ct: self.ct.checked_add(o.ct)?,
+            cq: self.cq.checked_add(o.cq)?,
+            cr: self.cr.checked_add(o.cr)?,
+        })
+    }
+
+    fn scale(self, by: u64) -> Option<Self> {
+        Some(Self {
+            w: self.w,
+            base: self.base.checked_mul(by)?,
+            ct: self.ct.checked_mul(by)?,
+            cq: self.cq.checked_mul(by)?,
+            cr: self.cr.checked_mul(by)?,
+        })
+    }
+}
+
 /// **A fold-less move site (S45): a `map` that only MOVES data.** Its body is a
 /// single proven `Index` whose address is affine in the derived axes
 /// `(t÷C, t%C)` — a transpose, a gather-by-formula, any permutation-shaped read.
@@ -330,6 +410,196 @@ pub struct MovePlan {
     pub sites: SecondaryMap<MorphismId, MoveSite>,
 }
 
+/// **Which cells of one array a per-cell morphism's cell `t` reads** (S54).
+///
+/// The read footprint existed in pieces (`TileRead` for a fold's operands,
+/// `MoveSite` for a permutation) and nowhere whole for the per-cell maps a
+/// backend wants to place next to their producer: a cell that reads only
+/// `x[t]` can run where `x[t]` is computed, and one that reads `x[t ÷ c]` can
+/// run anywhere `x` is complete. Geometry only (ADR-0032).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Footprint {
+    /// `x[t]`.
+    Same,
+    /// `x[t ÷ c]` — one cell per row of `c` cells (a per-row scale).
+    Row { c: u64 },
+    /// `x[t % c]` — one cell per column (a bias).
+    Col { c: u64 },
+    /// `x[k]`, one fixed cell.
+    Const(u64),
+    /// Any other address (data-dependent, or not one of the above forms).
+    Other,
+}
+
+/// One read of a per-cell morphism: slot `slot` of the map's source product
+/// (for a capture-free map, slot 0 is the mapped array itself), at `foot`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellRead {
+    pub slot: u32,
+    pub foot: Footprint,
+}
+
+/// A `Map` whose cell `t` is a clean leaf function of a fixed set of input
+/// cells (S54): `out[t] = body(x₁[f₁(t)], …, u₁, …)`. `reads` lists every
+/// array read the body makes, the mapped element included unless it is the
+/// index itself (an `iota`). A number capture (`uniform`) is one value every
+/// cell reads alike — a loop counter, a fold's result (cpu-gpu-boundary).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CellSite {
+    /// The number of cells, `len(out)`.
+    pub extent: u64,
+    pub reads: Vec<CellRead>,
+    pub body: FuncId,
+    /// The capture slots holding a number (not an array), ascending.
+    pub uniform: Vec<u32>,
+    /// The capture slots a nested `Map`/`Fold` of the body reads (through its
+    /// own captures, any proven address: `reads` holds each as
+    /// [`Footprint::Other`]) — a dot product or a whole fold per cell.
+    pub nested: Vec<u32>,
+    /// Element steps one cell takes: 1, plus each nested `Map`/`Fold`'s
+    /// extent times its own body's steps (a dot product over `k`: `1 + k`).
+    pub work: u64,
+    /// recurrence-precision item 2: the body's one nested fold, when it is
+    /// its only `Map`/`Fold` and its step is `acc ⊕ g(…)` with `⊕` a `+`, `×`
+    /// or running max/min and `g` blind to `acc` ([`CategoryIr::fold_tree_step`])
+    /// — `(fold, step, extent)`: where the order is free its steps may be
+    /// split across lanes and combined as a tree.
+    pub tree: Option<(MorphismId, RowFoldOp, u64)>,
+}
+
+/// **Which producer cells a consumer's cell `t` reads** (generic-fusion,
+/// [`CategoryIr::footprint_plan`]): the read footprint of every recognized
+/// consumer in one form, translated from the recognizers' own records
+/// ([`TileRead`], [`RowFoldSite`], [`MoveSite`], [`CellRead`]) — nothing new
+/// is derived here. Geometry only (ADR-0032).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reach {
+    /// `base + cq·(t÷w) + cr·(t%w) + Σ coef·k`, each tap's `k ∈ [0, ext)`.
+    Affine {
+        w: u64,
+        base: u64,
+        cq: u64,
+        cr: u64,
+        taps: Vec<Tap>,
+    },
+    /// A proven address in `[lo, hi)` that is not affine in `t`.
+    Range { lo: u64, hi: u64 },
+    /// The producer's element is a closed form rooted at the index
+    /// ([`ElemSrc`] over [`ElemSrc::Index`]): evaluated at the read, no bytes.
+    Law,
+    /// Unproven or data-dependent: any cell.
+    Whole,
+}
+
+/// One counted axis of a read: `coef·k`, `k ∈ [0, ext)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tap {
+    pub coef: u64,
+    pub ext: u64,
+}
+
+/// One read edge: slot `slot` of `consumer`'s source reads `producer` at `reach`.
+/// `law` is set when the edge sees through a capture-free classifiable map
+/// (`producer` is that map's input, `law` its output: the read is
+/// `body(producer[addr])`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub consumer: MorphismId,
+    pub slot: u32,
+    pub producer: ObjectId,
+    pub reach: Reach,
+    pub law: Option<ObjectId>,
+}
+
+/// Every consumer's read edges in one function.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FootprintPlan {
+    pub edges: SecondaryMap<MorphismId, Vec<Edge>>,
+}
+
+impl FootprintPlan {
+    /// The edges of `consumer` (empty: nothing recognized, read it whole).
+    pub fn of(&self, consumer: MorphismId) -> &[Edge] {
+        self.edges.get(consumer).map_or(&[], Vec::as_slice)
+    }
+}
+
+impl Reach {
+    /// The producer rectangle `[rows, cols]` (the producer laid out `pw`
+    /// wide) that the consumer cells `t` with `t÷w ∈ rows`, `t%w ∈ cols`
+    /// read — the tight hull of the addresses. `None` when the column terms
+    /// are not confined within one producer row (a coefficient neither a
+    /// multiple of `pw` nor small enough), or the reach is [`Reach::Whole`].
+    /// A law reads no bytes: the empty rectangle. Proven reads lie in
+    /// `[0, len)` already, so the hull needs no clipping.
+    pub fn rect(
+        &self,
+        pw: u64,
+        rows: std::ops::Range<u64>,
+        cols: std::ops::Range<u64>,
+    ) -> Option<[std::ops::Range<u64>; 2]> {
+        let empty = Some([0..0, 0..0]);
+        if pw == 0 {
+            return None;
+        }
+        match self {
+            Reach::Whole => None,
+            Reach::Law => empty,
+            Reach::Range { lo, hi } => {
+                if lo >= hi {
+                    return empty;
+                }
+                let (r0, r1) = (lo / pw, (hi - 1) / pw);
+                Some(if r0 == r1 {
+                    [r0..r0 + 1, lo % pw..(hi - 1) % pw + 1]
+                } else {
+                    [r0..r1 + 1, 0..pw]
+                })
+            }
+            Reach::Affine {
+                base, cq, cr, taps, ..
+            } => {
+                if rows.is_empty() || cols.is_empty() || taps.iter().any(|t| t.ext == 0) {
+                    return empty;
+                }
+                let terms = [
+                    (*cq, rows.start, rows.end - 1),
+                    (*cr, cols.start, cols.end - 1),
+                ]
+                .into_iter()
+                .chain(taps.iter().map(|t| (t.coef, 0, t.ext - 1)));
+                let (mut r0, mut r1) = (base / pw, base / pw);
+                let (mut c0, mut c1) = (base % pw, base % pw);
+                for (coef, lo, hi) in terms {
+                    if coef % pw == 0 {
+                        r0 = r0.checked_add((coef / pw).checked_mul(lo)?)?;
+                        r1 = r1.checked_add((coef / pw).checked_mul(hi)?)?;
+                    } else {
+                        c0 = c0.checked_add(coef.checked_mul(lo)?)?;
+                        c1 = c1.checked_add(coef.checked_mul(hi)?)?;
+                    }
+                }
+                (c1 < pw).then_some([r0..r1 + 1, c0..c1 + 1])
+            }
+        }
+    }
+
+    /// The single address the consumer cell `t` reads, for a tap-free affine
+    /// reach (`None` otherwise).
+    pub fn at(&self, t: u64) -> Option<u64> {
+        match self {
+            Reach::Affine {
+                w,
+                base,
+                cq,
+                cr,
+                taps,
+            } if taps.is_empty() && *w > 0 => Some(base + cq * (t / w) + cr * (t % w)),
+            _ => None,
+        }
+    }
+}
+
 /// Everything a backend needs to emit one recognized tiled map site.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TileSite {
@@ -342,6 +612,111 @@ pub struct TileSite {
     pub elem: Ty,
     pub mul_a_first: bool,
     pub add_acc_first: bool,
+    /// The addresses that are digit-affine only ([`CategoryIr::tile_plan_radix`]);
+    /// `None` on every [`CategoryIr::tile_plan`] site.
+    pub radix: Option<Box<RadixTile>>,
+    /// ADR-0041 D1: the site's product admits `tf32` (`precision_plan.set`).
+    pub tf32: bool,
+}
+
+/// **A row-local in-order fold (S54 `rowfold`):** a `map` over `rows` whose
+/// body is one `fold` over `k` reading one array at `base + ci·i + ck·k` and
+/// combining it into the accumulator by one step — `out[i] = fold_k (seed,
+/// ⊕) a[base + ci·i + ck·k]`. The arm [`CategoryIr::tile_site`] refuses (it
+/// needs `a·b`): a row sum, a row max, a norm's denominator.
+///
+/// Each row is one chain in increasing `k` (ADR-0028 D4), so rows are
+/// independent and any realization that keeps one row on one in-order chain
+/// computes the oracle's bits. Geometry only, like [`TileSite`]: where it runs
+/// is the backend's question.
+///
+/// generic-fusion `window`: the map index may be split `(t÷w, t%w)` and the
+/// fold's axis `(k÷div, k%div)` — a weightless 2-D window (a box filter):
+/// cell `t` folds `a[base + ci·(t÷w) + clane·(t%w) + taps]`, the taps `ck·k`
+/// or [`TileKSplit`]'s `cq·(k÷div) + cr·(k%div)`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowFoldSite {
+    pub rows: u64,
+    pub k: u64,
+    /// The one read; `clane == 0` unless the map index is split (`w > 1`).
+    pub a: TileRead,
+    /// The map index's split width (1: no split, `t÷1 = t`).
+    pub w: u64,
+    pub op: RowFoldOp,
+    pub seed: Value,
+    pub elem: Ty,
+}
+
+/// The step of a [`RowFoldSite`], in the source's operand order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowFoldOp {
+    /// `acc ⊕ e` (`acc_first`) or `e ⊕ acc`, `⊕` ∈ {`Add`, `Sub`, `Mul`}.
+    Arith { op: Operation, acc_first: bool },
+    /// `(x cmp y) ? p : q` with `{x, y} = {p, q} = {acc, e}` — a running max
+    /// or min. `acc_lhs`: `x` is `acc`; `acc_if_true`: `p` is `acc`.
+    Select {
+        cmp: Operation,
+        acc_lhs: bool,
+        acc_if_true: bool,
+    },
+}
+
+/// **The trip split of a counted loop** (recurrence-precision item 1,
+/// [`CategoryIr::trip_split`]): the counter `t` (a state slot, `t + 1 → t`,
+/// a constant first trip, continued while `t < hi`), the trip intervals the
+/// guards on `t` cut the range into, and per interval which state is a
+/// recurrence there and which body work is outside it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TripSplit {
+    pub merge: ObjectId,
+    /// The counter's state slot.
+    pub counter: u32,
+    /// Trips `t ∈ [lo, hi)`.
+    pub lo: i64,
+    pub hi: i64,
+    /// Consecutive, covering `[lo, hi)`; one per run of trips on which every
+    /// guard on `t` takes the same arm.
+    pub phases: Vec<TripPhase>,
+}
+
+/// One interval of a [`TripSplit`]: the body as its trips run it (every
+/// guard on the counter decided, the arm not taken dropped).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TripPhase {
+    pub lo: i64,
+    pub hi: i64,
+    /// State slots on a cycle of the slot dependence graph (slot `k` → `j`
+    /// when `j`'s next value reads `k`'s view): the recurrence. A piecewise
+    /// write of a slot over itself (`batched`) is not a self-edge: its cells
+    /// read nothing of the previous state.
+    pub recurrent: Vec<u32>,
+    /// Body morphisms no recurrent slot's view reaches: closed forms of the
+    /// counter, loop invariants and non-recurrent state.
+    pub outside: Vec<MorphismId>,
+    /// `(slot, map)`: the slot's next value is a piecewise map over the slot
+    /// itself ([`Outside`]: rows `d·(t + b)`, `len ≤ d` cells each) whose
+    /// other live captures are the counter or loop invariants — the
+    /// interval's writes are one batch of `(hi − lo)·len` cells, cell `c`
+    /// from trip `c ÷ d − b`.
+    pub batched: Vec<(u32, MorphismId)>,
+    /// The first interval only: trips `[lo, hi − 1)` leave no value a later
+    /// trip reads but the `batched` writes — every other state slot is
+    /// unchanged or overwritten from batched state and the counter alone,
+    /// the exit test reads only the counter, and the body has no effect. The
+    /// loop may enter at `hi − 1` with the batch applied.
+    pub skip: bool,
+}
+
+/// [`CategoryIr::fold_core`]: a fold's step and its one read.
+struct FoldCore {
+    fbody: FuncId,
+    fcap: u32,
+    k: u64,
+    seed: Value,
+    op: RowFoldOp,
+    /// The read array as the fold body sees it, and its address.
+    array: ObjectId,
+    address: ObjectId,
 }
 
 impl PathPlan {
@@ -402,6 +777,26 @@ impl EmissionPlan {
     pub fn class(&self, o: ObjectId) -> Option<EmissionClass> {
         self.class.get(o).copied()
     }
+}
+
+/// The cells `lo + step·k`, `k ∈ [0, len)`, `lo = d·(a·e + b)` over a map
+/// body's captured scalar `e` (its capture slot) — [`Outside`] before `e` is
+/// resolved.
+#[derive(Clone, Copy, Debug)]
+struct Interval {
+    d: u64,
+    a: i64,
+    e: Option<u32>,
+    b: i64,
+    step: u64,
+    len: u64,
+}
+
+/// One side of an index interval: `t ≥ a·e + b` or `t < a·e + b`.
+#[derive(Clone, Copy, Debug)]
+enum Bound {
+    Lo(Option<u32>, i64, i64),
+    Hi(Option<u32>, i64, i64),
 }
 
 /// A value range in the unsigned lattice (negative-capable shapes bail to
@@ -473,7 +868,37 @@ pub enum ElemSrc {
         /// nested inside a `Pair` would collapse the whole pair back to an
         /// array-of-structs read, silently undoing the `Zip` win.
         array: ObjectId,
+        /// The law is piecewise: outside an index interval the cell is a
+        /// captured array's own cell ([`Outside`]).
+        outside: Option<Outside>,
     },
+}
+
+/// **The piece of a `Map`'s law outside a set of cells** (generic-fusion
+/// natural forms): `out[t] = x[t]` for every `t` that is not one of the cells
+/// `lo + step·k`, `k ∈ [0, len)`; `x` the map's capture `slot`, which the
+/// body reads at `t` and nowhere else; on those cells the body's other arm.
+/// `lo = d·(a·e + b)`, `a·e + b` in `e`'s own wrapping int arithmetic (the
+/// program's value; `e` a captured int scalar of the map, `None`: `lo = d·b`),
+/// the product exact. `len = u64::MAX`: to the array's end.
+///
+/// A row write `(t ÷ d == r) ? new(t) : x[t]` is one (`[d·r, d·r + d)`), and
+/// so is `(lo ≤ t ∧ t < lo + len) ? new(t) : x[t]` (`d = 1`; `n − 1 + len`
+/// fits the index type, so `lo + len` never wraps where the interval meets
+/// `[0, n)`), and a column write `(t % s == r) ? new(t) : x[t]` (`step = s`,
+/// from `r`: `t ≥ 0`, so `t % s` is exact and only `r ∈ [0, s)` matches).
+/// Only those cells within `[0, n)` are computed; every other cell is the
+/// capture's — which is what lets a row write run in place over its row
+/// ([`CategoryIr::write_delta`]'s map step, the emitter's range map).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Outside {
+    pub slot: u32,
+    pub d: u64,
+    pub a: i64,
+    pub e: Option<ObjectId>,
+    pub b: i64,
+    pub step: u64,
+    pub len: u64,
 }
 
 /// The per-fn element-law plan — the deduced query
@@ -547,6 +972,14 @@ pub struct LastUsePlan {
     /// `LoopBack` into — the back-route `Pair` cone, loop-body objects only
     /// (a loop-invariant route feeder is not carried).
     carried: SecondaryMap<ObjectId, ObjectId>,
+    /// `use_pos` when forwarding re-exposes the bytes instead of copying them
+    /// (a view, S65): a `Proj` of an array-holding component and a
+    /// `LoopEnter` pin too — the projection lives on the product's bytes, the
+    /// merge's first state and the loop's exit objects (which may be that
+    /// state) on the init's. The pins [`escape_reach`] already counts, as
+    /// liveness. `LoopExit` is no pin: a loop's own buffers are not written
+    /// once it has exited, and the init's ride the `LoopEnter` pin.
+    view_pos: SecondaryMap<ObjectId, u32>,
 }
 
 impl LastUsePlan {
@@ -595,11 +1028,52 @@ impl LastUsePlan {
             && self.carried.get(o).is_none()
             && self.use_pos.get(o).copied().is_none_or(|p| p <= idx)
     }
+
+    /// `view_death` (S65): [`Self::death`] of `o`'s **bytes** when forwarding
+    /// does not copy them — the greatest position at which `o` or any view of
+    /// it (a product holding it, a projection of that, a `Phi` choosing it, a
+    /// loop state starting from it, an exit object that may be that state) is
+    /// used. `None` for escaping objects.
+    pub fn view_death(&self, o: ObjectId) -> Option<u32> {
+        if self.escapes(o) {
+            return None;
+        }
+        self.view_pos.get(o).copied()
+    }
+
+    /// The greatest position at which `o` or a view of its bytes is used,
+    /// escape aside: within one trip of a loop, what its own exit forwards out
+    /// is not read again (the per-iteration release valve of `escapes`).
+    pub fn view_last_use(&self, o: ObjectId) -> Option<u32> {
+        self.view_pos.get(o).copied()
+    }
+
+    /// [`Self::dead_after`] over [`Self::view_death`]: no view of `o`'s bytes
+    /// is used after `idx`, `o` does not escape and is not carried.
+    pub fn view_dead_after(&self, o: ObjectId, idx: u32) -> bool {
+        !self.escapes(o)
+            && self.carried.get(o).is_none()
+            && self.view_pos.get(o).copied().is_none_or(|p| p <= idx)
+    }
+}
+
+/// Whether a value of `ty` holds array bytes (an array, or a product with one).
+fn holds_array(ty: &Ty) -> bool {
+    match ty {
+        Ty::Array { .. } => true,
+        Ty::Tuple(ts) => ts.iter().any(holds_array),
+        Ty::Struct { fields, .. } => fields.iter().any(|(_, t)| holds_array(t)),
+        _ => false,
+    }
 }
 
 impl CategoryIr {
     /// The objects owned by function `f`, in deterministic order.
     fn func_objects(&self, f: FuncId) -> Vec<ObjectId> {
+        self.fact(f, |s| &s.func_objects, || self.func_objects_compute(f))
+    }
+
+    fn func_objects_compute(&self, f: FuncId) -> Vec<ObjectId> {
         self.objects
             .iter()
             .filter(|(id, _)| self.owner.get(*id) == Some(&f))
@@ -615,6 +1089,10 @@ impl CategoryIr {
     /// those transparent products, so a field used by two consumers is named
     /// once rather than duplicated when its product wrapper disappears.
     pub fn emission_plan(&self, f: FuncId) -> EmissionPlan {
+        self.fact(f, |s| &s.emission_plan, || self.emission_plan_compute(f))
+    }
+
+    fn emission_plan_compute(&self, f: FuncId) -> EmissionPlan {
         let bounds = self.bounds_proof(f);
         let mut boundary: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
 
@@ -783,12 +1261,39 @@ impl CategoryIr {
     /// Recognize affine map/fold sites whose cell chains may be interleaved
     /// without changing their operation or operand order.
     pub fn tile_plan(&self, f: FuncId) -> TilePlan {
+        self.fact(f, |s| &s.tile_plan, || self.tile_plan_compute(f))
+    }
+
+    fn tile_plan_compute(&self, f: FuncId) -> TilePlan {
+        self.tile_plan_with(f, false)
+    }
+
+    /// [`Self::tile_plan`] plus the one-row sites whose lane operand is read
+    /// at a lane stride other than 1: `out[j] = fold_k a[k]·b[j·s + k]`, a
+    /// product against a transposed operand (`q·Kᵀ`). Geometry only — the
+    /// stride is the program's. `tile_plan` keeps refusing them: the CPU tile
+    /// ladder walks `b` at unit lane stride; a backend whose realization
+    /// addresses any affine read (the GPU's one-thread-per-cell kernel) asks
+    /// for this plan instead.
+    pub fn tile_plan_strided(&self, f: FuncId) -> TilePlan {
+        self.fact(
+            f,
+            |s| &s.tile_plan_strided,
+            || self.tile_plan_strided_compute(f),
+        )
+    }
+
+    fn tile_plan_strided_compute(&self, f: FuncId) -> TilePlan {
+        self.tile_plan_with(f, true)
+    }
+
+    fn tile_plan_with(&self, f: FuncId, strided: bool) -> TilePlan {
         let mut sites = SecondaryMap::new();
         let Some(fd) = self.func(f) else {
             return TilePlan { sites };
         };
         for &m in &fd.morphisms {
-            if let Some(site) = self.tile_site(m) {
+            if let Some(site) = self.tile_site(m, strided) {
                 sites.insert(m, site);
             }
         }
@@ -800,6 +1305,10 @@ impl CategoryIr {
     /// disjoint from it by construction: this arm requires the body to hold **no**
     /// fold, that one requires exactly one.
     pub fn move_plan(&self, f: FuncId) -> MovePlan {
+        self.fact(f, |s| &s.move_plan, || self.move_plan_compute(f))
+    }
+
+    fn move_plan_compute(&self, f: FuncId) -> MovePlan {
         let mut sites = SecondaryMap::new();
         let Some(fd) = self.func(f) else {
             return MovePlan { sites };
@@ -810,6 +1319,757 @@ impl CategoryIr {
             }
         }
         MovePlan { sites }
+    }
+
+    /// Recognize [`RowFoldSite`]s — maps whose body is one in-order fold of one
+    /// affine read. Disjoint from [`Self::tile_plan`] (its step needs a product
+    /// of two reads, this one the read itself) and from [`Self::move_plan`] (no
+    /// fold there).
+    pub fn row_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        self.fact(f, |s| &s.row_fold, || self.row_fold_compute(f))
+    }
+
+    /// **The trip split** (recurrence-precision item 1): per canonical loop
+    /// with a counter, its guard-cut trip intervals and each interval's
+    /// recurrence ([`TripSplit`]). Built from `loop_plan`, `guard_plan` (of
+    /// `f` and of each map body in the trip) and `map_law`.
+    pub fn trip_split(&self, f: FuncId) -> Vec<TripSplit> {
+        self.fact(
+            f,
+            |s| &s.trip_split,
+            || {
+                self.loop_structure(f)
+                    .iter()
+                    .filter_map(|scc| match scc.merges.as_slice() {
+                        &[merge] => self.trip_split_of(f, &self.loop_plan(f, merge)?),
+                        _ => None,
+                    })
+                    .collect()
+            },
+        )
+    }
+
+    fn trip_split_of(&self, f: FuncId, plan: &LoopPlan) -> Option<TripSplit> {
+        let merge = plan.merge;
+        let Ty::Tuple(parts) = &self.objects.get(merge)?.ty else {
+            return None;
+        };
+        let next = self.pair_slot_source(plan.back_route, 0)?;
+        let cond = self.pair_slot_source(plan.exit_route, 1)?;
+        let views = |k: u32| -> Vec<ObjectId> {
+            self.out_edges(merge)
+                .iter()
+                .filter_map(|&m| {
+                    let mm = &self.morphisms[m];
+                    (mm.op == Operation::Proj { index: k }).then_some(mm.target)
+                })
+                .collect()
+        };
+        let int_const = |o: ObjectId| -> Option<i64> {
+            let ob = self.objects.get(o)?;
+            match (ob.kind, ob.value.as_ref()?) {
+                (ObjectKind::Constant, Value::I32(v)) => Some(i64::from(*v)),
+                (ObjectKind::Constant, Value::I64(v)) => Some(*v),
+                _ => None,
+            }
+        };
+        // `x op C` as `(op, C)` with `x` the operand `is_x` accepts (a flipped
+        // compare is normalized).
+        let compare = |o: ObjectId, is_x: &dyn Fn(ObjectId) -> bool| -> Option<(Operation, i64)> {
+            let m = self.morphisms.get(*self.in_edges(o).first()?)?;
+            if !matches!(
+                m.op,
+                Operation::Lt | Operation::Le | Operation::Gt | Operation::Ge
+            ) {
+                return None;
+            }
+            let (l, r) = (
+                self.pair_slot_source(m.source, 0)?,
+                self.pair_slot_source(m.source, 1)?,
+            );
+            let flip = |op| match op {
+                Operation::Lt => Operation::Gt,
+                Operation::Gt => Operation::Lt,
+                Operation::Le => Operation::Ge,
+                _ => Operation::Le,
+            };
+            if is_x(l) {
+                Some((m.op, int_const(r)?))
+            } else if is_x(r) {
+                Some((flip(m.op), int_const(l)?))
+            } else {
+                None
+            }
+        };
+        // The counter: an int slot from a constant, `t + 1`, continued while `t < hi`.
+        let (counter, lo, hi) = (0..parts.len() as u32).find_map(|k| {
+            if !matches!(parts[k as usize], Ty::Int { .. }) {
+                return None;
+            }
+            let vk = views(k);
+            let lo = int_const(self.pair_slot_source(plan.init, k)?)?;
+            let nk = self.pair_slot_source(next, k)?;
+            let add = self.morphisms.get(*self.in_edges(nk).first()?)?;
+            let (a, b) = (
+                self.pair_slot_source(add.source, 0)?,
+                self.pair_slot_source(add.source, 1)?,
+            );
+            let step_one = add.op == Operation::Add
+                && ((vk.contains(&a) && int_const(b) == Some(1))
+                    || (vk.contains(&b) && int_const(a) == Some(1)));
+            let hi = match compare(cond, &|o| vk.contains(&o))? {
+                (Operation::Lt, c) => c,
+                (Operation::Le, c) => c.checked_add(1)?,
+                _ => return None,
+            };
+            (step_one && lo < hi).then_some((k, lo, hi))
+        })?;
+        let vc = views(counter);
+        let body: SecondaryMap<MorphismId, ()> = plan
+            .decide_order
+            .iter()
+            .chain(&plan.advance_order)
+            .map(|&m| (m, ()))
+            .collect();
+        let truth = |op: Operation, c: i64, t: i64| match op {
+            Operation::Lt => t < c,
+            Operation::Le => t <= c,
+            Operation::Gt => t > c,
+            _ => t >= c,
+        };
+        let cut = |op: Operation, c: i64| match op {
+            Operation::Lt | Operation::Ge => c,
+            _ => c.saturating_add(1),
+        };
+        // Guards on the counter: `f`'s own (in the trip) and each trip map's
+        // body's, whose test reads a capture the map takes from `t`.
+        let mut guards: Vec<(GuardSite, Operation, i64)> = Vec::new();
+        let mut all: Vec<GuardSite> = self.guard_plan(f);
+        for site in self.guard_plan(f) {
+            if body.contains_key(site.phi)
+                && let Some((op, c)) = compare(site.cond, &|o| vc.contains(&o))
+            {
+                guards.push((site, op, c));
+            }
+        }
+        for &m in plan.decide_order.iter().chain(&plan.advance_order) {
+            let Operation::Map { body: b, captures } = self.morphisms[m].op else {
+                continue;
+            };
+            let input = self.func(b)?.input;
+            let src = self.morphisms[m].source;
+            let from_t = |o: ObjectId| {
+                self.tile_input_proj_index(o, input).is_some_and(|s| {
+                    s < captures
+                        && self
+                            .pair_slot_source(src, s)
+                            .is_some_and(|x| vc.contains(&x))
+                })
+            };
+            let sites = self.guard_plan(b);
+            for site in &sites {
+                if let Some((op, c)) = compare(site.cond, &from_t) {
+                    guards.push((site.clone(), op, c));
+                }
+            }
+            all.extend(sites);
+        }
+        let mut cuts: Vec<i64> = guards
+            .iter()
+            .map(|g| cut(g.1, g.2))
+            .filter(|&c| lo < c && c < hi)
+            .collect();
+        cuts.push(lo);
+        cuts.push(hi);
+        cuts.sort_unstable();
+        cuts.dedup();
+        let effect = body.keys().any(|m| {
+            let mm = &self.morphisms[m];
+            [mm.source, mm.target]
+                .iter()
+                .any(|&o| crate::ty::ty_contains_token(&self.objects[o].ty))
+        });
+        let slots: Vec<u32> = (0..parts.len() as u32)
+            .filter(|&k| k != counter && !views(k).is_empty())
+            .collect();
+        let bounds = self.bounds_proof(f);
+        let mut phases = Vec::new();
+        for (n, w) in cuts.windows(2).enumerate() {
+            let (plo, phi) = (w[0], w[1]);
+            // The arms this interval does not take, with every site nested in them.
+            let mut dead: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+            for (site, op, c) in &guards {
+                let off = if truth(*op, *c, plo) {
+                    &site.on_false
+                } else {
+                    &site.on_true
+                };
+                dead.extend(off.own.iter().map(|&m| (m, ())));
+            }
+            loop {
+                let before = dead.len();
+                for s in &all {
+                    if dead.contains_key(s.phi) {
+                        dead.extend(
+                            s.on_true
+                                .own
+                                .iter()
+                                .chain(&s.on_false.own)
+                                .map(|&m| (m, ())),
+                        );
+                    }
+                }
+                if dead.len() == before {
+                    break;
+                }
+            }
+            // A trip map's capture slot every read of which is in a dropped arm.
+            let slot_dead = |m: MorphismId, s: u32| -> bool {
+                let Operation::Map { body: b, captures } = self.morphisms[m].op else {
+                    return false;
+                };
+                let Some(fd) = self.func(b) else { return false };
+                s < captures
+                    && self.out_edges(fd.input).iter().all(|&p| {
+                        self.morphisms[p].op != (Operation::Proj { index: s })
+                            || dead.contains_key(p)
+                            || self
+                                .out_edges(self.morphisms[p].target)
+                                .iter()
+                                .all(|&q| dead.contains_key(q))
+                    })
+            };
+            let reach = |seeds: &[ObjectId]| -> SecondaryMap<ObjectId, ()> {
+                let mut seen: SecondaryMap<ObjectId, ()> = seeds.iter().map(|&o| (o, ())).collect();
+                let mut work = seeds.to_vec();
+                while let Some(o) = work.pop() {
+                    for &m in self.out_edges(o) {
+                        let mm = &self.morphisms[m];
+                        if !body.contains_key(m) || dead.contains_key(m) {
+                            continue;
+                        }
+                        if let Operation::Pair { slot, .. } = mm.op {
+                            let readers = self.out_edges(mm.target);
+                            if !readers.is_empty() && readers.iter().all(|&r| slot_dead(r, slot)) {
+                                continue;
+                            }
+                        }
+                        if seen.insert(mm.target, ()).is_none() {
+                            work.push(mm.target);
+                        }
+                    }
+                }
+                seen
+            };
+            let nexts: Vec<Option<ObjectId>> = slots
+                .iter()
+                .map(|&k| self.pair_slot_source(next, k))
+                .collect();
+            let batched: Vec<(u32, MorphismId)> = slots
+                .iter()
+                .zip(&nexts)
+                .filter_map(|(&k, &nk)| {
+                    let m = *self.in_edges(nk?).first()?;
+                    let Operation::Map { captures, .. } = self.morphisms[m].op else {
+                        return None;
+                    };
+                    let Some(ElemSrc::Apply {
+                        outside: Some(ou),
+                        source,
+                        ..
+                    }) = self.map_law(m)
+                    else {
+                        return None;
+                    };
+                    let invariant = |o: ObjectId| vc.contains(&o) || !plan.scc_objects.contains(&o);
+                    let rows = ou.a == 1
+                        && ou.step == 1
+                        && ou.len <= ou.d
+                        && ou.e.is_some_and(|e| vc.contains(&e));
+                    let own = self
+                        .pair_slot_source(source, ou.slot)
+                        .is_some_and(|x| views(k).contains(&x));
+                    let rest = (0..=captures)
+                        .filter(|&s| s != ou.slot && !slot_dead(m, s))
+                        .all(|s| self.pair_slot_source(source, s).is_some_and(invariant));
+                    (rows && own && rest).then_some((k, m))
+                })
+                .collect();
+            let is_batched = |k: u32| batched.iter().any(|b| b.0 == k);
+            let reached: Vec<SecondaryMap<ObjectId, ()>> =
+                slots.iter().map(|&k| reach(&views(k))).collect();
+            // Slot edges `i → j`: `j`'s next reads `i`'s view.
+            let n_s = slots.len();
+            let mut closure = vec![vec![false; n_s]; n_s];
+            for (i, row) in closure.iter_mut().enumerate() {
+                for (j, c) in row.iter_mut().enumerate() {
+                    *c = !(i == j && is_batched(slots[j]))
+                        && nexts[j].is_some_and(|nj| reached[i].contains_key(nj));
+                }
+            }
+            for k in 0..n_s {
+                for i in 0..n_s {
+                    if closure[i][k] {
+                        for j in 0..n_s {
+                            closure[i][j] |= closure[k][j];
+                        }
+                    }
+                }
+            }
+            let recurrent: Vec<u32> = (0..n_s)
+                .filter(|&i| closure[i][i])
+                .map(|i| slots[i])
+                .collect();
+            let rec_reach = reach(&recurrent.iter().flat_map(|&k| views(k)).collect::<Vec<_>>());
+            let outside: Vec<MorphismId> = plan
+                .decide_order
+                .iter()
+                .chain(&plan.advance_order)
+                .copied()
+                .filter(|&m| {
+                    !dead.contains_key(m) && !rec_reach.contains_key(self.morphisms[m].target)
+                })
+                .collect();
+            let unbatched: Vec<ObjectId> = slots
+                .iter()
+                .filter(|&&k| !is_batched(k))
+                .flat_map(|&k| views(k))
+                .collect();
+            let from_unbatched = reach(&unbatched);
+            // A skipped trip's work must be unobservable: trap-free, so the
+            // interpreter's trap at an early trip is not dropped.
+            let skip = n == 0
+                && phi - plo >= 2
+                && !effect
+                && body
+                    .keys()
+                    .all(|m| dead.contains_key(m) || self.morph_trap_free(m, &bounds, None, 0))
+                && !reach(&slots.iter().flat_map(|&k| views(k)).collect::<Vec<_>>())
+                    .contains_key(cond)
+                && slots.iter().zip(&nexts).all(|(&k, &nk)| {
+                    is_batched(k)
+                        || nk.is_some_and(|nk| {
+                            views(k).contains(&nk) || !from_unbatched.contains_key(nk)
+                        })
+                });
+            phases.push(TripPhase {
+                lo: plo,
+                hi: phi,
+                recurrent,
+                outside,
+                batched,
+                skip,
+            });
+        }
+        Some(TripSplit {
+            merge,
+            counter,
+            lo,
+            hi,
+            phases,
+        })
+    }
+
+    /// **A fold step the order may regroup** (recurrence-precision item 2):
+    /// `fold`'s body is `acc ⊕ g(caps, k)` — `⊕` an `Add` or `Mul` with `acc`
+    /// on either side, or a running max/min (`cmp(acc, e) ? · : ·` over
+    /// exactly `{acc, e}`) — and `acc` feeds nothing but that step, so `g`
+    /// never reads it. Where the order is free (ADR-0040) such a fold may run
+    /// as partial folds from the step's identity combined by `⊕`.
+    pub fn fold_tree_step(&self, fold: MorphismId) -> Option<RowFoldOp> {
+        let Operation::Fold { body, captures } = self.morphisms.get(fold)?.op else {
+            return None;
+        };
+        let fd = self.func(body)?;
+        let accs: Vec<ObjectId> = self
+            .out_edges(fd.input)
+            .iter()
+            .filter(|&&p| self.morphisms[p].op == (Operation::Proj { index: captures }))
+            .map(|&p| self.morphisms[p].target)
+            .collect();
+        let &[acc] = accs.as_slice() else { return None };
+        let [step] = self.in_edges(fd.output) else {
+            return None;
+        };
+        let st = self.morphisms.get(*step)?;
+        let (op, _) = self.fold_step(st, &|o| o == acc)?;
+        if matches!(
+            op,
+            RowFoldOp::Arith {
+                op: Operation::Sub,
+                ..
+            }
+        ) {
+            return None;
+        }
+        // Every use of `acc` is a slot of a product read only by the step
+        // (and a running max/min's compare).
+        let mut into = vec![st.source];
+        if st.op == Operation::Phi {
+            into.push(
+                self.morphisms
+                    .get(
+                        *self
+                            .in_edges(self.pair_slot_source(st.source, 2)?)
+                            .first()?,
+                    )?
+                    .source,
+            );
+        }
+        self.out_edges(acc)
+            .iter()
+            .all(|&e| {
+                let pm = &self.morphisms[e];
+                matches!(pm.op, Operation::Pair { .. }) && into.contains(&pm.target)
+            })
+            .then_some(op)
+    }
+
+    /// A fold body's step `acc ⊕ e` and its `e`: `⊕` an `Add`, `Sub` or `Mul`
+    /// with `acc` on one side, or a running max/min (`cmp(acc, e) ? · : ·`
+    /// over exactly `{acc, e}`). One classifier for [`Self::fold_core`] and
+    /// [`Self::fold_tree_step`].
+    fn fold_step(
+        &self,
+        step: &crate::graph::Morphism,
+        acc: &dyn Fn(ObjectId) -> bool,
+    ) -> Option<(RowFoldOp, ObjectId)> {
+        let slot = |k| self.pair_slot_source(step.source, k);
+        match step.op {
+            Operation::Add | Operation::Sub | Operation::Mul => {
+                let (x, y) = (slot(0)?, slot(1)?);
+                match (acc(x), acc(y)) {
+                    (true, false) => Some((
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: true,
+                        },
+                        y,
+                    )),
+                    (false, true) => Some((
+                        RowFoldOp::Arith {
+                            op: step.op,
+                            acc_first: false,
+                        },
+                        x,
+                    )),
+                    _ => None,
+                }
+            }
+            Operation::Phi => {
+                let (p, q) = (slot(0)?, slot(1)?);
+                let cmp = self.morphisms.get(*self.in_edges(slot(2)?).first()?)?;
+                if !matches!(
+                    cmp.op,
+                    Operation::Lt | Operation::Gt | Operation::Le | Operation::Ge
+                ) {
+                    return None;
+                }
+                let x = self.pair_slot_source(cmp.source, 0)?;
+                let y = self.pair_slot_source(cmp.source, 1)?;
+                let e = if acc(x) { y } else { x };
+                // Exactly `{acc, e}` on both sides: anything else is not a
+                // running max/min of the read.
+                let one_each = |u: ObjectId, v: ObjectId| {
+                    acc(u) != acc(v) && [u, v].iter().all(|&o| acc(o) || o == e)
+                };
+                (one_each(x, y) && one_each(p, q)).then_some((
+                    RowFoldOp::Select {
+                        cmp: cmp.op,
+                        acc_lhs: acc(x),
+                        acc_if_true: acc(p),
+                    },
+                    e,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// **Whole folds** (recurrence-precision): a `Fold` of `f` itself (no
+    /// enclosing map) over a counted range whose step reads one captured
+    /// array at an affine address — a [`RowFoldSite`] of one row (`rows = 1`,
+    /// `ci = 0`): `out = fold_k (seed, ⊕) a[base + ck·k]`. Its slot is the
+    /// fold source's capture slot. A softmax's `max` and `sum` in a loop trip.
+    pub fn whole_fold(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        self.fact(
+            f,
+            |s| &s.whole_fold,
+            || {
+                let mut sites = SecondaryMap::new();
+                for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
+                    if let Some(site) = self.whole_fold_site(m) {
+                        sites.insert(m, site);
+                    }
+                }
+                sites
+            },
+        )
+    }
+
+    fn whole_fold_site(&self, m: MorphismId) -> Option<RowFoldSite> {
+        let fold = self.morphisms.get(m)?;
+        if !matches!(fold.op, Operation::Fold { .. }) {
+            return None;
+        }
+        let elem = self.objects.get(fold.target)?.ty.clone();
+        if !elem.is_numeric() {
+            return None;
+        }
+        let FoldCore {
+            fbody,
+            fcap,
+            k,
+            seed,
+            op,
+            array,
+            address,
+        } = self.fold_core(m)?;
+        let fdef = self.func(fbody)?;
+        let slot = self.tile_input_proj_index(array, fdef.input)?;
+        let source = self.pair_slot_source(fold.source, slot)?;
+        if slot >= fcap {
+            return None;
+        }
+        let Ty::Array {
+            elem: read_elem, ..
+        } = &self.objects.get(source)?.ty
+        else {
+            return None;
+        };
+        if **read_elem != elem || self.objects.get(fdef.output)?.ty != elem || seed.ty() != elem {
+            return None;
+        }
+        // No row: the fold's target stands in for the index, never a capture.
+        let aff = self.tile_affine(
+            address,
+            fold.source,
+            fdef.input,
+            fcap,
+            None,
+            fold.target,
+            None,
+        )?;
+        if aff.ci != 0 || aff.clane != 0 || aff.cq != 0 || aff.cr != 0 || k == 0 {
+            return None;
+        }
+        if !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None) {
+            return None;
+        }
+        Some(RowFoldSite {
+            rows: 1,
+            k,
+            a: TileRead {
+                slot,
+                base: aff.base,
+                ci: 0,
+                ck: aff.ck,
+                clane: 0,
+                ksplit: None,
+            },
+            w: 1,
+            op,
+            seed,
+            elem,
+        })
+    }
+
+    fn row_fold_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, RowFoldSite> {
+        let mut sites = SecondaryMap::new();
+        if let Some(fd) = self.func(f) {
+            for &m in &fd.morphisms {
+                if let Some(site) = self.row_fold_site(m) {
+                    sites.insert(m, site);
+                }
+            }
+        }
+        sites
+    }
+
+    fn row_fold_site(&self, site: MorphismId) -> Option<RowFoldSite> {
+        let map = self.morphisms.get(site)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        if captures == 0 {
+            return None;
+        }
+        let rows = self.tile_iota_size(self.pair_slot_source(map.source, captures)?)?;
+        let Ty::Array { size, elem } = &self.objects.get(map.target)?.ty else {
+            return None;
+        };
+        if *size != rows || rows == 0 || !elem.is_numeric() {
+            return None;
+        }
+        let elem = (**elem).clone();
+        let body_def = self.func(body)?;
+        let mut folds = body_def.morphisms.iter().copied().filter(|&m| {
+            matches!(
+                self.morphisms.get(m).map(|x| x.op),
+                Some(Operation::Fold { .. })
+            )
+        });
+        let fold_id = folds.next()?;
+        if folds.next().is_some() {
+            return None;
+        }
+        let fold = self.morphisms.get(fold_id)?;
+        if fold.target != body_def.output {
+            return None;
+        }
+        let FoldCore {
+            fbody,
+            fcap,
+            k,
+            seed,
+            op,
+            array,
+            address,
+        } = self.fold_core(fold_id)?;
+        let fdef = self.func(fbody)?;
+        let body_value = self.tile_fold_capture(array, fold.source, fdef.input, fcap)?;
+        let read_slot = self.tile_input_proj_index(body_value, body_def.input)?;
+        if read_slot >= captures {
+            return None;
+        }
+        let Ty::Array {
+            elem: read_elem, ..
+        } = &self.objects.get(array)?.ty
+        else {
+            return None;
+        };
+        let acc_ty = &self.objects.get(fdef.output)?.ty;
+        if **read_elem != elem || *acc_ty != elem || seed.ty() != elem {
+            return None;
+        }
+        // The map index's axes as the fold captures them: the element itself,
+        // or its split `(t÷w, t%w)` (`tile_site`'s split, one level up).
+        let split = body_def.morphisms.iter().find_map(|&d| {
+            let (q, w) = self.tile_split(d, body_def.input, captures, Operation::Div)?;
+            body_def.morphisms.iter().find_map(|&m| {
+                let (r, wm) = self.tile_split(m, body_def.input, captures, Operation::Mod)?;
+                (wm == w && w > 1 && rows % w == 0).then_some((q, r, w))
+            })
+        });
+        let (i, lane, w) = match split {
+            Some((q, r, w)) => (q, r, w),
+            None => {
+                let t = (0..fcap).find_map(|s| {
+                    let o = self.pair_slot_source(fold.source, s)?;
+                    (self.tile_input_proj_index(o, body_def.input) == Some(captures)).then_some(o)
+                })?;
+                (t, t, 1)
+            }
+        };
+        // The fold's own `(k÷div, k%div)`, rectangular windows only.
+        let element = fcap + 1;
+        let kaxes = fdef.morphisms.iter().find_map(|&d| {
+            let (kq, div) = self.tile_split(d, fdef.input, element, Operation::Div)?;
+            fdef.morphisms.iter().find_map(|&m| {
+                let (kr, md) = self.tile_split(m, fdef.input, element, Operation::Mod)?;
+                (md == div && k % div == 0).then_some((kq, kr, div))
+            })
+        });
+        let aff = self.tile_affine(
+            address,
+            fold.source,
+            fdef.input,
+            fcap,
+            Some(i),
+            lane,
+            kaxes.map(|(kq, kr, _)| (kq, kr)),
+        )?;
+        let ksplit = match kaxes {
+            Some((_, _, div)) if aff.cq != 0 || aff.cr != 0 => {
+                if aff.ck != 0 {
+                    return None;
+                }
+                Some(TileKSplit {
+                    div,
+                    cq: aff.cq,
+                    cr: aff.cr,
+                })
+            }
+            _ if aff.cq != 0 || aff.cr != 0 => return None,
+            _ => None,
+        };
+        if w == 1 && aff.clane != 0 {
+            return None;
+        }
+        if !self.tile_trap_free(body, &self.bounds_proof(body), Some(fold_id))
+            || !self.tile_trap_free(fbody, &self.bounds_proof(fbody), None)
+        {
+            return None;
+        }
+        Some(RowFoldSite {
+            rows,
+            k,
+            a: TileRead {
+                slot: read_slot,
+                base: aff.base,
+                ci: aff.ci,
+                ck: aff.ck,
+                clane: aff.clane,
+                ksplit,
+            },
+            w,
+            op,
+            seed,
+            elem,
+        })
+    }
+
+    /// A fold's step and its one read, wherever the fold sits: a row fold's
+    /// (inside a map body) or a whole fold's ([`CategoryIr::whole_fold`]).
+    fn fold_core(&self, fold_id: MorphismId) -> Option<FoldCore> {
+        let fold = self.morphisms.get(fold_id)?;
+        let Operation::Fold {
+            body: fbody,
+            captures: fcap,
+        } = fold.op
+        else {
+            return None;
+        };
+        let k = self.tile_iota_size(self.pair_slot_source(fold.source, fcap.checked_add(1)?)?)?;
+        let seed_object = self
+            .objects
+            .get(self.pair_slot_source(fold.source, fcap)?)?;
+        if seed_object.kind != ObjectKind::Constant {
+            return None;
+        }
+        let seed = seed_object.value.clone()?;
+        let fdef = self.func(fbody)?;
+        // ONE read: a second one is a second array or a second cell per step.
+        let reads = fdef
+            .morphisms
+            .iter()
+            .filter(|&&m| {
+                self.morphisms
+                    .get(m)
+                    .is_some_and(|x| x.op == Operation::Index)
+            })
+            .count();
+        if reads != 1 {
+            return None;
+        }
+        let acc = |o: ObjectId| self.tile_input_proj_index(o, fdef.input) == Some(fcap);
+        let [step] = self.in_edges(fdef.output) else {
+            return None;
+        };
+        let (op, e) = self.fold_step(self.morphisms.get(*step)?, &acc)?;
+        // `e` IS the read — any arithmetic on it is a second step.
+        let index = self.tile_definer(e, Operation::Index)?;
+        let array = self.pair_slot_source(index.source, 0)?;
+        let address = self.pair_slot_source(index.source, 1)?;
+        Some(FoldCore {
+            fbody,
+            fcap,
+            k,
+            seed,
+            op,
+            array,
+            address,
+        })
     }
 
     fn move_site(&self, site: MorphismId) -> Option<MoveSite> {
@@ -946,7 +2206,663 @@ impl CategoryIr {
         }
     }
 
-    fn tile_site(&self, site: MorphismId) -> Option<TileSite> {
+    /// **The per-cell morphisms of `f` and what each cell reads** (S54,
+    /// [`CellSite`]). A `Map` is one when its body is classifiable (trap-,
+    /// loop- and effect-free: [`Self::body_is_classifiable`]), calls no
+    /// function, every nested `Map`/`Fold` in it walks local values or reads
+    /// captured arrays only (`nested`, `work`), every `Index` in it is proven
+    /// and reads a captured array, and every capture is an array or a number
+    /// (`uniform`). Each `Index` address is classified over
+    /// the map index `t` — which exists only when the mapped array is an
+    /// `iota`; over any other mapped array the element is a value and an
+    /// address built from it is [`Footprint::Other`].
+    pub fn cell_plan(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
+        self.fact(f, |s| &s.cell_plan, || self.cell_plan_compute(f))
+    }
+
+    fn cell_plan_compute(&self, f: FuncId) -> SecondaryMap<MorphismId, CellSite> {
+        let mut out = SecondaryMap::new();
+        let Some(fd) = self.func(f) else {
+            return out;
+        };
+        for &m in &fd.morphisms {
+            if let Some(site) = self.cell_site(m) {
+                out.insert(m, site);
+            }
+        }
+        out
+    }
+
+    fn cell_site(&self, m: MorphismId) -> Option<CellSite> {
+        let map = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        let mapped = if captures == 0 {
+            map.source
+        } else {
+            self.pair_slot_source(map.source, captures)?
+        };
+        let Ty::Array { size: extent, .. } = self.objects.get(map.target)?.ty else {
+            return None;
+        };
+        let bd = self.func(body)?;
+        let mut nested = Vec::new();
+        let leaf = bd
+            .morphisms
+            .iter()
+            .all(|&g| match self.morphisms.get(g).map(|x| x.op) {
+                Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                    self.local_nest(g, bd.input, 0)
+                        || self
+                            .nest_reads(g, bd.input, captures, 0)
+                            .map(|r| nested.extend(r))
+                            .is_some()
+                }
+                Some(Operation::Call(_)) | None => false,
+                Some(_) => true,
+            });
+        if !leaf || !self.body_is_classifiable(body) {
+            return None;
+        }
+        nested.sort_unstable();
+        nested.dedup();
+        let mut uniform = Vec::new();
+        for s in 0..captures {
+            match self
+                .pair_slot_source(map.source, s)
+                .and_then(|o| self.objects.get(o))
+                .map(|o| &o.ty)
+            {
+                Some(Ty::Array { .. }) => {}
+                Some(Ty::Int { .. } | Ty::Float { .. }) => uniform.push(s),
+                _ => return None,
+            }
+        }
+        // The mapped element: the index itself over an `iota`, else a read.
+        let index = self.tile_iota_size(mapped) == Some(extent);
+        let mut reads = Vec::new();
+        if !index {
+            reads.push(CellRead {
+                slot: captures,
+                foot: Footprint::Same,
+            });
+        }
+        for &g in &bd.morphisms {
+            let x = self.morphisms.get(g)?;
+            if x.op != Operation::Index {
+                continue;
+            }
+            let arr = self.pair_slot_source(x.source, 0)?;
+            let slot = self
+                .tile_input_proj_index(arr, bd.input)
+                .filter(|&s| s < captures)?;
+            let addr = self.pair_slot_source(x.source, 1)?;
+            let foot = if index {
+                self.cell_footprint(addr, bd.input, captures)
+            } else {
+                Footprint::Other
+            };
+            reads.push(CellRead { slot, foot });
+        }
+        reads.extend(nested.iter().map(|&slot| CellRead {
+            slot,
+            foot: Footprint::Other,
+        }));
+        let work = bd
+            .morphisms
+            .iter()
+            .fold(1u64, |w, &g| w.saturating_add(self.nest_steps(g, 0)));
+        let bulk: Vec<MorphismId> = bd
+            .morphisms
+            .iter()
+            .copied()
+            .filter(|&g| {
+                matches!(
+                    self.morphisms[g].op,
+                    Operation::Map { .. } | Operation::Fold { .. }
+                )
+            })
+            .collect();
+        let tree = match bulk[..] {
+            [g] if !nested.is_empty() => self.fold_tree_step(g).and_then(|op| {
+                let Operation::Fold { captures: fc, .. } = self.morphisms[g].op else {
+                    return None;
+                };
+                let k =
+                    self.tile_iota_size(self.pair_slot_source(self.morphisms[g].source, fc + 1)?)?;
+                Some((g, op, k))
+            }),
+            _ => None,
+        };
+        Some(CellSite {
+            extent,
+            reads,
+            body,
+            uniform,
+            nested,
+            work,
+            tree,
+        })
+    }
+
+    /// Element steps of one evaluation of `g` when it is a `Map`/`Fold`: the
+    /// extent it walks times (1 + its body's nested steps); 0 otherwise.
+    fn nest_steps(&self, g: MorphismId, depth: u32) -> u64 {
+        let Some(x) = self.morphisms.get(g) else {
+            return 0;
+        };
+        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op
+        else {
+            return 0;
+        };
+        let over = match x.op {
+            Operation::Map { .. } if nc == 0 => Some(x.source),
+            Operation::Map { .. } => self.pair_slot_source(x.source, nc),
+            _ => self.pair_slot_source(x.source, nc + 1),
+        };
+        let n = match over.and_then(|o| self.objects.get(o)).map(|o| &o.ty) {
+            Some(&Ty::Array { size, .. }) => size,
+            _ => 0,
+        };
+        let inner = match self.func(body) {
+            Some(b) if depth < 8 => b
+                .morphisms
+                .iter()
+                .map(|&h| self.nest_steps(h, depth + 1))
+                .sum(),
+            _ => 0,
+        };
+        n.saturating_mul(inner.saturating_add(1))
+    }
+
+    /// The capture slots (`< captures`, of the body whose input is `input`)
+    /// that nested `Map`/`Fold` `g` reads: every `Index` in its body (and in
+    /// theirs) addresses one of its own captured arrays, each a capture of
+    /// the enclosing body; an array it maps or folds over is either local or
+    /// such a capture. `None` on anything else (a `Call`, an array of
+    /// unknown origin). Depth-guarded (J1).
+    fn nest_reads(
+        &self,
+        g: MorphismId,
+        input: ObjectId,
+        captures: u32,
+        depth: u32,
+    ) -> Option<Vec<u32>> {
+        let x = self.morphisms.get(g)?;
+        let (Operation::Map { body, captures: nc } | Operation::Fold { body, captures: nc }) = x.op
+        else {
+            return None;
+        };
+        let nb = self.func(body)?;
+        if depth >= 8 {
+            return None;
+        }
+        // A component of `g`'s source → the enclosing body's capture slot.
+        let up = |o: ObjectId| {
+            self.tile_input_proj_index(o, input)
+                .filter(|&s| s < captures)
+                .filter(|_| matches!(self.objects.get(o).map(|o| &o.ty), Some(Ty::Array { .. })))
+        };
+        let mut out = Vec::new();
+        // The array `g` maps or folds over: an iota or local value, or a capture.
+        let over = match x.op {
+            Operation::Map { .. } if nc == 0 => Some(x.source),
+            Operation::Map { .. } => self.pair_slot_source(x.source, nc),
+            _ => self.pair_slot_source(x.source, nc + 1),
+        }?;
+        if let Some(s) = up(over) {
+            out.push(s);
+        } else if self.tile_input_proj_index(over, input).is_some() {
+            return None;
+        }
+        for &h in &nb.morphisms {
+            let y = self.morphisms.get(h)?;
+            let inner = match y.op {
+                Operation::Call(_) => return None,
+                Operation::Index => {
+                    let arr = self.pair_slot_source(y.source, 0)?;
+                    vec![
+                        self.tile_input_proj_index(arr, nb.input)
+                            .filter(|&s| s < nc)?,
+                    ]
+                }
+                Operation::Map { .. } | Operation::Fold { .. } => {
+                    self.nest_reads(h, nb.input, nc, depth + 1)?
+                }
+                _ => continue,
+            };
+            for ns in inner {
+                out.push(up(self.pair_slot_source(x.source, ns)?)?);
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    }
+
+    /// A nested `Map`/`Fold` `g` of a cell body with input `input` that reads
+    /// nothing of the cell's inputs but scalars: no array operand is one of
+    /// `input`'s components, and its body (and theirs) holds no `Index` — so
+    /// the cell's reads are exactly its own `Index`es (generic-fusion natural
+    /// forms: a fold over a range the body makes). Depth-guarded (J1).
+    fn local_nest(&self, g: MorphismId, input: ObjectId, depth: u32) -> bool {
+        let Some(x) = self.morphisms.get(g) else {
+            return false;
+        };
+        let (Operation::Map { body, .. } | Operation::Fold { body, .. }) = x.op else {
+            return false;
+        };
+        let Some(src) = self.objects.get(x.source) else {
+            return false;
+        };
+        let parts: Vec<ObjectId> = match &src.ty {
+            Ty::Tuple(ts) => (0..ts.len() as u32)
+                .filter_map(|k| self.pair_slot_source(x.source, k))
+                .collect(),
+            _ => vec![x.source],
+        };
+        let captured = parts.iter().any(|&o| {
+            matches!(self.objects.get(o).map(|o| &o.ty), Some(Ty::Array { .. }))
+                && self.tile_input_proj_index(o, input).is_some()
+        });
+        let Some(nb) = self.func(body) else {
+            return false;
+        };
+        depth < 8
+            && !captured
+            && nb
+                .morphisms
+                .iter()
+                .all(|&h| match self.morphisms.get(h).map(|y| y.op) {
+                    Some(Operation::Index | Operation::Call(_)) | None => false,
+                    Some(Operation::Map { .. } | Operation::Fold { .. }) => {
+                        self.local_nest(h, nb.input, depth + 1)
+                    }
+                    Some(_) => true,
+                })
+    }
+
+    /// `addr` over the map index `t` (`Proj{captures}` of the body input):
+    /// `t`, `t ÷ c`, `t % c` (literal `c`), a literal, or anything else.
+    fn cell_footprint(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Footprint {
+        match self.cell_affine(addr, input, captures) {
+            Some(a) if a.cq == 0 && a.cr == 0 => Footprint::Const(a.base),
+            // `t` itself: `1·(t÷1)`, or `w·(t÷w) + t%w`.
+            Some(a) if a.base == 0 && (a.cq, a.cr) == (a.w, u64::from(a.w > 1)) => Footprint::Same,
+            Some(a) if a.base == 0 && a.w > 1 && (a.cq, a.cr) == (1, 0) => {
+                Footprint::Row { c: a.w }
+            }
+            Some(a) if a.base == 0 && a.w > 1 && (a.cq, a.cr) == (0, 1) => {
+                Footprint::Col { c: a.w }
+            }
+            _ => Footprint::Other,
+        }
+    }
+
+    /// `addr` over the map index `t` (`Proj{captures}` of the body input) as
+    /// `base + cq·(t÷w) + cr·(t%w)`: the [`Self::move_affine`] walk (Add,
+    /// Mul by a literal, a literal) over the leaves `t`, `t÷c`, `t%c` with
+    /// one literal divisor `c` (`w = c`; `w = 1` without one, `t = t÷1`).
+    fn cell_affine(&self, addr: ObjectId, input: ObjectId, captures: u32) -> Option<CellAff> {
+        let raw = self.cell_affine_walk(addr, input, captures, 0)?;
+        let w = raw.w.unwrap_or(1);
+        Some(CellAff {
+            w,
+            base: raw.base,
+            cq: raw.cq.checked_add(raw.ct.checked_mul(w)?)?,
+            cr: raw.cr.checked_add(if w > 1 { raw.ct } else { 0 })?,
+        })
+    }
+
+    fn cell_affine_walk(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        depth: u32,
+    ) -> Option<CellAffRaw> {
+        if depth >= 16 {
+            return None;
+        }
+        if self.tile_input_proj_index(o, input) == Some(captures) {
+            return Some(CellAffRaw {
+                ct: 1,
+                ..CellAffRaw::default()
+            });
+        }
+        if let Some(base) = self.tile_literal_u64(o) {
+            return Some(CellAffRaw {
+                base,
+                ..CellAffRaw::default()
+            });
+        }
+        let [m] = self.in_edges(o) else {
+            return None;
+        };
+        for (op, quot) in [(Operation::Div, true), (Operation::Mod, false)] {
+            if let Some((_, c)) = self.tile_split(*m, input, captures, op) {
+                return Some(CellAffRaw {
+                    w: Some(c),
+                    cq: u64::from(quot),
+                    cr: u64::from(!quot),
+                    ..CellAffRaw::default()
+                });
+            }
+        }
+        let morph = self.morphisms.get(*m)?;
+        let lhs = self.pair_slot_source(morph.source, 0)?;
+        let rhs = self.pair_slot_source(morph.source, 1)?;
+        match morph.op {
+            Operation::Add => self
+                .cell_affine_walk(lhs, input, captures, depth + 1)?
+                .add(self.cell_affine_walk(rhs, input, captures, depth + 1)?),
+            Operation::Mul => {
+                let (scale, value) = match self.tile_literal_u64(lhs) {
+                    Some(s) => (s, rhs),
+                    None => (self.tile_literal_u64(rhs)?, lhs),
+                };
+                self.cell_affine_walk(value, input, captures, depth + 1)?
+                    .scale(scale)
+            }
+            _ => None,
+        }
+    }
+
+    /// **`footprint_plan` (generic-fusion): every consumer's read edges** —
+    /// the one query a fusion rule asks "which producer cells does this
+    /// consumer's cell `t` read". A translation of what the recognizers
+    /// already found ([`Self::tile_plan_strided`], [`Self::row_fold`],
+    /// [`Self::move_plan`], [`Self::cell_plan`], [`Self::bounds_proof`],
+    /// [`Self::elem_plan`]); a consumer none of them recognizes reads its
+    /// captured arrays [`Reach::Whole`]. Only proven reads are affine or a
+    /// range. A producer whose element law is rooted at the index is read as
+    /// [`Reach::Law`]; a capture-free classifiable map over a loaded array
+    /// adds a second edge onto that array with the same reach (`law` set).
+    pub fn footprint_plan(&self, f: FuncId) -> FootprintPlan {
+        self.fact(f, |s| &s.footprint_plan, || self.footprint_plan_compute(f))
+    }
+
+    fn footprint_plan_compute(&self, f: FuncId) -> FootprintPlan {
+        let mut plan = FootprintPlan::default();
+        let Some(fd) = self.func(f) else {
+            return plan;
+        };
+        let tiles = self.tile_plan_strided(f);
+        let folds = self.row_fold(f);
+        let moves = self.move_plan(f);
+        let cells = self.cell_plan(f);
+        let elem = self.elem_plan(f);
+        let bounds = self.bounds_proof(f);
+        // A closed form of the index alone: capture-free applications down
+        // to `Index` (a captured array is bytes the law reads).
+        let rooted = |o: ObjectId| {
+            let mut s = elem.src(o);
+            while let Some(ElemSrc::Apply {
+                inner, captures: 0, ..
+            }) = s
+            {
+                s = Some(inner);
+            }
+            matches!(s, Some(ElemSrc::Index))
+        };
+        let len = |o: ObjectId| match self.objects.get(o).map(|x| &x.ty) {
+            Some(Ty::Array { size, .. }) => *size,
+            _ => 0,
+        };
+        let read = |src: ObjectId, slot: Option<u32>| match slot {
+            Some(s) => self.pair_slot_source(src, s),
+            None => Some(src),
+        };
+        let tile_reach = |r: &TileRead, c: u64, k: u64| {
+            let taps = match r.ksplit {
+                Some(ks) => vec![
+                    Tap {
+                        coef: ks.cq,
+                        ext: k / ks.div,
+                    },
+                    Tap {
+                        coef: ks.cr,
+                        ext: ks.div,
+                    },
+                ],
+                None => vec![Tap { coef: r.ck, ext: k }],
+            };
+            Reach::Affine {
+                w: c,
+                base: r.base,
+                cq: r.ci,
+                cr: r.clane,
+                taps,
+            }
+        };
+        for &m in &fd.morphisms {
+            let Some(morph) = self.morphisms.get(m) else {
+                continue;
+            };
+            let mut edges: Vec<(u32, Option<u32>, Reach)> = Vec::new();
+            match morph.op {
+                Operation::Map { captures, .. } => {
+                    if let Some(s) = tiles.sites.get(m) {
+                        for r in [&s.a, &s.b] {
+                            edges.push((r.slot, Some(r.slot), tile_reach(r, s.c, s.k)));
+                        }
+                    } else if let Some(s) = folds.get(m) {
+                        // A row fold's cells are its map's: `w = s.w`.
+                        edges.push((s.a.slot, Some(s.a.slot), tile_reach(&s.a, s.w, s.k)));
+                    } else if let Some(s) = moves.sites.get(m) {
+                        let slot = self.move_read_slot(m);
+                        if let Some((slot, base)) = slot {
+                            edges.push((
+                                slot,
+                                Some(slot),
+                                Reach::Affine {
+                                    w: s.width,
+                                    base,
+                                    cq: s.cq,
+                                    cr: s.cr,
+                                    taps: Vec::new(),
+                                },
+                            ));
+                        }
+                    } else if let Some(s) = cells.get(m) {
+                        for r in &s.reads {
+                            let slot = (captures > 0).then_some(r.slot);
+                            let reach = if s.nested.contains(&r.slot) {
+                                read(morph.source, slot)
+                                    .map_or(Reach::Whole, |a| Reach::Range { lo: 0, hi: len(a) })
+                            } else {
+                                self.cell_read_reach(m, r, captures, &bounds, len)
+                            };
+                            edges.push((r.slot, slot, reach));
+                        }
+                        for &u in &s.uniform {
+                            edges.push((u, Some(u), Reach::Whole));
+                        }
+                    } else {
+                        for s in 0..captures {
+                            edges.push((s, Some(s), Reach::Whole));
+                        }
+                        let mapped = (captures > 0).then_some(captures);
+                        let same = Reach::Affine {
+                            w: 1,
+                            base: 0,
+                            cq: 1,
+                            cr: 0,
+                            taps: Vec::new(),
+                        };
+                        if let Some(a) = read(morph.source, mapped)
+                            && self.tile_iota_size(a).is_none()
+                        {
+                            edges.push((captures, mapped, same));
+                        }
+                    }
+                }
+                Operation::Fold { captures, .. } => {
+                    let slot = captures + 1;
+                    if let Some(a) = self.pair_slot_source(morph.source, slot) {
+                        edges.push((
+                            slot,
+                            Some(slot),
+                            Reach::Affine {
+                                w: 1,
+                                base: 0,
+                                cq: 0,
+                                cr: 0,
+                                taps: vec![Tap {
+                                    coef: 1,
+                                    ext: len(a),
+                                }],
+                            },
+                        ));
+                    }
+                    for s in 0..captures {
+                        edges.push((s, Some(s), Reach::Whole));
+                    }
+                }
+                Operation::Index => {
+                    let a = self.pair_slot_source(morph.source, 0);
+                    let addr = self.pair_slot_source(morph.source, 1);
+                    let reach = match (a, addr.and_then(|x| self.tile_literal_u64(x))) {
+                        (Some(a), Some(k)) if k < len(a) => Reach::Affine {
+                            w: 1,
+                            base: k,
+                            cq: 0,
+                            cr: 0,
+                            taps: Vec::new(),
+                        },
+                        (Some(a), _) if bounds.proven(m) => Reach::Range { lo: 0, hi: len(a) },
+                        _ => Reach::Whole,
+                    };
+                    edges.push((0, Some(0), reach));
+                }
+                _ => {}
+            }
+            let mut out = Vec::new();
+            for (slot, at, reach) in edges {
+                let Some(producer) = read(morph.source, at) else {
+                    continue;
+                };
+                let reach = if rooted(producer) { Reach::Law } else { reach };
+                // See through a capture-free classifiable map over a loaded
+                // array: `producer[a]` is `body(x[a])`.
+                if reach != Reach::Law
+                    && let Some(ElemSrc::Apply {
+                        captures: 0, inner, ..
+                    }) = elem.src(producer)
+                    && let ElemSrc::Load { source, slot: None } = **inner
+                {
+                    out.push(Edge {
+                        consumer: m,
+                        slot,
+                        producer: source,
+                        reach: reach.clone(),
+                        law: Some(producer),
+                    });
+                }
+                out.push(Edge {
+                    consumer: m,
+                    slot,
+                    producer,
+                    reach,
+                    law: None,
+                });
+            }
+            if !out.is_empty() {
+                plan.edges.insert(m, out);
+            }
+        }
+        plan
+    }
+
+    /// A [`CellRead`]'s reach: the affine walk of its address over the map
+    /// index (every cell read is proven, `cell_plan`), else the proven range.
+    fn cell_read_reach(
+        &self,
+        m: MorphismId,
+        r: &CellRead,
+        captures: u32,
+        bounds: &BoundsProof,
+        len: impl Fn(ObjectId) -> u64,
+    ) -> Reach {
+        let affine = |a: CellAff| Reach::Affine {
+            w: a.w,
+            base: a.base,
+            cq: a.cq,
+            cr: a.cr,
+            taps: Vec::new(),
+        };
+        let morph = &self.morphisms[m];
+        let arr = if captures == 0 {
+            Some(morph.source)
+        } else {
+            self.pair_slot_source(morph.source, r.slot)
+        };
+        let whole = arr.map_or(Reach::Whole, |a| Reach::Range { lo: 0, hi: len(a) });
+        if r.slot == captures {
+            // The mapped element, read at `t`.
+            return affine(CellAff {
+                w: 1,
+                base: 0,
+                cq: 1,
+                cr: 0,
+            });
+        }
+        let Operation::Map { body, .. } = morph.op else {
+            return whole;
+        };
+        let Some(bd) = self.func(body) else {
+            return whole;
+        };
+        // Every Index of this slot: one reach when they agree, else the range.
+        let mut found: Option<Reach> = None;
+        for &g in &bd.morphisms {
+            let Some(x) = self.morphisms.get(g) else {
+                continue;
+            };
+            if x.op != Operation::Index
+                || self
+                    .pair_slot_source(x.source, 0)
+                    .and_then(|a| self.tile_input_proj_index(a, bd.input))
+                    != Some(r.slot)
+            {
+                continue;
+            }
+            let reach = self
+                .pair_slot_source(x.source, 1)
+                .and_then(|a| self.cell_affine(a, bd.input, captures))
+                .map_or_else(|| whole.clone(), affine);
+            match &found {
+                None => found = Some(reach),
+                Some(f) if *f == reach => {}
+                Some(_) => return whole,
+            }
+        }
+        let _ = bounds;
+        found.unwrap_or(whole)
+    }
+
+    /// A move site's read slot and base (the [`MoveSite`] record keeps the
+    /// coefficients only).
+    fn move_read_slot(&self, site: MorphismId) -> Option<(u32, u64)> {
+        let map = self.morphisms.get(site)?;
+        let Operation::Map { body, captures } = map.op else {
+            return None;
+        };
+        let bd = self.func(body)?;
+        let (q, _) = bd
+            .morphisms
+            .iter()
+            .find_map(|&m| self.tile_split(m, bd.input, captures, Operation::Div))?;
+        let (r, _) = bd
+            .morphisms
+            .iter()
+            .find_map(|&m| self.tile_split(m, bd.input, captures, Operation::Mod))?;
+        let index = self.tile_definer(bd.output, Operation::Index)?;
+        let slot = self.tile_input_proj_index(self.pair_slot_source(index.source, 0)?, bd.input)?;
+        let aff = self.move_affine(self.pair_slot_source(index.source, 1)?, q, r, 0)?;
+        Some((slot, aff.base))
+    }
+
+    fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
         let map = self.morphisms.get(site)?;
         let Operation::Map {
             body,
@@ -1045,6 +2961,7 @@ impl CategoryIr {
                     c,
                     depth,
                     seed.clone(),
+                    strided,
                 ) else {
                     continue;
                 };
@@ -1074,6 +2991,7 @@ impl CategoryIr {
             mapped_size,
             depth,
             seed,
+            strided,
         )
     }
 
@@ -1109,6 +3027,7 @@ impl CategoryIr {
         c: u64,
         k: u64,
         seed: Value,
+        strided: bool,
     ) -> Option<TileSite> {
         let Operation::Fold {
             body,
@@ -1208,6 +3127,9 @@ impl CategoryIr {
         let (a, b, mul_a_first) = match (read0.clane, read1.clane) {
             (0, 1) => (read0, read1, true),
             (1, 0) => (read1, read0, false),
+            // `tile_plan_strided`: `b` walks the lanes at stride `l` (`q·Kᵀ`, one row or 2-D).
+            (0, l) if strided && l > 1 => (read0, read1, true),
+            (l, 0) if strided && l > 1 => (read1, read0, false),
             _ => return None,
         };
 
@@ -1228,6 +3150,8 @@ impl CategoryIr {
             elem: elem0,
             mul_a_first,
             add_acc_first,
+            radix: None,
+            tf32: self.precision(mul.id).admits_tf32(),
         })
     }
 
@@ -1391,7 +3315,7 @@ impl CategoryIr {
         // law; a fact check follows. Behavior today is identical — `Iota` is
         // still the only producer of `ElemSrc::Index` — and the cost of getting
         // this wrong is pinned in `tests/tile_sites_pin.rs` (4.0x on matmul
-        // 1024, docs/performance/matmul/s25.md:46-48).
+        // 1024, docs/performance/matmul/history/bit-exact-simd-tiles.md:46-48).
         matches!(self.elem_law_local(array), Some(ElemSrc::Index)).then_some(*size)
     }
 
@@ -1427,6 +3351,10 @@ impl CategoryIr {
     /// tags specifically (`graph.rs`) — a future bodyless-looking op, or a
     /// `Call` whose totality is underivable, must not be admitted by shape.
     pub fn elem_plan(&self, f: FuncId) -> ElemPlan {
+        self.fact(f, |s| &s.elem_plan, || self.elem_plan_compute(f))
+    }
+
+    fn elem_plan_compute(&self, f: FuncId) -> ElemPlan {
         let mut plan = ElemPlan::default();
         let Some(def) = self.func(f) else {
             return plan;
@@ -1501,27 +3429,287 @@ impl CategoryIr {
             )),
             // `Map` joins only when its body is classifiable — see the
             // `ElemSrc::Apply` doc for why it is not a peer of the other four.
-            Operation::Map { body, captures } if self.body_is_classifiable(body) => {
-                let arr_out = arr;
-                let arr = if captures == 0 {
+            Operation::Map { captures, .. } => {
+                let mapped = if captures == 0 {
                     morph.source
                 } else {
                     self.pair_slot_source(morph.source, captures)?
                 };
-                let inner = self
-                    .elem_law(arr, in_loop, depth + 1)
-                    .unwrap_or(ElemSrc::Load {
-                        source: morph.source,
-                        slot: (captures > 0).then_some(captures),
-                    });
-                Some(ElemSrc::Apply {
-                    body,
-                    source: morph.source,
-                    captures,
-                    inner: Box::new(inner),
-                    array: arr_out,
-                })
+                let inner = self.elem_law(mapped, in_loop, depth + 1);
+                self.map_apply(*definer, inner)
             }
+            _ => None,
+        }
+    }
+
+    /// **One `Map`'s element law, its input cut** (generic-fusion): what
+    /// `out[t]` is in terms of the mapped element as loaded — `elem_plan`'s
+    /// `Map` arm without the loop-residence guard, so a map inside a loop
+    /// (a row write into a carried state) has one too. `None` unless `m` is a
+    /// `Map` whose body is classifiable.
+    pub fn map_law(&self, m: MorphismId) -> Option<ElemSrc> {
+        self.map_apply(m, None)
+    }
+
+    /// The `Apply` of map `m` over `inner` (`None`: the mapped element loaded).
+    fn map_apply(&self, m: MorphismId, inner: Option<ElemSrc>) -> Option<ElemSrc> {
+        let morph = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        if !self.body_is_classifiable(body) {
+            return None;
+        }
+        let inner = inner.unwrap_or(ElemSrc::Load {
+            source: morph.source,
+            slot: (captures > 0).then_some(captures),
+        });
+        Some(ElemSrc::Apply {
+            body,
+            source: morph.source,
+            captures,
+            inner: Box::new(inner),
+            array: morph.target,
+            outside: self.map_outside(m),
+        })
+    }
+
+    /// [`Outside`] of map `m`: its mapped array is an `iota` of the output's
+    /// length (the element is the index `t`), its body's output a `Phi` on an
+    /// index interval of `t` whose other arm is `x[t]`, `x` a captured array
+    /// of the output's type read at `t` only.
+    fn map_outside(&self, m: MorphismId) -> Option<Outside> {
+        let morph = self.morphisms.get(m)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        if captures == 0 {
+            return None;
+        }
+        let out_ty = &self.objects.get(morph.target)?.ty;
+        let Ty::Array { size: n, .. } = *out_ty else {
+            return None;
+        };
+        if self.tile_iota_size(self.pair_slot_source(morph.source, captures)?) != Some(n) {
+            return None;
+        }
+        let bd = self.func(body)?;
+        let input = bd.input;
+        let phi = self.tile_definer(bd.output, Operation::Phi)?;
+        let arm = |k| self.pair_slot_source(phi.source, k);
+        let (iv, inside_true) = self.index_interval(arm(2)?, input, captures)?;
+        let outer = arm(if inside_true { 1 } else { 0 })?;
+        let ix = self.tile_definer(outer, Operation::Index)?;
+        let slot = self
+            .tile_input_proj_index(self.pair_slot_source(ix.source, 0)?, input)
+            .filter(|&s| s < captures)?;
+        let x = self.pair_slot_source(morph.source, slot)?;
+        if self.objects.get(x)?.ty != *out_ty || !self.reads_only_at_t(bd, slot, captures) {
+            return None;
+        }
+        // `lo + len` must not wrap where the interval meets `[0, n)`.
+        if iv.d == 1 && iv.step == 1 && n.saturating_sub(1).saturating_add(iv.len) > i32::MAX as u64
+        {
+            return None;
+        }
+        let e = match iv.e {
+            Some(k) => Some(self.pair_slot_source(morph.source, k)?),
+            None => None,
+        };
+        Some(Outside {
+            slot,
+            d: iv.d,
+            a: iv.a,
+            e,
+            b: iv.b,
+            step: iv.step,
+            len: iv.len,
+        })
+    }
+
+    /// Every use of capture `slot` in `bd` is an `Index` at the element `t`.
+    fn reads_only_at_t(&self, bd: &crate::graph::FuncDef, slot: u32, captures: u32) -> bool {
+        self.out_edges(bd.input).iter().all(|&p| {
+            let x = &self.morphisms[p];
+            x.op != (Operation::Proj { index: slot })
+                || self.out_edges(x.target).iter().all(|&q| {
+                    let y = &self.morphisms[q];
+                    matches!(y.op, Operation::Pair { slot: 0, .. })
+                        && self.out_edges(y.target).iter().all(|&r| {
+                            let z = &self.morphisms[r];
+                            z.op == Operation::Index
+                                && self
+                                    .pair_slot_source(z.source, 1)
+                                    .and_then(|a| self.tile_input_proj_index(a, bd.input))
+                                    == Some(captures)
+                        })
+                })
+        })
+    }
+
+    /// `cond` over the map element `t` (`Proj{captures}` of `input`) as a set
+    /// of cells, and whether `t` is in it when `cond` holds: `t == X` / `!=`
+    /// (`[X, X + 1)`), `t ÷ d == X` / `!=` (`[d·X, d·X + d)`), `t % s == X` /
+    /// `!=` (`X + s·k`), or
+    /// `L ≤ t ∧ t < L + len` in either operand order (`t ≥ L`, `L ≤ t`,
+    /// `t > L − 1`; `t < H`, `H > t`, `t ≤ H − 1`), `X`, `L` affine in one
+    /// captured int scalar.
+    fn index_interval(
+        &self,
+        cond: ObjectId,
+        input: ObjectId,
+        captures: u32,
+    ) -> Option<(Interval, bool)> {
+        let c = self.morphisms.get(*self.in_edges(cond).first()?)?;
+        let (x, y) = (
+            self.pair_slot_source(c.source, 0)?,
+            self.pair_slot_source(c.source, 1)?,
+        );
+        let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
+        match c.op {
+            Operation::Eq | Operation::Neq => {
+                // `t` (one cell), `t ÷ d` (a row: `d` cells from `d·X`) or
+                // `t % s` (a column: every `s`-th cell from `X`), `d`, `s`
+                // literals.
+                let split_of_t = |o: ObjectId| {
+                    if is_t(o) {
+                        return Some((1, 1, 1));
+                    }
+                    let (op, g) = [Operation::Div, Operation::Mod]
+                        .into_iter()
+                        .find_map(|op| Some((op, self.tile_definer(o, op)?)))?;
+                    if !is_t(self.pair_slot_source(g.source, 0)?) {
+                        return None;
+                    }
+                    let k = self
+                        .tile_literal_u64(self.pair_slot_source(g.source, 1)?)
+                        .filter(|&k| k > 0)?;
+                    Some(if op == Operation::Div {
+                        (k, 1, k)
+                    } else {
+                        (1, k, u64::MAX)
+                    })
+                };
+                let ((d, step, len), other) = match split_of_t(x) {
+                    Some(s) => (s, y),
+                    None => (split_of_t(y)?, x),
+                };
+                let mut e = None;
+                let (a, b) = self.capture_affine(other, input, captures, &mut e, 0)?;
+                Some((
+                    Interval {
+                        d,
+                        a,
+                        e,
+                        b,
+                        step,
+                        len,
+                    },
+                    c.op == Operation::Eq,
+                ))
+            }
+            Operation::And => {
+                let (bx, by) = (
+                    self.t_bound(x, input, captures)?,
+                    self.t_bound(y, input, captures)?,
+                );
+                let ((e1, a1, b1), (e2, a2, b2)) = match (bx, by) {
+                    (Bound::Lo(e1, a1, b1), Bound::Hi(e2, a2, b2))
+                    | (Bound::Hi(e2, a2, b2), Bound::Lo(e1, a1, b1)) => {
+                        ((e1, a1, b1), (e2, a2, b2))
+                    }
+                    _ => return None,
+                };
+                let len = u64::try_from(b2.checked_sub(b1)?).ok().filter(|&l| l > 0)?;
+                (a1 == a2 && (e1 == e2 || a1 == 0)).then_some((
+                    Interval {
+                        d: 1,
+                        a: a1,
+                        e: e1.or(e2),
+                        b: b1,
+                        step: 1,
+                        len,
+                    },
+                    true,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// One comparison of `t` against an affine bound: `t ≥ a·e + b` as
+    /// `Lo(e, a, b)`, `t < a·e + b` as `Hi(e, a, b)`.
+    fn t_bound(&self, cmp: ObjectId, input: ObjectId, captures: u32) -> Option<Bound> {
+        let c = self.morphisms.get(*self.in_edges(cmp).first()?)?;
+        let (x, y) = (
+            self.pair_slot_source(c.source, 0)?,
+            self.pair_slot_source(c.source, 1)?,
+        );
+        let is_t = |o: ObjectId| self.tile_input_proj_index(o, input) == Some(captures);
+        // Normalize to `t op bound`.
+        let (op, bound) = if is_t(x) {
+            (c.op, y)
+        } else if is_t(y) {
+            let flipped = match c.op {
+                Operation::Lt => Operation::Gt,
+                Operation::Gt => Operation::Lt,
+                Operation::Le => Operation::Ge,
+                Operation::Ge => Operation::Le,
+                _ => return None,
+            };
+            (flipped, x)
+        } else {
+            return None;
+        };
+        let mut e = None;
+        let (a, b) = self.capture_affine(bound, input, captures, &mut e, 0)?;
+        match op {
+            Operation::Ge => Some(Bound::Lo(e, a, b)),
+            Operation::Gt => Some(Bound::Lo(e, a, b.checked_add(1)?)),
+            Operation::Lt => Some(Bound::Hi(e, a, b)),
+            Operation::Le => Some(Bound::Hi(e, a, b.checked_add(1)?)),
+            _ => None,
+        }
+    }
+
+    /// `o` as `a·e + b` over one captured int scalar `e` (`Proj{k}` of the
+    /// body input, `k < captures`; the capture slot is recorded in `e`) and
+    /// literals: `Add`, `Sub`, `Mul` by a literal. Depth-guarded (J1).
+    fn capture_affine(
+        &self,
+        o: ObjectId,
+        input: ObjectId,
+        captures: u32,
+        e: &mut Option<u32>,
+        depth: u32,
+    ) -> Option<(i64, i64)> {
+        if depth > 16 {
+            return None;
+        }
+        let obj = self.objects.get(o)?;
+        if obj.kind == ObjectKind::Constant {
+            return match obj.value {
+                Some(Value::I32(v)) => Some((0, v.into())),
+                _ => None,
+            };
+        }
+        if let Some(k) = self.tile_input_proj_index(o, input) {
+            return (k < captures && obj.ty == Ty::i32() && *e.get_or_insert(k) == k)
+                .then_some((1, 0));
+        }
+        let mm = self.morphisms.get(*self.in_edges(o).first()?)?;
+        if !matches!(mm.op, Operation::Add | Operation::Sub | Operation::Mul) {
+            return None;
+        }
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        let (xa, xb) = self.capture_affine(x, input, captures, e, depth + 1)?;
+        let (ya, yb) = self.capture_affine(y, input, captures, e, depth + 1)?;
+        match mm.op {
+            Operation::Add => Some((xa.checked_add(ya)?, xb.checked_add(yb)?)),
+            Operation::Sub => Some((xa.checked_sub(ya)?, xb.checked_sub(yb)?)),
+            _ if xa == 0 => Some((ya.checked_mul(xb)?, yb.checked_mul(xb)?)),
+            _ if ya == 0 => Some((xa.checked_mul(yb)?, xb.checked_mul(yb)?)),
             _ => None,
         }
     }
@@ -1539,10 +3727,22 @@ impl CategoryIr {
     /// - **effect-free**: `tile_trap_free`'s catch-all arm answers `true` for
     ///   `Print`/`TimeMs`. Its existing callers are covered by token threading;
     ///   this one is not, so the check is made here rather than inherited.
+    ///
+    /// A nested `Map`/`Fold` whose own body is classifiable is too (a fixed
+    /// array is a finite trip; generic-fusion natural forms: an exponent as a
+    /// fold over a range): it can neither trap nor diverge nor print.
+    /// Depth-guarded (J1).
     fn body_is_classifiable(&self, body: FuncId) -> bool {
+        self.classifiable_at(body, 0)
+    }
+
+    fn classifiable_at(&self, body: FuncId, depth: u32) -> bool {
         let Some(def) = self.func(body) else {
             return false;
         };
+        if depth > 8 {
+            return false;
+        }
         let effectful = def.morphisms.iter().any(|m| {
             matches!(
                 self.morphisms.get(*m).map(|x| x.op),
@@ -1551,7 +3751,7 @@ impl CategoryIr {
         });
         !effectful
             && self.loop_structure(body).is_empty()
-            && self.tile_trap_free(body, &self.bounds_proof(body), None)
+            && self.trap_free_at(body, &self.bounds_proof(body), None, depth)
     }
 
     /// The law of component `slot` of `product`, cutting to a `Load` addressed
@@ -1590,38 +3790,63 @@ impl CategoryIr {
     /// emits only the recognized chain, so anything it would skip must be
     /// provably unobservable — pure, trap-free, and with no nested body it
     /// cannot see into. `Call` and any Map/Fold other than the recognized fold
-    /// (`allow_fold`) are rejected outright: their subgraphs could trap while
-    /// the tiled form skips them (an R1 divergence, not just a missed proof).
+    /// (`allow_fold`) are rejected unless their own body is classifiable
+    /// (pure, trap-free, loop-free — then skipping it is unobservable); any
+    /// other subgraph could trap while the tiled form skips it (an R1
+    /// divergence, not just a missed proof). `Call` is rejected outright.
     fn tile_trap_free(
         &self,
         f: FuncId,
         bounds: &BoundsProof,
         allow_fold: Option<MorphismId>,
     ) -> bool {
+        self.trap_free_at(f, bounds, allow_fold, 0)
+    }
+
+    fn trap_free_at(
+        &self,
+        f: FuncId,
+        bounds: &BoundsProof,
+        allow_fold: Option<MorphismId>,
+        depth: u32,
+    ) -> bool {
         self.func(f).is_some_and(|fd| {
-            fd.morphisms.iter().all(|m| {
-                let Some(morph) = self.morphisms.get(*m) else {
-                    return false;
-                };
-                match morph.op {
-                    Operation::Div | Operation::Mod => {
-                        self.objects.get(morph.target).is_some_and(|target| {
-                            matches!(target.ty, Ty::Float { .. })
-                                || self
-                                    .pair_slot_source(morph.source, 1)
-                                    .and_then(|o| self.objects.get(o))
-                                    .is_some_and(safe_integer_divisor)
-                        })
-                    }
-                    Operation::Index => bounds.proven(*m),
-                    Operation::Update => false,
-                    Operation::Call { .. } => false,
-                    Operation::Fold { .. } => allow_fold == Some(*m),
-                    Operation::Map { .. } => false,
-                    _ => true,
-                }
-            })
+            fd.morphisms
+                .iter()
+                .all(|&m| self.morph_trap_free(m, bounds, allow_fold, depth))
         })
+    }
+
+    /// One morphism of [`Self::trap_free_at`]: it cannot trap (a nested
+    /// body only when it is classifiable — pure, trap-free, loop-free).
+    fn morph_trap_free(
+        &self,
+        m: MorphismId,
+        bounds: &BoundsProof,
+        allow_fold: Option<MorphismId>,
+        depth: u32,
+    ) -> bool {
+        let Some(morph) = self.morphisms.get(m) else {
+            return false;
+        };
+        match morph.op {
+            Operation::Div | Operation::Mod => {
+                self.objects.get(morph.target).is_some_and(|target| {
+                    matches!(target.ty, Ty::Float { .. })
+                        || self
+                            .pair_slot_source(morph.source, 1)
+                            .and_then(|o| self.objects.get(o))
+                            .is_some_and(safe_integer_divisor)
+                })
+            }
+            Operation::Index => bounds.proven(m),
+            Operation::Update => false,
+            Operation::Call { .. } => false,
+            Operation::Fold { body, .. } | Operation::Map { body, .. } => {
+                allow_fold == Some(m) || self.classifiable_at(body, depth + 1)
+            }
+            _ => true,
+        }
     }
 
     /// The per-function parallel path query. Tasks are emitted in first topo
@@ -1635,6 +3860,10 @@ impl CategoryIr {
     /// Checkpoint trap guards use the last earlier site as their watermark
     /// threshold; consumed-value producers require completion.
     pub fn path_plan(&self, f: FuncId) -> PathPlan {
+        self.fact(f, |s| &s.path_plan, || self.path_plan_compute(f))
+    }
+
+    fn path_plan_compute(&self, f: FuncId) -> PathPlan {
         let topo = self.topo_order(f);
         let bounds = self.bounds_proof(f);
         let trap_capable = self.fn_trap_capabilities();
@@ -2185,6 +4414,10 @@ impl CategoryIr {
     /// objects are in the order Tarjan pops them. Deterministic given the
     /// insertion-ordered adjacency.
     pub fn sccs(&self, f: FuncId) -> Vec<Vec<ObjectId>> {
+        self.fact(f, |s| &s.sccs, || self.sccs_compute(f))
+    }
+
+    fn sccs_compute(&self, f: FuncId) -> Vec<Vec<ObjectId>> {
         let nodes = self.func_objects(f);
 
         // Tarjan bookkeeping in SecondaryMaps (no HashMap; I12).
@@ -2325,7 +4558,15 @@ impl CategoryIr {
     /// rely on this: they read loop-invariant operands when the header fires
     /// (S12 fix; previously a multi-hop invariant like `x * 2` inside a loop
     /// body was ordered after its `LoopEnter` and read-before-write).
+    ///
+    /// **Clock reads cut the order** ([`Self::fence_clocks`], plan-s53): the
+    /// work written before a `time` precedes it and the work written after it
+    /// follows. A function without one keeps the order above byte for byte.
     pub fn topo_order(&self, f: FuncId) -> Vec<MorphismId> {
+        self.fact(f, |s| &s.topo_order, || self.topo_order_compute(f))
+    }
+
+    fn topo_order_compute(&self, f: FuncId) -> Vec<MorphismId> {
         let nodes = self.func_objects(f);
 
         // For each object, how many in-edges must fire before it "completes".
@@ -2440,6 +4681,103 @@ impl CategoryIr {
             break;
         }
 
+        self.fence_clocks(f, order)
+    }
+
+    /// plan-s53 `clock-fence`: a clock read sits after the work written before
+    /// it and before the work written after it. Kahn alone cannot see that — a
+    /// `TimeMs` consumes only the token, so it is released the moment the token
+    /// is, and on the GPU e2e program (S52) `t0` landed before the input
+    /// generation and `t1` before the site: `t1 - t0` timed the generation.
+    /// `path_plan` fences the parallel walk by source position (S29/S33b); this
+    /// is the same key for every walk of `topo_order` — the sequential emitter,
+    /// the interpreter, and the plans that take positions from it.
+    ///
+    /// `own(m)` = 2 × (clocks written before `m`), + 1 if `m` is itself a clock;
+    /// `seg(m)` = max(`own(m)`, `seg` of every producer of `m.source`), to a
+    /// fixpoint, and every morphism incident to a loop SCC takes the SCC's
+    /// maximum — the loop runs as one unit at its header, so the header must
+    /// follow everything the loop reads. `seg` never decreases along an edge,
+    /// so the stable sort by it is still a topological order, and equal
+    /// segments keep Kahn's order. A clock inside a loop is not a cut: it reads
+    /// once per iteration, at its place in the cycle.
+    fn fence_clocks(&self, f: FuncId, mut order: Vec<MorphismId>) -> Vec<MorphismId> {
+        if !order
+            .iter()
+            .any(|&m| self.morphisms[m].op == Operation::TimeMs)
+        {
+            return order;
+        }
+        let loops = self.loop_structure(f);
+        let mut loop_of: SecondaryMap<ObjectId, usize> = SecondaryMap::new();
+        for (i, scc) in loops.iter().enumerate() {
+            for &o in &scc.objects {
+                loop_of.insert(o, i);
+            }
+        }
+        let is_cut = |m: MorphismId| {
+            let morph = &self.morphisms[m];
+            morph.op == Operation::TimeMs && !loop_of.contains_key(morph.source)
+        };
+        let mut cuts: Vec<u32> = order
+            .iter()
+            .filter(|&&m| is_cut(m))
+            .map(|&m| self.morphisms[m].loc.start)
+            .collect();
+        if cuts.is_empty() {
+            return order;
+        }
+        cuts.sort_unstable();
+        let own = |m: MorphismId| {
+            let before = cuts.partition_point(|&s| s < self.morphisms[m].loc.start) as u32;
+            2 * before + is_cut(m) as u32
+        };
+        let incident = |m: MorphismId| {
+            let morph = &self.morphisms[m];
+            loop_of
+                .get(morph.source)
+                .or_else(|| loop_of.get(morph.target))
+                .copied()
+        };
+
+        let mut seg: SecondaryMap<MorphismId, u32> = order.iter().map(|&m| (m, own(m))).collect();
+        loop {
+            let mut changed = false;
+            for &m in &order {
+                let from = self
+                    .in_edges(self.morphisms[m].source)
+                    .iter()
+                    .filter_map(|&p| seg.get(p).copied())
+                    .max()
+                    .unwrap_or(0);
+                if from > seg[m] {
+                    seg[m] = from;
+                    changed = true;
+                }
+            }
+            let mut top = vec![0; loops.len()];
+            for &m in &order {
+                if let Some(i) = incident(m) {
+                    top[i] = top[i].max(seg[m]);
+                }
+            }
+            for &m in &order {
+                if let Some(i) = incident(m)
+                    && seg[m] < top[i]
+                {
+                    seg[m] = top[i];
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        debug_assert!(
+            order.iter().all(|&m| !is_cut(m) || seg[m] == own(m)),
+            "a clock read was pushed past its own segment"
+        );
+        order.sort_by_key(|&m| seg[m]);
         order
     }
 
@@ -2448,6 +4786,10 @@ impl CategoryIr {
     ///
     /// A trivial SCC (one object, no self-loop) is not a loop and is excluded.
     pub fn loop_structure(&self, f: FuncId) -> Vec<LoopScc> {
+        self.fact(f, |s| &s.loop_structure, || self.loop_structure_compute(f))
+    }
+
+    fn loop_structure_compute(&self, f: FuncId) -> Vec<LoopScc> {
         let mut out = Vec::new();
         for comp in self.sccs(f) {
             let nontrivial = comp.len() > 1 || self.has_self_loop(comp[0]);
@@ -2484,6 +4826,26 @@ impl CategoryIr {
     /// exit-route feeders, incl. exit-feeding effects); the advance cone is the
     /// rest (next-state), unreachable on the exit step.
     pub fn loop_plan(&self, f: FuncId, merge: ObjectId) -> Option<LoopPlan> {
+        let plans = |s: &crate::facts::FuncFacts| -> Option<LoopPlan> {
+            s.loop_plans
+                .get_or_init(|| {
+                    self.loop_structure(f)
+                        .iter()
+                        .flat_map(|scc| scc.merges.iter())
+                        .map(|&m| (m, self.loop_plan_compute(f, m)))
+                        .collect()
+                })
+                .iter()
+                .find(|(m, _)| *m == merge)
+                .and_then(|(_, p)| p.clone())
+        };
+        match self.facts_of(f) {
+            Some(s) => plans(s),
+            None => self.loop_plan_compute(f, merge),
+        }
+    }
+
+    fn loop_plan_compute(&self, f: FuncId, merge: ObjectId) -> Option<LoopPlan> {
         // Single-merge SCC (M1 canonical shape) — THIS merge's SCC only, never
         // the per-function union.
         let scc = self
@@ -2596,11 +4958,15 @@ impl CategoryIr {
         }
 
         // body_order: topo_order filtered to morphisms incident to SCC(merge) OR
-        // targeting the loop-variant route cone, excluding loop ops. Route
-        // objects sit outside the SCC, but every morphism assembling them —
-        // direct Pair edges and the whole computed-payload chain behind them —
-        // must re-fire each iteration, so membership-by-SCC alone would drop
-        // them.
+        // targeting a loop-variant object, excluding loop ops. Route objects
+        // sit outside the SCC, but every morphism assembling them — direct
+        // Pair edges and the whole computed-payload chain behind them — must
+        // re-fire each iteration, so membership-by-SCC alone would drop them.
+        // So must a trip's dead work (a value that feeds no route: it runs,
+        // and may trap, every trip — generic-fusion's twin sweep: a dead site
+        // over the state ran once outside the loop, the interpreter reading a
+        // half-staged capture, the parallel host racing the loop for its
+        // view).
         let body_order: Vec<MorphismId> = self
             .topo_order(f)
             .into_iter()
@@ -2614,7 +4980,7 @@ impl CategoryIr {
                 }
                 in_scc.contains_key(morph.source)
                     || in_scc.contains_key(morph.target)
-                    || (cone.contains_key(morph.target) && variant.contains_key(morph.target))
+                    || variant.contains_key(morph.target)
             })
             .collect();
 
@@ -2678,6 +5044,10 @@ impl CategoryIr {
     /// recursion-free (J1), total on any sealed fn: non-canonical loops
     /// contribute no carried set and no re-ranking, so consumers fall back.
     pub fn last_use_plan(&self, f: FuncId) -> LastUsePlan {
+        self.fact(f, |s| &s.last_use_plan, || self.last_use_plan_compute(f))
+    }
+
+    fn last_use_plan_compute(&self, f: FuncId) -> LastUsePlan {
         let topo = self.topo_order(f);
         let mut position: SecondaryMap<MorphismId, u32> = SecondaryMap::new();
         for (i, &m) in topo.iter().enumerate() {
@@ -2866,11 +5236,55 @@ impl CategoryIr {
             }
         }
 
+        // view_pos: the same sweep, every forwarding morphism a pin. A pin's
+        // target is defined after its source (a `LoopEnter`'s merge and the
+        // loop's `LoopExit` targets after the init), so it is settled first.
+        let exits_of = |merge: ObjectId| -> Vec<ObjectId> {
+            plans
+                .iter()
+                .filter(|p| p.merge == merge)
+                .flat_map(|p| p.exits.iter().map(|&x| self.morphisms[x].target))
+                .collect()
+        };
+        let mut view_pos: SecondaryMap<ObjectId, u32> = SecondaryMap::new();
+        for &(o, _) in &definer {
+            let mut best: Option<u32> = None;
+            for &m in self.out_edges(o) {
+                let morph = &self.morphisms[m];
+                let pins: Vec<ObjectId> = match morph.op {
+                    Operation::Pair { .. } | Operation::Phi => vec![morph.target],
+                    Operation::Proj { index }
+                        if self.objects[o]
+                            .ty
+                            .component_ty(index)
+                            .is_some_and(holds_array) =>
+                    {
+                        vec![morph.target]
+                    }
+                    Operation::LoopEnter => {
+                        let mut v = exits_of(morph.target);
+                        v.push(morph.target);
+                        v
+                    }
+                    _ => Vec::new(),
+                };
+                let p = pins
+                    .iter()
+                    .filter_map(|&t| view_pos.get(t).copied())
+                    .fold(position[m], u32::max);
+                best = Some(best.map_or(p, |b: u32| b.max(p)));
+            }
+            if let Some(b) = best {
+                view_pos.insert(o, b);
+            }
+        }
+
         LastUsePlan {
             position,
             use_pos,
             escapes,
             carried,
+            view_pos,
         }
     }
 
@@ -2939,8 +5353,276 @@ impl CategoryIr {
     /// One `topo_order` pass; anything unknown/wrapping/loop-carried is NOT
     /// proven (consumers keep today's guards there — zero behavior change).
     pub fn bounds_proof(&self, f: FuncId) -> BoundsProof {
+        self.fact(f, |s| &s.bounds_proof, || self.bounds_proof_compute(f))
+    }
+
+    fn bounds_proof_compute(&self, f: FuncId) -> BoundsProof {
         let mut visited: Vec<FuncId> = Vec::new();
         self.bounds_proof_inner(f, &mut visited).0
+    }
+
+    /// The write delta of every loop-carried array in `f` (S53 `retain-delta`
+    /// — the fact [`bounds_proof`](Self::bounds_proof) never had: it ranges
+    /// `Index`, and `Update` stays trap-capable). Keyed by the carried array's
+    /// merge view: the `LoopMerge` itself when the loop carries one value, its
+    /// `Proj{k}` otherwise.
+    ///
+    /// [`Delta::Rows`] when the value crossing the back edge is reached from
+    /// that view through `Update`s and piecewise maps only (`Proj`-of-`Pair`
+    /// hops are transparent; a map whose [`Outside`] slot is the walked array
+    /// writes its interval) whose cells are all `a·t + b_j` (+ the interval)
+    /// — one int merge view `t`, one `a`, in `t`'s wrapping arithmetic — and
+    /// together cover one contiguous range. [`Delta::Top`] for every other
+    /// carried array. Canonical loops only.
+    ///
+    /// A map's interval holds every cell it writes in `[0, n)` (the body
+    /// computes nothing else), and the trip's cells there are its interval's
+    /// — so the union is sound for maps too; where the interval misses the
+    /// array the claim is vacuous (see [`Delta::Rows`]).
+    ///
+    /// Why wrapping is enough: every index is `X + b_j` for the same wrapped
+    /// `X = a·t`, and an executed `Update` traps unless its index is in
+    /// `[0, n)` — so when the iteration completes, its cells are exactly
+    /// `[start, start + stride)` with `start = X + b_min ≥ 0`.
+    ///
+    /// **Same consumers (S54).** A captures-0 `Map` over a `Rows` value `v`,
+    /// `y[c] = m(v[c])`, run every iteration (in the loop body, not in a guard
+    /// arm), differs from its own previous-iteration value only where `v`
+    /// does: `y` gets the same `Δ`, keyed by `y` itself (`next: y`; it is no
+    /// view), and so on down a chain of such maps. Never the other way: a
+    /// back-edge value that is a map's output is rewritten whole (`Top`).
+    pub fn write_delta(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
+        self.fact(f, |s| &s.write_delta, || self.write_delta_compute(f))
+    }
+
+    fn write_delta_compute(&self, f: FuncId) -> SecondaryMap<ObjectId, Delta> {
+        let mut out = SecondaryMap::new();
+        let gated: Vec<MorphismId> = self
+            .guard_plan(f)
+            .into_iter()
+            .filter(GuardSite::gated)
+            .flat_map(|s| s.on_true.own.into_iter().chain(s.on_false.own))
+            .collect();
+        for scc in self.loop_structure(f) {
+            let &[merge] = scc.merges.as_slice() else {
+                continue;
+            };
+            let Some(plan) = self.loop_plan(f, merge) else {
+                continue;
+            };
+            let Some(next) = self.pair_slot_source(plan.back_route, 0) else {
+                continue;
+            };
+            let merge_ty = &self.objects[merge].ty;
+            let slots: Vec<(Option<u32>, ObjectId)> = match merge_ty {
+                Ty::Tuple(ts) => (0..ts.len() as u32)
+                    .filter_map(|k| Some((Some(k), self.pair_slot_source(next, k)?)))
+                    .collect(),
+                _ => vec![(None, next)],
+            };
+            for (k, nk) in slots {
+                let comp = k.map_or(Some(merge_ty), |k| merge_ty.component_ty(k));
+                if !matches!(comp, Some(Ty::Array { .. })) {
+                    continue;
+                }
+                let is_view = |o: ObjectId| match k {
+                    None => o == merge,
+                    Some(k) => self.in_edges(o).iter().any(|&m| {
+                        let mm = &self.morphisms[m];
+                        mm.source == merge && mm.op == Operation::Proj { index: k }
+                    }),
+                };
+                // Walk back from the back-route value to the view.
+                let (mut o, mut idxs, mut view) = (nk, Vec::new(), None);
+                for _ in 0..self.objects.len() {
+                    if is_view(o) {
+                        view = Some(o);
+                        break;
+                    }
+                    let Some(&m) = self.in_edges(o).first() else {
+                        break;
+                    };
+                    let mm = &self.morphisms[m];
+                    let step = match mm.op {
+                        Operation::Update => self.pair_slot_source(mm.source, 1).and_then(|i| {
+                            idxs.push(Outside {
+                                slot: 0,
+                                d: 1,
+                                a: 1,
+                                e: Some(i),
+                                b: 0,
+                                step: 1,
+                                len: 1,
+                            });
+                            self.pair_slot_source(mm.source, 0)
+                        }),
+                        Operation::Proj { .. } => self.proj_of_pair(o),
+                        // A piecewise map: only its interval is not the walked array's.
+                        Operation::Map { .. } => match self.map_law(m) {
+                            Some(ElemSrc::Apply {
+                                outside: Some(ou),
+                                source,
+                                ..
+                            }) => {
+                                idxs.push(ou);
+                                self.pair_slot_source(source, ou.slot)
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    let Some(prev) = step else { break };
+                    o = prev;
+                }
+                let first_view = || match k {
+                    None => Some(merge),
+                    Some(k) => self.out_edges(merge).iter().find_map(|&m| {
+                        let mm = &self.morphisms[m];
+                        (mm.op == Operation::Proj { index: k }).then_some(mm.target)
+                    }),
+                };
+                let Some(key) = view.or_else(first_view) else {
+                    continue;
+                };
+                let delta = view
+                    .and_then(|_| self.rows_of(&idxs, merge, nk))
+                    .unwrap_or(Delta::Top);
+                out.insert(key, delta);
+                let Delta::Rows { stride, start, .. } = delta else {
+                    continue;
+                };
+                let mut frontier = vec![nk];
+                while let Some(v) = frontier.pop() {
+                    for &m in self.out_edges(v) {
+                        let mm = &self.morphisms[m];
+                        let in_body =
+                            plan.advance_order.contains(&m) || plan.decide_order.contains(&m);
+                        if matches!(mm.op, Operation::Map { captures: 0, .. })
+                            && mm.source == v
+                            && in_body
+                            && !gated.contains(&m)
+                            && !out.contains_key(mm.target)
+                        {
+                            let next = mm.target;
+                            out.insert(
+                                next,
+                                Delta::Rows {
+                                    stride,
+                                    start,
+                                    next,
+                                },
+                            );
+                            frontier.push(next);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The [`Delta::Rows`] of one iteration's writes, or `None`: each the
+    /// cells `[d·(a·e + b), … + len)` of an [`Outside`] piece (an `Update` at
+    /// `i` is `d = a = len = 1, b = 0, e = i`), `e` affine in the counter.
+    fn rows_of(&self, idxs: &[Outside], merge: ObjectId, next: ObjectId) -> Option<Delta> {
+        let (mut var, mut a, mut bs) = (None, None, Vec::new());
+        for p in idxs {
+            // (Every `step`-th cell is no range.)
+            if p.step != 1 && p.len > 1 {
+                return None;
+            }
+            let (ae, be) = match p.e {
+                Some(e) => self.affine_in(e, merge, &mut var, 0)?,
+                None => (0, 0),
+            };
+            let d = i128::from(p.d);
+            let ai = d.checked_mul(i128::from(p.a).checked_mul(ae)?)?;
+            let bi = d.checked_mul(i128::from(p.a).checked_mul(be)?.checked_add(p.b.into())?)?;
+            if *a.get_or_insert(ai) != ai {
+                return None;
+            }
+            bs.push((bi, i128::from(p.len)));
+        }
+        let var = var?;
+        let bits = match self.objects[var].ty {
+            Ty::Int { bits, .. } => u32::from(bits),
+            _ => return None,
+        };
+        // Wrap into the counter's width: the program computes there.
+        let wrap = |x: i128| -> i64 {
+            let m = 1i128 << bits;
+            let r = x.rem_euclid(m);
+            (if r >= m / 2 { r - m } else { r }) as i64
+        };
+        let mut bs: Vec<(i128, i128)> = bs
+            .into_iter()
+            .map(|(b, l)| (i128::from(wrap(b)), l))
+            .collect();
+        bs.sort_unstable();
+        // One contiguous union.
+        let lo = bs.first()?.0;
+        let mut end = lo;
+        for &(b, l) in &bs {
+            if b > end {
+                return None;
+            }
+            end = end.max(b + l);
+        }
+        let lo = i64::try_from(lo).ok()?;
+        let stride = u64::try_from(end - i128::from(lo)).ok()?;
+        Some(Delta::Rows {
+            stride,
+            start: Affine {
+                var,
+                a: wrap(a?),
+                b: lo,
+            },
+            next,
+        })
+    }
+
+    /// `o` as `(a, b)` with `o = a·var + b`, `var` an int `Proj` of `merge`
+    /// (the first one met; a second is `None`). Exact over `i128`; `Add`,
+    /// `Sub`, and `Mul` by a constant only. Depth-guarded (J1).
+    fn affine_in(
+        &self,
+        o: ObjectId,
+        merge: ObjectId,
+        var: &mut Option<ObjectId>,
+        depth: u32,
+    ) -> Option<(i128, i128)> {
+        if depth > 64 {
+            return None;
+        }
+        let obj = &self.objects[o];
+        if obj.kind == ObjectKind::Constant {
+            return match obj.value {
+                Some(Value::I32(x)) => Some((0, x.into())),
+                Some(Value::I64(x)) => Some((0, x.into())),
+                _ => None,
+            };
+        }
+        let mm = &self.morphisms[*self.in_edges(o).first()?];
+        match mm.op {
+            Operation::Proj { .. } if mm.source == merge && matches!(obj.ty, Ty::Int { .. }) => {
+                (*var.get_or_insert(o) == o).then_some((1, 0))
+            }
+            Operation::Proj { .. } => self.affine_in(self.proj_of_pair(o)?, merge, var, depth + 1),
+            Operation::Add | Operation::Sub | Operation::Mul => {
+                let x = self.pair_slot_source(mm.source, 0)?;
+                let y = self.pair_slot_source(mm.source, 1)?;
+                let (xa, xb) = self.affine_in(x, merge, var, depth + 1)?;
+                let (ya, yb) = self.affine_in(y, merge, var, depth + 1)?;
+                match mm.op {
+                    Operation::Add => Some((xa.checked_add(ya)?, xb.checked_add(yb)?)),
+                    Operation::Sub => Some((xa.checked_sub(ya)?, xb.checked_sub(yb)?)),
+                    _ if xa == 0 => Some((ya.checked_mul(xb)?, yb.checked_mul(xb)?)),
+                    _ if ya == 0 => Some((xa.checked_mul(yb)?, xb.checked_mul(yb)?)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     /// The recursive worker: returns the proof AND the full range map so a
@@ -3242,6 +5924,13 @@ impl CategoryIr {
     /// Per-function trap-capability fixpoint. Trap-free leaves flow backward
     /// through Call/Map/Fold references; unresolved cycles remain capable.
     fn fn_trap_capabilities(&self) -> SecondaryMap<FuncId, bool> {
+        self.facts
+            .trap_capabilities
+            .get_or_init(|| self.fn_trap_capabilities_compute())
+            .clone()
+    }
+
+    fn fn_trap_capabilities_compute(&self) -> SecondaryMap<FuncId, bool> {
         let mut capable = SecondaryMap::new();
         let mut remaining = SecondaryMap::new();
         let mut dependents: SecondaryMap<FuncId, Vec<FuncId>> = SecondaryMap::new();
@@ -3337,6 +6026,10 @@ impl CategoryIr {
     /// shape, or whose arm reaches loop machinery, is skipped — consumers keep
     /// strict semantics for it.
     pub fn guard_plan(&self, f: FuncId) -> Vec<GuardSite> {
+        self.fact(f, |s| &s.guard_plan, || self.guard_plan_compute(f))
+    }
+
+    fn guard_plan_compute(&self, f: FuncId) -> Vec<GuardSite> {
         let topo = self.topo_order(f);
 
         // No Phi ⇒ no sites. Skip the unit construction, bounds proof and

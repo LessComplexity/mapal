@@ -1,0 +1,10 @@
+{
+  "utc": "2026-10-21T20:08:26.081441+00:00",
+  "tag": "rtx-5090-confirm-retry2",
+  "all_match": true,
+  "file_count": 17,
+  "bytes": 1204848,
+  "accepted": false,
+  "archive": ".claude/worktrees/_archive-s54-20261021/final-integrated-confirmations-recovery/rtx-5090-confirm-retry2",
+  "receipt_sha256": "e3f718d183e04b89751a2db7ff84e4d854d2d98e6cbb2b71deaf15e80eb35b2c"
+}

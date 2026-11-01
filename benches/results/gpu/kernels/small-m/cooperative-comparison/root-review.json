@@ -1,0 +1,17 @@
+{
+  "approved": true,
+  "single_attempt": true,
+  "packet_sha256": "660da9f084b71c4332cea52bb6c36a9b7a45473f0fe3e325d6077bf9494cdd0e",
+  "launcher_sha256": "6d3f206ac084fca7f96ce604a1be8c9e94e4c203b575efd0ba053307c1e14fc0",
+  "reviewed_at": "2026-10-22T00:09:05.203261+00:00",
+  "decision": "One benchmark-only RTX 5090 attempt using the unchanged reviewed small-M payload. Root inspected launcher, adapter, wrapper and staging; independently verified payload hashes and budget; 16 launcher and 10 adapter tests pass.",
+  "max_rate_per_hour": 0.8,
+  "lease_seconds": 670,
+  "max_additional_planning_cost": 0.23124279835390946,
+  "max_cumulative_planning_cost": 0.998041055700908,
+  "aggregate_hourly_cap": 8,
+  "protected_unrelated_instances": [
+    57065574,
+    57100404
+  ]
+}

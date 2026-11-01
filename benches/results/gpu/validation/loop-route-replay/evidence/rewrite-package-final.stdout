@@ -1,0 +1,171 @@
+
+running 3 tests
+test replay::tests::split_capture_source_partitions_caps_and_data ... ok
+test replay::tests::split_capture_source_under_arity_is_loud - should panic ... ok
+test replay::tests::split_capture_source_over_arity_is_loud - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 8 tests
+test cse_distinguishes_differing_captures ... ok
+test map_fusion_identical_captures_fuses ... ok
+test map_fusion_capture_count_mismatch_skips ... ok
+test cse_merges_identical_captured_maps ... ok
+test dce_keeps_live_capture_drops_dead_temp ... ok
+test replay_captured_map_preserves_capture_edges ... ok
+test map_fusion_differing_captures_skip ... ok
+test rewrite_pipeline_captured_map_and_fold ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+test index_of_update_non_const_not_folded ... ok
+test identity_add_into_return_survives ... ok
+test const_add_into_return_survives ... ok
+test token_proj_pack_not_forwarded ... ok
+test loop_carried_mul_zero_not_constified ... ok
+test index_of_update_equal_const_in_bounds_folds ... ok
+test unconditional_trap_survives_mod_one_folding ... ok
+test index_of_update_oob_not_folded ... ok
+test guarded_loop_payload_folds_preserve_driver_dependencies ... ok
+test guarded_folds_preserve_trap_dependencies ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 1 test
+test fixpoint_iota_fill_cse ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test example_goldens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 6 tests
+test in_body_arm_work_is_not_double_owned ... ok
+test reclose_drops_the_handle_when_the_units_outputs_leak ... ok
+test constfold_does_not_drop_what_it_cannot_alias ... ok
+test unit_with_sink_member_never_joins ... ok
+test dce_must_not_change_arm_ownership ... ok
+test dce_keeps_the_dead_phi_of_a_heavy_gated_site ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test guard_arm_ownership_invariants ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 5 tests
+test multi_merge_nested_loop_rewrite_is_identity ... ok
+test multi_merge_nested_loop_is_non_canonical ... ok
+test update_graph_round_trips_through_rewrite ... ok
+test two_sequential_loops_rewrite_not_skipped ... ok
+test identity_replay_matches_every_example ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 15 tests
+test entry_is_never_inlined ... ok
+test diamond_shared_callee_inlines_per_site ... ok
+test call_writing_return_inlines ... ok
+test default_rewrite_inlines_call_inside_map_body ... ok
+test inline_is_deterministic_and_idempotent ... ok
+test loop_bearing_callee_stays_a_call ... ok
+test callee_at_the_cap_inlines ... ok
+test matmul4_loops_lift_then_callees_inline ... ok
+test two_fn_program_inlines_to_one_graph ... ok
+test tuple_returning_callee_inlines ... ok
+test oversized_callee_stays_a_call ... ok
+test closed_inline_trap_free ... ok
+test closed_inline ... ok
+test open_inline_trap_free ... ok
+test open_inline ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 3 tests
+test canonical_counter_identity_update_lifts_to_captured_map ... ok
+test canonical_counter_acc_lifts_to_captured_fold ... ok
+test rejections_stay_loops ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 5 tests
+test pure_computed_exit_payload_survives_identity_and_each_pass ... ok
+test sequential_loop_routes_keep_invariants_and_ownership ... ok
+test non_scc_route_work_honors_constify_plan ... ok
+test exit_step_skips_advance_effects_and_traps ... ok
+test observed_loop_exit_payload_survives_identity_and_each_pass ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test map_id_eliminated_when_targeting_temporary ... ok
+test map_fusion_skips_loop_bearing_body ... ok
+test map_fusion_skips_shared_intermediate ... ok
+test map_id_targeting_return_not_eliminated ... ok
+test map_fusion_fuses_and_drops_orphans ... ok
+test map_fusion_through_temporary ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 12 tests
+test float_add_zero_untouched ... ok
+test dead_trapping_div_stays_trapped ... ok
+test identity_map_body_with_dead_trap_stays_trapped ... ok
+test pure_identity_map_is_still_eliminated ... ok
+test two_independent_traps_stay_trapped ... ok
+test divergent_loop_stays_diverged ... ok
+test sequential_generated_lifts_with_intervening_fold ... ok
+test guarded_mod_one_after_independent_loop_preserves_class ... ok
+test closed_default ... ok
+test closed_trap_free ... ok
+test open_default ... ok
+test open_trap_free ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+
+running 7 tests
+test map_scalar_capture ... ok
+test fold_scalar_capture ... ok
+test map_array_capture ... ok
+test loop_carried_capture ... ok
+test map_nested_fold_two_level_capture ... ok
+test chained_array_capture_maps_fuse ... ok
+test random_programs_include_captures ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 1 test
+test random_programs_cover_widen_lattice ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 2 tests
+test widen_replay_round_trips ... ok
+test widen_constants_fold_exactly ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

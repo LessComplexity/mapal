@@ -1,0 +1,17 @@
+{
+  "pass": true,
+  "recovery_files": 504,
+  "receipt_sha256": "c1bd46b5ee57ebed7c559acdf5de057c184dbf978fa6da033b93cf4ac386df45",
+  "archive": {
+    "bytes": 10938433,
+    "sha256": "dab5bbba2e0f6c57d1b60289b442cd496c2f5e8f26c4f37ded6cabb42586dec6"
+  },
+  "cleanup": {
+    "instance": 57271085,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-22T20:48:03.025162+00:00",
+    "method": "Independent exact-ID inventory absence"
+  },
+  "outer_summary_sha256": "75953f2cbc7f9987c7ff3be9070fdbacbe1b0e74a3b82cfb363d70bcbcb0c59d",
+  "capture_summary_sha256": "9cbc6e5f89c0427938c76af69af9f7b25712e68108c1e12aa3e5ddcd84e95649"
+}

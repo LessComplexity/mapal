@@ -1,0 +1,37 @@
+[
+  {
+    "stage": "final-tests-against-old-production",
+    "argv": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "mapal-backend-llvm",
+      "--test",
+      "streams",
+      "grouped_",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "log": "/private/tmp/mapal-ordering-fix/evidence/old-final-tests.log"
+  },
+  {
+    "stage": "restored-fixed-production",
+    "argv": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "mapal-backend-llvm",
+      "--test",
+      "streams"
+    ],
+    "exit": 0,
+    "log": "/private/tmp/mapal-ordering-fix/evidence/fixed-final-streams.log"
+  }
+]

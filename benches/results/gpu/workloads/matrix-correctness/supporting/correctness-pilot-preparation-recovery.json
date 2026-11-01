@@ -1,0 +1,64 @@
+{
+  "created_utc": "2026-10-21T20:23:46.203251+00:00",
+  "scope": "Immutable reviewed correctness-pilot preparation plus completed host call-effects audit; no remote execution or approval inferred",
+  "archive": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s57-correctness-pilot-preparation",
+  "files": [
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging-manifest.json",
+      "relative_path": "correctness-pair/staging-manifest.json",
+      "bytes": 3942,
+      "sha256": "c20b320527a96e3a739656d56a91512aae5155dafa5aeeea7c604977b1ed745d"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/review.md",
+      "relative_path": "correctness-pair/review.md",
+      "bytes": 8210,
+      "sha256": "e119ec3b93b51501cbba4c4ee7f8feb4a3a3a46a7454e44a8538b146a18a4c82"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/run_correctness_pair_vast.py",
+      "relative_path": "run_correctness_pair_vast.py",
+      "bytes": 6601,
+      "sha256": "7261323bb0e9f81f80b0d1e20025c92bbf043096babc9075770cedd3b06829e7"
+    },
+    {
+      "source": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md",
+      "relative_path": "host-gpu-call-effects-audit.md",
+      "bytes": 11345,
+      "sha256": "57bdfdc135faa3824bcf424ea4fe3f314d14fc4344b3f80dfdc5e63dbe46f380"
+    },
+    {
+      "source": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit-copy-receipt.json",
+      "relative_path": "host-gpu-call-effects-audit-copy-receipt.json",
+      "bytes": 646,
+      "sha256": "d7e8afafac0d959c4e6bd2303f061c8fb17a28d6b9e3570a583792387bfd0fde"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging/box_run.sh",
+      "relative_path": "correctness-pair/staging/box_run.sh",
+      "bytes": 750,
+      "sha256": "6b0890ed1734fd127a89daff468b87946970c02f1de7aca33a86560bd9d999ba"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging/matrix-upload.tgz",
+      "relative_path": "correctness-pair/staging/matrix-upload.tgz",
+      "bytes": 7152268,
+      "sha256": "c460670f667f43dc255085574934aae3b6ea7780d1a878309179c6709a5aa056"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging/ordering.tgz",
+      "relative_path": "correctness-pair/staging/ordering.tgz",
+      "bytes": 6234381,
+      "sha256": "2892f59e49b11cfbc46f54ad355aa8b9bd010073787dfe1ace112ad734e900ce"
+    },
+    {
+      "source": "/private/tmp/mapal-s56-gpu/correctness-pair/staging/run_checks.py",
+      "relative_path": "correctness-pair/staging/run_checks.py",
+      "bytes": 7435,
+      "sha256": "5ab34931cd122ac3258283a22c076cd3bf89bff2ea014ffb389e5588049937fc"
+    }
+  ],
+  "file_count": 9,
+  "total_bytes": 13425578,
+  "all_copies_match": true
+}

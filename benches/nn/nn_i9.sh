@@ -13,7 +13,7 @@ set -euo pipefail
 HOST="${1:?usage: nn_i9.sh <host> [d ...]}"; shift
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STAGE="$ROOT/target/tmp/nn_i9"
-OUT="${OUT:-$ROOT/benches/results-s49}"
+OUT="${OUT:-$ROOT/benches/results/cpu/scheduling/dependency-cycles}"
 REMOTE="${REMOTE:-mapal-s49}"
 CYCLES="${CYCLES:-15}"
 SIZES=("$@"); [ ${#SIZES[@]} -gt 0 ] || SIZES=(128 256 512 1024 2048)

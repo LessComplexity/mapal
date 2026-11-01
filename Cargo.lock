@@ -474,6 +474,15 @@ dependencies = [
 [[package]]
 name = "mapal-cli"
 version = "0.0.1"
+dependencies = [
+ "mapal-backend-llvm",
+ "mapal-check",
+ "mapal-interp",
+ "mapal-ir",
+ "mapal-lower",
+ "mapal-rewrite",
+ "mapal-syntax",
+]
 
 [[package]]
 name = "mapal-interp"

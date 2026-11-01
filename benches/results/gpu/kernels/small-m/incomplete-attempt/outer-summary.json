@@ -1,0 +1,805 @@
+{
+  "smallm_pass": false,
+  "compiled_pass": true,
+  "compiled_state": "passed",
+  "timing_admitted": false,
+  "commands": [
+    {
+      "name": "smallm-payload-check",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/smallm-packet/run_packet.py",
+        "--bundle",
+        "/w/smallm-packet",
+        "--profile",
+        "rtx-5090",
+        "--check-only"
+      ],
+      "timeout_seconds": 60,
+      "exit": 0,
+      "seconds": 0.316,
+      "stdout_sha256": "62a9aca2b18a7af3fd278be9cf5ea81591878fa2cc2878c04556d2ca8f8dcffd",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "matrix-payload-check",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/matrix-upload/check_payload.py"
+      ],
+      "timeout_seconds": 60,
+      "exit": 0,
+      "seconds": 0.165,
+      "stdout_sha256": "2144d6fa8d3881cb5d5b013b0de76d089dbfb7afa0effcfd443e52997111d87c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-before-smallm",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.065,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "smallm",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/smallm-packet/run_packet.py",
+        "--bundle",
+        "/w/smallm-packet",
+        "--profile",
+        "rtx-5090",
+        "--results",
+        "/w/trace/combined-v61/smallm-values",
+        "--host-hourly-rate",
+        "0.6161111111111112",
+        "--total-timeout",
+        "912"
+      ],
+      "timeout_seconds": 922,
+      "exit": 1,
+      "seconds": 22.455,
+      "stdout_sha256": "0d7cbe1dcc238b0d34ca5c1cb01c0118fc403350b24176d291d6a46781613b8b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-after-smallm",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.115,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "apt-update",
+      "argv": [
+        "apt-get",
+        "update"
+      ],
+      "timeout_seconds": 90,
+      "exit": 0,
+      "seconds": 3.372,
+      "stdout_sha256": "4998de0f14c5590ee0a9243fee34c2060c84e1ebd30c1fc25473aedaab4b40a1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "apt-python-development",
+      "argv": [
+        "apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "python3-venv",
+        "python3-dev"
+      ],
+      "timeout_seconds": 90,
+      "exit": 0,
+      "seconds": 7.63,
+      "stdout_sha256": "ca5a36f71d6084930000d9bea578f86767dfd36898152491c1399d5633db202b",
+      "stderr_sha256": "f77216c41aadf6c667ac1a602069951966cea350daab793ffe11ae0de1225ddc"
+    },
+    {
+      "name": "venv",
+      "argv": [
+        "/usr/bin/python3",
+        "-m",
+        "venv",
+        "/w/torch-venv"
+      ],
+      "timeout_seconds": 30,
+      "exit": 0,
+      "seconds": 3.621,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "python-header-gate",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-c",
+        "import json,pathlib,sysconfig; p=pathlib.Path(sysconfig.get_paths()['include'])/'Python.h'; print(json.dumps({'sysconfig_include':str(p.parent),'python_h':str(p),'exists':p.is_file()})); assert p.is_file(), 'Python.h missing from sysconfig include'"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.065,
+      "stdout_sha256": "5062ac026ecda0dfabd9570ecd2d0402cb8eaea8a1961c05004eadcab54afc1d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pip-upgrade",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--no-deps",
+        "--upgrade",
+        "https://files.pythonhosted.org/packages/44/3c/d717024885424591d5376220b5e836c2d5293ce2011523c9de23ff7bf068/pip-25.3-py3-none-any.whl#sha256=9655943313a94722b7774661c21049070f6bbb0a1516bf02f7c8d5d9201514cd"
+      ],
+      "timeout_seconds": 60,
+      "exit": 0,
+      "seconds": 3.07,
+      "stdout_sha256": "c3a1901ed53a432c2b56e34c99428ff94a345613c8a4779a625b5ef49dda8cde",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pip-version",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-c",
+        "import pip; print(pip.__version__); assert pip.__version__=='25.3'"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.033,
+      "stdout_sha256": "c9afd5d395ab8eb6d65895de80946d708af23a1fcbef2a770a927803f045959c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "torch-install",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--index-url",
+        "https://download.pytorch.org/whl/cu130",
+        "--report",
+        "/w/trace/combined-v61/torch-install-report.json",
+        "torch==2.13.0"
+      ],
+      "timeout_seconds": 240,
+      "exit": 0,
+      "seconds": 105.185,
+      "stdout_sha256": "c9ce42033b7ba5b6fc7443d8c04f65233b1a2667761a3adc0a65ae955f03f0ab",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "torch-version",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-c",
+        "import json,torch; r={'torch':torch.__version__,'cuda':torch.version.cuda,'count':torch.cuda.device_count(),'device':torch.cuda.get_device_name(0)}; print(json.dumps(r)); assert r['torch'].split('+')[0]=='2.13.0' and r['cuda']=='13.0' and r['count']==1 and 'RTX 5090' in r['device']"
+      ],
+      "timeout_seconds": 30,
+      "exit": 0,
+      "seconds": 2.319,
+      "stdout_sha256": "a0603ef12e5a9dd33074b77b6941e0fd40e5ffb0196bee4cec37e8161241e208",
+      "stderr_sha256": "02764f5e1c50e94c491a1102eb464d58a06bce1f947932db0f7b7fed008912ea"
+    },
+    {
+      "name": "pip-freeze",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "-m",
+        "pip",
+        "freeze",
+        "--all"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.316,
+      "stdout_sha256": "37359db26631187066f3500f8cd9bfeb3a72b8c82963a950c6b31dc540a85c77",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "system-packages",
+      "argv": [
+        "dpkg-query",
+        "-W"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.017,
+      "stdout_sha256": "0855dd1c33943631d12553675e39ffc987e50f212e9a37f9309bba5d11075fc4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-before-compiled",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.115,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "compiled",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "/w/matrix-upload/matrix-packet/pytorch/run_reference.py",
+        "--case",
+        "matrix-m16-d8-h16",
+        "--mode",
+        "compiled",
+        "--scope",
+        "matrix",
+        "--device",
+        "cuda:0",
+        "--out",
+        "/w/trace/combined-v61/compiled-values"
+      ],
+      "timeout_seconds": 774,
+      "exit": 0,
+      "seconds": 8.231,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "a7a711f9a03e17422014df75d80fdc7e770fbe9ad17d930123d21a578836b983"
+    },
+    {
+      "name": "gpu-idle-before-optional-capture",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 15,
+      "exit": 0,
+      "seconds": 0.033,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "optional-capture",
+      "argv": [
+        "/usr/bin/python3",
+        "/w/capture-proof/proof.py",
+        "--root",
+        "/w",
+        "--bundle",
+        "/w/smallm-packet",
+        "--combined-out",
+        "/w/trace/combined-v61",
+        "--out",
+        "/w/trace/combined-v61/optional-capture-proof",
+        "--after-all-ordinary"
+      ],
+      "timeout_seconds": 90,
+      "exit": 0,
+      "seconds": 0.064,
+      "stdout_sha256": "26904b66d5c62dfe10a8e36a95eb8b4c7bd97d420ae264f98f453f2e2a8ccc5c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "absolute_deadline_epoch": 1792624684.314359,
+  "retrieval_cleanup_reserve_seconds": 180,
+  "smallm_max_seconds": 1100,
+  "compiled_minimum_start_seconds": 240,
+  "outer_timeout_aborts_all_later_gpu": true,
+  "phase_environment": {
+    "smallm_removed_keys": [],
+    "smallm_tf32_override": null,
+    "compiled_policy": {
+      "NVIDIA_TF32_OVERRIDE": "0",
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8"
+    }
+  },
+  "smallm_summary": {
+    "pass": false,
+    "records": [
+      {
+        "id": "rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old",
+        "stage": "full_gate",
+        "case": "rtx-5090__gate__dense_m1_n512_k7168__exact",
+        "arm": "old",
+        "pass": false
+      }
+    ],
+    "manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+    "profile": "rtx-5090",
+    "instrumented": false,
+    "deadline_seconds": 912,
+    "declared_host_hourly_rate": 0.6161111111111112,
+    "max_new_host_charge_usd": 0.15608148148148152,
+    "large_value_scope": "256 sampled cells; bounded gates are every-cell only for their exact recorded shapes",
+    "initial_capacity": {
+      "gpu_free_bytes": 33654046720,
+      "host_available_bytes": 485066809344
+    },
+    "binaries": {
+      "checked": "3c323e521a2c810668da3653f325a6d4adfee29b6ec17342804d358a5807a5a5",
+      "reference": "e8ec085ad27e0fd59b57393ca5fe6ef85f82efec9d82a159bfee000ae756d128"
+    },
+    "negative_controls": [
+      {
+        "name": "reference_nan",
+        "expected_exit": 0,
+        "process": {
+          "argv": [
+            "/w/trace/combined-v61/smallm-values/reference",
+            "16",
+            "128",
+            "4096",
+            "/w/smallm-packet/ptx/nonfinite_nan.ptx",
+            "nonfinite_nan",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--tf32"
+          ],
+          "exit": 0,
+          "wall_seconds": 1.318084,
+          "stdout_sha256": "c81b942f0b91a97d4e56d66335076026f893fd702cd9b52e3e020c221c0f08a2",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "name": "checked_nan",
+        "expected_exit": 104,
+        "process": {
+          "argv": [
+            "/w/trace/combined-v61/smallm-values/checked",
+            "16",
+            "128",
+            "4096",
+            "/w/smallm-packet/ptx/nonfinite_nan.ptx",
+            "nonfinite_nan",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--tf32",
+            "--full-values",
+            "--values-only"
+          ],
+          "exit": 104,
+          "wall_seconds": 0.567071,
+          "stdout_sha256": "5dd863c1246d1c40650c2b5665e47c5e5b82788bf62d904c535863948325b09c",
+          "stderr_sha256": "e6973be1c6785cf0bda5d57106ecfe08dbb6093572f41d36a18df37a9933cbd8"
+        }
+      },
+      {
+        "name": "checked_wrong",
+        "expected_exit": 1,
+        "process": {
+          "argv": [
+            "/w/trace/combined-v61/smallm-values/checked",
+            "16",
+            "128",
+            "4096",
+            "/w/smallm-packet/ptx/wrong_zero.ptx",
+            "wrong_zero",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--full-values",
+            "--values-only"
+          ],
+          "exit": 1,
+          "wall_seconds": 0.716556,
+          "stdout_sha256": "536865b73777e0e0aef45c732c0c3dba817fff179439cf66920f224fe1c97c33",
+          "stderr_sha256": "3af6a769c32b0864a70bf454476188623f5d21c14200470535c5b82cedd82259"
+        }
+      }
+    ],
+    "fatal_error": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+    "elapsed_seconds": 22.07,
+    "expected_records": 234,
+    "completed_records": 1
+  },
+  "compiled_report": {
+    "case": {
+      "id": "matrix-m16-d8-h16",
+      "kind": "matrix",
+      "M": 16,
+      "d": 8,
+      "h": 16
+    },
+    "mode": "compiled",
+    "scope": "matrix",
+    "variant": "full",
+    "step": null,
+    "requested_device": "cuda:0",
+    "policy_status": "root accepted small-case gate conditionally; generated/runtime adherence remains untested",
+    "policy_sha256": "14e704561e756669f2d1d883ea9dc48018965f4cb84b86a100799859bdaef4ae",
+    "runner_sha256": "a718f81ead3b2b5b02b4315a622cbabd71036407e0f1d2a03ebaa18fbb601d18",
+    "numerics_sha256": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a",
+    "input_receipt_sha256": "fa999c4095e413bde6b45b18d0b5fcce89565c7ed269a13ff154db0a9f6574b9",
+    "input_files": {
+      "contract.json": "c70bfce10584331121080d084f84313ecf3d82ebfed7c686392606516eb4c50b",
+      "generated-manifest.json": "60b63e7c490d726d502fd0f7a59688b7a88f5b296a02620b381ee0c8a1d29ca7",
+      "certification-summary.json": "8fe816d625af54da3efbb7ed61d8a23c73bc328abc94f6e4c1c38317f651f2c2",
+      "recurrent-t16-d8-h16.fp32.json": "6eedd184c1e855cdaec9c3f9f613508acbbd753c381d9f7753fdb0436b6d5ad1",
+      "recurrent-t16-d8-h16.fmaf.json": "5cf702e1e6a7214ad8a6af0ed88cddbbca282a170d61d33b87cb0dfb634de94c",
+      "matrix-m16-d8-h16.fp32.json": "e283d834158ec46b930c71fc1916a88f8f30557663230cf611553b26def4c963",
+      "matrix-m16-d8-h16.fmaf.json": "8a2f4b72f68f94e980800c570223200546df4633d5fe8ab3161a30cfb0a2db4a"
+    },
+    "python": "3.10.12",
+    "runtime_tested": true,
+    "pass": true,
+    "arithmetic": "FP32 parallel GEMM; no claim of Mapal Exact/Contract bitwise association",
+    "compiler": {
+      "backend": "inductor",
+      "fullgraph": true,
+      "dynamic": false,
+      "cudagraphs": false
+    },
+    "environment": {
+      "torch": "2.13.0+cu130",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "torch_cuda": "13.0",
+      "precision": {
+        "api": "fp32_precision",
+        "global": "ieee",
+        "cuda_matmul": "ieee"
+      },
+      "deterministic_algorithms": true,
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+      "cpu_threads": 112,
+      "torch_config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.12.0 (Git Hash 80afa71049cd69a3df32adcccb623b12cd7baa22)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - CUDA Runtime 13.0\n  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120\n  - CuDNN 92.0  (built against CUDA 13.2)\n  - Magma 2.6.1\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=cf30153c4c131c8164ee7798e5022d810682e2cb, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xfatbin -compress-all --threads 2 -compress-mode=size -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CUDA_VERSION=13.0, CUDNN_VERSION=9.20.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DHAS_CUPTI -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.13.0, USE_CUDA=1, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+      "gpu": "_CudaDeviceProperties(name='NVIDIA GeForce RTX 5090', major=12, minor=0, total_memory=32109MB, multi_processor_count=170, uuid=4134b943-8701-c4ea-21de-1fb48a84f04b, pci_bus_id=56, pci_device_id=0, pci_domain_id=0, L2_cache_size=96MB)"
+    },
+    "first_checker_call_sync_wall_ms": 2752.836121013388,
+    "checkpoint_checks": {
+      "candidate_gate_pass": true,
+      "references": {
+        "fp32": {
+          "candidate_gate_pass": true,
+          "checkpoints": [
+            {
+              "step": -1,
+              "name": "p",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 8.335344992012971e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "hraw",
+              "cells": 256,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.4875719694279092e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "h",
+              "cells": 256,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 2.2158954038679907e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "mraw",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.1093893682433236e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "m",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.3998608541680355e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "y",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 2.569881500642674e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            }
+          ]
+        },
+        "fmaf": {
+          "candidate_gate_pass": true,
+          "checkpoints": [
+            {
+              "step": -1,
+              "name": "p",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 8.335344992012971e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "hraw",
+              "cells": 256,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.4875719694279092e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "h",
+              "cells": 256,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 2.2158954038679907e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "mraw",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.1093893682433236e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "m",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 1.3998608541680355e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            },
+            {
+              "step": -1,
+              "name": "y",
+              "cells": 128,
+              "pass": true,
+              "max_abs_error": 0.0,
+              "max_component_budget": 2.569881500642674e-08,
+              "failed_cells": 0,
+              "first_failed_indices": []
+            }
+          ]
+        }
+      }
+    },
+    "first_run_graph_call_sync_wall_ms": 392.6326989894733,
+    "run_final_gate_pass": true
+  },
+  "optional_capture": {
+    "status": "unvalidated",
+    "timing_admissible": false,
+    "max_seconds": 90,
+    "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+    "commands": [],
+    "reason": "ordinary smallM incomplete or instrumented",
+    "elapsed_seconds": 0.006,
+    "files": {}
+  },
+  "pass": false,
+  "files": {
+    "apt-python-development/status.json": "e752006ac820739165c9d4cdfbb42d8a2bdd32c03784ac75c30e9bcdb854550f",
+    "apt-python-development/stderr": "f77216c41aadf6c667ac1a602069951966cea350daab793ffe11ae0de1225ddc",
+    "apt-python-development/stdout": "ca5a36f71d6084930000d9bea578f86767dfd36898152491c1399d5633db202b",
+    "apt-update/status.json": "155144fe4078ae44e986392956d83a7f41a9d5def9bd0aca5df4cc25ef9781ea",
+    "apt-update/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "apt-update/stdout": "4998de0f14c5590ee0a9243fee34c2060c84e1ebd30c1fc25473aedaab4b40a1",
+    "compiled/status.json": "80d2a61fc8b0bf271b5dfd2fe4f49d3f48b0993cd0e97b86559447b51020ce61",
+    "compiled/stderr": "a7a711f9a03e17422014df75d80fdc7e770fbe9ad17d930123d21a578836b983",
+    "compiled/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "compiled-values/checkpoint-values.json": "58878429b045803805ed05595b146bce6e80906f72a9ce94fc09b8225e880b03",
+    "compiled-values/report.json": "1f0cdb785781abd6346cf2c37c3fa6b4b635a8736a3026614916cf23fbd0099e",
+    "compiled-values/run-final.json": "05461dc4ad3e685fb242e9a64517d00a5730b36c500524d9138ef2451a5774af",
+    "gpu-idle-after-smallm/status.json": "1273551bb928774858425cdbc022d7bc56ba9bbda5c7e72baf91d66a951a5a24",
+    "gpu-idle-after-smallm/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-after-smallm/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-compiled/status.json": "04572fe6d23a7281e0698819b161d65dce7e6a1acc1bd6a147a8d4919839dc4f",
+    "gpu-idle-before-compiled/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-compiled/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-optional-capture/status.json": "6267217e5f2d50324e9702d84875c1afe19ebe02503754a4858b57e44df89652",
+    "gpu-idle-before-optional-capture/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-optional-capture/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-smallm/status.json": "f083bab79ce362b76d7b4bb724e1e5de3e6ece2b1d1142b0a3d99049041fa0bc",
+    "gpu-idle-before-smallm/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "gpu-idle-before-smallm/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "matrix-payload-check/status.json": "46a88ed4e283efc867ce33ee415c52bf963ec128aabc6546106929cdd2655380",
+    "matrix-payload-check/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "matrix-payload-check/stdout": "2144d6fa8d3881cb5d5b013b0de76d089dbfb7afa0effcfd443e52997111d87c",
+    "optional-capture/status.json": "0947d92b77c9627d8e1fcc9bdfc841bf785cb387e9d4481ae014b2a048f4fd49",
+    "optional-capture/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "optional-capture/stdout": "26904b66d5c62dfe10a8e36a95eb8b4c7bd97d420ae264f98f453f2e2a8ccc5c",
+    "optional-capture-proof/status.json": "e85c51e4198bbf2810e259d7a2565148c8dcad37677ad8513b00b047a7bb0212",
+    "pip-freeze/status.json": "57a07e93490e6f937cc952e5698b735644bb280548b51bfcb40796f350b1b54e",
+    "pip-freeze/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pip-freeze/stdout": "37359db26631187066f3500f8cd9bfeb3a72b8c82963a950c6b31dc540a85c77",
+    "pip-upgrade/status.json": "f8707b31a5d1b96fb9949f269e06d1c8e39968ff22a5e3deb55a3e603374c447",
+    "pip-upgrade/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pip-upgrade/stdout": "c3a1901ed53a432c2b56e34c99428ff94a345613c8a4779a625b5ef49dda8cde",
+    "pip-version/status.json": "5ebd0ca0c96c76499a05b12ade2f5877f7065037486da470398deda5ee1ab375",
+    "pip-version/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pip-version/stdout": "c9afd5d395ab8eb6d65895de80946d708af23a1fcbef2a770a927803f045959c",
+    "python-header-gate/status.json": "4e0ae14cd0d62da66fb8b14192ef17923ad0ede911c0c63294efeeaad68234bc",
+    "python-header-gate/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "python-header-gate/stdout": "5062ac026ecda0dfabd9570ecd2d0402cb8eaea8a1961c05004eadcab54afc1d",
+    "smallm/status.json": "83d5e298cbc82e6cd80607dede7147af7e5d8bc6c857ba09f84c1f684d789806",
+    "smallm/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm/stdout": "0d7cbe1dcc238b0d34ca5c1cb01c0118fc403350b24176d291d6a46781613b8b",
+    "smallm-payload-check/status.json": "3c733be4d4e909c7c03b239a605aceb904e77716e6a8e5a59245173811823832",
+    "smallm-payload-check/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-payload-check/stdout": "62a9aca2b18a7af3fd278be9cf5ea81591878fa2cc2878c04556d2ca8f8dcffd",
+    "smallm-values/build-checked.status.json": "3b19b4fb401a328f254e8118f037a61205c1ca965c2395970b81c09e9625d6c9",
+    "smallm-values/build-checked.stderr": "7bedfd328ed922c4323b43f69f7a0fbc1e7b917c05eacdb40738be40ae05c9f5",
+    "smallm-values/build-checked.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/build-reference.status.json": "53d79603fc2038aeca5d7015604b75bf3dc8a04cd245ea9a41121a053a38c2bc",
+    "smallm-values/build-reference.stderr": "7bedfd328ed922c4323b43f69f7a0fbc1e7b917c05eacdb40738be40ae05c9f5",
+    "smallm-values/build-reference.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/checked": "3c323e521a2c810668da3653f325a6d4adfee29b6ec17342804d358a5807a5a5",
+    "smallm-values/checked_nan.status.json": "f5b98f8991d2ade4f288a74930f20169e37305a05760e6b0ce9e0fad9bd1915c",
+    "smallm-values/checked_nan.stderr": "e6973be1c6785cf0bda5d57106ecfe08dbb6093572f41d36a18df37a9933cbd8",
+    "smallm-values/checked_nan.stdout": "5dd863c1246d1c40650c2b5665e47c5e5b82788bf62d904c535863948325b09c",
+    "smallm-values/checked_wrong.status.json": "df5e03017a2f27bdafbf75c732ad436ac021f0cbcd488e1af721ab3bb1e9bed3",
+    "smallm-values/checked_wrong.stderr": "3af6a769c32b0864a70bf454476188623f5d21c14200470535c5b82cedd82259",
+    "smallm-values/checked_wrong.stdout": "536865b73777e0e0aef45c732c0c3dba817fff179439cf66920f224fe1c97c33",
+    "smallm-values/device.status.json": "5c85e5f6c0d96ecfed3ba03144a1f77f226b48825e889f41def5d09a6401e4e4",
+    "smallm-values/device.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/device.stdout": "0fa5c6b926cee15eb024106f6c8f1d0d16c6eebfa80c094ea0f7dbfac7fac2f2",
+    "smallm-values/reference": "e8ec085ad27e0fd59b57393ca5fe6ef85f82efec9d82a159bfee000ae756d128",
+    "smallm-values/reference_nan.status.json": "40abb0c9ae03ffc50e474083564ec3835999586bc0ca434973050287d8d67017",
+    "smallm-values/reference_nan.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/reference_nan.stdout": "c81b942f0b91a97d4e56d66335076026f893fd702cd9b52e3e020c221c0f08a2",
+    "smallm-values/rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/summary.json": "8f2dff2b47fd94790e552f3799a716395a97d354905131d8c25dfcdff81bd324",
+    "smallm-values/toolchain.status.json": "2f0ce155b4d9e07e58b3b195d5b13e211237d8cd19c4d72465685faa92e1c501",
+    "smallm-values/toolchain.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "smallm-values/toolchain.stdout": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+    "system-packages/status.json": "13a02b094a76ee54fcf301164b978df5267c7d104010cbd745d65bfd4173bf6e",
+    "system-packages/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "system-packages/stdout": "0855dd1c33943631d12553675e39ffc987e50f212e9a37f9309bba5d11075fc4",
+    "torch-cache-compiled/7m/c7mhjljs3mgtzvbfslbwcjogh33n4qrgu4uhf5lscqxviai5np47.py": "c0c61dfa430fd56e6388eeca82ecc69323f5640fc0345da7562b8d32692f5dc4",
+    "torch-cache-compiled/aotautograd/a6hiq53spkvav6dkk2jjwhfgdwugi2akwfn37iw5sylamnjw3ilk/pkoprh5cgh743437y375qsgvzbjwii3t3se44vllnxr4n2uxfnr": "7a9cf89fa231ffcdf37fc6ffd848d5c853642373dc89ce556b6de3c6ea972b62",
+    "torch-cache-compiled/aotautograd/agpqrkmlplhh23e3rqs2zeon2apdojswd6s7gue5tvy4sgjun7hx/4xilguiqkqcyogtewzfleh44o7ew45vnaw7svmj47kc4iznp3tz": "e5d0b351105405871a64b64ab21f9c77c96e76ad05bf2ab13cfa85c465afdcf3",
+    "torch-cache-compiled/fxgraph/hf/fhfcs5m2auldifqolxoozxbzb6cohhsh3j7ee2gwkjbx3ajty62o/352uyfixy6sb4pxsyfgn64dythh6webz5frtxyrpsttx7o7iuz6": "df754c1517c7a41e3ef2c14cdf707899cfeb1039e9633be22f94e77fbbe8a67d",
+    "torch-cache-compiled/fxgraph/rj/frjecq64dxkg7k4ycsb7kozzf3ydvuwxi7lj5bpsyv7wwad22mzu/hjvehklrosen5qhscvjbpgrcvherim4ehcof3pryyr2juh27jsk": "3a6a43a9717488dec0f21552179a22a9c9143384389c5dbe38c4749a1f5f4c94",
+    "torch-cache-compiled/gx/bb77ec48bfdd20a9c2dbcb9253939cc86b73e35921ff868264c4ddfa4d37b5a0.best_config": "0b26d407e1f89934c8984e9a16ae8821c099f58baaeae09d125dff5c9f01eecc",
+    "torch-cache-compiled/gx/cgxcbva4rbeb3r7r7maeabfrp5z5tvvs2nr2hks4l3hwicdt2jq3.py": "7e95be8e8af416ee3609df0cbb0e676eb31ce35aa9e46d11ac60f57c7b0d6472",
+    "torch-cache-compiled/hu/c6cee92c09574e99fdeb4fcf7c275a8895d71923c602f44bdd4b69d942fcb206.best_config": "14b999c654013362a4dc106f8ced86a3bdf33f3d727c3d116c2a394de5b0de49",
+    "torch-cache-compiled/hu/chubfjribdcim2ywbwrz4ioqdh56gkb3egn3oejslkppeq6yur5z.py": "2471764c7236ddfe76e85e38303dfb6e4c37b37000aa766949d9f104196aa06f",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/fx_graph_readable.py": "9bcefbdf3dfd57c0b82c7ff0ffea4626d67fee4be90ee9aab266fbfb9f72e8cc",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/fx_graph_runnable.py": "e66fe85ac66568901705f1d1a247f3edbc70553fd9e0f8d3d620e6e6280ed52b",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/fx_graph_transformed.py": "9bcefbdf3dfd57c0b82c7ff0ffea4626d67fee4be90ee9aab266fbfb9f72e8cc",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/ir_post_fusion.txt": "b40c9e143400dc451f5716254f43455f98b91e1818c5b386828adca6e476601d",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/ir_pre_fusion.txt": "51bd5730bb5c535706c9378ba8c3dd202f4fae31adf018ef507f43d660722e8b",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug/output_code.py": "49accbc681c07792a21e26807b029dad25f911114b02eec6a8e36ca2c422fe23",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.debug.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch-cache-compiled/p3/cp3ioonklh4hzvvyfcgpexphn2m5o44ujp3mkchvfcvvhnqu3mrz.py": "49accbc681c07792a21e26807b029dad25f911114b02eec6a8e36ca2c422fe23",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/fx_graph_readable.py": "84d6205999e8a449f70aa1fe3a212fb1e7170a77d24fa3a0704936d409fc19b7",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/fx_graph_runnable.py": "658009ff967b1cacd941b5cbf03019a8296f057ccb425b9719e9c5ead37f837a",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/fx_graph_transformed.py": "84d6205999e8a449f70aa1fe3a212fb1e7170a77d24fa3a0704936d409fc19b7",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/ir_post_fusion.txt": "03e5faf94ce6d7fc4b6f9aea0218d0455e14807eecb156c32317636450a4b040",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/ir_pre_fusion.txt": "5fb2313e5a9ca69f799f662fc4456f93e9eda46e89a239175ebc6d08f066383e",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug/output_code.py": "862e5332a065e033e5ca40a08c8eb3d2d3125d25620568c10f6d2946a2b7e9ee",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.debug.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch-cache-compiled/qu/cqug6djhrrfy5qehm76furzd55uazedvgbqlh2bej2xajprfx6sf.py": "862e5332a065e033e5ca40a08c8eb3d2d3125d25620568c10f6d2946a2b7e9ee",
+    "torch-cache-compiled/to/ctoionoj3dcor6ksod3qjapxf4stuhtb6iggh5rqaq5ussp3m3hv.py": "ad203c4b81131b506477d7dc63006a3a7ea7b16272c50d09eb23490f2cb6baf2",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/__grp__triton_poi_fused_add_relu_0.json": "130ba0bd8ee103ce3b63e8465acbd48b7604a30df08bbb4044b1c55aa37373c0",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.cubin": "590c1fb8dfc61c742282184682370c643cf647d3f9957e851d235212b60beb26",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.json": "03157dad68ea9aa681f618d1eb5b18e317a903980c0d255d261f8fa98c921b4d",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.llir": "9ea5318cdabd44d09455ea0005db50ddb0ecaf36d30ef96dc68a2397e8c59ce2",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.ptx": "f981e771e7215e37bb096a1d4d911afedfe308695e98ccb73dbf0d9bb7dce48c",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.source": "0ced49705f22c2057098aef2f2c71c9e52bcae54233200d45c384a1071f00d9b",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.ttgir": "94595c3787133ce329180da580cbb16794f305a23771fc372818dfb8f989b8b2",
+    "torch-cache-compiled/triton/0/3VFWEFUJYMYO3TP6GKUQK2G4GBDMUSYIIRJ3NYZB5CE75D2A7QQQ/triton_poi_fused_add_relu_0.ttir": "696b65c953ecc4d33dce295552bec5af7f3f590534da01292dbcbf2c5863ba46",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/__grp__triton_poi_fused_add_relu_0.json": "698186141545b8f21dca4f9992e1eb6d455b811ed2339ac5bf7216fd89ae8122",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.cubin": "59a219f0ff6cfb49a0f55afff7be3859eeac177ea9a8e2de96f439fe56aac575",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.json": "b60c6166b8cab28dd8dbb319993a7ef9b47efdd74eba4d97a56072f03a0fdee4",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.llir": "eecc82ad193d9e931c12e1018b92a0846b4531a90f62cd59bc0a269e759ee89b",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.ptx": "f772e8b6eb6045906c06534e8e12cb2e51c56dd29cebf7655e6e449202d48902",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.source": "9a94d1299dec8997f8c0fbca2c171354042f2dddb1bda51dedcdcfbfe58ea7a0",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.ttgir": "19e927c65014afef909030c41dff1c4eeb472ba619728d3d1b7c179733d07d30",
+    "torch-cache-compiled/triton/0/BNRAD4C7A6NIGJ7U6AJ6RF2MP5SZGTY6CD2SRKH4ZIUMTIB2U5YA/triton_poi_fused_add_relu_0.ttir": "1e0886d5b49bc51e6e4e7e877a8b85065b51f8a0b478e82a0623994cc6d6acbf",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/__grp__triton_poi_fused_add_relu_0.json": "9c966c98287be8c3232f6725a2f933b80aebb247c3f95e3106205295faf1b6ef",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.cubin": "f46a3ca07d349579fe8d1c0102877647a45aeffe5025ff92ca38e3b61ee18861",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.json": "b4c42c17bd440df36885c7ebee83dfb95e4918ad11ae998ade34866d4930f79a",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.llir": "a94e467dc42b123f1428d8353246781d3ccb89dcddd2be251d479c21e4351530",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.ptx": "1e5fa7d10069cc7c62e663837cd313809a7829fb1aaa6e2a3beb09bd5e06975e",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.source": "d3e8e757f3a3bd709b9177993feb9ef94f77808644568d113ad22ed67ee332a3",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.ttgir": "c029818796cf3ccdedabd16b76d96af8b643c230afb3de03a4f1d7f58c00271a",
+    "torch-cache-compiled/triton/0/GBMPYXFT7767XK34CWTEBW3YSRXBWCEAD7TJKPKX7DRZGUBFIBMQ/triton_poi_fused_add_relu_0.ttir": "8f4a6a11cd9dbba5bff50c6d535c37d9ed52e8682822fab62535bd66f2bf78fc",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/__grp__triton_poi_fused_add_mul_1.json": "8757c996550bbc57c99193008acd49689bd807711a4783a00fc3048e15a899f2",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.cubin": "59205f4942b771180aff3cd6e3018fa32cbb503b8b6239ad7fea0e7c79e205a9",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.json": "0fbe2e048df20ded046dbbbd919a5db3c000a59a64d16727307d8ea9187ee19d",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.llir": "95d9dba60e3342cdcf8d42b84803a53650cf978b0c6b47391c55a2c5d135b260",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.ptx": "05474e55cc5a19b679a963d465e9f2bb5421494cd4a968708b90c60210f43958",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.source": "f0b076ace7d84ed062f17562ed9a13ea9774ca7f3342f4b974ba1aed7749ef62",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.ttgir": "0c9f26d66ff66f58aae551958acb7298429b30d4a094f10b00ff027e6f760949",
+    "torch-cache-compiled/triton/0/L2TK27SK23SHCKM65HFLJ54ZQDZ4AABSR2STFN3G56DNPHR72POA/triton_poi_fused_add_mul_1.ttir": "998b4c797144361e4fb0df25a29a68a92e665b421c823fd5a2aa01b4e940ed31",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/__grp__triton_poi_fused_add_relu_0.json": "62157f54c6fcbd9e930042d0863c66ca0bf8c8e1db0c103b877d299dcfe84b3c",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.cubin": "e87b9df64a3a004d8b367d6e6cb2caacbce88f6801501ce2298023b2d363d282",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.json": "b50eecc159ce7b3f2567e51929364d36b430fa9ce3cbb52b9d624d522ccb1e80",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.llir": "31466105b0e96121983738beb00a9159e8321e70874a497186426255355b0888",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.ptx": "2b68d549938b51ee014396bca196dcd8820e5536e5550d0cf864a4690aa65502",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.source": "22fec3cfcb205622fc1a2129f761cea22d6bea8a89482cab433174913bba1cf5",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.ttgir": "49483273066b108440a4ade85470744055800e87f98fe963894ea79e55949038",
+    "torch-cache-compiled/triton/0/LTJJSFKTTRYNSA2756DDAJCKKWRG5CPXYP3WD6YJIR6PITFJBCEQ/triton_poi_fused_add_relu_0.ttir": "c1b0b906bf0db3cf8ea8948f90c064299195a7034f26c035e7476b791b4d0ba8",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/__grp__triton_poi_fused_add_mul_1.json": "4d7aa6e13772fb3c985695789ddabd3ed800bb674147e20076a712548b81846e",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.cubin": "804d64ece0b7815fa808b0afdfd6bab404d289611223ab87b8644cf31a8697be",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.json": "4c3efc7f08d19f0a4e2c4d3e44d0808cb247553221dc7db6f7c01084d7475829",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.llir": "16343c0609ea8fcf89ef1c7301666642a09fc2d5a9d819a7375e7a018d768380",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.ptx": "3792b3cf74a6e370f30f618974f80a0beb3b8fadcceafa55951f4fe20b5ac31d",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.source": "9a68df7f04755a256866a07928a9f0f36f0e021cec74bed4329f19c3fa6e69ef",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.ttgir": "6b85003110a1360a554dd4bdfda8018b5e950c3a66458fa7b4ffb4dbe0f9722c",
+    "torch-cache-compiled/triton/0/OE5BY77CQPOCAS34P3EWSDZKEW2PQ7QKEI6ATQIRXP6VYSKAPQ5A/triton_poi_fused_add_mul_1.ttir": "3cdb6abbfd7b58867122a1de313deba6c38d57d674c6d326814920bbcb435b29",
+    "torch-install/status.json": "1d0e40f5120de224921b5a2d4c50481fb2480312d0bff6786fce5d0d28b9ebc6",
+    "torch-install/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch-install/stdout": "c9ce42033b7ba5b6fc7443d8c04f65233b1a2667761a3adc0a65ae955f03f0ab",
+    "torch-install-report.json": "44e4dd19142828126845a902f73acdef11569c00db4b41af2a4ba20caff5d83c",
+    "torch-version/status.json": "5d99f9fc86cb5b17c0dbe2b75c6a023e64fd1cf36da030cf2d4f5a589ba23510",
+    "torch-version/stderr": "02764f5e1c50e94c491a1102eb464d58a06bce1f947932db0f7b7fed008912ea",
+    "torch-version/stdout": "a0603ef12e5a9dd33074b77b6941e0fd40e5ffb0196bee4cec37e8161241e208",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchdynamo/debug.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/aot_model___0_debug.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/aot_model___1_debug.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/fx_graph_readable.py": "84d6205999e8a449f70aa1fe3a212fb1e7170a77d24fa3a0704936d409fc19b7",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/fx_graph_runnable.py": "658009ff967b1cacd941b5cbf03019a8296f057ccb425b9719e9c5ead37f837a",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/fx_graph_transformed.py": "84d6205999e8a449f70aa1fe3a212fb1e7170a77d24fa3a0704936d409fc19b7",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/inductor_provenance_tracking_node_mappings.json": "b4505501732d8d30ec53eba3977b1619617a6656c8d65f64b10d054e9f0e1fd2",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/ir_post_fusion.txt": "03e5faf94ce6d7fc4b6f9aea0218d0455e14807eecb156c32317636450a4b040",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/ir_pre_fusion.txt": "5fb2313e5a9ca69f799f662fc4456f93e9eda46e89a239175ebc6d08f066383e",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__0_inference_0.0/output_code.py": "862e5332a065e033e5ca40a08c8eb3d2d3125d25620568c10f6d2946a2b7e9ee",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/fx_graph_readable.py": "9bcefbdf3dfd57c0b82c7ff0ffea4626d67fee4be90ee9aab266fbfb9f72e8cc",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/fx_graph_runnable.py": "e66fe85ac66568901705f1d1a247f3edbc70553fd9e0f8d3d620e6e6280ed52b",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/fx_graph_transformed.py": "9bcefbdf3dfd57c0b82c7ff0ffea4626d67fee4be90ee9aab266fbfb9f72e8cc",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/inductor_provenance_tracking_node_mappings.json": "f07ac04456ac551a7bc31cf790d264cd1470544f50b0ef34b125559b3aaeaeaf",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/ir_post_fusion.txt": "b40c9e143400dc451f5716254f43455f98b91e1818c5b386828adca6e476601d",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/ir_pre_fusion.txt": "51bd5730bb5c535706c9378ba8c3dd202f4fae31adf018ef507f43d660722e8b",
+    "torch_compile_debug/run_2026_10_21_23_02_12_829240-pid_1513/torchinductor/model__1_inference_1.1/output_code.py": "49accbc681c07792a21e26807b029dad25f911114b02eec6a8e36ca2c422fe23",
+    "torch_compile_debug/tlparse/dedicated_log_torch_trace_u2tr1_p_.log": "4187ea4f0140922dcb4ccf65b0bbc705ce5051280f1614130bb14b0f97deaa5f",
+    "venv/status.json": "b6f70e7fa316cbeefceee259b35e12ff50589d5bcaabb69399ec6b4c49cfc257",
+    "venv/stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "venv/stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

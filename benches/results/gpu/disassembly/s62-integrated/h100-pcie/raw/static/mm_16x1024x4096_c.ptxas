@@ -1,0 +1,16 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_320e89c051337355' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_320e89c051337355
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 119.632 ms
+ptxas info    : Compiling entry function 'mapal_gen_398f346f86899636' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_398f346f86899636
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.539 ms
+ptxas info    : Compiling entry function 'mapal_tile_29d163e8903c830f' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_29d163e8903c830f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers
+ptxas info    : Compile time = 27.071 ms

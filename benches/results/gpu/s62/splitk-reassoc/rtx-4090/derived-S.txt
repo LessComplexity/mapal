@@ -1,0 +1,34 @@
+# rtx-4090: derived split-K per cell (bundle .launch files; kernel gx gy block smem [S rkernel rgx rgy rblock rsmem])
+mm_128x1024x4096_r mapal_tile_a25d54ad3793001b 32 32 64 9216 8 mapal_tile_ed9d43c18ad9a5f8 512 1 256 0
+mm_128x2048x7168_r mapal_tile_9efc30f1debe4ae5 64 8 128 19968 4 mapal_tile_807a9b57e2664102 1024 1 256 0
+mm_16x1024x4096_r mapal_tile_0a11ebba9da4cbd1 64 16 256 0 16 mapal_tile_c991024d1c2da42e 64 1 256 0
+mm_16x18432x7168_r mapal_tile_b242a27814b0ff70 1152 1 256 0
+mm_16x2048x7168_r mapal_tile_c4173285e7181813 128 8 256 0 8 mapal_tile_89b780269bdcad20 128 1 256 0
+mm_1x1024x4096_r mapal_tile_a1a4451982ddd92d 4 256 256 0 256 mapal_tile_4fbd2efc4a76e2ba 4 1 256 0
+mm_1x2048x7168_r mapal_tile_de9540483f7a6b3f 8 128 256 0 128 mapal_tile_de50cd34d5fa5bdc 8 1 256 0
+mm_4096x4096x4096_r mapal_tile_6f5769e03e0cb858 32 32 128 16640
+mm_128x1024x4096_rc mapal_tile_f27909213393bcc2 32 32 64 9216 8 mapal_tile_80745a4e5b2e6b11 512 1 256 0
+mm_128x2048x7168_rc mapal_tile_15e720318a85fae4 64 8 128 19968 4 mapal_tile_031c774458d50ed3 1024 1 256 0
+mm_16x1024x4096_rc mapal_tile_6e8813bff492db98 64 16 256 0 16 mapal_tile_b06bc8abf1f59147 64 1 256 0
+mm_16x18432x7168_rc mapal_tile_cda39e3b27851797 1152 1 256 0
+mm_16x2048x7168_rc mapal_tile_b576c61568d3b45a 128 8 256 0 8 mapal_tile_a129b170e18ff1b9 128 1 256 0
+mm_1x1024x4096_rc mapal_tile_01c23efa4c046d6c 4 256 256 0 256 mapal_tile_e45e05d5722ed9eb 4 1 256 0
+mm_1x2048x7168_rc mapal_tile_ac76926f9ae9579e 8 128 256 0 128 mapal_tile_3ca16bcfa0cd39dd 8 1 256 0
+mm_4096x4096x4096_rc mapal_tile_617d16a5df3b6ebf 32 32 128 16640
+# ordered-arm PTX identity (kernel name substituted)
+mm_128x1024x4096_r.off-splitk vs mm_128x1024x4096: ptx identical, launch 32 4 64 9216 vs 32 4 64 9216
+mm_128x2048x7168_r.off-splitk vs mm_128x2048x7168: ptx identical, launch 64 2 128 19968 vs 64 2 128 19968
+mm_16x1024x4096_r.off-splitk vs mm_16x1024x4096: ptx identical, launch 64 1 256 0 vs 64 1 256 0
+mm_16x18432x7168_r vs mm_16x18432x7168: ptx identical, launch 1152 1 256 0 vs 1152 1 256 0
+mm_16x2048x7168_r.off-splitk vs mm_16x2048x7168: ptx identical, launch 128 1 256 0 vs 128 1 256 0
+mm_1x1024x4096_r.off-splitk vs mm_1x1024x4096: ptx identical, launch 4 1 256 0 vs 4 1 256 0
+mm_1x2048x7168_r.off-splitk vs mm_1x2048x7168: ptx identical, launch 8 1 256 0 vs 8 1 256 0
+mm_4096x4096x4096_r vs mm_4096x4096x4096: ptx identical, launch 32 32 128 16640 vs 32 32 128 16640
+mm_128x1024x4096_rc.off-splitk vs mm_128x1024x4096_c: ptx identical, launch 32 4 64 9216 vs 32 4 64 9216
+mm_128x2048x7168_rc.off-splitk vs mm_128x2048x7168_c: ptx identical, launch 64 2 128 19968 vs 64 2 128 19968
+mm_16x1024x4096_rc.off-splitk vs mm_16x1024x4096_c: ptx identical, launch 64 1 256 0 vs 64 1 256 0
+mm_16x18432x7168_rc vs mm_16x18432x7168_c: ptx identical, launch 1152 1 256 0 vs 1152 1 256 0
+mm_16x2048x7168_rc.off-splitk vs mm_16x2048x7168_c: ptx identical, launch 128 1 256 0 vs 128 1 256 0
+mm_1x1024x4096_rc.off-splitk vs mm_1x1024x4096_c: ptx identical, launch 4 1 256 0 vs 4 1 256 0
+mm_1x2048x7168_rc.off-splitk vs mm_1x2048x7168_c: ptx identical, launch 8 1 256 0 vs 8 1 256 0
+mm_4096x4096x4096_rc vs mm_4096x4096x4096_c: ptx identical, launch 32 32 128 16640 vs 32 32 128 16640

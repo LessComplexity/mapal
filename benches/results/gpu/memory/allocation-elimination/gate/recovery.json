@@ -1,0 +1,11 @@
+{
+  "archive": ".claude/worktrees/_archive-s54-20261021/s58-allocation-gate-v2",
+  "files": 5140,
+  "bytes": 66893776,
+  "copy_verified": true,
+  "archive_sha256": "a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd",
+  "packet_manifest_sha256": "32d618492a233f3c32708cc8c028a752dd4997413529e487ac4d0f07c8d18a87",
+  "manifest_sha256": "cc2aa4746fd143304717d125f808c27534c29ca10cb651aa2866c731d4243fbc",
+  "GPU_executed": false,
+  "independent_packet_review": "no remaining blocker; hardware not executed"
+}

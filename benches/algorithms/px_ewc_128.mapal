@@ -1,0 +1,17 @@
+fn main() {
+    16384 -> iota -> ta;
+    128 -> iota -> krange;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    a -> map { v -> v * 3.0 } -> x;
+    x -> map { v -> v + 2.0 } -> y;
+    ta -> map { t -> y[t] * b[t] } -> z;
+    z[0] -> println;
+    z[1] -> println;
+    z[255] -> println;
+    z[256] -> println;
+    z[8191] -> println;
+    z[8192] -> println;
+    z[12345] -> println;
+    z[16383] -> println;
+}

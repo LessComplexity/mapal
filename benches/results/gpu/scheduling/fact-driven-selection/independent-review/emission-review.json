@@ -1,0 +1,564 @@
+{
+  "pass": true,
+  "reviewed_gpu_sha256": "e932fcb811d5a245d4dfcc03134928af85af19443210014089c5e66f97092205",
+  "source_and_compiler_hashes_verified": true,
+  "files_compared": 104,
+  "unchanged_successful_controls": 8,
+  "intentional_policy_changes_with_unchanged_arithmetic_inventory": 5,
+  "mixed_module": {
+    "case": "mixed-pdl",
+    "unchanged_required": false,
+    "files": {
+      "host.ll": {
+        "before_sha256": "4e996bb3a76dcc1ac548dcf0f0b2fe07ed9c8b4bb83a553c9aa6ad18e8e6de8a",
+        "after_sha256": "4e996bb3a76dcc1ac548dcf0f0b2fe07ed9c8b4bb83a553c9aa6ad18e8e6de8a",
+        "equal": true,
+        "normalization": null
+      },
+      "device.ll": {
+        "before_sha256": "bdbdf80a41a06e1a6d029f42de08e2ec0f79908bf1b7e206fc5cb52886756981",
+        "after_sha256": "a76a0bc354dca22315d23ff913f5e085879c3c8f31a40fb547a14a0e060cd732",
+        "equal": false,
+        "normalization": null
+      },
+      "opt.ll": {
+        "before_sha256": "133545acd7c34a2ee4f36c412f9009a1586fca48c6d06c2b0a1a198602cc588f",
+        "after_sha256": "564e3984bb12edfa07066144b8a7109743511591ecca1a502c038aa2238e0c21",
+        "equal": false,
+        "normalization": "ModuleID/source_filename path only"
+      },
+      "ptx": {
+        "before_sha256": "60b35d48a102ff601330595dd88ac3aa04f47b4ff4f02a4015ff32f4051355b3",
+        "after_sha256": "9fe8e18bb43463fc0e2382712961cd2dd77b2232a1869096e01d5569161e0d68",
+        "equal": false,
+        "normalization": null
+      }
+    },
+    "arithmetic_inventory": {
+      "fmul": 1,
+      "fadd": 1,
+      "fma": 0,
+      "mma": 64,
+      "wgmma": 0,
+      "pdl_waits": 2,
+      "ptx_fma": 0
+    }
+  },
+  "integration_completed_test_groups": 14,
+  "integration_completed_passes": 176,
+  "emissions": [
+    {
+      "case": "scalar-exact",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "362ae3e9ed19c1ccaecc39d3382fbc9fd8aa41d9f088da28f3b9be2876510512",
+          "after_sha256": "362ae3e9ed19c1ccaecc39d3382fbc9fd8aa41d9f088da28f3b9be2876510512",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "41a445242b9e347f5b45df4e04c7a8d2edfd64b3d895685863c60e03a1857d6d",
+          "after_sha256": "41a445242b9e347f5b45df4e04c7a8d2edfd64b3d895685863c60e03a1857d6d",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "60079ecc897ca03b793698b12a7bb0788f01d6d31b7eaba0d1a735ce022260b4",
+          "after_sha256": "2a6dfe39f7789a2747dc82662966b5ff9ac48ed93bf244926eae997e73e2b8ae",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "93824cb7e600323473fcc112652a52d9ae3c4de32c43184959667e772e9d71d2",
+          "after_sha256": "93824cb7e600323473fcc112652a52d9ae3c4de32c43184959667e772e9d71d2",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 32,
+        "fadd": 32,
+        "fma": 0,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "scalar-contract",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "f9597ff70e8d8f1f0c8aaf370b21a0da2d7761e7be81ccba962e068379e761e8",
+          "after_sha256": "f9597ff70e8d8f1f0c8aaf370b21a0da2d7761e7be81ccba962e068379e761e8",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "6a6f4591fc0d604f6a210a2d76a3ff866b7bac009153ce6c6a395baac9eacd9f",
+          "after_sha256": "6a6f4591fc0d604f6a210a2d76a3ff866b7bac009153ce6c6a395baac9eacd9f",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "12003a05781f7113a89861aa014f68f2fd27cd863ddb9a1b10ce478255e09aa3",
+          "after_sha256": "d6599e8b6078815c0633a9b26ac8a9d577b2826267fd945d49a083dfbb757e93",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "71a349165bebf228f7b9ce11e05fa5745eda143943e5c33805c4abc519c1aff1",
+          "after_sha256": "71a349165bebf228f7b9ce11e05fa5745eda143943e5c33805c4abc519c1aff1",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 32,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 512
+      }
+    },
+    {
+      "case": "mma-default",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "2aee7e3ed5ab31aaaa6a7eacf000c33edd1e4471824c276ac89f23604c58be1b",
+          "after_sha256": "2aee7e3ed5ab31aaaa6a7eacf000c33edd1e4471824c276ac89f23604c58be1b",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "5ac0bcd759246a8bd6944d229aeb7c3c0454e33ec7ff5e5d9ca2855f415d914d",
+          "after_sha256": "5ac0bcd759246a8bd6944d229aeb7c3c0454e33ec7ff5e5d9ca2855f415d914d",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "c334752701ba5b7cafe7d23f5b8d5e450658abec3abc9787ab3f9a192d0531cb",
+          "after_sha256": "52423b6dbe460d19e10a288d1ee0c901ac86909b77ebed0fbf98a864d45dfacc",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "9f6b1fe41daf6d3d617f7286cf799313af08ebb2c68019c451f8b4f0a007b01e",
+          "after_sha256": "9f6b1fe41daf6d3d617f7286cf799313af08ebb2c68019c451f8b4f0a007b01e",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 0,
+        "mma": 32,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "wgmma-default",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "b9bf8d1133564c39201fc16834a7da31503f318aeb0ddac80a03eb65ba14eaa6",
+          "after_sha256": "b9bf8d1133564c39201fc16834a7da31503f318aeb0ddac80a03eb65ba14eaa6",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "ea192b4d69a2439f14270e7b258cb00657ca065795fcf30dccbe92d899dc3ae6",
+          "after_sha256": "ea192b4d69a2439f14270e7b258cb00657ca065795fcf30dccbe92d899dc3ae6",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "2b320dfc694ef87f0bfb2229365d79207c1739a071dd4559d999aebf49c1d77e",
+          "after_sha256": "6832138b156d6e1909d3dfd7597e757e82ae0849bc164c2d117e8223f32593d9",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "ce37cb054a08b956f28a4bf4c8bae5ebfa96d110e5ee429fcf007a5d5d498cc7",
+          "after_sha256": "ce37cb054a08b956f28a4bf4c8bae5ebfa96d110e5ee429fcf007a5d5d498cc7",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 0,
+        "mma": 0,
+        "wgmma": 4,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "mma-hopper-wgmma-off",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "0b5b05b70414b861f75fd032f708c1844d278ef3a8712b244ba88f10726de484",
+          "after_sha256": "0b5b05b70414b861f75fd032f708c1844d278ef3a8712b244ba88f10726de484",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "9e3b04d346c8c6036e131f32c7552f5bb7249f6610314ba0113ddb49da8d4811",
+          "after_sha256": "9e3b04d346c8c6036e131f32c7552f5bb7249f6610314ba0113ddb49da8d4811",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "52d243b4c78ca8c84f3faa326a3b3be3bb71dade235deeb5517e86d857d36457",
+          "after_sha256": "0213e821d078c3ebc353aa9f00f41be30179f03679ea5ce3d6aeaef0f04b1c5b",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "4d8d09a4ea4b2c38969a257cfadeb58a9006fc210c02b2cf73c132ddd54877b6",
+          "after_sha256": "4d8d09a4ea4b2c38969a257cfadeb58a9006fc210c02b2cf73c132ddd54877b6",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 0,
+        "mma": 128,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "mma-forced",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "3825253766113b43c5c5504f8dc4356ecf2be8954b6500822b77992545d04ab7",
+          "after_sha256": "3825253766113b43c5c5504f8dc4356ecf2be8954b6500822b77992545d04ab7",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "affae2708b9cd5fb61e06ca7896a9382d4ac108cb4650fdfe07cf4b9e053160d",
+          "after_sha256": "affae2708b9cd5fb61e06ca7896a9382d4ac108cb4650fdfe07cf4b9e053160d",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "9b7532540dc45d571f42fa25b407cfb7f695db4b1fa8b374723c319e4bfba7ce",
+          "after_sha256": "26f5efbf51d37c4747900cf303f88d324ae54bed2b91b1145477df9e8a8f6576",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "4b2564df530702c71614fa7a99fbd1587af0dda273c66ddd70d8226053d07c49",
+          "after_sha256": "4b2564df530702c71614fa7a99fbd1587af0dda273c66ddd70d8226053d07c49",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 0,
+        "mma": 32,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "wgmma-forced",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "ab1474bbf7c957f26b1469f9734be07da4eecf0d3faeaaaebe1a02a5c9119006",
+          "after_sha256": "ab1474bbf7c957f26b1469f9734be07da4eecf0d3faeaaaebe1a02a5c9119006",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "6c76a082b96e983691356d45c7772d075699aea794eac68951bb9bf4def0ccea",
+          "after_sha256": "6c76a082b96e983691356d45c7772d075699aea794eac68951bb9bf4def0ccea",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "a46446a1b1f8f6967c72330789f0e0a9795ffc4ae331d3e35993b9011eacf9fd",
+          "after_sha256": "9f2b2da6a9f9f7c50f359c21a118901a43e2152d222f150afd24b444377ca06d",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "3f4677c0bfdc380fac0c5408d2c2626cf3d775ceb1a25a3a7bada5105bb290b3",
+          "after_sha256": "3f4677c0bfdc380fac0c5408d2c2626cf3d775ceb1a25a3a7bada5105bb290b3",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 0,
+        "mma": 0,
+        "wgmma": 4,
+        "pdl_waits": 1,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "scalar-naive",
+      "unchanged_required": true,
+      "files": {
+        "host.ll": {
+          "before_sha256": "dfc880e23bc5d3e2b6849af7c8e972d7e8f1dcbe140720a7fc0db074b21fb0c0",
+          "after_sha256": "dfc880e23bc5d3e2b6849af7c8e972d7e8f1dcbe140720a7fc0db074b21fb0c0",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "68e4ef3d42ba9c25b9aae57877842e69d0c9c934c70dadfb66e48f244adb3adb",
+          "after_sha256": "68e4ef3d42ba9c25b9aae57877842e69d0c9c934c70dadfb66e48f244adb3adb",
+          "equal": true,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "ae3475af01b347224056a518da84fceb885867293ea4f0c763f27c4320a253ce",
+          "after_sha256": "eaa94358a1d5d5b506023a2d36ab52918630e3d55b23792496e3b7ed847e7ee5",
+          "equal": true,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "543b0efb865cd5d3a08d9ae9bfa3f8653782b7ed720126220b827a9bd7a283bf",
+          "after_sha256": "543b0efb865cd5d3a08d9ae9bfa3f8653782b7ed720126220b827a9bd7a283bf",
+          "equal": true,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 1,
+        "fadd": 1,
+        "fma": 0,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "mixed-pdl",
+      "unchanged_required": false,
+      "files": {
+        "host.ll": {
+          "before_sha256": "4e996bb3a76dcc1ac548dcf0f0b2fe07ed9c8b4bb83a553c9aa6ad18e8e6de8a",
+          "after_sha256": "4e996bb3a76dcc1ac548dcf0f0b2fe07ed9c8b4bb83a553c9aa6ad18e8e6de8a",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "bdbdf80a41a06e1a6d029f42de08e2ec0f79908bf1b7e206fc5cb52886756981",
+          "after_sha256": "a76a0bc354dca22315d23ff913f5e085879c3c8f31a40fb547a14a0e060cd732",
+          "equal": false,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "133545acd7c34a2ee4f36c412f9009a1586fca48c6d06c2b0a1a198602cc588f",
+          "after_sha256": "564e3984bb12edfa07066144b8a7109743511591ecca1a502c038aa2238e0c21",
+          "equal": false,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "60b35d48a102ff601330595dd88ac3aa04f47b4ff4f02a4015ff32f4051355b3",
+          "after_sha256": "9fe8e18bb43463fc0e2382712961cd2dd77b2232a1869096e01d5569161e0d68",
+          "equal": false,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 1,
+        "fadd": 1,
+        "fma": 0,
+        "mma": 64,
+        "wgmma": 0,
+        "pdl_waits": 2,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "strided-contract",
+      "unchanged_required": false,
+      "files": {
+        "host.ll": {
+          "before_sha256": "f4081e98b005b1c18be7177cf0c88d26cc5336ac9f3e23b20818c20c3a4b8018",
+          "after_sha256": "f4081e98b005b1c18be7177cf0c88d26cc5336ac9f3e23b20818c20c3a4b8018",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "97c6a68a39d7806e557cc944aa2b1fdc48dcfa6d7339cdf1b31f88d918e3d761",
+          "after_sha256": "e7fa3b5012986c7247cebe1a99d7a46831e7d7ff389c917f81f20813519488e4",
+          "equal": false,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "996d0f4bef749b2a9870a77b9941a8adadfd60a450986945e956ba3358df69d9",
+          "after_sha256": "64b90bbbab996c6f75749341a6b706652a64a615e957100474e76b91ccca9ec0",
+          "equal": false,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "1ca36d938597af496bf7e0a06bdff82f18fe8b72ced627858f4956d0f01dc53f",
+          "after_sha256": "9ec196fd857a373d5b087b9ece098fc08bd82135f45d1f9bb8072781b459fc7c",
+          "equal": false,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 1,
+        "fadd": 1,
+        "fma": 0,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 0
+      }
+    },
+    {
+      "case": "layout-fallback",
+      "unchanged_required": false,
+      "files": {
+        "host.ll": {
+          "before_sha256": "4f9d890bb6a3def0662e6cb8c3073b1be85ef978c4a254d2eb0aee27656694f0",
+          "after_sha256": "4f9d890bb6a3def0662e6cb8c3073b1be85ef978c4a254d2eb0aee27656694f0",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "2c0efc06a8afa65d8699a9c1c8e4d95cafbe21d4e4515a456d329879ad754ab0",
+          "after_sha256": "d39fc48ae35eeef8061a8b448df7930f03a72ad52700e3d15ac2a8a0c99e6a41",
+          "equal": false,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "b1be1a0fb5dd4a3d19405aef31d0f77c38a170b3e19e2db8b53d34b56965b2cb",
+          "after_sha256": "7bdc20a92a962c0b25ab5d9c621edf37f35fe014142c370ae205368e6ce01d5e",
+          "equal": false,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "81eec1674c89a20fdf9166c02902921058a6bfb6a3bb3d1e2060b61cca092b75",
+          "after_sha256": "190e176e6772616dd2849ea33489dd9d013c43715b048e35f8a8ac22bc73f5d5",
+          "equal": false,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 64,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 256
+      }
+    },
+    {
+      "case": "type-fallback",
+      "unchanged_required": false,
+      "files": {
+        "host.ll": {
+          "before_sha256": "a7baa21a6fb16fc84365ecb6020f8dbd02160dad8152bfe4633113d3de1a0ff9",
+          "after_sha256": "a7baa21a6fb16fc84365ecb6020f8dbd02160dad8152bfe4633113d3de1a0ff9",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "d5e2ced0aa46a4ea5336d85658402e05d8066f893415d41b062330a219827365",
+          "after_sha256": "a46d5b86f72bb4b34b8b5ced37520116368bacf92257392189b6b17c9d9b9c49",
+          "equal": false,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "128f278009e5b244d452fe1f0cea92c887c3147fe22e99b0c3f29660a862316d",
+          "after_sha256": "68eba63e68ccf8857332274d1bc1114fcd52f58bfe4e95a58d8f681aa5a52693",
+          "equal": false,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "84caac67302d963ac0c8b377c85af928a558823255fbe5b40729ed6c5437e5d0",
+          "after_sha256": "5bcbfc2545b7af1b7882164b386624be772970649bbe7658e35b09695d9ad145",
+          "equal": false,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 16,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 64
+      }
+    },
+    {
+      "case": "mma-off-fallback",
+      "unchanged_required": false,
+      "files": {
+        "host.ll": {
+          "before_sha256": "7f5f7d043ae4c60f58c5997ed3a2233315339a55b128a3ab6e3e74fd0b6b4795",
+          "after_sha256": "7f5f7d043ae4c60f58c5997ed3a2233315339a55b128a3ab6e3e74fd0b6b4795",
+          "equal": true,
+          "normalization": null
+        },
+        "device.ll": {
+          "before_sha256": "0714a7a7abc87c7f007c25fc2c1e78d95714fcd87394179fb87358136d8e5912",
+          "after_sha256": "2b58c9c1e3bc53ac585141e1831c2a341f762ea5f16dca840bba83c2ff01c4b8",
+          "equal": false,
+          "normalization": null
+        },
+        "opt.ll": {
+          "before_sha256": "701b89f418dc2f1bc36f257f00d6228df2ade200ecb0e23662170bcf50089ddb",
+          "after_sha256": "fc0a71245fd1a48d8106112d5fb5a0221e3f177c81fec09fa445e52f225007d0",
+          "equal": false,
+          "normalization": "ModuleID/source_filename path only"
+        },
+        "ptx": {
+          "before_sha256": "fc9b7550d0ee915d9d743a6789572c661e8715400d3893b4beb6de9cb4553025",
+          "after_sha256": "c2baad41d1ef4034d177463a361b02b85ba673dc03e2fb85f5de96ed2e9e62bc",
+          "equal": false,
+          "normalization": null
+        }
+      },
+      "arithmetic_inventory": {
+        "fmul": 0,
+        "fadd": 0,
+        "fma": 64,
+        "mma": 0,
+        "wgmma": 0,
+        "pdl_waits": 0,
+        "ptx_fma": 512
+      }
+    }
+  ],
+  "gpu_executed": false,
+  "limits": [
+    "Control equality establishes finite compile-time output only",
+    "Five changed policy emissions have unchanged arithmetic instruction counts; this alone does not prove runtime values",
+    "No new GPU numerical or performance claim"
+  ]
+}

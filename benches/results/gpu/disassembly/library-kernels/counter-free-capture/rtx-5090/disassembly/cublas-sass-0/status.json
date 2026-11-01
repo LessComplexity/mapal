@@ -1,0 +1,17 @@
+{
+  "name": "cublas-sass-0",
+  "argv": [
+    "/usr/local/cuda-12.8/bin/nvdisasm",
+    "--print-code",
+    "--cuda-function-index",
+    "62",
+    "/w/trace/library-images/cublas-profile/capture/module-2987.cubin"
+  ],
+  "limit_seconds": 20,
+  "pass": true,
+  "exit": 0,
+  "files": {
+    "stdout": "978bcfe0475fc6a31b18e649f3d94661abf2e4d14f96cb4ccba449bba644881d",
+    "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

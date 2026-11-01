@@ -1,0 +1,11 @@
+--- /private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/d48de64b-c24f-4f25-9674-928a7ce97ccb/scratchpad/disasm-h100-pcie/capv2/library-image-capture/capture.cpp	2026-10-22 16:28:53
++++ /private/tmp/claude-501/-Volumes-LessComplex-Personal-mapal/d48de64b-c24f-4f25-9674-928a7ce97ccb/scratchpad/disasm-h100-pcie/bundle/capture.cpp	2026-10-22 22:35:59
+@@ -34,7 +34,7 @@
+  const CUlaunchConfig* c=nullptr;CUfunction f=nullptr;
+  if(id==CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx){const auto* p=static_cast<const cuLaunchKernelEx_params*>(raw);c=p->config;f=p->f;}
+  else {const auto* p=static_cast<const cuLaunchKernelEx_ptsz_params*>(raw);c=p->config;f=p->f;}
+- if(!c){bad("null-launch-config");return {};}if(c->numAttrs){bad("unsupported-launch-attributes");return {};}
++ if(!c){bad("null-launch-config");return {};}if(c->numAttrs){fprintf(log_,"launch-attrs\t%u",c->numAttrs);for(unsigned i=0;i<c->numAttrs;i++)fprintf(log_,"\t%d",int(c->attrs[i].id));fprintf(log_,"\n");} // disasm-h100-pcie: record, do not reject
+  return {f,c->gridDimX,c->gridDimY,c->gridDimZ,c->blockDimX,c->blockDimY,c->blockDimZ,c->sharedMemBytes,c->hStream};
+ }
+ void CUPTIAPI callback(void*,CUpti_CallbackDomain dom,CUpti_CallbackId id,const void* raw){

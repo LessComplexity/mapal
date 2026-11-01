@@ -1,0 +1,8 @@
+arch	knob	default	best	gmean_s	programs	null	worst_program	worst_s	verdict	citation	machine
+rtx-3090	bk	0	0	1.000	0	-	-	-	no-site	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	resident	2	2	0.914	5	0.003	mm_128x2048x7168/default	1.153	default	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	split	0	0	1.008	4	0.003	mm_128x2048x7168/default	1.133	default	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	stages	0	0	1.000	4	0.003	mm_16x18432x7168/default	1.000	default	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	tm	0	0	1.000	2	0.001	mm_16x18432x7168/default	1.000	default	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	tn	0	0	1.000	2	0.001	mm_16x18432x7168/default	1.000	default	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03
+rtx-3090	warps	0	4	0.855	4	0.003	pt_pj_m16_n18432_k7168/default	1.003	ship	benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt	NVIDIA GeForce RTX 3090|580.159.03

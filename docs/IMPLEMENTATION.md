@@ -18,8 +18,9 @@
 | backend-llvm | `crates/backends/llvm/` — entry `mapal_backend_llvm::emit(&CategoryIr) -> Result<String, EmitError>` (ADR-0020; `src/{ty,module,func,loops}.rs`) | [DESIGN](components/backend-llvm/DESIGN.md) | [IMPLEMENTATION](components/backend-llvm/IMPLEMENTATION.md) | built/tested |
 | mapal-rt | `crates/mapal-rt/` — shared runtime seam (ADR-0020; owned by backend-llvm per its DESIGN §1): 7 `mapal_print_*` externs (Rust `Display` = interp render parity) + `mapal_trap` → exit 101; **S24: the parallel scheduler (11 `mapal_par_*` externs — work-stealing pool, rank-seeded static schedule, watermark waits, CAS-min trap flag, registration-time pinning; `MAPAL_PAR` env; std-only)**; **S25: cgroup-quota-aware width (`cpu.max` v2 / cfs v1 parsers; `MAPAL_PAR` override absolute) + `mapal_perf_begin`/`mapal_perf_end` compute-timer externs (pool-warm then `Instant`; `MAPAL_PERF total ms=` stdout grammar)**; **S29: `mapal_time_ms` (the `time` builtin's clock seam, one process-lifetime `Instant` epoch) + the heap arena `mapal_rt_alloc`/`mapal_rt_free_all` (a `Mutex<Vec<(usize, Layout)>>` registry over `std::alloc`) — the llvm backend places entry-block blocks ≥ `HEAP_MIN_BYTES` (256 KB) there, which is what lets matmul2048 run on a 64 MB stack**; `staticlib`+`rlib` | [DESIGN](components/backend-llvm/DESIGN.md) §1 + [plan-parallel-orchestrator](components/backend-llvm/plans/plan-parallel-orchestrator.md) | `crates/mapal-rt/src/lib.rs` | built |
 | backend-cuda | `crates/backends/cuda/` — entry `mapal_backend_cuda::emit(&CategoryIr) -> Result<String, EmitError>` (ADR-0020; `src/{ty,module,func,kernel,loops,arena}.rs`) + `emit_with_opts(&CategoryIr, &EmitOpts)` (S20: `perf_timing` — CUDA-event `MAPAL_PERF` instrumentation; `emit` = defaults, byte-identical) | [DESIGN](components/backend-cuda/DESIGN.md) | [IMPLEMENTATION](components/backend-cuda/IMPLEMENTATION.md) | built/tested (M3, S15; arenas + emitter-quality S20) |
+| backend-nvptx | GPU leg in `crates/backends/llvm/src/func/` and `crates/backends/llvm/src/profile.rs`; CUDA-driver transmissions in `crates/mapal-rt/gpu/mapal_gpu.c` | [ARCHITECTURE](components/backend-nvptx/ARCHITECTURE.md) | [IMPLEMENTATION](components/backend-nvptx/IMPLEMENTATION.md) | built; frozen S54 matrix passed; targeted ordering open |
 | backend-verilog | `crates/backends/verilog/` | [DESIGN](components/backend-verilog/DESIGN.md) | [IMPLEMENTATION](components/backend-verilog/IMPLEMENTATION.md) | stub |
-| cli | `crates/mapal-cli/` | [DESIGN](components/cli/DESIGN.md) | [IMPLEMENTATION](components/cli/IMPLEMENTATION.md) | stub |
+| cli | `crates/mapal-cli/` | [DESIGN](components/cli/DESIGN.md) | [IMPLEMENTATION](components/cli/IMPLEMENTATION.md) | implemented |
 
 ## Shared objects (one `Dat`, materialised in ≥2 components)
 
@@ -28,6 +29,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 
 | Object / bridge | Signature | Realized at | Stored? |
 | --- | --- | --- | --- |
+| formatted source | `Source → Source ⊕ Diagnostic*` | `crates/mapal-syntax/src/format.rs:format_source`, used by `crates/mapal-cli/src/fmt.rs:run`; editor ports mapped in [cli](components/cli/IMPLEMENTATION.md) | deduced from source tokens and comments |
 | `SourceLoc` duality (D8) | `mapal_syntax::SourceLoc → mapal_ir::SourceLoc` | seam: `crates/mapal-lower/src/tys.rs:ir_loc` | stored copy at one declared seam (keeps `mapal-ir` zero-dep) |
 | type-resolution functor | `mapal_syntax::TyKind ⇀ mapal_ir::Ty` (partial) | `crates/mapal-lower/src/tys.rs:resolve_ty` / `tys.rs:TypeTable::resolve` | deduced (a pass) |
 | Diagnostic seam | `Diagnostic ⊕ IrError ⊕ IrViolation ⇀ rendered 𝕊` | per-crate enums; renderer reserved to `mapal-cli` (planned) | deduced at the CLI |
@@ -35,7 +37,7 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 | emission classification `EmissionPlan` (S22, plan-minimal-emission) | `FuncId ⇀ (Obj ⇀ Dissolved \| Inline \| Named)` — the minimal-emission split rule (fanout/boundary/guard-driven) | exported `mapal_ir::CategoryIr::emission_plan` (`algo.rs`); consumed by `mapal-backend-cuda` (`src/{kernel,func}.rs` — DevEmit/FnEmit); llvm assessment = WP-E | deduced (recomputed, never stored) |
 | task parallelism `PathPlan` (S24, plan-parallel-orchestrator; **S29 clock rules**) | `FuncId → PathPlan` — the task-DAG (fused/parallel/split tasks, speculate-and-order watermarks) | exported `mapal_ir::CategoryIr::path_plan` (`algo.rs:946`); consumed by `mapal-backend-llvm` (parallel `mapal_main`) + `mapal-rt` (work-stealing scheduler) · **S29 (plan-time-builtin):** a `TimeMs` checkpoint FENCES every task written entirely before it in the SOURCE (`algo.rs` `task_max_loc` vs `morph.loc.start` ⇒ `WaitEntry.threshold = None`) — source order because the graph orders pure work against a clock read not at all; and a clock read's consumer cone stays on the host spine (`host_value`/`host_cone` in `is_host`) because a task cannot read a value the host writes after dispatch (FRAMEWORK §4.5 Law 1). Both mutation-verified (`mapal-ir/tests/algos.rs`) | deduced (recomputed, never stored) |
 | guard elision `BoundsProof` (S20c) | `FuncId → BoundsProof` — per-`Index` proven-in-bounds | exported `mapal_ir::CategoryIr::bounds_proof` (`algo.rs:2008`); consumed by `tile_plan` (T4 precondition) + llvm/cuda guard elision | deduced (recomputed, never stored) |
-| tile sites `TilePlan` (S25 rung 1; S26 rung 2 TI×TJ; S27 rung 3 packing; S28 fold k-split + window/conv rungs; **S29 KC k-panel rung — built, measured a 3× loss locally, shipped default-OFF**) | `MorphismId ⇀ TileSite` — affine-triple recognition, lane strides {0,1}, guard-free; S28: `TileRead.ksplit? : TileRead → TileKSplit` — fold-body `(k÷div, k%div)` derived axes (XOR raw `k`, `depth % div == 0`) | exported `mapal_ir::CategoryIr::tile_plan` (`algo.rs:510`); consumed by `mapal-backend-llvm` (`func/{tile,window}.rs:emit_tiled_map` + `emit_tiled_map_blocked` + `emit_tiled_map_blocked_1d` + `emit_tiled_map_conv`; gates `packing_site`/`window1d_site`/`conv_site`; S29 `emit_tile_packed_kc` behind `EmitOpts::kc_nest`, default off — bit-exact either way, see `docs/performance/matmul/s29.md`); cuda consumption standing (S27 item 6) | deduced (recomputed, never stored) |
+| tile sites `TilePlan` (S25 rung 1; S26 rung 2 TI×TJ; S27 rung 3 packing; S28 fold k-split + window/conv rungs; **S29 KC k-panel rung — built, measured a 3× loss locally, shipped default-OFF**) | `MorphismId ⇀ TileSite` — affine-triple recognition, lane strides {0,1}, guard-free; S28: `TileRead.ksplit? : TileRead → TileKSplit` — fold-body `(k÷div, k%div)` derived axes (XOR raw `k`, `depth % div == 0`) | exported `mapal_ir::CategoryIr::tile_plan` (`algo.rs:510`); consumed by `mapal-backend-llvm` (`func/{tile,window}.rs:emit_tiled_map` + `emit_tiled_map_blocked` + `emit_tiled_map_blocked_1d` + `emit_tiled_map_conv`; gates `packing_site`/`window1d_site`/`conv_site`; S29 `emit_tile_packed_kc` behind `EmitOpts::kc_nest`, default off — bit-exact either way, see `docs/performance/matmul/history/k-panel-measurements.md`); cuda consumption standing (S27 item 6) | deduced (recomputed, never stored) |
 > **S41 (2026-07-29).** Two whole-system facts landed. (1) The backend-llvm code
 > root changed shape: `src/func.rs` → `src/func/` (11 submodules); every `func.rs:X`
 > citation in this file and in `components/backend-llvm/` now names the submodule
@@ -45,15 +47,23 @@ them (detail: [categorical-model.md §6–§7](architecture/categorical-model.md
 > `elem_plan` fails the suite. New component: `components/backend-nvptx/` — planned,
 > no crate, grounded by a ratified plan (`plans/plan-s41-the-nvptx-leg.md`).
 
-| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`algo.rs:1747`); consumed by llvm in-place `Update` (`llvm/func/ops.rs:update_in_place_source`) + cuda back-edge freeing/arena coloring (`cuda/func.rs:393`) | deduced (recomputed, never stored) |
+> **S56 recovery (2026-10-21).** That GPU leg is now built inside LLVM. Its current
+> [implementation map](components/backend-nvptx/IMPLEMENTATION.md) covers the second
+> realization of tile sites, cell/row-fold geometry, loop deltas, lifetime and task
+> dependencies. Device capabilities and selection stay in the backend; the shared
+> geometry remains deduced IR data. Final integrated acceptance is recorded in the
+> [component status](components/backend-nvptx/STATUS.md).
+
+| last-use `LastUsePlan` | `FuncId → LastUsePlan` — dead-after per object | exported `mapal_ir::CategoryIr::last_use_plan` (`crates/mapal-ir/src/algo.rs`); consumed by llvm in-place `Update` (`crates/backends/llvm/src/func/ops.rs:FnEmit::in_place_source`) + cuda in-place `Update` and back-edge freeing (`crates/backends/cuda/src/func.rs:in_place_update`, `crates/backends/cuda/src/func.rs:FnEmit::emit_back_edge_frees`); CUDA arena last-use coloring remains planned (`crates/backends/cuda/src/arena.rs` module documentation) | deduced (recomputed, never stored) |
 
 ## System entry points
 
 | Entry | Trn triggered | Code | State |
 | --- | --- | --- | --- |
-| `mapal` CLI | build/run/dump-ir/test | `crates/mapal-cli/src/main.rs:main` | stub (exits 1) |
+| `mapal` CLI | build/run/dump-ir/test/fmt | `crates/mapal-cli/src/main.rs:main` | implemented; source formatting 2026-10-28 |
 | `dump_ir` example | file → lex→parse→lower → Mermaid | `crates/mapal-lower/examples/dump_ir.rs` | built |
-| `emit` examples | file → lex→parse→lower → `.ll` / `.cu` text (dev tools — the `mapal build` embryo) | `crates/backends/{llvm,cuda}/examples/emit.rs` | built (S16) |
+| LLVM `emit` example | file → lex→parse→lower → `.ll` text (dev tool — the `mapal build` embryo) | `crates/backends/llvm/examples/emit.rs` | built (S16) |
+| CUDA `emit_cuda` example | file → lex→parse→lower → `.cu` text (dev tool — distinct Cargo target prevents the LLVM output collision) | `crates/backends/cuda/examples/emit_cuda.rs` | built (S16; target renamed S55) |
 | `run` example / test pipeline | parse→lower→`run` (fueled) | `mapal-interp` tests + example (see [interp map](components/interp/IMPLEMENTATION.md)) | built |
 | `cargo test --workspace` | the whole `Alg` under golden/property/differential harnesses | per-crate `tests/` | built (673 green, S15) |
 

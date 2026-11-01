@@ -1,0 +1,208 @@
+== h100-pcie sm_90a 2026-10-21T10:34:30Z
+name, driver_version, clocks.max.sm [MHz], clocks.current.sm [MHz], power.limit [W], temperature.gpu, persistence_mode
+NVIDIA H100 PCIe, 595.71.05, 1755 MHz, 345 MHz, 350.00 W, 28, Enabled
+Build cuda_12.8.r12.8/compiler.35583870_0
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+
+cutlass/include/cutlass/conv/conv3d_problem_size.h(224): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+        Z = ((D + pad_d + std::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+                                     ^
+
+-- differential (GPU stdout vs oracle)
+PASS decode_1024_256 -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-delta-h2d -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-devgen -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-eager-init -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-lane-stride -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-resident -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-retain-delta+resident -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-retain-resident+delta-h2d+lane-stride -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.off-retain-resident -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256.on-async -0.0072219768 0.013486648 0.0015551001 
+PASS decode_1024_256_c -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-delta-h2d -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-devgen -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-eager-init -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-lane-stride -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-resident -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-retain-delta+resident -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.off-retain-resident -0.007221978 0.013486649 0.0015550787 
+PASS decode_1024_256_c.on-async -0.007221978 0.013486649 0.0015550787 
+PASS decode_16_8 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-delta-h2d 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-devgen 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-eager-init 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-lane-stride 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-resident 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-retain-delta+resident 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-retain-resident+delta-h2d+lane-stride 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8.off-retain-resident 0.19266272 -0.052189127 -0.21739586 
+PASS decode_16_8_c 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-delta-h2d 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-devgen 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-eager-init 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-lane-stride 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-resident 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-retain-delta+resident 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-retain-resident+delta-h2d+lane-stride 0.19266269 -0.052189134 -0.21739581 
+PASS decode_16_8_c.off-retain-resident 0.19266269 -0.052189134 -0.21739581 
+PASS decode_scaled_16_8 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-delta-h2d 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-devgen 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-eager-init 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-lane-stride 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-resident 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-retain-delta+resident 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-retain-resident+delta-h2d+lane-stride 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8.off-retain-resident 0.04892945 0.008195829 -0.06520842 
+PASS decode_scaled_16_8_c 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-delta-h2d 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-devgen 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-eager-init 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-lane-stride 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-resident 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-retain-delta+resident 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-retain-resident+delta-h2d+lane-stride 0.048929445 0.008195827 -0.06520841 
+PASS decode_scaled_16_8_c.off-retain-resident 0.048929445 0.008195827 -0.06520841 
+PASS loop_128_8 -0.000020660413 0.000000039814424 -0.0000034266031 
+PASS loop_128_8.on-async -0.000020660413 0.000000039814424 -0.0000034266031 
+PASS loop_128_8_c -0.000020660282 0.000000039817678 -0.0000034266034 
+PASS loop_rewrite_16_8 -0.6333774 -2.7756739 3.0139074 
+PASS loop_rewrite_16_8.off-devgen -0.6333774 -2.7756739 3.0139074 
+PASS loop_rewrite_16_8.off-eager-init -0.6333774 -2.7756739 3.0139074 
+PASS loop_rewrite_16_8.off-lane-stride -0.6333774 -2.7756739 3.0139074 
+PASS loop_rewrite_16_8.off-resident -0.6333774 -2.7756739 3.0139074 
+PASS loop_rewrite_16_8_c -0.6333775 -2.7756748 3.0139084 
+PASS loop_rewrite_16_8_c.off-devgen -0.6333775 -2.7756748 3.0139084 
+PASS loop_rewrite_16_8_c.off-eager-init -0.6333775 -2.7756748 3.0139084 
+PASS loop_rewrite_16_8_c.off-lane-stride -0.6333775 -2.7756748 3.0139084 
+PASS loop_rewrite_16_8_c.off-resident -0.6333775 -2.7756748 3.0139084 
+PASS px_loop_256 111330.02 0 0 
+PASS px_loop_256_c 111329.97 0 0 
+differential: 71 pass, 0 fail
+-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals
+floor prog=e2e_1024 rep=1 program n=1024 gemms=1 ops=2 ctx_ms=528.470 handle_ms=19.038 alloc_ms=0.514 gen_ms=0.491 gemm_ms=79.288 d2h_ms=0.044 after_ctx_ms=99.375 total_ms=627.845 value=13216
+floor prog=e2e_1024 rep=2 program n=1024 gemms=1 ops=2 ctx_ms=537.900 handle_ms=25.270 alloc_ms=2.912 gen_ms=0.416 gemm_ms=73.919 d2h_ms=0.036 after_ctx_ms=102.554 total_ms=640.454 value=13216
+floor prog=e2e_1024 rep=3 program n=1024 gemms=1 ops=2 ctx_ms=376.479 handle_ms=26.100 alloc_ms=10.639 gen_ms=0.417 gemm_ms=82.970 d2h_ms=0.048 after_ctx_ms=120.174 total_ms=496.653 value=13216
+floor prog=e2e_4096 rep=1 program n=4096 gemms=1 ops=2 ctx_ms=535.865 handle_ms=16.943 alloc_ms=0.539 gen_ms=0.495 gemm_ms=82.254 d2h_ms=0.043 after_ctx_ms=100.273 total_ms=636.138 value=13517
+floor prog=e2e_4096 rep=2 program n=4096 gemms=1 ops=2 ctx_ms=553.555 handle_ms=21.908 alloc_ms=8.255 gen_ms=0.519 gemm_ms=79.796 d2h_ms=0.052 after_ctx_ms=110.530 total_ms=664.085 value=13517
+floor prog=e2e_4096 rep=3 program n=4096 gemms=1 ops=2 ctx_ms=395.895 handle_ms=17.640 alloc_ms=0.555 gen_ms=0.559 gemm_ms=75.266 d2h_ms=0.044 after_ctx_ms=94.065 total_ms=489.960 value=13517
+floor prog=mm_share_1024 rep=1 program n=1024 gemms=2 ops=3 ctx_ms=351.959 handle_ms=22.351 alloc_ms=0.561 gen_ms=0.434 gemm_ms=78.407 d2h_ms=0.040 after_ctx_ms=101.792 total_ms=453.751 value=-2.98851e+06
+floor prog=mm_share_1024 rep=2 program n=1024 gemms=2 ops=3 ctx_ms=552.915 handle_ms=22.560 alloc_ms=6.718 gen_ms=0.413 gemm_ms=75.008 d2h_ms=0.036 after_ctx_ms=104.735 total_ms=657.651 value=-2.98851e+06
+floor prog=mm_share_1024 rep=3 program n=1024 gemms=2 ops=3 ctx_ms=393.180 handle_ms=22.930 alloc_ms=0.559 gen_ms=0.415 gemm_ms=83.564 d2h_ms=0.044 after_ctx_ms=107.512 total_ms=500.692 value=-2.98851e+06
+floor prog=mm_chain_2048 rep=1 program n=2048 gemms=2 ops=3 ctx_ms=533.480 handle_ms=18.679 alloc_ms=0.665 gen_ms=0.500 gemm_ms=87.427 d2h_ms=0.038 after_ctx_ms=107.309 total_ms=640.789 value=2.24559e+06
+floor prog=mm_chain_2048 rep=2 program n=2048 gemms=2 ops=3 ctx_ms=570.594 handle_ms=24.858 alloc_ms=4.239 gen_ms=0.457 gemm_ms=78.757 d2h_ms=0.035 after_ctx_ms=108.347 total_ms=678.941 value=2.24559e+06
+floor prog=mm_chain_2048 rep=3 program n=2048 gemms=2 ops=3 ctx_ms=402.371 handle_ms=18.338 alloc_ms=0.627 gen_ms=0.465 gemm_ms=74.584 d2h_ms=0.036 after_ctx_ms=94.051 total_ms=496.422 value=2.24559e+06
+floor prog=e2e_chain_4096 rep=1 program n=4096 gemms=2 ops=3 ctx_ms=549.592 handle_ms=16.835 alloc_ms=0.618 gen_ms=0.551 gemm_ms=81.758 d2h_ms=0.057 after_ctx_ms=99.819 total_ms=649.412 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=2 program n=4096 gemms=2 ops=3 ctx_ms=399.329 handle_ms=20.388 alloc_ms=3.256 gen_ms=0.573 gemm_ms=84.960 d2h_ms=0.045 after_ctx_ms=109.222 total_ms=508.551 value=-1.91245e+06
+floor prog=e2e_chain_4096 rep=3 program n=4096 gemms=2 ops=3 ctx_ms=565.402 handle_ms=31.142 alloc_ms=18.782 gen_ms=0.550 gemm_ms=81.202 d2h_ms=0.045 after_ctx_ms=131.721 total_ms=697.123 value=-1.91245e+06
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=1 wall_us=736808 traced_wall_us=548296 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=318.825 lead_ms=27.221 init_ms=163.721 ctx_ms=181.766 module_ms=0.375 alloc_ms=1.292 h2d_ms=0.546 kernel_ms=1.827 gen_ms=0.043 d2h_ms=0.033 free_ms=54.425 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=2 wall_us=607263 traced_wall_us=701612 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=501.211 lead_ms=25.407 init_ms=199.894 ctx_ms=326.145 module_ms=0.382 alloc_ms=0.968 h2d_ms=0.533 kernel_ms=1.826 gen_ms=0.058 d2h_ms=0.029 free_ms=0.472 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=3 wall_us=703669 traced_wall_us=704206 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=502.883 lead_ms=28.709 init_ms=199.974 ctx_ms=331.030 module_ms=0.364 alloc_ms=0.982 h2d_ms=0.556 kernel_ms=1.824 gen_ms=0.036 d2h_ms=0.036 free_ms=0.423 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=4 wall_us=700027 traced_wall_us=783584 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=501.192 lead_ms=28.819 init_ms=199.763 ctx_ms=329.686 module_ms=0.358 alloc_ms=0.676 h2d_ms=0.563 kernel_ms=1.824 gen_ms=0.042 d2h_ms=0.028 free_ms=0.372 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=5 wall_us=618065 traced_wall_us=714831 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=514.238 lead_ms=29.372 init_ms=201.484 ctx_ms=341.500 module_ms=0.404 alloc_ms=0.502 h2d_ms=0.638 kernel_ms=1.826 gen_ms=0.035 d2h_ms=0.027 free_ms=0.553 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=6 wall_us=710891 traced_wall_us=709592 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=508.832 lead_ms=28.422 init_ms=200.041 ctx_ms=336.622 module_ms=0.367 alloc_ms=0.880 h2d_ms=0.541 kernel_ms=1.825 gen_ms=0.044 d2h_ms=0.031 free_ms=0.414 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_exact arm=on rep=7 wall_us=692660 traced_wall_us=703161 out=[-0.000009066947 ] mapal_gpu_trace_total flags=1 load_ms=498.832 lead_ms=28.260 init_ms=196.805 ctx_ms=329.523 module_ms=0.557 alloc_ms=0.836 h2d_ms=0.577 kernel_ms=1.830 gen_ms=0.043 d2h_ms=0.030 free_ms=0.425 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=1 wall_us=747606 traced_wall_us=555260 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=309.223 lead_ms=25.454 init_ms=165.216 ctx_ms=168.940 module_ms=0.333 alloc_ms=0.985 h2d_ms=0.579 kernel_ms=1.314 gen_ms=0.051 d2h_ms=0.032 free_ms=19.120 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=2 wall_us=708173 traced_wall_us=713744 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=442.062 lead_ms=27.469 init_ms=239.045 ctx_ms=229.964 module_ms=0.299 alloc_ms=0.945 h2d_ms=0.538 kernel_ms=1.303 gen_ms=0.056 d2h_ms=0.027 free_ms=0.370 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=3 wall_us=613499 traced_wall_us=715168 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=506.193 lead_ms=30.345 init_ms=199.035 ctx_ms=336.934 module_ms=0.340 alloc_ms=0.847 h2d_ms=0.546 kernel_ms=1.313 gen_ms=0.040 d2h_ms=0.032 free_ms=0.717 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=4 wall_us=695502 traced_wall_us=711311 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=507.215 lead_ms=28.843 init_ms=201.420 ctx_ms=334.115 module_ms=0.297 alloc_ms=1.031 h2d_ms=0.596 kernel_ms=1.312 gen_ms=0.039 d2h_ms=0.032 free_ms=0.422 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=5 wall_us=696518 traced_wall_us=708659 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=505.582 lead_ms=28.620 init_ms=201.783 ctx_ms=331.869 module_ms=0.317 alloc_ms=0.870 h2d_ms=0.565 kernel_ms=1.310 gen_ms=0.039 d2h_ms=0.030 free_ms=0.443 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=6 wall_us=677793 traced_wall_us=670052 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=491.204 lead_ms=29.252 init_ms=117.092 ctx_ms=402.811 module_ms=0.329 alloc_ms=3.568 h2d_ms=0.240 kernel_ms=1.298 gen_ms=0.071 d2h_ms=0.034 free_ms=0.758 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+e2e prog=loop_mm_1024_8 face=_c arm=on rep=7 wall_us=618266 traced_wall_us=526328 out=[-0.000009066933 ] mapal_gpu_trace_total flags=1 load_ms=295.547 lead_ms=29.353 init_ms=147.190 ctx_ms=177.190 module_ms=0.312 alloc_ms=2.488 h2d_ms=0.227 kernel_ms=1.305 gen_ms=0.063 d2h_ms=0.030 free_ms=55.402 bytes_in=4194304 bytes_out=4 h2d=1 d2h=1 launches=8 gens=1 allocs=3
+floor prog=loop_mm_1024_8 rep=1 program n=1024 gemms=8 ops=2 ctx_ms=367.276 handle_ms=16.502 alloc_ms=0.442 gen_ms=0.407 gemm_ms=71.081 d2h_ms=0.045 after_ctx_ms=88.477 total_ms=455.754 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=2 program n=1024 gemms=8 ops=2 ctx_ms=451.606 handle_ms=39.134 alloc_ms=0.552 gen_ms=0.550 gemm_ms=84.244 d2h_ms=0.047 after_ctx_ms=124.527 total_ms=576.133 value=-1.28729e+27
+floor prog=loop_mm_1024_8 rep=3 program n=1024 gemms=8 ops=2 ctx_ms=464.714 handle_ms=16.943 alloc_ms=0.595 gen_ms=0.402 gemm_ms=70.676 d2h_ms=0.045 after_ctx_ms=88.660 total_ms=553.375 value=-1.28729e+27
+copy_rate mb=64 reps=10 h2d_pageable_ms=3.190 h2d_pageable_gbps=21.04 h2d_pinned_ms=2.373 h2d_pinned_gbps=28.28 d2h_pageable_ms=8.108 d2h_pageable_gbps=8.28 d2h_pinned_ms=4.319 d2h_pinned_gbps=15.54
+-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chain_bench)
+-- decode e2e (T=1024 d=256), MAPAL_GPU_TRACE=1
+decode prog=decode_1024_256 rep=1 rc=0 wall_s=1.046 traced_wall_s=0.813 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=312.400 lead_ms=5.662 init_ms=153.255 ctx_ms=164.229 module_ms=0.374 alloc_ms=0.494 h2d_ms=6.572 kernel_ms=120.644 gen_ms=0.074 d2h_ms=8.152 free_ms=0.894 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256 kernel=mapal_tile_05a4094143295566 n=2046
+decode_launch prog=decode_1024_256 kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256 kernel=mapal_tile_85f5800669649845 n=1024
+decode_launch prog=decode_1024_256 kernel=mapal_tile_94c389372c7a9eaa n=2
+decode prog=decode_1024_256.off-retain-resident rep=1 rc=0 wall_s=1.106 traced_wall_s=0.925 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=324.813 lead_ms=5.895 init_ms=159.823 ctx_ms=170.279 module_ms=0.390 alloc_ms=1.486 h2d_ms=7.854 kernel_ms=153.013 gen_ms=0.048 d2h_ms=9.121 free_ms=6.487 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256.off-retain-resident kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256.off-retain-resident kernel=mapal_tile_85f5800669649845 n=1024
+decode_launch prog=decode_1024_256.off-retain-resident kernel=mapal_tile_94c389372c7a9eaa n=2048
+decode prog=decode_1024_256.off-delta-h2d rep=1 rc=0 wall_s=1.105 traced_wall_s=1.130 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=439.848 lead_ms=6.168 init_ms=214.026 ctx_ms=231.388 module_ms=0.373 alloc_ms=0.635 h2d_ms=56.385 kernel_ms=245.876 gen_ms=0.039 d2h_ms=9.783 free_ms=19.969 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256.off-delta-h2d kernel=mapal_tile_05a4094143295566 n=2046
+decode_launch prog=decode_1024_256.off-delta-h2d kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256.off-delta-h2d kernel=mapal_tile_85f5800669649845 n=1024
+decode_launch prog=decode_1024_256.off-delta-h2d kernel=mapal_tile_94c389372c7a9eaa n=2
+decode prog=decode_1024_256.off-lane-stride rep=1 rc=0 wall_s=1.102 traced_wall_s=1.171 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=455.291 lead_ms=6.019 init_ms=233.102 ctx_ms=227.664 module_ms=0.359 alloc_ms=0.715 h2d_ms=8.342 kernel_ms=76.006 gen_ms=0.043 d2h_ms=19.031 free_ms=0.319 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode_launch prog=decode_1024_256.off-lane-stride kernel=mapal_tile_05a4094143295566 n=2046
+decode_launch prog=decode_1024_256.off-lane-stride kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256.off-lane-stride kernel=mapal_tile_94c389372c7a9eaa n=2
+decode prog=decode_1024_256.off-retain-resident+delta-h2d+lane-stride rep=1 rc=0 wall_s=1.913 traced_wall_s=1.975 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=439.143 lead_ms=4.823 init_ms=214.622 ctx_ms=228.824 module_ms=0.316 alloc_ms=0.635 h2d_ms=58.306 kernel_ms=242.830 gen_ms=0.065 d2h_ms=633.490 free_ms=37.002 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode_launch prog=decode_1024_256.off-retain-resident+delta-h2d+lane-stride kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256.off-retain-resident+delta-h2d+lane-stride kernel=mapal_tile_94c389372c7a9eaa n=2048
+decode prog=decode_1024_256.off-retain-delta+resident rep=1 rc=0 wall_s=7.012 traced_wall_s=10.800 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=517.164 lead_ms=5.866 init_ms=146.274 ctx_ms=376.194 module_ms=0.323 alloc_ms=2423.880 h2d_ms=613.370 kernel_ms=588.101 gen_ms=0.000 d2h_ms=1226.703 free_ms=4965.537 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+decode_launch prog=decode_1024_256.off-retain-delta+resident kernel=mapal_tile_6169bcc9286573e1 n=1024
+decode_launch prog=decode_1024_256.off-retain-delta+resident kernel=mapal_tile_85f5800669649845 n=1024
+decode_launch prog=decode_1024_256.off-retain-delta+resident kernel=mapal_tile_94c389372c7a9eaa n=2048
+decode prog=decode_1024_256_c rep=1 rc=0 wall_s=0.967 traced_wall_s=0.985 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=472.813 lead_ms=5.501 init_ms=235.483 ctx_ms=242.247 module_ms=0.327 alloc_ms=0.692 h2d_ms=6.157 kernel_ms=157.389 gen_ms=0.084 d2h_ms=7.661 free_ms=0.320 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256_c kernel=mapal_tile_3881eb4bbf2d9cb5 n=2046
+decode_launch prog=decode_1024_256_c kernel=mapal_tile_6861481cdb124811 n=2
+decode_launch prog=decode_1024_256_c kernel=mapal_tile_88aee765b7f8d518 n=1024
+decode_launch prog=decode_1024_256_c kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256_c.off-retain-resident rep=1 rc=0 wall_s=0.908 traced_wall_s=0.881 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=327.841 lead_ms=5.625 init_ms=153.838 ctx_ms=179.056 module_ms=0.365 alloc_ms=2.780 h2d_ms=7.614 kernel_ms=173.823 gen_ms=0.050 d2h_ms=9.263 free_ms=0.358 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256_c.off-retain-resident kernel=mapal_tile_6861481cdb124811 n=2048
+decode_launch prog=decode_1024_256_c.off-retain-resident kernel=mapal_tile_88aee765b7f8d518 n=1024
+decode_launch prog=decode_1024_256_c.off-retain-resident kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256_c.off-delta-h2d rep=1 rc=0 wall_s=1.258 traced_wall_s=1.145 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=463.673 lead_ms=5.039 init_ms=228.852 ctx_ms=239.336 module_ms=0.320 alloc_ms=0.666 h2d_ms=54.649 kernel_ms=256.197 gen_ms=0.059 d2h_ms=9.369 free_ms=0.313 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode_launch prog=decode_1024_256_c.off-delta-h2d kernel=mapal_tile_3881eb4bbf2d9cb5 n=2046
+decode_launch prog=decode_1024_256_c.off-delta-h2d kernel=mapal_tile_6861481cdb124811 n=2
+decode_launch prog=decode_1024_256_c.off-delta-h2d kernel=mapal_tile_88aee765b7f8d518 n=1024
+decode_launch prog=decode_1024_256_c.off-delta-h2d kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256_c.off-lane-stride rep=1 rc=0 wall_s=1.206 traced_wall_s=1.104 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=373.498 lead_ms=6.752 init_ms=147.805 ctx_ms=231.857 module_ms=0.366 alloc_ms=0.764 h2d_ms=8.053 kernel_ms=114.858 gen_ms=0.070 d2h_ms=18.467 free_ms=46.373 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode_launch prog=decode_1024_256_c.off-lane-stride kernel=mapal_tile_3881eb4bbf2d9cb5 n=2046
+decode_launch prog=decode_1024_256_c.off-lane-stride kernel=mapal_tile_6861481cdb124811 n=2
+decode_launch prog=decode_1024_256_c.off-lane-stride kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride rep=1 rc=0 wall_s=1.663 traced_wall_s=1.653 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=570.455 lead_ms=4.617 init_ms=223.481 ctx_ms=351.032 module_ms=0.300 alloc_ms=2.630 h2d_ms=57.207 kernel_ms=137.908 gen_ms=0.052 d2h_ms=332.463 free_ms=0.293 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode_launch prog=decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride kernel=mapal_tile_6861481cdb124811 n=2048
+decode_launch prog=decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256_c.off-retain-delta+resident rep=1 rc=0 wall_s=10.744 traced_wall_s=11.940 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=639.137 lead_ms=5.483 init_ms=135.789 ctx_ms=508.296 module_ms=0.268 alloc_ms=2835.319 h2d_ms=634.222 kernel_ms=639.267 gen_ms=0.000 d2h_ms=1311.219 free_ms=5405.802 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+decode_launch prog=decode_1024_256_c.off-retain-delta+resident kernel=mapal_tile_6861481cdb124811 n=2048
+decode_launch prog=decode_1024_256_c.off-retain-delta+resident kernel=mapal_tile_88aee765b7f8d518 n=1024
+decode_launch prog=decode_1024_256_c.off-retain-delta+resident kernel=mapal_tile_b718d5e58883d9ac n=1024
+decode prog=decode_1024_256 rep=2 rc=0 wall_s=0.950 traced_wall_s=0.957 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=480.363 lead_ms=5.117 init_ms=136.706 ctx_ms=348.195 module_ms=0.361 alloc_ms=0.507 h2d_ms=7.663 kernel_ms=125.897 gen_ms=0.053 d2h_ms=9.193 free_ms=0.315 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-retain-resident rep=2 rc=0 wall_s=0.922 traced_wall_s=0.852 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=330.333 lead_ms=5.402 init_ms=170.998 ctx_ms=164.237 module_ms=0.310 alloc_ms=0.676 h2d_ms=7.951 kernel_ms=152.226 gen_ms=0.069 d2h_ms=9.518 free_ms=0.695 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-delta-h2d rep=2 rc=0 wall_s=1.193 traced_wall_s=1.238 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=537.279 lead_ms=6.134 init_ms=136.503 ctx_ms=406.174 module_ms=0.426 alloc_ms=0.722 h2d_ms=56.716 kernel_ms=276.022 gen_ms=0.065 d2h_ms=9.373 free_ms=0.321 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-lane-stride rep=2 rc=0 wall_s=1.133 traced_wall_s=1.080 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=372.546 lead_ms=6.950 init_ms=147.938 ctx_ms=230.961 module_ms=0.359 alloc_ms=0.624 h2d_ms=8.387 kernel_ms=76.597 gen_ms=0.069 d2h_ms=18.998 free_ms=5.878 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256.off-retain-resident+delta-h2d+lane-stride rep=2 rc=0 wall_s=1.986 traced_wall_s=1.789 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=324.627 lead_ms=5.592 init_ms=168.015 ctx_ms=161.641 module_ms=0.303 alloc_ms=0.677 h2d_ms=56.603 kernel_ms=245.948 gen_ms=0.056 d2h_ms=628.543 free_ms=0.407 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256.off-retain-delta+resident rep=2 rc=0 wall_s=6.573 traced_wall_s=13.951 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=443.452 lead_ms=6.571 init_ms=220.505 ctx_ms=228.992 module_ms=0.320 alloc_ms=3032.630 h2d_ms=644.418 kernel_ms=608.808 gen_ms=0.000 d2h_ms=1298.383 free_ms=7429.852 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+decode prog=decode_1024_256_c rep=2 rc=0 wall_s=0.890 traced_wall_s=0.992 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=469.393 lead_ms=5.267 init_ms=229.347 ctx_ms=244.598 module_ms=0.394 alloc_ms=0.768 h2d_ms=7.095 kernel_ms=162.429 gen_ms=0.083 d2h_ms=8.856 free_ms=3.222 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-retain-resident rep=2 rc=0 wall_s=1.105 traced_wall_s=1.104 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=482.155 lead_ms=4.933 init_ms=144.211 ctx_ms=342.341 module_ms=0.324 alloc_ms=5.596 h2d_ms=7.587 kernel_ms=173.427 gen_ms=0.045 d2h_ms=9.115 free_ms=57.903 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-delta-h2d rep=2 rc=0 wall_s=1.154 traced_wall_s=1.164 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=391.954 lead_ms=6.450 init_ms=135.561 ctx_ms=262.302 module_ms=0.313 alloc_ms=0.702 h2d_ms=56.537 kernel_ms=312.634 gen_ms=0.065 d2h_ms=9.605 free_ms=22.990 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-lane-stride rep=2 rc=0 wall_s=1.147 traced_wall_s=1.412 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=527.751 lead_ms=5.527 init_ms=168.419 ctx_ms=364.354 module_ms=0.296 alloc_ms=1.602 h2d_ms=8.452 kernel_ms=115.797 gen_ms=0.052 d2h_ms=19.229 free_ms=45.087 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride rep=2 rc=0 wall_s=2.028 traced_wall_s=1.916 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=385.674 lead_ms=6.366 init_ms=129.309 ctx_ms=262.226 module_ms=0.291 alloc_ms=0.899 h2d_ms=58.613 kernel_ms=245.800 gen_ms=0.060 d2h_ms=622.718 free_ms=4.682 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256_c.off-retain-delta+resident rep=2 rc=0 wall_s=14.917 traced_wall_s=8.017 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=539.153 lead_ms=6.017 init_ms=165.656 ctx_ms=379.024 module_ms=0.267 alloc_ms=1612.888 h2d_ms=630.244 kernel_ms=641.072 gen_ms=0.000 d2h_ms=1239.370 free_ms=2910.834 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+decode prog=decode_1024_256 rep=3 rc=0 wall_s=0.801 traced_wall_s=0.836 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=310.941 lead_ms=5.710 init_ms=156.638 ctx_ms=159.464 module_ms=0.335 alloc_ms=0.509 h2d_ms=7.582 kernel_ms=125.076 gen_ms=0.067 d2h_ms=9.095 free_ms=12.765 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-retain-resident rep=3 rc=0 wall_s=0.783 traced_wall_s=0.929 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=390.511 lead_ms=5.858 init_ms=131.076 ctx_ms=264.706 module_ms=0.386 alloc_ms=0.552 h2d_ms=7.291 kernel_ms=151.693 gen_ms=0.053 d2h_ms=9.179 free_ms=14.500 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-delta-h2d rep=3 rc=0 wall_s=1.029 traced_wall_s=1.214 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=448.610 lead_ms=6.291 init_ms=120.572 ctx_ms=333.732 module_ms=0.369 alloc_ms=7.440 h2d_ms=55.162 kernel_ms=221.530 gen_ms=0.247 d2h_ms=8.952 free_ms=1.645 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256.off-lane-stride rep=3 rc=0 wall_s=0.934 traced_wall_s=1.171 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=517.896 lead_ms=5.617 init_ms=136.547 ctx_ms=386.380 module_ms=0.336 alloc_ms=1.619 h2d_ms=7.660 kernel_ms=72.507 gen_ms=0.073 d2h_ms=15.703 free_ms=1.768 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256.off-retain-resident+delta-h2d+lane-stride rep=3 rc=0 wall_s=1.125 traced_wall_s=1.357 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=442.851 lead_ms=6.007 init_ms=202.760 ctx_ms=245.546 module_ms=0.321 alloc_ms=0.776 h2d_ms=56.465 kernel_ms=95.921 gen_ms=0.079 d2h_ms=134.843 free_ms=14.620 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256.off-retain-delta+resident rep=3 rc=0 wall_s=10.465 traced_wall_s=9.672 out=[-0.0072219768 0.013486648 0.0015551001 ] mapal_gpu_trace_total flags=1 load_ms=592.165 lead_ms=6.077 init_ms=150.205 ctx_ms=447.469 module_ms=0.344 alloc_ms=1859.942 h2d_ms=617.344 kernel_ms=603.501 gen_ms=0.000 d2h_ms=1212.940 free_ms=4316.296 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+decode prog=decode_1024_256_c rep=3 rc=0 wall_s=1.068 traced_wall_s=0.853 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=313.163 lead_ms=6.546 init_ms=166.602 ctx_ms=152.607 module_ms=0.288 alloc_ms=0.573 h2d_ms=7.438 kernel_ms=163.294 gen_ms=0.046 d2h_ms=9.007 free_ms=3.567 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-retain-resident rep=3 rc=0 wall_s=1.147 traced_wall_s=0.840 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=315.114 lead_ms=5.112 init_ms=165.804 ctx_ms=153.904 module_ms=0.321 alloc_ms=0.550 h2d_ms=7.490 kernel_ms=173.994 gen_ms=0.044 d2h_ms=8.992 free_ms=0.311 bytes_in=3144704 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-delta-h2d rep=3 rc=0 wall_s=1.186 traced_wall_s=1.061 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=311.286 lead_ms=5.807 init_ms=164.440 ctx_ms=152.092 module_ms=0.297 alloc_ms=0.649 h2d_ms=58.190 kernel_ms=311.964 gen_ms=0.072 d2h_ms=9.734 free_ms=0.355 bytes_in=1074790400 bytes_out=1048576 h2d=2048 d2h=1024 launches=4096 gens=2 allocs=8
+decode prog=decode_1024_256_c.off-lane-stride rep=3 rc=0 wall_s=1.188 traced_wall_s=1.338 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=528.483 lead_ms=5.808 init_ms=200.843 ctx_ms=332.935 module_ms=0.289 alloc_ms=0.630 h2d_ms=8.777 kernel_ms=115.363 gen_ms=0.073 d2h_ms=19.019 free_ms=6.039 bytes_in=6290432 bytes_out=3144704 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256_c.off-retain-resident+delta-h2d+lane-stride rep=3 rc=0 wall_s=1.595 traced_wall_s=1.687 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=356.488 lead_ms=4.933 init_ms=121.926 ctx_ms=238.981 module_ms=0.302 alloc_ms=0.695 h2d_ms=58.932 kernel_ms=205.645 gen_ms=0.061 d2h_ms=485.587 free_ms=0.476 bytes_in=1077936128 bytes_out=1074790400 h2d=2048 d2h=2048 launches=3072 gens=2 allocs=7
+decode prog=decode_1024_256_c.off-retain-delta+resident rep=3 rc=0 wall_s=10.088 traced_wall_s=9.120 out=[-0.007221978 0.013486649 0.0015550787 ] mapal_gpu_trace_total flags=1 load_ms=338.655 lead_ms=5.289 init_ms=193.964 ctx_ms=149.447 module_ms=0.292 alloc_ms=1977.361 h2d_ms=620.760 kernel_ms=631.016 gen_ms=0.000 d2h_ms=1165.983 free_ms=3940.683 bytes_in=4837081088 bytes_out=2152726528 h2d=8192 d2h=4096 launches=4096 gens=0 allocs=12288
+-- decode floor: hand-written cuBLAS sgemv KV cache (tile_bench --decode)
+device name="NVIDIA H100 PCIe" cc=9.0 driver=13020
+facts sms=114 regs_per_sm=65536 regs_per_block=65536 smem_per_sm=233472 smem_per_block=232448 smem_reserved_per_block=1024 max_threads_per_sm=2048 max_blocks_per_sm=32 max_threads_per_block=1024 warp=32 l2_bytes=52428800 sm_clock_khz=1755000 mem_clock_khz=1593000
+decode_floor values o0=-0.00722198002 olast=0.0134866526 sum=0.00155513355
+decode_floor T=1024 d=256 reps=30 min_ms=24.320 med_ms=25.217 max_ms=28.368 per_step_us=24.63
+chain_values probe=decode T=1024 d=256 leg=cache values=-0.00722198002,0.0134866526 gate=pass vs_mapal=4.267e-07
+chain_values probe=decode T=1024 d=256 leg=nocache values=-0.00722198049,0.0134866517 gate=pass vs_mapal=4.884e-07
+chain probe=decode T=1024 d=256 leg=cache launches=6144 per_step=6 reps=30 wall_min_ms=24.225 wall_med_ms=24.719 wall_max_ms=26.437 event_med_ms=24.711
+chain probe=decode T=1024 d=256 leg=nocache launches=6144 per_step=6 reps=30 wall_min_ms=43.908 wall_med_ms=43.926 wall_max_ms=46.117 event_med_ms=43.918
+-- timing vs cuBLAS / CUTLASS (f32, reps=30)
+== done

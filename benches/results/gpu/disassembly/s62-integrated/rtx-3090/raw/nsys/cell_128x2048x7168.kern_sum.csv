@@ -1,0 +1,7 @@
+
+WARNING: Existing SQLite export found: out/nsys/cell_128x2048x7168.sqlite
+         File is older than input file: out/nsys/cell_128x2048x7168.nsys-rep
+         Use --force-export=true to update export file.
+
+usage: nsys stats [<args>] <input-file>
+Try 'nsys stats --help' for more information.

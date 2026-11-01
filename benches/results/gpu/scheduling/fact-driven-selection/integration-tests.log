@@ -1,0 +1,266 @@
+   Compiling mapal-backend-llvm v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/backends/llvm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.87s
+     Running tests/devmap.rs (target/debug/deps/devmap-f00ccd1f4da22da7)
+
+running 12 tests
+test an_operand_only_the_host_holds_keeps_the_map_on_the_host ... ok
+test ew_without_cell_law_loads_the_devgen_buffers ... ok
+test ew_read_at_corners_is_one_cell_kernel_with_its_operands_evaluated ... ok
+test a_float_remainder_body_is_never_a_cell ... ok
+test a_whole_host_reader_of_a_device_operand_still_takes_the_cell ... ok
+test ew_read_whole_stays_on_the_host_byte_for_byte ... ok
+test a_map_over_a_carry_view_before_a_site_is_a_cell ... ok
+test off_arm_has_no_cell ... ok
+test mlp_keeps_the_chain_on_the_device ... ok
+test golden_devmap_device_units ... ok
+test a_loop_whose_next_state_is_a_cell_carries_it_on_the_device ... ok
+test the_contract_face_places_the_same_cells ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/differential.rs (target/debug/deps/differential-23be712026ad3713)
+
+running 38 tests
+   Compiling mapal-rt v0.0.1 (/Volumes/LessComplex/Personal/mapal/crates/mapal-rt)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+test differential_parallel_run_twice ... ok
+test differential_parallel_env_matrix ... ok
+test differential_native_profile_is_value_correct ... ok
+test differential_default_rewritten_matmul4_lifts_and_tiles ... ok
+test differential_parallel_trap_order ... ok
+test differential_iota_fill ... ok
+test differential_matmul_loop_driven_update ... ok
+test differential_tiled_conv2d ... ok
+test differential_tiled_conv2d_remainder ... ok
+test differential_tiled_fir ... ok
+test differential_tiled_fir_remainder ... ok
+test differential_computed_exit_payloads ... ok
+test differential_tiled_matmul ... ok
+test differential_byref_call_args ... ok
+test differential_heap_lowered_arrays ... ok
+test differential_testgen_closed_sweep ... ok
+test differential_parallel_bign ... ok
+test differential_tiled_fir_split ... ok
+test differential_captures ... ok
+test differential_tiled_conv2d_split ... ok
+test differential_tiled_matmul_kc_split ... ok
+test differential_tiled_matmul_r5_c20_k7 ... ok
+test differential_tiled_matmul_loop_carried_pack ... ok
+test differential_tiled_matmul_kc_middle_panel ... ok
+test differential_trap_preserves_preceding_output ... ok
+test differential_time_bracket ... ok
+test differential_tiled_matmul_r6_c32_k5 ... ok
+test differential_two_sequential_loops ... ok
+test differential_u8_index_and_print ... ok
+test differential_tiled_matmul_kc_f64 ... ok
+test differential_tiled_matmul_via_helper_fn ... ok
+test differential_traps_exit_101 ... ok
+test differential_widen ... ok
+test differential_tiled_matmul_r6_c20_k5_f64 ... ok
+test differential_tiled_matmul_kc_32x32x200 ... ok
+test differential_zen3_profile_is_value_invariant ... ok
+test differential_examples_raw_and_rewritten ... ok
+test differential_tiled_matmul_kc_c540 ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 45.04s
+
+     Running tests/epilogue.rs (target/debug/deps/epilogue-4b8c4bec6cb1a44a)
+
+running 13 tests
+test epi_runs_in_the_store_and_c_never_exists ... ok
+test off_arm_is_the_host_map_behind_a_copy_out ... ok
+test bias_reads_its_vector_in_gmem ... ok
+test a_read_off_the_cell_is_a_kernel_boundary ... ok
+test loop_carries_the_activation_on_the_device ... ok
+test indep_joins_the_later_site_and_reads_the_earlier_one ... ok
+test a_trap_capable_or_float_mod_consumer_stays_on_the_host ... ok
+test a_launch_never_passes_two_objects_on_the_same_arena_bytes ... ok
+test fanout_stores_the_shared_output_once ... ok
+test programs_without_a_per_cell_consumer_are_unchanged ... ok
+test every_kernel_takes_the_epilogue ... ok
+test the_exact_face_device_unit_has_no_contraction ... ok
+test mlp2_two_groups_store_only_what_the_next_site_reads ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/golden_ll.rs (target/debug/deps/golden_ll-4429982f226afaab)
+
+running 35 tests
+test exit_only_payload_emitted_once ... ok
+test capture_array_staging_never_loads_whole ... ok
+test golden_heap_lowered_frame ... ok
+test default_opts_are_byte_identical ... ok
+test golden_capture_map ... ok
+test golden_capture_fold ... ok
+test golden_micro_update ... ok
+test golden_proven_index_guard_elision ... ok
+test golden_proven_index_fn_clean_attrs ... ok
+test golden_micro_arith ... ok
+test golden_micro_two_loops ... ok
+test golden_capture_one_kernel_matmul ... ok
+test golden_tile_map_shape_1d ... ok
+test golden_parallel_matmul_cap ... ok
+test nested_loop_is_unsupported ... ok
+test perf_timing_golden ... ok
+test parallel_scalar_guard_publishes_watermark ... ok
+test golden_update_memcpy_kept_when_not_dead ... ok
+test golden_update_inplace_carried_loop ... ok
+test time_inside_a_loop_stays_inside_the_loop ... ok
+test unknown_profile_is_an_error_not_a_silent_default ... ok
+test time_bracket_fences_the_tasks_it_brackets ... ok
+test widen_emits_conversion_instructions ... ok
+test parallel_effectful_loop_waits_before_entry ... ok
+test golden_tile_map_shape_conv ... ok
+test packed_wrapper_dispatches_the_b_pack_across_the_pool ... ok
+test golden_tile_map_shape_kc ... ok
+test determinism_emit_twice_byte_equal ... ok
+test tile_contract_flags_are_opt_in ... ok
+test tiny_tile_site_is_inlined_when_the_part_has_measured_costs ... ok
+test rtx_4090_streams_with_cp_async_only_under_filled ... ok
+test golden_examples ... ok
+test golden_tile_map_shapes ... ok
+test gpu_time_bracket_is_time_tile_sync_time ... ok
+test profile_closes_the_kc_gate_by_derivation ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/gpu_host.rs (target/debug/deps/gpu_host-43bf797bf259fbd9)
+
+running 5 tests
+test the_rung_is_one_flag_bit ... ok
+test a_gpu_site_makes_init_mains_first_call ... ok
+test golden_gpu_host_module ... ok
+test no_init_without_a_gpu_site ... ok
+test the_host_rung_moves_nothing_but_the_flag ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/gpu_wgmma.rs (target/debug/deps/gpu_wgmma-34f35ceea55f1a98)
+
+running 3 tests
+test wgmma_off_is_the_mma_sync_kernel ... ok
+test wgmma_kernel_on_sm_90a_rounds_every_operand_to_nearest_even ... ok
+test wgmma_is_unreachable_off_hopper_and_off_the_tf32_face ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/move_panel.rs (target/debug/deps/move_panel-1d487d6add56d451)
+
+running 8 tests
+test a_transpose_is_recognized_as_a_fold_less_move_site ... ok
+test a_fold_bodied_map_is_never_a_move_site ... ok
+test default_off_is_character_identical ... ok
+test the_rung_fires_when_the_panel_tiles_the_geometry ... ok
+test move_panel_is_a_bijection_of_the_iteration_space ... ok
+test the_deduction_fires_without_a_flag_and_declines_without_a_reason ... ok
+test a_panel_that_does_not_tile_the_geometry_declines_silently ... ok
+test the_flag_cannot_reach_a_recognized_tile_site ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/perf_baseline.rs (target/debug/deps/perf_baseline-951f8f77a575bcf3)
+
+running 1 test
+test sepia_perf_baseline ... ignored, long-running perf baseline; run with --ignored --nocapture
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/resident.rs (target/debug/deps/resident-f1d06b9eef16cc88)
+
+running 13 tests
+test devgen_builds_closed_form_operands_on_the_device ... ok
+test e2e_copies_in_after_the_producers_and_out_one_element ... ok
+test devgen_refuses_a_float_remainder ... ok
+test devgen_refuses_an_unclean_body ... ok
+test loop_copies_w_in_outside_the_loop_and_carries_x_on_the_device ... ok
+test off_arm_is_the_s52_round_trip ... ok
+test chain_copies_each_input_once_and_never_moves_c ... ok
+test arena_device_only_objects_have_no_host_slot ... ok
+test arena_keeps_loop_scoped_and_escaping_objects_in_their_own_buffers ... ok
+test arena_lays_disjoint_lives_on_shared_bytes ... ok
+test golden_arena_host_modules ... ok
+test l2_window_covers_the_chain_intermediate_then_the_most_read_operand ... ok
+test golden_resident_host_modules ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/retain_delta.rs (target/debug/deps/retain_delta-371f8309e63918c5)
+
+running 14 tests
+test strided_site_keeps_the_host_step_on_the_contract_face ... ok
+test site_produced_carry_is_top_and_byte_identical ... ok
+test column_write_is_byte_identical_on_and_off ... ok
+test write_delta_on_sources ... ok
+test decode_retains_k_and_v_only ... ok
+test column_write_retains_nothing_on_the_resident_path ... ok
+test resident_yields_to_a_retained_site_only_without_retain_resident ... ok
+test decode_retains_on_the_resident_buffers ... ok
+test write_delta_passes_through_a_same_map ... ok
+test delta_upload_is_stride_times_elem_bytes ... ok
+test lane_stride_places_q_kt_on_the_device ... ok
+test cpu_profiles_are_untouched ... ok
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+test int_decode_matches_the_oracle_on_and_off ... ok
+test resident_path_matches_the_oracle_emulated ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 46.02s
+
+     Running tests/rowfold.rs (target/debug/deps/rowfold-e8f80f3d563b3610)
+
+running 6 tests
+test row_fold_recognizes_a_row_sum ... ok
+test row_fold_recognizes_a_running_max_in_source_order ... ok
+test row_fold_refuses_a_product_and_a_second_read ... ok
+test a_fold_over_a_device_output_is_a_device_site ... ok
+test the_layout_is_the_only_readers_order ... ok
+test a_fold_over_a_host_array_stays_on_the_host ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/sme_rung.rs (target/debug/deps/sme_rung-ed48c868e2c36688)
+
+running 7 tests
+test sme_rung_emits_the_verified_kernel ... ok
+test the_a_pack_is_blocked_exactly_when_it_stops_fitting_l1d ... ok
+test sme_kernel_spends_every_za_tile_the_profile_records ... ok
+test sme_rung_is_a_contract_face_realization ... ok
+test the_dispatch_threshold_is_what_separates_the_two_profiles_here ... ok
+test sme_rung_is_unreachable_from_every_other_profile ... ok
+test sme_profile_differs_from_apple_m_only_in_dispatch_kind_where_the_rung_declines ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/streams.rs (target/debug/deps/streams-5faec9df720664f7)
+
+running 19 tests
+test a_one_element_read_is_not_pinned ... ok
+test a_single_chain_keeps_one_stream ... ok
+test diamond_waits_on_its_join_edge_only ... ok
+test a_whole_copy_out_keeps_one_stream ... ok
+test independent_device_only_sites_take_two_streams ... ok
+test a_filled_part_keeps_one_stream_unless_the_gate_is_off ... ok
+test grouped_loop_carry_views_stay_on_the_legacy_stream ... ok
+test grouped_member_corners_wait_on_the_physical_writer ... ok
+test grouped_member_capture_uses_one_producer_wait ... ok
+test two_chains_with_no_edge ... ok
+test grouped_member_fork_waits_only_for_the_other_chain ... ok
+test pins_are_the_arrays_that_cross_the_bus_repeatedly ... ok
+test grouped_member_legacy_cell_keeps_the_conservative_fallback ... ok
+test a_part_whose_table_turns_streams_off_keeps_one_stream ... ok
+test grouped_member_row_fold_keeps_its_ordered_whole_copy ... ok
+test grouped_chains_allocate_only_materialized_raw_outputs ... ok
+test pdl_is_hopper_and_later_only ... ok
+test raw_storage_controls_keep_their_observable_pointers ... ok
+test every_off_arm_is_the_one_stream_pageable_text ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests/tile_sites_pin.rs (target/debug/deps/tile_sites_pin-28b1c29cecb3332d)
+
+running 3 tests
+test tile_sites_recognized_per_bench_source ... ok
+test geometry_record_content_is_pinned_and_target_independent ... ok
+test the_record_is_a_pure_function_of_the_graph ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+

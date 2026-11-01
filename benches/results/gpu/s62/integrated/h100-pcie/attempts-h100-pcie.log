@@ -1,0 +1,2 @@
+[21:45:26] try H100_PCIE offer=57077527 dph=3.306 pcie=26.9 cpu_ghz=3.7207029 cpu=AMD_EPYC_7713_64-Core_Processor host=670790 machine=149333 geo=South Africa, ZA
+[21:58:51] DONE H100_PCIE offer=57077527 host=670790 machine=149333

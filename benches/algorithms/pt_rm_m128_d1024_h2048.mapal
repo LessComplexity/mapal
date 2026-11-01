@@ -1,0 +1,32 @@
+fn main() {
+    131072 -> iota -> i_x;
+    i_x -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> x;
+    2097152 -> iota -> i_w1;
+    i_w1 -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> w1;
+    2097152 -> iota -> i_w2;
+    i_w2 -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> w2;
+    2048 -> iota -> i_bias;
+    i_bias -> map { t -> t % 13 - 6 -> widen_f32 -> v; v / 5.0 } -> bias;
+    () -> time -> t0;
+    262144 -> iota -> o_s1;
+    1024 -> iota -> k_s1;
+    o_s1 -> map { t ->
+        t / 2048 -> i;
+        t % 2048 -> j;
+        (0.0, k_s1) -> fold { acc, k -> acc + x[i * 1024 + k] * w1[k * 2048 + j] }
+    } -> s1;
+    o_s1 -> map { t -> s1[t] + bias[t % 2048] -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> r; r } -> hh;
+    131072 -> iota -> o_s2;
+    2048 -> iota -> k_s2;
+    o_s2 -> map { t ->
+        t / 1024 -> i;
+        t % 1024 -> j;
+        (0.0, k_s2) -> fold { acc, k -> acc + hh[i * 2048 + k] * w2[k * 1024 + j] }
+    } -> s2;
+    o_s2 -> map { t -> s2[t] + x[t] } -> y;
+    () -> time -> t1;
+    y[0] -> println;
+    y[131071] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

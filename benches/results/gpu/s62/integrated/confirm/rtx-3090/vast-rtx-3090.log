@@ -1,0 +1,5 @@
+[22:09:57 rtx-3090] instance 57306701 from offer 54681929
+[22:10:32 rtx-3090] ssh 104.233.209.157:12830 up
+[22:10:46 rtx-3090] bundle uploaded
+[22:18:07 rtx-3090] results fetched: 1719 lines
+[22:18:09 rtx-3090] destroyed 57306701

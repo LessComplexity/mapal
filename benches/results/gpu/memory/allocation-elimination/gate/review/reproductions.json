@@ -1,0 +1,6 @@
+{
+  "outer_phase_timeout_leaves_independent_session_descendant_alive": true,
+  "all_fixture_processes_killed_by_review_cleanup": true,
+  "results_inside_packet_reach_child_launch": true,
+  "no_gpu_network_rental": true
+}

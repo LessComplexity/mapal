@@ -1,0 +1,58 @@
+[
+  {
+    "package": "cuda-cupti-dev-12-8_12.8.57-1_amd64.deb",
+    "sha256": "8ec69d909d283c1ae526ac4a8a58f99809dc0c2f20d2a5b919e40047b272db51",
+    "bytes": 4074608,
+    "relevant_payload_paths": [
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/include/cupti.h",
+        "size": 4697,
+        "linkname": ""
+      }
+    ]
+  },
+  {
+    "package": "cuda-cupti-dev-12-8_12.8.90-1_amd64.deb",
+    "sha256": "a7dc61e7b18dc48b3a2fb180c67ef4efa80bf874b6079ce5fe4183f4f2dc5102",
+    "bytes": 4075388,
+    "relevant_payload_paths": [
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/include/cupti.h",
+        "size": 4697,
+        "linkname": ""
+      }
+    ]
+  },
+  {
+    "package": "cuda-cupti-12-8_12.8.90-1_amd64.deb",
+    "sha256": "cc73a4e090945b020fb0caa65830b9d12421d5cf802db5f977b1a3d7a78e9a68",
+    "bytes": 11412720,
+    "relevant_payload_paths": [
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.2025.1.1",
+        "size": 7595792,
+        "linkname": ""
+      },
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti_static.a",
+        "size": 43563448,
+        "linkname": ""
+      },
+      {
+        "path": "./usr/local/cuda-12.8/lib64",
+        "size": 0,
+        "linkname": "targets/x86_64-linux/lib"
+      },
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so",
+        "size": 0,
+        "linkname": "libcupti.so.12"
+      },
+      {
+        "path": "./usr/local/cuda-12.8/targets/x86_64-linux/lib/libcupti.so.12",
+        "size": 0,
+        "linkname": "libcupti.so.2025.1.1"
+      }
+    ]
+  }
+]

@@ -1,8 +1,8 @@
 {
   "name": "mapal-lang",
   "displayName": "Mapal",
-  "description": "Syntax highlighting and file icon for the Mapal dataflow language.",
-  "version": "0.1.0",
+  "description": "Syntax highlighting, formatting and file icon for the Mapal dataflow language.",
+  "version": "0.2.0",
   "publisher": "mapal-lang",
   "license": "Apache-2.0 WITH LLVM-exception",
   "engines": {
@@ -11,7 +11,29 @@
   "categories": [
     "Programming Languages"
   ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:mapal"
+  ],
   "contributes": {
+    "configuration": {
+      "title": "Mapal",
+      "properties": {
+        "mapal.executablePath": {
+          "type": "string",
+          "default": "mapal",
+          "scope": "machine-overridable",
+          "description": "Executable name or absolute path to the Mapal CLI used for formatting. Arguments are not supported."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[mapal]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "editor.detectIndentation": false
+      }
+    },
     "languages": [
       {
         "id": "mapal",
@@ -31,7 +53,7 @@
     ],
     "grammars": [
       {
-        "language": "flow",
+        "language": "mapal",
         "scopeName": "source.mapal",
         "path": "./syntaxes/mapal.tmLanguage.json"
       }

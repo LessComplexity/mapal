@@ -127,7 +127,7 @@ The builder exposes **typed primitives only** (no raw add-object/add-edge); comp
 | defined by `TimeMs` (S29) | one op edge, source = the **bare** `IoToken` (no packed source, unlike `Print`) | `fb.time_ms(replayed_token, loc)` — mints the fresh `(IoToken, f64)` pair. Identity replay only: no pass ever plans a `TimeMs` (see §3 — it is impure by `is_pure` and token-bearing by ty, which excludes it from CSE, forwarding, DCE removal and lifting without a single `TimeMs` special case) |
 | defined by `Output` | op edge | `output(replayed_src, slot, loc)` |
 | Return slot writes | `Pair` into Return | the writing primitive replayed with `Dest::Ret{slot}` (canonical form, ir L3-4) |
-| `LoopMerge` + routes + exits | the quartet | canonicity and per-merge layout are **delegated to `mapal_ir::CategoryIr::loop_plan(f, merge)`** (ir §13, BL7 — the one source of truth; `is_canonical` gates on `loop_plan(...).is_some()` for every `loop_structure` merge, `replay` reads the same `LoopPlan` back). Replay init → `begin_loop` → in-SCC morphisms in body order (merge ↦ `merge_of(lh)`) → `loop_back(next_state', cond')` from the back route's slot feeders → `loop_exit(value', cond', dest)` from the exit route's slot feeders → `end_loop`. Route objects are never materialized. **Exit attribution (S12): by route-feeder membership in the specific merge's SCC (the interp driver's rule, now encapsulated in `loop_plan`) — never by reachability, which mis-attributed a downstream loop's exit to an upstream merge; two sequential canonical loops in one fn are canonical and rewritable** (pinned by `identity.rs::two_sequential_loops_rewrite_not_skipped`) |
+| `LoopMerge` + routes + exits | the quartet | canonicity and per-merge layout are **delegated to `mapal_ir::CategoryIr::loop_plan(f, merge)`** (ir §13, BL7 — the one source of truth; `is_canonical` gates on `loop_plan(...).is_some()` for every `loop_structure` merge, `replay` reads the same `LoopPlan` back). Replay init → `begin_loop` → canonical driver region in the global object-topological suborder (SCC objects plus targets of existing `decide_order`/`advance_order`; merge ↦ `merge_of(lh)`; classification through `reconstruct_a`) → `loop_back(next_state', cond')` from the back route's slot feeders → `loop_exit(value', cond', dest)` from the exit route's slot feeders → `end_loop`. Route objects are never materialized. **Exit attribution (S12): by route-feeder membership in the specific merge's SCC (the interp driver's rule, now encapsulated in `loop_plan`) — never by reachability, which mis-attributed a downstream loop's exit to an upstream merge; two sequential canonical loops in one fn are canonical and rewritable** (pinned by `identity.rs::two_sequential_loops_rewrite_not_skipped`) |
 
 - **Id remap**: `SecondaryMap<ObjectId_old, ObjectId_new>`, built during the walk. `alias?` is resolved (transitively) *before* lookup; `constify?` short-circuits to a fresh `constant(v)`; `drop` objects are skipped.
 - `inline` redirects a selected call through the callee replay recipe. `lift` reconstructs the planned SCC as a captured collection op and marks the old merge/routes/SCC complete; both reuse the same remap and primitive emitter.
@@ -136,7 +136,20 @@ The builder exposes **typed primitives only** (no raw add-object/add-edge); comp
 - **Shared primitive-source products** (a product feeding both an explicit consumer and an internally-packing primitive) are validate-legal but not lower-emitted; the replayer handles them soundly by letting the primitive re-pack (one duplicate product; values identical). Recorded, not optimized.
 - **Identity replay is a first-class product**: `replay(ir, empty_plan)` must satisfy R1 against `ir` on the 10 in-Core examples — this is the harness's own soundness anchor and the first thing built (plan WP1).
 
-### 1.2 Plan-consistency rules (global — every pass, enforced by plan.rs, asserted by replay)
+#**Route reconstruction completeness (S57).** `Trn replay` consumes the existing `Dat`
+`LoopPlan`, `RewritePlan` and old-to-new object map in the same compiler-memory location.
+A loop's required exit value may be acyclic: a token/value pair derived from the merge
+is in its canonical driver cone but outside the SCC. `replay.rs:reconstruct_loop` must
+rebuild that work before feeding `loop_exit`; SCC membership alone does not establish
+route readiness. Existing decide/advance orders supply membership, the global object order
+supplies deterministic reconstruction order, and `reconstruct_a` supplies the same
+alias/drop/constify/internal-pack policy as ordinary replay. No second loop model, new
+location, transmission or backend fact is introduced. Invariant producers and sequential
+loop ownership remain governed by `CategoryIr::loop_plan`; noncanonical shapes retain
+R6's existing rejection boundary. `tests/loop_routes.rs` forces empty-plan replay so a
+fixpoint driver's no-op shortcut cannot conceal missing route work.
+
+## 1.2 Plan-consistency rules (global — every pass, enforced by plan.rs, asserted by replay)
 
 The design review (S12, 4-lens adversarial) converged three independent blockers onto one missing generalization: the exclusions §3.2 gave CSE are really **laws of the plan itself**. Promoted here; the per-pass sections inherit them.
 
@@ -148,12 +161,15 @@ The design review (S12, 4-lens adversarial) converged three independent blockers
 
 All §2 rules produce plan entries and are therefore bounded by §1.2 P1/P2 (keys are non-SCC `Temporary` objects only).
 
+**Guard dependency preservation (S55; R1/R4).** The partial `alias?` and `constify?` candidates of `Trn analyze_const_fold : CategoryIr → RewritePlan` exclude targets owned by a gated `GuardSite` arm. Membership is derived from `CategoryIr::guard_plan`'s ownership lists, including nested sites. An owned loop unit appears there only as its `LoopEnter` handle, so its non-SCC driver targets are included through the existing `loop_plan` decide/advance/exit orders; SCC targets already inherit P2's exclusion. The pass keeps no independent ownership model. A value identity such as `Index(a, i) % 1 → 0` can otherwise detach its Index dependency from an untaken arm and make the trap unconditional. Folding and forwarding of owned targets defer while the enclosing guard survives; the existing fixpoint retries after that guard resolves. The `Dat` remains sealed IR plus the existing plan channels, at the same in-process `Loc`, with no new `Trm` (FRAMEWORK §4.5, unchanged component placement). Realization: IMPLEMENTATION's `analyze_const_fold` and derived target-set rows.
+
+
 **Const folding.** A foldable application is an op edge whose operand feeders are all `Constant` (via the current alias/constify view). Folding computes the value at the **oracle's exact semantics** (interp eval.rs): integers `wrapping_add/sub/mul/neg`; `wrapping_div/rem` **only when the divisor constant ≠ 0** (zero divisor: not folded — the runtime trap is the program's meaning, R4); floats IEEE at width; comparisons/logic exact; `Neg` wrapping / IEEE `fneg`. Foldable ops: `Add..Mod` (guarded), `Neg`, `Eq..Ge`, `And,Or,Not`. Result → `constify[target]`. Constants stay scalar (Value is scalar-only); aggregates never constify — `Proj`/`Index` reach *through* structure instead:
 
 - **proj∘pack forwarding**: `Proj{k}` whose source product's slot-`k` feeder is `x` ⇒ `alias[target] = x`. (Also collapses lower's zip round-trip re-pair, the fusion seeded in lower §8.9.)
 - **Index-of-const**: `Index` with constant index `i` on a `pack_array`-built source with `0 ≤ i < n` ⇒ `alias[target] = feeder(i)`; OOB or non-literal array: untouched (R4).
 - **Index∘Update (L-a, ADR-0021 §3)**: `Index_i` reading a source produced by `Update_i`, both indices **constant, equal, and in-bounds** ⇒ the read is the written value ⇒ `alias[target] = update's value operand`. OOB or unequal/non-const index does not fold (a real OOB read is a trap = the program's meaning, R4; the base-read law L-b and update∘update L-c need an operand-rewrite channel that does not exist yet — headroom §11).
-- **Phi-select**: `Phi` with constant cond ⇒ `alias[target] = chosen branch object` (branch cones remain; DCE decides their fate under R4).
+- **Phi-select**: `Phi` with constant cond ⇒ `alias[target] = chosen branch object`. For a gated site, the same plan drops the losing arm and its triple only when forwarding the winner can succeed; a site whose arm owns a loop unit defers. An arm-owned nested Phi also defers under the guard rule above. Ungated branch cones remain for DCE under R4.
 
 **Algebraic identities** (table-driven; **integer types only** for arithmetic — float identities are IEEE-unsound: `-0.0 + 0.0 = 0.0 ≠ -0.0`, `NaN * 0 ≠ 0`): `x+0 → x`, `0+x → x`, `x-0 → x`, `x*1 → x`, `1*x → x`, `x*0 → 0`* , `0*x → 0`*, `x/1 → x`, `x%1 → 0`*, `Not(Not(x)) → x`, `x && true → x`, `true && x → x`, `x && false → false`*, `x || false → x`, `x || true → true`*. Entries marked `*` produce a constant while `x`'s cone remains in the graph — sound because DCE is trap-conservative (R4); the cone is removed only if independently provably-safe. No strength reduction (Core has no shift op).
 

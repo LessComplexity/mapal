@@ -1,0 +1,15 @@
+# vast.ai instances created for S62 asyncstage (vast_part.sh logs), all destroyed by vast_part.sh (vastai destroy instance <id> -y).
+# round 1 (2026-10-22 18:45-19:12 EDT)
+57284956 rtx-4090 offer=48982788 destroyed 19:03:16
+57284957 rtx-5090 offer=57283600 destroyed 19:07:43
+57284958 rtx-3090 offer=55620874 start failed, destroyed 18:45:35
+57284997 rtx-3090 offer=54025933 destroyed 19:11:08
+57284959 h100-pcie (H100 SXM) offer=36346695 destroyed 19:11:46
+# round 2 (19:07-19:37 EDT)
+57287180 rtx-4090 offer=51243676 destroyed 19:12:10
+57287181 rtx-5090 offer=41974074 destroyed 19:13:32
+57287605 rtx-3090 offer=55620874 start failed, destroyed 19:12:42
+57287679 rtx-3090 offer=49040849 destroyed 19:21:52
+57288872 h100-pcie (H100 PCIe) offer=50562987 ssh lost mid-run, partial results, destroyed 19:26:11
+57289286 h100-pcie (H100 SXM) offer=41555537 ssh lost mid-run, partial results, destroyed 19:36:42
+# absence check 2026-10-23T00:03Z: ids live on the account = 57065574 57100404 57126023 57133432 57285249 57292542 57292543 57292621 (none of the above; those ids are not this item's and were not touched)

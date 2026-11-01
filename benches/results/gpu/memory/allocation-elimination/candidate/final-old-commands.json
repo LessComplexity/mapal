@@ -1,0 +1,38 @@
+[
+  {
+    "argv": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "mapal-backend-llvm",
+      "--test",
+      "streams",
+      "grouped_chains_allocate_only_materialized_raw_outputs",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 101,
+    "log": "/private/tmp/mapal-s58-allocation/evidence/final-old-grouped_chains_allocate_only_materialized_raw_outputs.log"
+  },
+  {
+    "argv": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "mapal-backend-llvm",
+      "--test",
+      "streams",
+      "raw_storage_controls",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "log": "/private/tmp/mapal-s58-allocation/evidence/final-old-raw_storage_controls.log"
+  }
+]

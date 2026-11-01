@@ -1,0 +1,163 @@
+{
+  "state": "closed-smallm-missing-time-compiled-recheck-passed",
+  "instance": 57122410,
+  "cleanup_confirmed": true,
+  "smallm_numeric_or_timing_admission": false,
+  "compiled_numeric_recheck_pass": true,
+  "optional_capture_validated": false,
+  "recovery": ".claude/worktrees/_archive-s54-20261021/s58-combined-pilot-closed",
+  "files": {
+    "launch_once.py": {
+      "bytes": 8096,
+      "sha256": "ce581ad3328277ddbcebafb801c83d4e8efec5d83a981f017668b57db160adde"
+    },
+    "independent-copy-check.json": {
+      "bytes": 328,
+      "sha256": "d0b67aec50ce07a3e15a267a1a3f2729ce8c938b1c85075e5c938e581e1dd7aa"
+    },
+    "recheck_compiled.py": {
+      "bytes": 2668,
+      "sha256": "a4a9b5e0d838cf64a61dd12118117b09df8fc4d367258f935221e5e27a2ca94b"
+    },
+    "packet.json": {
+      "bytes": 254277,
+      "sha256": "1c794167ef3e5685b2476238ece35054b302a68d1ea1d95340036038aa4645b6"
+    },
+    "known-machine-offers-sanitized.json": {
+      "bytes": 71,
+      "sha256": "265eafb16983a6f72d0ca6b0162113f9b89bbd80d485174b4cc34757e8fd0522"
+    },
+    "launch-claim.json": {
+      "bytes": 550,
+      "sha256": "4c71e12e7ef2d5bc33777c0fb79f69b2c915e744ee167db5344e24f76ecff6ac"
+    },
+    "vast_run.sh": {
+      "bytes": 4634,
+      "sha256": "3e2d67a015810bdd98be23d9cac17c8f438c0b4d83d96563e4ae504b0ea6c487"
+    },
+    "verify_collected.py": {
+      "bytes": 1496,
+      "sha256": "04aafe9c72b2603cf459ccd6e34e0a2b04be8f478baaea058e8e11347039af8d"
+    },
+    "launcher-tests.json": {
+      "bytes": 532,
+      "sha256": "37ba862773a993d4bde435a3ab6043d592a69b70d3b4558d161b7898cb8abb30"
+    },
+    "offers-sanitized.json": {
+      "bytes": 481,
+      "sha256": "fd6626f193967fc7212775dd850f11238e7cb9cce3ff1d7ad3c2b78d14198a29"
+    },
+    "ledger.json": {
+      "bytes": 311,
+      "sha256": "359ef0776fe8d52fb4a15afee6cec94fb711df8fe1d11d92715bb6f4d1b6c59c"
+    },
+    "launcher-operational.diff": {
+      "bytes": 3185,
+      "sha256": "29e0dfe2c02e1a5f932792faf20fc31e774a801e8ef917f7ac7b5110ba1b9547"
+    },
+    "test_launcher.py": {
+      "bytes": 4092,
+      "sha256": "4bb511d10fb3381bff6ca3602a3723dd626d5c896e343dcb9ae2e8ffe4df4007"
+    },
+    "root-review.json": {
+      "bytes": 1314,
+      "sha256": "5e4e4ad4bb02a8e2b0c120b3bf6e5fe684ebc098669ad3d3ee74ba8a6feb9508"
+    },
+    "staging/box_run.sh": {
+      "bytes": 723,
+      "sha256": "6de8e9288112434830c37a068592663404b0b836cc2a4193795a0d19275ecd33"
+    },
+    "staging/smallm-packet.tgz": {
+      "bytes": 5686832,
+      "sha256": "6f4535d08a49cc92ad8ffdd7863e814e7343cbbf6a916105ad864bc85a48b9b3"
+    },
+    "staging/matrix-upload.tgz": {
+      "bytes": 7152268,
+      "sha256": "c460670f667f43dc255085574934aae3b6ea7780d1a878309179c6709a5aa056"
+    },
+    "staging/lease.json": {
+      "bytes": 138,
+      "sha256": "fe3443cdfbb777d7798966d292d4cd739e10bb052b3bf95b33c93d71cbb0f54e"
+    },
+    "staging/capture-proof-source.tgz": {
+      "bytes": 10393,
+      "sha256": "930f0bbbcae893465b967e8106ec9041279a46d2c26657833606085020d68d9c"
+    },
+    "staging/run_combined.py": {
+      "bytes": 8920,
+      "sha256": "3b8e87db4ac071bfb55e287d4cc911ddb037449adbcb41e618146e5a07779d73"
+    },
+    "staging/sealed-files.json": {
+      "bytes": 456,
+      "sha256": "f4802ce1283df0bbdf2ce4bb8206ddef82f177a4b16c2b3fb241332e8c440ca0"
+    },
+    "future-time-prerequisite-preparation/adapter-tests.json": {
+      "bytes": 8163,
+      "sha256": "d7374bcc8d5cdc8e7e054cdd21b988f86506f332edd2791b2a5c7b410795a631"
+    },
+    "future-time-prerequisite-preparation/time-prerequisite.diff": {
+      "bytes": 1585,
+      "sha256": "203c65d233884518f4bf7c8d0982e13e07bc88752a109ccccd9a7ee69d21a18e"
+    },
+    "future-time-prerequisite-preparation/test_combined.py": {
+      "bytes": 5576,
+      "sha256": "ea8f7f2bb83c2098d2e6f71ad86ed004dc751271681d750d6cb0a439d21d49d4"
+    },
+    "future-time-prerequisite-preparation/run_combined.py": {
+      "bytes": 9448,
+      "sha256": "d9bef41cccbdab3f182794661afd5657b8ac1dbd4bcabb180703156ab8879dcc"
+    },
+    "results/request.json": {
+      "bytes": 261224,
+      "sha256": "ec1e9ec460fd001f03c31d43bbc457572cef96410157ba73625ccff66555815a"
+    },
+    "results/wrapper.log": {
+      "bytes": 792,
+      "sha256": "ac5a123657a0a2d21b1ed1916c8faff9cada681e46626d967a1574e3959dd93f"
+    },
+    "results/compiled-numeric-recheck.json": {
+      "bytes": 619,
+      "sha256": "0eea70807f564f2b20a44a6e31fb37547bea2f81bed755dd06b7a7f833a18147"
+    },
+    "results/run-rtx-5090.out": {
+      "bytes": 1359,
+      "sha256": "5dc7e5ee2297e4f75c8f6752615d46e64af8eab1da4684c6cc300dd1a8d5bc3a"
+    },
+    "results/budget-closed.json": {
+      "bytes": 694,
+      "sha256": "2ff72b018830444a7dd55fc5d7a48d396a8ccc031dac71621a34e6c27bf1e064"
+    },
+    "results/trace-rtx-5090.tgz": {
+      "bytes": 1260095,
+      "sha256": "eedda3447849d271e9ba0bcf7fe03de9d1e3cc78b70b1f4617ab4c7af0e6b386"
+    },
+    "results/early-smallm.tgz": {
+      "bytes": 802711,
+      "sha256": "773fb0ddb9bd999515e1710d31bcb49609e6162561f8941587ef27542a6d3cc4"
+    },
+    "results/instance-identity.json": {
+      "bytes": 208,
+      "sha256": "b2fcb38c93636a1af2d828f7f49545f3e87172f89d6353b30a8d0c1a67c8f9b5"
+    },
+    "results/cleanup.json": {
+      "bytes": 163,
+      "sha256": "cbc9835c4f11db11b826ba0b2e835431fc373523a8c969bb15ae770a9df72d50"
+    },
+    "results/results-rtx-5090.txt": {
+      "bytes": 49769,
+      "sha256": "583303f73165086508f5629234963f107d2fe8745ca1e2b43bdae60475641577"
+    },
+    "results/raw-integrity.json": {
+      "bytes": 710,
+      "sha256": "03f69cca1658c6dc36d542055019bf06ae9f10f0780b6087811e61fe1a4a24a4"
+    },
+    "results/execution.json": {
+      "bytes": 211,
+      "sha256": "35b8ce35025dbd2bb40dc2b165359a1be5d4d94be7d156c90b05b6c2fed4b899"
+    }
+  },
+  "total_files": 37,
+  "total_bytes": 15545092,
+  "private_raw_api_responses_excluded": true,
+  "private_create_response_sha256": "3a3de79b9fb2c3172fefd40658677de254ab8390a9c1badc2fed3d75e7098453"
+}

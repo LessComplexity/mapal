@@ -1,0 +1,16 @@
+{
+  "packet": "/private/tmp/mapal-s61-competitive-reference/packet-v2",
+  "archive": "/private/tmp/mapal-s61-competitive-reference/competitive-fp32-reference-v2.tar.gz",
+  "archive_root": "competitive-reference/",
+  "archive_bytes": 3296820,
+  "archive_sha256": "713433bf62bc7dc744bc1f2e3a917f73a83e3a1553726202094e569698475064",
+  "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+  "sealed_files": 983,
+  "candidate_count": 12,
+  "cases": 8,
+  "unique_oracles": 4,
+  "frozen_source_files_modified": false,
+  "gpu_executed": false,
+  "ordinary_internal_seconds": 900,
+  "ordinary_outer_seconds": 930
+}

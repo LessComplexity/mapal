@@ -1,0 +1,7 @@
+514: pub extern "C" fn mapal_time_ms() -> f64 {
+515:     TIME_EPOCH
+516:         .get_or_init(std::time::Instant::now)
+517:         .elapsed()
+518:         .as_secs_f64()
+519:         * 1000.0
+520: }

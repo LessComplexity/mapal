@@ -1,0 +1,43 @@
+value failures: none | rows without bit_exact=yes: [('1024', '_tf', ''), ('1024', '_tf', 'null'), ('4096', '_tf', ''), ('4096', '_tf', 'null'), ('1024', '_tf', 'null'), ('1024', '_tf', ''), ('4096', '_tf', 'null'), ('4096', '_tf', '')]
+
+cell face | ON ms | OFF ms | cuBLAS ms | CUTLASS ms | ON/OFF | ON/OFF raw | null | ON grid | OFF grid
+128x1024x4096 _c | 0.2970 | 0.3834 | 0.0788 | 0.4444 | 0.738 (0.750/0.726) | 0.775 | 0.336% | grid=32x2 block=32 | grid=32x2 block=32
+128x1024x4096 _exact | 0.1997 | 0.2007 | 0.0727 | 0.4106 | 0.972 (0.979/0.966) | 0.995 | 0.697% | grid=32x4 block=64 | grid=32x4 block=64
+128x18432x7168 _c | 1.9220 | = ON | 1.7910 | 1.9077 | 1 (same text) | 1 (same text) | 0.052% | grid=144x1 block=256 | = ON
+128x18432x7168 _exact | 3.2143 | = ON | 1.6998 | 1.8104 | 1 (same text) | 1 (same text) | 0.295% | grid=144x1 block=256 | = ON
+128x2048x7168 _c | 0.5150 | 0.6881 | 0.1853 | 0.7731 | 0.746 (0.749/0.744) | 0.748 | 0.533% | grid=64x2 block=32 | grid=64x2 block=32
+128x2048x7168 _exact | 0.3932 | 0.3625 | 0.1843 | 0.7670 | 1.003 (1.005/1.001) | 1.085 | 0.273% | grid=64x2 block=128 | grid=64x2 block=128
+16x1024x4096 _c | 0.1567 | = ON | 0.0358 | 0.4403 | 1 (same text) | 1 (same text) | 2.654% | grid=64x1 block=256 | = ON
+16x1024x4096 _exact | 0.0655 | 0.1649 | 0.0358 | 0.4403 | 0.397 (0.397/0.397) | 0.397 | 0.000% | grid=64x2 block=32 | grid=64x1 block=256
+16x18432x7168 _c | 0.6451 | 8.2800 | 0.6369 | 1.7449 | 0.077 (0.077/0.077) | 0.078 | 0.308% | grid=576x1 block=64 | grid=1152x1 block=256
+16x18432x7168 _exact | 0.6733 | 8.5160 | 0.6375 | 1.7464 | 0.078 (0.078/0.078) | 0.079 | 0.689% | grid=576x1 block=64 | grid=1152x1 block=256
+16x2048x7168 _c | 0.1311 | 0.6062 | 0.0891 | 0.7670 | 0.216 (0.216/0.217) | 0.216 | 0.000% | grid=64x2 block=64 | grid=128x1 block=256
+16x2048x7168 _exact | 0.1285 | 0.3502 | 0.0881 | 0.7383 | 0.356 (0.340/0.372) | 0.367 | 6.777% | grid=64x2 block=64 | grid=128x1 block=256
+1x1024x4096 _c | 0.1403 | = ON | 0.0256 | 0.4403 | 1 (same text) | 1 (same text) | 0.000% | grid=4x1 block=256 | = ON
+1x1024x4096 _exact | 0.1464 | = ON | 0.0256 | 0.4249 | 1 (same text) | 1 (same text) | 0.268% | grid=4x1 block=256 | = ON
+1x18432x7168 _c | 0.6052 | = ON | 0.6083 | 1.5759 | 1 (same text) | 1 (same text) | 0.156% | grid=72x1 block=256 | = ON
+1x18432x7168 _exact | 0.6083 | = ON | 0.6083 | 1.5785 | 1 (same text) | 1 (same text) | 0.082% | grid=72x1 block=256 | = ON
+1x2048x7168 _c | 0.2334 | = ON | 0.0891 | 0.7281 | 1 (same text) | 1 (same text) | 3.971% | grid=8x1 block=256 | = ON
+1x2048x7168 _exact | 0.2406 | = ON | 0.0881 | 0.6845 | 1 (same text) | 1 (same text) | 1.078% | grid=8x1 block=256 | = ON
+1024 _c | 0.1475 | 0.1536 | 0.1167 | 0.1188 | 0.966 (0.960/0.972) | 0.960 | 0.864% | grid=16x8 block=128 | grid=16x8 block=128
+1024 _exact | 0.1941 | = ON | 0.1157 | 0.1178 | 1 (same text) | 1 (same text) | 0.771% | grid=16x8 block=256 | = ON
+1024 _tf | 0.0860 | = ON | 0.0860 | 0.0860 | 1 (same text) | 1 (same text) | 0.000% | grid=16x8 block=128 | = ON
+4096 _c | 6.9468 | = ON | 6.8485 | 6.9929 | 1 (same text) | 1 (same text) | 0.553% | grid=32x32 block=128 | = ON
+4096 _exact | 11.4007 | = ON | 6.5823 | 6.7707 | 1 (same text) | 1 (same text) | 0.509% | grid=32x32 block=256 | = ON
+4096 _tf | 4.5701 | = ON | 4.5363 | 4.2481 | 1 (same text) | 1 (same text) | 0.365% | grid=32x32 block=128 | = ON
+
+arms: cell face arm | arm/ON per pass (normalized; >1 = arm slower) | arm ms | ON ms | arm grid
+1024 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.041 1.029 | 0.1536 | 0.1475 | grid=16x8 block=128
+128x1024x4096 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.333 1.377 | 0.3834 | 0.2970 | grid=32x2 block=32
+128x1024x4096 _exact off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.022 1.036 | 0.2007 | 0.1997 | grid=32x4 block=64
+128x2048x7168 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.335 1.345 | 0.6881 | 0.5150 | grid=64x2 block=32
+128x2048x7168 _exact off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 0.995 0.999 | 0.3625 | 0.3932 | grid=64x2 block=128
+16x1024x4096 _exact off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 2.518 2.518 | 0.1649 | 0.0655 | grid=64x1 block=256
+16x18432x7168 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 13.011 12.999 | 8.2800 | 0.6451 | grid=1152x1 block=256
+16x18432x7168 _c on-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.035 1.038 | 0.6646 | 0.6451 | grid=576x1 block=32
+16x18432x7168 _exact off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 12.871 12.865 | 8.5160 | 0.6733 | grid=1152x1 block=256
+16x18432x7168 _exact on-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 0.989 0.995 | 0.6646 | 0.6733 | grid=576x1 block=32
+16x2048x7168 _c off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 4.624 4.616 | 0.6062 | 0.1311 | grid=128x1 block=256
+16x2048x7168 _c on-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.112 1.153 | 0.1464 | 0.1311 | grid=64x2 block=64
+16x2048x7168 _exact off-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 2.940 2.687 | 0.3502 | 0.1285 | grid=128x1 block=256
+16x2048x7168 _exact on-row-fit+wave-gate+grid-share+panel-regs+fill-rows | 1.193 1.048 | 0.1449 | 0.1285 | grid=64x2 block=64

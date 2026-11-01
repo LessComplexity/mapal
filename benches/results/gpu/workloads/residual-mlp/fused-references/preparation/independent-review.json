@@ -1,0 +1,39 @@
+{
+  "pass": true,
+  "scope": "Independent final source/protocol/cancellation corrections review; no CUDA execution or timing admission",
+  "sources": {
+    "run_native.py": "a70da14ba47cbb388e16b63d388ffaac4f2772f87c751582376438c929e6c052",
+    "validate_native.py": "b381573b65309b6188938a8dea892bdaef7223ac0779aedafe7ec50dabd88b28",
+    "composed_native.cu": "452554ca3b64bd80eb2dcdd5e9b881db19b21d44e9b89e8dcb23f0f20b28f2ec",
+    "native_plans.hpp": "7bd9d2d47c4f947926e5da4319c710300fcec469af35c1e153cf89814bd843e2"
+  },
+  "tests": {
+    "final-validation": {
+      "pass": true,
+      "receipt_sha256": "ce5102854389c201e0d2a4ad0e0642095bb70da866e0c9a3026f9501e2e56ab4",
+      "receipt": "final-validation.json"
+    },
+    "final-handshake": {
+      "pass": true,
+      "receipt_sha256": "cde88c976c530308e8a599de14748680672868de661d52be20bdbb69f755eb23",
+      "receipt": "final-handshake.json"
+    },
+    "final-cleanup": {
+      "pass": true,
+      "receipt_sha256": "a739121d59208c10cd32a3ca36ee87fff7454701de63560c8b9b2164f403bdea",
+      "receipt": "final-cleanup.json"
+    },
+    "final-cancel": {
+      "pass": true,
+      "receipt_sha256": "f55b1431a7248e1a8aeefdb3f54e0267406ef48d52d61d74ab77198d886b1639",
+      "receipt": "final-cancel.json"
+    }
+  },
+  "actual_source_cpp_protocol_receipt_sha256": "00e250cf48d6c8e027a5ee3a8203ef7eb60ee2e5acc2661c7eb232319a12b8af",
+  "limitations": [
+    "CPU fixture clock values are not measurements",
+    "Cleanup/cancellation tests cover owned process-group descendants, not descendants that deliberately escape with setsid",
+    "CUDA compilation, cuBLASLt algorithm support, CUTLASS can_implement and numerical/runtime admission remain live obligations",
+    "Frozen historical numerical budgets are preserved; this review does not replace them with a newly derived bound"
+  ]
+}

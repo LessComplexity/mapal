@@ -4,9 +4,9 @@ Status: **PLAN, written before the code** (FRAMEWORK §6.1); reconciled in §10 
 Machines: Apple M4 Pro (10P+4E; L1D 128 KB, 128 B lines, page 16 KB, L2 16 MB shared by **5**
 P-cores) and an Intel i9-14900F (P-core L1D 48 KB/12-way/64 B lines, page 4 KB, **2 MB private L2
 per P-core**, 36 MB L3). Worktree `agent-a5e299a1ffeefd714` off `1877b73`.
-Governing records: `docs/performance/s44-conflict-not-capacity.md`,
-`benches/results-s44/l1-micro-panel.md`, `benches/results-s44/i9-ladder.md`.
-Results land in `benches/results-s45/deduced-move-panel.md` **the moment they are taken**.
+Governing records: `docs/performance/cpu/memory/l1-panel-conflicts.md`,
+`benches/results/cpu/memory/l1-panel-conflicts/l1-micro-panel.md`, `benches/results/cpu/memory/l1-panel-conflicts/i9-ladder.md`.
+Results land in `benches/results/cpu/memory/deduced-panel-movement/deduced-move-panel.md` **the moment they are taken**.
 
 ## 0. The defect
 
@@ -246,7 +246,7 @@ OFF, min-to-min 1.02×. **Held.**
 
 ## 10. RECONCILIATION — scored against the measurements
 
-Full tables in `benches/results-s45/deduced-move-panel.md`. Every §8 prediction, scored:
+Full tables in `benches/results/cpu/memory/deduced-panel-movement/deduced-move-panel.md`. Every §8 prediction, scored:
 
 | # | prediction | outcome |
 | --- | --- | --- |

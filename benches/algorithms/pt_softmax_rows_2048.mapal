@@ -1,0 +1,21 @@
+fn main() {
+    4194304 -> iota -> ta;
+    2048 -> iota -> krange;
+    ta -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    ta -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    () -> time -> t0;
+    ta -> map { t ->
+        t / 2048 -> i;
+        t % 2048 -> j;
+        (0.0, krange) -> fold { acc, k -> acc + a[i * 2048 + k] * b[k * 2048 + j] }
+    } -> c;
+    krange -> map { i -> (-1000000000.0, krange) -> fold { acc, j -> c[i * 2048 + j] -> e; (e > acc) -> { -true-> e; -false-> acc; } } } -> mx;
+    ta -> map { t -> (c[t] - mx[t / 2048]) / 2048.0 -> x; x / 256.0 + 1.0 -> u; (u > 0.0) -> { -true-> u; -false-> 0.0; } -> v0; 8 -> iota -> sq; (v0, sq) -> fold { acc, k -> acc * acc } } -> ex;
+    krange -> map { i -> (0.0, krange) -> fold { acc, j -> ex[i * 2048 + j] -> e; acc + e } } -> den;
+    ta -> map { t -> ex[t] / den[t / 2048] } -> y;
+    () -> time -> t1;
+    y[0] -> println;
+    y[4194303] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

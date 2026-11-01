@@ -21,7 +21,7 @@ cd "$(dirname "$0")/../.."
 cargo build -q --release -p mapal-backend-llvm -p mapal-backend-cuda --examples
 
 emit_ll() { cargo run -q --release -p mapal-backend-llvm --example emit -- "$@"; }
-emit_cu() { cargo run -q --release -p mapal-backend-cuda --example emit -- "$@"; }
+emit_cu() { cargo run -q --release -p mapal-backend-cuda --example emit_cuda -- "$@"; }
 
 # The CUDA leg legitimately rejects some sources (a `time` builtin has no CUDA
 # realization — it is a recorded ✋ cell, not a bug), so a refusal there must not

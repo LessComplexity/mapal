@@ -1,0 +1,4 @@
+[21:06:15] try RTX_4090 offer=57284771 dph=0.533 pcie=23.1 cpu_ghz=2.8 host=55116 machine=10577 geo=Vietnam, VN
+[21:13:26] no complete results from offer=57284771
+[21:13:26] try RTX_4090 offer=53919837 dph=0.535 pcie=12.7 cpu_ghz=4.267 host=302304 machine=137160 geo=Texas, US
+[21:15:33] DONE RTX_4090 offer=53919837 host=302304 machine=137160

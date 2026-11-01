@@ -1,0 +1,23 @@
+{
+  "head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "sources_checked": 328,
+  "source_manifest_sha256": "afdb6d16c0fbeb31789d2760a82ec48ffacd206d9f957af8d0cac72608e62133",
+  "source_mismatches": [],
+  "archives": [
+    {
+      "path": "/private/tmp/mapal-s56-gpu/integrated/results/a100-primary/prof-a100.tgz",
+      "sha256": "065e6623a19289d0b1763a9efb1e1b1ccf43e0867f3c541f9ad06efea75e3386",
+      "extracted_to": "/private/tmp/mapal-s56-gpu/ptx-sass-gap/a100-primary"
+    },
+    {
+      "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-4090-primary/prof-rtx-4090.tgz",
+      "sha256": "287508440b51e0a13ab8b80d89a5e5985c259922eea742164eaafaf02dc26226",
+      "extracted_to": "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-4090-primary"
+    },
+    {
+      "path": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/prof-rtx-5090.tgz",
+      "sha256": "3ea980a915bf4ae61ab768c9817c93252009c55559f58a26d0d2b55bd0ad5092",
+      "extracted_to": "/private/tmp/mapal-s56-gpu/ptx-sass-gap/rtx-5090-primary-retry4"
+    }
+  ]
+}

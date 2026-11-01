@@ -1,0 +1,11 @@
+{
+  "scope": "Unchanged copy of completed read-only host/GPU call-effects audit; existing evidence and receipt untouched",
+  "author": "/root/audit_s54_worktrees",
+  "source": "/private/tmp/mapal-s56-gpu/large-composed/host-gpu-call-effects-audit.md",
+  "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-host-optimization/host-gpu-call-effects-audit.md",
+  "source_sha256": "57bdfdc135faa3824bcf424ea4fe3f314d14fc4344b3f80dfdc5e63dbe46f380",
+  "destination_sha256": "57bdfdc135faa3824bcf424ea4fe3f314d14fc4344b3f80dfdc5e63dbe46f380",
+  "source_bytes": 11345,
+  "destination_bytes": 11345,
+  "byte_identical": true
+}

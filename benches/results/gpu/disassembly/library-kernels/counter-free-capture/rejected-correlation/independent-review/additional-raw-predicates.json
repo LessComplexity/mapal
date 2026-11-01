@@ -1,0 +1,29 @@
+{
+  "context_creation_before_first_known_use_predicate_pass": false,
+  "violations": [
+    {
+      "context_pointer": 94049734176080,
+      "creation_event": 241,
+      "prior_callbacks": [
+        {
+          "event": 239,
+          "uid": 0,
+          "cbid": 303,
+          "api_name": "cuCtxSetCurrent",
+          "enter": 0
+        },
+        {
+          "event": 240,
+          "uid": 0,
+          "cbid": 386,
+          "api_name": "cuDevicePrimaryCtxRetain",
+          "enter": 1
+        }
+      ]
+    }
+  ],
+  "all_stream_metadata_queries_successful": true,
+  "stream_metadata_records": 13,
+  "nonzero_Ex_attributes": false,
+  "note": "Independent raw predicate evaluation only; no deduplication, trace modification or image admission"
+}

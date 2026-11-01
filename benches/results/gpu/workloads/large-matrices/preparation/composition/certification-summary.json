@@ -1,0 +1,290 @@
+{
+  "scope": "Small synthetic source scalar/interpreter/native arithmetic certification and GPU LLVM static inspection; no GPU execution or performance",
+  "optimized": {
+    "exact_interpreter_passed": 4,
+    "native_contract_passed": 3,
+    "native_contract_failed_emit": 1,
+    "gpu_emits_passed": 24,
+    "gpu_emits_failed": 8,
+    "new_proven_failure": {
+      "source": "generated/recurrent-t16-d8-h16.check.mapal",
+      "source_sha256": "0e4c05b403550da3a3afaeebcea8323e2af1dca887aa6a94d95c1e0dd7c57142",
+      "stderr": "replay.rs:989:28: feeder ObjectId(5907v1) not mapped",
+      "status": 101,
+      "meaning": "Compiler failure for this valid interpreter-accepted source; no compiler fix selected or implemented."
+    }
+  },
+  "diagnostic_without_rewrite": {
+    "scope": "Unchanged checkpoint source WITHOUT --rewrite; diagnostic arithmetic control, not optimized checkpoint placement parity",
+    "source_sha256": "0e4c05b403550da3a3afaeebcea8323e2af1dca887aa6a94d95c1e0dd7c57142",
+    "native": {
+      "passed": false,
+      "emit_status": "timeout"
+    },
+    "gpu": {
+      "profile": "a100",
+      "face": "contract",
+      "emit_status": 0,
+      "device_present": false
+    }
+  },
+  "diagnostic_gpu_host_runtime_calls": [],
+  "freeze": {
+    "all_phases_identical": true,
+    "source_files": 328,
+    "compiler_runtime_inputs": 4,
+    "llvm_tools": 3
+  },
+  "receipts": {
+    "certification-01/manifest.json": "e65b89fba065ea650b19298d1e820a7845ad767478715af192107e8a8318cf0a",
+    "certification-02/manifest.json": "5427f8c834c223c2d729147583711aac51987c01601b8fe8e4bf2b8513ee7185"
+  },
+  "scripts": {
+    "generate.py": "5ef8f7a5dfdc2932136cb7aee32af00db88e403a29e2061a93b146ade3534ae6",
+    "certify.py": "7a8ae5a704bbfa0b40f4a93c813870a207344b341e6d1e00200f1ae9a9ed7680",
+    "certify_diagnostic.py": "9d07e88093934db9ca1260d42d1ae535dc039b119ba412e6d7465c5476e2c157"
+  },
+  "previous_artifacts_reverified": {
+    "certification-01": 206,
+    "certification-02": 10
+  },
+  "shipped_placement": [
+    {
+      "case": "recurrent-t16-d8-h16",
+      "kind": "run",
+      "profile": "rtx-5090",
+      "face": "exact",
+      "calls": {
+        "alloc": 16,
+        "gen": 7,
+        "h2d": 3,
+        "launch": 4,
+        "launchv": 3,
+        "d2h": 1,
+        "free": 16,
+        "init": 1
+      },
+      "arena_requested_bytes": [],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "recurrent-t16-d8-h16",
+      "kind": "run",
+      "profile": "rtx-5090",
+      "face": "contract",
+      "calls": {
+        "alloc": 16,
+        "gen": 7,
+        "h2d": 3,
+        "launch": 4,
+        "launchv": 3,
+        "d2h": 1,
+        "free": 16,
+        "init": 1
+      },
+      "arena_requested_bytes": [],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "recurrent-t16-d8-h16",
+      "kind": "run",
+      "profile": "a100",
+      "face": "exact",
+      "calls": {
+        "alloc": 16,
+        "gen": 7,
+        "h2d": 3,
+        "launch": 6,
+        "launchv": 3,
+        "d2h": 1,
+        "free": 16,
+        "init": 1
+      },
+      "arena_requested_bytes": [],
+      "both_retention_off_host_identical": false,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "recurrent-t16-d8-h16",
+      "kind": "run",
+      "profile": "a100",
+      "face": "contract",
+      "calls": {
+        "alloc": 16,
+        "gen": 7,
+        "h2d": 3,
+        "launch": 6,
+        "launchv": 3,
+        "d2h": 1,
+        "free": 16,
+        "init": 1
+      },
+      "arena_requested_bytes": [],
+      "both_retention_off_host_identical": false,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "check",
+      "profile": "rtx-5090",
+      "face": "exact",
+      "calls": {
+        "arena": 12,
+        "gen": 6,
+        "d2h": 1496,
+        "launch": 1,
+        "launchv": 2,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        5376
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "check",
+      "profile": "rtx-5090",
+      "face": "contract",
+      "calls": {
+        "arena": 12,
+        "gen": 6,
+        "d2h": 1496,
+        "launch": 1,
+        "launchv": 2,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        5376
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "check",
+      "profile": "a100",
+      "face": "exact",
+      "calls": {
+        "arena": 12,
+        "gen": 6,
+        "d2h": 1496,
+        "launch": 1,
+        "launchv": 2,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        5376
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "check",
+      "profile": "a100",
+      "face": "contract",
+      "calls": {
+        "arena": 12,
+        "gen": 6,
+        "d2h": 1496,
+        "launch": 1,
+        "launchv": 2,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        5376
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "run",
+      "profile": "rtx-5090",
+      "face": "exact",
+      "calls": {
+        "arena": 9,
+        "gen": 6,
+        "launch": 1,
+        "launchv": 2,
+        "d2h": 128,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        4864
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "run",
+      "profile": "rtx-5090",
+      "face": "contract",
+      "calls": {
+        "arena": 9,
+        "gen": 6,
+        "launch": 1,
+        "launchv": 2,
+        "d2h": 128,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        4864
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "run",
+      "profile": "a100",
+      "face": "exact",
+      "calls": {
+        "arena": 9,
+        "gen": 6,
+        "launch": 1,
+        "launchv": 2,
+        "d2h": 128,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        4864
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    },
+    {
+      "case": "matrix-m16-d8-h16",
+      "kind": "run",
+      "profile": "a100",
+      "face": "contract",
+      "calls": {
+        "arena": 9,
+        "gen": 6,
+        "launch": 1,
+        "launchv": 2,
+        "d2h": 128,
+        "free": 1,
+        "init": 1
+      },
+      "arena_requested_bytes": [
+        4864
+      ],
+      "both_retention_off_host_identical": true,
+      "both_retention_off_device_identical": true
+    }
+  ],
+  "numeric_admission": "No gate relaxed. Weak final attention signal and large-case numeric policy remain open. Optimized recurrent Contract full checkpoint coverage is blocked."
+}

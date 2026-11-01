@@ -6,7 +6,7 @@ Status: **SHIPPED S25** (v1 matmul kernel + v2 affine/1-D generalization; commit
 (bench recipe is `--rewrite`; the differential gates both forms, raw taking the
 untiled fallback); (2) T6 tightened to `Constant` seeds (non-const = recorded
 ceiling); (3) address `Add` accepts any nesting/order via the affine walker, but
-`Sub`/var×var reject. Measured + shape-corpus results: `docs/performance/matmul/s25.md`.
+`Sub`/var×var reject. Measured + shape-corpus results: `docs/performance/matmul/history/bit-exact-simd-tiles.md`.
 Original text below.
 Family: region-emission (ir owns legality once; each backend refines with its own cost
 model — the `region_plan` principle, here instantiated for iteration-space structure).

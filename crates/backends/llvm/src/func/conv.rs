@@ -64,11 +64,7 @@ impl<'a> FnEmit<'a> {
             b_llt,
             out_llt,
             lane_ctr,
-            contract_flag: if self.contract && is_float(&site.elem) {
-                " contract"
-            } else {
-                ""
-            },
+            contract_flag: self.fp_flags(&site.elem),
         };
         let (lo, hi) = self.bulk_bounds(n);
 

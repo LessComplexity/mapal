@@ -1,0 +1,36 @@
+{
+  "pass": true,
+  "original_report_sha256": "e6b28b8a95fa852e28db9a6f12976154f8bfaa798b86a1ca1776eceb763a8e10",
+  "corrected_report_sha256": "7dc41e0cb12d2dd5cb9979c8f2fed3ec83ccc711a449572fbbb285d5b874f846",
+  "independent_review_original": {
+    "path": "/private/tmp/mapal-s56-gpu/ptx-sass-gap/independent-review.md",
+    "sha256": "35ad73814fc2d785ae9edbd7aa2cd37ce1e85d76fedcc34e3cdc83b9b3ff023f",
+    "changed": false
+  },
+  "changes": [
+    "Requested precision face exposed separately from actual emitted arithmetic route",
+    "Only Mapal outputs have numerical acceptance gates; library errors are diagnostics",
+    "Exact clamped diagnostic and large admitted M16/16K TF32 diagnostics exposed; no fixed absolute bound claimed",
+    "Current Reduced::Tf32 source explicitly specifies cvt.rna; future nearest-even ADR remains undecided"
+  ],
+  "diagnostics_order": [
+    "mapal",
+    "cublas",
+    "cutlass"
+  ],
+  "bound_diagnostics": {
+    "deepseek_expert_m16_n2048_k7168__tf32": {
+      "mapal": 3.302,
+      "cublas": 3.302,
+      "cutlass": 3.248
+    },
+    "square16k_m16384_n16384_k16384__tf32": {
+      "mapal": 0.1043,
+      "cublas": 0.1059,
+      "cutlass": 0.1059
+    }
+  },
+  "timing_and_instruction_analysis_unchanged": true,
+  "source_head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "no_code_build_or_gpu_actions": true
+}

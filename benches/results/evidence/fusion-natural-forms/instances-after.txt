@@ -1,0 +1,28 @@
+DEPRECATED: `vastai show instances` will be removed in a future release. Use `vastai show instances-v1` for the new paginated command.
+[40m[97m  #  ID        Machine  Status   Num  Model         Util. %  vCPUs    RAM[0m
+[48;5;240m[97m  1  57065574  69770    exited    1x  GTX_1660_S    0.0      14.0    64.1[0m
+[40m[97m  2  57100404  144411   exited    1x  Quadro_P4000  0.0      12.0    64.2[0m
+[48;5;240m[97m  3  57126023  53859    exited    1x  Quadro_P4000  0.0      18.0    96.5[0m
+[40m[97m  4  57133432  31844    exited    1x  GTX_1660_S    0.0      20.0   128.7[0m
+[48;5;240m[97m  5  57285249  37055    running   2x  Quadro_P4000  0.0      36.0   128.8[0m
+[40m[97m  6  57415164  131146   running   1x  RTX_3060      0.0      10.0   193.3[0m
+[48;5;240m[97m  7  57450102  17786    running   1x  Quadro_P4000  17.0     12.0   128.7[0m
+
+[40m[97m  #  Storage  SSH Addr      SSH Port  $/hr    Image         Net up  Net down[0m
+[48;5;240m[97m  1  60       ssh3.vast.ai  33628     0.0833  ubuntu:22.04  903.3   938.6   [0m
+[40m[97m  2  60       ssh4.vast.ai  34888     0.0967  ubuntu:22.04  2189.8  5540.2  [0m
+[48;5;240m[97m  3  40       ssh1.vast.ai  17006     0.0719  ubuntu:22.04  864.8   900.0   [0m
+[40m[97m  4  120      ssh7.vast.ai  33504     0.0811  ubuntu:22.04  1710.7  2092.2  [0m
+[48;5;240m[97m  5  120      ssh1.vast.ai  28978     0.1680  ubuntu:22.04  901.6   957.0   [0m
+[40m[97m  6  30       ssh9.vast.ai  29610     0.0967  ubuntu:22.04  838.6   904.0   [0m
+[48;5;240m[97m  7  120      ssh1.vast.ai  15244     0.0800  ubuntu:22.04  1434.5  1155.1  [0m
+
+[40m[97m  #  R     Label                                   age(hours)  uptime(mins)[0m
+[48;5;240m[97m  1  99.5  stocklab-orderflow-20261021             77.53       4650.32     [0m
+[40m[97m  2  99.7  stocklab-horizon-state-20261021         72.43       4076.02     [0m
+[48;5;240m[97m  3  99.3  stocklab-capital-audit-20261021         68.43       -           [0m
+[40m[97m  4  99.6  stocklab-independent-mbt-120g-20261021  67.29       3006.61     [0m
+[48;5;240m[97m  5  99.7  stocklab-sweep-cpu-20261022             44.99       981.85      [0m
+[40m[97m  6  99.6  stocklab-exit-policy-20261023b          24.39       1065.00     [0m
+[48;5;240m[97m  7  99.6  stocklab-grid-trading-20261023          18.14       1044.58     [0m
+

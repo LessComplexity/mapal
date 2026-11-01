@@ -58,8 +58,16 @@ category.
 | `line_col` | `SourceLoc.start → LineCol` (Deduced, display-only) | `crates/mapal-syntax/src/loc.rs:LineIndex::line_col` | built |
 | `lex` (pass) | `𝕊 → LexOutput` (Total) | `crates/mapal-syntax/src/lexer.rs:lex` | built |
 | `parse` (pass) | `𝕊 → ParseOutput` (Total; composes `lex ; parse_program ; merge+sort`) | `crates/mapal-syntax/src/parser.rs:parse` | built |
+| `format_source` | `Source → Source ⊕ Diagnostic*` (formatting partial on accepted syntax) | `crates/mapal-syntax/src/format.rs:format_source` | built |
 
 ## Composition rules / invariants → where enforced
+
+Formatting uses existing spans and token kinds, retaining source comment slices.
+`crates/mapal-syntax/src/format.rs:format_source` validates input and output syntax
+and exact token identity. `crates/mapal-syntax/tests/format.rs:assert_stable` checks
+idempotence; bounded generated whitespace cases and the nonrecursive example /
+algorithm corpus exercise composition across syntax constructs. It has no I/O.
+
 | Rule (from DESIGN) | Enforced at | Tested at |
 | --- | --- | --- |
 | I1 — `lex` total, `Eof`-terminated, scanner always advances | `crates/mapal-syntax/src/lexer.rs:lex` (scan loop) | `tests/proptest_lexer.rs::arbitrary_strings_total`, `::arbitrary_unicode_total` |
@@ -74,6 +82,7 @@ category.
 | J5 — presentation-free: no `Display` anywhere in crate | `crates/mapal-syntax/src/ast.rs`, `diag.rs` (only `Debug`) | grep/review |
 | J6 — `parse(s).diagnostics ⊇ lex(s).diagnostics` (same values) | `crates/mapal-syntax/src/parser.rs:parse` (seeds `Parser` with lex diags, then stable-sorts) | `tests/proptest_parser.rs::flow_soup_total` |
 | Pipe-weld — `t_to(lex) = t_from(parse_program) = Token*` (Coherence Law 1, specialized) | `crates/mapal-syntax/src/parser.rs:parse` (`lex` → `Parser::new(&lexed.tokens)`) | `tests/golden_trees.rs` (end-to-end), `tests/out_of_core.rs::full_surface_exact_pcode_multiset` |
+| ADR-0041 D2 — `: compute` (`f32`, `tf32`, `|`-joined) on anything that opens a body: `-> fold: tf32 \| f32 { … }` / `map`, `loop: … { … }`, `seq: … { … }`, `fn f(a) -> T: … { … }` (after the output); stored as `Block::compute`, innermost wins in lowering | `crates/mapal-syntax/src/parser.rs:Parser::parse_compute`; `crates/mapal-lower/src/emit.rs:ir_prec` | `crates/mapal-lower/tests/compute_type.rs` |
 
 ## Notes / divergences
 Per FRAMEWORK §6.6 — where code carries structure the model's diagram abstracts over, or

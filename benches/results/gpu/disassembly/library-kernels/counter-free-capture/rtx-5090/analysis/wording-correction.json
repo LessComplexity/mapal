@@ -1,0 +1,8 @@
+{
+  "scope": "Only two independently requested architecture/timing wording corrections; raw evidence and all numeric tables unchanged",
+  "prior_report_sha256": "9f48259d8d0bc6677cf68261b7e5ac08794a93d4f5b3f8789923ab7a3d122f57",
+  "report_sha256": "7ecfef55e7645b5af7bd6e855a36c2854de280982fd6f2e90302360dab939dc1",
+  "copyplan_sha256": "1f60c894a6e8b6301b667299e0b2779e52b5450a973268541785d173808302bf",
+  "FILES_sha256": "560f712d9c914c8fa6319a1564eec2426974504ecc4c144909f57effead0959e",
+  "independent_static_review": "/private/tmp/mapal-library-image-review/actual-sass-review/static-review.json"
+}

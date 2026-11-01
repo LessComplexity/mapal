@@ -1,0 +1,51 @@
+--- v59/verify_results.py
++++ allocation-gate/verify_results.py
+@@ -26,9 +26,8 @@
+     if manifest['profile'] != 'rtx-5090' or manifest['sm'] != 'sm_120' or not manifest['build_complete']:
+         raise ValueError('Wrong/incomplete bundle')
+     cases = {(row['case'], row['face']): row for row in manifest['cases']}
+-    expected_cases = {(name, face) for name in ['materialized-raw', 'forked-tile', 'omitted-raw',
+-                                              'member-rowfold', 'base-rowfold'] for face in ['exact', 'contract']}
+-    if len(manifest['cases']) != 10 or set(cases) != expected_cases:
++    expected_cases = {(name, face) for name in ['independent', 'diamond', 'mlp2', 'single-chain', 'materialized-raw', 'omitted-raw', 'forked-tile', 'loop'] for face in ['exact', 'contract']}
++    if len(manifest['cases']) != 16 or set(cases) != expected_cases:
+         raise ValueError('Wrong case/face inventory')
+     summary = json.loads((results / 'summary.json').read_text())
+     inventory(results, summary['files'], ['summary.json'])
+@@ -36,15 +35,15 @@
+     for data in [summary, receipt]:
+         if data['manifest_sha256'] != expected_manifest_sha:
+             raise ValueError('Result binding differs')
+-    if (not summary['pass'] or not summary['complete'] or summary['runs'] != 200 or summary['failed'] != 0
++    if (not summary['pass'] or not summary['complete'] or summary['runs'] != 320 or summary['failed'] != 0
+             or summary['error'] is not None or receipt['repetitions'] != 20):
+-        raise ValueError('Baseline requires exactly200 completed passing ordinary processes (20 per cell)')
++        raise ValueError('Baseline requires exactly320 completed passing ordinary processes (20 per cell)')
+     if receipt['runner_sha256'] != manifest['files']['box_ordering.py']:
+         raise ValueError('Runner differs')
+     if sha(results / 'build-receipt.json') != summary['build_receipt_sha256']:
+         raise ValueError('Build receipt differs')
+     builds = {row['stem']: row for row in receipt['builds']}
+-    if len(receipt['builds']) != 10 or set(builds) != {name + '-' + face for name, face in cases}:
++    if len(receipt['builds']) != 16 or set(builds) != {name + '-' + face for name, face in cases}:
+         raise ValueError('Incomplete/duplicate links')
+     for stem, build in builds.items():
+         if build['link']['exit'] or build['disassembly']['exit'] or sha(results / 'executables' / stem) != build['binary_sha256']:
+@@ -52,7 +51,7 @@
+     rows = [json.loads(line) for line in (results / 'runs.jsonl').read_text().splitlines()]
+     wanted = {(name, face, rep) for name, face in cases for rep in range(1, 21)}
+     keys = [(row['case'], row['face'], row['rep']) for row in rows]
+-    if len(keys) != 200 or set(keys) != wanted or sha(results / 'runs.jsonl') != summary['runs_sha256']:
++    if len(keys) != 320 or set(keys) != wanted or sha(results / 'runs.jsonl') != summary['runs_sha256']:
+         raise ValueError('Missing/duplicate/changed process records')
+     for row in rows:
+         name, face, rep = row['case'], row['face'], row['rep']
+@@ -74,7 +73,7 @@
+     actual_raw = {str(p.relative_to(results)) for p in results.rglob('*') if p.is_file() and p.name in ['stdout', 'stderr']}
+     if actual_raw != expected_raw:
+         raise ValueError('Unexpected/missing ordinary raw outputs')
+-    return {'pass': True, 'ordinary_processes': 200, 'case_face_cells': 10,
++    return {'pass': True, 'ordinary_processes': 320, 'case_face_cells': 16,
+             'manifest_sha256': expected_manifest_sha, 'summary_sha256': sha(results / 'summary.json'),
+             'runs_sha256': sha(results / 'runs.jsonl'),
+             'scope': 'exact observed ordinary outputs/statuses only; no universal ordering-safety proof'}

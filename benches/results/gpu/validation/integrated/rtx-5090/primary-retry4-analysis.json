@@ -1,0 +1,6013 @@
+{
+  "schema": "s57-integrated-compact-v1",
+  "session": "s57-integrated-rtx-5090-primary-retry4",
+  "profile": "rtx-5090",
+  "machine_id": 44652,
+  "host_id": 309734,
+  "results": "s57-integrated-rtx-5090-primary-retry4.txt",
+  "results_sha256": "568afad81b2d4b5e2d26bf7f0d44fb8267be9f08c372db60fd2e741dd5ed3ea5",
+  "verification": "s57-integrated-rtx-5090-primary-retry4.verification.json",
+  "verification_sha256": "e438ac23bd1e9c0c6793242f82210a6b71140e284f53926e6c0dccca86b8e8d5",
+  "provenance": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4.json",
+  "provenance_sha256": "a5c526e83d8ccb049a5f5f7222aceae47f5efe52610c975fd1b7a603517d24b4",
+  "exporter_sha256": "a4b35c51647b19111fb0234b89ad9d57d9183d57fc9da89d1bec4bdfff8230ea",
+  "summarizer_sha256": "09ec4b12525cf0d8943f53fc89d4020cdf65b58cf95e676e8c16e52990f03a2a",
+  "frozen_provenance": {
+    "validator": "/private/tmp/mapal-s56-gpu/verify_integrated.py",
+    "validator_sha256": "b5858a99feff07b1ff7f8b5b1683c46c9fa3f6f8807d98b8cd8077b7834ba7de",
+    "manifest": "/private/tmp/mapal-s56-gpu/integrated/rtx-5090-manifest.json",
+    "manifest_sha256": "26f9dda81ed78ccfa0d92791d9ffe55d4320039fb8bb4b1351352c70647a9afa",
+    "request": "/private/tmp/mapal-s56-gpu/integrated/results/rtx-5090-primary-retry4/request.json",
+    "request_sha256": "839ef798f51c31c9482b56f03399d20a8f7dc8db4a97d66ea492a47cbfdcafab"
+  },
+  "hardware": {
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce RTX 5090",
+        "driver_version": "615.78.08",
+        "clocks.max.sm [MHz]": "3090 MHz",
+        "clocks.current.sm [MHz]": "180 MHz",
+        "power.limit [W]": "450.00 W",
+        "temperature.gpu": "46",
+        "persistence_mode": "Enabled"
+      }
+    ],
+    "csv_columns": [
+      "name",
+      "driver_version",
+      "clocks.max.sm [MHz]",
+      "clocks.current.sm [MHz]",
+      "power.limit [W]",
+      "temperature.gpu",
+      "persistence_mode"
+    ]
+  },
+  "warnings": [
+    "No library comparison exists for twin: pt_twin_1024, pt_twin_2048, pt_twin_4096, pt_twin_512"
+  ],
+  "measurement_scope": {
+    "decode_baseline": "off-retain-resident+delta-h2d+lane-stride",
+    "decode_full_table_comparison": "unmeasured by existing timed-arm loop",
+    "decode_full_placement_disabled_comparison": "unmeasured by existing timed-arm loop"
+  },
+  "run_env": {
+    "DIFFERENTIAL_ONLY": "0",
+    "PROFILE": "1",
+    "PROBE_REPS": "5",
+    "E2E_REPS": "7",
+    "PROBE_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window off-streams on-streams",
+    "E2E_ARMS": "on off-arch-rungs off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+    "PROF_PROBES": "pt_epi_4096_c pt_mlp_4096_c pt_mlp2_4096_c pt_indep_4096_c pt_twin_4096_c",
+    "START_TRIES": "36"
+  },
+  "tables": {
+    "programs": {
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-programs.csv",
+      "sha256": "dab37498b8ce41b2a01a7313bff0aa9ad962530b4f875e2bdf9c56cdf93bbe6f",
+      "rows": 298,
+      "bytes": 187636
+    },
+    "kernels": {
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-kernels.csv",
+      "sha256": "aad2f6d369b11e3420ac31da14d586b51b0e42a055e9135a8df32987ba0b5cce",
+      "rows": 48,
+      "bytes": 23350
+    },
+    "libraries": {
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-libraries.csv",
+      "sha256": "b2c8b8d90a92f5c39db815e21eff4941a7ed66cb248b681cc556479ddd45f5b4",
+      "rows": 118,
+      "bytes": 44269
+    },
+    "losses": {
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-losses.csv",
+      "sha256": "7102d053d6ec756f6cc12a61271f29b5a24ed9597ecc3bfc4a832a35101a0dfd",
+      "rows": 755,
+      "bytes": 356625
+    },
+    "nulls": {
+      "path": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-integrated-rtx-5090-primary-retry4-nulls.csv",
+      "sha256": "b0e071544d8fabb6d513e592eb94bce22b2e1f5e5283a639b8f56c4ac9619453",
+      "rows": 12,
+      "bytes": 4545
+    }
+  },
+  "notes": {
+    "kernel_shipped_all_sizes": [
+      {
+        "kind": "kernel",
+        "program": "mm_1024",
+        "n": 1024,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4154,
+        "mapal_device_event_ms": {
+          "min": 0.057,
+          "median": 0.0573,
+          "max": 0.0625
+        },
+        "cublas_device_event_ms": {
+          "min": 0.0451,
+          "median": 0.0451,
+          "max": 0.0451
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.0939,
+          "median": 0.096,
+          "max": 0.0963
+        },
+        "library_over_mapal": {
+          "cublas": 0.787085514834206,
+          "cutlass": 1.6753926701570683
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_1024",
+        "n": 1024,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4118,
+        "mapal_device_event_ms": {
+          "min": 0.0693,
+          "median": 0.0696,
+          "max": 0.0748
+        },
+        "cublas_device_event_ms": {
+          "min": 0.0451,
+          "median": 0.0451,
+          "max": 0.0471
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.0939,
+          "median": 0.0959,
+          "max": 0.0993
+        },
+        "library_over_mapal": {
+          "cublas": 0.6479885057471265,
+          "cutlass": 1.377873563218391
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_1024",
+        "n": 1024,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4190,
+        "mapal_device_event_ms": {
+          "min": 0.0386,
+          "median": 0.0389,
+          "max": 0.041
+        },
+        "cublas_device_event_ms": {
+          "min": 0.0307,
+          "median": 0.0307,
+          "max": 0.0307
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.0509,
+          "median": 0.0532,
+          "max": 0.0532
+        },
+        "library_over_mapal": {
+          "cublas": 0.789203084832905,
+          "cutlass": 1.3676092544987146
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_1536",
+        "n": 1536,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4238,
+        "mapal_device_event_ms": {
+          "min": 0.1434,
+          "median": 0.1454,
+          "max": 0.1472
+        },
+        "cublas_device_event_ms": {
+          "min": 0.1208,
+          "median": 0.1229,
+          "max": 0.126
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.1349,
+          "median": 0.137,
+          "max": 0.1372
+        },
+        "library_over_mapal": {
+          "cublas": 0.8452544704264099,
+          "cutlass": 0.9422283356258597
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_1536",
+        "n": 1536,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4226,
+        "mapal_device_event_ms": {
+          "min": 0.2124,
+          "median": 0.213,
+          "max": 0.215
+        },
+        "cublas_device_event_ms": {
+          "min": 0.1208,
+          "median": 0.1209,
+          "max": 0.1209
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.1349,
+          "median": 0.1352,
+          "max": 0.1403
+        },
+        "library_over_mapal": {
+          "cublas": 0.5676056338028169,
+          "cutlass": 0.6347417840375587
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_1536",
+        "n": 1536,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4250,
+        "mapal_device_event_ms": {
+          "min": 0.0901,
+          "median": 0.0922,
+          "max": 0.0942
+        },
+        "cublas_device_event_ms": {
+          "min": 0.0778,
+          "median": 0.0778,
+          "max": 0.0819
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.0773,
+          "median": 0.0778,
+          "max": 0.0798
+        },
+        "library_over_mapal": {
+          "cublas": 0.843817787418655,
+          "cutlass": 0.843817787418655
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_2048",
+        "n": 2048,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4298,
+        "mapal_device_event_ms": {
+          "min": 0.3189,
+          "median": 0.3195,
+          "max": 0.3254
+        },
+        "cublas_device_event_ms": {
+          "min": 0.2724,
+          "median": 0.2745,
+          "max": 0.2745
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.3148,
+          "median": 0.3172,
+          "max": 0.3195
+        },
+        "library_over_mapal": {
+          "cublas": 0.8591549295774649,
+          "cutlass": 0.9928012519561814
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_2048",
+        "n": 2048,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4262,
+        "mapal_device_event_ms": {
+          "min": 0.5036,
+          "median": 0.5059,
+          "max": 0.5079
+        },
+        "cublas_device_event_ms": {
+          "min": 0.2724,
+          "median": 0.2745,
+          "max": 0.2745
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.3151,
+          "median": 0.3174,
+          "max": 0.3195
+        },
+        "library_over_mapal": {
+          "cublas": 0.5425973512551888,
+          "cutlass": 0.6273967187191145
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_2048",
+        "n": 2048,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4334,
+        "mapal_device_event_ms": {
+          "min": 0.225,
+          "median": 0.2253,
+          "max": 0.2304
+        },
+        "cublas_device_event_ms": {
+          "min": 0.1946,
+          "median": 0.1966,
+          "max": 0.1997
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.1984,
+          "median": 0.2004,
+          "max": 0.2007
+        },
+        "library_over_mapal": {
+          "cublas": 0.8726142920550377,
+          "cutlass": 0.8894806924101198
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_3072",
+        "n": 3072,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4382,
+        "mapal_device_event_ms": {
+          "min": 1.1244,
+          "median": 1.1937,
+          "max": 1.2001
+        },
+        "cublas_device_event_ms": {
+          "min": 0.9155,
+          "median": 0.9769,
+          "max": 0.9871
+        },
+        "cutlass_device_event_ms": {
+          "min": 1.0342,
+          "median": 1.0916,
+          "max": 1.1018
+        },
+        "library_over_mapal": {
+          "cublas": 0.8183798274273268,
+          "cutlass": 0.9144676216804891
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_3072",
+        "n": 3072,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4370,
+        "mapal_device_event_ms": {
+          "min": 1.6302,
+          "median": 1.7428,
+          "max": 1.751
+        },
+        "cublas_device_event_ms": {
+          "min": 0.9134,
+          "median": 0.9953,
+          "max": 0.9994
+        },
+        "cutlass_device_event_ms": {
+          "min": 1.0342,
+          "median": 1.1138,
+          "max": 1.1203
+        },
+        "library_over_mapal": {
+          "cublas": 0.5710924948358963,
+          "cutlass": 0.6390865274271287
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_3072",
+        "n": 3072,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4394,
+        "mapal_device_event_ms": {
+          "min": 0.6673,
+          "median": 0.6676,
+          "max": 0.6728
+        },
+        "cublas_device_event_ms": {
+          "min": 0.5898,
+          "median": 0.5919,
+          "max": 0.5919
+        },
+        "cutlass_device_event_ms": {
+          "min": 0.5878,
+          "median": 0.5898,
+          "max": 0.596
+        },
+        "library_over_mapal": {
+          "cublas": 0.8866087477531456,
+          "cutlass": 0.8834631515877771
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_4096",
+        "n": 4096,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4454,
+        "mapal_device_event_ms": {
+          "min": 2.4658,
+          "median": 2.6327,
+          "max": 2.645
+        },
+        "cublas_device_event_ms": {
+          "min": 2.262,
+          "median": 2.3869,
+          "max": 2.4054
+        },
+        "cutlass_device_event_ms": {
+          "min": 2.4771,
+          "median": 2.6171,
+          "max": 2.6523
+        },
+        "library_over_mapal": {
+          "cublas": 0.9066357731606336,
+          "cutlass": 0.9940745242526685
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_4096",
+        "n": 4096,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4406,
+        "mapal_device_event_ms": {
+          "min": 3.8595,
+          "median": 4.0694,
+          "max": 4.1438
+        },
+        "cublas_device_event_ms": {
+          "min": 2.2456,
+          "median": 2.3706,
+          "max": 2.4105
+        },
+        "cutlass_device_event_ms": {
+          "min": 2.4709,
+          "median": 2.5948,
+          "max": 2.6389
+        },
+        "library_over_mapal": {
+          "cublas": 0.5825428810144002,
+          "cutlass": 0.6376369980832556
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_4096",
+        "n": 4096,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4502,
+        "mapal_device_event_ms": {
+          "min": 1.5299,
+          "median": 1.546,
+          "max": 1.5503
+        },
+        "cublas_device_event_ms": {
+          "min": 1.3824,
+          "median": 1.3906,
+          "max": 1.3926
+        },
+        "cutlass_device_event_ms": {
+          "min": 1.364,
+          "median": 1.3701,
+          "max": 1.3763
+        },
+        "library_over_mapal": {
+          "cublas": 0.8994825355756791,
+          "cutlass": 0.886222509702458
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_8192",
+        "n": 8192,
+        "face": "_c",
+        "arm": "on",
+        "source_line": 4598,
+        "mapal_device_event_ms": {
+          "min": 20.2271,
+          "median": 21.0535,
+          "max": 76.6269
+        },
+        "cublas_device_event_ms": {
+          "min": 17.5759,
+          "median": 19.6209,
+          "max": 69.0667
+        },
+        "cutlass_device_event_ms": {
+          "min": 20.3602,
+          "median": 21.1026,
+          "max": 69.7896
+        },
+        "library_over_mapal": {
+          "cublas": 0.9319543068848409,
+          "cutlass": 1.0023321537986558
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_8192",
+        "n": 8192,
+        "face": "_exact",
+        "arm": "on",
+        "source_line": 4550,
+        "mapal_device_event_ms": {
+          "min": 29.9766,
+          "median": 34.6417,
+          "max": 92.3279
+        },
+        "cublas_device_event_ms": {
+          "min": 17.5084,
+          "median": 18.1412,
+          "max": 79.5976
+        },
+        "cutlass_device_event_ms": {
+          "min": 20.1492,
+          "median": 23.1762,
+          "max": 84.864
+        },
+        "library_over_mapal": {
+          "cublas": 0.5236809971796996,
+          "cutlass": 0.669026058189985
+        }
+      },
+      {
+        "kind": "kernel",
+        "program": "mm_8192",
+        "n": 8192,
+        "face": "_tf",
+        "arm": "on",
+        "source_line": 4646,
+        "mapal_device_event_ms": {
+          "min": 11.4043,
+          "median": 11.5948,
+          "max": 29.2628
+        },
+        "cublas_device_event_ms": {
+          "min": 9.986,
+          "median": 10.0475,
+          "max": 45.0857
+        },
+        "cutlass_device_event_ms": {
+          "min": 10.239,
+          "median": 10.3393,
+          "max": 44.247
+        },
+        "library_over_mapal": {
+          "cublas": 0.8665522475592508,
+          "cutlass": 0.8917187014868735
+        }
+      }
+    ],
+    "mlp2_4096": [
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_c",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2713,
+          2729,
+          2745,
+          2761,
+          2777
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 12.574667999999999,
+          "median": 12.862540999999998,
+          "max": 13.048773
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 221.355,
+          "median": 238.263,
+          "max": 659.558
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 10.691,
+          "median": 10.881,
+          "max": 11.08
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 227.504,
+          "median": 232.564,
+          "max": 249.124
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 14,
+            "max": 14,
+            "observed_values": [
+              14
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.2879367894153713,
+          "wall_ms": 1.1137688442211056,
+          "traced_kernel_ms": 1.09356783919598,
+          "traced_wall_ms": 1.1591455087373028
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.699993881457793,
+          "device_event_over_traced_kernel": 0.82746990166345
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_c",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          2715,
+          2731,
+          2747,
+          2763,
+          2779
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 34.609186,
+          "median": 35.956227000000005,
+          "max": 36.671215999999994
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 256.584,
+          "median": 262.853,
+          "max": 339.217
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 9.892,
+          "median": 9.908,
+          "max": 9.936
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 244.891,
+          "median": 253.613,
+          "max": 256.967
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12,
+            "max": 12,
+            "observed_values": [
+              12
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 134217728,
+            "max": 134217728,
+            "observed_values": [
+              134217728
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 134217744,
+            "max": 134217744,
+            "observed_values": [
+              134217744
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 3.600326526607013,
+          "wall_ms": 1.2287156713801566,
+          "traced_kernel_ms": 0.9957788944723618,
+          "traced_wall_ms": 1.2640579363417965
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.2504072521290957,
+          "device_event_over_traced_kernel": 0.9087303189341946
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_c",
+        "arm": "on",
+        "source_lines": [
+          2711,
+          2727,
+          2743,
+          2759,
+          2775
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 9.972568,
+          "median": 9.986934999999999,
+          "max": 9.995070000000002
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 202.554,
+          "median": 213.925,
+          "max": 404.607
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 9.947,
+          "median": 9.95,
+          "max": 9.966
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 197.387,
+          "median": 200.634,
+          "max": 214.461
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.0,
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 1.0
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.9015478722951538,
+          "device_event_over_traced_kernel": 0.9048944723618091
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_c",
+        "arm": "on-streams",
+        "source_lines": [
+          2717,
+          2733,
+          2749,
+          2765,
+          2781
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 11.857985,
+          "median": 11.862434,
+          "max": 11.965989
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 225.525,
+          "median": 232.135,
+          "max": 236.58
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 9.995,
+          "median": 10.002,
+          "max": 10.015
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 231.215,
+          "median": 234.08,
+          "max": 243.36
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 14,
+            "max": 14,
+            "observed_values": [
+              14
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.1877952545000043,
+          "wall_ms": 1.0851232908729693,
+          "traced_kernel_ms": 1.0052261306532664,
+          "traced_wall_ms": 1.1667015560672669
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.7590094916439577,
+          "device_event_over_traced_kernel": 0.9001899620075985
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2705,
+          2721,
+          2737,
+          2753,
+          2769
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 18.726184999999997,
+          "median": 18.955007000000002,
+          "max": 18.964915
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 240.205,
+          "median": 253.787,
+          "max": 865.328
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 16.735,
+          "median": 17.002,
+          "max": 17.152
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 232.205,
+          "median": 237.184,
+          "max": 249.543
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 14,
+            "max": 14,
+            "observed_values": [
+              14
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.2264562067299067,
+          "wall_ms": 1.2043173524540767,
+          "traced_kernel_ms": 1.103810945919626,
+          "traced_wall_ms": 1.0814369673951203
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.4750037813227924,
+          "device_event_over_traced_kernel": 0.529567109751794
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_exact",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          2707,
+          2723,
+          2739,
+          2755,
+          2771
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 41.586710999999994,
+          "median": 42.82671,
+          "max": 43.682415
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 254.552,
+          "median": 263.741,
+          "max": 380.291
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 15.32,
+          "median": 15.325,
+          "max": 15.349
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 253.028,
+          "median": 262.484,
+          "max": 269.709
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12,
+            "max": 12,
+            "observed_values": [
+              12
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 134217728,
+            "max": 134217728,
+            "observed_values": [
+              134217728
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 134217744,
+            "max": 134217744,
+            "observed_values": [
+              134217744
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 2.7710400894772422,
+          "wall_ms": 1.2515529276660766,
+          "traced_kernel_ms": 0.9949360514185548,
+          "traced_wall_ms": 1.1967919461251213
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.21023562164826579,
+          "device_event_over_traced_kernel": 0.5875171288743883
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_exact",
+        "arm": "on",
+        "source_lines": [
+          2703,
+          2719,
+          2735,
+          2751,
+          2767
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 15.40559,
+          "median": 15.455103000000001,
+          "max": 15.46987
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 204.9,
+          "median": 210.731,
+          "max": 535.814
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 15.399,
+          "median": 15.403,
+          "max": 15.413
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 207.086,
+          "median": 219.323,
+          "max": 224.583
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.0,
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 1.0
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.5825713358235141,
+          "device_event_over_traced_kernel": 0.58454197234305
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_mlp2_4096",
+        "face": "_exact",
+        "arm": "on-streams",
+        "source_lines": [
+          2709,
+          2725,
+          2741,
+          2757,
+          2773
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 17.346632,
+          "median": 17.367932,
+          "max": 17.397668000000003
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 227.816,
+          "median": 241.725,
+          "max": 246.93
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 15.43,
+          "median": 15.438,
+          "max": 15.455
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 232.966,
+          "median": 240.132,
+          "max": 260.081
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 14,
+            "max": 14,
+            "observed_values": [
+              14
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.1237668231651383,
+          "wall_ms": 1.1470785029255306,
+          "traced_kernel_ms": 1.0022722846198793,
+          "traced_wall_ms": 1.0948783301340945
+        },
+        "best_library": {
+          "leg": "lt2",
+          "line": 2795,
+          "device_event_ms": {
+            "min": 8.772,
+            "median": 9.0037,
+            "max": 29.3516
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2787
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.5184094456380876,
+          "device_event_over_traced_kernel": 0.5832167379194196
+        }
+      }
+    ],
+    "decode": [
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "off-delta-h2d",
+        "source_lines": [
+          4033,
+          4061,
+          4075,
+          4089,
+          4103
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 476.0,
+          "median": 480.0,
+          "max": 491.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 79.617,
+          "median": 80.039,
+          "max": 80.185
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.0666666666666667,
+          "traced_kernel_ms": 1.1099262258708675
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.03634166666666667,
+            "device_event_over_mapal_traced_kernel": 0.21779382551006382
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.04268541666666667,
+            "device_event_over_mapal_traced_kernel": 0.255925236447232
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "off-lane-stride",
+        "source_lines": [
+          4037,
+          4062,
+          4076,
+          4090,
+          4104
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 576.0,
+          "median": 579.0,
+          "max": 585.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 48.816,
+          "median": 48.982,
+          "max": 49.372
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 6290432,
+            "max": 6290432,
+            "observed_values": [
+              6290432
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 3072,
+            "max": 3072,
+            "observed_values": [
+              3072
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.2866666666666666,
+          "traced_kernel_ms": 0.6792489460838695
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.030127806563039723,
+            "device_event_over_mapal_traced_kernel": 0.35588583561308235
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.035386873920552675,
+            "device_event_over_mapal_traced_kernel": 0.418194438773427
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "off-retain-delta+resident",
+        "source_lines": [
+          4048,
+          4065,
+          4079,
+          4093,
+          4107
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 1276.0,
+          "median": 1292.0,
+          "max": 1304.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 159.446,
+          "median": 160.394,
+          "max": 161.765
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12288,
+            "max": 12288,
+            "observed_values": [
+              12288
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 8192,
+            "max": 8192,
+            "observed_values": [
+              8192
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 4837081088,
+            "max": 4837081088,
+            "observed_values": [
+              4837081088
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 2152726528,
+            "max": 2152726528,
+            "observed_values": [
+              2152726528
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 2.871111111111111,
+          "traced_kernel_ms": 2.2242345240736636
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.0135015479876161,
+            "device_event_over_mapal_traced_kernel": 0.10868236966470066
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.015858359133126936,
+            "device_event_over_mapal_traced_kernel": 0.12771051286207713
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "off-retain-resident+delta-h2d+lane-stride",
+        "source_lines": [
+          4040,
+          4063,
+          4077,
+          4091,
+          4105
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 611.0,
+          "median": 612.0,
+          "max": 622.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 56.922,
+          "median": 57.335,
+          "max": 57.484
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 1077936128,
+            "max": 1077936128,
+            "observed_values": [
+              1077936128
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 3072,
+            "max": 3072,
+            "observed_values": [
+              3072
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.36,
+          "traced_kernel_ms": 0.7950826492123364
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.028503267973856206,
+            "device_event_over_mapal_traced_kernel": 0.3040376733234499
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.03347875816993464,
+            "device_event_over_mapal_traced_kernel": 0.3572686840498823
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "on",
+        "source_lines": [
+          4024,
+          4059,
+          4073,
+          4087,
+          4101
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 440.0,
+          "median": 450.0,
+          "max": 460.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 72.027,
+          "median": 72.112,
+          "max": 72.28
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 3144704,
+            "max": 3144704,
+            "observed_values": [
+              3144704
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.03876444444444444,
+            "device_event_over_mapal_traced_kernel": 0.24173507876636344
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.04553111111111111,
+            "device_event_over_mapal_traced_kernel": 0.2840581317949856
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "on-retain-delta",
+        "source_lines": [
+          4043,
+          4064,
+          4078,
+          4092,
+          4106
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 869.0,
+          "median": 873.0,
+          "max": 882.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 147.057,
+          "median": 147.255,
+          "max": 147.393
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12288,
+            "max": 12288,
+            "observed_values": [
+              12288
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 8192,
+            "max": 8192,
+            "observed_values": [
+              8192
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 2693789696,
+            "max": 2693789696,
+            "observed_values": [
+              2693789696
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 9435136,
+            "max": 9435136,
+            "observed_values": [
+              9435136
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.94,
+          "traced_kernel_ms": 2.042031839360994
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.019981672394043526,
+            "device_event_over_mapal_traced_kernel": 0.11837968150487249
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.023469644902634593,
+            "device_event_over_mapal_traced_kernel": 0.139105633085464
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_c",
+        "arm": "on-retain-resident",
+        "source_lines": [
+          4028,
+          4060,
+          4074,
+          4088,
+          4102
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 433.0,
+          "median": 436.0,
+          "max": 446.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 67.136,
+          "median": 67.399,
+          "max": 67.459
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 3144704,
+            "max": 3144704,
+            "observed_values": [
+              3144704
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 0.9688888888888889,
+          "traced_kernel_ms": 0.9346433325937431
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.040009174311926604,
+            "device_event_over_mapal_traced_kernel": 0.2586388522084897
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.046993119266055046,
+            "device_event_over_mapal_traced_kernel": 0.3039214231665158
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "off-delta-h2d",
+        "source_lines": [
+          4005,
+          4054,
+          4068,
+          4082,
+          4096
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 473.0,
+          "median": 479.0,
+          "max": 492.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 82.602,
+          "median": 82.675,
+          "max": 82.984
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.0527472527472528,
+          "traced_kernel_ms": 1.1039672047964322
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.036417536534446765,
+            "device_event_over_mapal_traced_kernel": 0.21084971273057151
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.04277453027139875,
+            "device_event_over_mapal_traced_kernel": 0.24776534623525856
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "off-lane-stride",
+        "source_lines": [
+          4009,
+          4055,
+          4069,
+          4083,
+          4097
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 582.0,
+          "median": 590.0,
+          "max": 598.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 51.628,
+          "median": 51.695,
+          "max": 51.983
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 6290432,
+            "max": 6290432,
+            "observed_values": [
+              6290432
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 3072,
+            "max": 3072,
+            "observed_values": [
+              3072
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.2967032967032968,
+          "traced_kernel_ms": 0.6902882933408111
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.02956610169491525,
+            "device_event_over_mapal_traced_kernel": 0.3372086275268401
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.0347271186440678,
+            "device_event_over_mapal_traced_kernel": 0.3962472192668537
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "off-retain-delta+resident",
+        "source_lines": [
+          4020,
+          4058,
+          4072,
+          4086,
+          4100
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 1290.0,
+          "median": 1295.0,
+          "max": 1317.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 162.633,
+          "median": 163.06,
+          "max": 163.582
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12288,
+            "max": 12288,
+            "observed_values": [
+              12288
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 8192,
+            "max": 8192,
+            "observed_values": [
+              8192
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 4837081088,
+            "max": 4837081088,
+            "observed_values": [
+              4837081088
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 2152726528,
+            "max": 2152726528,
+            "observed_values": [
+              2152726528
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 2.8461538461538463,
+          "traced_kernel_ms": 2.177355819946855
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.01347027027027027,
+            "device_event_over_mapal_traced_kernel": 0.10690543358273027
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.015821621621621623,
+            "device_event_over_mapal_traced_kernel": 0.12562247025634737
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "off-retain-resident+delta-h2d+lane-stride",
+        "source_lines": [
+          4012,
+          4056,
+          4070,
+          4084,
+          4098
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 620.0,
+          "median": 625.0,
+          "max": 633.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 59.443,
+          "median": 59.931,
+          "max": 60.002
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 1077936128,
+            "max": 1077936128,
+            "observed_values": [
+              1077936128
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1074790400,
+            "max": 1074790400,
+            "observed_values": [
+              1074790400
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 3072,
+            "max": 3072,
+            "observed_values": [
+              3072
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.3736263736263736,
+          "traced_kernel_ms": 0.8002643912991227
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.0279104,
+            "device_event_over_mapal_traced_kernel": 0.2908678313393736
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.0327824,
+            "device_event_over_mapal_traced_kernel": 0.3417930620213246
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "on",
+        "source_lines": [
+          3996,
+          4052,
+          4066,
+          4080,
+          4094
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 446.0,
+          "median": 455.0,
+          "max": 458.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 74.78,
+          "median": 74.889,
+          "max": 75.05
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 3144704,
+            "max": 3144704,
+            "observed_values": [
+              3144704
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.03833846153846154,
+            "device_event_over_mapal_traced_kernel": 0.2327711679952997
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.045030769230769235,
+            "device_event_over_mapal_traced_kernel": 0.2735248167287586
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "on-retain-delta",
+        "source_lines": [
+          4015,
+          4057,
+          4071,
+          4085,
+          4099
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 879.0,
+          "median": 882.0,
+          "max": 888.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 149.788,
+          "median": 150.01,
+          "max": 150.328
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 12288,
+            "max": 12288,
+            "observed_values": [
+              12288
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 8192,
+            "max": 8192,
+            "observed_values": [
+              8192
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 2693789696,
+            "max": 2693789696,
+            "observed_values": [
+              2693789696
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 9435136,
+            "max": 9435136,
+            "observed_values": [
+              9435136
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 1.9384615384615385,
+          "traced_kernel_ms": 2.003097918252347
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.019777777777777776,
+            "device_event_over_mapal_traced_kernel": 0.11620558629424704
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.02323015873015873,
+            "device_event_over_mapal_traced_kernel": 0.1365508966068929
+          }
+        ]
+      },
+      {
+        "kind": "decode",
+        "program": "decode_1024_256",
+        "face": "_exact",
+        "arm": "on-retain-resident",
+        "source_lines": [
+          4000,
+          4053,
+          4067,
+          4081,
+          4095
+        ],
+        "wall_ms": {
+          "count": 5,
+          "min": 435.0,
+          "median": 446.0,
+          "max": 456.0
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 70.204,
+          "median": 70.258,
+          "max": 70.339
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 2048,
+            "max": 2048,
+            "observed_values": [
+              2048
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1024,
+            "max": 1024,
+            "observed_values": [
+              1024
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 3144704,
+            "max": 3144704,
+            "observed_values": [
+              3144704
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 1048576,
+            "max": 1048576,
+            "observed_values": [
+              1048576
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 4096,
+            "max": 4096,
+            "observed_values": [
+              4096
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "wall_ms": 0.9802197802197802,
+          "traced_kernel_ms": 0.9381618128163014
+        },
+        "library_comparisons": [
+          {
+            "leg": "cache",
+            "host_loop_wall_over_mapal_process_wall": 0.03911210762331838,
+            "device_event_over_mapal_traced_kernel": 0.24811409376868115
+          },
+          {
+            "leg": "nocache",
+            "host_loop_wall_over_mapal_process_wall": 0.04593946188340808,
+            "device_event_over_mapal_traced_kernel": 0.29155398673460675
+          }
+        ]
+      }
+    ],
+    "decode_libraries": [
+      {
+        "leg": "cache",
+        "T": 1024,
+        "d": 256,
+        "line": 4115,
+        "repetitions": 30,
+        "host_loop_wall_ms": {
+          "min": 17.393,
+          "max": 17.523,
+          "median": 17.444
+        },
+        "device_event_ms": {
+          "median": 17.432
+        },
+        "gate": {
+          "gate": "pass",
+          "line": 4113
+        }
+      },
+      {
+        "leg": "nocache",
+        "T": 1024,
+        "d": 256,
+        "line": 4116,
+        "repetitions": 30,
+        "host_loop_wall_ms": {
+          "min": 20.474,
+          "max": 20.503,
+          "median": 20.489
+        },
+        "device_event_ms": {
+          "median": 20.484
+        },
+        "gate": {
+          "gate": "pass",
+          "line": 4114
+        }
+      }
+    ],
+    "own_session_kernel_nulls": {
+      "_exact 1024": 1.0,
+      "_c 1024": 1.0,
+      "_tf 1024": 1.0,
+      "_exact 2048": 0.9966509062253742,
+      "_c 2048": 1.0,
+      "_tf 2048": 0.9912010558732953,
+      "_exact 4096": 0.9983046524284124,
+      "_c 4096": 0.9994372294306944,
+      "_tf 4096": 0.998489860491874,
+      "_exact 8192": 0.7036268305812066,
+      "_c 8192": 1.001669247880795,
+      "_tf 8192": 0.9996052540254244
+    },
+    "max_abs_kernel_null_deviation": 0.29637316941879344,
+    "largest_iteration_tails": [
+      {
+        "kind": "probe",
+        "program": "pt_indep_512",
+        "face": "_c",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2346,
+          2358,
+          2370,
+          2382,
+          2394
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.20888400000000001,
+          "median": 0.210377,
+          "max": 0.47815199999999997
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 166.218,
+          "median": 208.75,
+          "max": 271.968
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.045,
+          "median": 0.046,
+          "max": 0.05
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 184.917,
+          "median": 196.984,
+          "max": 207.75
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 4.836030527332077,
+          "wall_ms": 0.9962726279166328,
+          "traced_kernel_ms": 1.2432432432432432,
+          "traced_wall_ms": 1.0436736056288776
+        },
+        "best_library": {
+          "leg": "streams",
+          "line": 2405,
+          "device_event_ms": {
+            "min": 0.0248,
+            "median": 0.0249,
+            "max": 0.0287
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2400
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.118358946082509,
+          "device_event_over_traced_kernel": 0.5413043478260869
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_twin_512",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          3915,
+          3931,
+          3947,
+          3963,
+          3979
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.143321,
+          "median": 0.159692,
+          "max": 0.285902
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 195.493,
+          "median": 211.635,
+          "max": 240.829
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.052,
+          "median": 0.057,
+          "max": 0.061
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 194.089,
+          "median": 207.552,
+          "max": 216.677
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 3.8913202397777673,
+          "wall_ms": 1.09491486840948,
+          "traced_kernel_ms": 1.5405405405405406,
+          "traced_wall_ms": 1.002390646053985
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_indep_512",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2340,
+          2352,
+          2364,
+          2376,
+          2388
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.194136,
+          "median": 0.234312,
+          "max": 0.417428
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 200.986,
+          "median": 208.162,
+          "max": 242.179
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.046,
+          "median": 0.05,
+          "max": 0.072
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 190.566,
+          "median": 205.848,
+          "max": 212.62
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 5.096287274071819,
+          "wall_ms": 1.0095150339476238,
+          "traced_kernel_ms": 1.3513513513513515,
+          "traced_wall_ms": 1.0567525527097996
+        },
+        "best_library": {
+          "leg": "streams",
+          "line": 2405,
+          "device_event_ms": {
+            "min": 0.0248,
+            "median": 0.0249,
+            "max": 0.0287
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2400
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.10626856499026938,
+          "device_event_over_traced_kernel": 0.49799999999999994
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_twin_512",
+        "face": "_exact",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          3917,
+          3933,
+          3949,
+          3965,
+          3981
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.130306,
+          "median": 0.20321499999999998,
+          "max": 0.336116
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 202.559,
+          "median": 211.956,
+          "max": 262.978
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.036,
+          "median": 0.037,
+          "max": 0.044
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 162.802,
+          "median": 204.329,
+          "max": 207.357
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 4.95187387299576,
+          "wall_ms": 1.0965755940586377,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 0.9868248839691487
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_indep_512",
+        "face": "_exact",
+        "arm": "on",
+        "source_lines": [
+          2338,
+          2350,
+          2362,
+          2374,
+          2386
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.044554,
+          "median": 0.045977,
+          "max": 0.07137500000000001
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 203.988,
+          "median": 206.2,
+          "max": 231.783
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.036,
+          "median": 0.037,
+          "max": 0.038
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 186.24,
+          "median": 194.793,
+          "max": 206.149
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.0,
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 1.0
+        },
+        "best_library": {
+          "leg": "streams",
+          "line": 2405,
+          "device_event_ms": {
+            "min": 0.0248,
+            "median": 0.0249,
+            "max": 0.0287
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2400
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.5415751353937839,
+          "device_event_over_traced_kernel": 0.672972972972973
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_twin_1024",
+        "face": "_exact",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          3711,
+          3723,
+          3735,
+          3747,
+          3759
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.32487499999999997,
+          "median": 0.36054300000000006,
+          "max": 0.535163
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 192.695,
+          "median": 197.979,
+          "max": 242.672
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.146,
+          "median": 0.152,
+          "max": 0.154
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 155.8,
+          "median": 201.826,
+          "max": 211.176
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16,
+            "max": 16,
+            "observed_values": [
+              16
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 2.2154813258120423,
+          "wall_ms": 0.957706485037877,
+          "traced_kernel_ms": 1.0133333333333334,
+          "traced_wall_ms": 1.0139258693620825
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_ew_4096",
+        "face": "_exact",
+        "arm": "on",
+        "source_lines": [
+          1764,
+          1776,
+          1788,
+          1800,
+          1812
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.195269,
+          "median": 0.208854,
+          "max": 0.304905
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 186.732,
+          "median": 200.668,
+          "max": 209.339
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.05,
+          "median": 0.056,
+          "max": 0.059
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 189.119,
+          "median": 196.389,
+          "max": 206.785
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.0,
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 1.0
+        },
+        "best_library": {
+          "leg": "fused",
+          "line": 1829,
+          "device_event_ms": {
+            "min": 0.1311,
+            "median": 0.1311,
+            "max": 0.1311
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1826
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.6277112241087075,
+          "device_event_over_traced_kernel": 2.3410714285714285
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_ew_4096",
+        "face": "_c",
+        "arm": "on",
+        "source_lines": [
+          1770,
+          1782,
+          1794,
+          1806,
+          1818
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.189557,
+          "median": 0.203824,
+          "max": 0.29678
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 157.351,
+          "median": 193.79,
+          "max": 198.747
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.05,
+          "median": 0.057,
+          "max": 0.058
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 188.929,
+          "median": 198.01,
+          "max": 224.716
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 1.0,
+          "wall_ms": 1.0,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 1.0
+        },
+        "best_library": {
+          "leg": "fused",
+          "line": 1829,
+          "device_event_ms": {
+            "min": 0.1311,
+            "median": 0.1311,
+            "max": 0.1311
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1826
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.6432019781772509,
+          "device_event_over_traced_kernel": 2.3
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_epi_2048",
+        "face": "_c",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          1567,
+          1579,
+          1591,
+          1603,
+          1615
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 2.451586,
+          "median": 2.480961,
+          "max": 3.435031
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 205.034,
+          "median": 210.704,
+          "max": 217.998
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.322,
+          "median": 0.324,
+          "max": 0.325
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 203.732,
+          "median": 209.533,
+          "max": 218.242
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 3,
+            "max": 3,
+            "observed_values": [
+              3
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16777216,
+            "max": 16777216,
+            "observed_values": [
+              16777216
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 7.2769752414697315,
+          "wall_ms": 1.0133117882425362,
+          "traced_kernel_ms": 1.0,
+          "traced_wall_ms": 0.9954581949650575
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 1623,
+          "device_event_ms": {
+            "min": 0.2724,
+            "median": 0.2765,
+            "max": 0.2786
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1619
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.1114487490935972,
+          "device_event_over_traced_kernel": 0.8533950617283951
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_indep_512",
+        "face": "_exact",
+        "arm": "off-epilogue+devmap+cell-law+rowfold+rowfold-layout+streams+pinned+pdl+arena+retain-resident+delta-h2d+lane-stride+l2-window",
+        "source_lines": [
+          2342,
+          2354,
+          2366,
+          2378,
+          2390
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.43020099999999994,
+          "median": 0.475688,
+          "max": 0.654175
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 200.038,
+          "median": 201.691,
+          "max": 234.1
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.038,
+          "median": 0.045,
+          "max": 0.047
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 199.463,
+          "median": 204.749,
+          "max": 209.645
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 6,
+            "max": 6,
+            "observed_values": [
+              6
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 2097152,
+            "max": 2097152,
+            "observed_values": [
+              2097152
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 4,
+            "max": 4,
+            "observed_values": [
+              4
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 10.346216586554148,
+          "wall_ms": 0.9781328806983511,
+          "traced_kernel_ms": 1.2162162162162162,
+          "traced_wall_ms": 1.0511106661943703
+        },
+        "best_library": {
+          "leg": "streams",
+          "line": 2405,
+          "device_event_ms": {
+            "min": 0.0248,
+            "median": 0.0249,
+            "max": 0.0287
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2400
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.05234523469164662,
+          "device_event_over_traced_kernel": 0.5533333333333333
+        }
+      }
+    ],
+    "shipped_iteration_losses_to_controls": [
+      {
+        "kind": "probe",
+        "program": "pt_bias_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          1127,
+          1139,
+          1151,
+          1163,
+          1175
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.550098,
+          "median": 0.552212,
+          "max": 0.563132
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 199.884,
+          "median": 208.397,
+          "max": 308.732
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.515,
+          "median": 0.517,
+          "max": 0.518
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 164.832,
+          "median": 203.649,
+          "max": 212.614
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 3,
+            "max": 3,
+            "observed_values": [
+              3
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.9911886286820997,
+          "wall_ms": 0.9936773744415252,
+          "traced_kernel_ms": 0.988527724665392,
+          "traced_wall_ms": 0.9805147908481627
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 1191,
+          "device_event_ms": {
+            "min": 0.2724,
+            "median": 0.2745,
+            "max": 0.2786
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1187
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.497091696667222,
+          "device_event_over_traced_kernel": 0.5309477756286267
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_epi_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          1559,
+          1571,
+          1583,
+          1595,
+          1607
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.533938,
+          "median": 0.5513809999999999,
+          "max": 0.555528
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 203.981,
+          "median": 206.533,
+          "max": 280.894
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.515,
+          "median": 0.516,
+          "max": 0.517
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 197.504,
+          "median": 204.823,
+          "max": 206.239
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.998603645373013,
+          "wall_ms": 0.9845500395663904,
+          "traced_kernel_ms": 1.0019417475728156,
+          "traced_wall_ms": 1.0081161959699567
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 1623,
+          "device_event_ms": {
+            "min": 0.2724,
+            "median": 0.2765,
+            "max": 0.2786
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1619
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.5014681318362441,
+          "device_event_over_traced_kernel": 0.5358527131782946
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_ew_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          1699,
+          1711,
+          1723,
+          1735,
+          1747
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.166124,
+          "median": 0.207642,
+          "max": 0.278375
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 188.779,
+          "median": 198.046,
+          "max": 199.922
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.026,
+          "median": 0.036,
+          "max": 0.066
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 162.945,
+          "median": 196.047,
+          "max": 207.778
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.876322553144796,
+          "wall_ms": 1.0190854031913634,
+          "traced_kernel_ms": 1.125,
+          "traced_wall_ms": 0.9351915013380526
+        },
+        "best_library": {
+          "leg": "fused",
+          "line": 1762,
+          "device_event_ms": {
+            "min": 0.0348,
+            "median": 0.0348,
+            "max": 0.0369
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 1759
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.16759615106770306,
+          "device_event_over_traced_kernel": 0.9666666666666667
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_loop_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2413,
+          2425,
+          2437,
+          2449,
+          2461
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 28.973781000000002,
+          "median": 29.496547000000003,
+          "max": 31.702578999999997
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 235.202,
+          "median": 242.941,
+          "max": 316.381
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 4.099,
+          "median": 4.112,
+          "max": 4.132
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 231.12,
+          "median": 234.344,
+          "max": 244.091
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 3,
+            "max": 3,
+            "observed_values": [
+              3
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 16777216,
+            "max": 16777216,
+            "observed_values": [
+              16777216
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.9953631233035509,
+          "wall_ms": 0.995476244135303,
+          "traced_kernel_ms": 1.0029268292682927,
+          "traced_wall_ms": 1.0010038059194648
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 2477,
+          "device_event_ms": {
+            "min": 2.0948,
+            "median": 2.1914,
+            "max": 2.2282
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2473
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.07429344187304364,
+          "device_event_over_traced_kernel": 0.5329280155642022
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_loop_4096",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          2483,
+          2495,
+          2507,
+          2519,
+          2531
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 126.66395400000002,
+          "median": 127.196077,
+          "max": 133.52384800000002
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 339.036,
+          "median": 349.076,
+          "max": 529.241
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 31.761,
+          "median": 32.579,
+          "max": 32.659
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 371.076,
+          "median": 373.466,
+          "max": 379.133
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 3,
+            "max": 3,
+            "observed_values": [
+              3
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 67108864,
+            "max": 67108864,
+            "observed_values": [
+              67108864
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 7,
+            "max": 7,
+            "observed_values": [
+              7
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.9915331990247721,
+          "wall_ms": 0.995627607962146,
+          "traced_kernel_ms": 1.1231426896955907,
+          "traced_wall_ms": 1.0242552561282643
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 2547,
+          "device_event_ms": {
+            "min": 17.0117,
+            "median": 17.8668,
+            "max": 69.2828
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 2543
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.14046659630862673,
+          "device_event_over_traced_kernel": 0.5484146229166027
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_residual_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          3297,
+          3309,
+          3321,
+          3333,
+          3345
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.550834,
+          "median": 0.5518249999999999,
+          "max": 0.565621
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 163.88,
+          "median": 197.701,
+          "max": 283.037
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.517,
+          "median": 0.518,
+          "max": 0.519
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 180.109,
+          "median": 208.799,
+          "max": 240.186
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.9865997997568475,
+          "wall_ms": 0.938118647445692,
+          "traced_kernel_ms": 0.9904397705544933,
+          "traced_wall_ms": 1.0597266420004974
+        },
+        "best_library": {
+          "leg": "lt",
+          "line": 3361,
+          "device_event_ms": {
+            "min": 0.2745,
+            "median": 0.2765,
+            "max": 0.2786
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 3357
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.5010646491188331,
+          "device_event_over_traced_kernel": 0.5337837837837838
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_rowsum_2048",
+        "face": "_exact",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          3437,
+          3449,
+          3461,
+          3473,
+          3485
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 0.562856,
+          "median": 0.5824029999999999,
+          "max": 0.583755
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 203.456,
+          "median": 208.288,
+          "max": 291.55
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.534,
+          "median": 0.553,
+          "max": 0.571
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 190.64,
+          "median": 199.888,
+          "max": 201.038
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 8,
+            "max": 8,
+            "observed_values": [
+              8
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.991504835774345,
+          "wall_ms": 1.005318892203141,
+          "traced_kernel_ms": 0.9910394265232975,
+          "traced_wall_ms": 1.0103466925460345
+        },
+        "best_library": {
+          "leg": "eager",
+          "line": 3499,
+          "device_event_ms": {
+            "min": 0.2765,
+            "median": 0.2785,
+            "max": 0.2827
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 3497
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.47819121810842335,
+          "device_event_over_traced_kernel": 0.5036166365280289
+        }
+      },
+      {
+        "kind": "probe",
+        "program": "pt_softmax_rows_2048",
+        "face": "_c",
+        "arm": "off-arch-rungs",
+        "source_lines": [
+          3579,
+          3591,
+          3603,
+          3615,
+          3627
+        ],
+        "iter_ms": {
+          "count": 5,
+          "min": 3.9502309999999996,
+          "median": 4.074457,
+          "max": 4.282750999999999
+        },
+        "wall_ms": {
+          "count": 5,
+          "min": 204.231,
+          "median": 220.957,
+          "max": 261.358
+        },
+        "traced_kernel_ms": {
+          "count": 5,
+          "min": 0.406,
+          "median": 0.409,
+          "max": 0.437
+        },
+        "traced_wall_ms": {
+          "count": 5,
+          "min": 196.009,
+          "median": 206.197,
+          "max": 216.974
+        },
+        "trace_process_counts": {
+          "allocs": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "h2d": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "d2h": {
+            "observations": 5,
+            "min": 1,
+            "max": 1,
+            "observed_values": [
+              1
+            ]
+          },
+          "bytes_in": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "bytes_out": {
+            "observations": 5,
+            "min": 16777216,
+            "max": 16777216,
+            "observed_values": [
+              16777216
+            ]
+          },
+          "launches": {
+            "observations": 5,
+            "min": 3,
+            "max": 3,
+            "observed_values": [
+              3
+            ]
+          },
+          "gens": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "events": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          },
+          "pdl": {
+            "observations": 5,
+            "min": 2,
+            "max": 2,
+            "observed_values": [
+              2
+            ]
+          },
+          "pins": {
+            "observations": 5,
+            "min": 0,
+            "max": 0,
+            "observed_values": [
+              0
+            ]
+          }
+        },
+        "arm_over_shipped": {
+          "iter_ms": 0.9877272772450881,
+          "wall_ms": 1.0574533864236761,
+          "traced_kernel_ms": 1.0623376623376624,
+          "traced_wall_ms": 0.9964192173501243
+        },
+        "best_library": {
+          "leg": "eager",
+          "line": 3635,
+          "device_event_ms": {
+            "min": 0.301,
+            "median": 0.3031,
+            "max": 0.3072
+          },
+          "gate": {
+            "gate": "pass",
+            "line": 3633
+          }
+        },
+        "best_library_over_mapal": {
+          "device_event_over_untraced_iter": 0.0743902807171606,
+          "device_event_over_traced_kernel": 0.7410757946210269
+        }
+      }
+    ],
+    "loss_definition": "Every reported ratio below 1; no tolerance or significance claim. For arm/shipped this means shipped is slower; for library/Mapal this means Mapal is slower. Cross-domain comparisons remain explicitly labeled; all arms are retained."
+  },
+  "comparison_limits": "Probe library CUDA events and Mapal iteration have different scopes. Decode library host-loop wall excludes Mapal whole-process setup. Traced kernels serialize overlap. All ratio<1 entries are retained without tolerance/significance filtering."
+}

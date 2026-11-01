@@ -48,7 +48,7 @@ Never recover a mixed/tail block by filtering. In the `has_arm` branch:
 2. `cargo test --workspace --release` — lower/check/golden consumers must stay
    green (they see complete ASTs now; any behavior change must be a loud
    rejection, and the suite will say if one exists).
-3. Emit-sweep diff vs `benches/results-s48/emit-baseline.hashes` — expected
+3. Emit-sweep diff vs `benches/results/compiler/emission-equivalence/emit-baseline.hashes` — expected
    empty (no example uses a mixed guard block; a diff here means the fix
    changed accepted programs, which must then be justified row by row).
 4. numpy A/B N=4096 stays in the baseline band (39–40 ms median).

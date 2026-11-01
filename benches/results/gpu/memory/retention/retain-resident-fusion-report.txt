@@ -1,0 +1,137 @@
+S54 item 5 `retain-resident` (R5) + `delta-h2d` + `lane-stride` (R0 for strided one-row sites)
+— fusion report, before (s54-base @ 94044fb) and after (s54/retain-resident), no GPU needed.
+
+== 1. Static counts (benches/gpu/fusion_report.py <profile> <face> 2048 <probes>)
+
+Call sites in the emitted host IR; L = inside a host loop. Identical on rtx-3090, a100, rtx-4090,
+h100-pcie, rtx-5090 and on both faces (all ten tables were run; one shown). A retained site and a
+delta upload are two static sites each (the first pass, whole; the later passes, the row), so the
+static counts rise while the per-step traffic falls — the dynamic counts are in §3 and the box traces.
+
+rtx-4090 exact — BEFORE (s54-base)
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| decode_1024_256 | 2 | 2 | 3 (3 L) | 2 | 2 | 1.0 MB | 2 | 1.0 MB | 1 | 1 |
+| decode_16_8 | 2 | 2 | 3 (3 L) | 2 | 2 | 576 B | 2 | 544 B | 1 | 1 |
+| loop_128_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 65536 B | 1 | 65536 B | 3 | 1 |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 |
+| loop_rewrite_16_8 | 2 | 2 | 3 (3 L) | 2 | 2 | 576 B | 2 | 544 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 (1 L) | 1 | 1 | 262144 B | 1 | 262144 B | 4 | 1 |
+
+rtx-4090 exact — AFTER (s54/retain-resident, shipped table: every new rung ON)
+
+| program | tile kernels | gen kernels | launches | gens | h2d calls | h2d bytes | d2h calls | d2h bytes | host elem loops | host loops over device out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| decode_1024_256 | 4 | 2 | 6 (6 L) | 2 | 3 | 1.0 MB | 1 | 1024 B | 1 | 1 |
+| decode_16_8 | 4 | 2 | 6 (6 L) | 2 | 3 | 576 B | 1 | 32 B | 1 | 1 |
+| decode_scaled_16_8 | 4 | 2 | 6 (6 L) | 2 | 3 | 576 B | 1 | 32 B | 2 | 1 |
+| loop_128_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 65536 B | 1 | 65536 B | 3 | 1 |
+| loop_mm_1024_8 | 1 | 1 | 1 (1 L) | 1 | 1 | 4.0 MB | 1 | 4 B | 2 | 0 |
+| loop_rewrite_16_8 | 3 | 2 | 4 (4 L) | 2 | 2 | 544 B | 1 | 32 B | 1 | 1 |
+| px_loop_256 | 1 | 1 | 1 (1 L) | 1 | 1 | 262144 B | 1 | 262144 B | 4 | 1 |
+
+decode: +2 kernels (the one-row K/V kernel, s = q·Kᵀ's), the 1 MB d2h of K per step is gone (K and
+V never leave the device; s runs there), the 4 KB h2d of s is gone; what crosses per step is x's
+written row and q (in), o (out). loop_rewrite (the column-write control): s moves to the device
+(lane-stride), nothing is retained or delta-uploaded. px_loop_256, loop_128_8, loop_mm_1024_8
+(site-produced carries, Δ = Top): unchanged.
+
+== 2. Byte identity (text, not timing)
+
+The three new rungs off (`--gpu-off=retain-resident,delta-h2d,lane-stride`) vs the s54-base emit,
+every program gen_tiles.py writes except mm_*, both faces, host + device text:
+  GPU profiles rtx-4090 rtx-3090 a100 h100-pcie rtx-5090: 570 / 570 byte-identical.
+  CPU profiles generic apple-m zen3 (ON vs base): 342 / 342 byte-identical.
+ON vs base on the GPU profiles: 30 / 570 differ — decode_16_8, decode_1024_256, loop_rewrite_16_8,
+both faces, five parts. Nothing else moves.
+
+== 3. Dynamic counts, emulated (crates/mapal-rt/gpu/mapal_gpu_emu.c, the device unit run on the
+host thread by thread; test `resident_path_matches_the_oracle_emulated`)
+
+Whole program, 16 steps; every arm, both faces, against the interpreter (exact) and the CPU
+`--contract` build (contract). rtx-4090 shown; the counts are identical on the other four parts and
+every row PASSes there too (270 / 270).
+
+| program | face | arm | h2d | d2h | launches | bytes in | bytes out | vs oracle |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| decode_16_8 | exact | on | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_16_8 | contract | on | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_16_8 | exact | off-retain-resident | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_16_8 | contract | off-retain-resident | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_16_8 | exact | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| decode_16_8 | contract | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| decode_16_8 | exact | off-lane-stride | 32 | 32 | 48 | 2016 | 1504 | PASS |
+| decode_16_8 | contract | off-lane-stride | 32 | 32 | 48 | 2016 | 1504 | PASS |
+| decode_16_8 | exact | off-retain-resident,delta-h2d,lane-stride (= s54-base) | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| decode_16_8 | contract | off-retain-resident,delta-h2d,lane-stride (= s54-base) | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| decode_16_8 | exact | off-retain-delta,resident (S52 round trips) | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_16_8 | contract | off-retain-delta,resident (S52 round trips) | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_16_8 | exact | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_16_8 | contract | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_16_8 | exact | off-retain-resident on-retain-delta (S53 arm) | 128 | 64 | 64 | 28096 | 3520 | PASS |
+| decode_16_8 | contract | off-retain-resident on-retain-delta (S53 arm) | 128 | 64 | 64 | 28096 | 3520 | PASS |
+| decode_16_8 | exact | off-retain-resident,lane-stride | 32 | 32 | 48 | 2016 | 8704 | PASS |
+| decode_16_8 | contract | off-retain-resident,lane-stride | 32 | 32 | 48 | 2016 | 8704 | PASS |
+| decode_scaled_16_8 | exact | on | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_scaled_16_8 | contract | on | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_scaled_16_8 | exact | off-retain-resident | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_scaled_16_8 | contract | off-retain-resident | 32 | 16 | 64 | 1504 | 512 | PASS |
+| decode_scaled_16_8 | exact | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| decode_scaled_16_8 | contract | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| decode_scaled_16_8 | exact | off-lane-stride | 32 | 32 | 48 | 2016 | 1504 | PASS |
+| decode_scaled_16_8 | contract | off-lane-stride | 32 | 32 | 48 | 2016 | 1504 | PASS |
+| decode_scaled_16_8 | exact | off-retain-resident,delta-h2d,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| decode_scaled_16_8 | contract | off-retain-resident,delta-h2d,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| decode_scaled_16_8 | exact | off-retain-delta,resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_scaled_16_8 | contract | off-retain-delta,resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_scaled_16_8 | exact | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_scaled_16_8 | contract | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| decode_scaled_16_8 | exact | off-retain-resident on-retain-delta | 128 | 64 | 64 | 28096 | 3520 | PASS |
+| decode_scaled_16_8 | contract | off-retain-resident on-retain-delta | 128 | 64 | 64 | 28096 | 3520 | PASS |
+| decode_scaled_16_8 | exact | off-retain-resident,lane-stride | 32 | 32 | 48 | 2016 | 8704 | PASS |
+| decode_scaled_16_8 | contract | off-retain-resident,lane-stride | 32 | 32 | 48 | 2016 | 8704 | PASS |
+| loop_rewrite_16_8 | exact | on | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | contract | on | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | exact | off-retain-resident | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | contract | off-retain-resident | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | exact | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | contract | off-delta-h2d | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | exact | off-lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| loop_rewrite_16_8 | contract | off-lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| loop_rewrite_16_8 | exact | off-retain-resident,delta-h2d,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| loop_rewrite_16_8 | contract | off-retain-resident,delta-h2d,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| loop_rewrite_16_8 | exact | off-retain-delta,resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| loop_rewrite_16_8 | contract | off-retain-delta,resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| loop_rewrite_16_8 | exact | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| loop_rewrite_16_8 | contract | off-resident | 128 | 64 | 64 | 42496 | 17920 | PASS |
+| loop_rewrite_16_8 | exact | off-retain-resident on-retain-delta | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | contract | off-retain-resident on-retain-delta | 32 | 16 | 64 | 8704 | 512 | PASS |
+| loop_rewrite_16_8 | exact | off-retain-resident,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+| loop_rewrite_16_8 | contract | off-retain-resident,lane-stride | 32 | 32 | 48 | 9216 | 8704 | PASS |
+
+decode_16_8, ON vs s54-base: bytes in 9216 → 1504 (x: one whole upload, then its 32-byte row),
+bytes out 8704 → 512 (K's 512 B whole copy per step gone; o's 32 B stays), launches 3 → 4 per step
+(s joins the device). Per step after the first: 2 h2d (x's row, q), 4 launches (K row, V row, s, o),
+1 d2h (o). retain-resident does not change these counts: it changes the K and V launches from the
+whole site to one row (O(T·d²) → O(d²) work per step), which only the box measures.
+
+The emulator caught one real bug before any box ran: the strided site on the contract face first
+emitted `llvm.fma`, while the CPU (which does not tile it) keeps the map's `fmul` + `fadd`; the
+contract-face oracle differed in the last digits. Fixed: a strided site keeps the host step
+(`gpu.rs:kernel_text`, `contract && b.clane == 1`).
+
+== 4. Dynamic counts on the box (decode_1024_256, MAPAL_GPU_TRACE totals; identical on all five
+parts, both faces; retain-resident-<part>.txt)
+
+| arm | launches | h2d | d2h | bytes in | bytes out |
+|---|---:|---:|---:|---:|---:|
+| on (shipped) | 4096 | 2048 | 1024 | 3,144,704 | 1,048,576 |
+| off-retain-resident | 4096 | 2048 | 1024 | 3,144,704 | 1,048,576 |
+| off-delta-h2d | 4096 | 2048 | 1024 | 1,074,790,400 | 1,048,576 |
+| off-lane-stride | 3072 | 2048 | 2048 | 6,290,432 | 3,144,704 |
+| off-retain-resident+delta-h2d+lane-stride (= s54-base) | 3072 | 2048 | 2048 | 1,077,936,128 | 1,074,790,400 |
+| off-retain-delta+resident (S52 round trips) | 4096 | 8192 | 4096 | 4,837,081,088 | 2,152,726,528 |
+
+ON per step after the first: x's written row (1 KB) and q (1 KB) in, o (1 KB) out, four launches
+(K row, V row, s, o). s54-base per step: x whole (1 MB) and s (4 KB) in, K whole (1 MB) and o out.

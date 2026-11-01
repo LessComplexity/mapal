@@ -1,0 +1,39 @@
+[
+  {
+    "model": "deepseek-ai/DeepSeek-V3.2",
+    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V3.2/resolve/main/config.json",
+    "repo_commit": "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6",
+    "file": "deepseek-ai--DeepSeek-V3.2.config.json",
+    "sha256": "c7fa8b191e9936d8e6a57d864baab82b792fae16a116416cdd3a75ba76bc5af1",
+    "retrieved_utc": "2026-10-21T18:39:49.943376+00:00",
+    "fields": {
+      "hidden_size": 7168,
+      "intermediate_size": 18432,
+      "moe_intermediate_size": 2048,
+      "torch_dtype": "bfloat16",
+      "quantization_config": {
+        "activation_scheme": "dynamic",
+        "fmt": "e4m3",
+        "quant_method": "fp8",
+        "scale_fmt": "ue8m0",
+        "weight_block_size": [
+          128,
+          128
+        ]
+      }
+    }
+  },
+  {
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "url": "https://huggingface.co/Qwen/Qwen3.5-397B-A17B/resolve/main/config.json",
+    "repo_commit": "8472618112abcbd45acbcdc58436aff4233c23f7",
+    "file": "Qwen--Qwen3.5-397B-A17B.config.json",
+    "sha256": "3ae7fa89c2f7d1354096418ddaf1331e9e0898a8ca11e804fb6dbaa087efb7da",
+    "retrieved_utc": "2026-10-21T18:39:50.014765+00:00",
+    "fields": {
+      "hidden_size": 4096,
+      "moe_intermediate_size": 1024,
+      "dtype": "bfloat16"
+    }
+  }
+]

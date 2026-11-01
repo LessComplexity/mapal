@@ -1,0 +1,20 @@
+{
+  "s58-correctness-pair-rtx-5090": {
+    "tag": "s58-correctness-pair-rtx-5090",
+    "profile": "rtx-5090",
+    "phase": "correctness-pair",
+    "offer": 56970533,
+    "machine_id": 146107,
+    "host_id": 213578,
+    "listed_dph": 0.6598148148148149,
+    "active": false,
+    "accepted": false,
+    "prelaunch_inventory_utc": "2026-10-21T22:13:57.423273+00:00",
+    "prelaunch_instance_ids": [
+      57065574,
+      57100404
+    ],
+    "instance": 57118557,
+    "cleanup_confirmed": true
+  }
+}

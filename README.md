@@ -30,6 +30,7 @@
 - [Status](#status)
 - [Scope](#scope)
 - [Trying it](#trying-it)
+  - [Formatting](#formatting)
   - [Editor support](#editor-support)
 - [What is next](#what-is-next)
 - [How the project works](#how-the-project-works)
@@ -93,7 +94,7 @@ Method, machine specs, raw logs: [`docs/performance/`](docs/performance/).
 
 3,556 GFLOP/s vs 3,115 at 4096, disjoint. Naive threaded C++: 33,439 ms.
 Single-threaded NumPy is ~2× ahead
-([why](docs/performance/s43-residency-and-the-thermal-artifact.md)).
+([why](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
 
 ### Other shapes - M4 Pro, threaded
 
@@ -107,7 +108,7 @@ Single-threaded NumPy is ~2× ahead
 | gather `x[idx[i]]`, 1M |      0.139 ms | **0.137 ms** |         0.16 |     2.19 |
 
 Every row above moved this session, 1.00–1.31×, from scheduling alone — the kernels
-are unchanged ([what changed](docs/performance/s50e-the-roofline-threshold.md)).
+are unchanged ([what changed](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
 
 ### The same shapes on an i9-14900F, threaded
 
@@ -121,7 +122,7 @@ are unchanged ([what changed](docs/performance/s50e-the-roofline-threshold.md)).
 | gather `x[idx[i]]`, 1M |      0.236 ms | **0.203 ms** |         0.48 |     1.33 |
 
 Transpose single-threaded on this box: 2.42 → 1.09 ms, −55%, disjoint
-([what changed](docs/performance/s44-conflict-not-capacity.md)).
+([what changed](docs/performance/cpu/memory/l1-panel-conflicts.md)).
 
 ### matmul vs OpenBLAS on an i9-14900F, 1024² f32
 
@@ -132,7 +133,7 @@ Transpose single-threaded on this box: 2.42 → 1.09 ms, −55%, disjoint
 | threaded, whole box |  1.52 ms |  1.50 ms | **tie** |
 
 The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
-8 threads per row ([detail](docs/performance/matmul/s33.md)):
+8 threads per row ([detail](docs/performance/matmul/history/timing-boundary-and-openblas-comparison.md)):
 
 | 8 threads on…       |   Mapal | NumPy |               |
 | ------------------- | ------: | ----: | ------------- |
@@ -145,7 +146,7 @@ The whole-box tie is heterogeneity tolerance, not a better kernel - same box,
 Forward pass only, square (batch = width = `d`), every layer `d×d`. Values are
 bit-identical to NumPy's on every cell. NumPy is the better of its 1-thread and
 multi-thread legs. One run, 41 interleaved cycles
-([full table + noise spreads](docs/performance/s50e-the-roofline-threshold.md)).
+([full table + noise spreads](docs/performance/cpu/scheduling/roofline-dispatch-threshold.md)).
 
 | d | 4-layer net | NumPy | | 2 nets at once | NumPy | |
 | ---: | ---: | ---: | --- | ---: | ---: | --- |
@@ -157,7 +158,7 @@ multi-thread legs. One run, 41 interleaved cycles
 
 Two independent nets are the same total work as one 4-layer net. Nothing in the
 source says "run these in parallel"
-([why that is free](docs/performance/s49-two-nets-and-the-cyclic-plan.md)).
+([why that is free](docs/performance/cpu/scheduling/independent-networks-and-dependency-cycles.md)).
 
 | d | one 4-layer net | two 2-layer nets | gain from the graph alone |
 | ---: | ---: | ---: | ---: |
@@ -166,7 +167,53 @@ source says "run these in parallel"
 | 1024 | 2.930 ms | 2.771 ms | 1.06× |
 
 Small sizes are now a single-thread kernel gap, not a scheduling one
-([breakdown](docs/performance/s50d-dont-dispatch-what-cannot-be-shared.md)).
+([breakdown](docs/performance/cpu/scheduling/dispatch-threshold.md)).
+
+### GPU workloads - 4 GPUs, October 2026
+
+Mapal time / the best of cuBLAS, cuBLASLt, CUTLASS, PyTorch eager and `torch.compile` (`_tf32` rows: torch with TF32 on);
+below 1 = Mapal faster. Values pass on every program and arch. 61 of 132 cells at or below 1.0. † = carried from an
+earlier sweep (emission identical); – = not timed on that part (no library leg, or a new program whose emission is
+unchanged there) ([end check, gaps and causes](docs/performance/evidence/site-geometry.md);
+[earlier](docs/performance/evidence/recurrence-precision.md)).
+
+| workload | RTX 4090 | RTX 5090 | H100 PCIe | RTX 3090 |
+| --- | ---: | ---: | ---: | ---: |
+| decode_1024_256 | 1.01 | **0.82** | 1.51 | **1.00** |
+| convmc_8_64_56_3_tf32 | 1.91 | 1.44 | 2.62 | 1.53 |
+| indep_512 | 2.18 | 2.18 | – | – |
+| mlp_512 | 2.10 | 1.58 | – | – |
+| pj_m16_n18432_k7168 | 1.08 | – | 1.86 | – |
+| pj_m1_n18432_k7168 | 1.01 | **0.93** | 1.21 | – |
+| pj_m1_n2048_k7168 | **0.42** | **0.77** | 1.40 | – |
+| attn_1024_64 | 2.09 | **0.82** | 2.00 † | 1.77 † |
+| mlp2_2048_tf32 † | 1.16 | 1.15 | 1.87 | 1.17 |
+| mlp_2048_tf32 † | 1.06 | 1.16 | 1.75 | 1.40 |
+| convmc_8_64_56_3 | 1.38 | **0.89** | 1.18 | 1.43 |
+| loopmm_1024_8 † | 1.31 | 1.25 | 1.12 | 1.62 |
+| pj_m16_n2048_k7168 | **0.69** | 1.30 | 1.58 | 1.56 † |
+| rt_mlp2_1024 † | 1.14 | 1.20 | 1.45 | **0.99** |
+| mlp2_2048 † | 1.01 | 1.12 | 1.39 | 1.03 |
+| indep_2048 † | **0.99** | 1.08 | 1.35 | 1.09 |
+| diamond_2048 † | **0.98** | 1.11 | 1.30 | 1.01 |
+| smlp_4096_256_1024 † | 1.09 | 1.17 | 1.19 | 1.29 |
+| fanout_2048 † | **0.97** | 1.08 | 1.23 | 1.02 |
+| mlp_2048 † | **0.97** | 1.09 | 1.22 | 1.04 |
+| rowsum_2048 † | **0.93** | 1.08 | 1.21 | 1.11 |
+| twin_2048 † | **0.95** | 1.05 | 1.21 | 1.01 |
+| rt_mlp2_2048 † | **0.75** | **1.00** | 1.17 | **0.88** |
+| softmax_rows_4096 † | 1.03 | 1.09 | **0.97** | **0.96** |
+| rowsum_4096 † | **0.99** | 1.07 | **0.96** | **0.96** |
+| epi_4096 † | **1.00** | 1.06 | **0.97** | **0.88** |
+| ew_4096 † | **0.46** | **0.45** | 1.01 | **0.61** |
+| loop_4096 † | **0.95** | **0.97** | **0.97** | **0.96** |
+| firew_rowsum_2048x2048_16 † | **0.66** | **0.55** | **0.57** | **0.72** |
+| conv_2048_5 † | **0.63** | **0.45** | **0.50** | **0.68** |
+| fir_4194304_16 † | **0.61** | **0.51** | **0.56** | **0.63** |
+| causal_1024_256 | **0.18** | **0.26** | **0.25** | **0.14** |
+| prefill_1024_512_256 | **0.18** | **0.22** | **0.26** | **0.15** |
+| ewconvew_2048_5 † | **0.53** | **0.51** | **0.51** | **0.53** |
+| gen_1024_512_256 | **0.17** | **0.24** | **0.25** | **0.15** |
 
 ### Three builds
 
@@ -185,7 +232,7 @@ Small sizes are now a single-thread kernel gap, not a scheduling one
 | Language core          | working - functions, pipelines, parallel fanout, guards, loops, `map`/`fold`/`zip`/`enumerate`, tuples, fixed arrays, `print` |
 | Interpreter            | working - _defines_ the language; every backend is tested against it                                                          |
 | CPU backend (LLVM)     | working - automatic threading, vectorization, cache blocking                                                                  |
-| GPU backend (CUDA)     | working - 640 compile-and-runs on an RTX 4090, July 2026; **not re-validated on hardware since.** No `time` builtin           |
+| GPU backend (CUDA)     | working - value gates pass on RTX 4090, RTX 5090, H100 PCIe and RTX 3090, October 2026. No `time` builtin                     |
 | FPGA backend (Verilog) | not started                                                                                                                   |
 | Command-line tool      | **not built** - `mapal` prints "not yet implemented" and exits 1                                                              |
 | Tests                  | 1,047; 161 are CUDA's and skip without `nvcc`. Green                                                                          |
@@ -237,15 +284,30 @@ clang -O2 fir.ll target/release/libmapal_rt.a -o fir && ./fir
 Start in [`examples/`](examples/) - `pipeline.mapal` for syntax, `sepia.mapal` for most of the
 language, `fir.mapal` for a loop.
 
+### Formatting
+
+```sh
+cargo build -p mapal-cli
+target/debug/mapal fmt path/to/program.mapal           # format in place
+target/debug/mapal fmt --check path/to/program.mapal   # check without writing
+target/debug/mapal fmt --stdout path/to/program.mapal  # preview without writing
+```
+
+The formatter uses four spaces and expands brace bodies onto multiple lines,
+preserving comments and literal spelling. `mapal fmt -` reads stdin and writes
+stdout, so editors and generators share the same style. Invalid syntax is reported
+without replacing the source. LLVM and GPU tools are not needed for formatting.
+
 ### Editor support
 
-Both editors get highlighting and a file icon. Neither is published to a registry, so both load
+Both editors get highlighting, formatting through `mapal fmt`, and a file icon. Neither is published to a registry, so both load
 from disk.
 
 |                 | Neovim                                     | VS Code                                      |
 | --------------- | ------------------------------------------ | -------------------------------------------- |
 | Highlighting    | Vimscript syntax file                      | TextMate grammar                             |
 | File icon       | font glyph                                 | the real SVG logo                            |
+| Formatting      | `:MapalFormat` or `gggqG`                   | **Format Document**                          |
 | Binding vs call | resolved by scanning for `fn` declarations | lexical only - `-> name;` reads as a binding |
 | Details         | [`editors/nvim/`](editors/nvim/)           | [`editors/vscode/`](editors/vscode/)         |
 
@@ -266,12 +328,18 @@ require("mapal.icon").setup()          -- optional: nvim-web-devicons / mini.ico
 
 ```sh
 python3 editors/vscode/package-vsix.py
-code --install-extension editors/vscode/mapal-lang-0.1.0.vsix   # or `cursor`
+code --install-extension editors/vscode/mapal-lang-0.2.0.vsix   # or `cursor`
 ```
 
 Then restart. A `.mapal` file should show **Mapal** in the status bar. Copying the folder into
 `~/.vscode/extensions` does _not_ work: VS Code reads `extensions.json` as its registry and
 ignores unregistered directories silently.
+
+For formatting, install the CLI with `cargo install --path crates/mapal-cli --locked`,
+or point the plugins at your built `target/debug/mapal`: set `vim.g.mapal_executable`
+in Neovim or `mapal.executablePath` in VS Code. Formatting uses unsaved buffer text
+and supports format-on-save through the editor's configuration; see the plugin
+READMEs for setup.
 
 **The logo as a terminal glyph.** The Rust and C++ marks in a file tree are font glyphs, not
 images - Nerd Fonts ships those brand logos as characters. So Mapal's mark ships as a
@@ -292,7 +360,7 @@ so neither resolves names the way the compiler does (ADR-0008).
 ## What is next
 
 1. **Close the single-threaded gap**, where NumPy is still ~2× ahead. Threaded is solved; this is a
-   different bottleneck ([what we measured](docs/performance/s43-residency-and-the-thermal-artifact.md)).
+   different bottleneck ([what we measured](docs/performance/cpu/memory/operand-residency-and-thermal-effects.md)).
 2. **Pick the thread count from the program** instead of defaulting to every core
    ([plan](docs/components/backend-llvm/plans/plan-s32-deduced-scheduling.md)).
 3. **Intel AMX**, so matrix units are not an Apple-only story.

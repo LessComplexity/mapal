@@ -1,0 +1,204 @@
+--- v1/capture.cpp
++++ v2/capture.cpp
+@@ -17,7 +17,10 @@
+ FILE* log_=nullptr; int dir_=-1,mem_=-1;std::vector<char> expected_; size_t seq_=0,bytes_=0,images_=0,buffers_=0;
+ bool failed_=false,active_=false,finished_=false; unsigned starts_=0,stops_=0,selected_=0;
+ CUpti_SubscriberHandle sub_;
+-thread_local std::vector<uint32_t> runtime_;thread_local std::map<uint32_t,bool> payload_;
++struct Frame {uint64_t invocation;uint32_t correlation;};
++thread_local std::vector<Frame> runtime_;thread_local std::map<uint64_t,bool> payload_;
++struct Invocation {unsigned domain,id;uint32_t correlation;const uint64_t* storage;};
++uint64_t invocation_seq_=0;std::map<uint64_t,Invocation> invocations_;std::map<const uint64_t*,uint64_t> invocation_storage_;
+ void bad(const char* why){failed_=true;if(log_){fprintf(log_,"error\t%s\n",why);fflush(log_);}}
+ size_t ev(){if(++seq_>RECORD_CAP){bad("record-cap");return 0;}return seq_;}
+ std::string hex(const char* s){if(!s){bad("missing-string");return "";}size_t n=strnlen(s,16385);if(!n||n>16384){bad("string-cap");return "";}std::string o;o.reserve(n*2);const char* h="0123456789abcdef";for(size_t i=0;i<n;i++){unsigned char c=s[i];o+=h[c>>4];o+=h[c&15];}return o;}
+@@ -45,18 +48,26 @@
+   }else if(id==CUPTI_CBID_RESOURCE_MODULE_UNLOAD_STARTING){const auto* m=static_cast<const CUpti_ModuleResourceData*>(r->resourceDescriptor);if(!m){bad("unload-no-payload");return;}fprintf(log_,"unload\t%zu\t%llu\t%u\n",ev(),(unsigned long long)ptr(r->context),m->moduleId);}
+   else if(id==CUPTI_CBID_RESOURCE_CONTEXT_CREATED||id==CUPTI_CBID_RESOURCE_CONTEXT_DESTROY_STARTING)fprintf(log_,"context\t%zu\t%u\t%llu\n",ev(),unsigned(id),(unsigned long long)ptr(r->context));
+  }else if(dom==CUPTI_CB_DOMAIN_RUNTIME_API||dom==CUPTI_CB_DOMAIN_DRIVER_API){const auto* d=static_cast<const CUpti_CallbackData*>(raw);bool enter=d->callbackSite==CUPTI_API_ENTER;unsigned code=enter?0xffffffffu:(d->functionReturnValue?*static_cast<const unsigned*>(d->functionReturnValue):0xfffffffeu);std::string name=hex(d->functionName);
+-  fprintf(log_,"api\t%zu\t%u\t%u\t%u\t%u\t%llu\t%u\t%u\t%u\t%s\n",ev(),unsigned(dom),unsigned(id),unsigned(enter),d->correlationId,(unsigned long long)ptr(d->context),d->contextUid,unsigned(active_),code,name.c_str());
++  // CUPTI explicitly provides invocation-specific ENTER/EXIT storage. Activity
++  // correlation IDs may be shared by nested or repeated internal driver calls.
++  if(!d->correlationData){bad("missing-invocation-storage");return;}
++  uint64_t invocation=0;
++  if(enter){if(invocation_storage_.count(d->correlationData)||invocations_.size()>=RECORD_CAP){bad("active-invocation-storage-collision");return;}invocation=++invocation_seq_;*d->correlationData=invocation;invocations_[invocation]={unsigned(dom),unsigned(id),d->correlationId,d->correlationData};invocation_storage_[d->correlationData]=invocation;}
++  else {invocation=*d->correlationData;auto it=invocations_.find(invocation);if(it==invocations_.end()||it->second.domain!=unsigned(dom)||it->second.id!=unsigned(id)||it->second.correlation!=d->correlationId||it->second.storage!=d->correlationData){bad("unpaired-invocation-exit");return;}}
++
++  fprintf(log_,"api\t%zu\t%u\t%u\t%u\t%u\t%llu\t%u\t%u\t%u\t%s\t%llu\n",ev(),unsigned(dom),unsigned(id),unsigned(enter),d->correlationId,(unsigned long long)ptr(d->context),d->contextUid,unsigned(active_),code,name.c_str(),(unsigned long long)invocation);
+   if(dom==CUPTI_CB_DOMAIN_RUNTIME_API){
+-   if(enter)runtime_.push_back(d->correlationId);
+-   else {if(runtime_.empty()||runtime_.back()!=d->correlationId){bad("runtime-callback-stack");return;}runtime_.pop_back();}
++   if(enter)runtime_.push_back({invocation,d->correlationId});
++   else {if(runtime_.empty()||runtime_.back().invocation!=invocation){bad("runtime-callback-stack");return;}runtime_.pop_back();}
+    if(id==CUPTI_RUNTIME_TRACE_CBID_cudaProfilerStart_v4000&&!enter){if(code||active_||++starts_!=1){bad("invalid-region-start");return;}active_=true;fprintf(log_,"region-start\t%zu\t%u\t%u\n",ev(),d->contextUid,d->correlationId);}
+    if(id==CUPTI_RUNTIME_TRACE_CBID_cudaProfilerStop_v4000){if(enter){if(!active_||++stops_!=1){bad("invalid-region-stop");return;}active_=false;fprintf(log_,"region-stop\t%zu\t%u\t%u\n",ev(),d->contextUid,d->correlationId);}else if(code)bad("region-stop-failed");}
+   }else{
+-   if(supported(id)){if(!enter&&active_&&++selected_>512){bad("selected-kernel-cap");return;}Launch l=launch(id,d->functionParams);if(!enter&&code==0){uint32_t context_id=0,stream_id=0;uint8_t ptsz=id==CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel_ptsz||id==CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx_ptsz;CUptiResult cr=cuptiGetContextId(d->context,&context_id),sr=cuptiGetStreamIdEx(d->context,l.stream,ptsz,&stream_id);fprintf(log_,"stream-map\t%zu\t%u\t%llu\t%u\t%llu\t%u\t%u\t%u\t%u\n",ev(),d->correlationId,(unsigned long long)ptr(d->context),context_id,(unsigned long long)ptr(l.stream),stream_id,unsigned(ptsz),unsigned(cr),unsigned(sr));if(cr!=CUPTI_SUCCESS||sr!=CUPTI_SUCCESS){bad("context-stream-metadata-query");return;}}std::string symbol=hex(d->symbolName);fprintf(log_,"launch\t%zu\t%u\t%u\t%u\t%u\t%llu\t%u\t%llu\t%llu\t%u,%u,%u\t%u,%u,%u\t%u\t%u\t%u\t%s\n",ev(),unsigned(id),unsigned(enter),d->correlationId,runtime_.empty()?0:runtime_.back(),(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)ptr(l.f),(unsigned long long)ptr(l.stream),l.gx,l.gy,l.gz,l.bx,l.by,l.bz,l.smem,unsigned(active_),code,symbol.c_str());}
++   if(supported(id)){if(!enter&&active_&&++selected_>512){bad("selected-kernel-cap");return;}Launch l=launch(id,d->functionParams);if(!enter&&code==0){uint32_t context_id=0,stream_id=0;uint8_t ptsz=id==CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel_ptsz||id==CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx_ptsz;CUptiResult cr=cuptiGetContextId(d->context,&context_id),sr=cuptiGetStreamIdEx(d->context,l.stream,ptsz,&stream_id);fprintf(log_,"stream-map\t%zu\t%u\t%llu\t%u\t%llu\t%u\t%u\t%u\t%u\t%llu\n",ev(),d->correlationId,(unsigned long long)ptr(d->context),context_id,(unsigned long long)ptr(l.stream),stream_id,unsigned(ptsz),unsigned(cr),unsigned(sr),(unsigned long long)invocation);if(cr!=CUPTI_SUCCESS||sr!=CUPTI_SUCCESS){bad("context-stream-metadata-query");return;}}std::string symbol=hex(d->symbolName);fprintf(log_,"launch\t%zu\t%u\t%u\t%u\t%u\t%llu\t%u\t%llu\t%llu\t%u,%u,%u\t%u,%u,%u\t%u\t%u\t%u\t%s\t%llu\t%llu\n",ev(),unsigned(id),unsigned(enter),d->correlationId,runtime_.empty()?0:runtime_.back().correlation,(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)ptr(l.f),(unsigned long long)ptr(l.stream),l.gx,l.gy,l.gz,l.bx,l.by,l.bz,l.smem,unsigned(active_),code,symbol.c_str(),(unsigned long long)invocation,(unsigned long long)(runtime_.empty()?0:runtime_.back().invocation));}
+    else if(active_&&d->functionName&&strstr(d->functionName,"Launch"))bad("unsupported-selected-launch-API");
+-   if(id==CUPTI_DRIVER_TRACE_CBID_cuModuleLoadData){const auto* p=static_cast<const cuModuleLoadData_params*>(d->functionParams);bool matched=false;if(enter){std::vector<char> candidate(expected_.size());ssize_t n=pread(mem_,candidate.data(),candidate.size(),(off_t)ptr(p->image));matched=n==ssize_t(candidate.size())&&candidate==expected_;payload_[d->correlationId]=matched;}else{auto it=payload_.find(d->correlationId);if(it==payload_.end()){bad("load-payload-enter-absent");return;}matched=it->second;payload_.erase(it);}fprintf(log_,"load\t%zu\t%u\t%u\t%llu\t%u\t%llu\t%u\t%u\n",ev(),unsigned(enter),d->correlationId,(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)(!enter&&code==0&&p->module?ptr(*p->module):0),code,unsigned(matched));}
+-   if(!enter&&code==0&&id==CUPTI_DRIVER_TRACE_CBID_cuModuleGetFunction){const auto* p=static_cast<const cuModuleGetFunction_params*>(d->functionParams);std::string n=hex(p->name);fprintf(log_,"function-direct\t%zu\t%llu\t%u\t%llu\t%llu\t%s\n",ev(),(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)ptr(p->hmod),(unsigned long long)(p->hfunc?ptr(*p->hfunc):0),n.c_str());}
++   if(id==CUPTI_DRIVER_TRACE_CBID_cuModuleLoadData){const auto* p=static_cast<const cuModuleLoadData_params*>(d->functionParams);bool matched=false;if(enter){std::vector<char> candidate(expected_.size());ssize_t n=pread(mem_,candidate.data(),candidate.size(),(off_t)ptr(p->image));matched=n==ssize_t(candidate.size())&&candidate==expected_;payload_[invocation]=matched;}else{auto it=payload_.find(invocation);if(it==payload_.end()){bad("load-payload-enter-absent");return;}matched=it->second;payload_.erase(it);}fprintf(log_,"load\t%zu\t%u\t%u\t%llu\t%u\t%llu\t%u\t%u\t%llu\n",ev(),unsigned(enter),d->correlationId,(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)(!enter&&code==0&&p->module?ptr(*p->module):0),code,unsigned(matched),(unsigned long long)invocation);}
++   if(!enter&&code==0&&id==CUPTI_DRIVER_TRACE_CBID_cuModuleGetFunction){const auto* p=static_cast<const cuModuleGetFunction_params*>(d->functionParams);std::string n=hex(p->name);fprintf(log_,"function-direct\t%zu\t%llu\t%u\t%llu\t%llu\t%s\t%llu\n",ev(),(unsigned long long)ptr(d->context),d->contextUid,(unsigned long long)ptr(p->hmod),(unsigned long long)(p->hfunc?ptr(*p->hfunc):0),n.c_str(),(unsigned long long)invocation);}
+   }
++  if(!enter){invocations_.erase(invocation);invocation_storage_.erase(d->correlationData);}
+  }else if(dom==CUPTI_CB_DOMAIN_STATE)bad("CUPTI-state-notification");
+  if(log_)fflush(log_);
+ }
+@@ -69,9 +80,9 @@
+  else bad("unexpected-activity-kind");
+ }
+ void CUPTIAPI complete_buffer(CUcontext ctx,uint32_t stream,uint8_t* b,size_t size,size_t valid){CUpti_Activity* r=nullptr;CUptiResult result=CUPTI_SUCCESS;while((result=cuptiActivityGetNextRecord(b,valid,&r))==CUPTI_SUCCESS)record(r);size_t dropped=0;CUptiResult drop=cuptiActivityGetNumDroppedRecords(ctx,stream,&dropped);{std::lock_guard<std::mutex> g(mu);if(result!=CUPTI_ERROR_MAX_LIMIT_REACHED||drop!=CUPTI_SUCCESS||dropped)bad("activity-parse-or-drop");if(log_)fprintf(log_,"buffer\t%zu\t%zu\t%zu\t%zu\t%u\t%u\n",ev(),size,valid,dropped,unsigned(result),unsigned(drop));if(size>buffers_)bad("activity-buffer-accounting");else buffers_-=size;}free(b);}
+-void finish(){CUptiResult rc=cuptiActivityFlushAll(0);size_t dropped=0;CUptiResult dr=cuptiActivityGetNumDroppedRecords(nullptr,0,&dropped);std::lock_guard<std::mutex> g(mu);if(finished_)return;if(rc!=CUPTI_SUCCESS||dr!=CUPTI_SUCCESS||dropped||buffers_||active_||starts_!=1||stops_!=1)bad("incomplete-final-flush-or-region");if(log_){fprintf(log_,"final-drop\t%zu\t%zu\t%u\n",ev(),dropped,unsigned(dr));fprintf(log_,"finish\t%zu\t%u\t%u\t%u\t%u\t%zu\t%zu\t%zu\n",ev(),unsigned(rc),unsigned(failed_),starts_,stops_,images_,bytes_,buffers_);fflush(log_);}finished_=true;}
++void finish(){CUptiResult rc=cuptiActivityFlushAll(0);size_t dropped=0;CUptiResult dr=cuptiActivityGetNumDroppedRecords(nullptr,0,&dropped);std::lock_guard<std::mutex> g(mu);if(finished_)return;if(rc!=CUPTI_SUCCESS||dr!=CUPTI_SUCCESS||dropped||buffers_||!invocations_.empty()||active_||starts_!=1||stops_!=1)bad("incomplete-final-flush-or-region");if(log_){fprintf(log_,"final-drop\t%zu\t%zu\t%u\n",ev(),dropped,unsigned(dr));fprintf(log_,"finish\t%zu\t%u\t%u\t%u\t%u\t%zu\t%zu\t%zu\n",ev(),unsigned(rc),unsigned(failed_),starts_,stops_,images_,bytes_,buffers_);fflush(log_);}finished_=true;}
+ }
+-extern "C" int InitializeInjection(){const char* out=getenv("MAPAL_CAPTURE_OUT"),*ptx=getenv("MAPAL_CAPTURE_PTX");if(!out||!ptx||mkdir(out,0700))return 0;dir_=open(out,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(dir_<0)return 0;int fd=openat(dir_,"events.tsv",O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);if(fd<0)return 0;log_=fdopen(fd,"w");if(!log_)return 0;fprintf(log_,"schema\tlibrary-image-callback-v1\n");int input=open(ptx,O_RDONLY|O_NOFOLLOW);struct stat st{};if(input<0||fstat(input,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>(16<<20)){bad("PTX-input");return 0;}expected_.resize(size_t(st.st_size)+1);size_t pos=0;while(pos<size_t(st.st_size)){ssize_t n=read(input,expected_.data()+pos,size_t(st.st_size)-pos);if(n<=0){bad("PTX-read");close(input);return 0;}pos+=size_t(n);}close(input);if(memchr(expected_.data(),0,pos)||!save("input.ptx",expected_.data(),pos)){bad("PTX-format-or-save");return 0;}mem_=open("/proc/self/mem",O_RDONLY);
++extern "C" int InitializeInjection(){const char* out=getenv("MAPAL_CAPTURE_OUT"),*ptx=getenv("MAPAL_CAPTURE_PTX");if(!out||!ptx||mkdir(out,0700))return 0;dir_=open(out,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(dir_<0)return 0;int fd=openat(dir_,"events.tsv",O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);if(fd<0)return 0;log_=fdopen(fd,"w");if(!log_)return 0;fprintf(log_,"schema\tlibrary-image-callback-v2\n");int input=open(ptx,O_RDONLY|O_NOFOLLOW);struct stat st{};if(input<0||fstat(input,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>(16<<20)){bad("PTX-input");return 0;}expected_.resize(size_t(st.st_size)+1);size_t pos=0;while(pos<size_t(st.st_size)){ssize_t n=read(input,expected_.data()+pos,size_t(st.st_size)-pos);if(n<=0){bad("PTX-read");close(input);return 0;}pos+=size_t(n);}close(input);if(memchr(expected_.data(),0,pos)||!save("input.ptx",expected_.data(),pos)){bad("PTX-format-or-save");return 0;}mem_=open("/proc/self/mem",O_RDONLY);
+  if(cuptiSubscribe(&sub_,callback,nullptr)!=CUPTI_SUCCESS){bad("subscribe");return 0;}
+  for(auto d:{CUPTI_CB_DOMAIN_DRIVER_API,CUPTI_CB_DOMAIN_RUNTIME_API,CUPTI_CB_DOMAIN_RESOURCE,CUPTI_CB_DOMAIN_STATE})if(cuptiEnableDomain(1,sub_,d)!=CUPTI_SUCCESS){bad("enable-domain");return 0;}
+  if(cuptiActivityRegisterCallbacks(request_buffer,complete_buffer)!=CUPTI_SUCCESS){bad("register-activity");return 0;}
+--- v1/admit.py
++++ v2/admit.py
+@@ -16,7 +16,7 @@
+  for sec in sections:need(sec[1]==8 or sec[4]<=len(data)and sec[5]<=len(data)-sec[4],'ELF bounds')
+  def name_at(table,index):
+   need(index<len(table),'ELF name offset');end=table.find(b'\0',index);need(end>=0,'ELF name termination');return table[index:end].decode('ascii')
+- ns=sections[names];need(ns[1]==3,'ELF section names absent');table=data[ns[4]:ns[4]+ns[5]];section_names=[name_at(table,sec[0])for sec in sections];texts={};tables=0
++ ns=sections[names];need(ns[1]==3,'ELF section names absent');table=data[ns[4]:ns[4]+ns[5]];section_names=[name_at(table,sec[0])for sec in sections];texts={};defined={};tables=0
+  for sec in sections:
+   if sec[1]!=2:continue
+   tables+=1;need(sec[9]==24 and sec[5]%24==0 and sec[6]<count,'ELF symbol table');strings=sections[sec[6]];need(strings[1]==3,'ELF symbol names absent');strings=data[strings[4]:strings[4]+strings[5]]
+@@ -25,15 +25,23 @@
+    if info&15!=2 or sh==0:continue
+    need(sh<count,'ELF function section index');target=sections[sh];name=name_at(strings,n)
+    need(target[1]==1 and target[2]&4 and length>0 and value>=target[3]and value-target[3]<=target[5]and length<=target[5]-(value-target[3]),'ELF function is not bounded executable text')
+-   need(section_names[sh]=='.text.'+name,'Unsupported CUDA function section convention')
+-   need(name not in texts,'Duplicate defined ELF function');start=target[4]+value-target[3];texts[name]={'sha256':hashlib.sha256(data[start:start+length]).hexdigest(),'elf_symbol_index':i,'section_index':sh,'section_offset':value-target[3],'size':length}
++   need(name not in defined,'Duplicate defined ELF function');start=target[4]+value-target[3];defined[name]={'sha256':hashlib.sha256(data[start:start+length]).hexdigest(),'elf_symbol_index':i,'section_index':sh,'section_offset':value-target[3],'size':length}
+  need(tables==1,'ELF symbol table absent/ambiguous')
++ # A CUDA entry owns .text.<entry>. Device helper STT_FUNC subranges can
++ # legitimately share that section; they are inventoried but not launch entries.
++ for name,f in defined.items():
++  if section_names[f['section_index']]=='.text.'+name:texts[name]={**f,'contained_helpers':[]}
++ for name,f in defined.items():
++  if name in texts:continue
++  section=section_names[f['section_index']];owner=texts.get(section[6:])if section.startswith('.text.')else None
++  need(owner is not None and owner['section_index']==f['section_index']and owner['section_offset']<=f['section_offset']and f['section_offset']+f['size']<=owner['section_offset']+owner['size'],'Unsupported helper/entry section range')
++  owner['contained_helpers'].append({'symbol':name,**f})
+  return texts
+ 
+ def admit(root):
+  root=Path(root);event=root/'events.tsv';need(event.is_file()and not event.is_symlink()and 0<event.stat().st_size<=16<<20,'Event file/cap')
+- rows=[x.split('\t')for x in event.read_text().splitlines()];need(rows[0]==['schema','library-image-callback-v1'],'Wrong schema')
+- images=[];api={};launches={};api_activities={};functions=[];kernels=[];direct=[];loads={};contexts=set();enables={};buffers=0;start=[];stop=[];ready=0;finish=[];final_drop=[];prev=0;uid_by_pointer={};stream_maps={};context_created={};context_destroyed={};context_uses={}
++ rows=[x.split('\t')for x in event.read_text().splitlines()];need(rows[0]==['schema','library-image-callback-v2'],'Wrong schema')
++ images=[];api={};launches={};api_activities={};functions=[];kernels=[];direct=[];loads={};contexts=set();enables={};buffers=0;start=[];stop=[];ready=0;finish=[];final_drop=[];prev=0;uid_by_pointer={};stream_maps={};context_created={};context_destroyed={};context_uses={};provisional_uses=[]
+  for row in rows[1:]:
+   kind=row[0]
+   if kind=='error':raise ValueError('Observer error '+str(row[1:]))
+@@ -51,18 +59,23 @@
+    elif cbid==2:need(pointer in context_created and pointer not in context_destroyed,'Unlinked context destroy');context_destroyed[pointer]=e
+    else:raise ValueError('Unsupported context resource event')
+   elif kind=='api':
+-   _,_,domain,cbid,enter,corr,pointer,uid,active,code,name=row;domain,cbid,enter,corr,pointer,uid,active,code=map(int,(domain,cbid,enter,corr,pointer,uid,active,code));key=(domain,corr);need(enter in (0,1)and active in (0,1),'Bad API flags');r={'event':e,'cbid':cbid,'pointer':pointer,'uid':uid,'active':active,'code':code,'name':word(name)}
++   _,_,domain,cbid,enter,corr,pointer,uid,active,code,name,invocation=row;domain,cbid,enter,corr,pointer,uid,active,code=map(int,(domain,cbid,enter,corr,pointer,uid,active,code));invocation=int(invocation);key=(domain,invocation);need(invocation>0,"Invalid invocation identity");need(enter in (0,1)and active in (0,1),'Bad API flags');r={'event':e,'cbid':cbid,'pointer':pointer,'uid':uid,'active':active,'code':code,'name':word(name),'correlation':corr,'invocation':invocation}
+    need(enter not in api.setdefault(key,{}),'Duplicate callback site');api[key][enter]=r
+-   if pointer:context_uses.setdefault(pointer,[]).append(e)
++   # UID0 construction callbacks do not establish an initialized context.
++   # Only the two observed initialization APIs can precede CONTEXT_CREATED;
++   # every other pointer use, including UID0 module/launch APIs, remains strict.
++   constructing=domain==1 and uid==0 and (cbid,r['name'])in((303,'cuCtxSetCurrent'),(386,'cuDevicePrimaryCtxRetain'))
++   if pointer and constructing:provisional_uses.append((pointer,e))
++   if pointer and not constructing:context_uses.setdefault(pointer,[]).append(e)
+    if pointer and uid:need(pointer not in uid_by_pointer or uid_by_pointer[pointer]==uid,'Reused/ambiguous context pointer');uid_by_pointer[pointer]=uid
+   elif kind=='launch':
+-   _,_,cbid,enter,corr,parent,pointer,uid,fn,stream,grid,block,smem,active,code,name=row;cbid,enter,corr,parent,pointer,uid,fn,stream,smem,active,code=map(int,(cbid,enter,corr,parent,pointer,uid,fn,stream,smem,active,code));r={'event':e,'cbid':cbid,'parent':parent,'pointer':pointer,'uid':uid,'opaque_launch_handle':fn,'stream':stream,'grid':dims(grid),'block':dims(block),'smem':smem,'active':active,'code':code,'symbol':word(name),'correlation':corr};need(cbid in (307,442,652,653)and enter in(0,1),'Unsupported dispatch');need(enter not in launches.setdefault(corr,{}),'Duplicate launch site');launches[corr][enter]=r
++   _,_,cbid,enter,corr,parent,pointer,uid,fn,stream,grid,block,smem,active,code,name,invocation,parent_invocation=row;cbid,enter,corr,parent,pointer,uid,fn,stream,smem,active,code=map(int,(cbid,enter,corr,parent,pointer,uid,fn,stream,smem,active,code));r={'event':e,'cbid':cbid,'parent':parent,'pointer':pointer,'uid':uid,'opaque_launch_handle':fn,'stream':stream,'grid':dims(grid),'block':dims(block),'smem':smem,'active':active,'code':code,'symbol':word(name),'correlation':corr,'invocation':int(invocation),'parent_invocation':int(parent_invocation)};need(cbid in (307,442,652,653)and enter in(0,1),'Unsupported dispatch');need(enter not in launches.setdefault(int(invocation),{}),'Duplicate launch site');launches[int(invocation)][enter]=r
+   elif kind=='stream-map':
+-   _,_,corr,pointer,uid,stream,streamid,ptsz,cr,sr=row;corr=int(corr);need(corr not in stream_maps,'Duplicate metadata mapping');stream_maps[corr]=dict(pointer=int(pointer),uid=int(uid),stream=int(stream),stream_id=int(streamid),ptsz=int(ptsz),context_result=int(cr),stream_result=int(sr))
++   _,_,corr,pointer,uid,stream,streamid,ptsz,cr,sr,invocation=row;corr=int(corr);invocation=int(invocation);need(invocation not in stream_maps,'Duplicate metadata mapping');stream_maps[invocation]=dict(correlation=corr,pointer=int(pointer),uid=int(uid),stream=int(stream),stream_id=int(streamid),ptsz=int(ptsz),context_result=int(cr),stream_result=int(sr),event=e)
+   elif kind=='load':
+-   _,_,enter,corr,pointer,uid,module,code,matched=row;r=dict(event=e,pointer=int(pointer),uid=int(uid),module=int(module),code=int(code),matched=int(matched));need(int(enter)not in loads.setdefault(int(corr),{}),'Duplicate load');loads[int(corr)][int(enter)]=r
++   _,_,enter,corr,pointer,uid,module,code,matched,invocation=row;r=dict(event=e,pointer=int(pointer),uid=int(uid),module=int(module),code=int(code),matched=int(matched),correlation=int(corr));need(int(enter)not in loads.setdefault(int(invocation),{}),'Duplicate load');loads[int(invocation)][int(enter)]=r
+   elif kind=='function-direct':
+-   _,_,pointer,uid,module,fn,symbol=row;direct.append(dict(event=e,pointer=int(pointer),uid=int(uid),handle=int(module),function=int(fn),symbol=word(symbol)))
++   _,_,pointer,uid,module,fn,symbol,invocation=row;direct.append(dict(event=e,invocation=int(invocation),pointer=int(pointer),uid=int(uid),handle=int(module),function=int(fn),symbol=word(symbol)))
+   elif kind=='kernel':
+    _,_,corr,uid,stream,gridid,grid,block,smem,lt,node,graph,symbol=row;kernels.append(dict(event=e,correlation=int(corr),uid=int(uid),stream=int(stream),grid_id=int(gridid),grid=dims(grid),block=dims(block),smem=int(smem),launch_type=int(lt),node=int(node),graph=int(graph),symbol=word(symbol)))
+   elif kind=='function-activity':
+@@ -82,30 +95,54 @@
+  need(rows[-1][0]=='finish'and finish[0][1:5]==(0,0,1,1)and finish[0][5:]==(len(images),sum(i['size']for i in images),0),'Incomplete finalization')
+  need(len(final_drop)==1 and stop[0][0]<final_drop[0][0]<finish[0][0],'Missing final dropped-record query')
+  need(buffers>0 and images and kernels,'Empty observation')
+- for (domain,corr),pair in api.items():
+-  need(set(pair)=={0,1}and pair[1]['event']<pair[0]['event']and pair[1]['cbid']==pair[0]['cbid'],'Unpaired API callback')
++ need(len({invocation for domain,invocation in api})==len(api),"Invocation identity reused across domains")
++ for (domain,invocation),pair in api.items():
++  need(set(pair)=={0,1}and pair[1]['event']<pair[0]['event']and pair[1]['cbid']==pair[0]['cbid']and pair[1]['correlation']==pair[0]['correlation']and pair[1]['name']==pair[0]['name']and pair[1]['code']==0xffffffff and pair[0]['code']!=0xfffffffe,'Unpaired API callback')
++ need(set(launches)=={inv for (dom,inv),pair in api.items()if dom==1 and pair[0]['cbid']in(307,442,652,653)},'Incomplete driver launch callback inventory')
++ need(set(loads)=={inv for (dom,inv),pair in api.items()if dom==1 and pair[0]['name']=='cuModuleLoadData'},'Incomplete loader callback inventory')
+  need(not any(k[0]==48 for k in api_activities),'Unsupported internal API dispatch')
++ for pointer,e in provisional_uses:
++  need(pointer in context_created and e<context_created[pointer],'Provisional context callback outside creation prefix')
++ for d in direct:
++  ap=api.get((1,d['invocation']));need(ap is not None and ap[0]['name']=='cuModuleGetFunction'and ap[0]['code']==0 and ap[1]['event']<ap[0]['event']<d['event']and ap[0]['pointer']==d['pointer']and ap[0]['uid']==d['uid'],'Direct function/API invocation differs')
+  module_handles=[]
+- for pair in loads.values():
+-  need(set(pair)=={0,1},'Unpaired loader');a,b=pair[1],pair[0];need(a['matched']==b['matched']and a['pointer']==b['pointer']and a['uid']==b['uid'],'Loader payload/context identity changed')
++ for invocation,pair in loads.items():
++  need(set(pair)=={0,1},'Unpaired loader');a,b=pair[1],pair[0];need(a['matched']==b['matched']and a['pointer']==b['pointer']and a['uid']==b['uid']and a['correlation']==b['correlation'],'Loader payload/context identity changed')
++  ap=api.get((1,invocation));need(ap is not None and ap[0]['name']==ap[1]['name']=='cuModuleLoadData'and ap[0]['code']==b['code']and ap[1]['event']<a['event']<ap[0]['event']<b['event']and all(ap[site]['pointer']==p['pointer']and ap[site]['uid']==p['uid']and ap[site]['correlation']==p['correlation']for site,p in((1,a),(0,b))),'Loader/API invocation differs')
+   if b['code']==0:
+    candidates=[i for i in images if a['event']<i['event']<b['event']and i['pointer']==a['pointer']]
+    if len(candidates)==1:module_handles.append(dict(pointer=b['pointer'],handle=b['module'],event=b['event'],image=candidates[0],matched=b['matched']))
+  selected=[];all_matches={}
+- for corr,pair in launches.items():
+-  need(set(pair)=={0,1},'Unpaired launch');a,b=pair[1],pair[0];need(a['event']<b['event'],'Launch order');need(all(a[k]==b[k]for k in a if k not in ('event','code')),'Launch identity changed');need(b['code']==0,'Failed launch')
+-  need((1,corr)in api and api[(1,corr)][0]['cbid']==b['cbid'],'Launch/API callback differs')
++ for invocation,pair in launches.items():
++  need(set(pair)=={0,1},'Unpaired launch');a,b=pair[1],pair[0];corr=a["correlation"];need(a['event']<b['event'],'Launch order');need(all(a[k]==b[k]for k in a if k not in ('event','code')),'Launch identity changed');need(b['code']==0,'Failed launch')
++  need((1,invocation)in api and api[(1,invocation)][0]['cbid']==b['cbid']and api[(1,invocation)][0]['correlation']==corr,'Launch/API callback differs')
++  ap=api[(1,invocation)];need(ap[1]['event']<a['event']<ap[0]['event']<b['event']and ap[0]['code']==0 and all(ap[site]['pointer']==p['pointer']and ap[site]['uid']==p['uid']for site,p in((1,a),(0,b))),'Launch/API invocation interval/context differs')
++  need(bool(b['parent'])==bool(b['parent_invocation']),'Runtime parent identity incomplete')
++  if b['parent_invocation']:
++   rp=api.get((2,b['parent_invocation']));need(rp is not None and rp[0]['correlation']==b['parent']and rp[1]['event']<ap[1]['event']<ap[0]['event']<rp[0]['event'],'Runtime parent invocation differs')
+   need(b['active']==int(start[0][0]<a['event']<b['event']<stop[0][0]),'Selected region chronology/flag differs')
+   ks=[k for k in kernels if k['correlation']==corr or b['parent'] and k['correlation']==b['parent']]
+   need(len(ks)==1,'Missing/ambiguous kernel correlation');k=ks[0];need(k['event']not in all_matches,'Kernel linked to multiple dispatches');all_matches[k['event']]=corr
+-  activity=api_activities.get((4 if k['correlation']==corr else 5,k['correlation']));need(activity is not None and activity['code']==0 and activity['cbid']==(b['cbid']if k['correlation']==corr else api.get((2,b['parent']),{}).get(0,{}).get('cbid')),'Missing/mismatched correlated API activity')
++  # Driver and runtime-parent correlation numbers can be identical. Resolve
++  # the enabled API domain explicitly, rather than prioritizing a numeric match.
++  activity_bindings=[]
++  for kind,expected in ((4,b['cbid']),(5,api.get((2,b['parent_invocation']),{}).get(0,{}).get('cbid'))):
++   if k['correlation']!=(corr if kind==4 else b['parent'])or expected is None:continue
++   activity=api_activities.get((kind,k['correlation']))
++   if activity is not None and activity['cbid']==expected:
++    domain=1 if kind==4 else 2;target=invocation if kind==4 else b['parent_invocation']
++    eligible=[token for (dom,token),p in api.items()if dom==domain and p[0]['cbid']==expected and p[0]['correlation']==k['correlation']]
++    need(eligible==[target],'Ambiguous correlated API invocation')
++    need(activity['code']==api[(domain,target)][0]['code']==0,'Correlated API status differs/failed')
++    activity_bindings.append({'kind':kind,'correlation':k['correlation'],**activity})
++  need(len(activity_bindings)==1,'Missing/ambiguous correlated API activity domain')
+   need(b['pointer']in context_created and context_created[b['pointer']]<min(context_uses[b['pointer']])and(context_destroyed.get(b['pointer'],finish[0][0])>b['event']),'Context creation/full initial inventory unproved')
+-  mapping=stream_maps.get(corr);need(mapping is not None and mapping['context_result']==mapping['stream_result']==0 and mapping['pointer']==b['pointer']and mapping['uid']==k['uid']==b['uid']and mapping['stream']==b['stream']and mapping['stream_id']==k['stream']and mapping['ptsz']==int(b['cbid']in(442,653)),'Unproved stream/context mapping')
++  mapping=stream_maps.get(invocation);need(mapping is not None and ap[0]['event']<mapping['event']<b['event']and mapping['correlation']==corr and mapping['context_result']==mapping['stream_result']==0 and mapping['pointer']==b['pointer']and mapping['uid']==k['uid']==b['uid']and mapping['stream']==b['stream']and mapping['stream_id']==k['stream']and mapping['ptsz']==int(b['cbid']in(442,653)),'Unproved stream/context mapping')
+   need(k['uid']in contexts and b['pointer']!=0 and b['opaque_launch_handle']!=0,'Unproved context/function handle')
+   need(all(k[x]==b[x]for x in ('grid','block','smem','symbol'))and k['launch_type']==0 and k['node']==k['graph']==0,'Kernel geometry/type differs')
+-  if k['correlation']==b['parent']:
+-   need((2,b['parent'])in api,'Missing runtime parent callback')
+-   rp=api[(2,b['parent'])];need(rp[1]['event']<a['event']<b['event']<rp[0]['event'],'Runtime parent interval differs')
++  if activity_bindings[0]['kind']==5:
++   need((2,b['parent_invocation'])in api,'Missing runtime parent callback')
++   rp=api[(2,b['parent_invocation'])];need(rp[0]['correlation']==b['parent'],'Runtime parent correlation differs');need(rp[1]['event']<a['event']<b['event']<rp[0]['event'],'Runtime parent interval differs')
+   if not b['active']:continue
+   syncs=[p for (dom,_),p in api.items()if dom==2 and p[0]['name']=='cudaDeviceSynchronize'and p[0]['code']==0 and p[0]['uid']==k['uid']and b['event']<p[1]['event']<p[0]['event']<stop[0][0]]
+   need(syncs,'No successful selected device synchronization before region stop')
+@@ -127,7 +164,7 @@
+    need(len(exporting)==1,'Ambiguous symbol across all active images');image=exporting[0]
+    need(sum(i['module']==image['module']for i in images)==1,'Reused moduleId cannot resolve FUNCTION lifetime')
+    fs={tuple(sorted(f.items()))for f in functions if f['uid']==k['uid']and f['module']==image['module']and f['symbol']==b['symbol']};need(len(fs)==1,'Missing/ambiguous authoritative FUNCTION metadata');method='unique-active-ELF-plus-FUNCTION';function_metadata=dict(next(iter(fs)))
+-  selected.append({**b,'image_event':image['event'],'module':image['module'],'module_sha256':image['sha256'],'text_sha256':image['texts'][b['symbol']]['sha256'],'elf_symbol_index':image['texts'][b['symbol']]['elf_symbol_index'],'join':method,'launch_handle_kind':('CUfunction returned by cuModuleGetFunction'if direct_event is not None else'CUfunction-or-CUkernel launch argument; underlying handle kind unproved'),'direct_GetFunction_event':direct_event,'FUNCTION_metadata':function_metadata,'context_creation_event':context_created[b['pointer']]})
++  selected.append({**b,'image_event':image['event'],'module':image['module'],'module_sha256':image['sha256'],'text_sha256':image['texts'][b['symbol']]['sha256'],'elf_symbol_index':image['texts'][b['symbol']]['elf_symbol_index'],'join':method,'launch_handle_kind':('CUfunction returned by cuModuleGetFunction'if direct_event is not None else'CUfunction-or-CUkernel launch argument; underlying handle kind unproved'),'direct_GetFunction_event':direct_event,'FUNCTION_metadata':function_metadata,'API_activity_binding':activity_bindings[0],'context_creation_event':context_created[b['pointer']]})
+  need(len(all_matches)==len(kernels),'Unexplained kernel activity')
+  need(0<len(selected)<=512,'Selected kernel inventory/cap')
+  return {'pass':True,'scope':'counter-free attribution only; enclosing harness gates still required','timing_admissible':False,'events_sha256':hashlib.sha256(event.read_bytes()).hexdigest(),'images':images,'selected_launches':selected,'all_kernel_records':len(kernels),'activity_buffers_zero_drop':buffers,'cupti_version':ready,'matched_PTX_image_events':[m['image']['event']for m in module_handles if m['matched']],'observed_PTX_sha256':hashlib.sha256((root/'input.ptx').read_bytes()).hexdigest()}

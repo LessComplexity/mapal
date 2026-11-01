@@ -1,0 +1,333 @@
+{
+  "pass": true,
+  "tests": [
+    {
+      "mode": "success",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled",
+        "gpu-idle-before-optional-capture",
+        "optional-capture"
+      ]
+    },
+    {
+      "mode": "smallm-failed",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled",
+        "gpu-idle-before-optional-capture",
+        "optional-capture"
+      ]
+    },
+    {
+      "mode": "smallm-timeout",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm"
+      ]
+    },
+    {
+      "mode": "compiled-timeout",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled"
+      ]
+    },
+    {
+      "mode": "header-missing",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate"
+      ]
+    },
+    {
+      "mode": "torch-version-failed",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version"
+      ]
+    },
+    {
+      "mode": "insufficient-after-smallm",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm"
+      ]
+    },
+    {
+      "mode": "gpu-process-after-smallm",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm"
+      ]
+    },
+    {
+      "mode": "compiled-numeric-failed",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled",
+        "gpu-idle-before-optional-capture",
+        "optional-capture"
+      ]
+    },
+    {
+      "mode": "sealed-input-changed",
+      "pass": true,
+      "stages": []
+    },
+    {
+      "mode": "apt-update-timeout",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update"
+      ]
+    },
+    {
+      "mode": "insufficient-after-bootstrap",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled"
+      ]
+    },
+    {
+      "mode": "optional-validated",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled",
+        "gpu-idle-before-optional-capture",
+        "optional-capture"
+      ]
+    },
+    {
+      "mode": "optional-capture-timeout",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package",
+        "gpu-idle-before-smallm",
+        "smallm",
+        "gpu-idle-after-smallm",
+        "apt-update",
+        "apt-python-development",
+        "venv",
+        "python-header-gate",
+        "pip-upgrade",
+        "pip-version",
+        "torch-install",
+        "torch-version",
+        "pip-freeze",
+        "system-packages",
+        "gpu-idle-before-compiled",
+        "compiled",
+        "gpu-idle-before-optional-capture",
+        "optional-capture"
+      ]
+    },
+    {
+      "mode": "time-install-failed",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time"
+      ]
+    },
+    {
+      "mode": "time-version-failed",
+      "pass": true,
+      "stages": [
+        "smallm-payload-check",
+        "matrix-payload-check",
+        "apt-update-benchmark-prerequisite",
+        "apt-install-time",
+        "time-version",
+        "time-package"
+      ]
+    }
+  ],
+  "no_gpu_network_rental": true
+}

@@ -1,0 +1,48 @@
+[
+  {
+    "case": "tiny674",
+    "source": "/private/tmp/mapal-s56-gpu/large-composed/rewrite-investigation/variants/tiny-counter-print-only/source.mapal",
+    "source_sha256": "01b77ce1ff970fd26e28e22f3d779d06ba5c5403e809a9d3e0f72450ccf45ce2",
+    "binary": "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+    "binary_sha256": "779e91ba92c3eb51a695f9117c336f571ce52f15252602d67b409614f6bd1517",
+    "command": [
+      "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/large-composed/rewrite-investigation/variants/tiny-counter-print-only/source.mapal",
+      "-",
+      "--rewrite",
+      "--contract",
+      "--target=apple-m"
+    ],
+    "environment_overrides": {
+      "MAPAL_REPLAY_DIAGNOSTIC": "1",
+      "RUST_BACKTRACE": "1"
+    },
+    "exit": 101,
+    "seconds": 0.2450521670107264,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "9169121b4eec1eba4b005311a268c4b56e1abc74abbddb187c9753ce2a88d23f"
+  },
+  {
+    "case": "original5907",
+    "source": "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+    "source_sha256": "0e4c05b403550da3a3afaeebcea8323e2af1dca887aa6a94d95c1e0dd7c57142",
+    "binary": "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+    "binary_sha256": "779e91ba92c3eb51a695f9117c336f571ce52f15252602d67b409614f6bd1517",
+    "command": [
+      "/private/tmp/mapal-replay-diagnostic/target/release/examples/emit",
+      "/private/tmp/mapal-s56-gpu/large-composed/composition/generated/recurrent-t16-d8-h16.check.mapal",
+      "-",
+      "--rewrite",
+      "--contract",
+      "--target=apple-m"
+    ],
+    "environment_overrides": {
+      "MAPAL_REPLAY_DIAGNOSTIC": "1",
+      "RUST_BACKTRACE": "1"
+    },
+    "exit": 101,
+    "seconds": 0.5923028749966761,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "83af80c710870c10471a486a0af2d7dfb97ecb65a25a0576002d11966ef91282"
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "pass": true,
+  "rows": {
+    "kernels": 36,
+    "probes": 108,
+    "cache": 3,
+    "r5": 6,
+    "allocation": 8
+  },
+  "ratio_checks": 282,
+  "direct_raw_median_checks": 244,
+  "distinct_hashed_artifacts": 30,
+  "method": "Independent root CSV arithmetic, raw kernel rows and program medians, source/proof/PTX hashes; profiler interpretation remains separately documented.",
+  "csv_sha256": {
+    "benches/results-s54-gpu/s56-current-library-allocation.csv": "7c6a2b09dc5a2334391194593d86355f055c63053e992afed1aa405e0cc65d4c",
+    "benches/results-s54-gpu/s56-current-library-cache.csv": "4bc7652c51a70e4679fd4d7fa38a9f050af07306ca3e67b9c2adb3d81fa2d195",
+    "benches/results-s54-gpu/s56-current-library-kernels.csv": "a89b0ce7f831856ffaabacd93ecd55d26f5542b91d5bbd905e23b0999dde25f7",
+    "benches/results-s54-gpu/s56-current-library-probes.csv": "ea14c5f9721ad510116392df1ce01cac3d7678ba6fe48185206735c27c0912d5",
+    "benches/results-s54-gpu/s56-current-library-r5.csv": "117953bd3e841abcd164913714d08d66bcd8ed23ae3a0823f11adfa4686be4b8"
+  }
+}

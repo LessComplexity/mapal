@@ -1,0 +1,30 @@
+mapal_gpu_trace op=load flags=3 wait_ms=166.873 lead_ms=0.076 init_ms=59.675 ctx_ms=106.425 module_ms=0.601
+mapal_gpu_trace op=alloc ms=0.325 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_1f19f0178349a042 ms=0.060 n=4096
+mapal_gpu_trace op=alloc ms=0.009 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_8c8c3bdb9c78e77f ms=0.010 n=4096
+mapal_gpu_trace op=alloc ms=0.004 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_2f0666f212630a9c ms=0.009 n=4096
+mapal_gpu_trace op=alloc ms=0.003 bytes=16384
+mapal_gpu_trace op=gen kernel=mapal_gen_2c4310112e11e516 ms=0.008 n=4096
+mapal_gpu_trace op=alloc ms=0.006 bytes=16384
+mapal_gpu_trace op=alloc ms=0.003 bytes=16384
+mapal_gpu_trace op=alloc ms=0.003 bytes=16384
+mapal_gpu_trace op=event record=0 wait=1 auto=1 ms=0.010
+mapal_gpu_trace op=launch kernel=mapal_tile_0f72a96f2dacde57 ms=0.015 stream=1 pdl=0
+mapal_gpu_trace op=launch kernel=mapal_tile_0f72a96f2dacde57 ms=0.010 stream=1 pdl=0
+mapal_gpu_trace op=event record=1 wait=2 auto=0 ms=0.002
+mapal_gpu_trace op=alloc ms=0.004 bytes=16384
+mapal_gpu_trace op=event record=0 wait=2 auto=1 ms=0.001
+mapal_gpu_trace op=launch kernel=mapal_tile_3f5637dfc173ded0 ms=0.014 stream=2 pdl=0
+mapal_gpu_trace op=free ms=0.005
+mapal_gpu_trace op=free ms=0.004
+mapal_gpu_trace op=free ms=0.002
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.004
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=free ms=0.003
+mapal_gpu_trace op=d2h ms=0.051 bytes=4 stream=2
+mapal_gpu_trace op=d2h ms=0.009 bytes=4 stream=2
+mapal_gpu_trace op=free ms=0.136
+mapal_gpu_trace_total flags=3 load_ms=166.873 lead_ms=0.076 init_ms=59.675 ctx_ms=106.425 module_ms=0.601 alloc_ms=0.357 h2d_ms=0.000 kernel_ms=0.039 gen_ms=0.086 d2h_ms=0.060 free_ms=0.160 bytes_in=0 bytes_out=8 h2d=0 d2h=2 launches=3 gens=4 allocs=8 l2_windows=0 l2_persist=0 pin_ms=0.000 pins=0 events=3 pdl=0

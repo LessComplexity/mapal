@@ -1,0 +1,50 @@
+{
+  "schema": "mapal-executed-images-final-independent-review-v1",
+  "pass": true,
+  "artifacts": {
+    "analyst_report": {
+      "path": "/private/tmp/mapal-library-image-capture/actual-sass-comparison/public-ready/REPORT.md",
+      "sha256": "7ecfef55e7645b5af7bd6e855a36c2854de280982fd6f2e90302360dab939dc1"
+    },
+    "comparison": {
+      "path": "/private/tmp/mapal-library-image-capture/actual-sass-comparison/public-ready/comparison.json",
+      "sha256": "1dfa683333d365b7c3436c6657ec02475dce9979b2f9d834bc14c98a3bb4ea2c"
+    },
+    "main_report": {
+      "path": "/Volumes/LessComplex/Personal/mapal/docs/performance/gpu/disassembly/executed-library-images.md",
+      "sha256": "5c8825e203e64ee23c330c36d6b9b98acd226e55f0760062c280c814a438d95b"
+    },
+    "independent_static_review": {
+      "path": "/private/tmp/mapal-library-image-review/actual-sass-review/static-review.json",
+      "sha256": "266b9dde3af101a17cc445f68da7aac90ccd48b097805aafd78974f4f970b2d8"
+    },
+    "independent_admission": {
+      "path": "/private/tmp/mapal-library-image-review/repair-review/live-admission-v2/attempt13/admission.json",
+      "sha256": "79ff56dbb5c6cc015351c3fba3f7808c381367caa74f61ce25e5be63af87d9a4"
+    },
+    "independent_recovery": {
+      "path": "/private/tmp/mapal-library-image-review/repair-review/live-admission-v2/attempt13/recovery-verification.json",
+      "sha256": "d14505f4921670697ced74d198e9ccc509da5bcd27f812d8bff92e7baceccc5f"
+    }
+  },
+  "checks": {
+    "live_admission": "3/3 selected calls, 4 complete selected entries, 4608 independently checked raw IEEE words; 504 recovered raw files rehashed",
+    "attribution": "Sealed reviewed parser replay, not an independent second join implementation",
+    "static_listing": "Independent full-address/opcode/annotation/ELF-range parse matches all four entries; 232/1680/880/736 addressed instruction rows",
+    "static_vs_dynamic": "Invocation inventory 1/2/1 is distinct from static counts; 22 constant-false cuBLAS LDS padding rows retained",
+    "resources": "Only explicit queried attributes reported; unknown cuBLAS registers/local/static shared remain unknown",
+    "numerical_scope": "256 of 32768 output cells per phase; Mapal/CUTLASS 256 ordered-FMA bit matches, cuBLAS5, all componentwise pass",
+    "decoder": "All four have unknown annotations; no MMA-family mnemonic is a qualified selected-listing observation",
+    "partition": "Dispatch plus reduction entry supports partitioned organization; exact partition extents/order/heuristic unrecorded",
+    "wording_corrections": "Both requested fixes verified: Dat Gpu/GpuTile vs Loc Gmem/Smem/Reg; primitive preallocated-buffer boundary distinguished from whole-program arena/lifetimes",
+    "main_report": "Factual consistency PASS at bound hash; host/binary/selection/launch/numeric/resource/decoder/provenance/causal limits agree"
+  },
+  "limits": [
+    "No instrumented timing admission or counters",
+    "No dynamic utilization, executed instruction count, overlap or causal speedup claim",
+    "No universal CUTLASS bit-exact guarantee",
+    "Capture on new host does not retroactively identify earlier timing-host dispatch",
+    "Archive-byte rehash separately performed by root; this reviewer rehashed recovered raw files"
+  ],
+  "remaining_blockers": []
+}

@@ -1,0 +1,8 @@
+{
+  "pass": true,
+  "archive_sha256": "a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd",
+  "archive_bytes": 12568328,
+  "regular_files": 432,
+  "uncompressed_bytes": 50260394,
+  "all_member_hashes_match_reviewed_manifest": true
+}

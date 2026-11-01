@@ -1,0 +1,9 @@
+{
+  "created_utc": "2026-10-21T20:34:49.537904+00:00",
+  "source": "/private/tmp/mapal-s56-gpu/large-composed/recurrent-checkpoint-root-cause.md",
+  "destination": "/Volumes/LessComplex/Personal/mapal/benches/results-s54-gpu/s57-large-composed-preparation/recurrent-checkpoint-root-cause.md",
+  "bytes": 10855,
+  "sha256": "e05abcadb16ed26acfb73750573f5eb4aaa3062b2d9e2f192acf1f6b69aa67be",
+  "byte_identical": true,
+  "scope": "Bounded source-level candidate, exact failing feeder provenance unconfirmed; no fix selected or applied."
+}

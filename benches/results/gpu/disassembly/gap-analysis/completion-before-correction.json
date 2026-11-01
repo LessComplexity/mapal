@@ -1,0 +1,42 @@
+{
+  "inspected_artifacts": 104,
+  "all_hashes_rechecked": true,
+  "outputs": {
+    "REPORT.md": {
+      "bytes": 11096,
+      "sha256": "e6b28b8a95fa852e28db9a6f12976154f8bfaa798b86a1ca1776eceb763a8e10"
+    },
+    "analysis.json": {
+      "bytes": 1226864,
+      "sha256": "3035a9f3b6eb2d7edc85b8fe687a74db26f0086843500116fcebbe63d5449c36"
+    },
+    "comparison.csv": {
+      "bytes": 5310,
+      "sha256": "f6948f22f511f6bbd50eccc68e08fc59d8864b1465bd029d6dcec27c97d859c7"
+    },
+    "artifact-manifest.json": {
+      "bytes": 21763,
+      "sha256": "b6a738ee0b48e37c4b10b733e5531f561f7407228254461b2a32a706540798bc"
+    },
+    "verification.json": {
+      "bytes": 1311,
+      "sha256": "c9f73b815b8cc2c0565aa07fbbe490e41544b73932c5d60bc000b40db9064d4c"
+    },
+    "analyze.py": {
+      "bytes": 5556,
+      "sha256": "e8e9283ef7c86241773bdcafab2f5362a035e03e3b83f2f6ba7f9181dfd8ff0d"
+    },
+    "verify.py": {
+      "bytes": 4593,
+      "sha256": "1744935428db348de3c0fe5997d1eb7f0bf84fac1a93e81a220b5a25ee76c4d6"
+    },
+    "write_report.py": {
+      "bytes": 11864,
+      "sha256": "b56761a600a89974e35dcaab804e318c596e4bc785a9f62bbdd7a5c9a5738da2"
+    },
+    "initial-receipt.json": {
+      "bytes": 1056,
+      "sha256": "f572d87a37ebff77ef057333afdfa89feb4bf0cb0f98789e3ee674e3e8781a90"
+    }
+  }
+}

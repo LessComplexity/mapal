@@ -1,0 +1,8 @@
+1612.2351
+1322.6967
+iter ms=0.081232
+Collecting data...
+Generating '/tmp/nsys-report-59f1.qdstrm'
+[1/1] [0%                          ] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [0%                          ] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [5%                          ] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [===========51%              ] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [===========52%              ] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [========================100%] prog_pt_rm_m128_d256_h512_c.base.nsys-rep[1/1] [========================100%] prog_pt_rm_m128_d256_h512_c.base.nsys-rep
+Generated:
+    /w/nsys/prog_pt_rm_m128_d256_h512_c.base.nsys-rep

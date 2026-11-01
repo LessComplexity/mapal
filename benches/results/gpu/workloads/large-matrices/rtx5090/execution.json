@@ -1,0 +1,13 @@
+{
+  "profile": "rtx-5090",
+  "tag": "primitive-rtx-5090",
+  "exit": 1,
+  "stage": "rental-wrapper",
+  "rental_started": true,
+  "results_directory_created": true,
+  "timed_out": false,
+  "timeout_seconds": 7500,
+  "seconds": 354.6,
+  "results": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090",
+  "end_utc": "2026-10-21T19:27:12.577359+00:00"
+}

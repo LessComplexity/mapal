@@ -1,9 +1,10 @@
 ---
 source: crates/mapal-rewrite/tests/golden.rs
+assertion_line: 58
 expression: "format!(\"{:#?}\", res.report)"
 ---
 RewriteReport {
-    rounds: 4,
+    rounds: 11,
     applied: [
         (
             Inline,
@@ -11,7 +12,7 @@ RewriteReport {
         ),
         (
             ConstFold,
-            80,
+            126,
         ),
         (
             Dce,

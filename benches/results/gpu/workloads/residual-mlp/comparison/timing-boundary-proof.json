@@ -1,0 +1,42 @@
+[
+  {
+    "case": "matrix",
+    "generator_calls_before_start": 6,
+    "work_launch_sites_inside_clocks": 3,
+    "start_line": 1111,
+    "end_line": 1201,
+    "inductor_generated_log_markers": [
+      "V1022 17:51:20.648000 1551 torch/_inductor/graph.py:2722] [0/0] [__output_code] # AOT ID: ['0_inference']",
+      "V1022 17:51:20.648000 1551 torch/_inductor/graph.py:2722] [0/0] [__output_code]     def call(self, args):",
+      "V1022 17:51:20.649000 1551 torch/_inductor/graph.py:2733] [0/0] [__output_code] Output code written to: /w/trace/composed-results/matrix/cache-matrix-compiled/ij/cijc6ahehnc47mzfog2szjsi24srusyl7zsbytozuanmg3cdn66o.py",
+      "I1022 17:51:20.949000 1551 torch/_inductor/graph.py:2693] [0/0] [__output_code] Output code written to: /w/trace/composed-results/matrix/cache-matrix-compiled/ij/cijc6ahehnc47mzfog2szjsi24srusyl7zsbytozuanmg3cdn66o.py",
+      "V1022 17:51:21.746000 1551 torch/_inductor/graph.py:2722] [1/0] [__output_code] # AOT ID: ['1_inference']",
+      "V1022 17:51:21.746000 1551 torch/_inductor/graph.py:2722] [1/0] [__output_code]     def call(self, args):",
+      "V1022 17:51:21.747000 1551 torch/_inductor/graph.py:2733] [1/0] [__output_code] Output code written to: /w/trace/composed-results/matrix/cache-matrix-compiled/jg/cjgngwajc6ub2afhtkn2uw6xcjxi2apspjzapyibwwpmczn5rxjq.py",
+      "I1022 17:51:21.988000 1551 torch/_inductor/graph.py:2693] [1/0] [__output_code] Output code written to: /w/trace/composed-results/matrix/cache-matrix-compiled/jg/cjgngwajc6ub2afhtkn2uw6xcjxi2apspjzapyibwwpmczn5rxjq.py"
+    ],
+    "source_compile_fullgraph": true,
+    "source_compile_suppress_errors": false,
+    "actual_report_pass": true
+  },
+  {
+    "case": "matrix-large",
+    "generator_calls_before_start": 6,
+    "work_launch_sites_inside_clocks": 3,
+    "start_line": 1111,
+    "end_line": 1201,
+    "inductor_generated_log_markers": [
+      "V1022 17:52:11.134000 2058 torch/_inductor/graph.py:2722] [0/0] [__output_code] # AOT ID: ['0_inference']",
+      "V1022 17:52:11.134000 2058 torch/_inductor/graph.py:2722] [0/0] [__output_code]     def call(self, args):",
+      "V1022 17:52:11.135000 2058 torch/_inductor/graph.py:2733] [0/0] [__output_code] Output code written to: /w/trace/composed-results/matrix-large/cache-matrix-compiled/se/csemzytwwtqz2e3yzlyisgxxugshnp4p3urwyjdrq5feybqb4e42.py",
+      "I1022 17:52:11.416000 2058 torch/_inductor/graph.py:2693] [0/0] [__output_code] Output code written to: /w/trace/composed-results/matrix-large/cache-matrix-compiled/se/csemzytwwtqz2e3yzlyisgxxugshnp4p3urwyjdrq5feybqb4e42.py",
+      "V1022 17:52:13.071000 2058 torch/_inductor/graph.py:2722] [1/0] [__output_code] # AOT ID: ['1_inference']",
+      "V1022 17:52:13.071000 2058 torch/_inductor/graph.py:2722] [1/0] [__output_code]     def call(self, args):",
+      "V1022 17:52:13.072000 2058 torch/_inductor/graph.py:2733] [1/0] [__output_code] Output code written to: /w/trace/composed-results/matrix-large/cache-matrix-compiled/mh/cmhxdqhfbed4gxo6jcnc5sv5azosotk7lmavbnuv536lllpgtuhc.py",
+      "I1022 17:52:13.299000 2058 torch/_inductor/graph.py:2693] [1/0] [__output_code] Output code written to: /w/trace/composed-results/matrix-large/cache-matrix-compiled/mh/cmhxdqhfbed4gxo6jcnc5sv5azosotk7lmavbnuv536lllpgtuhc.py"
+    ],
+    "source_compile_fullgraph": true,
+    "source_compile_suppress_errors": false,
+    "actual_report_pass": true
+  }
+]

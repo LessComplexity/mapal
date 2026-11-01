@@ -1,0 +1,25 @@
+schema: spec-driven
+
+context: |
+  Mapal is a Rust compiler workspace. Existing docs/components/<component>/ARCHITECTURE.md
+  (or DESIGN.md for older components) hold internal intent; IMPLEMENTATION.md maps it to code.
+  Architecture method: supercharge FRAMEWORK.md (Dat / Trn / Loc / Trm and section 4.5 coherence laws).
+  Every claim names its object, transformation, location or transmission and maps to a real
+  file:symbol, a planned realization, or an explicit open question.
+  Contract split B: specs describe observable external behavior only; architecture docs own internal models.
+  Preserve immutable docs/sessions logs and historical measurement records.
+  GPU selections require value-gated evidence from the actual integrated build; report losses as well as wins.
+
+rules:
+  design:
+    - State the model delta with signatures, partiality and semantics; explicitly say when none exists.
+    - Apply the consolidation check by extending existing objects rather than introducing parallel representations.
+    - Name affected section 4.5 coherence laws and ground claims in file:symbol or planned realizations.
+    - Keep effects behind existing ports and shared structure in one source of truth.
+  specs:
+    - Observable consumer-facing behavior only, not internal function or class names.
+    - Every requirement includes a happy-path and a failure or boundary scenario.
+  tasks:
+    - Reconcile changed implementation mappings, architecture and component status, then root status.
+    - Record a section 4.5 review and verification evidence.
+    - Run supercharge drift and fix dead rows before archiving.

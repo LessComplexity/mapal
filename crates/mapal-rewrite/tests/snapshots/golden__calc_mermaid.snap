@@ -1,5 +1,6 @@
 ---
 source: crates/mapal-rewrite/tests/golden.rs
+assertion_line: 57
 expression: res.ir.to_mermaid()
 ---
 flowchart LR
@@ -50,96 +51,70 @@ flowchart LR
         f0o43(("false: bool"))
         f0o44(("false: bool"))
         f0o45(("false: bool"))
-        f0o46(("26: i32"))
-        f0o47(("14: i32"))
-        f0o48(("120: i32"))
-        f0o49(("3: i32"))
-        f0o50(("2: i32"))
+        f0o46(("false: bool"))
+        f0o47(("26: i32"))
+        f0o48(("true: bool"))
+        f0o49(("false: bool"))
+        f0o50(("false: bool"))
         f0o51(("false: bool"))
-        f0o52(("true: bool"))
-        f0o53(("false: bool"))
+        f0o52(("14: i32"))
+        f0o53(("true: bool"))
         f0o54(("false: bool"))
-        f0o55(("26: i32"))
-        f0o56(("14: i32"))
-        f0o57(("120: i32"))
-        f0o58(("3: i32"))
-        f0o59(("2: i32"))
-        f0o60(("false: bool"))
-        f0o61(("false: bool"))
-        f0o62(("true: bool"))
-        f0o63(("false: bool"))
-        f0o64(("26: i32"))
-        f0o65(("14: i32"))
-        f0o66(("120: i32"))
-        f0o67(("3: i32"))
-        f0o68(("2: i32"))
-        f0o69(("false: bool"))
-        f0o70(("false: bool"))
-        f0o71(("false: bool"))
-        f0o72(("true: bool"))
-        f0o73(("26: i32"))
-        f0o74(("14: i32"))
-        f0o75(("120: i32"))
-        f0o76(("3: i32"))
-        f0o77(("2: i32"))
-        f0o78(("false: bool"))
-        f0o79(("false: bool"))
-        f0o80(("false: bool"))
-        f0o81(("false: bool"))
-        f0o82(("26: i32"))
-        f0o83(("14: i32"))
-        f0o84(("120: i32"))
-        f0o85(("3: i32"))
-        f0o86(("2: i32"))
-        f0o87(("(io, str)"))
-        f0o88(("io"))
-        f0o89(("(io, i32)"))
-        f0o90(("io"))
-        f0o91(("(io, str)"))
-        f0o92(("io"))
-        f0o93(("(io, i32)"))
-        f0o94(("io"))
-        f0o95(("(io, str)"))
-        f0o96(("io"))
-        f0o97(("(io, i32)"))
-        f0o98(("io"))
-        f0o99(("(io, str)"))
-        f0o100(("io"))
-        f0o101(("(io, i32)"))
-        f0o102(("io"))
-        f0o103(("(io, str)"))
-        f0o104(("io"))
-        f0o105(("(io, i32)"))
-        f0o106(("io"))
-        f0o0 -- "Pair 0/2" --> f0o87
-        f0o5 -- "Pair 1/2" --> f0o87
-        f0o87 -- "Print" --> f0o88
-        f0o88 -- "Pair 0/2" --> f0o89
-        f0o46 -- "Pair 1/2" --> f0o89
-        f0o89 -- "Println" --> f0o90
-        f0o90 -- "Pair 0/2" --> f0o91
-        f0o9 -- "Pair 1/2" --> f0o91
-        f0o91 -- "Print" --> f0o92
-        f0o92 -- "Pair 0/2" --> f0o93
-        f0o56 -- "Pair 1/2" --> f0o93
-        f0o93 -- "Println" --> f0o94
-        f0o94 -- "Pair 0/2" --> f0o95
-        f0o13 -- "Pair 1/2" --> f0o95
-        f0o95 -- "Print" --> f0o96
-        f0o96 -- "Pair 0/2" --> f0o97
-        f0o66 -- "Pair 1/2" --> f0o97
-        f0o97 -- "Println" --> f0o98
-        f0o98 -- "Pair 0/2" --> f0o99
-        f0o17 -- "Pair 1/2" --> f0o99
-        f0o99 -- "Print" --> f0o100
-        f0o100 -- "Pair 0/2" --> f0o101
-        f0o76 -- "Pair 1/2" --> f0o101
-        f0o101 -- "Println" --> f0o102
-        f0o102 -- "Pair 0/2" --> f0o103
-        f0o21 -- "Pair 1/2" --> f0o103
-        f0o103 -- "Print" --> f0o104
-        f0o104 -- "Pair 0/2" --> f0o105
-        f0o86 -- "Pair 1/2" --> f0o105
-        f0o105 -- "Println" --> f0o106
-        f0o106 -- "Output" --> f0o1
+        f0o55(("false: bool"))
+        f0o56(("120: i32"))
+        f0o57(("true: bool"))
+        f0o58(("false: bool"))
+        f0o59(("(io, str)"))
+        f0o60(("io"))
+        f0o61(("(io, i32)"))
+        f0o62(("io"))
+        f0o63(("(io, str)"))
+        f0o64(("io"))
+        f0o65(("(io, i32)"))
+        f0o66(("io"))
+        f0o67(("(io, str)"))
+        f0o68(("io"))
+        f0o69(("(io, i32)"))
+        f0o70(("io"))
+        f0o71(("3: i32"))
+        f0o72(("(io, str)"))
+        f0o73(("io"))
+        f0o74(("(io, i32)"))
+        f0o75(("io"))
+        f0o76(("2: i32"))
+        f0o77(("(io, str)"))
+        f0o78(("io"))
+        f0o79(("(io, i32)"))
+        f0o80(("io"))
+        f0o0 -- "Pair 0/2" --> f0o59
+        f0o5 -- "Pair 1/2" --> f0o59
+        f0o59 -- "Print" --> f0o60
+        f0o60 -- "Pair 0/2" --> f0o61
+        f0o47 -- "Pair 1/2" --> f0o61
+        f0o61 -- "Println" --> f0o62
+        f0o62 -- "Pair 0/2" --> f0o63
+        f0o9 -- "Pair 1/2" --> f0o63
+        f0o63 -- "Print" --> f0o64
+        f0o64 -- "Pair 0/2" --> f0o65
+        f0o52 -- "Pair 1/2" --> f0o65
+        f0o65 -- "Println" --> f0o66
+        f0o66 -- "Pair 0/2" --> f0o67
+        f0o13 -- "Pair 1/2" --> f0o67
+        f0o67 -- "Print" --> f0o68
+        f0o68 -- "Pair 0/2" --> f0o69
+        f0o56 -- "Pair 1/2" --> f0o69
+        f0o69 -- "Println" --> f0o70
+        f0o70 -- "Pair 0/2" --> f0o72
+        f0o17 -- "Pair 1/2" --> f0o72
+        f0o72 -- "Print" --> f0o73
+        f0o73 -- "Pair 0/2" --> f0o74
+        f0o71 -- "Pair 1/2" --> f0o74
+        f0o74 -- "Println" --> f0o75
+        f0o75 -- "Pair 0/2" --> f0o77
+        f0o21 -- "Pair 1/2" --> f0o77
+        f0o77 -- "Print" --> f0o78
+        f0o78 -- "Pair 0/2" --> f0o79
+        f0o76 -- "Pair 1/2" --> f0o79
+        f0o79 -- "Println" --> f0o80
+        f0o80 -- "Output" --> f0o1
     end

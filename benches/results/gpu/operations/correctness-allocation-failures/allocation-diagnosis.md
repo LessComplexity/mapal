@@ -1,0 +1,7 @@
+The two correctness attempts failed during allocation, before SSH, payload upload, setup or GPU execution. Both returned `success=false` with an assigned instance ID, then `intended=stopped`; no detailed provider reason was returned. Both IDs are independently confirmed absent. No numerical or setup failure was observed.
+
+The successful RTX5090 primary and confirmation used the same frozen wrapper, effective create options, image,40GB disk, startup retries and normalized create capture. The current CLI is1.0.13 at the same recorded executable path; past CLI content/version was not captured, so exact historical CLI identity remains unproven. Current read-only account flags show `can_pay=true`, `billing_failed=false`, credit at least$1 and no unpaid-deletion flag. These reveal no explicit account block, but do not prove every server-side check passed. No concrete startup constraint or provider defect has been established.
+
+Benchmark upload was0bytes and GPU executions0. Cumulative reservation-through-independent-absence listed-time estimate is$0.009195; the conservative allowance is$0.22 including two$0.10 transfer reserves. Actual invoices and possible provider image traffic were not observed. This is planning evidence, not an invoice or hard billing bound. Raw create responses contain instance API keys and remain private0600; public receipts contain only their hashes. No third attempt is authorized or running.
+
+Exact bindings and independent no-GPU reviews are recorded in `allocation-diagnosis.json` and `closed-attempts-receipt.json`.

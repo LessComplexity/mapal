@@ -1,0 +1,450 @@
+{
+  "scope": "Read-only artifact/value-gate comparison; no source, GPU, rental or gate changes",
+  "shape": {
+    "M": 1,
+    "N": 2048,
+    "K": 7168
+  },
+  "overall_primitive_pass": false,
+  "primitive_integrity_pass": true,
+  "primitive_verification": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/primitive-verification.json",
+  "primitive_verification_sha256": "43bb3366f2203247721a934ee1d9053dfa62c0139211a1307a8d8c87856dd17d",
+  "manifest_sha256": "426c60c61603b037cf50d312f371777d73dc9bcb784d6d5a1a07a0a71ff70cd2",
+  "results_sha256": "4aeef1a28521cf1cf8eda82c451b8a5fa5944fbcb87422adcd73fd7a075cd3cf",
+  "harness_source_sha256": "aacc4630eec1cb63f9912d7597b5bce4ccfcf3faf2a58aacd37ff83799fbda51",
+  "harness_runtime_binary_sha256": "583c7eaf5b6825729a58931641523d3adc0085a790a1cdfbd5435d9b5e809066",
+  "records": {
+    "contract": {
+      "entry": "mapal_tile_538afa580cc851c9",
+      "launch": {
+        "entry": "mapal_tile_538afa580cc851c9",
+        "gx": 8,
+        "gy": 1,
+        "block": 256,
+        "smem": 0,
+        "host_line": 61,
+        "host_call": "call void @mapal_gpu_launch(i64 6019899108012609993, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+      },
+      "ptx": "/private/tmp/mapal-s56-gpu/large-composed/primitive/artifacts/rtx-5090/deepseek_expert_m1_n2048_k7168/contract/kernel.ptx",
+      "ptx_sha256": "e317e95d4c87e77c289c9282fffc3c2857a87663596b746b8a10023555182fb1",
+      "normalized_module_sha256": "5a61117f0372e2c2602175777785c7959ba0f3387d4d4665e1fc76c7eee59482",
+      "launched_entry_body_sha256": "66c52645a69479ac9f5f9fc9dc6a07a8d0f44bb60ba0004fa7571b0ab10c2a63",
+      "launched_entry_f32_fma_sites": 8,
+      "launched_entry_tf32_conversion_sites": 0,
+      "launched_entry_mma_sites": 0,
+      "launched_entry_float_conversion_sites": 0,
+      "instructions": [
+        {
+          "line": 31,
+          "text": "cvt.u64.u32 \t%rd1, %r1;"
+        },
+        {
+          "line": 32,
+          "text": "cvt.u64.u32 \t%rd2, %r2;"
+        },
+        {
+          "line": 46,
+          "text": "ld.global.nc.b32 \t%r3, [%rd13+-16];"
+        },
+        {
+          "line": 47,
+          "text": "ld.global.nc.b32 \t%r4, [%rd16+-32768];"
+        },
+        {
+          "line": 48,
+          "text": "fma.rn.f32 \t%r5, %r3, %r4, %r26;"
+        },
+        {
+          "line": 49,
+          "text": "ld.global.nc.b32 \t%r6, [%rd13+-12];"
+        },
+        {
+          "line": 50,
+          "text": "ld.global.nc.b32 \t%r7, [%rd16+-24576];"
+        },
+        {
+          "line": 51,
+          "text": "fma.rn.f32 \t%r8, %r6, %r7, %r5;"
+        },
+        {
+          "line": 52,
+          "text": "ld.global.nc.b32 \t%r9, [%rd13+-8];"
+        },
+        {
+          "line": 53,
+          "text": "ld.global.nc.b32 \t%r10, [%rd16+-16384];"
+        },
+        {
+          "line": 54,
+          "text": "fma.rn.f32 \t%r11, %r9, %r10, %r8;"
+        },
+        {
+          "line": 55,
+          "text": "ld.global.nc.b32 \t%r12, [%rd13+-4];"
+        },
+        {
+          "line": 56,
+          "text": "ld.global.nc.b32 \t%r13, [%rd16+-8192];"
+        },
+        {
+          "line": 57,
+          "text": "fma.rn.f32 \t%r14, %r12, %r13, %r11;"
+        },
+        {
+          "line": 58,
+          "text": "ld.global.nc.b32 \t%r15, [%rd13];"
+        },
+        {
+          "line": 59,
+          "text": "ld.global.nc.b32 \t%r16, [%rd16];"
+        },
+        {
+          "line": 60,
+          "text": "fma.rn.f32 \t%r17, %r15, %r16, %r14;"
+        },
+        {
+          "line": 61,
+          "text": "ld.global.nc.b32 \t%r18, [%rd13+4];"
+        },
+        {
+          "line": 62,
+          "text": "ld.global.nc.b32 \t%r19, [%rd16+8192];"
+        },
+        {
+          "line": 63,
+          "text": "fma.rn.f32 \t%r20, %r18, %r19, %r17;"
+        },
+        {
+          "line": 64,
+          "text": "ld.global.nc.b32 \t%r21, [%rd13+8];"
+        },
+        {
+          "line": 65,
+          "text": "ld.global.nc.b32 \t%r22, [%rd16+16384];"
+        },
+        {
+          "line": 66,
+          "text": "fma.rn.f32 \t%r23, %r21, %r22, %r20;"
+        },
+        {
+          "line": 67,
+          "text": "ld.global.nc.b32 \t%r24, [%rd13+12];"
+        },
+        {
+          "line": 68,
+          "text": "ld.global.nc.b32 \t%r25, [%rd16+24576];"
+        },
+        {
+          "line": 69,
+          "text": "fma.rn.f32 \t%r26, %r24, %r25, %r23;"
+        },
+        {
+          "line": 77,
+          "text": "st.global.b32 \t[%rd15], %r26;"
+        }
+      ],
+      "executions": [
+        {
+          "arm": "base",
+          "exit": 0,
+          "argv": [
+            "/w/trace/primitive-results/tile_bench",
+            "1",
+            "2048",
+            "7168",
+            "/w/run-bundle-rtx-5090/cases/deepseek_expert_m1_n2048_k7168__contract/base.ptx",
+            "mapal_tile_538afa580cc851c9",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--contract"
+          ],
+          "stdout": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__contract/base/harness.stdout",
+          "stdout_sha256": "dd4b523769807c0f8e38210715b4bedb04a75a10bc60e335e7e06ed57cf576e7",
+          "stderr": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__contract/base/harness.stderr",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "process_status_sha256": "0642c7aabea6457957a7773ffa873b7218946adb13a6297be5c3cd3d285cc411",
+          "values": [
+            {
+              "line": 4,
+              "text": "values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03"
+            },
+            {
+              "line": 5,
+              "text": "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04"
+            },
+            {
+              "line": 6,
+              "text": "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 bit_exact_vs_in_order_fold=yes"
+            }
+          ],
+          "stderr_text": "",
+          "timing_present": true
+        },
+        {
+          "arm": "null",
+          "exit": 0,
+          "argv": [
+            "/w/trace/primitive-results/tile_bench",
+            "1",
+            "2048",
+            "7168",
+            "/w/run-bundle-rtx-5090/cases/deepseek_expert_m1_n2048_k7168__contract/null.ptx",
+            "mapal_tile_538afa580cc851c9",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--contract"
+          ],
+          "stdout": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__contract/null/harness.stdout",
+          "stdout_sha256": "3941c7d98b3cbd0a4611c465221777da4addaa72b3b4e19747493f0e5196a741",
+          "stderr": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__contract/null/harness.stderr",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "process_status_sha256": "1ff6980c83f0ee83067b9df420ace93d970f6e98756538a49479149b49417b90",
+          "values": [
+            {
+              "line": 4,
+              "text": "values leg=cutlass cells=256 maxrel_vs_f64=1.787e-03"
+            },
+            {
+              "line": 5,
+              "text": "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04"
+            },
+            {
+              "line": 6,
+              "text": "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 bit_exact_vs_in_order_fold=yes"
+            }
+          ],
+          "stderr_text": "",
+          "timing_present": true
+        }
+      ]
+    },
+    "tf32": {
+      "entry": "mapal_tile_5343b47e4b7c8bad",
+      "launch": {
+        "entry": "mapal_tile_5343b47e4b7c8bad",
+        "gx": 8,
+        "gy": 1,
+        "block": 256,
+        "smem": 0,
+        "host_line": 61,
+        "host_call": "call void @mapal_gpu_launch(i64 5999837583112965037, i64 %t10, i64 %t11, i64 %t13, i32 8, i32 1, i32 256, i32 0)"
+      },
+      "ptx": "/private/tmp/mapal-s56-gpu/large-composed/primitive/artifacts/rtx-5090/deepseek_expert_m1_n2048_k7168/tf32/kernel.ptx",
+      "ptx_sha256": "cfd8d2740145392d87fcb15b33f3d2bc64a4d26fab2be0c432432c6f3d19d6c7",
+      "normalized_module_sha256": "5a61117f0372e2c2602175777785c7959ba0f3387d4d4665e1fc76c7eee59482",
+      "launched_entry_body_sha256": "971353adfbfc92fc8e855076413590cc1f24995fb7a7f84504008cfe6fd76e28",
+      "launched_entry_f32_fma_sites": 8,
+      "launched_entry_tf32_conversion_sites": 0,
+      "launched_entry_mma_sites": 0,
+      "launched_entry_float_conversion_sites": 0,
+      "instructions": [
+        {
+          "line": 31,
+          "text": "cvt.u64.u32 \t%rd1, %r1;"
+        },
+        {
+          "line": 32,
+          "text": "cvt.u64.u32 \t%rd2, %r2;"
+        },
+        {
+          "line": 46,
+          "text": "ld.global.nc.b32 \t%r3, [%rd13+-16];"
+        },
+        {
+          "line": 47,
+          "text": "ld.global.nc.b32 \t%r4, [%rd16+-32768];"
+        },
+        {
+          "line": 48,
+          "text": "fma.rn.f32 \t%r5, %r3, %r4, %r26;"
+        },
+        {
+          "line": 49,
+          "text": "ld.global.nc.b32 \t%r6, [%rd13+-12];"
+        },
+        {
+          "line": 50,
+          "text": "ld.global.nc.b32 \t%r7, [%rd16+-24576];"
+        },
+        {
+          "line": 51,
+          "text": "fma.rn.f32 \t%r8, %r6, %r7, %r5;"
+        },
+        {
+          "line": 52,
+          "text": "ld.global.nc.b32 \t%r9, [%rd13+-8];"
+        },
+        {
+          "line": 53,
+          "text": "ld.global.nc.b32 \t%r10, [%rd16+-16384];"
+        },
+        {
+          "line": 54,
+          "text": "fma.rn.f32 \t%r11, %r9, %r10, %r8;"
+        },
+        {
+          "line": 55,
+          "text": "ld.global.nc.b32 \t%r12, [%rd13+-4];"
+        },
+        {
+          "line": 56,
+          "text": "ld.global.nc.b32 \t%r13, [%rd16+-8192];"
+        },
+        {
+          "line": 57,
+          "text": "fma.rn.f32 \t%r14, %r12, %r13, %r11;"
+        },
+        {
+          "line": 58,
+          "text": "ld.global.nc.b32 \t%r15, [%rd13];"
+        },
+        {
+          "line": 59,
+          "text": "ld.global.nc.b32 \t%r16, [%rd16];"
+        },
+        {
+          "line": 60,
+          "text": "fma.rn.f32 \t%r17, %r15, %r16, %r14;"
+        },
+        {
+          "line": 61,
+          "text": "ld.global.nc.b32 \t%r18, [%rd13+4];"
+        },
+        {
+          "line": 62,
+          "text": "ld.global.nc.b32 \t%r19, [%rd16+8192];"
+        },
+        {
+          "line": 63,
+          "text": "fma.rn.f32 \t%r20, %r18, %r19, %r17;"
+        },
+        {
+          "line": 64,
+          "text": "ld.global.nc.b32 \t%r21, [%rd13+8];"
+        },
+        {
+          "line": 65,
+          "text": "ld.global.nc.b32 \t%r22, [%rd16+16384];"
+        },
+        {
+          "line": 66,
+          "text": "fma.rn.f32 \t%r23, %r21, %r22, %r20;"
+        },
+        {
+          "line": 67,
+          "text": "ld.global.nc.b32 \t%r24, [%rd13+12];"
+        },
+        {
+          "line": 68,
+          "text": "ld.global.nc.b32 \t%r25, [%rd16+24576];"
+        },
+        {
+          "line": 69,
+          "text": "fma.rn.f32 \t%r26, %r24, %r25, %r23;"
+        },
+        {
+          "line": 77,
+          "text": "st.global.b32 \t[%rd15], %r26;"
+        }
+      ],
+      "executions": [
+        {
+          "arm": "base",
+          "exit": 1,
+          "argv": [
+            "/w/trace/primitive-results/tile_bench",
+            "1",
+            "2048",
+            "7168",
+            "/w/run-bundle-rtx-5090/cases/deepseek_expert_m1_n2048_k7168__tf32/base.ptx",
+            "mapal_tile_5343b47e4b7c8bad",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--tf32"
+          ],
+          "stdout": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__tf32/base/harness.stdout",
+          "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+          "stderr": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__tf32/base/harness.stderr",
+          "stderr_sha256": "179bbfd799b7ae5430330e1e935c7d51d95ff64c32516946e880188398b0b2a8",
+          "process_status_sha256": "fd62cc3ed4edddbc422d62532d50a12dbf6e692df1a24d56e6a43bebd7905b22",
+          "values": [
+            {
+              "line": 4,
+              "text": "values leg=cutlass cells=256 maxrel_vs_f64=2.652e-01"
+            },
+            {
+              "line": 5,
+              "text": "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04"
+            },
+            {
+              "line": 6,
+              "text": "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 within_4x_cublas_tf32=NO"
+            }
+          ],
+          "stderr_text": "MAPAL VALUES WRONG: 1 of 256 cells differ from the in-order fold",
+          "timing_present": false
+        },
+        {
+          "arm": "null",
+          "exit": 1,
+          "argv": [
+            "/w/trace/primitive-results/tile_bench",
+            "1",
+            "2048",
+            "7168",
+            "/w/run-bundle-rtx-5090/cases/deepseek_expert_m1_n2048_k7168__tf32/null.ptx",
+            "mapal_tile_5343b47e4b7c8bad",
+            "8",
+            "1",
+            "256",
+            "0",
+            "30",
+            "--tf32"
+          ],
+          "stdout": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__tf32/null/harness.stdout",
+          "stdout_sha256": "8b922c97dff9339698be2f9c0d195082a9fc2448d185e4f8f5d07b964bfc112a",
+          "stderr": "/private/tmp/mapal-s56-gpu/integrated/results/primitive-rtx-5090/retrieved/trace/primitive-results/deepseek_expert_m1_n2048_k7168__tf32/null/harness.stderr",
+          "stderr_sha256": "179bbfd799b7ae5430330e1e935c7d51d95ff64c32516946e880188398b0b2a8",
+          "process_status_sha256": "04afca0aa0deceffe86ed0016c616b03173708a224da896521ca4bf80ce8d28a",
+          "values": [
+            {
+              "line": 4,
+              "text": "values leg=cutlass cells=256 maxrel_vs_f64=2.652e-01"
+            },
+            {
+              "line": 5,
+              "text": "values leg=cublas cells=256 maxrel_vs_f64=1.248e-04"
+            },
+            {
+              "line": 6,
+              "text": "values leg=mapal cells=256 maxrel_vs_f64=1.787e-03 within_4x_cublas_tf32=NO"
+            }
+          ],
+          "stderr_text": "MAPAL VALUES WRONG: 1 of 256 cells differ from the in-order fold",
+          "timing_present": false
+        }
+      ]
+    }
+  },
+  "modules_identical_after_primary_symbol_rename": true,
+  "geometry_equal": true,
+  "printed_error_comparison": {
+    "mapal_contract_and_requested_tf32_maxrel": 0.001787,
+    "cublas_maxrel": 0.0001248,
+    "ratio_from_printed_values": 14.318910256410255,
+    "four_times_cublas_from_printed_values": 0.0004992,
+    "cutlass_contract_maxrel": 0.001787,
+    "cutlass_requested_tf32_maxrel": 0.2652
+  },
+  "interpretation": "Artifact equality plus passing Contract bitwise gate supports ordinary FP32-FMA fallback arithmetic. Requested TF32 uses a different existing relative-to-cuBLAS gate and fails it. No specific wrong output cell, absolute error, cancellation cause, cuBLAS realization or compiler defect established from saved output. Stderr count1 is boolean failure bookkeeping in TF32 mode, not an enumerated mismatch count.",
+  "note_sha256": "f2025cb3853628af3823d56571b4469cf51eb1c70930c247173d30da2666e954"
+}

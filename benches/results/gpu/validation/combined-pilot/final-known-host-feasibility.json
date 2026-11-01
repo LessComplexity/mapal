@@ -1,0 +1,18 @@
+{
+  "state": "read-only-feasibility-no-eligible-known-host-offer",
+  "queried_utc": "2026-10-21T23:11:27.528015+00:00",
+  "required_machine_id": 154241,
+  "required_host_id": 303447,
+  "maximum_hourly_rate_usd": 0.7992104559,
+  "maximum_total_seconds": 600,
+  "minimum_retrieval_cleanup_reserve_seconds": 150,
+  "remaining_original_one_dollar_planning_usd": 0.2332017426530015,
+  "eligible_offers": 0,
+  "alternative_hosts_queried": false,
+  "rental_created": false,
+  "payload_uploaded": false,
+  "launch_claim_created": false,
+  "reviewed_gpu_packet_changed": false,
+  "snapshot_sha256": "2046504e9948c28e645887df2819b852b668e307785078e6646f389291ed7319",
+  "cause_of_absence_proved": false
+}

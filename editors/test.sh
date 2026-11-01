@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Both editors' highlighting, asserted. Exits non-zero on any failure.
+# Both editors' highlighting and formatting. Build mapal-cli first.
 #
 # The two grammars are hand-maintained copies of the same rules with OPPOSITE
 # precedence (Vim last-match-wins, TextMate first-match-wins/earliest-match), so
@@ -13,3 +13,4 @@ sh editors/nvim/test/run.sh
 echo
 echo "== vscode"
 python3 editors/vscode/test/scope_test.py
+node editors/vscode/test/format_test.js

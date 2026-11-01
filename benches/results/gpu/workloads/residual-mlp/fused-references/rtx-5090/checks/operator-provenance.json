@@ -1,0 +1,774 @@
+{
+  "title": "Native and same-host controls public provenance audit",
+  "pass": true,
+  "scope": "Recovery, software/math metadata, identity, source/command order and cleanup only; no numerical rerun or performance ranking.",
+  "device_identity": "NVIDIA GeForce RTX 5090, GPU-45dae734-7dbd-fc3f-ea9a-35302e563150, 580.142",
+  "identity_same_across_three_phases": true,
+  "all_six_idle_receipts_empty": true,
+  "nvcc": [
+    "12.8",
+    "12.8.93"
+  ],
+  "math_metadata": {
+    "cublas_versions": [
+      120804
+    ],
+    "cublas_math_modes": [
+      2
+    ],
+    "lt_versions": [
+      120804
+    ],
+    "lt_compute_types": [
+      "CUBLAS_COMPUTE_32F_PEDANTIC"
+    ],
+    "lt_epilogues": [
+      1,
+      4,
+      6
+    ],
+    "cutlass_operators": [
+      "SIMT_FP32"
+    ],
+    "cutlass_instruction_shapes": [
+      [
+        1,
+        1,
+        1
+      ]
+    ],
+    "native_driver_api_versions": [
+      13000
+    ],
+    "native_runtime_versions": [
+      12080
+    ],
+    "tf32_overrides": [
+      0
+    ]
+  },
+  "torch_controls": [
+    {
+      "case": "matrix",
+      "mode": "eager",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "precision": {
+        "api": "fp32_precision",
+        "global": "ieee",
+        "cuda_matmul": "ieee"
+      },
+      "pass": true,
+      "report_sha256": "0be47afb896291d62d06696f58439cd077e83635e933eed9d3ecb2dd76c8071b"
+    },
+    {
+      "case": "matrix",
+      "mode": "compiled",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "precision": {
+        "api": "fp32_precision",
+        "global": "ieee",
+        "cuda_matmul": "ieee"
+      },
+      "pass": true,
+      "report_sha256": "524e6785c6b41941338868b451b756697b1e2ca5a5be865b4144fd8111b2551d"
+    },
+    {
+      "case": "matrix-large",
+      "mode": "eager",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "precision": {
+        "api": "fp32_precision",
+        "global": "ieee",
+        "cuda_matmul": "ieee"
+      },
+      "pass": true,
+      "report_sha256": "50b24c8c18464adf0323693c4bb5f6f06ec25953e2d2af6b84a5e4eeac18039f"
+    },
+    {
+      "case": "matrix-large",
+      "mode": "compiled",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "precision": {
+        "api": "fp32_precision",
+        "global": "ieee",
+        "cuda_matmul": "ieee"
+      },
+      "pass": true,
+      "report_sha256": "c91ae0e928087265dcddff44e5f0bb9704687c5cc6deab7047ccd1a3dd0fac1d"
+    }
+  ],
+  "phase_order": [
+    "native_comparison",
+    "torch_bootstrap",
+    "composed_controls"
+  ],
+  "phase_commands_in_exact_recorded_order": [
+    {
+      "name": "native-check",
+      "argv": [
+        "python3",
+        "/w/composed-fused-reference/run_native.py",
+        "--check-only"
+      ],
+      "timeout_seconds": 60,
+      "exit": 0,
+      "seconds": 1.517914,
+      "stdout_sha256": "9ce849e0b322500f1c763ee36af0a3bcc7e478b3011d8ccc9204e675546d9c0d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "control-check",
+      "argv": [
+        "python3",
+        "/w/composed-matrix/run_all.py",
+        "--check-only"
+      ],
+      "timeout_seconds": 60,
+      "exit": 0,
+      "seconds": 0.265248,
+      "stdout_sha256": "92fc6f72865e7f0c2ca912487f438ef375db6ee0ddf5b2a8b10c42e5bb51cdc4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "apt-update",
+      "argv": [
+        "apt-get",
+        "update"
+      ],
+      "timeout_seconds": 110,
+      "exit": 0,
+      "seconds": 1.417903,
+      "stdout_sha256": "d79621921600241e31a2a572c34081702e436e7922ecd3322ec42153169e8687",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "apt-time",
+      "argv": [
+        "apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "time"
+      ],
+      "timeout_seconds": 110,
+      "exit": 0,
+      "seconds": 1.869179,
+      "stdout_sha256": "3ce0bc8b8a78d85c32e308b52fc8120c34f572b48b2a6c3a387d30839846839e",
+      "stderr_sha256": "f77216c41aadf6c667ac1a602069951966cea350daab793ffe11ae0de1225ddc"
+    },
+    {
+      "name": "time-version",
+      "argv": [
+        "/usr/bin/time",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.001845,
+      "stdout_sha256": "a3b64288a651d40a18a243c43c871f7ae2886baa58b7e3c64a1061bfd651245f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "time-package",
+      "argv": [
+        "dpkg-query",
+        "-W",
+        "-f",
+        "${Package}\t${Version}\n",
+        "time"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.008075,
+      "stdout_sha256": "0d50031558b3938272647f7e2b22164dbec92cc0c00ed3a45a042b8f446dc936",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "nvcc-version",
+      "argv": [
+        "nvcc",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.008073,
+      "stdout_sha256": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "cuobjdump-version",
+      "argv": [
+        "cuobjdump",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.00398,
+      "stdout_sha256": "157d181422abcec788126267a332f951918897ba615a87e6eb621da0fbd04395",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "cc-version",
+      "argv": [
+        "cc",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.004159,
+      "stdout_sha256": "2dbcdf2a3d0daa1b738edef104c5ae91b78ac2240233ca3d8f0315247ea954aa",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "objdump-version",
+      "argv": [
+        "objdump",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.004319,
+      "stdout_sha256": "af0f1c72e66b14b19cc6f13713985a90b7a8e9cb0acc075b7d75b2e591d45762",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "g++-version",
+      "argv": [
+        "g++",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.004416,
+      "stdout_sha256": "2492f521845dd536aad96475a9c2fd8299b960a29d0821dcab0bbe0e1668717b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "nvidia-smi-version",
+      "argv": [
+        "nvidia-smi",
+        "--version"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.064363,
+      "stdout_sha256": "574ee0ffd2a26b16f1aec544e081432335e6ce176c95a67881616f9702b5fd40",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "cuda-header-stub",
+      "argv": [
+        "/usr/bin/python3",
+        "-c",
+        "import pathlib; p=pathlib.Path('/usr/local/cuda'); assert(p/'include/cuda.h').is_file(); assert(p/'lib64/stubs/libcuda.so').is_file(); print('CUDA header and driver stub exist')"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.032252,
+      "stdout_sha256": "a66348289237c9c406afa1e592fc832c3ecb6a9d49580a53383b1c6e87174ccb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-identity-before-native_comparison",
+      "argv": [
+        "nvidia-smi",
+        "--query-gpu=name,uuid,driver_version",
+        "--format=csv,noheader"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.114471,
+      "stdout_sha256": "b5a1042161582db5f5fec32686e39aeaa0935a0bfe932e8dd00d60f1ad5159e0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-before-native_comparison",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.114553,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "native_comparison",
+      "argv": [
+        "python3",
+        "/w/composed-fused-reference/run_native.py",
+        "--out",
+        "/w/trace/composed-native",
+        "--total-timeout",
+        "1200"
+      ],
+      "timeout_seconds": 1230,
+      "exit": 0,
+      "seconds": 239.097836,
+      "stdout_sha256": "13db483a8001896eaea782ca08bd3d44b835e2cec9029e14df01b52e905997bb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-after-native_comparison",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.114879,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-identity-before-torch_bootstrap",
+      "argv": [
+        "nvidia-smi",
+        "--query-gpu=name,uuid,driver_version",
+        "--format=csv,noheader"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.114455,
+      "stdout_sha256": "b5a1042161582db5f5fec32686e39aeaa0935a0bfe932e8dd00d60f1ad5159e0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-before-torch_bootstrap",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.064553,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "torch_bootstrap",
+      "argv": [
+        "python3",
+        "/w/bootstrap_torch.py",
+        "--out",
+        "/w/trace/torch-bootstrap"
+      ],
+      "timeout_seconds": 445,
+      "exit": 0,
+      "seconds": 50.292615,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-after-torch_bootstrap",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.115107,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-identity-before-composed_controls",
+      "argv": [
+        "nvidia-smi",
+        "--query-gpu=name,uuid,driver_version",
+        "--format=csv,noheader"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.064587,
+      "stdout_sha256": "b5a1042161582db5f5fec32686e39aeaa0935a0bfe932e8dd00d60f1ad5159e0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-before-composed_controls",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.032287,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "composed_controls",
+      "argv": [
+        "/w/torch-venv/bin/python",
+        "/w/composed-matrix/run_all.py",
+        "--out",
+        "/w/trace/composed-controls",
+        "--total-timeout",
+        "900"
+      ],
+      "timeout_seconds": 930,
+      "exit": 0,
+      "seconds": 63.927131,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "gpu-idle-after-composed_controls",
+      "argv": [
+        "nvidia-smi",
+        "--query-compute-apps=pid",
+        "--format=csv,noheader,nounits"
+      ],
+      "timeout_seconds": 35,
+      "exit": 0,
+      "seconds": 0.064136,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "phase_wall_seconds": {
+    "native_comparison": 239.097836,
+    "torch_bootstrap": 50.292615,
+    "composed_controls": 63.927131
+  },
+  "per_phase_timestamp_limit": "Absolute per-phase UTC starts were not recorded. Exact receipt order and measured durations are recorded; no inferred UTC boundaries.",
+  "native_build_commands": [
+    {
+      "candidate": -1,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=-1",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/-1/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/-1/native",
+        "sha256": "a5d768e2f1b1a3056975b992801e42449cc46bbb75f3fa06e4338f5c460bf584"
+      },
+      "process_wall_seconds": 7.034327937755734,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 0,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=0",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/0/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/0/native",
+        "sha256": "2d57727912cf91d401965164e3751db17193941edfad00b700d11b123bdeb990"
+      },
+      "process_wall_seconds": 8.789606493897736,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 1,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=1",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/1/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/1/native",
+        "sha256": "37ba0473663e41c720ff4bc3b2b74987f223aa1a36b229edd5f19c1a259334a7"
+      },
+      "process_wall_seconds": 8.285890270024538,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 2,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=2",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/2/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/2/native",
+        "sha256": "68051b856de3d2a2f2c1eba3bee5322cbfb994f2fd5634a99201628f2912263a"
+      },
+      "process_wall_seconds": 7.932380045764148,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 3,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=3",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/3/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/3/native",
+        "sha256": "037cf5fb0805afc35623ed1194ef08d2ae6c8147d917a5f6784296879d43a271"
+      },
+      "process_wall_seconds": 8.032623182982206,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 4,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=4",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/4/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/4/native",
+        "sha256": "6cd683a3d113d287a1b5def51f6aa953a1319a8ff790f95ec31cf6b6fc96060e"
+      },
+      "process_wall_seconds": 8.838349968660623,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 5,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=5",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/5/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/5/native",
+        "sha256": "e98204d2d25aa1d7014cb6e1d92f5329683688b8a71dd5b5e1db662b3c22cbda"
+      },
+      "process_wall_seconds": 7.687342537101358,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    },
+    {
+      "candidate": 6,
+      "argv": [
+        "nvcc",
+        "-O3",
+        "-std=c++17",
+        "-arch=sm_120",
+        "-DCOMPOSED_CUTLASS_CANDIDATE=6",
+        "-I/w/composed-fused-reference/cutlass/include",
+        "/w/composed-fused-reference/composed_native.cu",
+        "-lcublas",
+        "-lcublasLt",
+        "-o",
+        "/w/trace/composed-native/build/6/native"
+      ],
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "pass": true,
+      "exit_code": 0,
+      "binary": {
+        "path": "/w/trace/composed-native/build/6/native",
+        "sha256": "ec119416d4f23c05466574ed8c84f72862b159c04ee313e99af3db272069700a"
+      },
+      "process_wall_seconds": 7.8876225161366165,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3dd6f3bf1c59f693f915e8c15f50eb82fd760229feecf9d685a73c8f2c0e2f4e"
+    }
+  ],
+  "components": [
+    {
+      "archive": "composed-fused-native-reference-v1.tar.gz",
+      "archive_sha256": "12fd10e54a2f9f56efda2d4cdc7f9939c2e2ea03f7ad54ba452beb31b52a6c4c",
+      "archive_bytes": 3771894,
+      "manifest_sha256": "4fb22559cc07319d46ae719425a03e8efc258ebeea1ffeda20e6e40245c8d5b0",
+      "sealed_payload_files": 962,
+      "cutlass_commit": "91843b71d90737e0a9b86f7d9df213cff5a3526f",
+      "emitter_sha256": null,
+      "source_files": {
+        "composed_native.cu": "452554ca3b64bd80eb2dcdd5e9b881db19b21d44e9b89e8dcb23f0f20b28f2ec",
+        "frozen/handwritten/inputs/fixture.hpp": "780ca3f33a785c58abd52b32d0eb26c2c7d36a9a225eb5719eae5f2f2cc330a3",
+        "frozen/handwritten/reference.cu": "917a8a1b1aa983d7b9c38603950349262aebe515e8f6d1faa5653287b17730b0",
+        "frozen/pytorch/numerics.py": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a",
+        "native_plans.hpp": "7bd9d2d47c4f947926e5da4319c710300fcec469af35c1e153cf89814bd843e2",
+        "prepare_reference_data.py": "e92d3f30bab5ca49bd568ddb5c2d1a428d4434988d953d9648cae8963143dc04",
+        "run_native.py": "a70da14ba47cbb388e16b63d388ffaac4f2772f87c751582376438c929e6c052",
+        "test_cancel.py": "215a54cee08feddea6d208cdf2490fa13c935653e0cc2fb7d51fcf9db340ce0c",
+        "test_cleanup.py": "c9b154bca7a2bff5110790e7ecfb750f360c202601ad3d72aaee8c2b19efa80d",
+        "test_handshake.py": "249156b24dfc20cddcbe37746d905974ca1d85affa2eac38fe4227a0646fff14",
+        "test_validation.py": "7740853e7fe0648d947b95fc6015c22708ffa8f18cb11addc3a425e1f12de41e",
+        "validate_native.py": "b381573b65309b6188938a8dea892bdaef7223ac0779aedafe7ec50dabd88b28"
+      }
+    },
+    {
+      "archive": "composed-matrix-v4.tgz",
+      "archive_sha256": "c6435b82ea682b8f392e9f2302e7d56a28eab61d5ac50c5a852e33fe52e7ff29",
+      "archive_bytes": 8179649,
+      "manifest_sha256": "201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc",
+      "sealed_payload_files": 85,
+      "cutlass_commit": null,
+      "emitter_sha256": "fa60cfa4a809802aa5de05515839083cafc054b626006ba89f504cbbeeb7ec1f",
+      "source_files": {
+        "gate_matrix.py": "cbcd27e2e46e5b6ac33f62e43c2d488c0ca4f387769d6897ef16b6a66ecceadb",
+        "handwritten/inputs/fixture.hpp": "780ca3f33a785c58abd52b32d0eb26c2c7d36a9a225eb5719eae5f2f2cc330a3",
+        "handwritten/inputs/numerics.py": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a",
+        "handwritten/prepare.py": "a4f7644a1dd4ae1403cc300383180c4a20a83ad5b9c9cd79dd04f414d2241292",
+        "handwritten/reference.cu": "917a8a1b1aa983d7b9c38603950349262aebe515e8f6d1faa5653287b17730b0",
+        "handwritten/run_reference.py": "7bf2eea3bfe46a9c02ca1685529abca7971374c2b62370183a3454e901e7f42a",
+        "mapal_wrapper.c": "4cec182e45f16c9bec5433cee28c91c0969b0a3a5677596ef992afeb570d52b8",
+        "matrix_reference.cu": "081c1d85eeeed7fd535e962247eb15e9ae721cc4c8e85e3fc5cf790d432d53a3",
+        "matrix_torch.py": "bf7bb312915231e6b71b7a91d0ae1966dea63a0815fffbc214619cce29844f44",
+        "pytorch/numerics.py": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a",
+        "pytorch/run_reference.py": "a718f81ead3b2b5b02b4315a622cbabd71036407e0f1d2a03ebaa18fbb601d18",
+        "run_all.py": "1a05f7c043f7fe38d6d9d13dedcc712f973cc3678848b5be9c767c18f7cc9f50",
+        "run_matrix.py": "1a5ad92dcde57ab4d6300775e76733c5b4eb24ca05f5c5686f6d77dc5877a272",
+        "runtime/mapal_gpu.c": "640f671b57b6edb03038eceea4c8e68ba95026ca5a7d8565848456f652b25565",
+        "small_gate.py": "1a136f498a2b814495b00f7472aab14eccb625a2c27e1d4b0d64e4b690230b99",
+        "test_cancel.py": "4f5cee2b0ec35cdda0733a70aac03153ae954c8543060134ebc552955cdd9b92",
+        "test_large.py": "40c7942c28f06a337faef8479619b8bef0539a342b1589078a6a8d58fc0a928b",
+        "test_matrix.py": "8d5cfaeaba3a96e9579fb4bb35bb8fb09856988213688b296759d994a5e5a4bd"
+      }
+    }
+  ],
+  "verified_seals": {
+    "operator": {
+      "sealed_files": 75,
+      "summary_sha256": "8f5e9fff083f20b7b4a24c94dea7354e18924473e2c6a3587d3bf7e49989df64",
+      "pass": true
+    },
+    "native": {
+      "sealed_files": 910,
+      "summary_sha256": "3c9652d0b758a84f3ec37981935870a7378b7347f29eea8b91c8bf2a64be8f58",
+      "pass": true
+    },
+    "bootstrap": {
+      "sealed_files": 31,
+      "summary_sha256": "bd2c89279061b51478df3b3ddf6a26866af06ecc8d07542d257c37e9d8894889",
+      "pass": true
+    },
+    "controls_matrix": {
+      "sealed_files": 235,
+      "summary_sha256": "998db1c32019ef1eb1d981b03286fbbf5272ee1bee01712c66079bf141de00d8",
+      "pass": true
+    },
+    "controls_matrix_large": {
+      "sealed_files": 235,
+      "summary_sha256": "3ef09faac1b4219feae61c5aa854fc5b2e6cf959623264b9685f35942646666b",
+      "pass": true
+    }
+  },
+  "recovery": {
+    "all_recovered_files": 1492,
+    "archive_sha256": "7c9fd12bee9f88fa82e70f5b788cbd46dd92e8cdc3fecff88ab0e215336b53df",
+    "all_archive_members_match_recovered_manifest": true,
+    "recovery_receipt_sha256": "acaa86737c5ab61e543392fb6a3844d1dc2d5f6def0f79597ae6beb565f3c34c"
+  },
+  "ownership": {
+    "create_utc": "2026-10-22T19:10:05.844980+00:00",
+    "owned_id": 57259496,
+    "machine_id": 58084,
+    "host_id": 98309,
+    "preexisting_ids_protected": [
+      57065574,
+      57100404,
+      57126023,
+      57133432
+    ],
+    "cleanup": {
+      "instance": 57259496,
+      "confirmed_absent": true,
+      "verified_utc": "2026-10-22T19:17:06.789439+00:00",
+      "method": "Independent exact-ID inventory absence"
+    },
+    "cleanup_sha256": "cfd8a0610ebb98542d6b99ecc4d7909769bf525085dbef7d8c8b98d3bf5ab945",
+    "absence_before_absolute_deadline": true
+  },
+  "public_raw_tree_scan": {
+    "files_scanned": 1384,
+    "high_confidence_credential_pattern_hits": [],
+    "suspicious_credential_paths": []
+  },
+  "limitations": [
+    "OS driver580.142 and CUDA driver API13000 use different version schemes. Native runtime12080 is CUDA12.8; Torch reports bundledCUDA13.0.",
+    "Math settings are reported/source-bound configuration, not captured library instruction evidence. No NCU/counters were run.",
+    "Private library allocations remain unmeasured.",
+    "Pattern scans cannot prove absence of every possible secret; no unexpected secrets found in reviewed ordinary trees."
+  ],
+  "redaction": "No raw provider/API/account data, endpoints, credentials, payment data. No shared edits or new rental."
+}

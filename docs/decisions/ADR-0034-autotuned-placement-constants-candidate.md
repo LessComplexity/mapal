@@ -1,6 +1,6 @@
 # ADR-0034: Placement constants are searched, not set — the autotuner over `tile_plan` (candidate)
 
-Date: 2026-07-25 · Status: **candidate — NOT decided** · number provisional · changes nothing until accepted. Extends ADR-0032 D4 (backend config = performance tailors). Related: `docs/notes/tile-ladder-direction.md`, `docs/notes/2026-07-25-thesis-review.md`, suggestion #10 (`block_plan`).
+Date: 2026-07-25 · Status: **accepted-for-implementation** (Sapir, 2026-10-26: "yes go for it" — sprint `site-geometry`). Extends ADR-0032 D4 (backend config = performance tailors). Related: `docs/notes/tile-ladder-direction.md`, `docs/notes/2026-07-25-thesis-review.md`, suggestion #10 (`block_plan`).
 
 ## Context (what forced the decision)
 

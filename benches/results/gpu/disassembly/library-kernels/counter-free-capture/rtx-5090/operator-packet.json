@@ -1,0 +1,75 @@
+{
+  "ready": true,
+  "state": "reviewable-awaiting-bound-root-review",
+  "staging": "/private/tmp/mapal-s61-gpu/attempt-13/staging",
+  "attempt_id": "executed-library-images-attempt-13",
+  "uncapped_budget_authorization": "User: dont cap just do the performance analysis",
+  "protect_all_preexisting_instances": true,
+  "max_seconds": 3300,
+  "retrieval_cleanup_reserve_seconds": 180,
+  "offer": {
+    "id": 57263686,
+    "machine_id": 140049,
+    "host_id": 552627,
+    "gpu_name": "RTX 5090",
+    "num_gpus": 1,
+    "cpu_arch": "amd64",
+    "dph_total": 1.0777777777777777,
+    "cuda_max_good": 13.3,
+    "inet_down_cost": 0.0013020833333333333,
+    "inet_up_cost": 0.0013020833333333333,
+    "inet_down": 8388.6,
+    "inet_up": 7272.4,
+    "reliability2": 0.9934315,
+    "dph_base": 1.0666666666666667,
+    "storage_cost": 0.19999999999999998,
+    "storage_total_cost": 0.011111111111111112
+  },
+  "files": {
+    "batch-plan.json": "42330421d03df8e1e0e932adff1b9a7385260d2500cbbf8cf801444e56dc954f",
+    "competitive-ordinary.tgz": "3d30714b73023a5454fd4c839455b0a871fc20e19b94b37ded5f7f58450d24ff",
+    "box_run.sh": "38acfb5190be3c343667e404644ee4796812a4b915e3d3890a96e92edd833b7c",
+    "library-image-capture-v2.tar.gz": "48f288f43a9d2133a50e3572de8aa5604209fc254e5697e0c8027f15d5aaacaf",
+    "competitive-fp32-reference-v2.tar.gz": "713433bf62bc7dc744bc1f2e3a917f73a83e3a1553726202094e569698475064",
+    "run_batch.py": "0997687b1a0d0c41dc2a021825da6375696366e15ec0c84d2258cbbc87e684a0",
+    "verify_cupti_targets.py": "6ffa09f1ede5bc1cb86b5f82673affb9105c04969100cbb80139ddbe9d398c13",
+    "sealed-files.json": "ca10ccb8a3d9f5d2b4ec27cafa04a4dcee54011573ff31512e73ae50a795a5c0"
+  },
+  "scope": "Counter-free three-leg actual image capture using exact admitted ordinary binary and original absolute paths. New diagnostic host identity, no new ordinary timings, counters or admin changes.",
+  "offer_snapshot_sha256": "cd0073addfca6b02e1f2508acb2f6e3d42140b619fb33ba4d5685b9d3e0b6fd2",
+  "disk_gib": 40,
+  "rate_includes_requested_storage": true,
+  "new_planning_reservation_usd": 1.0879629629629628,
+  "image": "nvidia/cuda:12.8.1-devel-ubuntu22.04",
+  "same_payload_upload_attempts": 2,
+  "wrapper_sha256": "c202181769f7fd885947423a9c372e02417b56640856389ec5ec852aae7cb83a",
+  "confirm_created_sha256": "01b66353ff48e9678f06309aaf873a10f51e74e41d85f2419ee57529220db49a",
+  "phase_plan_sha256": "42330421d03df8e1e0e932adff1b9a7385260d2500cbbf8cf801444e56dc954f",
+  "payload_bytes": 9157695,
+  "archive_bytes": 9142743,
+  "phase_budgets": [
+    {
+      "name": "library_image_request",
+      "outer_max_seconds": 60,
+      "minimum_start_seconds": 630,
+      "optional": false,
+      "results": "/w/trace/library-image-request.json"
+    },
+    {
+      "name": "capture_check",
+      "outer_max_seconds": 60,
+      "minimum_start_seconds": 570,
+      "optional": false,
+      "results": "/w/trace/library-images"
+    },
+    {
+      "name": "library_image_capture",
+      "outer_max_seconds": 510,
+      "minimum_start_seconds": 510,
+      "optional": false,
+      "results": "/w/trace/library-images"
+    }
+  ],
+  "failure_policy": "Every nonzero, protocol/identity/numerical/attribution failure or timeout aborts later capture legs. All partial receipts retrieved, only exact response-owned ID cleaned. No ordinary timing claim, rebuild, counters or host/admin changes.",
+  "create_cancel_unavailable": true
+}

@@ -1,0 +1,19 @@
+test_complete_multi_kernel_preserved_and_invocations_distinct (test_parse_ncu.ParserTests.test_complete_multi_kernel_preserved_and_invocations_distinct) ... ok
+test_csv_rejects_conflicting_identity_duplicate_metric_and_permission (test_parse_ncu.ParserTests.test_csv_rejects_conflicting_identity_duplicate_metric_and_permission) ... ok
+test_filtered_wrong_id_or_context_rejected (test_parse_ncu.ParserTests.test_filtered_wrong_id_or_context_rejected) ... ok
+test_launch_byte_units_reject_uninterpreted_kilobytes (test_parse_ncu.ParserTests.test_launch_byte_units_reject_uninterpreted_kilobytes) ... ok
+test_launch_stats_not_reported_as_hardware_counter (test_parse_ncu.ParserTests.test_launch_stats_not_reported_as_hardware_counter) ... ok
+test_protocol_rejects_numeric_failure_even_with_completion (test_parse_ncu.ParserTests.test_protocol_rejects_numeric_failure_even_with_completion) ... ok
+test_protocol_rejects_wrong_identity_digest_and_leg (test_parse_ncu.ParserTests.test_protocol_rejects_wrong_identity_digest_and_leg) ... ok
+test_wrong_kernel_missing_sass_and_error_rejected (test_parse_ncu.ParserTests.test_wrong_kernel_missing_sass_and_error_rejected) ... ok
+test_numeric_post_failure_overrides_true_harness_protocol (test_run_ncu.RunnerTests.test_numeric_post_failure_overrides_true_harness_protocol) ... ok
+test_permission_error_stops_before_later_legs (test_run_ncu.RunnerTests.test_permission_error_stops_before_later_legs) ... ok
+test_three_legs_and_every_internal_kernel_preserved_with_real_numeric_checker (test_run_ncu.RunnerTests.test_three_legs_and_every_internal_kernel_preserved_with_real_numeric_checker) ... ok
+test_wrong_filtered_launch_id_stops_before_source_admission (test_run_ncu.RunnerTests.test_wrong_filtered_launch_id_stops_before_source_admission) ... ok
+test_rejects_failed_bounded_gate_or_confirmation_selection (test_build_request.BuilderTests.test_rejects_failed_bounded_gate_or_confirmation_selection) ... ok
+test_selected_binary_is_reused_and_mutation_rejected (test_build_request.BuilderTests.test_selected_binary_is_reused_and_mutation_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 3.955s
+
+OK

@@ -1,0 +1,163 @@
+{
+  "ready_for_review": true,
+  "no_rental_upload_create": true,
+  "packet_sha256": "b37f14727ac878394046d520e83ef60c1679f1efe758e9ad37cf4dac20a12432",
+  "launcher_sha256": "90c514ad3b97b3c7f30909383703107f465ff3ccd3788b4366baa72e33bdc211",
+  "wrapper_sha256": "ceedc88b50263e4c76b765ae784216aa7f374df65790e032e85dbc22f09b948e",
+  "payload_bytes": 26444972,
+  "archive_bytes": 26423939,
+  "components": {
+    "allocation-gate-v2.tgz": {
+      "sha256": "a93247bef4e50b96ed148dbad6c66a77caf1f10462ab6af8b2210c7a4de545cd",
+      "bytes": 12568328
+    },
+    "composed-matrix-v3.tgz": {
+      "sha256": "750a72f414573417fcf2dae3c2f39e1cfb738d63417995309920541c55af0119",
+      "bytes": 8178381
+    },
+    "kernel-B-comparison.tgz": {
+      "sha256": "09f8318c3aea5a38a5190d05361bd5840c45bceaf6ca12d5d87b117e61f515a2",
+      "bytes": 2861573
+    },
+    "kernel-diagnostics.tgz": {
+      "sha256": "95d68cec8de2d386700322bd91ffd7becbe8ec6c7d747246175b10d6b295b618",
+      "bytes": 2815657
+    }
+  },
+  "offer_queried_utc": "2026-10-22T03:13:03.167381+00:00",
+  "offer": {
+    "id": 56809128,
+    "machine_id": 17419,
+    "host_id": 43746,
+    "gpu_name": "RTX 5090",
+    "num_gpus": 1,
+    "cpu_arch": "amd64",
+    "dph_total": 0.611111111111111,
+    "cuda_max_good": 13.0,
+    "inet_down_cost": 0.0026041666666666665,
+    "inet_up_cost": 0.00390625,
+    "inet_down": 828.5,
+    "inet_up": 922.3,
+    "reliability2": 0.9927817,
+    "dph_base": 0.6,
+    "storage_cost": 0.19999999999999998,
+    "storage_total_cost": 0.011111111111111112
+  },
+  "phase_budgets": [
+    {
+      "name": "allocation_gate",
+      "outer_max_seconds": 1530,
+      "minimum_start_seconds": 1530,
+      "optional": false,
+      "results": "/w/trace/allocation-gate-v2-results"
+    },
+    {
+      "name": "torch_bootstrap",
+      "outer_max_seconds": 445,
+      "minimum_start_seconds": 445,
+      "optional": false,
+      "results": "/w/trace/torch-bootstrap"
+    },
+    {
+      "name": "composed",
+      "outer_max_seconds": 930,
+      "minimum_start_seconds": 400,
+      "optional": false,
+      "results": "/w/trace/composed-results"
+    },
+    {
+      "name": "kernel_B",
+      "outer_max_seconds": 175,
+      "minimum_start_seconds": 180,
+      "optional": true,
+      "results": "/w/trace/kernel-B"
+    },
+    {
+      "name": "diagnostics",
+      "outer_max_seconds": 175,
+      "minimum_start_seconds": 180,
+      "optional": true,
+      "results": "/w/trace/kernel-diagnostics"
+    }
+  ],
+  "absolute_create_to_independent_absence_max_seconds": 3300,
+  "wrapper_cutoff_seconds": 3120,
+  "retrieval_cleanup_reserve_seconds": 180,
+  "transfer_reserve_usd": 0.1,
+  "maximum_new_planning_reservation_usd": 0.6601851851851851,
+  "maximum_cumulative_planning_usage_usd": 1.5638451383559313,
+  "explicit_budget_extension_required": true,
+  "protected_instance_snapshot": {
+    "queried_utc": "2026-10-22T03:13:03.526633+00:00",
+    "instances": [
+      {
+        "id": 57065574,
+        "machine_id": 69770,
+        "host_id": 435366,
+        "actual_status": "exited",
+        "dph_total": 0.08333333333333333,
+        "num_gpus": 1,
+        "gpu_name": "GTX 1660 S"
+      },
+      {
+        "id": 57100404,
+        "machine_id": 144411,
+        "host_id": 560104,
+        "actual_status": "running",
+        "dph_total": 0.09666666666666666,
+        "num_gpus": 1,
+        "gpu_name": "Quadro P4000"
+      },
+      {
+        "id": 57126023,
+        "machine_id": 53859,
+        "host_id": 228989,
+        "actual_status": "exited",
+        "dph_total": 0.07185185185185186,
+        "num_gpus": 1,
+        "gpu_name": "Quadro P4000"
+      },
+      {
+        "id": 57133432,
+        "machine_id": 31844,
+        "host_id": 79466,
+        "actual_status": "running",
+        "dph_total": 0.0811111111111111,
+        "num_gpus": 1,
+        "gpu_name": "GTX 1660 S"
+      }
+    ]
+  },
+  "required_dependencies": {
+    "image": "nvidia/cuda:12.8.1-devel-ubuntu22.04",
+    "allocation": [
+      "Python3",
+      "cc",
+      "objdump",
+      "CUDA headers and driver stub"
+    ],
+    "composed": [
+      "nvcc sm120",
+      "cuBLAS",
+      "CUDA driver",
+      "pinned pip25.3 wheel SHA9655943313a94722b7774661c21049070f6bbb0a1516bf02f7c8d5d9201514cd",
+      "pinned pip25.3 wheel SHA9655943313a94722b7774661c21049070f6bbb0a1516bf02f7c8d5d9201514cd",
+      "torch2.13.0 cu130 plus its pinned package dependencies; install report and freeze preserved"
+    ],
+    "capture": [
+      "nvdisasm",
+      "CUPTI headers/library from CUDA devel; no extra install"
+    ]
+  },
+  "tests": {
+    "launcher": 23,
+    "batch_order_failure": 19,
+    "allocation_classifier": 11,
+    "bootstrap": 4,
+    "real_retrieval_inventory": "success1528files/partial728files all hashes",
+    "real_nested_cleanup": "6-second inner cleanup within15-second outer grace",
+    "real_spawn_assignment_race": "actual nested phase and detached leaf killed/reaped; later phase not started"
+  },
+  "all_results_retrieved_from": "/w/trace",
+  "runtime_prediction": "Per-phase bounds are ceilings, not measured completion promises. Shared absolute deadline truncates work; later optional phases may skip."
+}

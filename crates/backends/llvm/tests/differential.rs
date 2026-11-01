@@ -12,7 +12,7 @@
 //!
 //! Profile policy (ADR-0038 D4): every emission here pins a profile by name —
 //! `generic`, whose NEON-derived geometry is what the tile-shape assertions
-//! bind — because S46 made `EmitOpts::default().target` the host-detected
+//! bind — because S46 made `EmitOpts::exact().target` the host-detected
 //! `native`, and a detected AVX2/AVX-512/L2 yields different tile constants.
 //! The ONE leg that intentionally floats on the ambient default is
 //! `differential_native_profile_is_value_correct` (values only, no shape).
@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
-use mapal_interp::{Outcome, RValue, RunResult, render, run};
+use mapal_interp::{Outcome, RunResult, native_observable as expect_native, run};
 use mapal_ir::{CategoryIr, Operation, Ty};
 use mapal_rewrite::{PassId, rewrite};
 
@@ -59,6 +59,11 @@ const TIMEOUT_SECS: u64 = 15;
 /// levels, against the same oracle expectations — the cross product is
 /// unchanged; only the number of *binaries* shrinks.
 const BATCH: usize = 32;
+
+/// Pool width of a sweep child: parallel, but small enough that
+/// `job_slots() × SWEEP_LANES` stays inside the core budget. Single tests that
+/// pin the default pool (`run_exe(.., None)`) keep it.
+const SWEEP_LANES: &str = "2";
 
 const EXAMPLES: &[&str] = &[
     "abs",
@@ -158,7 +163,10 @@ fn try_compile_exe(
     {
         cmd.arg(format!("-fuse-ld={ld}"));
     }
-    let out = cmd.output().unwrap();
+    let out = {
+        let _slot = slot();
+        cmd.output().unwrap()
+    };
     if out.status.success() {
         Ok((dir, exe))
     } else {
@@ -171,7 +179,9 @@ fn run_exe(exe: &Path, secs: u64, mapal_par: Option<&str>) -> Option<(Vec<u8>, i
     command
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .env_remove("MAPAL_PAR");
+        .env_remove("MAPAL_PAR")
+        // Values only: no host spin while other children share the cores.
+        .env("MAPAL_SPIN", "0");
     if let Some(value) = mapal_par {
         command.env("MAPAL_PAR", value);
     }
@@ -187,20 +197,27 @@ fn run_case(exe: &Path, secs: u64, slot: usize) -> Option<(Vec<u8>, i32)> {
         .arg(slot.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .env_remove("MAPAL_PAR");
+        .env("MAPAL_PAR", SWEEP_LANES)
+        .env("MAPAL_SPIN", "0");
     wait_boxed(command, secs)
 }
 
 /// Spawn and wait, time-boxed. `None` on timeout (the caller fails loudly
 /// rather than hanging).
 fn wait_boxed(mut command: Command, secs: u64) -> Option<(Vec<u8>, i32)> {
+    let _slot = slot();
     let mut child = command.spawn().unwrap();
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             let mut buf = Vec::new();
             child.stdout.take().unwrap().read_to_end(&mut buf).unwrap();
-            return Some((buf, status.code().unwrap_or(-1)));
+            // Killed by a signal: the shell's `128 + signal`.
+            let code = status.code().unwrap_or_else(|| {
+                use std::os::unix::process::ExitStatusExt;
+                128 + status.signal().unwrap_or(0)
+            });
+            return Some((buf, code));
         }
         if start.elapsed() > Duration::from_secs(secs) {
             let _ = child.kill();
@@ -211,31 +228,6 @@ fn wait_boxed(mut command: Command, secs: u64) -> Option<(Vec<u8>, i32)> {
 }
 
 // --- oracle expectation ---------------------------------------------------
-
-/// The expected native observable from the interp oracle (L1 / BL8). Returns
-/// `None` for a Diverged run (skip). `Some((None, 101))` for a trap (stdout
-/// ignored). `Some((Some(stdout), 0))` for a Done program — the entry protocol
-/// decides the observable: an `IoToken` entry's stdout is the token log; a
-/// closed `Unit → scalar` entry's is the wrapper-printed return.
-fn expect_native(ir: &CategoryIr, rr: &RunResult) -> Option<(Option<String>, i32)> {
-    match &rr.outcome {
-        Outcome::Diverged => None,
-        Outcome::Trapped(_) => Some((None, 101)),
-        Outcome::Done(v) => {
-            let entry = ir.entry();
-            let in_ty = &ir.object(ir.func(entry).unwrap().input).unwrap().ty;
-            let stdout = if *in_ty == Ty::IoToken {
-                rr.output.clone()
-            } else if let RValue::Scalar(sv) = v {
-                // The @main wrapper prints the scalar return with a newline.
-                format!("{}\n", render(sv))
-            } else {
-                String::new() // non-printable return: wrapper prints nothing
-            };
-            Some((Some(stdout), 0))
-        }
-    }
-}
 
 /// Emit `ir`, compile+run at **both `-O0` and `-O2`**, and assert L1 parity
 /// against `rr` at each level — the same oracle expectations (DESIGN §8 `-O2`
@@ -251,7 +243,7 @@ fn assert_parity(clang: &str, ir: &CategoryIr, rr: &RunResult, tag: &str) {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap_or_else(|e| panic!("{tag}: emit failed: {e:?}"));
@@ -445,7 +437,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .expect("emit");
@@ -679,6 +671,62 @@ fn judge(run: Option<(Vec<u8>, i32)>, j: &Job, opt: &str, out: &mut Vec<String>)
     }
 }
 
+/// Phase 2 of a sweep: every job at `-O0` and `-O2`, `BATCH` jobs per
+/// executable; the divergences.
+fn run_jobs(clang: &str, jobs: &[Job]) -> Vec<String> {
+    let batches: Vec<&[Job]> = jobs.chunks(BATCH).collect();
+    let next = AtomicUsize::new(0);
+    let failures: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    std::thread::scope(|s| {
+        for _ in 0..job_slots() {
+            s.spawn(|| {
+                loop {
+                    let bi = next.fetch_add(1, Ordering::Relaxed);
+                    if bi >= batches.len() {
+                        break;
+                    }
+                    let batch = batches[bi];
+                    let lls: Vec<&str> = batch.iter().map(|j| j.ll.as_str()).collect();
+                    let merged = batch_module(&lls);
+                    for opt in ["-O0", "-O2"] {
+                        let mut found = Vec::new();
+                        match try_compile_exe(clang, &merged, opt) {
+                            Ok((_dir, exe)) => {
+                                for (slot, j) in batch.iter().enumerate() {
+                                    judge(run_case(&exe, TIMEOUT_SECS, slot), j, opt, &mut found);
+                                }
+                            }
+                            // The merge is a textual transform over emitted IR;
+                            // if it ever produces something clang rejects, fall
+                            // back to one binary per case so the failure names
+                            // the module rather than the batch.
+                            Err(e) => {
+                                eprintln!(
+                                    "differential_testgen: batch {bi} {opt} did not build, \
+                                     falling back to per-case ({} cases)\n{e}",
+                                    batch.len()
+                                );
+                                for j in batch {
+                                    judge(
+                                        compile_run(clang, &j.ll, &j.tag, opt),
+                                        j,
+                                        opt,
+                                        &mut found,
+                                    );
+                                }
+                            }
+                        }
+                        if !found.is_empty() {
+                            failures.lock().unwrap().extend(found);
+                        }
+                    }
+                }
+            });
+        }
+    });
+    failures.into_inner().unwrap()
+}
+
 /// Build a job from an `ir` + its oracle run. `None` if the run diverged (skip).
 fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
     let (want_out, want_code) = expect_native(ir, rr)?;
@@ -688,10 +736,20 @@ fn make_job(ir: &CategoryIr, rr: &RunResult, tag: String) -> Option<Job> {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap_or_else(|e| panic!("{tag}: emit: {e:?}"));
+    if let Ok(d) = std::env::var("S65_DUMP") {
+        let name = tag.replace(['#', '/'], "_");
+        std::fs::write(format!("{d}/{name}.ll"), &ll).unwrap();
+        std::fs::write(format!("{d}/{name}.ir"), format!("{ir:#?}")).unwrap();
+        std::fs::write(
+            format!("{d}/{name}.want"),
+            format!("{want_code}\n{}", want_out.clone().unwrap_or_default()),
+        )
+        .unwrap();
+    }
     Some(Job {
         tag,
         ll,
@@ -763,60 +821,7 @@ fn differential_testgen_closed_sweep() {
     // untouched. What changed is that `BATCH` jobs share one linked executable
     // and are selected by `argv[1]`, because the per-case cost was never the
     // compile: it was minting and first-running a fresh binary (see `BATCH`).
-    let batches: Vec<&[Job]> = jobs.chunks(BATCH).collect();
-    let next = AtomicUsize::new(0);
-    let failures: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    std::thread::scope(|s| {
-        let threads = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(8);
-        for _ in 0..threads {
-            s.spawn(|| {
-                loop {
-                    let bi = next.fetch_add(1, Ordering::Relaxed);
-                    if bi >= batches.len() {
-                        break;
-                    }
-                    let batch = batches[bi];
-                    let lls: Vec<&str> = batch.iter().map(|j| j.ll.as_str()).collect();
-                    let merged = batch_module(&lls);
-                    for opt in ["-O0", "-O2"] {
-                        let mut found = Vec::new();
-                        match try_compile_exe(&clang, &merged, opt) {
-                            Ok((_dir, exe)) => {
-                                for (slot, j) in batch.iter().enumerate() {
-                                    judge(run_case(&exe, TIMEOUT_SECS, slot), j, opt, &mut found);
-                                }
-                            }
-                            // The merge is a textual transform over emitted IR;
-                            // if it ever produces something clang rejects, fall
-                            // back to one binary per case so the failure names
-                            // the module rather than the batch.
-                            Err(e) => {
-                                eprintln!(
-                                    "differential_testgen: batch {bi} {opt} did not build, \
-                                     falling back to per-case ({} cases)\n{e}",
-                                    batch.len()
-                                );
-                                for j in batch {
-                                    judge(
-                                        compile_run(&clang, &j.ll, &j.tag, opt),
-                                        j,
-                                        opt,
-                                        &mut found,
-                                    );
-                                }
-                            }
-                        }
-                        if !found.is_empty() {
-                            failures.lock().unwrap().extend(found);
-                        }
-                    }
-                }
-            });
-        }
-    });
-    let failures = failures.into_inner().unwrap();
+    let failures = run_jobs(&clang, &jobs);
     assert!(
         failures.is_empty(),
         "{} testgen divergences:\n{}",
@@ -826,6 +831,418 @@ fn differential_testgen_closed_sweep() {
     eprintln!(
         "differential_testgen: {n} closed programs (raw + rewritten) OK at -O0 and -O2; phase 2 (compile+run) {:?}",
         t1.elapsed()
+    );
+}
+
+// --- S65 rule R on programs it was not designed on ---------------------------
+
+/// One arm of the carried-loop sweep: `generic`, the exact face, the `by-ref`
+/// rung on (shipped) or forced off (S64's by-value loop products).
+fn emit_by_ref(ir: &CategoryIr, on: bool) -> String {
+    let mut gpu = mapal_backend_llvm::GpuArms::default();
+    if !on {
+        *gpu.off.rung("by-ref").expect("rung") = true;
+    }
+    mapal_backend_llvm::emit_with_opts(
+        ir,
+        &mapal_backend_llvm::EmitOpts {
+            target: "generic",
+            gpu,
+            ..mapal_backend_llvm::EmitOpts::exact()
+        },
+    )
+    .expect("emits")
+}
+
+/// The array copies the emitted host IR makes per trip, over every loop the
+/// emitter headed with `; mapal.move` (header block to latch): `llvm.memcpy`
+/// calls, and whole-array values loaded or stored (a by-value forward).
+fn trip_copies(ll: &str) -> (usize, usize) {
+    let (mut copies, mut values) = (0, 0);
+    for f in ll.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else {
+                continue;
+            };
+            let header = rest.split_whitespace().next().expect("header");
+            let back = format!("br label %{header}");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
+            for x in &lines[h..=latch] {
+                copies += x.contains("call void @llvm.memcpy") as usize;
+                let t = x.trim();
+                let value = (t.contains("= load [")
+                    || t.contains("= load {")
+                    || t.starts_with("store [")
+                    || t.starts_with("store {"))
+                    && t.split(", ptr").next().is_some_and(|ty| ty.contains(" x "));
+                values += value as usize;
+            }
+        }
+    }
+    (copies, values)
+}
+
+/// Where an array position's bytes are, under handle semantics (every
+/// forwarding morphism re-exposes them): an object's own, a loop state
+/// position, or bytes the function does not own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Bytes {
+    Own(mapal_ir::ObjectId),
+    State(mapal_ir::ObjectId, Vec<u32>),
+    Foreign,
+}
+
+/// **S65's movement oracle**, an independent reading of the IR facts: the
+/// array copies `f`'s loops need per trip. Forwarding (`Pair`, `Proj`,
+/// `Phi`, a loop's enter, back edge and exit) needs none; an `Update` needs
+/// one unless its array's bytes are one buffer the function may overwrite —
+/// its own (made in every loop running the update) or a loop state the loop
+/// owns (every buffer the next state may be is the state's or made in the
+/// trip, for that position alone) — and no other holder of those bytes made
+/// before the update is read after it (`LastUsePlan::view_last_use`; a
+/// guard-arm read runs at its `Phi`: any time; a whole-state read: any time).
+fn required_trip_copies(ir: &CategoryIr, f: mapal_ir::FuncId) -> usize {
+    use mapal_ir::{ObjectKind, Operation as Op};
+    use std::collections::{HashMap, HashSet};
+    let lup = ir.last_use_plan(f);
+    let gated: HashSet<_> = ir
+        .guard_plan(f)
+        .into_iter()
+        .filter(|g| g.gated())
+        .flat_map(|g| g.on_true.own.into_iter().chain(g.on_false.own))
+        .collect();
+    let loops: Vec<(mapal_ir::LoopPlan, HashSet<mapal_ir::MorphismId>)> = ir
+        .loop_structure(f)
+        .into_iter()
+        .flat_map(|s| s.merges)
+        .filter_map(|m| ir.loop_plan(f, m))
+        .map(|p| {
+            let body = p
+                .decide_order
+                .iter()
+                .chain(&p.advance_order)
+                .copied()
+                .collect();
+            (p, body)
+        })
+        .collect();
+    let mo = |m| ir.morphism(m).expect("morphism");
+    let pair_src = |o, k| {
+        ir.in_edges(o)
+            .iter()
+            .map(|&m| mo(m))
+            .find(|x| matches!(x.op, Op::Pair { slot, .. } if slot == k))
+            .map(|x| x.source)
+    };
+    let objs: Vec<mapal_ir::ObjectId> = ir
+        .objects()
+        .map(|(o, _)| o)
+        .filter(|&o| ir.try_owner(o) == Some(f))
+        .collect();
+    let paths = |ty: &Ty| -> Vec<Vec<u32>> {
+        fn go(ty: &Ty, pre: &mut Vec<u32>, out: &mut Vec<Vec<u32>>) {
+            match ty {
+                Ty::Array { .. } => out.push(pre.clone()),
+                Ty::Tuple(ts) => {
+                    for (i, t) in ts.iter().enumerate() {
+                        pre.push(i as u32);
+                        go(t, pre, out);
+                        pre.pop();
+                    }
+                }
+                Ty::Struct { fields, .. } => {
+                    for (i, (_, t)) in fields.iter().enumerate() {
+                        pre.push(i as u32);
+                        go(t, pre, out);
+                        pre.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        go(ty, &mut Vec::new(), &mut out);
+        out
+    };
+    let ty_of = |o| ir.object(o).expect("object").ty.clone();
+    let bytes = |alias: &HashMap<_, _>, o, p: Vec<u32>| -> Vec<Bytes> {
+        let mut out = Vec::new();
+        let mut stack = vec![(o, p)];
+        while let Some((o, p)) = stack.pop() {
+            if p.is_empty()
+                && let Some(&s) = alias.get(&o)
+            {
+                stack.push((s, p));
+                continue;
+            }
+            let obj = ir.object(o).expect("object");
+            let b = match obj.kind {
+                ObjectKind::Parameter | ObjectKind::Constant => Some(Bytes::Foreign),
+                ObjectKind::LoopMerge => Some(Bytes::State(o, p.clone())),
+                _ => match ir.in_edges(o).first().map(|&m| mo(m)) {
+                    Some(x) if matches!(x.op, Op::Pair { .. }) && !p.is_empty() => {
+                        match pair_src(o, p[0]) {
+                            Some(s) => {
+                                stack.push((s, p[1..].to_vec()));
+                                None
+                            }
+                            None => Some(Bytes::Foreign),
+                        }
+                    }
+                    Some(x) if matches!(x.op, Op::Proj { .. } | Op::LoopExit | Op::Phi) => {
+                        let pre: Vec<u32> = match x.op {
+                            Op::Proj { index } => vec![index],
+                            _ => vec![0],
+                        };
+                        stack.push((x.source, pre.iter().chain(&p).copied().collect()));
+                        if x.op == Op::Phi {
+                            stack.push((x.source, [1].iter().chain(&p).copied().collect()));
+                        }
+                        None
+                    }
+                    _ if p.is_empty() => Some(Bytes::Own(o)),
+                    _ => Some(Bytes::Foreign),
+                },
+            };
+            if let Some(b) = b
+                && !out.contains(&b)
+            {
+                out.push(b);
+            }
+        }
+        out
+    };
+    let holders = |alias: &HashMap<_, _>, b: &Bytes| -> Vec<mapal_ir::ObjectId> {
+        objs.iter()
+            .copied()
+            .filter(|&o| {
+                paths(&ty_of(o))
+                    .into_iter()
+                    .any(|q| bytes(alias, o, q).contains(b))
+            })
+            .collect()
+    };
+    let born = |o| {
+        ir.in_edges(o)
+            .iter()
+            .filter_map(|&m| lup.position(m))
+            .max()
+            .unwrap_or(0)
+    };
+    let made_in = |body: &HashSet<_>, o| ir.in_edges(o).iter().any(|m| body.contains(m));
+    let mut updates: Vec<mapal_ir::MorphismId> = ir
+        .morphisms()
+        .filter(|(_, x)| x.op == Op::Update && ir.try_owner(x.source) == Some(f))
+        .map(|(m, _)| m)
+        .collect();
+    updates.sort_by_key(|&m| lup.position(m));
+    // The parallel entry (`generic` is a CPU profile: a multi-path, acyclic
+    // plan runs as tasks): a read before the write in another task must be
+    // one the plan orders before it.
+    let par: Option<(HashMap<mapal_ir::MorphismId, usize>, Vec<Vec<bool>>)> =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ir.path_plan(f)))
+            .ok()
+            .filter(|p| !p.is_single_path())
+            .and_then(|p| {
+                let n = p.tasks.len();
+                let mut task = HashMap::new();
+                let mut before = vec![vec![false; n]; n];
+                for (t, tk) in p.tasks.iter().enumerate() {
+                    match &tk.kind {
+                        mapal_ir::TaskKind::Split { site, .. } => {
+                            task.insert(*site, t);
+                        }
+                        mapal_ir::TaskKind::Seq { morphisms } => {
+                            for &m in morphisms {
+                                task.insert(m, t);
+                            }
+                        }
+                    }
+                    for &d in &tk.deps {
+                        before[d][t] = true;
+                    }
+                }
+                for k in 0..n {
+                    for i in 0..n {
+                        for j in 0..n {
+                            if before[i][k] && before[k][j] {
+                                before[i][j] = true;
+                            }
+                        }
+                    }
+                }
+                (0..n).all(|i| !before[i][i]).then_some((task, before))
+            });
+    let ordered = |hs: &[mapal_ir::ObjectId], u: mapal_ir::MorphismId| {
+        let Some((task, before)) = &par else {
+            return true;
+        };
+        let Some(&tw) = task.get(&u) else {
+            return false;
+        };
+        // (A loop's exit object reads its final state, after the loop.)
+        let exit = |o| ir.in_edges(o).iter().any(|&m| mo(m).op == Op::LoopExit);
+        hs.iter()
+            .filter(|&&o| !exit(o))
+            .flat_map(|&o| ir.out_edges(o).iter().copied())
+            .all(|e| {
+                e == u
+                    || lup.position(e) >= lup.position(u)
+                    || matches!(mo(e).op, Op::LoopEnter | Op::LoopBack | Op::LoopExit)
+                        && !task.contains_key(&e)
+                    || task.get(&e).is_some_and(|&tr| tr == tw || before[tr][tw])
+            })
+    };
+    let mut alias: HashMap<mapal_ir::ObjectId, mapal_ir::ObjectId> = HashMap::new();
+    let mut need = 0;
+    for u in updates {
+        let at = lup.position(u).expect("position");
+        let arr = pair_src(mo(u).source, 0).expect("update array");
+        let mine: Vec<&(mapal_ir::LoopPlan, HashSet<_>)> =
+            loops.iter().filter(|(_, b)| b.contains(&u)).collect();
+        // No holder made before the update is read after it.
+        let quiet = |hs: Vec<mapal_ir::ObjectId>, body: Option<&HashSet<_>>| {
+            hs.into_iter()
+                .filter(|&o| born(o) < at && body.is_none_or(|b| made_in(b, o)))
+                .all(|o| {
+                    !ir.out_edges(o)
+                        .iter()
+                        .any(|&e| gated.contains(&e) && e != u && mo(e).target != mo(u).source)
+                        && lup.view_last_use(o).is_none_or(|p| p <= at)
+                        && (body.is_some() || (!lup.escapes(o) && lup.carried_by(o).is_none()))
+                })
+        };
+        let ok = match &bytes(&alias, arr, vec![])[..] {
+            [Bytes::Own(c)] => {
+                let hs = holders(&alias, &Bytes::Own(*c));
+                ir.object(*c).expect("object").kind == ObjectKind::Temporary
+                    && mine.iter().all(|(_, b)| made_in(b, *c))
+                    && ordered(&hs, u)
+                    && quiet(hs, None)
+            }
+            [Bytes::State(m, p)] => {
+                mine.iter()
+                    .find(|(pl, _)| pl.merge == *m)
+                    .is_some_and(|(pl, body)| {
+                        let next = |q: &[u32]| {
+                            bytes(
+                                &HashMap::new(),
+                                pl.back_route,
+                                [0].iter().chain(q).copied().collect(),
+                            )
+                        };
+                        let others: Vec<Bytes> = paths(&ty_of(*m))
+                            .iter()
+                            .filter(|q| *q != p)
+                            .flat_map(|q| next(q))
+                            .collect();
+                        let owned = next(p).iter().all(|b| match b {
+                            Bytes::State(m2, q) => m2 == m && q == p,
+                            Bytes::Own(o) => made_in(body, *o) && !others.contains(b),
+                            Bytes::Foreign => false,
+                        });
+                        let whole = ir
+                            .out_edges(*m)
+                            .iter()
+                            .any(|&e| !matches!(mo(e).op, Op::Proj { .. }));
+                        let hs = holders(&alias, &Bytes::State(*m, p.clone()));
+                        owned && !whole && ordered(&hs, u) && quiet(hs, Some(body))
+                    })
+            }
+            _ => false,
+        };
+        if ok {
+            alias.insert(mo(u).target, arr);
+        } else if !mine.is_empty() {
+            need += 1;
+        }
+    }
+    need
+}
+
+/// **S65 rule R, proven on unseen programs.** ≥ 256 generated `main`s whose
+/// loops carry arrays (testgen `carry_prog_strategy`): one or two, one nested
+/// with the accumulator in a sub-product, read through maps, folds, element
+/// reads and captured maps, rewritten by update chains, chosen between by
+/// guards whose arms own the work, swapped, replaced by invariants, zero to
+/// eight trips, two loops in sequence — none of them written for the rule.
+/// Each is (a) value-equal to the interpreter at `-O0` and `-O2` with the
+/// rung on and off, and (b) moves per trip exactly the copies the facts
+/// require ([`required_trip_copies`]): no forwarding morphism copies, and
+/// every copy is an `Update` whose array is read again.
+#[test]
+fn differential_carried_loops_values_and_movement() {
+    let Some(clang) = clang() else {
+        eprintln!("SKIP differential_carried_loops: clang not found");
+        return;
+    };
+    let _ = rt_lib();
+    let mut runner = TestRunner::deterministic();
+    let (mut jobs, mut moved, mut n) = (Vec::new(), Vec::new(), 0usize);
+    let (mut trips, mut copies, mut required, mut loops) = (0usize, 0usize, 0usize, 0usize);
+    for (count, trap_free) in [(224usize, true), (96, false)] {
+        let strat = testgen::carry_prog_strategy(trap_free);
+        for _ in 0..count {
+            let prog = strat.new_tree(&mut runner).unwrap().current();
+            let Built { ir, .. } = build(&prog);
+            let rr = run(&ir, BUDGET);
+            let Some((want_out, want_code)) = expect_native(&ir, &rr) else {
+                continue; // diverged
+            };
+            let on = emit_by_ref(&ir, true);
+            let (c, v) = trip_copies(&on);
+            let need = required_trip_copies(&ir, ir.entry());
+            loops += on.matches("; mapal.move loop=").count();
+            trips += matches!(rr.outcome, Outcome::Done(_)) as usize;
+            copies += c;
+            required += need;
+            if c != need || v != 0 {
+                moved.push(format!("carry#{n}: {c} copies, {v} by-value forwards per trip; the facts require {need}\n{prog:?}"));
+            }
+            for (arm, ll) in [("on", on), ("off", emit_by_ref(&ir, false))] {
+                if let Ok(d) = std::env::var("S65_DUMP") {
+                    std::fs::write(format!("{d}/carry{n}_{arm}.ll"), &ll).unwrap();
+                    std::fs::write(
+                        format!("{d}/carry{n}.prog"),
+                        format!("{prog:#?}\n{want_code}\n{want_out:?}"),
+                    )
+                    .unwrap();
+                }
+                jobs.push(Job {
+                    tag: format!("carry#{n}/{arm}"),
+                    ll,
+                    want_out: want_out.clone(),
+                    want_code,
+                });
+            }
+            n += 1;
+        }
+    }
+    assert!(n >= 256, "expected ≥256 carried-loop programs, got {n}");
+    assert!(
+        loops >= n,
+        "every program has a carried loop: {loops} loops in {n}"
+    );
+    assert!(
+        moved.is_empty(),
+        "{} movement findings:\n{}",
+        moved.len(),
+        moved.join("\n")
+    );
+    let failures = run_jobs(&clang, &jobs);
+    assert!(
+        failures.is_empty(),
+        "{} carried-loop divergences:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    eprintln!(
+        "differential_carried_loops: {n} programs ({trips} run to the end), {loops} loops; \
+         per-trip copies {copies} = required {required}; values OK on and off at -O0 and -O2"
     );
 }
 
@@ -934,7 +1351,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -961,7 +1378,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1028,7 +1445,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1048,7 +1465,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1095,7 +1512,7 @@ fn differential_default_rewritten_matmul4_lifts_and_tiles() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1154,7 +1571,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1173,7 +1590,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1232,7 +1649,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1250,7 +1667,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1295,7 +1712,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1310,7 +1727,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1382,7 +1799,7 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1393,7 +1810,7 @@ fn emit_kc_and_untiled(ir: &CategoryIr) -> (String, String) {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1407,7 +1824,7 @@ fn emit_tiled_and_untiled(ir: &CategoryIr) -> (String, String) {
         ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1418,7 +1835,7 @@ fn emit_tiled_and_untiled(ir: &CategoryIr) -> (String, String) {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1591,7 +2008,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1608,7 +2025,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1679,7 +2096,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1696,7 +2113,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1746,7 +2163,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1763,7 +2180,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1774,7 +2191,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1863,7 +2280,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1895,7 +2312,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1961,7 +2378,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -1978,7 +2395,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2030,7 +2447,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2046,7 +2463,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2207,7 +2624,7 @@ fn main() {
             // fires at all. These tests assert the nest's SHAPE, so they pin
             // the reference profile by name.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2223,7 +2640,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2234,7 +2651,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2543,7 +2960,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2584,7 +3001,7 @@ fn differential_heap_lowered_arrays() {
             &ir,
             &mapal_backend_llvm::EmitOpts {
                 target: "generic",
-                ..mapal_backend_llvm::EmitOpts::default()
+                ..mapal_backend_llvm::EmitOpts::exact()
             },
         )
         .unwrap();
@@ -2636,7 +3053,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2681,7 +3098,7 @@ fn differential_parallel_env_matrix() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2750,7 +3167,7 @@ fn main() {
         &lower_src(src),
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2798,7 +3215,7 @@ fn differential_parallel_run_twice() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2869,7 +3286,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2877,7 +3294,7 @@ fn main() {
         &ir,
         &mapal_backend_llvm::EmitOpts {
             target: "zen3",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2893,7 +3310,7 @@ fn main() {
             // ADR-0038 D4: the comparison's other leg pins `generic` by name —
             // keep both legs inside the one profile.
             target: "generic",
-            ..mapal_backend_llvm::EmitOpts::default()
+            ..mapal_backend_llvm::EmitOpts::exact()
         },
     )
     .unwrap();
@@ -2938,9 +3355,10 @@ fn main() {
     let (Some(want), 0) = expect_native(&ir, &rr).expect("native oracle completes") else {
         panic!("native oracle must complete");
     };
-    // The only ambient `emit` left in this file — the host-detected default is
-    // the whole point of this leg.
-    let ll = mapal_backend_llvm::emit(&ir).unwrap();
+    // The only ambient profile left in this file — the host-detected default
+    // is the whole point of this leg (on the exact face: the oracle's bits).
+    let ll =
+        mapal_backend_llvm::emit_with_opts(&ir, &mapal_backend_llvm::EmitOpts::exact()).unwrap();
     for opt in ["-O0", "-O2"] {
         let (out, code) = compile_run(&clang, &ll, &format!("native_profile/{opt}"), opt)
             .unwrap_or_else(|| panic!("native_profile/{opt}: run timed out"));
@@ -2951,4 +3369,538 @@ fn main() {
             "native_profile/{opt}: oracle stdout"
         );
     }
+}
+
+// --- S65 rule R on the device: generated device-sized loops, emulated --------
+
+#[path = "emu/mod.rs"]
+mod emu;
+use emu::{job_slots, slot};
+
+/// Bytes of an LLVM array type text `[n x T]` (nested arrays of scalars).
+fn llt_array_bytes(t: &str) -> u64 {
+    let t = t.trim();
+    if let Some(inner) = t.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
+        let (n, e) = inner.split_once(" x ").expect("array text");
+        return n.trim().parse::<u64>().expect("array length") * llt_array_bytes(e);
+    }
+    match t {
+        "i8" => 1,
+        "i32" | "float" => 4,
+        "i64" | "double" | "ptr" => 8,
+        _ => 0,
+    }
+}
+
+/// Per `; mapal.move` loop: the line's fields, and what the blocks from the
+/// header to the latch move per trip — `(memcpy calls, memcpy bytes, h2d
+/// bytes, d2h bytes)` — a first pass's blocks (a `store i1 true` to a pass
+/// flag: once per entry) aside.
+fn gpu_trip_moves(ll: &str) -> Vec<(std::collections::HashMap<String, String>, [u64; 4])> {
+    let last_i64 = |l: &str| -> u64 {
+        l.trim_end_matches(')')
+            .rsplit("i64 ")
+            .next()
+            .and_then(|x| x.trim().parse().ok())
+            .unwrap_or(0)
+    };
+    let mut out = Vec::new();
+    for f in ll.split("\ndefine ").skip(1) {
+        let lines: Vec<&str> = f.lines().collect();
+        for (h, l) in lines.iter().enumerate() {
+            let Some(rest) = l.strip_prefix("; mapal.move loop=") else {
+                continue;
+            };
+            let header = rest.split_whitespace().next().expect("header");
+            let kv = rest
+                .split_whitespace()
+                .filter_map(|x| x.split_once('='))
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let back = format!("br label %{header}");
+            let latch = (h..lines.len())
+                .rev()
+                .find(|&i| lines[i].trim() == back)
+                .expect("latch");
+            // Blocks of the region: a first-pass block stores a pass flag.
+            let mut moved = [0u64; 4];
+            let mut block: Vec<&str> = Vec::new();
+            let flush = |b: &mut Vec<&str>, m: &mut [u64; 4]| {
+                if !b
+                    .iter()
+                    .any(|x| x.trim().starts_with("store i1 true, ptr %s"))
+                {
+                    for x in b.iter() {
+                        if x.contains("call void @llvm.memcpy") {
+                            m[0] += 1;
+                            m[1] += x
+                                .split("getelementptr (")
+                                .nth(1)
+                                .and_then(|t| t.split(", ptr null").next())
+                                .map_or(0, llt_array_bytes);
+                        } else if x.contains("@mapal_gpu_h2d(")
+                            || x.contains("@mapal_gpu_h2d_async(")
+                        {
+                            m[2] += last_i64(x);
+                        } else if x.contains("@mapal_gpu_d2h(") || x.contains("@mapal_gpu_d2h_on(")
+                        {
+                            m[3] += last_i64(x);
+                        }
+                    }
+                }
+                b.clear();
+            };
+            for x in &lines[h..=latch] {
+                if x.ends_with(':') && !x.starts_with(' ') {
+                    flush(&mut block, &mut moved);
+                }
+                block.push(x);
+            }
+            flush(&mut block, &mut moved);
+            out.push((kv, moved));
+        }
+    }
+    out
+}
+
+/// **S65 rule R's device leg, on unseen programs.** ≥ 64 generated loops over
+/// device-sized arrays (testgen `device_prog_strategy`: sites, per-cell maps,
+/// guards, row writes into the state, swaps, invariant next states, one or
+/// two carried arrays, element or whole exit reads), every capable site on the
+/// device (`place` off), run on the GPU host emulation (`tests/emu`): the
+/// exact face equals the interpreter with the rung on and off; and per trip
+/// the host IR moves exactly what the residency plan derived from the facts
+/// (`; mapal.move`: uploads of host-produced arrays a device site reads,
+/// copy-outs of device outputs a host morphism reads) plus the host copies the
+/// facts require ([`required_trip_copies`]) — a device-carried state never
+/// crosses, and no forwarding morphism copies.
+#[test]
+fn differential_device_loops_values_and_movement() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP differential_device_loops: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::device_prog_strategy();
+    // The programs drawn in order (one deterministic runner), then run over the
+    // job slots: each is interpreter-, emitter-, clang- and emulator-bound and
+    // independent of the others.
+    let progs: Vec<_> = (0..64)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    let work = |n: usize, p: &testgen::DeviceProg| -> (Vec<String>, [usize; 4]) {
+        let (mut placed, mut carried, mut uniform, mut nests) = (0usize, 0usize, 0usize, 0usize);
+        let mut findings = Vec::new();
+        let src = testgen::device_src(p);
+        let ir = rewrite(lower_src(&src)).ir;
+        let rr = run(&ir, 400_000_000);
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+        for on in [true, false] {
+            let mut gpu = mapal_backend_llvm::GpuArms::default();
+            let off: &[&str] = if on { &["place"] } else { &["place", "by-ref"] };
+            for r in off.iter().chain(&["streams", "pinned", "pdl", "async"]) {
+                *gpu.off.rung(r).expect("rung") = true;
+            }
+            let opts = mapal_backend_llvm::EmitOpts {
+                host: "generic",
+                target: "h100-pcie",
+                gpu,
+                ..mapal_backend_llvm::EmitOpts::exact()
+            };
+            let em =
+                match std::panic::catch_unwind(|| mapal_backend_llvm::emit_detailed(&ir, &opts)) {
+                    Ok(em) => em.expect("emits"),
+                    Err(_) => {
+                        findings.push(format!("device#{n} on={on}: the emitter panicked\n{src}"));
+                        continue;
+                    }
+                };
+            // (A program whose every site the plan keeps on the host has no
+            // device unit: its CPU build — the CPU leg's.)
+            let Some(dev) = em.device else { continue };
+            let got = emu::run_emulated(&clang, &em.text, &dev);
+            if got != rr.output {
+                findings.push(format!(
+                    "device#{n} on={on}: {got:?} != {:?}\n{src}",
+                    rr.output
+                ));
+            }
+            if !on {
+                continue;
+            }
+            placed += 1;
+            // cpu-gpu-boundary 1b / 1a, counted from the emission: a rule
+            // fires when its arm launches more cells than its OFF arm, and a
+            // uniform cell takes an `i64` kernel parameter.
+            let launches = |t: &str| t.matches("call void @mapal_gpu_launchv(").count();
+            let fires = |rung: &str| {
+                let mut o = opts;
+                *o.gpu.off.rung(rung).expect("rung") = true;
+                mapal_backend_llvm::emit_detailed(&ir, &o)
+                    .is_ok_and(|e| launches(&em.text) > launches(&e.text))
+            };
+            uniform += usize::from(dev.contains("i64 %c") && fires("uniform"));
+            nests += usize::from(fires("nest-cell"));
+            let need = required_trip_copies(&ir, ir.entry());
+            let loops = gpu_trip_moves(&em.text);
+            carried += loops
+                .iter()
+                .filter(|(kv, _)| kv["carried"].contains(":device"))
+                .count();
+            let copies: u64 = loops.iter().map(|(_, m)| m[0]).sum();
+            for (kv, [_, copy_b, h2d, d2h]) in &loops {
+                let want = |k: &str| kv[k].parse::<u64>().expect("intent field");
+                if (*copy_b, *h2d, *d2h) != (want("host_copy"), want("h2d"), want("d2h")) {
+                    findings.push(format!(
+                        "device#{n}: per trip copy {copy_b} B h2d {h2d} B d2h {d2h} B; the plan: {kv:?}\n{src}"
+                    ));
+                }
+            }
+            if copies != need as u64 {
+                findings.push(format!(
+                    "device#{n}: {copies} host copies per trip, the facts require {need}\n{src}"
+                ));
+            }
+        }
+        (findings, [placed, carried, uniform, nests])
+    };
+    let next = AtomicUsize::new(0);
+    let all = Mutex::new((Vec::new(), [0usize; 4]));
+    std::thread::scope(|sc| {
+        for _ in 0..job_slots() {
+            sc.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= progs.len() {
+                        break;
+                    }
+                    let (f, st) = work(i, &progs[i]);
+                    let mut a = all.lock().unwrap();
+                    a.0.extend(f);
+                    for (x, y) in a.1.iter_mut().zip(st) {
+                        *x += y;
+                    }
+                }
+            });
+        }
+    });
+    let n = progs.len();
+    let (mut findings, [placed, carried, uniform, nests]) = all.into_inner().unwrap();
+    findings.sort();
+    assert!(
+        findings.is_empty(),
+        "{} findings:\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
+    assert!(
+        placed >= 48 && carried > 0 && uniform > 0 && nests > 0,
+        "{placed} device programs, {carried} device-carried states, {uniform} with a uniform cell, {nests} with a nest cell"
+    );
+    eprintln!(
+        "differential_device_loops: {n} programs, {placed} with a device unit, {carried} device-carried states, \
+         {uniform} with a uniform cell, {nests} with a nest cell; values OK on and off, movement = the plan's"
+    );
+}
+
+/// **generic-fusion natural forms, on unseen programs.** ≥ 256 generated
+/// device-sized loops in twin forms (testgen `twin_prog_strategy`: sites,
+/// per-cell maps, guards, row folds, a clamped power, and writes into the
+/// state — a row, a column, a range of a row, one cell): the **natural** form
+/// (a guarded map over the cells, a power as a fold over a range) against the
+/// **unrolled** one (`Update`s, a chain of squarings), the same values by
+/// construction. The natural form must compile as well:
+/// - the same `write_delta` (and a `Rows` claim holds: per trip the
+///   interpreter sees no cell of the state change outside it);
+/// - per GPU profile (`h100-pcie` and `rtx-4090` alternating, every capable
+///   site on the device) and on the CPU (`generic`): per trip no more bytes
+///   moved, copied or allocated and no less retained (`; mapal.move`), no more
+///   launches (the same kernel kinds at as many), and the realized movement
+///   equals the plan's (`gpu_trip_moves`, plus the host copies the facts
+///   require);
+/// - values: the exact face equals the interpreter with `range-map` on and
+///   off (the emulated device, or the CPU build).
+#[test]
+fn differential_natural_twins_values_and_movement() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP differential_natural_twins: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let cases: usize = std::env::var("MAPAL_TWINS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256);
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::twin_prog_strategy();
+    let deltas = |ir: &CategoryIr| -> Vec<Option<(u64, i64, i64)>> {
+        let mut v: Vec<_> = ir
+            .write_delta(ir.entry())
+            .values()
+            .map(|d| match *d {
+                mapal_ir::Delta::Rows { stride, start, .. } => Some((stride, start.a, start.b)),
+                mapal_ir::Delta::Top => None,
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    let emit = |ir: &CategoryIr, target: &'static str, range: bool, cell: bool| {
+        let mut gpu = mapal_backend_llvm::GpuArms::default();
+        let off = ["streams", "pinned", "pdl", "async", "place"]
+            .into_iter()
+            .chain((!range).then_some("range-map"))
+            .chain((!cell).then_some("range-cell"));
+        for r in off {
+            *gpu.off.rung(r).expect("rung") = true;
+        }
+        let opts = mapal_backend_llvm::EmitOpts {
+            host: "generic",
+            target,
+            gpu,
+            ..mapal_backend_llvm::EmitOpts::exact()
+        };
+        mapal_backend_llvm::emit_detailed(ir, &opts).expect("emits")
+    };
+    let moves = |t: &str| -> Vec<String> {
+        t.lines()
+            .filter(|l| l.starts_with("; mapal.move"))
+            .map(|l| l.split_once(" carried=").map_or(l, |(_, r)| r).to_string())
+            .collect()
+    };
+    let launches = |t: &str| {
+        t.matches("call void @mapal_gpu_launch").count()
+            + t.matches("call void @mapal_gpu_tile(").count()
+    };
+    let kinds = |d: &Option<String>| -> Vec<String> {
+        let mut k: Vec<String> = d
+            .iter()
+            .flat_map(|d| d.lines())
+            .filter_map(|l| l.strip_prefix("; mapal.plan kernel="))
+            .filter_map(|l| l.split(" kind=").nth(1))
+            .map(|k| k.split(' ').next().unwrap_or("").to_string())
+            .collect();
+        k.sort();
+        k
+    };
+    let range_cells = |d: &Option<String>| {
+        d.iter()
+            .flat_map(|d| d.lines())
+            .filter(|l| {
+                l.starts_with("; mapal.plan ") && l.contains(" kind=cell ") && l.contains(" range=")
+            })
+            .count()
+    };
+    let run_on = |em: &mapal_backend_llvm::Emission| -> String {
+        match &em.device {
+            Some(dev) => emu::run_emulated(&clang, &em.text, dev),
+            None => compile_run(&clang, &em.text, "twin", "-O1").map_or_else(
+                || "timeout".into(),
+                |(o, c)| {
+                    format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&o),
+                        if c == 0 {
+                            String::new()
+                        } else {
+                            format!("[exit {c}]")
+                        }
+                    )
+                },
+            ),
+        }
+    };
+    let progs: Vec<testgen::TwinProg> = (0..cases)
+        .map(|_| strat.new_tree(&mut runner).unwrap().current())
+        .collect();
+    // One program's checks: its findings, and `[Rows claims, probed, device
+    // builds, in-place states, better builds]`.
+    let work = |case: usize, p: &testgen::TwinProg| -> (Vec<String>, [usize; 5]) {
+        let mut findings = Vec::new();
+        let (mut rows, mut probed, mut devices, mut inplace, mut better) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        let (ns, us) = (
+            testgen::twin_src(&p, true, None),
+            testgen::twin_src(&p, false, None),
+        );
+        let tag = format!("twin#{case}");
+        let (ni, ui) = (rewrite(lower_src(&ns)).ir, rewrite(lower_src(&us)).ir);
+        let oracle = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (run(&ni, 400_000_000), run(&ui, 400_000_000))
+        }));
+        let Ok((rr, ru)) = oracle else {
+            findings.push(format!("{tag}: the interpreter panicked\n{ns}"));
+            return (findings, [0; 5]);
+        };
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{ns}");
+        assert_eq!(ru.output, rr.output, "the twins' values\n{ns}\n{us}");
+        let dn = deltas(&ni);
+        if dn != deltas(&ui) {
+            findings.push(format!(
+                "{tag}: Δ {dn:?} != the unrolled {:?}\n{ns}",
+                deltas(&ui)
+            ));
+        }
+        // The `Rows` claim, probed: the state's cells outside it never change.
+        if let Some(&Some((stride, a, b))) = dn.iter().find(|d| d.is_some()) {
+            rows += 1;
+            let cs = testgen::twin_src(&p, true, Some((a, b, stride)));
+            let ci = rewrite(lower_src(&cs)).ir;
+            if deltas(&ci) != dn {
+                findings.push(format!(
+                    "{tag}: the probe changed Δ: {:?}\n{cs}",
+                    deltas(&ci)
+                ));
+            }
+            let rc = run(&ci, 400_000_000);
+            let bad: Vec<&str> = rc
+                .output
+                .lines()
+                .filter(|l| l.starts_with("dz=") && *l != "dz=0")
+                .collect();
+            if !matches!(rc.outcome, Outcome::Done(_)) || !bad.is_empty() {
+                findings.push(format!(
+                    "{tag}: Δ Rows {stride} at {a}·it + {b} is unsound: {bad:?}\n{cs}"
+                ));
+            }
+            probed += 1;
+        }
+        for target in [["h100-pcie", "rtx-4090"][case % 2], "generic"] {
+            let (on, off, un) = (
+                emit(&ni, target, true, true),
+                emit(&ni, target, false, true),
+                emit(&ui, target, true, true),
+            );
+            // recurrence-precision `range-cell` is the natural form's alone (a
+            // map written in place; an `Update` stays the host's): launches
+            // and kernels are the twins' with it off, and with it on at most
+            // its range cells more, each replacing a written row's upload.
+            let flat = emit(&ni, target, true, false);
+            let ranges = range_cells(&on.device);
+            if launches(&on.text) > launches(&flat.text) + ranges {
+                findings.push(format!(
+                    "{tag} {target}: range-cell launches {} > {} + {ranges} range cells\n{ns}",
+                    launches(&on.text),
+                    launches(&flat.text)
+                ));
+            }
+            let (mn, mu) = (moves(&on.text), moves(&un.text));
+            if mn != mu {
+                // As well or better: per loop, no more bytes moved, copied or
+                // allocated per trip, no less retained.
+                let costs = |l: &str| -> Vec<i64> {
+                    let kv: std::collections::HashMap<&str, i64> = l
+                        .split_whitespace()
+                        .filter_map(|x| x.split_once('='))
+                        .filter_map(|(k, v)| Some((k, v.parse().ok()?)))
+                        .collect();
+                    ["h2d", "d2h", "host_copy", "alloc"]
+                        .iter()
+                        .map(|k| kv[k])
+                        .chain([-kv["retained"]])
+                        .collect()
+                };
+                let worse = mn.len() != mu.len()
+                    || mn
+                        .iter()
+                        .zip(&mu)
+                        .any(|(a, b)| costs(a).iter().zip(costs(b)).any(|(x, y)| *x > y));
+                if worse {
+                    findings.push(format!(
+                        "{tag} {target}: movement {mn:?} worse than the unrolled {mu:?}\n{ns}"
+                    ));
+                } else {
+                    better += 1;
+                }
+            }
+            if launches(&flat.text) > launches(&un.text)
+                || (launches(&flat.text) == launches(&un.text)
+                    && kinds(&flat.device) != kinds(&un.device))
+            {
+                findings.push(format!(
+                    "{tag} {target}: launches {} kinds {:?} != the unrolled {} {:?}\n{ns}",
+                    launches(&flat.text),
+                    kinds(&flat.device),
+                    launches(&un.text),
+                    kinds(&un.device)
+                ));
+            }
+            inplace += moves(&on.text)
+                .iter()
+                .filter(|l| l.starts_with("0:") && l.contains(":inplace"))
+                .count();
+            devices += on.device.is_some() as usize;
+            // Realized movement = the plan's, and the host copies the facts require.
+            let loops = gpu_trip_moves(&on.text);
+            let copies: u64 = loops.iter().map(|(_, m)| m[0]).sum();
+            for (kv, [_, copy_b, h2d, d2h]) in &loops {
+                let want = |k: &str| kv[k].parse::<u64>().expect("intent field");
+                if (*copy_b, *h2d, *d2h) != (want("host_copy"), want("h2d"), want("d2h")) {
+                    findings.push(format!("{tag} {target}: per trip copy {copy_b} B h2d {h2d} B d2h {d2h} B; the plan: {kv:?}\n{ns}"));
+                }
+            }
+            let need = required_trip_copies(&ni, ni.entry()) as u64;
+            if copies != need {
+                findings.push(format!(
+                    "{tag} {target}: {copies} host copies per trip, the facts require {need}\n{ns}"
+                ));
+            }
+            for (arm, em) in [("on", &on), ("off", &off)] {
+                // (The CPU build's OFF arm: every other program, for time.)
+                if target == "generic" && arm == "off" && case % 2 == 1 {
+                    continue;
+                }
+                let got = run_on(em);
+                if got != rr.output {
+                    findings.push(format!(
+                        "{tag} {target} range-map {arm}: {got:?} != {:?}\n{ns}",
+                        rr.output
+                    ));
+                }
+            }
+        }
+        (findings, [rows, probed, devices, inplace, better])
+    };
+    // The programs over the cores (each is interpreter-, clang- and
+    // emulator-bound and independent of the others).
+    let next = AtomicUsize::new(0);
+    let all = Mutex::new((Vec::new(), [0usize; 5]));
+    let workers = job_slots();
+    std::thread::scope(|sc| {
+        for _ in 0..workers {
+            sc.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= cases {
+                        break;
+                    }
+                    let (f, st) = work(i, &progs[i]);
+                    let mut a = all.lock().unwrap();
+                    a.0.extend(f);
+                    for (x, y) in a.1.iter_mut().zip(st) {
+                        *x += y;
+                    }
+                }
+            });
+        }
+    });
+    let (mut findings, [rows, probed, devices, inplace, better]) = all.into_inner().unwrap();
+    findings.sort();
+    assert!(
+        findings.is_empty(),
+        "{} findings:\n{}",
+        findings.len(),
+        findings.join("\n")
+    );
+    // (The sweep's reach, at the default size: a small MAPAL_TWINS is a smoke run.)
+    assert!(
+        cases < 64 || (rows > cases / 8 && devices > cases / 2),
+        "{rows} Rows claims, {devices} device units"
+    );
+    eprintln!(
+        "differential_natural_twins: {cases} twin programs, {rows} Δ Rows claims ({probed} probed sound), \
+         {devices} device builds, {inplace} in-place states; movement, launches, kernels = the unrolled twins' \
+         ({better} builds better); values OK with range-map on and off"
+    );
 }

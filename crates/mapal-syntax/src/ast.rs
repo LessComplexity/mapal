@@ -49,6 +49,18 @@ pub struct FnDecl {
     pub span: SourceLoc,
 }
 
+/// `compute := ':' member ('|' member)*` on anything that opens a body — a
+/// step `-> fold: tf32 | f32 { … }`, a block `loop: tf32 | f32 { … }` /
+/// `seq: … { … }`, a function after its output `fn f(a) -> T: tf32 | f32 { … }`
+/// (ADR-0041 D2): the products that body admits (D1), nested bodies included
+/// unless they carry their own (innermost wins; `: f32` restores the default).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Precision {
+    pub f32: bool,
+    pub tf32: bool,
+    pub span: SourceLoc,
+}
+
 /// `param := 'mut'? IDENT ':' type` (DESIGN §14.1).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Param {
@@ -112,6 +124,8 @@ pub struct Block {
     pub items: Vec<BlockItem>,
     pub tail: Option<Chain>,
     pub span: SourceLoc,
+    /// The `: compute` written on whatever opened this body (ADR-0041 D2).
+    pub compute: Option<Precision>,
 }
 
 /// A block item is a statement or a guard arm; mixing the two draws P0006

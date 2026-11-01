@@ -1,0 +1,68 @@
+   Compiling mapal-backend-llvm v0.0.1 (/private/tmp/mapal-s58-combined/source/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 1.35s
+     Running tests/differential.rs (/private/tmp/mapal-s58-integration-target/release/deps/differential-9e6cff67ece9563d)
+
+running 38 tests
+test differential_byref_call_args ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+ok
+test differential_captures ... ok
+test differential_computed_exit_payloads ... ok
+test differential_default_rewritten_matmul4_lifts_and_tiles ... ok
+test differential_examples_raw_and_rewritten ... ok
+test differential_heap_lowered_arrays ... ok
+test differential_iota_fill ... ok
+test differential_matmul_loop_driven_update ... ok
+test differential_native_profile_is_value_correct ... ok
+test differential_parallel_bign ... ok
+test differential_parallel_env_matrix ... ok
+test differential_parallel_run_twice ... ok
+test differential_parallel_trap_order ... ok
+test differential_testgen_closed_sweep ... ok
+test differential_tiled_conv2d ... ok
+test differential_tiled_conv2d_remainder ... ok
+test differential_tiled_conv2d_split ... ok
+test differential_tiled_fir ... ok
+test differential_tiled_fir_remainder ... ok
+test differential_tiled_fir_split ... ok
+test differential_tiled_matmul ... ok
+test differential_tiled_matmul_kc_32x32x200 ... ok
+test differential_tiled_matmul_kc_c540 ... ok
+test differential_tiled_matmul_kc_f64 ... ok
+test differential_tiled_matmul_kc_middle_panel ... ok
+test differential_tiled_matmul_kc_split ... ok
+test differential_tiled_matmul_loop_carried_pack ... ok
+test differential_tiled_matmul_r5_c20_k7 ... ok
+test differential_tiled_matmul_r6_c20_k5_f64 ... ok
+test differential_tiled_matmul_r6_c32_k5 ... ok
+test differential_tiled_matmul_via_helper_fn ... ok
+test differential_time_bracket ... ok
+test differential_trap_preserves_preceding_output ... ok
+test differential_traps_exit_101 ... ok
+test differential_two_sequential_loops ... ok
+test differential_u8_index_and_print ... ok
+test differential_widen ... ok
+test differential_zen3_profile_is_value_invariant ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 187.07s
+
+     Running tests/retain_delta.rs (/private/tmp/mapal-s58-integration-target/release/deps/retain_delta-e266a4ebaf83b715)
+
+running 14 tests
+test column_write_is_byte_identical_on_and_off ... ok
+test column_write_retains_nothing_on_the_resident_path ... ok
+test cpu_profiles_are_untouched ... ok
+test decode_retains_k_and_v_only ... ok
+test decode_retains_on_the_resident_buffers ... ok
+test delta_upload_is_stride_times_elem_bytes ... ok
+test int_decode_matches_the_oracle_on_and_off ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+ok
+test lane_stride_places_q_kt_on_the_device ... ok
+test resident_path_matches_the_oracle_emulated ... ok
+test resident_yields_to_a_retained_site_only_without_retain_resident ... ok
+test site_produced_carry_is_top_and_byte_identical ... ok
+test strided_site_keeps_the_host_step_on_the_contract_face ... ok
+test write_delta_on_sources ... ok
+test write_delta_passes_through_a_same_map ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.33s
+

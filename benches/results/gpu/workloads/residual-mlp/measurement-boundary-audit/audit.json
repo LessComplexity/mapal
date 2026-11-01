@@ -1,0 +1,738 @@
+{
+  "title": "Composed wall/event boundary audit",
+  "proved_accounting_defect_found": false,
+  "proved_scope_correction": "Mapal arena allocation/input generation/free excluded from t0\u2192t1; not full-request latency",
+  "wall_completion_synchronized": true,
+  "event_scope": "synchronized region including submission gaps and completion wakeup, not pure kernel sum",
+  "control_medians": [
+    {
+      "case": "matrix",
+      "arm": "mapal",
+      "wall_upper_median_ms": 0.07308999999999344,
+      "event_upper_median_ms": 0.0669760033,
+      "n": 30,
+      "wall_min_ms": 0.05771699999999669,
+      "wall_max_ms": 0.28896599999999495,
+      "event_min_ms": 0.0525440015,
+      "event_max_ms": 0.281567991
+    },
+    {
+      "case": "matrix",
+      "arm": "naive",
+      "wall_upper_median_ms": 0.054452,
+      "event_upper_median_ms": 0.0497919992,
+      "n": 30,
+      "wall_min_ms": 0.051748,
+      "wall_max_ms": 0.056875,
+      "event_min_ms": 0.0470080003,
+      "event_max_ms": 0.0521599986
+    },
+    {
+      "case": "matrix",
+      "arm": "cublas",
+      "wall_upper_median_ms": 0.039069,
+      "event_upper_median_ms": 0.0347840004,
+      "n": 30,
+      "wall_min_ms": 0.037126,
+      "wall_max_ms": 0.043275,
+      "event_min_ms": 0.0328960009,
+      "event_max_ms": 0.0390399992
+    },
+    {
+      "case": "matrix",
+      "arm": "torch-eager",
+      "wall_upper_median_ms": 0.115423929,
+      "event_upper_median_ms": 0.10182400047779083,
+      "n": 30,
+      "wall_min_ms": 0.112238806,
+      "wall_max_ms": 0.128423795,
+      "event_min_ms": 0.09839999675750732,
+      "event_max_ms": 0.11231999844312668
+    },
+    {
+      "case": "matrix",
+      "arm": "torch-compiled",
+      "wall_upper_median_ms": 0.178658869,
+      "event_upper_median_ms": 0.1634880006313324,
+      "n": 30,
+      "wall_min_ms": 0.171188265,
+      "wall_max_ms": 0.206942204,
+      "event_min_ms": 0.15718400478363037,
+      "event_max_ms": 0.1918720006942749
+    },
+    {
+      "case": "matrix-large",
+      "arm": "mapal",
+      "wall_upper_median_ms": 0.12893499999999847,
+      "event_upper_median_ms": 0.123007998,
+      "n": 30,
+      "wall_min_ms": 0.11975100000000793,
+      "wall_max_ms": 0.29938200000000137,
+      "event_min_ms": 0.114816003,
+      "event_max_ms": 0.291999996
+    },
+    {
+      "case": "matrix-large",
+      "arm": "naive",
+      "wall_upper_median_ms": 0.333153,
+      "event_upper_median_ms": 0.328671992,
+      "n": 30,
+      "wall_min_ms": 0.326944,
+      "wall_max_ms": 0.34484,
+      "event_min_ms": 0.322432011,
+      "event_max_ms": 0.340992004
+    },
+    {
+      "case": "matrix-large",
+      "arm": "cublas",
+      "wall_upper_median_ms": 0.09289,
+      "event_upper_median_ms": 0.0882880017,
+      "n": 30,
+      "wall_min_ms": 0.091919,
+      "wall_max_ms": 0.095304,
+      "event_min_ms": 0.0872960016,
+      "event_max_ms": 0.0906239972
+    },
+    {
+      "case": "matrix-large",
+      "arm": "torch-eager",
+      "wall_upper_median_ms": 0.140601769,
+      "event_upper_median_ms": 0.12355200201272964,
+      "n": 30,
+      "wall_min_ms": 0.134783331,
+      "wall_max_ms": 72.4742287,
+      "event_min_ms": 0.11798399686813354,
+      "event_max_ms": 72.45337677001953
+    },
+    {
+      "case": "matrix-large",
+      "arm": "torch-compiled",
+      "wall_upper_median_ms": 0.208714977,
+      "event_upper_median_ms": 0.19139200448989868,
+      "n": 30,
+      "wall_min_ms": 0.191928819,
+      "wall_max_ms": 0.483048614,
+      "event_min_ms": 0.17481599748134613,
+      "event_max_ms": 0.4455359876155853
+    }
+  ],
+  "native_medians": [
+    {
+      "case": "matrix",
+      "backend": "naive",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "unchanged_control"
+      ],
+      "wall_upper_median_ms": 0.055024,
+      "event_upper_median_ms": 0.0504320003,
+      "n": 30,
+      "receipt": "calls/0019-matrix-naive-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cublas",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "unchanged_control"
+      ],
+      "wall_upper_median_ms": 0.03948,
+      "event_upper_median_ms": 0.0349440016,
+      "n": 30,
+      "receipt": "calls/0020-matrix-cublas-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cublaslt",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "heuristic_zero_control"
+      ],
+      "wall_upper_median_ms": 0.038037,
+      "event_upper_median_ms": 0.0335679986,
+      "n": 30,
+      "receipt": "calls/0040-matrix-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cublaslt",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        1,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.036255,
+      "event_upper_median_ms": 0.0318080001,
+      "n": 30,
+      "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cublaslt",
+      "fusion": "fused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "heuristic_zero_control"
+      ],
+      "wall_upper_median_ms": 0.034382,
+      "event_upper_median_ms": 0.0298880003,
+      "n": 30,
+      "receipt": "calls/0061-matrix-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cublaslt",
+      "fusion": "fused",
+      "candidate": -1,
+      "indices": [
+        0,
+        1,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.032659,
+      "event_upper_median_ms": 0.028128,
+      "n": 30,
+      "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cutlass",
+      "fusion": "unfused",
+      "candidate": 0,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "matched_default_geometry_control"
+      ],
+      "wall_upper_median_ms": 0.09218,
+      "event_upper_median_ms": 0.0875839964,
+      "n": 30,
+      "receipt": "calls/0070-matrix-cutlass-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cutlass",
+      "fusion": "unfused",
+      "candidate": 2,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.047192,
+      "event_upper_median_ms": 0.0427200012,
+      "n": 30,
+      "receipt": "calls/0071-matrix-cutlass-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cutlass",
+      "fusion": "fused",
+      "candidate": 0,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "matched_default_geometry_control"
+      ],
+      "wall_upper_median_ms": 0.087933,
+      "event_upper_median_ms": 0.0833600014,
+      "n": 30,
+      "receipt": "calls/0079-matrix-cutlass-fused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "backend": "cutlass",
+      "fusion": "fused",
+      "candidate": 2,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.046711,
+      "event_upper_median_ms": 0.0419199988,
+      "n": 30,
+      "receipt": "calls/0080-matrix-cutlass-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "naive",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "unchanged_control"
+      ],
+      "wall_upper_median_ms": 0.333596,
+      "event_upper_median_ms": 0.328480005,
+      "n": 30,
+      "receipt": "calls/0081-matrix-large-naive-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cublas",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "unchanged_control"
+      ],
+      "wall_upper_median_ms": 0.093041,
+      "event_upper_median_ms": 0.088320002,
+      "n": 30,
+      "receipt": "calls/0082-matrix-large-cublas-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cublaslt",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "heuristic_zero_control"
+      ],
+      "wall_upper_median_ms": 0.064839,
+      "event_upper_median_ms": 0.0601599999,
+      "n": 30,
+      "receipt": "calls/0105-matrix-large-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cublaslt",
+      "fusion": "unfused",
+      "candidate": -1,
+      "indices": [
+        0,
+        3,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.063416,
+      "event_upper_median_ms": 0.0587840006,
+      "n": 30,
+      "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cublaslt",
+      "fusion": "fused",
+      "candidate": -1,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "heuristic_zero_control"
+      ],
+      "wall_upper_median_ms": 0.060852,
+      "event_upper_median_ms": 0.0561919995,
+      "n": 30,
+      "receipt": "calls/0129-matrix-large-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cublaslt",
+      "fusion": "fused",
+      "candidate": -1,
+      "indices": [
+        0,
+        3,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.05962,
+      "event_upper_median_ms": 0.0550719984,
+      "n": 30,
+      "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cutlass",
+      "fusion": "unfused",
+      "candidate": 0,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "matched_default_geometry_control"
+      ],
+      "wall_upper_median_ms": 0.293545,
+      "event_upper_median_ms": 0.288863987,
+      "n": 30,
+      "receipt": "calls/0138-matrix-large-cutlass-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cutlass",
+      "fusion": "unfused",
+      "candidate": 2,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.127954,
+      "event_upper_median_ms": 0.123328,
+      "n": 30,
+      "receipt": "calls/0139-matrix-large-cutlass-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cutlass",
+      "fusion": "fused",
+      "candidate": 0,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "matched_default_geometry_control"
+      ],
+      "wall_upper_median_ms": 0.291312,
+      "event_upper_median_ms": 0.286751986,
+      "n": 30,
+      "receipt": "calls/0147-matrix-large-cutlass-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "backend": "cutlass",
+      "fusion": "fused",
+      "candidate": 2,
+      "indices": [
+        0,
+        0,
+        0
+      ],
+      "roles": [
+        "selected"
+      ],
+      "wall_upper_median_ms": 0.123867,
+      "event_upper_median_ms": 0.119071998,
+      "n": 30,
+      "receipt": "calls/0148-matrix-large-cutlass-fused/receipt.json"
+    }
+  ],
+  "selected_lt_attributes": [
+    {
+      "case": "matrix",
+      "fusion": "unfused",
+      "site": "p",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 4
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 524288,
+      "checked_workspace_bytes": 524288,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "fusion": "unfused",
+      "site": "hraw",
+      "heuristic_index": 1,
+      "eligible_index": 1,
+      "split_k": {
+        "status": 0,
+        "value": 4
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 1048576,
+      "checked_workspace_bytes": 1048576,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "fusion": "unfused",
+      "site": "mraw",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 8
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 1048576,
+      "checked_workspace_bytes": 1048576,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0041-matrix-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "fusion": "fused",
+      "site": "p",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 4
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 524288,
+      "checked_workspace_bytes": 524288,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "fusion": "fused",
+      "site": "h-bias-relu",
+      "heuristic_index": 1,
+      "eligible_index": 1,
+      "split_k": {
+        "status": 0,
+        "value": 4
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 1048576,
+      "checked_workspace_bytes": 1048576,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000040000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix",
+      "fusion": "fused",
+      "site": "m-bias",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 8
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 1048576,
+      "checked_workspace_bytes": 1048576,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "140000000f0000001c000000080000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0062-matrix-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "unfused",
+      "site": "p",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 10
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 4194304,
+      "checked_workspace_bytes": 4194304,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "unfused",
+      "site": "hraw",
+      "heuristic_index": 3,
+      "eligible_index": 3,
+      "split_k": {
+        "status": 0,
+        "value": 5
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 5242880,
+      "checked_workspace_bytes": 5242880,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "unfused",
+      "site": "mraw",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 10
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 5242880,
+      "checked_workspace_bytes": 5242880,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0106-matrix-large-cublaslt-unfused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "fused",
+      "site": "p",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 10
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 4194304,
+      "checked_workspace_bytes": 4194304,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "fused",
+      "site": "h-bias-relu",
+      "heuristic_index": 3,
+      "eligible_index": 3,
+      "split_k": {
+        "status": 0,
+        "value": 5
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 5242880,
+      "checked_workspace_bytes": 5242880,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c000000050000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+    },
+    {
+      "case": "matrix-large",
+      "fusion": "fused",
+      "site": "m-bias",
+      "heuristic_index": 0,
+      "eligible_index": 0,
+      "split_k": {
+        "status": 0,
+        "value": 10
+      },
+      "reduction": {
+        "status": 0,
+        "value": 2
+      },
+      "workspace_bytes": 5242880,
+      "checked_workspace_bytes": 5242880,
+      "workspace_cap_bytes": 33554432,
+      "opaque_algorithm_hex": "14000000120000001c0000000a0000000200000000000000000000000000000001000000e4d70100000000000000000000000000450000000000000000000000",
+      "receipt": "calls/0130-matrix-large-cublaslt-fused/receipt.json"
+    }
+  ],
+  "limits": [
+    "Different outside-clock input/cache preparation",
+    "Torch in-call allocation/caching strategy differs from preallocated native/Mapal",
+    "Mapal ordered K with FMA permission versus library dual-budget reordered permission",
+    "No common empty-region overhead calibration or randomized block order",
+    "No actual library SASS/dispatch captured",
+    "No causal attribution from medians or attributes"
+  ],
+  "files": {
+    "native-medians.json": "d2fa7a3f57044cbbe9aa04d8255cc5f624dfd9843c2642c91b3e6e2d1892586f",
+    "report.md": "b0b0b9aeabae3500935af9dff028e8106448400cdc0159bd2bdd25666e280d84",
+    "control-medians.json": "9e3761977c0d1cf72de07b6d457e07e985c22da404e3a8df3c66e2b23ec5d3f6",
+    "frozen-timer-source.txt": "74a4dfa2da152591382ac0439f28d4368b7fd80a67251e246c2eae4ffffc057a",
+    "selected-lt-attributes.json": "d5517588be8440b91173ee0ef29af4504be64eddd70646faf905bd0cec533093"
+  }
+}

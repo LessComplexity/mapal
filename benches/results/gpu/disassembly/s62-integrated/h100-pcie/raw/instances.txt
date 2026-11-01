@@ -1,0 +1,15 @@
+# pre-existing vast instances (never touched), before renting:
+57065574 GTX 1660 S exited
+57100404 Quadro P4000 exited
+57126023 Quadro P4000 exited
+57133432 GTX 1660 S running
+57285249 Quadro P4000 running
+2026-10-23T03:00:44Z
+# created: 57311997 from offer 57077524 (host 670790), 2026-10-23T03:00:49Z
+# after destroy:
+57065574 GTX 1660 S exited
+57100404 Quadro P4000 exited
+57126023 Quadro P4000 exited
+57133432 GTX 1660 S running
+57285249 Quadro P4000 running
+2026-10-23T03:11:59Z

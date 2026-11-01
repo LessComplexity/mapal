@@ -1,0 +1,58 @@
+fn main() {
+    1024 -> iota -> i_sa;
+    i_sa -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> sa;
+    1024 -> iota -> i_sb;
+    i_sb -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> sb;
+    1024 -> iota -> i_se;
+    i_se -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> se;
+    1024 -> iota -> i_sf;
+    i_sf -> map { t -> (t * 3 + 1) % 89 - 44 -> widen_f32 -> v; v / 13.0 } -> sf;
+    16384 -> iota -> i_a;
+    i_a -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> a;
+    16384 -> iota -> i_b;
+    i_b -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 9.0 } -> b;
+    16384 -> iota -> i_e;
+    i_e -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> e;
+    () -> time -> t0;
+    1024 -> iota -> o_c1;
+    32 -> iota -> k_c1;
+    o_c1 -> map { t ->
+        t / 32 -> i;
+        t % 32 -> j;
+        (0.0, k_c1) -> fold { acc, k -> acc + sa[i * 32 + k] * sb[k * 32 + j] }
+    } -> c1;
+    1024 -> iota -> o_c2;
+    32 -> iota -> k_c2;
+    o_c2 -> map { t ->
+        t / 32 -> i;
+        t % 32 -> j;
+        (0.0, k_c2) -> fold { acc, k -> acc + c1[i * 32 + k] * se[k * 32 + j] }
+    } -> c2;
+    1024 -> iota -> o_c3;
+    32 -> iota -> k_c3;
+    o_c3 -> map { t ->
+        t / 32 -> i;
+        t % 32 -> j;
+        (0.0, k_c3) -> fold { acc, k -> acc + c2[i * 32 + k] * sf[k * 32 + j] }
+    } -> c3;
+    16384 -> iota -> o_c;
+    128 -> iota -> k_c;
+    o_c -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, k_c) -> fold { acc, k -> acc + a[i * 128 + k] * b[k * 128 + j] }
+    } -> c;
+    c -> map { v -> v * 0.5 } -> h;
+    16384 -> iota -> o_d;
+    128 -> iota -> k_d;
+    o_d -> map { t ->
+        t / 128 -> i;
+        t % 128 -> j;
+        (0.0, k_d) -> fold { acc, k -> acc + h[i * 128 + k] * e[k * 128 + j] }
+    } -> d;
+    () -> time -> t1;
+    c3[0] -> println;
+    c3[1023] -> println;
+    d[0] -> println;
+    d[16383] -> println;
+}

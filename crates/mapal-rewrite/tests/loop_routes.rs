@@ -1,0 +1,187 @@
+//! Loop routes include required acyclic work beyond the cyclic state.
+use mapal_interp::{Outcome, TrapKind, run};
+use mapal_ir::{CategoryIr, Operation, validate};
+use mapal_rewrite::{PassId, RewritePlan, analyze_const_fold, replay, rewrite, rewrite_with};
+
+const BUDGET: u64 = 100_000;
+
+fn lower(source: &str) -> CategoryIr {
+    let parsed = mapal_syntax::parse(source);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    mapal_lower::lower(source, &parsed.program).expect("valid loop source")
+}
+
+fn assert_acyclic_payload(ir: &CategoryIr) {
+    let f = ir.entry();
+    let loops = ir.loop_structure(f);
+    assert!(!loops.is_empty());
+    for scc in loops {
+        let lp = ir.loop_plan(f, scc.merges[0]).unwrap();
+        let payload = ir
+            .in_edges(lp.exit_route)
+            .iter()
+            .find_map(|&m| {
+                let edge = ir.morphism(m).unwrap();
+                matches!(edge.op, Operation::Pair { slot: 0, .. }).then_some(edge.source)
+            })
+            .unwrap();
+        assert!(
+            !lp.scc_objects.contains(&payload),
+            "regression must leave the SCC"
+        );
+        assert!(
+            lp.decide_order
+                .iter()
+                .any(|&m| ir.morphism(m).unwrap().target == payload)
+        );
+    }
+}
+
+fn assert_equivalent(source: &str, expected_output: &str, trap: bool) {
+    let ir = lower(source);
+    assert!(validate(&ir).is_empty());
+    assert_acyclic_payload(&ir);
+    let before = run(&ir, BUDGET);
+    assert_eq!(before.output, expected_output);
+    if trap {
+        assert_eq!(before.outcome, Outcome::Trapped(TrapKind::DivZero));
+    } else {
+        assert!(matches!(before.outcome, Outcome::Done(_)));
+    }
+    // Force reconstruction even when the driver would find no nonempty plan.
+    let identity = replay(&ir, &RewritePlan::new()).unwrap();
+    assert!(validate(&identity).is_empty());
+    assert_eq!(run(&identity, BUDGET), before);
+    for pass in [
+        PassId::Inline,
+        PassId::LiftLoops,
+        PassId::ConstFold,
+        PassId::Cse,
+        PassId::Dce,
+        PassId::MapFusion,
+    ] {
+        let out = rewrite_with(lower(source), &[pass]);
+        assert!(validate(&out.ir).is_empty(), "{pass:?}");
+        assert_eq!(run(&out.ir, BUDGET), before, "{pass:?}");
+    }
+    let out = rewrite(lower(source));
+    assert!(validate(&out.ir).is_empty());
+    assert_eq!(run(&out.ir, BUDGET), before);
+}
+
+#[test]
+fn observed_loop_exit_payload_survives_identity_and_each_pass() {
+    for (limit, expected) in [(0, "0\n"), (3, "0\n1\n2\n6\n")] {
+        let source = format!(
+            r#"
+fn main() {{
+    mut t: i32 <- 0;
+    loop {{
+        (t < {limit}) -> {{
+            -true-> {{ t -> println; t + 1 -> t; -> loop; }}
+            -false-> {{ t * 2 -> out; }}
+        }}
+    }}
+    out -> println;
+}}
+"#
+        );
+        assert_equivalent(&source, expected, false);
+    }
+}
+
+#[test]
+fn pure_computed_exit_payload_survives_identity_and_each_pass() {
+    for (limit, expected) in [(0, "0\n"), (3, "6\n")] {
+        let source = format!(
+            r#"
+fn main() {{
+    mut t: i32 <- 0;
+    loop {{
+        (t < {limit}) -> {{
+            -true-> {{ t + 1 -> t; -> loop; }}
+            -false-> {{ t * 2 -> out; }}
+        }}
+    }}
+    out -> println;
+}}
+"#
+        );
+        assert_equivalent(&source, expected, false);
+    }
+}
+
+#[test]
+fn non_scc_route_work_honors_constify_plan() {
+    let source = r#"
+fn main() {
+    mut t: i32 <- 0;
+    loop {
+        (t < 3) -> {
+            -true-> { t + 1 -> t; -> loop; }
+            -false-> { t * 0 -> out; }
+        }
+    }
+    out -> println;
+}
+"#;
+    let ir = lower(source);
+    assert_acyclic_payload(&ir);
+    let plan = analyze_const_fold(&ir);
+    assert!(plan.is_consistent(&ir));
+    assert_eq!(plan.constify.len(), 1, "route Mul must really be planned");
+    let out = replay(&ir, &plan).unwrap();
+    assert!(validate(&out).is_empty());
+    assert!(
+        !out.morphisms().any(|(_, m)| m.op == Operation::Mul),
+        "constify must be applied"
+    );
+    assert_eq!(run(&out, BUDGET), run(&ir, BUDGET));
+    assert_equivalent(source, "0\n", false);
+}
+
+#[test]
+fn sequential_loop_routes_keep_invariants_and_ownership() {
+    let source = r#"
+fn main() {
+    mut i: i32 <- 0;
+    loop {
+        (i < 2) -> {
+            -true-> { i + 1 -> i; -> loop; }
+            -false-> { i + 10 -> first; }
+        }
+    }
+    mut j: i32 <- 0;
+    loop {
+        (j < 2) -> {
+            -true-> { j -> println; j + 1 -> j; -> loop; }
+            -false-> { first + j -> last; }
+        }
+    }
+    first -> println;
+    last -> println;
+}
+"#;
+    assert_equivalent(source, "0\n1\n12\n14\n", false);
+}
+
+#[test]
+fn exit_step_skips_advance_effects_and_traps() {
+    for (limit, trap) in [(0, false), (1, true)] {
+        let source = format!(
+            r#"
+fn main() {{
+    mut t: i32 <- 0;
+    loop {{
+        (t < {limit}) -> {{
+            -true-> {{ 10 / t -> println; t + 1 -> t; -> loop; }}
+            -false-> {{ t * 2 -> out; }}
+        }}
+    }}
+    out -> println;
+}}
+"#
+        );
+        assert_equivalent(&source, if trap { "" } else { "0\n" }, trap);
+    }
+}

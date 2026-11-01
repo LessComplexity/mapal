@@ -1,0 +1,9 @@
+{
+  "id": 57118557,
+  "machine_id": 146107,
+  "host_id": 213578,
+  "gpu_name": "RTX 5090",
+  "actual_status": "loading",
+  "intended_status": "running",
+  "verified_utc": "2026-10-21T22:14:30.554394+00:00"
+}

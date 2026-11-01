@@ -1,0 +1,862 @@
+# arch-select-h100-pcie: box_profile.sh evidence (h100-pcie)
+## ptxas mm_4096.null
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 3.331 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.271 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 114.716 ms
+## ptxas mm_4096.off-arch-rungs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 3.108 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.529 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 253 registers, used 1 barriers
+ptxas info    : Compile time = 531.033 ms
+## ptxas mm_4096.off-interleave
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 3.326 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.512 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 131.697 ms
+## ptxas mm_4096.off-prefetch
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 3.966 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.527 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 170 registers, used 1 barriers
+ptxas info    : Compile time = 507.903 ms
+## ptxas mm_4096.off-unroll
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 3.881 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.506 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 126 registers, used 1 barriers
+ptxas info    : Compile time = 17.258 ms
+## ptxas mm_4096.off-warp
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.857 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.267 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 129.356 ms
+## ptxas mm_4096.on-affine
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.243 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.264 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 136 registers, used 1 barriers
+ptxas info    : Compile time = 126.974 ms
+## ptxas mm_4096.on-async
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.481 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.535 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 275.896 ms
+## ptxas mm_4096.on-fma-regs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.246 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.289 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 344.148 ms
+## ptxas mm_4096.on-idx32
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.233 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.269 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    16 bytes stack frame, 12 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 123.798 ms
+## ptxas mm_4096.on-min-blocks
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.003 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.264 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 117.776 ms
+## ptxas mm_4096.on-pad
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.296 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.525 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 135 registers, used 1 barriers
+ptxas info    : Compile time = 123.531 ms
+## ptxas mm_4096.on-wide-fma
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.459 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.278 ms
+ptxas info    : Compiling entry function 'mapal_tile_d7d2247fbbd9f82c' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_d7d2247fbbd9f82c
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 360.431 ms
+## ptxas mm_4096_c.null
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.465 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.261 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+ptxas info    : Compile time = 74.366 ms
+## ptxas mm_4096_c.off-affine
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.634 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.525 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 77.954 ms
+## ptxas mm_4096_c.off-arch-rungs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.935 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.261 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 207 registers, used 1 barriers
+ptxas info    : Compile time = 345.157 ms
+## ptxas mm_4096_c.off-fma-regs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.249 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.270 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 157 registers, used 1 barriers
+ptxas info    : Compile time = 79.486 ms
+## ptxas mm_4096_c.off-idx32
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.399 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.289 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 153 registers, used 1 barriers
+ptxas info    : Compile time = 79.284 ms
+## ptxas mm_4096_c.off-interleave
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.258 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.522 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 79.797 ms
+## ptxas mm_4096_c.off-pad
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.059 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.514 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+ptxas info    : Compile time = 73.992 ms
+## ptxas mm_4096_c.off-prefetch
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.706 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.523 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 123 registers, used 1 barriers
+ptxas info    : Compile time = 268.758 ms
+## ptxas mm_4096_c.off-unroll
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.113 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.272 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 110 registers, used 1 barriers
+ptxas info    : Compile time = 10.480 ms
+## ptxas mm_4096_c.off-warp
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.851 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.300 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 80.021 ms
+## ptxas mm_4096_c.on-async
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.338 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.522 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 146.592 ms
+## ptxas mm_4096_c.on-fma-regs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.576 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.534 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 195.072 ms
+## ptxas mm_4096_c.on-min-blocks
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.126 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.545 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 74.849 ms
+## ptxas mm_4096_c.on-wide-fma
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.287 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.518 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers
+ptxas info    : Compile time = 194.290 ms
+## ptxas mm_4096_c
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.579 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.288 ms
+ptxas info    : Compiling entry function 'mapal_tile_eb50b87a44f46aa3' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_eb50b87a44f46aa3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+ptxas info    : Compile time = 76.639 ms
+## ptxas mm_4096_tf.null
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.650 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.508 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+ptxas info    : Compile time = 98.907 ms
+## ptxas mm_4096_tf.off-arch-rungs
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.308 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.509 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+ptxas info    : Compile time = 89.620 ms
+## ptxas mm_4096_tf.off-mma
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.964 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.307 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 127 registers, used 1 barriers
+ptxas info    : Compile time = 73.632 ms
+## ptxas mm_4096_tf.off-wgmma-hopper
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.936 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.262 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 235 registers, used 1 barriers
+ptxas info    : Compile time = 83.756 ms
+## ptxas mm_4096_tf.on-min-blocks
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.459 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.276 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+ptxas info    : Compile time = 87.176 ms
+## ptxas mm_4096_tf
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'mapal_gen_7b59dfa488c6072f' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_7b59dfa488c6072f
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 2.158 ms
+ptxas info    : Compiling entry function 'mapal_gen_02743d924bf99060' for 'sm_90a'
+ptxas info    : Function properties for mapal_gen_02743d924bf99060
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 10 registers, used 0 barriers
+ptxas info    : Compile time = 1.284 ms
+ptxas info    : Compiling entry function 'mapal_tile_dff0dae306997d77' for 'sm_90a'
+ptxas info    : Function properties for mapal_tile_dff0dae306997d77
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 212 registers, used 1 barriers
+ptxas info    : Compile time = 87.866 ms
+## nsys kernels kern-1024
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+40.3,1224328,8,153041.0,151185.0,150497,157505,3069.3,mapal_tile_07c6663c96748bdb
+34.5,1048806,8,131100.8,132800.5,126881,133153,2718.6,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+25.2,764741,8,95592.6,96353.0,86752,101729,4230.4,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize64x64x8_stage3_warpsize1x4x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+## nsys kernels kern-4096
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+35.3,36952970,8,4619121.3,4619133.5,4609053,4631262,6648.5,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+32.9,34487673,8,4310959.1,4311531.5,4304219,4318491,4661.2,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+31.8,33342707,8,4167838.4,4167386.5,4164218,4174778,3271.7,mapal_tile_eb50b87a44f46aa3
+## nsys kernels kern-8192
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+36.6,296744057,8,37093007.1,37093303.0,37071496,37124551,16309.3,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)128, (int)8>, float, cutlass::layout::ColumnMajor, (int)1, cutlass::transform::TransposePitchLinearThreadMapSimt<cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)8, (int)128>, (int)256, (int)1>>, (int)4>, cutlass::transform::threadblock::PredicatedTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)1, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileIterator<cutlass::MatrixShape<(int)8, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearStripminedThreadMap<cutlass::PitchLinearShape<(int)128, (int)8>, (int)256, (int)1>, (int)4>, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, cutlass::MatrixShape<(int)4, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, cutlass::NumericArrayConverter<float, float, (int)4, (cutlass::FloatRoundStyle)2, cutlass::transform::thread::UnaryTransform::Identity>, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)8>, cutlass::gemm::warp::MmaSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>, (int)1, (cutlass::ComplexTransform)0, (cutlass::ComplexTransform)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::warp::TileIteratorSimt<cutlass::gemm::GemmShape<(int)32, (int)64, (int)8>, cutlass::gemm::thread::Mma<cutlass::gemm::GemmShape<(int)8, (int)8, (int)1>, float, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd, bool>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaSimtPolicy<cutlass::MatrixShape<(int)4, (int)8>, cutlass::layout::RowMajorInterleaved<(int)2>, cutlass::gemm::GemmShape<(int)4, (int)4, (int)1>>>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)1, (int)4, (int)4, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)4, (int)2, (int)1, (int)8>, (int)256, (int)1, (int)32>::CompactedThreadMap, float, (int)4>, cutlass::epilogue::thread::LinearCombination<float, (int)1, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)17>, (int)1, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+32.9,266683935,8,33335491.9,33329456.0,33255664,33431600,60916.7,mapal_tile_3c6966e353d7136e
+30.6,247895498,8,30986937.3,30988049.0,30955330,31024193,24478.9,sm80_xmma_gemm_f32f32_f32f32_f32_nn_n_tilesize128x128x8_stage3_warpsize2x2x1_ffma_aligna4_alignc4_execute_kernel__5x_cublas
+## nsys kernels kern_mm_4096_tf
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+39.3,7386638,8,923329.8,923301.5,918406,927430,2586.4,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+36.4,6832171,8,854021.4,853477.5,851558,861381,3105.7,mapal_tile_dff0dae306997d77
+24.3,4571835,8,571479.4,572627.0,565347,575204,3453.9,sm90_xmma_gemm_f32f32_tf32f32_f32_nn_n_tilesize128x128x32_warpgroupsize1x1x1_execute_segment_k_off_kernel__5x_cublas
+## nsys kernels kern_mm_4096_tf.off-wgmma-hopper
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+45.5,9962621,8,1245327.6,1245144.0,1241383,1252136,3337.5,mapal_tile_dff0dae306997d77
+33.7,7385677,8,923209.6,923029.5,920198,928485,2510.5,"void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaMultistage<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajor, (int)1, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)128, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)16, (int)128>, (int)128, cutlass::PitchLinearShape<(int)4, (int)8>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, cutlass::transform::threadblock::PredicatedTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajor, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, cutlass::Array<float, (int)4, (bool)1>, (bool)0, cutlass::layout::NoPermute>, cutlass::transform::threadblock::RegularTileAccessIterator<cutlass::MatrixShape<(int)16, (int)128>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, (int)0, cutlass::transform::PitchLinearWarpRakedThreadMap<cutlass::PitchLinearShape<(int)128, (int)16>, (int)128, cutlass::PitchLinearShape<(int)8, (int)4>, (int)4>, (int)16>, (cutlass::arch::CacheOperation::Kind)1, float, cutlass::layout::RowMajor, cutlass::gemm::threadblock::MmaPolicy<cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, cutlass::MatrixShape<(int)0, (int)0>, cutlass::MatrixShape<(int)0, (int)0>, (int)1>, (int)4, (cutlass::gemm::SharedMemoryClearOption)0, bool>, cutlass::epilogue::threadblock::Epilogue<cutlass::gemm::GemmShape<(int)128, (int)128, (int)16>, cutlass::gemm::warp::MmaTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<(int)32, (int)16>, float, cutlass::layout::RowMajorTensorOpMultiplicandCongruous<(int)32, (int)32>, float, cutlass::layout::RowMajor, cutlass::gemm::warp::MmaTensorOpPolicy<cutlass::arch::Mma<cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, (int)32, cutlass::tfloat32_t, cutlass::layout::RowMajor, cutlass::tfloat32_t, cutlass::layout::ColumnMajor, float, cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAdd>, cutlass::MatrixShape<(int)1, (int)1>>, (int)1, (bool)0, bool>, (int)1, cutlass::epilogue::threadblock::PredicatedTileIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>, float, (bool)0, cutlass::layout::NoPermute, (bool)0>, cutlass::epilogue::warp::FragmentIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::Array<float, (int)4, (bool)1>, cutlass::layout::RowMajor>, cutlass::epilogue::warp::TileIteratorTensorOp<cutlass::gemm::GemmShape<(int)64, (int)64, (int)16>, cutlass::gemm::GemmShape<(int)16, (int)8, (int)8>, float, cutlass::layout::RowMajor>, cutlass::epilogue::threadblock::SharedLoadIterator<cutlass::epilogue::threadblock::OutputTileOptimalThreadMap<cutlass::epilogue::threadblock::OutputTileShape<(int)128, (int)8, (int)2, (int)1, (int)1>, cutlass::epilogue::threadblock::OutputTileShape<(int)1, (int)8, (int)1, (int)1, (int)8>, (int)128, (int)4, (int)32>::CompactedThreadMap, float, (int)16>, cutlass::epilogue::thread::LinearCombination<float, (int)4, float, float, (cutlass::epilogue::thread::ScaleType::Kind)0, (cutlass::FloatRoundStyle)2, float>, cutlass::MatrixShape<(int)0, (int)8>, (int)2, (int)1>, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<(int)1>, (bool)0>>(T1::Params)"
+20.8,4562781,8,570347.6,570835.5,563428,577924,5029.2,sm90_xmma_gemm_f32f32_tf32f32_f32_nn_n_tilesize128x128x32_warpgroupsize1x1x1_execute_segment_k_off_kernel__5x_cublas
+## nsys timeline tl_e2e_1024_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+43.1,994849,3,331616.3,258458.0,242857,493534,140441.6,cuMemAlloc_v2
+32.7,756022,3,252007.3,178908.0,170608,406506,133864.1,cuMemFree_v2
+15.4,356096,1,356096.0,356096.0,356096,356096,0.0,cuModuleLoadData
+4.6,106799,3,35599.7,17850.0,17230,71719,31281.8,cuLaunchKernel
+3.0,69379,1,69379.0,69379.0,69379,69379,0.0,cuMemcpyDtoH_v2
+0.9,20950,2,10475.0,10475.0,4270,16680,8775.2,cuCtxSynchronize
+0.3,6630,2,3315.0,3315.0,1980,4650,1888.0,cuCtxSetCurrent
+
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+95.1,155297,1,155297.0,155297.0,155297,155297,0.0,mapal_tile_07c6663c96748bdb
+2.5,4032,1,4032.0,4032.0,4032,4032,0.0,mapal_gen_093825ecb41500cf
+2.4,4000,1,4000.0,4000.0,4000,4000,0.0,mapal_gen_eb67bbb3563f7336
+
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,1536,1,1536.0,1536.0,1536,1536,0.0,[CUDA memcpy Device-to-Host]
+
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+544662726,4000,8,4096,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_eb67bbb3563f7336
+544976936,4032,11,4096,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_093825ecb41500cf
+545333002,155297,15,16,8,1,256,1,1,79,0.000,0.013,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_07c6663c96748bdb
+545992334,1536,19,,,,,,,,,,0.000,2.604,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_e2e_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+74.8,4669220,3,1556406.7,169138.0,138408,4361674,2429481.4,cuMemFree_v2
+13.6,847390,3,282463.3,191728.0,144598,511064,199371.5,cuMemAlloc_v2
+8.6,536985,1,536985.0,536985.0,536985,536985,0.0,cuModuleLoadData
+1.2,76049,3,25349.7,9230.0,8809,58010,28285.5,cuLaunchKernel
+0.9,54910,2,27455.0,27455.0,2630,52280,35107.9,cuCtxSynchronize
+0.7,45920,1,45920.0,45920.0,45920,45920,0.0,cuMemcpyDtoH_v2
+0.2,10730,2,5365.0,5365.0,1380,9350,5635.6,cuCtxSetCurrent
+
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.8,4171769,1,4171769.0,4171769.0,4171769,4171769,0.0,mapal_tile_eb50b87a44f46aa3
+1.1,45953,1,45953.0,45953.0,45953,45953,0.0,mapal_gen_7b59dfa488c6072f
+1.1,45920,1,45920.0,45920.0,45920,45920,0.0,mapal_gen_02743d924bf99060
+
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,1600,1,1600.0,1600.0,1600,1600,0.0,[CUDA memcpy Device-to-Host]
+
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+560979203,45920,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+561208228,45953,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+561464838,4171769,15,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+566016610,1600,19,,,,,,,,,,0.000,2.500,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_epi_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+92.7,26863601,1,26863601.0,26863601.0,26863601,26863601,0.0,cuMemcpyDtoH_v2
+2.5,735873,3,245291.0,166519.0,153809,415545,147581.2,cuMemAlloc_v2
+2.2,639323,1,639323.0,639323.0,639323,639323,0.0,cuModuleLoadData
+2.0,586664,3,195554.7,206808.0,146308,233548,44695.4,cuMemFree_v2
+0.3,82979,3,27659.7,10670.0,10380,61929,29678.5,cuLaunchKernel
+0.2,67529,2,33764.5,33764.5,3490,64039,42814.6,cuCtxSynchronize
+0.0,6370,2,3185.0,3185.0,2350,4020,1180.9,cuCtxSetCurrent
+
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.4,4176250,1,4176250.0,4176250.0,4176250,4176250,0.0,mapal_tile_eb50b87a44f46aa3
+1.3,57824,1,57824.0,57824.0,57824,57824,0.0,mapal_gen_7b59dfa488c6072f
+1.3,54753,1,54753.0,54753.0,54753,54753,0.0,mapal_gen_02743d924bf99060
+
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,22602696,1,22602696.0,22602696.0,22602696,22602696,0.0,[CUDA memcpy Device-to-Host]
+
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+561897762,54753,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+562108676,57824,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+562395653,4176250,15,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+566581375,22602696,16,,,,,,,,,,67.109,2952.790,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_indep_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+93.6,48911406,2,24455703.0,24455703.0,21507720,27403686,4169077.5,cuMemcpyDtoH_v2
+2.5,1328215,6,221369.2,157128.5,133988,579704,175969.0,cuMemAlloc_v2
+2.3,1200437,6,200072.8,175343.0,125719,388096,98228.5,cuMemFree_v2
+1.1,596844,1,596844.0,596844.0,596844,596844,0.0,cuModuleLoadData
+0.2,113329,6,18888.2,11535.0,8750,60079,20240.0,cuLaunchKernel
+0.1,71549,2,35774.5,35774.5,6620,64929,41230.7,cuCtxSynchronize
+0.0,11600,2,5800.0,5800.0,2760,8840,4299.2,cuCtxSetCurrent
+
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+97.3,8350193,2,4175096.5,4175096.5,4172984,4177209,2987.5,mapal_tile_eb50b87a44f46aa3
+0.7,59712,1,59712.0,59712.0,59712,59712,0.0,mapal_gen_2636abe3000d5fd9
+0.7,58368,1,58368.0,58368.0,58368,58368,0.0,mapal_gen_7b59dfa488c6072f
+0.7,58368,1,58368.0,58368.0,58368,58368,0.0,mapal_gen_9033d04957187e8a
+0.6,54784,1,54784.0,54784.0,54784,54784,0.0,mapal_gen_02743d924bf99060
+
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,40393488,2,20196744.0,20196744.0,17236550,23156938,4186346.5,[CUDA memcpy Device-to-Host]
+
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+551326894,54784,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+551533615,58368,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+551728208,58368,14,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_9033d04957187e8a
+551895505,59712,17,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_2636abe3000d5fd9
+552171699,4172984,21,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+556347595,23156938,22,,,,,,,,,,67.109,2885.681,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+580052952,4177209,27,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+584233233,17236550,28,,,,,,,,,,67.109,3892.314,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## nsys timeline tl_pt_mlp_4096_c
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+70.5,43800720,3,14600240.0,33620.0,15329,43751771,25245968.1,cuMemcpyDtoH_v2
+16.3,10118892,1,10118892.0,10118892.0,10118892,10118892,0.0,cuMemcpyHtoD_v2
+8.5,5290253,6,881708.8,191367.5,124869,4357383,1703535.9,cuMemFree_v2
+3.3,2057767,6,342961.2,181548.5,130318,872520,300365.0,cuMemAlloc_v2
+1.0,651713,1,651713.0,651713.0,651713,651713,0.0,cuModuleLoadData
+0.2,132758,5,26551.6,11739.0,10520,61799,22925.1,cuLaunchKernel
+0.1,67308,2,33654.0,33654.0,4279,63029,41542.5,cuCtxSynchronize
+0.0,6770,2,3385.0,3385.0,1910,4860,2086.0,cuCtxSetCurrent
+
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+98.0,8349714,2,4174857.0,4174857.0,4174489,4175225,520.4,mapal_tile_eb50b87a44f46aa3
+0.7,57664,1,57664.0,57664.0,57664,57664,0.0,mapal_gen_7b59dfa488c6072f
+0.7,56864,1,56864.0,56864.0,56864,56864,0.0,mapal_gen_9033d04957187e8a
+0.6,54081,1,54081.0,54081.0,54081,54081,0.0,mapal_gen_02743d924bf99060
+
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+79.7,39482891,3,13160963.7,1632.0,992,39480267,22793185.3,[CUDA memcpy Device-to-Host]
+20.3,10066716,1,10066716.0,10066716.0,10066716,10066716,0.0,[CUDA memcpy Host-to-Device]
+
+Start (ns),Duration (ns),CorrId,GrdX,GrdY,GrdZ,BlkX,BlkY,BlkZ,Reg/Trd,StcSMem (MB),DymSMem (MB),Bytes (MB),Throughput (MB/s),SrcMemKd,DstMemKd,Device,Ctx,GreenCtx,Strm,Name
+563236324,54081,8,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_02743d924bf99060
+563444198,57664,11,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_7b59dfa488c6072f
+563682407,56864,14,65536,1,1,256,1,1,16,0.000,0.000,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_gen_9033d04957187e8a
+563973865,4174489,18,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+568154274,39480267,19,,,,,,,,,,67.109,1677.722,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+613865938,10066716,23,,,,,,,,,,67.109,6643.778,Pageable,Device,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Host-to-Device]
+624313680,4175225,27,32,32,1,256,1,1,127,0.000,0.017,,,,,NVIDIA H100 PCIe (0),1,,7,mapal_tile_eb50b87a44f46aa3
+628832971,1632,31,,,,,,,,,,0.000,2.451,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+628898059,992,32,,,,,,,,,,0.000,4.032,Device,Pageable,NVIDIA H100 PCIe (0),1,,7,[CUDA memcpy Device-to-Host]
+## trace e2e_1024
+mapal_gpu_trace op=load flags=1 wait_ms=293.470 lead_ms=8.956 init_ms=125.371 ctx_ms=176.455 module_ms=0.422
+mapal_gpu_trace op=alloc ms=0.324 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_eb67bbb3563f7336 ms=0.066 n=1048576
+mapal_gpu_trace op=alloc ms=0.162 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_093825ecb41500cf ms=0.016 n=1048576
+mapal_gpu_trace op=alloc ms=0.155 bytes=4194304
+mapal_gpu_trace op=launch kernel=mapal_tile_ca2f6114b3534324 ms=0.231
+mapal_gpu_trace op=free ms=0.171
+mapal_gpu_trace op=free ms=0.108
+mapal_gpu_trace op=d2h ms=0.054 bytes=4
+mapal_gpu_trace op=free ms=0.112
+11107
+iter ms=0.749552
+mapal_gpu_trace_total flags=1 load_ms=293.470 lead_ms=8.956 init_ms=125.371 ctx_ms=176.455 module_ms=0.422 alloc_ms=0.641 h2d_ms=0.000 kernel_ms=0.231 gen_ms=0.082 d2h_ms=0.054 free_ms=0.391 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_1024_c
+mapal_gpu_trace op=load flags=1 wait_ms=270.985 lead_ms=8.937 init_ms=125.008 ctx_ms=154.100 module_ms=0.287
+mapal_gpu_trace op=alloc ms=0.311 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_eb67bbb3563f7336 ms=0.054 n=1048576
+mapal_gpu_trace op=alloc ms=0.122 bytes=4194304
+mapal_gpu_trace op=gen kernel=mapal_gen_093825ecb41500cf ms=0.014 n=1048576
+mapal_gpu_trace op=alloc ms=0.115 bytes=4194304
+mapal_gpu_trace op=launch kernel=mapal_tile_07c6663c96748bdb ms=0.164
+mapal_gpu_trace op=free ms=0.138
+mapal_gpu_trace op=free ms=0.104
+mapal_gpu_trace op=d2h ms=0.048 bytes=4
+mapal_gpu_trace op=free ms=0.101
+11107
+iter ms=0.5754440000000001
+mapal_gpu_trace_total flags=1 load_ms=270.985 lead_ms=8.937 init_ms=125.008 ctx_ms=154.100 module_ms=0.287 alloc_ms=0.548 h2d_ms=0.000 kernel_ms=0.164 gen_ms=0.068 d2h_ms=0.048 free_ms=0.343 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_4096
+mapal_gpu_trace op=load flags=1 wait_ms=137.511 lead_ms=136.941 init_ms=123.263 ctx_ms=150.412 module_ms=0.552
+mapal_gpu_trace op=alloc ms=0.479 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.114 n=16777216
+mapal_gpu_trace op=alloc ms=0.183 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.199 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_d7d2247fbbd9f82c ms=7.347
+mapal_gpu_trace op=free ms=0.192
+mapal_gpu_trace op=free ms=0.130
+mapal_gpu_trace op=d2h ms=0.051 bytes=4
+mapal_gpu_trace op=free ms=0.164
+74348
+iter ms=7.968094999999999
+mapal_gpu_trace_total flags=1 load_ms=137.511 lead_ms=136.941 init_ms=123.263 ctx_ms=150.412 module_ms=0.552 alloc_ms=0.861 h2d_ms=0.000 kernel_ms=7.347 gen_ms=0.171 d2h_ms=0.051 free_ms=0.486 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace e2e_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=137.491 lead_ms=134.610 init_ms=126.171 ctx_ms=145.296 module_ms=0.414
+mapal_gpu_trace op=alloc ms=0.417 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.108 n=16777216
+mapal_gpu_trace op=alloc ms=0.233 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.059 n=16777216
+mapal_gpu_trace op=alloc ms=0.142 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.182
+mapal_gpu_trace op=free ms=0.206
+mapal_gpu_trace op=free ms=0.146
+mapal_gpu_trace op=d2h ms=0.054 bytes=4
+mapal_gpu_trace op=free ms=0.185
+74348
+iter ms=4.748269
+mapal_gpu_trace_total flags=1 load_ms=137.491 lead_ms=134.610 init_ms=126.171 ctx_ms=145.296 module_ms=0.414 alloc_ms=0.792 h2d_ms=0.000 kernel_ms=4.182 gen_ms=0.167 d2h_ms=0.054 free_ms=0.538 bytes_in=0 bytes_out=4 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace pt_epi_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=113.635 lead_ms=163.893 init_ms=126.561 ctx_ms=150.340 module_ms=0.420
+mapal_gpu_trace op=alloc ms=0.415 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.109 n=16777216
+mapal_gpu_trace op=alloc ms=0.165 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.134 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.182
+mapal_gpu_trace op=d2h ms=39.739 bytes=67108864
+mapal_gpu_trace op=free ms=0.193
+mapal_gpu_trace op=free ms=0.128
+mapal_gpu_trace op=free ms=0.331
+108.27773
+-104.92077
+iter ms=49.892595
+mapal_gpu_trace_total flags=1 load_ms=113.635 lead_ms=163.893 init_ms=126.561 ctx_ms=150.340 module_ms=0.420 alloc_ms=0.713 h2d_ms=0.000 kernel_ms=4.182 gen_ms=0.168 d2h_ms=39.739 free_ms=0.652 bytes_in=0 bytes_out=67108864 h2d=0 d2h=1 launches=1 gens=2 allocs=3
+## trace pt_indep_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=21.255 lead_ms=261.346 init_ms=127.101 ctx_ms=154.848 module_ms=0.473
+mapal_gpu_trace op=alloc ms=0.500 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.110 n=16777216
+mapal_gpu_trace op=alloc ms=0.210 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.061 n=16777216
+mapal_gpu_trace op=alloc ms=0.184 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_9033d04957187e8a ms=0.060 n=16777216
+mapal_gpu_trace op=alloc ms=0.172 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_2636abe3000d5fd9 ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.131 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.185
+mapal_gpu_trace op=d2h ms=22.041 bytes=67108864
+mapal_gpu_trace op=free ms=2.512
+mapal_gpu_trace op=free ms=0.870
+mapal_gpu_trace op=alloc ms=1.094 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.185
+mapal_gpu_trace op=d2h ms=17.230 bytes=67108864
+mapal_gpu_trace op=free ms=0.160
+mapal_gpu_trace op=free ms=0.139
+mapal_gpu_trace op=free ms=0.387
+mapal_gpu_trace op=free ms=0.163
+240.9961
+-298.4848
+iter ms=59.773219
+mapal_gpu_trace_total flags=1 load_ms=21.255 lead_ms=261.346 init_ms=127.101 ctx_ms=154.848 module_ms=0.473 alloc_ms=2.292 h2d_ms=0.000 kernel_ms=8.370 gen_ms=0.289 d2h_ms=39.271 free_ms=4.232 bytes_in=0 bytes_out=134217728 h2d=0 d2h=2 launches=2 gens=4 allocs=6
+## trace pt_mlp_4096_c
+mapal_gpu_trace op=load flags=1 wait_ms=34.202 lead_ms=246.860 init_ms=132.561 ctx_ms=147.870 module_ms=0.447
+mapal_gpu_trace op=alloc ms=0.461 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_02743d924bf99060 ms=0.102 n=16777216
+mapal_gpu_trace op=alloc ms=0.142 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_7b59dfa488c6072f ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.136 bytes=67108864
+mapal_gpu_trace op=gen kernel=mapal_gen_9033d04957187e8a ms=0.058 n=16777216
+mapal_gpu_trace op=alloc ms=0.132 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.181
+mapal_gpu_trace op=d2h ms=39.210 bytes=67108864
+mapal_gpu_trace op=free ms=0.238
+mapal_gpu_trace op=free ms=0.156
+mapal_gpu_trace op=alloc ms=0.365 bytes=67108864
+mapal_gpu_trace op=h2d ms=4.806 bytes=67108864
+mapal_gpu_trace op=free ms=0.282
+mapal_gpu_trace op=alloc ms=0.145 bytes=67108864
+mapal_gpu_trace op=launch kernel=mapal_tile_eb50b87a44f46aa3 ms=4.205
+mapal_gpu_trace op=free ms=0.170
+mapal_gpu_trace op=free ms=0.127
+mapal_gpu_trace op=d2h ms=0.033 bytes=4
+-1379.831
+mapal_gpu_trace op=d2h ms=0.013 bytes=4
+mapal_gpu_trace op=free ms=0.161
+1141.1611
+iter ms=59.646291000000005
+mapal_gpu_trace_total flags=1 load_ms=34.202 lead_ms=246.860 init_ms=132.561 ctx_ms=147.870 module_ms=0.447 alloc_ms=1.379 h2d_ms=4.806 kernel_ms=8.387 gen_ms=0.219 d2h_ms=39.255 free_ms=1.134 bytes_in=67108864 bytes_out=67108872 h2d=1 d2h=3 launches=2 gens=3 allocs=6

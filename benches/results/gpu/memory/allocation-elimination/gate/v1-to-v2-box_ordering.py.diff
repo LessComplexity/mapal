@@ -1,0 +1,62 @@
+--- rejected-v1/box_ordering.py
++++ v2/box_ordering.py
+@@ -31,26 +31,43 @@
+ 
+ 
+ def execute(command, stdout, stderr, timeout, env=None):
+-    """Keep raw streams and status, including spawn failure and killed timeouts."""
++    """Keep raw status; cancellation kills and reaps this isolated child group."""
+     started = time.monotonic()
+     child = None
++    cancelled = False
++    def cancel(signum, frame):
++        nonlocal cancelled
++        cancelled = True
++        # If TERM interrupts Popen before assignment, the check below handles it.
++        if child is not None:
++            raise SystemExit(128 + signum)
++    previous = signal.signal(signal.SIGTERM, cancel)
+     row = {'command': command, 'timeout_seconds': timeout, 'timed_out': False}
+-    with stdout.open('xb') as out, stderr.open('xb') as err:
+-        try:
+-            child = subprocess.Popen(command, stdout=out, stderr=err, env=env, start_new_session=True)
++    try:
++        with stdout.open('xb') as out, stderr.open('xb') as err:
+             try:
+-                row['exit'] = child.wait(timeout=timeout)
+-            except subprocess.TimeoutExpired:
+-                os.killpg(child.pid, signal.SIGKILL)
+-                child.wait()
+-                row.update(exit=124, timed_out=True)
+-        except OSError as exc:
+-            row.update(exit=127, spawn_error=str(exc))
+-        except BaseException:
+-            if child is not None and child.poll() is None:
+-                os.killpg(child.pid, signal.SIGKILL)
+-                child.wait()
+-            raise
++                if cancelled:
++                    raise SystemExit(143)
++                child = subprocess.Popen(command, stdout=out, stderr=err, env=env, start_new_session=True)
++                if cancelled:
++                    raise SystemExit(143)
++                try:
++                    row['exit'] = child.wait(timeout=timeout)
++                except subprocess.TimeoutExpired:
++                    os.killpg(child.pid, signal.SIGKILL)
++                    child.wait()
++                    row.update(exit=124, timed_out=True)
++            except OSError as exc:
++                row.update(exit=127, spawn_error=str(exc))
++            except BaseException:
++                if child is not None and child.poll() is None:
++                    os.killpg(child.pid, signal.SIGKILL)
++                    child.wait()
++                raise
++        if cancelled:
++            raise SystemExit(143)
++    finally:
++        signal.signal(signal.SIGTERM, previous)
+     row.update(seconds=time.monotonic() - started, stdout_sha256=digest(stdout), stderr_sha256=digest(stderr))
+     return row
+ 

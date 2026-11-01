@@ -1,0 +1,238 @@
+{
+  "patch_sha256": "2c8cdc1964abbd0516a46c5da1e02a76ba59e214e205275c8e478dc23e85ffd5",
+  "source_head": "3a0d4350dc2f5b13b53ed86821cf427922fe99d9",
+  "variants": 28,
+  "independent_equivalence_pass": true,
+  "source_files_hash_verified": 310,
+  "receipt_artifacts_hash_verified": 261,
+  "mutations_rejected": [
+    "device-slot alloca i64\u2192i32",
+    "device-slot initialization0\u21921"
+  ],
+  "rows": [
+    {
+      "case": "materialized-raw",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "materialized-raw",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "capture",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "capture",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "forked-tile",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "forked-tile",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "member-cell",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "member-cell",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "base-cell",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "base-cell",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "member-rowfold",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "member-rowfold",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "base-rowfold",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "base-rowfold",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "omitted-raw",
+      "face": "exact",
+      "removed_allocations": 2,
+      "omitted_static_bytes": 32768,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "omitted-raw",
+      "face": "contract",
+      "removed_allocations": 2,
+      "omitted_static_bytes": 32768,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-indep",
+      "face": "exact",
+      "removed_allocations": 1,
+      "omitted_static_bytes": 1048576,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-indep",
+      "face": "contract",
+      "removed_allocations": 1,
+      "omitted_static_bytes": 1048576,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-diamond",
+      "face": "exact",
+      "removed_allocations": 1,
+      "omitted_static_bytes": 1048576,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-diamond",
+      "face": "contract",
+      "removed_allocations": 1,
+      "omitted_static_bytes": 1048576,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-mlp2",
+      "face": "exact",
+      "removed_allocations": 2,
+      "omitted_static_bytes": 2097152,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-mlp2",
+      "face": "contract",
+      "removed_allocations": 2,
+      "omitted_static_bytes": 2097152,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-twin",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-twin",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-mlp",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-mlp",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-fanout",
+      "face": "exact",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    },
+    {
+      "case": "pt512-fanout",
+      "face": "contract",
+      "removed_allocations": 0,
+      "omitted_static_bytes": 0,
+      "body_types_zero_ownership_equal": true,
+      "device_LLVM_identical": true
+    }
+  ]
+}

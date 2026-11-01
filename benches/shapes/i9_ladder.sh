@@ -5,7 +5,7 @@
 # `movepanel_ab.sh` and `transpose_vs_baselines.sh` all shell out to a LOCAL
 # `clang`, and `movepanel_ab.sh` hardcodes `-march=armv8-a+sme2`. The i9 box has
 # gcc but NO clang. So none of them can run there, and the numbers in
-# `benches/results-s44/i9-ladder.md` are not reproducible without this.
+# `benches/results/cpu/memory/l1-panel-conflicts/i9-ladder.md` are not reproducible without this.
 #
 # The split: EMIT and .ll -> .o happen HERE (needs clang + the Mapal emitter);
 # only the LINK and the RUN happen on the box (needs gcc + the machine). Data
@@ -30,9 +30,8 @@ CFLAGS="-O3 -target x86_64-unknown-linux-gnu -march=raptorlake -ffp-contract=fas
 TARGET="${TARGET:-raptorlake}"
 BLOCKS="${BLOCKS:-2 4 8 16 32 64 128 256 512 1024}"
 
-# There are TWO examples named `emit` (cuda and llvm) colliding on
-# target/release/examples/emit, and the cuda one silently rejects --contract.
-# Build the right one and prove it understands the flags before trusting it.
+# Build LLVM's `emit` and verify its flags; an old build may still contain the
+# CUDA example that used this name before it became `emit_cuda`.
 cargo build -q --release -p mapal-backend-llvm --example emit --manifest-path "$ROOT/Cargo.toml"
 cargo build -q -p mapal-rt --release --target x86_64-unknown-linux-gnu --manifest-path "$ROOT/Cargo.toml"
 for probe in --contract "--move-panel=off" "--move-panel=1024:16" "--target=$TARGET"; do

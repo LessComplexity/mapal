@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local A/B for the shape-ladder-v2 classes (docs/performance/shape-ladder-v2.md):
+# Local A/B for the shape-ladder-v2 classes (docs/performance/methodology/algorithm-shape-ladder.md):
 # saxpy (streaming), reduce (reduction), transpose (data movement), gather
 # (irregular reads). Separate from shapes_ab.sh on purpose — that harness is the
 # published fir/conv2d path and is not touched here.

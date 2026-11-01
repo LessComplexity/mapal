@@ -1,0 +1,28 @@
+   Compiling mapal-backend-llvm v0.0.1 (/private/tmp/mapal-s58-allocation/source/crates/backends/llvm)
+    Finished `release` profile [optimized] target(s) in 5.62s
+     Running tests/streams.rs (/private/tmp/mapal-s58-allocation/target/release/deps/streams-65bd56ffb4529b4f)
+
+running 1 test
+
+thread 'grouped_chains_allocate_only_materialized_raw_outputs' (13370518) panicked at crates/backends/llvm/tests/streams.rs:722:5:
+[
+    "independent contract=false: %t22 = call i64 @mapal_gpu_alloc(ptr %d21, i64 16384)",
+    "independent contract=true: %t22 = call i64 @mapal_gpu_alloc(ptr %d21, i64 16384)",
+    "diamond contract=false: %t26 = call i64 @mapal_gpu_alloc(ptr %d25, i64 16384)",
+    "diamond contract=true: %t26 = call i64 @mapal_gpu_alloc(ptr %d25, i64 16384)",
+    "mlp2 contract=false: %t29 = call i64 @mapal_gpu_alloc(ptr %d28, i64 16384)",
+    "mlp2 contract=false: %t33 = call i64 @mapal_gpu_alloc(ptr %d32, i64 16384)",
+    "mlp2 contract=true: %t29 = call i64 @mapal_gpu_alloc(ptr %d28, i64 16384)",
+    "mlp2 contract=true: %t33 = call i64 @mapal_gpu_alloc(ptr %d32, i64 16384)",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test grouped_chains_allocate_only_materialized_raw_outputs ... FAILED
+
+failures:
+
+failures:
+    grouped_chains_allocate_only_materialized_raw_outputs
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p mapal-backend-llvm --test streams`

@@ -3,8 +3,8 @@
 Status: **PLAN, written before the emitter change** (FRAMEWORK §6.1), reconciled in §10 afterwards.
 Machine: Apple M4 Pro (10P+4E, 2 SME, L1D 128 KB / 128 B lines, shared L2 16 MB, page 16 KB).
 Worktree `agent-aa6edc589b1483b51` off `6d6302c`.
-Governing record: `docs/performance/s43-residency-and-the-thermal-artifact.md`.
-Results land in `benches/results-s44/l1-micro-panel.md` **the moment they are taken**, not at the end.
+Governing record: `docs/performance/cpu/memory/operand-residency-and-thermal-effects.md`.
+Results land in `benches/results/cpu/memory/l1-panel-conflicts/l1-micro-panel.md` **the moment they are taken**, not at the end.
 
 Design by a Fable subagent working read-only against the source; the instrument work in §6 (`tblock.c`,
 `stride_ab.sh`) ran concurrently and is folded in as §7's pre-registered predictions.
@@ -189,7 +189,7 @@ floor; B=W ≈ OFF everywhere; gather 0.95–1.0× overlapping.
 
 ## 10. RECONCILIATION — scored against the measurements
 
-Full tables in `benches/results-s44/l1-micro-panel.md`. Summary of where the plan was right and
+Full tables in `benches/results/cpu/memory/l1-panel-conflicts/l1-micro-panel.md`. Summary of where the plan was right and
 where it was wrong:
 
 | plan claim | outcome |

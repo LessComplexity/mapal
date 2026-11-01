@@ -146,3 +146,35 @@ fn main() {
     let rr = run_src(src);
     assert_eq!(rr.output, "20\n", "4*2 + 4*3; outcome {:?}", rr.outcome);
 }
+
+/// generic-fusion's twin sweep: a trip value that feeds no next state and no
+/// exit — a map whose body folds over the captured state — used to panic at
+/// read-before-write: the flat walk ran the capture `Pair`'s non-state slot
+/// and the map outside the loop, where the state has no value. It is the
+/// loop's (dead) work: never run outside it.
+#[test]
+fn dead_capture_of_the_state_in_a_loop_body_runs() {
+    let src = r#"
+fn main() {
+    16 -> iota -> ta;
+    4 -> iota -> krange;
+    ta -> map { t -> t -> widen_f32 } -> a0;
+    mut x: [f32; 16] <- a0;
+    mut it: i32 <- 0;
+    loop {
+        (it < 3) -> {
+            -true-> {
+                ta -> map { t -> (0.0, krange) -> fold { acc, k -> acc + x[k] } } -> z0;
+                ta -> map { t -> x[t] * 0.5 } -> x;
+                it + 1 -> it;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    out[1] -> println;
+}
+"#;
+    let rr = run_src(src);
+    assert_eq!(rr.output, "0.125\n", "outcome {:?}", rr.outcome);
+}

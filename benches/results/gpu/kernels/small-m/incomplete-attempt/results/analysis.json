@@ -1,0 +1,2400 @@
+{
+  "verification_counts": {
+    "sealed_payload_files": 2866,
+    "outer_files": 180,
+    "harness_binaries": 2,
+    "hashed_record_and_metadata_files": 25
+  },
+  "harness_binary_hashes_verified": {
+    "checked": "3c323e521a2c810668da3653f325a6d4adfee29b6ec17342804d358a5807a5a5",
+    "reference": "e8ec085ad27e0fd59b57393ca5fe6ef85f82efec9d82a159bfee000ae756d128"
+  },
+  "evidence_kind": "retrieved GPU artifacts",
+  "manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+  "profile": "rtx-5090",
+  "complete_inventory": false,
+  "observed_records": 1,
+  "expected_records": 234,
+  "combined_source_provenance": {
+    "source_head": "a14feda53406b0f1eaa6b1947afaa81728055c2b",
+    "source_manifest_sha256": "b4a7bbecacd477e2720965e31de87ce526f7f66c0ecdf51856c5a9d65a5ad185",
+    "ordering_patch_sha256": "0813872210b157aabc1887ece05e7d72d68744f420a07ef2efd0b8b29c5fbbbe",
+    "smallm_patch_sha256": "019870a820e4a2c5cb6aa5389e1229a685b01ea8f9876fc98fc1d247b736ea2b",
+    "emitter_sha256": "ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307",
+    "source_files": 3343,
+    "scope": "root combined snapshot: a14feda + reviewed ordering + final smallM candidate; shared smallM not yet applied"
+  },
+  "emitter_identities": {
+    "old": {
+      "path": "/private/tmp/mapal-replay-shared-host-target/release/examples/emit",
+      "sha256": "b8de9090d5f3ddcdc9a36543e5385f665440134f85a4a9985d5aecc3a58bd759"
+    },
+    "candidate": {
+      "path": "/private/tmp/mapal-s58-combined/bin/emit",
+      "sha256": "ccdde46ca700f19a9c9d51d733f1f7e6aaa2767c6dad9240e52a79b60f865307"
+    }
+  },
+  "negative_controls": [
+    {
+      "name": "reference_nan",
+      "verified": true
+    },
+    {
+      "name": "checked_nan",
+      "verified": true
+    },
+    {
+      "name": "checked_wrong",
+      "verified": true
+    }
+  ],
+  "all_negative_controls_verified": true,
+  "library_versions": [],
+  "reported_math_modes": {
+    "default": [],
+    "tf32": []
+  },
+  "candidate_regressions_at_admission": [],
+  "global_unchanged_ptx_control_factor": null,
+  "fatal_execution_error": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+  "primary_numeric_admissions": 0,
+  "primary_timing_processes": 0,
+  "performance_comparison_available": false,
+  "rows": [
+    {
+      "id": "rtx-5090__timing__dense_m1_n18432_k7168__exact",
+      "family": "dense",
+      "M": 1,
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "feb3d1174a0701bb430ee460b9c3f878b86594cfd20ae8dca7439bda4eb34be6",
+          "launch": {
+            "entry": "mapal_tile_829be41814fc3f34",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "feb3d1174a0701bb430ee460b9c3f878b86594cfd20ae8dca7439bda4eb34be6",
+          "launch": {
+            "entry": "mapal_tile_829be41814fc3f34",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          512,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "id": "rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old",
+            "case": "rtx-5090__gate__dense_m1_n512_k7168__exact",
+            "shape": [
+              1,
+              512,
+              7168
+            ],
+            "face": "exact",
+            "phase": "full_gate",
+            "arm": "old",
+            "pass": false,
+            "outcome": "launch_not_started",
+            "reason": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+            "raw_lengths": {
+              ".stdout": 0,
+              ".stderr": 0
+            },
+            "status_receipt_present": false
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m1_n18432_k7168__contract",
+      "family": "dense",
+      "M": 1,
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "30af98a73a822a43f3d6d75f97d61b66b83e99a3c7037602220eec7d7994228f",
+          "launch": {
+            "entry": "mapal_tile_2f00dbfa81c0b68b",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "30af98a73a822a43f3d6d75f97d61b66b83e99a3c7037602220eec7d7994228f",
+          "launch": {
+            "entry": "mapal_tile_2f00dbfa81c0b68b",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          512,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m1_n18432_k7168__tf32",
+      "family": "dense",
+      "M": 1,
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "5d41b6e8f7bb92b023665cbbd044574748573404f9505f6ba29108aa515d39ea",
+          "launch": {
+            "entry": "mapal_tile_91bee3ae5348920f",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "5d41b6e8f7bb92b023665cbbd044574748573404f9505f6ba29108aa515d39ea",
+          "launch": {
+            "entry": "mapal_tile_91bee3ae5348920f",
+            "gx": 72,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          512,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m16_n18432_k7168__exact",
+      "family": "dense",
+      "M": 16,
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "40378c2952649de2a7712402c10da8f58364c20d068e358001ab9c5cbc2a5529",
+          "launch": {
+            "entry": "mapal_tile_d16b4af8853afb28",
+            "gx": 1152,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "050ec1596a4627de22269d871ab7cb0d880fe7841d2e7f50f3d7854ac3df53d6",
+          "launch": {
+            "entry": "mapal_tile_d16b4af8853afb28",
+            "gx": 576,
+            "gy": 1,
+            "block": 32,
+            "smem": 1536
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          18432,
+          64
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m16_n18432_k7168__contract",
+      "family": "dense",
+      "M": 16,
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "1fe7eca6ec91ffa5c21c6fd3b0725f0076725d398074d274dc9f2e00774fc3fa",
+          "launch": {
+            "entry": "mapal_tile_698a8374c90a15e7",
+            "gx": 1152,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "d5dd8ad5b1b0bc14f20c1364cb790a7c42f8192c017cc242bb89396b388ae004",
+          "launch": {
+            "entry": "mapal_tile_698a8374c90a15e7",
+            "gx": 576,
+            "gy": 1,
+            "block": 32,
+            "smem": 1664
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          18432,
+          64
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m16_n18432_k7168__tf32",
+      "family": "dense",
+      "M": 16,
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "b4f828dfe12f79f07558ef9df1f7de63dd6d0a71ae8c9cb08fd2d6b31239ad94",
+          "launch": {
+            "entry": "mapal_tile_296d106e261087d3",
+            "gx": 1152,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "4d2ee621b6a868acc4a9e7eb4e0882939662aaf46a7518b55cec84ad6ff0b698",
+          "launch": {
+            "entry": "mapal_tile_296d106e261087d3",
+            "gx": 1152,
+            "gy": 1,
+            "block": 64,
+            "smem": 10752
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          18432,
+          64
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m128_n18432_k7168__exact",
+      "family": "dense",
+      "M": 128,
+      "N": 18432,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "93278f399056131b69e6ab988b71d479a9c804e75f58a0277488e384942489b1",
+          "launch": {
+            "entry": "mapal_tile_34c0c6c7c6b0c9fa",
+            "gx": 288,
+            "gy": 1,
+            "block": 256,
+            "smem": 12288
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "93278f399056131b69e6ab988b71d479a9c804e75f58a0277488e384942489b1",
+          "launch": {
+            "entry": "mapal_tile_34c0c6c7c6b0c9fa",
+            "gx": 288,
+            "gy": 1,
+            "block": 256,
+            "smem": 12288
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m128_n18432_k7168__contract",
+      "family": "dense",
+      "M": 128,
+      "N": 18432,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "32890ad8a0c72b35fea0d6049fd039193f2129bcb48fc53a584c34bff0629cc0",
+          "launch": {
+            "entry": "mapal_tile_da18661ecfd003c1",
+            "gx": 288,
+            "gy": 1,
+            "block": 256,
+            "smem": 12544
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "32890ad8a0c72b35fea0d6049fd039193f2129bcb48fc53a584c34bff0629cc0",
+          "launch": {
+            "entry": "mapal_tile_da18661ecfd003c1",
+            "gx": 288,
+            "gy": 1,
+            "block": 256,
+            "smem": 12544
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__dense_m128_n18432_k7168__tf32",
+      "family": "dense",
+      "M": 128,
+      "N": 18432,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "0b8519dc012c0af16bd4c6d2d0c42396ace5993401a77273b4c5cc4fb4ce3d98",
+          "launch": {
+            "entry": "mapal_tile_5d63e0da7b06eb15",
+            "gx": 144,
+            "gy": 2,
+            "block": 256,
+            "smem": 41472
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "0b8519dc012c0af16bd4c6d2d0c42396ace5993401a77273b4c5cc4fb4ce3d98",
+          "launch": {
+            "entry": "mapal_tile_5d63e0da7b06eb15",
+            "gx": 144,
+            "gy": 2,
+            "block": 256,
+            "smem": 41472
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__exact",
+      "family": "deepseek_expert",
+      "M": 1,
+      "N": 2048,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "d90e2f34dee1c9515d8379f9ba083a72e6660c683e58ede4fc1dfba60c0514e4",
+          "launch": {
+            "entry": "mapal_tile_05575f416abd3e62",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "d90e2f34dee1c9515d8379f9ba083a72e6660c683e58ede4fc1dfba60c0514e4",
+          "launch": {
+            "entry": "mapal_tile_05575f416abd3e62",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "M": 1,
+      "N": 2048,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "e317e95d4c87e77c289c9282fffc3c2857a87663596b746b8a10023555182fb1",
+          "launch": {
+            "entry": "mapal_tile_538afa580cc851c9",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "e317e95d4c87e77c289c9282fffc3c2857a87663596b746b8a10023555182fb1",
+          "launch": {
+            "entry": "mapal_tile_538afa580cc851c9",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m1_n2048_k7168__tf32",
+      "family": "deepseek_expert",
+      "M": 1,
+      "N": 2048,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "cfd8d2740145392d87fcb15b33f3d2bc64a4d26fab2be0c432432c6f3d19d6c7",
+          "launch": {
+            "entry": "mapal_tile_5343b47e4b7c8bad",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "cfd8d2740145392d87fcb15b33f3d2bc64a4d26fab2be0c432432c6f3d19d6c7",
+          "launch": {
+            "entry": "mapal_tile_5343b47e4b7c8bad",
+            "gx": 8,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__exact",
+      "family": "deepseek_expert",
+      "M": 16,
+      "N": 2048,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "bda12513d1e4acfba0607499d1c3c5f8a86561331eb1da199fcbc5687764643f",
+          "launch": {
+            "entry": "mapal_tile_7956f3ceef223e86",
+            "gx": 128,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "e84a656dcc20f884b498ab331ea9d19b48bc8a54fee7ab1a74ad6cb97ac864bc",
+          "launch": {
+            "entry": "mapal_tile_7956f3ceef223e86",
+            "gx": 64,
+            "gy": 1,
+            "block": 32,
+            "smem": 1536
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "M": 16,
+      "N": 2048,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+          "launch": {
+            "entry": "mapal_tile_37c5043169cbcc55",
+            "gx": 128,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "4a8528e28cac3abbb849a76cca5c8971812a5c59d338eb752ea42de0da0ecd01",
+          "launch": {
+            "entry": "mapal_tile_37c5043169cbcc55",
+            "gx": 64,
+            "gy": 1,
+            "block": 32,
+            "smem": 1664
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m16_n2048_k7168__tf32",
+      "family": "deepseek_expert",
+      "M": 16,
+      "N": 2048,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "d141ffff5c12b3728f32acc35c34da83b4a26b0fd8beffd6aa7e489ca5cf2450",
+          "launch": {
+            "entry": "mapal_tile_4fdd7e6fc938c361",
+            "gx": 256,
+            "gy": 1,
+            "block": 32,
+            "smem": 5376
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "d141ffff5c12b3728f32acc35c34da83b4a26b0fd8beffd6aa7e489ca5cf2450",
+          "launch": {
+            "entry": "mapal_tile_4fdd7e6fc938c361",
+            "gx": 256,
+            "gy": 1,
+            "block": 32,
+            "smem": 5376
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          256,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__exact",
+      "family": "deepseek_expert",
+      "M": 128,
+      "N": 2048,
+      "K": 7168,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "160cee54fe37e0d91c98c972c956a0ed2d4828544761d939ba2f1a757b00aa08",
+          "launch": {
+            "entry": "mapal_tile_1dee1dd281205218",
+            "gx": 64,
+            "gy": 4,
+            "block": 64,
+            "smem": 2048
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "160cee54fe37e0d91c98c972c956a0ed2d4828544761d939ba2f1a757b00aa08",
+          "launch": {
+            "entry": "mapal_tile_1dee1dd281205218",
+            "gx": 64,
+            "gy": 4,
+            "block": 64,
+            "smem": 2048
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__contract",
+      "family": "deepseek_expert",
+      "M": 128,
+      "N": 2048,
+      "K": 7168,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "e841253f20195512b14d2c83851763d9681556f0b3d4c6c04197f4d6006d1cd2",
+          "launch": {
+            "entry": "mapal_tile_8aa7da71b06a5c77",
+            "gx": 64,
+            "gy": 4,
+            "block": 64,
+            "smem": 2176
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "e841253f20195512b14d2c83851763d9681556f0b3d4c6c04197f4d6006d1cd2",
+          "launch": {
+            "entry": "mapal_tile_8aa7da71b06a5c77",
+            "gx": 64,
+            "gy": 4,
+            "block": 64,
+            "smem": 2176
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__deepseek_expert_m128_n2048_k7168__tf32",
+      "family": "deepseek_expert",
+      "M": 128,
+      "N": 2048,
+      "K": 7168,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "d127fa270e1c500955928edc59b91c7286e27d9e4cfca67165d01910a3884915",
+          "launch": {
+            "entry": "mapal_tile_eb00a04761a5c6a3",
+            "gx": 64,
+            "gy": 4,
+            "block": 256,
+            "smem": 37888
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "d127fa270e1c500955928edc59b91c7286e27d9e4cfca67165d01910a3884915",
+          "launch": {
+            "entry": "mapal_tile_eb00a04761a5c6a3",
+            "gx": 64,
+            "gy": 4,
+            "block": 256,
+            "smem": 37888
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          7168
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__exact",
+      "family": "qwen_expert",
+      "M": 1,
+      "N": 1024,
+      "K": 4096,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "b9fdc26b22fd323c38f5b385efe1847178505ef1fec3ac3cde5179b07920d971",
+          "launch": {
+            "entry": "mapal_tile_cbf5853ecb9b2760",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "b9fdc26b22fd323c38f5b385efe1847178505ef1fec3ac3cde5179b07920d971",
+          "launch": {
+            "entry": "mapal_tile_cbf5853ecb9b2760",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "M": 1,
+      "N": 1024,
+      "K": 4096,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "9f5b1df084a1a1279bd8653a368ffaedf5bf55521698881490484391de66c24d",
+          "launch": {
+            "entry": "mapal_tile_01d80ac3db7c95bf",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "9f5b1df084a1a1279bd8653a368ffaedf5bf55521698881490484391de66c24d",
+          "launch": {
+            "entry": "mapal_tile_01d80ac3db7c95bf",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m1_n1024_k4096__tf32",
+      "family": "qwen_expert",
+      "M": 1,
+      "N": 1024,
+      "K": 4096,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "ab883e98f654e1e86771b0a342332b77c53f31bb158120a6537f11b17870d520",
+          "launch": {
+            "entry": "mapal_tile_e8f1d40dde11133b",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "ab883e98f654e1e86771b0a342332b77c53f31bb158120a6537f11b17870d520",
+          "launch": {
+            "entry": "mapal_tile_e8f1d40dde11133b",
+            "gx": 4,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          1,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__exact",
+      "family": "qwen_expert",
+      "M": 16,
+      "N": 1024,
+      "K": 4096,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "481d85bc1dce45586bd17c624936d83a8acbb1675b01d10d683f40c6a48ed367",
+          "launch": {
+            "entry": "mapal_tile_b5d1b1f720b415a4",
+            "gx": 64,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "e48f2aa10013ea9dcf9c4b6bee14a7437ef49dbda6f2bcd8838b5cb21e4ef0e2",
+          "launch": {
+            "entry": "mapal_tile_b5d1b1f720b415a4",
+            "gx": 32,
+            "gy": 1,
+            "block": 32,
+            "smem": 1536
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "M": 16,
+      "N": 1024,
+      "K": 4096,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "c4d35a64e306db3c6a033c9c651693d18e8426dffcc446c10eceb0b5745ee49c",
+          "launch": {
+            "entry": "mapal_tile_fee0e120457e2f5b",
+            "gx": 64,
+            "gy": 1,
+            "block": 256,
+            "smem": 0
+          },
+          "route": "scalar"
+        },
+        "candidate": {
+          "ptx_sha256": "d80594ae32c898c9b63f6c92e870858b21b0b358fb9f8732a8ffac169176c41b",
+          "launch": {
+            "entry": "mapal_tile_fee0e120457e2f5b",
+            "gx": 32,
+            "gy": 1,
+            "block": 32,
+            "smem": 1664
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__tf32",
+      "family": "qwen_expert",
+      "M": 16,
+      "N": 1024,
+      "K": 4096,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "12e31396026ac98cfab8d3c1ecfbda652e1be61ef28cff633934bf63bc6007b3",
+          "launch": {
+            "entry": "mapal_tile_6328770e51d8459f",
+            "gx": 128,
+            "gy": 1,
+            "block": 32,
+            "smem": 5376
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "12e31396026ac98cfab8d3c1ecfbda652e1be61ef28cff633934bf63bc6007b3",
+          "launch": {
+            "entry": "mapal_tile_6328770e51d8459f",
+            "gx": 128,
+            "gy": 1,
+            "block": 32,
+            "smem": 5376
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          16,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__exact",
+      "family": "qwen_expert",
+      "M": 128,
+      "N": 1024,
+      "K": 4096,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "7dbeb4dc8c27ead086343b08bf81df6199958eaf8b95138eeb1f9afea4f13d39",
+          "launch": {
+            "entry": "mapal_tile_0652845044f8766e",
+            "gx": 64,
+            "gy": 4,
+            "block": 32,
+            "smem": 1536
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "7dbeb4dc8c27ead086343b08bf81df6199958eaf8b95138eeb1f9afea4f13d39",
+          "launch": {
+            "entry": "mapal_tile_0652845044f8766e",
+            "gx": 64,
+            "gy": 4,
+            "block": 32,
+            "smem": 1536
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__contract",
+      "family": "qwen_expert",
+      "M": 128,
+      "N": 1024,
+      "K": 4096,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "53596612754b6ac86e554edeb57330e4960a1605e83e236620445f35dcc54ade",
+          "launch": {
+            "entry": "mapal_tile_76dcb5a63f3f9c3d",
+            "gx": 64,
+            "gy": 4,
+            "block": 32,
+            "smem": 1664
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "53596612754b6ac86e554edeb57330e4960a1605e83e236620445f35dcc54ade",
+          "launch": {
+            "entry": "mapal_tile_76dcb5a63f3f9c3d",
+            "gx": 64,
+            "gy": 4,
+            "block": 32,
+            "smem": 1664
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__qwen_expert_m128_n1024_k4096__tf32",
+      "family": "qwen_expert",
+      "M": 128,
+      "N": 1024,
+      "K": 4096,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "6647ed78440bede447efb34a8013b7e05b0c5b0a0b98ae50f9cd049b8e31c0c0",
+          "launch": {
+            "entry": "mapal_tile_5809c530b2d0e539",
+            "gx": 64,
+            "gy": 4,
+            "block": 128,
+            "smem": 23040
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "6647ed78440bede447efb34a8013b7e05b0c5b0a0b98ae50f9cd049b8e31c0c0",
+          "launch": {
+            "entry": "mapal_tile_5809c530b2d0e539",
+            "gx": 64,
+            "gy": 4,
+            "block": 128,
+            "smem": 23040
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": {
+        "shape": [
+          128,
+          128,
+          4096
+        ],
+        "variants": {
+          "old": {
+            "pass": false,
+            "outcome": "missing"
+          },
+          "candidate": {
+            "pass": false,
+            "outcome": "missing"
+          }
+        }
+      },
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: bounded full gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__exact",
+      "family": "square_control",
+      "M": 4096,
+      "N": 4096,
+      "K": 4096,
+      "face": "exact",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6",
+          "launch": {
+            "entry": "mapal_tile_44b89e2e8514dfc0",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 33792
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "b4e28b435e3d4899d218fc6f62624f1f65902bccb5fca0f1b881f1644e1e3ba6",
+          "launch": {
+            "entry": "mapal_tile_44b89e2e8514dfc0",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 33792
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": null,
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: actual 256-sample gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__contract",
+      "family": "square_control",
+      "M": 4096,
+      "N": 4096,
+      "K": 4096,
+      "face": "contract",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "0ec5bf4171a415c6146bd4ea36362cf2027f95af5c90bb5b19105e77b6cd312b",
+          "launch": {
+            "entry": "mapal_tile_359ebbfdb3fa2c9f",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 16640
+          },
+          "route": "cooperative"
+        },
+        "candidate": {
+          "ptx_sha256": "0ec5bf4171a415c6146bd4ea36362cf2027f95af5c90bb5b19105e77b6cd312b",
+          "launch": {
+            "entry": "mapal_tile_359ebbfdb3fa2c9f",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 16640
+          },
+          "route": "cooperative"
+        }
+      },
+      "bounded_full_gate": null,
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: actual 256-sample gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    },
+    {
+      "id": "rtx-5090__timing__square_control_m4096_n4096_k4096__tf32",
+      "family": "square_control",
+      "M": 4096,
+      "N": 4096,
+      "K": 4096,
+      "face": "tf32",
+      "variant_code": {
+        "old": {
+          "ptx_sha256": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2",
+          "launch": {
+            "entry": "mapal_tile_18a86cb342332edb",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 37888
+          },
+          "route": "mma"
+        },
+        "candidate": {
+          "ptx_sha256": "a12fe0c79e32456641e8327e072e6bbe5269844678c1578a99a433ff4ddddea2",
+          "launch": {
+            "entry": "mapal_tile_18a86cb342332edb",
+            "gx": 32,
+            "gy": 32,
+            "block": 256,
+            "smem": 37888
+          },
+          "route": "mma"
+        }
+      },
+      "bounded_full_gate": null,
+      "actual_sampled_gate": {
+        "old": {
+          "pass": false,
+          "outcome": "missing"
+        },
+        "candidate": {
+          "pass": false,
+          "outcome": "missing"
+        }
+      },
+      "admitted": false,
+      "verdict": "not admitted: actual 256-sample gate",
+      "timed_arms_present": [],
+      "old_process_medians_ms": [
+        null,
+        null
+      ],
+      "candidate_process_medians_ms": [
+        null,
+        null
+      ],
+      "partial_processes": {},
+      "resource_changes": {
+        "old": null,
+        "candidate": null,
+        "candidate_null": null,
+        "old_null": null
+      }
+    }
+  ],
+  "verified_records": {
+    "rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old": {
+      "id": "rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old",
+      "case": "rtx-5090__gate__dense_m1_n512_k7168__exact",
+      "shape": [
+        1,
+        512,
+        7168
+      ],
+      "face": "exact",
+      "phase": "full_gate",
+      "arm": "old",
+      "pass": false,
+      "outcome": "launch_not_started",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: '/usr/bin/time'",
+      "raw_lengths": {
+        ".stdout": 0,
+        ".stderr": 0
+      },
+      "status_receipt_present": false
+    }
+  },
+  "artifact_hashes": {
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/summary.json": "8f2dff2b47fd94790e552f3799a716395a97d354905131d8c25dfcdff81bd324",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/summary.json": "583303f73165086508f5629234963f107d2fe8745ca1e2b43bdae60475641577",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/device.status.json": "5c85e5f6c0d96ecfed3ba03144a1f77f226b48825e889f41def5d09a6401e4e4",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/device.stdout": "0fa5c6b926cee15eb024106f6c8f1d0d16c6eebfa80c094ea0f7dbfac7fac2f2",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/device.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/toolchain.status.json": "2f0ce155b4d9e07e58b3b195d5b13e211237d8cd19c4d72465685faa92e1c501",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/toolchain.stdout": "68f8b0a1301428031e307cf5260142a517bff25cc232a09eae2734be475d721f",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/toolchain.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-checked.status.json": "3b19b4fb401a328f254e8118f037a61205c1ca965c2395970b81c09e9625d6c9",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-checked.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-checked.stderr": "7bedfd328ed922c4323b43f69f7a0fbc1e7b917c05eacdb40738be40ae05c9f5",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-reference.status.json": "53d79603fc2038aeca5d7015604b75bf3dc8a04cd245ea9a41121a053a38c2bc",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-reference.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/build-reference.stderr": "7bedfd328ed922c4323b43f69f7a0fbc1e7b917c05eacdb40738be40ae05c9f5",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/reference_nan.status.json": "40abb0c9ae03ffc50e474083564ec3835999586bc0ca434973050287d8d67017",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/reference_nan.stdout": "c81b942f0b91a97d4e56d66335076026f893fd702cd9b52e3e020c221c0f08a2",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/reference_nan.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_nan.status.json": "f5b98f8991d2ade4f288a74930f20169e37305a05760e6b0ce9e0fad9bd1915c",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_nan.stdout": "5dd863c1246d1c40650c2b5665e47c5e5b82788bf62d904c535863948325b09c",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_nan.stderr": "e6973be1c6785cf0bda5d57106ecfe08dbb6093572f41d36a18df37a9933cbd8",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_wrong.status.json": "df5e03017a2f27bdafbf75c732ad436ac021f0cbcd488e1af721ab3bb1e9bed3",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_wrong.stdout": "536865b73777e0e0aef45c732c0c3dba817fff179439cf66920f224fe1c97c33",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/checked_wrong.stderr": "3af6a769c32b0864a70bf454476188623f5d21c14200470535c5b82cedd82259",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/private/tmp/mapal-s58-gpu/combined-v62/retrieved/trace/combined-v61/smallm-values/rtx-5090__gate__dense_m1_n512_k7168__exact__full_gate__old.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "limits": [
+    "Every-cell ordered proof applies only to each recorded bounded gate shape; full timing shapes check 256 sampled cells.",
+    "TF32 uses the unchanged 4x cuBLAS diagnostic gate, not an absolute accuracy guarantee; library errors remain diagnostics.",
+    "Two ABBA process observations and thirty events each are descriptive; null/control envelopes are not confidence intervals.",
+    "cuBLAS mode readback does not identify its executed kernel arithmetic. Driver JIT machine-image capture is separate.",
+    "No default switch or automated production acceptance is performed."
+  ],
+  "source_reference": "https://docs.nvidia.com/cuda/archive/13.0.1/cublas/index.html"
+}

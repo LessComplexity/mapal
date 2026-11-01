@@ -1,0 +1,466 @@
+{
+  "protocol_pass": true,
+  "protocol": {
+    "schema": "s61-competitive-profile-v1",
+    "profile_only": true,
+    "leg": "mapal",
+    "M": 16,
+    "N": 2048,
+    "K": 7168,
+    "face": "contract",
+    "cutlass_candidate": "m16-n64-k16",
+    "mapal_variant": "old",
+    "mapal_ptx_sha256": "2f89743fea3864d94a91b05c3f0966081c535d30925953a82de8837640660f2e",
+    "oracle_sha256": "a597c4fd8b421afddc26d40861586e7ab3592befc2dae7f04fd4a50b78a4c112",
+    "manifest_sha256": "ab7495e45fb491a696290a444abf230b4704aeb0f3e68af68aa95c0e40c1d17f",
+    "pre_gate_all_three_pass": true,
+    "post_gate_all_three_pass": true,
+    "profiled_calls": 1,
+    "timing_admission": false
+  },
+  "replayed_sealed_parser_failure": "Duplicate callback site",
+  "region_start_event": 3182,
+  "region_stop_event": 3193,
+  "raw_launch_rows_in_region": [
+    [
+      "launch",
+      "3184",
+      "307",
+      "1",
+      "1425",
+      "0",
+      "94049734176080",
+      "1",
+      "94049754522928",
+      "0",
+      "128,1,1",
+      "256,1,1",
+      "0",
+      "1",
+      "4294967295",
+      "6d6170616c5f74696c655f33376335303433313639636263633535"
+    ],
+    [
+      "launch",
+      "3187",
+      "307",
+      "0",
+      "1425",
+      "0",
+      "94049734176080",
+      "1",
+      "94049754522928",
+      "0",
+      "128,1,1",
+      "256,1,1",
+      "0",
+      "1",
+      "0",
+      "6d6170616c5f74696c655f33376335303433313639636263633535"
+    ]
+  ],
+  "raw_api_rows_in_region": [
+    [
+      "api",
+      "3183",
+      "1",
+      "307",
+      "1",
+      "1425",
+      "94049734176080",
+      "1",
+      "1",
+      "4294967295",
+      "63754c61756e63684b65726e656c"
+    ],
+    [
+      "api",
+      "3185",
+      "1",
+      "307",
+      "0",
+      "1425",
+      "94049734176080",
+      "1",
+      "1",
+      "0",
+      "63754c61756e63684b65726e656c"
+    ],
+    [
+      "api",
+      "3188",
+      "2",
+      "165",
+      "1",
+      "1426",
+      "94049734176080",
+      "1",
+      "1",
+      "4294967295",
+      "6375646144657669636553796e6368726f6e697a65"
+    ],
+    [
+      "api",
+      "3189",
+      "1",
+      "17",
+      "1",
+      "1426",
+      "94049734176080",
+      "1",
+      "1",
+      "4294967295",
+      "637543747853796e6368726f6e697a65"
+    ],
+    [
+      "api",
+      "3190",
+      "1",
+      "17",
+      "0",
+      "1426",
+      "94049734176080",
+      "1",
+      "1",
+      "0",
+      "637543747853796e6368726f6e697a65"
+    ],
+    [
+      "api",
+      "3191",
+      "2",
+      "165",
+      "0",
+      "1426",
+      "94049734176080",
+      "1",
+      "1",
+      "0",
+      "6375646144657669636553796e6368726f6e697a65"
+    ],
+    [
+      "api",
+      "3192",
+      "2",
+      "172",
+      "1",
+      "1427",
+      "94049734176080",
+      "1",
+      "1",
+      "4294967295",
+      "6375646150726f66696c657253746f70"
+    ]
+  ],
+  "first_collision_correlation118_records": [
+    {
+      "row": [
+        "api",
+        "235",
+        "2",
+        "22",
+        "1",
+        "118",
+        "0",
+        "0",
+        "0",
+        "4294967295",
+        "6375646146726565"
+      ],
+      "name": "cudaFree"
+    },
+    {
+      "row": [
+        "api",
+        "236",
+        "1",
+        "304",
+        "1",
+        "118",
+        "0",
+        "0",
+        "0",
+        "4294967295",
+        "637543747847657443757272656e74"
+      ],
+      "name": "cuCtxGetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "237",
+        "1",
+        "304",
+        "0",
+        "118",
+        "0",
+        "0",
+        "0",
+        "0",
+        "637543747847657443757272656e74"
+      ],
+      "name": "cuCtxGetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "238",
+        "1",
+        "303",
+        "1",
+        "118",
+        "0",
+        "0",
+        "0",
+        "4294967295",
+        "637543747853657443757272656e74"
+      ],
+      "name": "cuCtxSetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "239",
+        "1",
+        "303",
+        "0",
+        "118",
+        "94049734176080",
+        "0",
+        "0",
+        "0",
+        "637543747853657443757272656e74"
+      ],
+      "name": "cuCtxSetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "240",
+        "1",
+        "386",
+        "1",
+        "118",
+        "94049734176080",
+        "0",
+        "0",
+        "4294967295",
+        "63754465766963655072696d61727943747852657461696e"
+      ],
+      "name": "cuDevicePrimaryCtxRetain"
+    },
+    {
+      "row": [
+        "api",
+        "242",
+        "1",
+        "386",
+        "0",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "0",
+        "63754465766963655072696d61727943747852657461696e"
+      ],
+      "name": "cuDevicePrimaryCtxRetain"
+    },
+    {
+      "row": [
+        "api",
+        "243",
+        "1",
+        "304",
+        "1",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "4294967295",
+        "637543747847657443757272656e74"
+      ],
+      "name": "cuCtxGetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "244",
+        "1",
+        "304",
+        "0",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "0",
+        "637543747847657443757272656e74"
+      ],
+      "name": "cuCtxGetCurrent"
+    },
+    {
+      "row": [
+        "api",
+        "245",
+        "1",
+        "16",
+        "1",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "4294967295",
+        "6375437478476574446576696365"
+      ],
+      "name": "cuCtxGetDevice"
+    },
+    {
+      "row": [
+        "api",
+        "246",
+        "1",
+        "16",
+        "0",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "0",
+        "6375437478476574446576696365"
+      ],
+      "name": "cuCtxGetDevice"
+    },
+    {
+      "row": [
+        "api",
+        "247",
+        "1",
+        "245",
+        "1",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "4294967295",
+        "63754d656d467265655f7632"
+      ],
+      "name": "cuMemFree_v2"
+    },
+    {
+      "row": [
+        "api",
+        "248",
+        "1",
+        "245",
+        "0",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "0",
+        "63754d656d467265655f7632"
+      ],
+      "name": "cuMemFree_v2"
+    },
+    {
+      "row": [
+        "api",
+        "249",
+        "2",
+        "22",
+        "0",
+        "118",
+        "94049734176080",
+        "1",
+        "0",
+        "0",
+        "6375646146726565"
+      ],
+      "name": "cudaFree"
+    }
+  ],
+  "static_ELF_only": [
+    {
+      "file": "module-2654.cubin",
+      "bytes": 13616,
+      "sha256": "2e8c744ccc4a3456fce7ecc5a7a060761c33ab4e07156fefe5730a873c52403f",
+      "sealed_static_parser_pass": true,
+      "defined_executable_function_count": 2,
+      "mapal_entry_present": false,
+      "non_entry_function_section_conventions": [],
+      "convention_mismatch_count": 0
+    },
+    {
+      "file": "module-2759.cubin",
+      "bytes": 63256,
+      "sha256": "127746b318485aaa4005418c954057a8f620572696aa73c71222feeffc299146",
+      "sealed_static_parser_pass": false,
+      "error": "Unsupported CUDA function section convention",
+      "non_entry_function_section_conventions": [
+        {
+          "elf_symbol_index": 19,
+          "name": "$__internal_0_$__cuda_sm3x_div_rn_noftz_f32_slowpath",
+          "section": ".text._Z8decode_qPfiif",
+          "value": 576,
+          "size": 1856
+        }
+      ],
+      "convention_mismatch_count": 1
+    },
+    {
+      "file": "module-2987.cubin",
+      "bytes": 2421144,
+      "sha256": "3837baaca8d2ec4e584f99157a50ec4c084c1d86764eb9f7bd1a83ce4bce5e06",
+      "sealed_static_parser_pass": true,
+      "defined_executable_function_count": 32,
+      "mapal_entry_present": false,
+      "non_entry_function_section_conventions": [],
+      "convention_mismatch_count": 0
+    },
+    {
+      "file": "module-3012.cubin",
+      "bytes": 8747456,
+      "sha256": "875aa2974b38b3f13a54f4f947f22e2bd7a7376adf45c1c3d6f822de4921769e",
+      "sealed_static_parser_pass": true,
+      "defined_executable_function_count": 314,
+      "mapal_entry_present": false,
+      "non_entry_function_section_conventions": [],
+      "convention_mismatch_count": 0
+    },
+    {
+      "file": "module-358.cubin",
+      "bytes": 15264,
+      "sha256": "323df40eb237e41d0c2164e61cda6f8fef09ab8ff221f52dfa685f148101d209",
+      "sealed_static_parser_pass": true,
+      "defined_executable_function_count": 3,
+      "mapal_entry_present": true,
+      "non_entry_function_section_conventions": [],
+      "convention_mismatch_count": 0
+    }
+  ],
+  "image_attribution_admitted": false,
+  "sass_admitted": false,
+  "implicit_deduplication": false,
+  "raw_kernel_activity_records": 13,
+  "callback_sites_all": 3156,
+  "trace_counts": {
+    "schema": 1,
+    "enable": 6,
+    "ready": 1,
+    "api": 3156,
+    "context": 1,
+    "load": 2,
+    "image": 5,
+    "function-direct": 3,
+    "launch": 26,
+    "stream-map": 13,
+    "region-start": 1,
+    "region-stop": 1,
+    "api-activity": 1430,
+    "context-activity": 1,
+    "function-activity": 355,
+    "kernel": 13,
+    "buffer": 1,
+    "final-drop": 1,
+    "finish": 1
+  }
+}

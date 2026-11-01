@@ -1,7 +1,7 @@
 # Plan S50 — the handoff, not the policy
 
 > **Status 2026-08-09: P0 and P0b are BUILT, gated and measured.** Results:
-> `docs/performance/s50-p0-the-nested-runs.md`. Headline: `nn4_128` 2.20x, `nn2_128` 2.01x,
+> `docs/performance/cpu/scheduling/nested-dispatch-removal.md`. Headline: `nn4_128` 2.20x, `nn2_128` 2.01x,
 > `nn2x2_128` 1.83x on the M4; the published ladder gained too (`conv2d_1024` 1.18x,
 > `matmul1024` 1.08x); no cell regressed on that machine; gate 1054/0 with the differential
 > oracle green. **P0b under-delivered against its microbenchmark** (11x on an empty dispatch,
@@ -11,7 +11,7 @@
 > 0.855-0.907x of S49**, and P2 is now the named suspect.
 >
 > **Status 2026-08-09 (later): P2 is BUILT and it closed that item.** Results:
-> `docs/performance/s50b-p2-the-shared-lock.md`. The two regressed i9 cells were the two P2
+> `docs/performance/cpu/scheduling/completion-lock-removal.md`. The two regressed i9 cells were the two P2
 > helped most (1.733x and 1.433x) — the diagnosis confirmed by its own repair. Cumulative
 > against S49: i9 `nn2_128` 1.744x, `nn4_128` 1.716x; M4 `nn4_128` 2.285x, `nn2x2_128`
 > 1.736x, `nn4_512` 1.320x. **`nn4` at d=512 reached parity with Accelerate** (0.6602 vs
@@ -26,7 +26,7 @@
 > executors including the host** (measured neutral in isolation). P1 also exposed a **race
 > introduced by P2**: `retire` published `Done` before unlocking its dependents, so a spinning
 > host could beat the unlock and trip `mapal_par_run_pinned`'s assertion — fixed by ordering,
-> hammered 300x. Results: `docs/performance/s50c-p1-spinning-workers-refuted.md`.
+> hammered 300x. Results: `docs/performance/cpu/scheduling/host-spin-and-worker-parking.md`.
 > Cumulative vs S49: M4 `nn4_128` **2.51x**, `nn2_128` 2.11x; i9 `nn2_128` 2.00x, `nn2_256`
 > 1.73x. Gate 1054/0.
 >
@@ -42,7 +42,7 @@
 > unreachable). The one-thread deficit is now the dominant term everywhere.
 
 Written: 2026-08-09 · component: **runtime** (`crates/mapal-rt`) · reads with
-`docs/performance/s49b-the-dispatch-price.md`, which is the measurement this plan acts on.
+`docs/performance/cpu/scheduling/dispatch-cost.md`, which is the measurement this plan acts on.
 
 > **Note on the component.** `docs/components/runtime/` did not exist before this plan.
 > `mapal-rt` is a `Cmp` with two `Loc`s (host spine, pool lane) and real `Trm`s (frame slot,

@@ -1,0 +1,900 @@
+{
+  "pass": true,
+  "implementation": "Independent IEEE/Fraction value and raw timing reader; no frozen checker imports",
+  "processes": 148,
+  "native_files": 910,
+  "reference_files": 17,
+  "raw_words_checked": 770816,
+  "timing_pairs_including_warmup": 2020,
+  "scope": "All native gate, tuning and confirmation exported words; both frozen scalar budgets; ordered naive words; both raw clocks/statistics. Separate reviewer owns protocol/selection and control admission.",
+  "records": [
+    {
+      "path": "calls/0001-tiny-naive-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "8febd8b1a5996b4ac33fc596600c49d887781e1707af48bc40462ccc7b847d14"
+    },
+    {
+      "path": "calls/0002-tiny-cublas-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "b94df891ff6517694520f7e3a461e73066fda2ce44a89d5599125e35ceba843f"
+    },
+    {
+      "path": "calls/0003-tiny-cublaslt-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "9786e9c5406df6e622dfa4fd6b39cd4dd75bb34fb3b711debfdc4e5923369b59"
+    },
+    {
+      "path": "calls/0004-tiny-cublaslt-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "0763b9c3fab2542f114ee72cd53f9f26ae125aca6f0fe433148809ed254bc1eb"
+    },
+    {
+      "path": "calls/0005-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "25bc2ecc2d974c928df70c9c72c91b3b517de8c260dc1bcc71ce804956e15eba"
+    },
+    {
+      "path": "calls/0006-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "b47f67dc29812d105f9cf89231e7154105894f8d9c8ad9e9e4b9501413b63fe1"
+    },
+    {
+      "path": "calls/0007-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "8a5fdeb3d14c628a8e486a60a6ca34d44429806c8547a6a8951ca58576f2b7c5"
+    },
+    {
+      "path": "calls/0008-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "5494f751f3281b70db19e59a49d9c4e84b0675380a5e5f84651cba1696b255e1"
+    },
+    {
+      "path": "calls/0009-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "45f49f65d146f3cb1f5f26ca566d7ec8a602ae4ba076d7d505884956a57d08f1"
+    },
+    {
+      "path": "calls/0010-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "9bc83ee8404b64651441d8cb53a7034fd53db280835ca0676095b92f4e56ccbc"
+    },
+    {
+      "path": "calls/0011-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "932be3f02a7980edb9282adc3e98827e329c49add6c9218d6a67f933d2d2fe98"
+    },
+    {
+      "path": "calls/0012-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "242fc97d65f78844e1535899bc7024b72c59daa01c1d39618963a158096fe1a9"
+    },
+    {
+      "path": "calls/0013-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "cfa446278ee9a9a83dd4abfab6144ea0fb9709fddee95c5486c2dfa5bbf50c1b"
+    },
+    {
+      "path": "calls/0014-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "62783dd027fb64e0e431b64137160e468cdfd2a0672d5fd4c06a88c7cd9398a8"
+    },
+    {
+      "path": "calls/0015-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "8e53289c055f83805f0ebe9677188292268a5d6f6fcfe068ec61351f04619ff4"
+    },
+    {
+      "path": "calls/0016-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "5918f7e75b59f6374ccefcf8e3e62f0c4572b194a9900ec54de0886af99c4a53"
+    },
+    {
+      "path": "calls/0017-tiny-cutlass-unfused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "33073c52ab7b0c4cd07e755e80a6a240583bfe066a7ce5063dc5b73474b9a641"
+    },
+    {
+      "path": "calls/0018-tiny-cutlass-fused",
+      "words": 1152,
+      "samples_including_warmups": 0,
+      "stdout_sha256": "7b50cdd9b517e1d57a54b73b11ec251f204b48cacdf8cda9f145c274090bd243"
+    },
+    {
+      "path": "calls/0021-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "29b5cf01058371a8347433017ed1861ee09330fd74dac9604f5e798a9aafbdda"
+    },
+    {
+      "path": "calls/0022-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "34e4396cdb1f5362e74e26fcf8a4a544eb8aef1e3e9e66d8fb5ca46f016a4696"
+    },
+    {
+      "path": "calls/0023-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a8af8bc8d1a88229766552c5df91ce77d2a6d890ac602fc5cee17ecd31a4f66a"
+    },
+    {
+      "path": "calls/0024-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "31dc8f91ba9df571f5fa0dc333b0b309bb5d4a8aba196bd35c90f27576bedc62"
+    },
+    {
+      "path": "calls/0025-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "131aa39acfb0fdd02abfb4d9e1c30e2166c3ebd5e1dcc09ac71442f80da22359"
+    },
+    {
+      "path": "calls/0026-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "39a6aca6a59c654d704d89f383f789fd3c663b06332eaa0add8550726400b0b5"
+    },
+    {
+      "path": "calls/0027-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "bb8e96c2151331b02453cb72a184a24a0aad8f0b524326576afa1ff8aac61054"
+    },
+    {
+      "path": "calls/0028-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "0809d357e11216fd06169d2d2adc3f488ca8592c4e54e86a8251dafeef814464"
+    },
+    {
+      "path": "calls/0029-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "ba7b212581144921a27499a8aee70449cfd6c177bec9172870e3f0f42c48acba"
+    },
+    {
+      "path": "calls/0030-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "c245cbcf040e89b2d81c89b40284a5547420f74e85abe5dc71dcc3ca7b2d5d0b"
+    },
+    {
+      "path": "calls/0031-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "2530077f80f75b9ee9300629e6584f0e30d2c182bba1171400d561a5d4efd66d"
+    },
+    {
+      "path": "calls/0032-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f0d66f98b08cfc0d938af4c06d4c6f240b8b15dedd60e33da7fca419d33def80"
+    },
+    {
+      "path": "calls/0033-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "7cb80fc4b2d2deb7c3eaab02c4b62daa540b856867909d6a14a68564db6b440b"
+    },
+    {
+      "path": "calls/0034-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "269383b853b1128f6610879719472fc52e6e4da44900d333f36e9d453306aaf4"
+    },
+    {
+      "path": "calls/0035-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "acd45a3924db3b4992ed31c8b284284b82f531ffdbe5f57d6b362b6bc8d0162e"
+    },
+    {
+      "path": "calls/0036-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "43679563c02c0af34d0bc021cd943fba58ce3a51659c0fb154999f0e8f993c20"
+    },
+    {
+      "path": "calls/0037-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "9227a1e4d0d3f8c1164d764201fdbcabf961b1a6ba1fa3673af03a26611568c4"
+    },
+    {
+      "path": "calls/0038-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "37ccba785c588282abc3b3e1764cfe867757611ae491b9acb01dd4f30bb2aed1"
+    },
+    {
+      "path": "calls/0039-matrix-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "60e08f27461df253cd9ebfd06bc9dbe9e0f42617b101032e6dac528e443375e3"
+    },
+    {
+      "path": "calls/0042-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "910cf1fd090f300ddedbe4d4d7389b1800299d81b5eca3c77e53883c0f6a4265"
+    },
+    {
+      "path": "calls/0043-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a6d3f61ac9febe065b482182189176aa63409087e1dae5a15ee1cc2549cf3378"
+    },
+    {
+      "path": "calls/0044-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f85279ad8589327f4cf201bebb1695a8791808b81af805c61aa3b83cb7b7cd14"
+    },
+    {
+      "path": "calls/0045-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "325e39dbd2e41c4a094952b92df7f978a412df70a9b349dd5b9087b878e6d912"
+    },
+    {
+      "path": "calls/0046-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "ae428cb1d4750a1e1adc6136957dd39b58d2edeb0a103b44749c0786b046ef17"
+    },
+    {
+      "path": "calls/0047-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "3d7846a48556f7dde4d4133b83b9349e97e6dbbcdfd0e81966b9d34ee26d68da"
+    },
+    {
+      "path": "calls/0048-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "00f46f9e429d294d8152bc8f18eab8dac68fd563f6c464332bfb1b36e206115a"
+    },
+    {
+      "path": "calls/0049-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "d819cd2c34a189c09a2f2800d5b1c4b3a09764c8afefe093df13f01581f704db"
+    },
+    {
+      "path": "calls/0050-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "9a8a8c2dd40e0223c434694b487d86af7fc97ec41c6e7a3fd1393aa1a2c2fc60"
+    },
+    {
+      "path": "calls/0051-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "e5909096a5416b8322c4259cedb5db7ba4aca972cf8ed11b86314bbf3a2dcbfc"
+    },
+    {
+      "path": "calls/0052-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "b13da5ad4daaf1636cbfa73ebea0bd6a85f91be9fb0fa8d26bad3e05ec04c1ce"
+    },
+    {
+      "path": "calls/0053-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "d3ca2513706b53e6367b3bd65fb6a375a07a2ac6489a1340e012d78bd6d5f0ea"
+    },
+    {
+      "path": "calls/0054-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "7df682df19fcb4c6ac5a3c3ea2db3633bb0d938772f147cf61d3916392d9ddc1"
+    },
+    {
+      "path": "calls/0055-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a2de68d4489aa4ab958f5872686c9b823f0adf55dd21e1f33d07247c24de05fd"
+    },
+    {
+      "path": "calls/0056-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f6dbf72f26bd8a2bd6dce941a20291dd762e2b44ad6bbef51143f36c448a63c1"
+    },
+    {
+      "path": "calls/0057-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "0517fba1e948555fa678afef515515aabe7f6aa08fd171c0f7027eca727129c6"
+    },
+    {
+      "path": "calls/0058-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "bdc28571481124d845661de2e000d981b8efb8c121af2e5f376ff28f0167bf73"
+    },
+    {
+      "path": "calls/0059-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "26442aed4d7fe839bf2255a30200cef350dfaa756b3c473afc8645240b79349c"
+    },
+    {
+      "path": "calls/0060-matrix-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "311e01a5319ae8a331560dd6106fe5c74f4092209f7f114312fc68172dfe5f66"
+    },
+    {
+      "path": "calls/0063-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f9bf178befa34a3e0ea5cd78a013fb80346e588f78a550a7f4413c5d12e81e55"
+    },
+    {
+      "path": "calls/0064-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "871d955aae0983a3133329a425160a7e8bc98ebf3f8d3c0f9cd938df044130cc"
+    },
+    {
+      "path": "calls/0065-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f542f9ec7207cd673197a0d4bd59a1ded1504e7dc774b265d9c8cf9967152d43"
+    },
+    {
+      "path": "calls/0066-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "b64f673807ef93b8a1e23f4e977bc0cd39029f771237cd41eddce0393c2caa75"
+    },
+    {
+      "path": "calls/0067-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "3b3f3ef761c9f741cddf3672e1ebb2964da0bce3fea1024d8fa1fb589e6b3dc0"
+    },
+    {
+      "path": "calls/0068-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a3b004b38e4e9ac9902a9bf2aeb3a6e9820b490e8c1a2b5029231d230dc9020d"
+    },
+    {
+      "path": "calls/0069-matrix-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "0ac882d6be5ef47f1c2d9a7d272249a9f5e67b68235f93df579b60e6682f3feb"
+    },
+    {
+      "path": "calls/0072-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "71e676cafe0ff3b6a6820c52bd0871f9413a51c1a641f0cf127165d0f238b68a"
+    },
+    {
+      "path": "calls/0073-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "83c0034237585fcb4d1b29eab976cef7ff0b019b348d412c66285101dea02c1d"
+    },
+    {
+      "path": "calls/0074-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "92ab86daed38694412a07cc3b6243bc530c0c1e8a1b46e5fea258418a4360312"
+    },
+    {
+      "path": "calls/0075-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a2b25e5d0c1c5a04f32346b3ed4ee0a9a76675b45b379ad1385038ee69d62fee"
+    },
+    {
+      "path": "calls/0076-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "34e5a1f835a7995ca192cc492c0c8cd019583458d9d2428669d66ef0793e0219"
+    },
+    {
+      "path": "calls/0077-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "dabe8a2668a5ae2301f92bcefe7259024595fca6bccedfbc8d1050cb8b9ed652"
+    },
+    {
+      "path": "calls/0078-matrix-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "ab361d6733b116334fae4f63e8d585c9a16c07c58c2c0599c4b07fa0162c3b0a"
+    },
+    {
+      "path": "calls/0083-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "ff05e1e0e0ad8cde4f8c6d2edd986d2d0ba2db700b4ec5cc0b8cf3e134e65e7e"
+    },
+    {
+      "path": "calls/0084-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "e12bb9c61e30576250ef78815cfec95334f8f3f33b5a0a18d3945c3383ec57c2"
+    },
+    {
+      "path": "calls/0085-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "098c1a9a4509f5cfb2cd217430fad52a7727485283e3ee499a037a74a10f4f4a"
+    },
+    {
+      "path": "calls/0086-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "9a463b093219954d497ca05db4aeac8f991b1d0610c55af67d3551c0b6b7e5e6"
+    },
+    {
+      "path": "calls/0087-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "57bc0fba6c29fe47237637ea83ad42f9e977b758cf9425c920032780837d82ac"
+    },
+    {
+      "path": "calls/0088-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "760848d2d3e25d59749d21756dff66f10e05e57e2ebcc657fea9f28985473652"
+    },
+    {
+      "path": "calls/0089-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "cfd69e2c0ac242486ec924f666ea782e3ac23aceb80712ebd5d1a27469853fd2"
+    },
+    {
+      "path": "calls/0090-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "d40dbd54c8adf88a29b1d0f188d9bcc1421ef2db4a1e8b3cd504026cea14d714"
+    },
+    {
+      "path": "calls/0091-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "3ec480fafc7ea08e30c78b2ad7153c0589e777c23f0db21b84326f53cc91e8c1"
+    },
+    {
+      "path": "calls/0092-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a78f210e57fbd868f1470549bfd3d1c42408c2fdc59b76568780712ba3c1c147"
+    },
+    {
+      "path": "calls/0093-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "8ace4c9c818fe406d9f69737513d3cd39befa502b2ba9675c2044d1aeff6c213"
+    },
+    {
+      "path": "calls/0094-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "d34a2ecb345d1bf80d8a104a337bfb6fb99a0e8da9c06e866a80602c04e2f5fe"
+    },
+    {
+      "path": "calls/0095-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "fc1ead9718137647a6bd2546226bf981f8fba76518a549bdaaa4fc6cb6f2fa3d"
+    },
+    {
+      "path": "calls/0096-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "d25413b9d1d84095abcda76925918f59419d9a13d8beb13b2deac8e1cbb85336"
+    },
+    {
+      "path": "calls/0097-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "047f6bd31837d1892dcdb82495dd88a1e277474cf662302a0d0dd5ebf3b91a14"
+    },
+    {
+      "path": "calls/0098-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "85a084adbd08645d178fd0d27791760610b998fcd6c6a464a5db9e79b2440b26"
+    },
+    {
+      "path": "calls/0099-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "58dfdc495779bbd9c417880f5c08df78bd5a456d155c7d99fc0b29529d3df5ea"
+    },
+    {
+      "path": "calls/0100-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "8c528699317f20d84035aec38cd1078db953fb147eafadc1ab7805abaed656dc"
+    },
+    {
+      "path": "calls/0101-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "c6ad5d1981dabbf303464dd31138a279d595111bb056b6b522cc96b58ff6085c"
+    },
+    {
+      "path": "calls/0102-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "466c148f200ce94e10a579e86652318d54e83f08289cfd7b2c8491afbff34ab4"
+    },
+    {
+      "path": "calls/0103-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "40c84fd9918dca45bcab84954206cc5758082f09bcd9a2435cf77faaa0b50cbf"
+    },
+    {
+      "path": "calls/0104-matrix-large-cublaslt-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f865cf4b023d075e6f1ef4f9dfdf6cd008eb64eb402a5854b17de4119c24a038"
+    },
+    {
+      "path": "calls/0107-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f054e339328ffefad812fd761ab731501a858bfe3907d0ea9c1208ed87f71fe3"
+    },
+    {
+      "path": "calls/0108-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "dfaea29fc553a63403273e5a28d50b6245e5c9b5558b54837df5d65de4d55c1d"
+    },
+    {
+      "path": "calls/0109-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "bbeffb183432e7a38726e070599832308778490ee9480fe5954aa9f9ffdd7490"
+    },
+    {
+      "path": "calls/0110-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "3eea15c5e8f45555bae64690bbfc1dd189d7c534599b03f5904020287e212bf3"
+    },
+    {
+      "path": "calls/0111-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "35bd8b373ac8644acd81ee5c377b5ec3f821431114b534092c97cad72e9baa25"
+    },
+    {
+      "path": "calls/0112-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f7bbbc8ee4fdfc74bd7885ec13bff7924f5039759aee7f5a45d3a30056c1359f"
+    },
+    {
+      "path": "calls/0113-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "3494aacb786d76fd66ac9ce223b85e82236cc083a1bd055cd371d813ca6f26ec"
+    },
+    {
+      "path": "calls/0114-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "61df7e83462f08d6f5ea6f5c9c19deb6f232810f12e5c8ccaad2b884278259cd"
+    },
+    {
+      "path": "calls/0115-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "2968ac23b637f8e31e6097a17844ac773e8e891507a8c79397f497427b213f7d"
+    },
+    {
+      "path": "calls/0116-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "9256d6a1fff0eb1e4760a8244ec2de955187ef0d46c1db7d39298c97bba21727"
+    },
+    {
+      "path": "calls/0117-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "dec267eee3a1925423a7c63776a14b075d4586265d6c1f5e348210d0ac50f1d8"
+    },
+    {
+      "path": "calls/0118-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "122df331137531c97d04a943cf055f91717db6639b25619f3ec29060d21a2ea0"
+    },
+    {
+      "path": "calls/0119-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "4838f21a3334b083f0661f1abc30e85ca357f9e06a837fe560428c436f777309"
+    },
+    {
+      "path": "calls/0120-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "7689bab0674f04010986db13641b7104c3d02ffcec8ecb92ad4aeb4d265a30b1"
+    },
+    {
+      "path": "calls/0121-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "6b35ce6cb0ae088174cae317a8ddf6a8df8289dde67eb8e0406a0c60ce6491e8"
+    },
+    {
+      "path": "calls/0122-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "e88b1b0e69730737a9e8cc9ad405db7c73df4c883bf9dc7f49faa4b04e3ae172"
+    },
+    {
+      "path": "calls/0123-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a2ed240e09c9547adf0048ff189a45ee98d892b41f678d6359c63e62cf8d7384"
+    },
+    {
+      "path": "calls/0124-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "cdacc7d5652117fa1b9d16272ab844437cbc54d7e9b05406ea22e0ff923254df"
+    },
+    {
+      "path": "calls/0125-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "e55a6c4a56f5e39a51e426c4dfb2d4d12a9e7518ac2678e2f59fe9c6a6058b7c"
+    },
+    {
+      "path": "calls/0126-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "cacf47e67f09d49d4b1d53ab3a654e1629e99b43d9ed05424aaf60c8096b72a3"
+    },
+    {
+      "path": "calls/0127-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "eb963818c272b2921a84760744596d14f229f98a4c1a9c520b87db09f7e5d67b"
+    },
+    {
+      "path": "calls/0128-matrix-large-cublaslt-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "93d91d2cbcb9d4d420f15670417fe61065e81dd6f700413ebd266e3bd4d0c165"
+    },
+    {
+      "path": "calls/0131-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "1dd57ff1897a61a8b9f38327a8b05e2d1ec2aa6ee89b70c3cf47a542e0e664d5"
+    },
+    {
+      "path": "calls/0132-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "f470ce065f93d1171bd5ec458479bfb47ddcab17fdae70a7b2ed132680c4d018"
+    },
+    {
+      "path": "calls/0133-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "6969fc1cfc4267df9dc2de45b12b111258a45f391c8f92c266769c35defa0d34"
+    },
+    {
+      "path": "calls/0134-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "794333d1cfce6199559b9c0e6e7bef2db6d8a9e9f734aa3c3b8f564849ac32a1"
+    },
+    {
+      "path": "calls/0135-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "28b220bab8b4a6594e78e45f0e5907e17e83755ccb2da572489b79fc5c0afae1"
+    },
+    {
+      "path": "calls/0136-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "a5c1c9ea880146938a600a9384b73e1ad963e5b5a6da41cfd7273c1dd344dd79"
+    },
+    {
+      "path": "calls/0137-matrix-large-cutlass-unfused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "4bae0eedef1f11fdbb499137f54ce9de882c0b18074cecded903c0791d9644cf"
+    },
+    {
+      "path": "calls/0140-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "31021261807b549997f8557773a0f8f823efd3b343bb4fe5de3c1050aa03edd1"
+    },
+    {
+      "path": "calls/0141-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "6317994fe0c99ff9ae6c236f99a76088a2c6f9b8bf63244906f8deafffd234c2"
+    },
+    {
+      "path": "calls/0142-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "4455f119fa74138b9e8b6999bd212fe61c3bb685ede138d29a2a9697d41899c0"
+    },
+    {
+      "path": "calls/0143-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "808a522de45df7910a8d295fbab9c9c0e5547e8155262e79615093975d6a1544"
+    },
+    {
+      "path": "calls/0144-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "9862042ef8ad20e78f3c8fd76692c3f28c6e3e26a4d8aeb52a161e573404fba4"
+    },
+    {
+      "path": "calls/0145-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "41255370ba1c5ce4f3132ebc964aa2e4c7d743642f5e0f3b5693e4826714659a"
+    },
+    {
+      "path": "calls/0146-matrix-large-cutlass-fused",
+      "words": 4864,
+      "samples_including_warmups": 12,
+      "stdout_sha256": "e8c5e3c7d75092309e7a7d9716eb1d3d62923e9e040edc943ac25a189899254d"
+    },
+    {
+      "path": "calls/0019-matrix-naive-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "2de93ef879ae694907d6c82b1abd116043183ffb7b4d6cbbf93f7109ca312d79"
+    },
+    {
+      "path": "calls/0020-matrix-cublas-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "660436107afe46b4d4291df9c84af0ca5ed0c530688fbfaa7dc3cdd9b0c2bd94"
+    },
+    {
+      "path": "calls/0040-matrix-cublaslt-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "f3f5baa91ae59fe7ab7d5f2283ea8effd2a5db73ad3ff1521e8d5dd01467b380"
+    },
+    {
+      "path": "calls/0041-matrix-cublaslt-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "05e2adf095a8922f5d04a4284b198816fcc6737ff2b2c8cd693f54a903b81691"
+    },
+    {
+      "path": "calls/0061-matrix-cublaslt-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "eca4f29ae1405a3f8eebd68936f3b0ed114ad5c4082d49277d6f4cae7f8bf37b"
+    },
+    {
+      "path": "calls/0062-matrix-cublaslt-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "7e74b9d5dbe995d183dac84e0f7a15d958b062203b5254574704987b435e4fe8"
+    },
+    {
+      "path": "calls/0070-matrix-cutlass-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "4e53ea7eb2b6abef885d596579e1069c01af647d93cc49fe08b53fb13b14e037"
+    },
+    {
+      "path": "calls/0071-matrix-cutlass-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "78752085357cd9fb5dc2b01aaecd237dca412ca766eb44b7a61a524445bd0f8b"
+    },
+    {
+      "path": "calls/0079-matrix-cutlass-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "456fee01f01884a05bb7956a4aad44295b1e7af225a3195c944a9b1313a7ae10"
+    },
+    {
+      "path": "calls/0080-matrix-cutlass-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "1b4871bc24b674f5a45b5e159726039c41c4f22aa5755b7f5ab843565b7ce81b"
+    },
+    {
+      "path": "calls/0081-matrix-large-naive-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "2da5f285cd724cbed895160a892b37f5763ddfa8508e8166f905fcf59220d232"
+    },
+    {
+      "path": "calls/0082-matrix-large-cublas-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "158dcfcd6aab1f3af3c2143c50dbd9ae4e8bdb0328fdd694b8d5ca14387be787"
+    },
+    {
+      "path": "calls/0105-matrix-large-cublaslt-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "780abf4d47da841ccc9385a9905c9fb2f7869ae93f5cb0964af73bb84e8f28f4"
+    },
+    {
+      "path": "calls/0106-matrix-large-cublaslt-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "4244f134f31c830635c8e11f7f8b6897f10d544c9eda05e4d58c52948ced4a8a"
+    },
+    {
+      "path": "calls/0129-matrix-large-cublaslt-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "18917a4a1e7ae3ad0a17056d6346e8be2bfb036ac9f464f8f022bee5863e3080"
+    },
+    {
+      "path": "calls/0130-matrix-large-cublaslt-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "39d83160266f1b022eb36f9809b6bd50a672ff4194d1a8a119cf2fa492c316af"
+    },
+    {
+      "path": "calls/0138-matrix-large-cutlass-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "95fe33b2bf428c6756b0fafdc3c3f201fdd3c27ac139eaa0f24ec8ebee999391"
+    },
+    {
+      "path": "calls/0139-matrix-large-cutlass-unfused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "90883096107d58e647b49d56ea214699eb66a0ea6f909eae4f135bf3705eb3b6"
+    },
+    {
+      "path": "calls/0147-matrix-large-cutlass-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "9858a55a627500074429b5c66d393f82d7a8f544fa7e5adcefa99296a5237167"
+    },
+    {
+      "path": "calls/0148-matrix-large-cutlass-fused",
+      "words": 10752,
+      "samples_including_warmups": 35,
+      "stdout_sha256": "ed76c69192070a857c9d0d9ba1d85cc54d1d9692bdd6ccb4a0bc139e2ce30c53"
+    }
+  ]
+}

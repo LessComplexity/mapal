@@ -14,7 +14,8 @@ use crate::MovePanel;
 use crate::module::StrGlobal;
 use crate::profile::TargetProfile;
 use crate::ty::{
-    erased_index, lower_body_input_ty, lower_named_input_ty, lower_ty, residual_arity,
+    array_paths, erased_index, lower_body_input_ty, lower_named_input_ty, lower_ptr_paths,
+    lower_ty, residual_arity, sub_paths,
 };
 
 /// Truthful fn attributes (trap-aware; suggestions #7): the conservative
@@ -316,6 +317,9 @@ pub(crate) struct FnEmit<'a> {
     perf_timing: bool,
     /// Matmul-shaped map sites recognized once for this function.
     tile_plan: Option<TilePlan>,
+    /// The sites of `tile_plan` that run on the device (S62
+    /// [`gpu::placement`]); empty on a CPU profile.
+    device: SecondaryMap<MorphismId, ()>,
     /// plan-s37-stage-structure: the per-element law of each array. Consulted
     /// at elementwise reads; absence means "load it", i.e. today's behavior.
     elem: ElemPlan,
@@ -353,12 +357,115 @@ pub(crate) struct FnEmit<'a> {
     /// This emitter lowered at least one block to the arena ⟹ it owes a
     /// teardown.
     heap_used: bool,
+    /// The GPU rung arms (S52/S53) — the host needs them because a rung can
+    /// change the launch (the prefetch rung's panel depth).
+    gpu_arms: crate::GpuArms,
+    /// The `k` fold's order (ADR-0040 D1): the device chooser's input
+    /// ([`gpu::combine`]) and, on the host, whether `reassoc` rides the
+    /// tiled steps ([`FnEmit::fp_flags`]).
+    order: crate::Order,
+    /// The split folds this function compiled under [`crate::Order::Fixed`]
+    /// (ADR-0040 D3), for [`crate::Emission::orders`].
+    orders: Vec<crate::FoldOrder>,
+    /// S53 `resident`: where each array's device copy lives and moves
+    /// (`func/resident.rs`). `None` off a GPU profile, with the rung off, or
+    /// in a function with no device site — the S52 emission exactly.
+    resident: Option<resident::ResidentPlan>,
+    /// S54 `cell-law`: this emission is a body's device variant, in which
+    /// capture slot `s` arrives as its element value `%cv<s>` of the given
+    /// type (every read of it is at the cell's own index) instead of as an
+    /// array pointer. Empty: the host body.
+    cell_vals: Vec<(u32, String)>,
+    /// `cell-lanes`: this body is a nest cell's lane variant — its fold
+    /// whose target is the first field walks every `lanes`-th step from the
+    /// lane and combines the lanes' partials by `step` (a warp shuffle tree).
+    lanes: Option<(ObjectId, mapal_ir::RowFoldOp, u64)>,
+    /// Object → its device slot (`alloca i64`, 0 = no buffer).
+    dslots: SecondaryMap<ObjectId, String>,
+    /// Objects whose device copy is current at this point of the walk.
+    dvalid: SecondaryMap<ObjectId, ()>,
+    /// S53 `retain-delta`: the tile sites whose output is retained across
+    /// iterations, by output object (`func/retain.rs`), and their first-pass
+    /// flags.
+    retain: SecondaryMap<ObjectId, retain::Retained>,
+    retain_flags: SecondaryMap<ObjectId, String>,
+    /// A retained site's restricted host pass: `bulk_bounds` answers this row.
+    row_bounds: Option<(String, String)>,
+    /// S54 `epilogue` (R1): per-cell morphisms evaluated in a device site's
+    /// store, by site morphism (`func/resident.rs:epilogues`). Decided before
+    /// the residency plan, which reads their uses as device uses.
+    groups: SecondaryMap<MorphismId, resident::Epi>,
+    /// Emitting a map body's device variant: these input slots are captured
+    /// arrays read only at the cell `t`, passed as one-cell buffers, so every
+    /// `Index` on them reads element 0 (`emit_index`).
+    cell_slots: Vec<u32>,
+    /// The name suffix of that variant: `_cell` (an epilogue's), `_u<slots>`
+    /// (a unit's, `func/flow.rs`).
+    cell_suffix: String,
+    /// S54 `streams`: the function's path plan (the entry's, from `lib.rs`),
+    /// which says which device sites are independent.
+    path_plan: Option<&'a PathPlan>,
+    /// S62 `splitk`: each split site's workspace slot (`alloca i64`), made on
+    /// its first launch and freed at function exit (a loop reuses it).
+    split_slots: Vec<String>,
+    /// `entry-arena`: every `mapal_gpu_alloc` the walk emits on a slot of its
+    /// own (an object's buffer, a split workspace), with its bytes.
+    dallocs: Vec<(String, u64)>,
+    /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions
+    /// (component paths) that hold a pointer to bytes elsewhere instead of
+    /// the bytes — forwarding does not copy. A bare array view is
+    /// `ptr_resident`.
+    views: SecondaryMap<ObjectId, Vec<Vec<u32>>>,
+    views_done: bool,
+    /// Each map's piecewise law, as `map_law` gave it (a pure function of
+    /// the IR, asked once per map: `in_place_source`'s fixed point asks every
+    /// round).
+    outside_memo: std::cell::RefCell<SecondaryMap<MorphismId, Option<mapal_ir::Outside>>>,
+    /// The `by-ref` rung, as `plan_views` read it.
+    by_ref: bool,
+    /// The loop state positions whose buffer the host chooses per trip or
+    /// owns (`frame.rs` `plan_loop_buffers`).
+    bufs: Vec<frame::LoopBuf>,
+    /// The function's canonical loops (with `by-ref`).
+    loops: Vec<frame::Loop>,
+    /// Objects by the bytes their views lead to (`frame.rs` `index_roots`).
+    root_index: std::collections::HashMap<frame::Root, Vec<ObjectId>>,
+    /// The parallel entry's task order (its host and tasks).
+    par: Option<std::rc::Rc<frame::ParOrder>>,
 }
 
-pub(crate) fn packing_site(site: &TileSite) -> bool {
+/// Should this site's `b` be packed — shape AND size.
+///
+/// **One predicate, six call sites, because they must not disagree.** The pack
+/// buffer's existence (`frame.rs`), the copy that fills it (`bulk.rs`), the
+/// slice function that owns it (`drive.rs`), the prefetch declaration
+/// (`lib.rs`), the SME kernel's load-width clause (`sme.rs`) and the copy's own
+/// assertion (`core.rs`) all read this. A site packed by one and not another is
+/// a kernel reading a layout nobody wrote (FRAMEWORK §5 — one source of truth
+/// for shared structure).
+///
+/// A device site (S62 [`gpu::placement`]) never packs — it stages its panels in
+/// shared memory, and a host pack would be copied across the bus and never
+/// read — so the two callers that can meet one (`bulk.rs`, `lib.rs`) ask the
+/// placement first; the parallel paths only exist without a device site.
+///
+/// The `profile`/`contract` arguments are what made this a two-part question:
+/// shape decides whether a packed layout can *represent* the site, size decides
+/// whether it *pays* (plan-s51 H1 — [`TargetProfile::pack_pays`]).
+///
+/// **The size half applies only to sites that take the SME rung**, because that
+/// is the only kernel the crossover was measured on. A site that runs the NEON
+/// packing rung packs exactly as it did before the threshold existed — nobody
+/// has taken its crossover, and a threshold is not transplanted between kernels
+/// on the strength of an argument.
+pub(crate) fn packing_site(site: &TileSite, profile: &TargetProfile, contract: bool) -> bool {
     // k-split sites never pack: the packed panel layout has no encoding for
     // the (k÷div, k%div) decomposition.
-    site.rows > 1 && site.b.ci == 0 && site.b.ksplit.is_none()
+    site.rows > 1
+        && site.b.ci == 0
+        && site.b.ksplit.is_none()
+        && (!crate::func::sme::sme_shape(site, profile, contract)
+            || profile.pack_pays(site.rows, site.c, site.k, &site.elem))
 }
 
 /// FIR-style 1-D sliding-window sites: a single-row map whose unit-stride
@@ -584,9 +691,14 @@ mod bulk;
 mod conv;
 mod core;
 mod drive;
+pub(crate) mod flow;
 mod frame;
+pub(crate) mod gpu;
 mod ops;
 mod packed;
+pub(crate) mod resident;
+mod retain;
+mod rowfold;
 mod sme;
 mod tile;
 mod trio;

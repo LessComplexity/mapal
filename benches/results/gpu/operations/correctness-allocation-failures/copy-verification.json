@@ -1,0 +1,32 @@
+{
+  "utc": "2026-10-21T21:12:24.288703+00:00",
+  "verified": true,
+  "scope": "Sanitized failure summaries and independent reviews only; raw API/create/account response bytes excluded.",
+  "records": [
+    {
+      "name": "allocation-diagnosis.md",
+      "bytes": 1561,
+      "sha256": "1760ae7a489c0feba5c679b4a01c38517f10b43eec83a533aabc3706e58c2929"
+    },
+    {
+      "name": "allocation-diagnosis.json",
+      "bytes": 5860,
+      "sha256": "0283ffb86f413dde1143e7eb8716b59f7d5923685ace7eca4aaf3639ba82f414"
+    },
+    {
+      "name": "closed-attempts-receipt.json",
+      "bytes": 6006,
+      "sha256": "e02c5d8e4cf73afde693dc8ee32c580713ad65dabacf09a7452af98757f64912"
+    },
+    {
+      "name": "failure-review.json",
+      "bytes": 2867,
+      "sha256": "c560508c2fdd486029d79057fd30e651deb3b0f88c0679a9fcff9bf39c40f442"
+    },
+    {
+      "name": "failure-review-retry2.json",
+      "bytes": 3061,
+      "sha256": "0fc30f76aa7d918f415237ed5aa1ed18fe5e23f72f7019004684fcac2703dac3"
+    }
+  ]
+}

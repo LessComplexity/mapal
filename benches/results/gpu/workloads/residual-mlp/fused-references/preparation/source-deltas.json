@@ -1,0 +1,27 @@
+{
+  "schema": "residual-mlp-native-source-deltas-v1",
+  "shared_repo_files_changed": [],
+  "frozen_parent_manifest_sha256": "201fd7d81e77cdbf866ed6411b11d84fc6452c7be32c3fe68c4bd2e623e880dc",
+  "frozen_files_unchanged": {
+    "handwritten/reference.cu": "917a8a1b1aa983d7b9c38603950349262aebe515e8f6d1faa5653287b17730b0",
+    "handwritten/inputs/fixture.hpp": "780ca3f33a785c58abd52b32d0eb26c2c7d36a9a225eb5719eae5f2f2cc330a3",
+    "pytorch/numerics.py": "3469aa34f1580520bcfac0e3516e8afcc9930eee87d2a559d160066948d4092a"
+  },
+  "added_runtime_sources": {
+    "composed_native.cu": "452554ca3b64bd80eb2dcdd5e9b881db19b21d44e9b89e8dcb23f0f20b28f2ec",
+    "native_plans.hpp": "7bd9d2d47c4f947926e5da4319c710300fcec469af35c1e153cf89814bd843e2",
+    "run_native.py": "a70da14ba47cbb388e16b63d388ffaac4f2772f87c751582376438c929e6c052",
+    "validate_native.py": "b381573b65309b6188938a8dea892bdaef7223ac0779aedafe7ec50dabd88b28"
+  },
+  "new_behavior": [
+    "Separate Lt/CUTLASS plans; preserved Program::gemm/mlp and pointwise controls via unchanged frozen include",
+    "Same FP32 input bytes, residual DAG and frozen acceptance budgets; explicit Lt transpose-layout reinterpretation and CUTLASS bias source-stride0",
+    "Seven independently built SIMT geometries plus base-only compile; bounded finite whole-program sweeps and fresh confirmation",
+    "Mandatory exact request/executable/input/manifest binding and independent pre-clock nonce ACK; actual Lt algorithm identity frozen for holdout",
+    "Owned process-group timeout/cancellation cleanup; no dependency installation, remote access, Torch or profiler in this packet"
+  ],
+  "numerical_gate_scope": "Full tiny inputs/stages/final; representative256 cells/stage/final and each timed y; exact rational comparison to unchanged binary64 thresholds",
+  "mapal_llvm_ptx_changes": false,
+  "historical_timing_or_correctness_gate_changes": false,
+  "gpu_executed": false
+}

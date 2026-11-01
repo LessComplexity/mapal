@@ -1,0 +1,9 @@
+{
+  "root_archive_files_verified": 2867,
+  "archive_sha256": "6f4535d08a49cc92ad8ffdd7863e814e7343cbbf6a916105ad864bc85a48b9b3",
+  "manifest_sha256": "527e4b6a3f4f474edab4fddf97ec837e685d84cd678883dc66a79fa012442002",
+  "combined_isolated_ptx_identical": 114,
+  "independent_local_tests": 13,
+  "production_patch_review": "no blocking correctness or genericity finding; GPU acceptance pending",
+  "scope": "root independently rehashed archive bytes, reviewed final runner and reran tests"
+}

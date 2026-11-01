@@ -1,0 +1,11 @@
+{
+  "approved": true,
+  "archive_sha256": "c6435b82ea682b8f392e9f2302e7d56a28eab61d5ac50c5a852e33fe52e7ff29",
+  "changed_sealed_files": [
+    "manifest.json",
+    "mapal_wrapper.c"
+  ],
+  "sealed_files": 86,
+  "reader_only_digest_changed": true,
+  "basis": "Real pipe framing reproduction and1,536raw values pass unchanged gate; fflush before request outside timed regions; allLLVM/PTX/gates/clocks unchanged."
+}

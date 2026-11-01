@@ -1,0 +1,89 @@
+{
+  "verdict": "no_static_blocker",
+  "production_acceptance": "pending matched GPU correctness and allocation/lifetime evidence",
+  "GPU_execution_performed": false,
+  "performance_claim": false,
+  "candidate_patch_sha256": "2c8cdc1964abbd0516a46c5da1e02a76ba59e214e205275c8e478dc23e85ffd5",
+  "source_head": "3a0d4350dc2f5b13b53ed86821cf427922fe99d9",
+  "independent_evidence": {
+    "source_files_rehashed": 310,
+    "receipt_artifacts_rehashed": 261,
+    "before_after_variants": 28,
+    "device_LLVM_identical": 28,
+    "whole_body_alloca_types_and_zero_ownership_equivalence": 28,
+    "mutation_checks": [
+      "device-slot alloca i64\u2192i32",
+      "device-slot initialization0\u21921"
+    ]
+  },
+  "findings": [],
+  "anchors": [
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::chain_prologue",
+      "line": 2149,
+      "checked": "skip only known selected-group store_out=false; missing group conservatively allocates"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::read_outside / FnEmit::epilogues",
+      "line": 670,
+      "checked": "outside readers determine store_out; members kept as registers require no raw Gmem"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::emit_site_resident",
+      "line": 1954,
+      "checked": "same group flag selects raw pointer0; stored member buffers still allocated; grouped=None fallback still allocates raw output"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/gpu.rs",
+      "symbol": "Kernel::store_cells / FnEmit::epi_kernel",
+      "line": 1426,
+      "checked": "raw output store gated by the same store_out fact propagated into device kernel"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "grouped_writer / ResidentPlan::stream_of",
+      "line": 171,
+      "checked": "stored member reads resolve physical base writer and its chain stream"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::chains",
+      "line": 1321,
+      "checked": "straight-line membership, legacy consumer veto and moved free ordering retained; loops/guards remain legacy"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::resident_plan",
+      "line": 1294,
+      "checked": "arena enabled only when chain map empty; skip cannot alter arena ownership in chained code"
+    },
+    {
+      "path": "crates/backends/llvm/src/func/resident.rs",
+      "symbol": "FnEmit::dslot / resident_after / resident_teardown",
+      "line": 1619,
+      "checked": "unallocated slots remain initialized0; free at death and teardown remains idempotent"
+    },
+    {
+      "path": "crates/mapal-rt/gpu/mapal_gpu.c",
+      "symbol": "launch_on / mapal_gpu_d2h_on / mapal_gpu_free",
+      "line": 316,
+      "checked": "legacy operations joined explicitly by event; readback waits physical stream; zero-free returns before incidental chain synchronization"
+    }
+  ],
+  "test_assessment": {
+    "meaningful_old_fail_new_pass": "old regression finds8dead raw allocation sites across independent/diamond/MLP2 and both Exact/Contract; old controls pass; candidate streams19 and focused51 pass in bound logs",
+    "new_tests_limit": "textual generated-IR liveness check uses current dload format; not a generic LLVM escape analysis and not hardware execution",
+    "proof_limit": "28 specific fixture variants, deviceLLVM equality not executed-image or numerical runtime equality; timing-bearing pt512fixtures cannot serve as no-clock ordering proof",
+    "workspace_limit": "candidate full workspace not rerun; upstream ordering400 GPU runs do not certify this new allocation variant"
+  },
+  "required_gpu_gates": [
+    "Exact and Contract matched archived-base/candidate no-clock programs, ordinary untraced execution repeated across independent, diamond, MLP2 and stored-raw/member/fork/capture controls; compare all declared outputs against same oracle",
+    "Retain legacy-cell, rowfold, loop-carry/guard and arena controls, validating outputs and absence of incorrect stream enrollment; no stream flags or value tolerances relaxed",
+    "Separate allocation/lifetime instrumentation must confirm intended real allocation count/bytes omission, no null access, no use-after-free/double-free, physical-writer readbacks and cross-chain waits; tracing that synchronizes kernels cannot substitute for ordinary correctness",
+    "If performance or peak VRAM improvement is claimed, measure matched untraced before/after programs and real allocation/peak memory on same host; static requested byte sums are not measurements"
+  ],
+  "tooling": "Semble search bounded at15seconds without result; reviewed named known files/symbols directly; no candidate/shared writes"
+}

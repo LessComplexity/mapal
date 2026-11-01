@@ -26,6 +26,7 @@
 
 mod algo;
 mod builder;
+mod facts;
 mod graph;
 mod loc;
 mod mermaid;
@@ -33,14 +34,16 @@ mod ty;
 mod validate;
 
 pub use algo::{
-    BoundsProof, Checkpoint, ElemPlan, ElemSrc, EmissionClass, EmissionPlan, GuardArm, GuardSite,
-    LastUsePlan, LoopPlan, LoopScc, MovePlan, MoveSite, PathPlan, Task, TaskId, TaskKind,
-    TileKSplit, TilePlan, TileRead, TileSite, WaitEntry,
+    Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Digit, Edge, ElemPlan,
+    ElemSrc, EmissionClass, EmissionPlan, Footprint, FootprintPlan, GuardArm, GuardSite,
+    LastUsePlan, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan,
+    RadixAddr, RadixForm, RadixTile, Reach, RowFoldOp, RowFoldSite, Tap, Task, TaskId, TaskKind,
+    TileKSplit, TilePlan, TileRead, TileSite, TripPhase, TripSplit, WaitEntry, bound_coef, gamma,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use graph::{
     CategoryIr, FuncDef, FuncId, FuncKind, Morphism, MorphismId, Object, ObjectId, ObjectKind,
-    Operation,
+    Operation, Precision,
 };
 pub use loc::SourceLoc;
 pub use mermaid::lint_mermaid;

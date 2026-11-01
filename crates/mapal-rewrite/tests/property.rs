@@ -203,6 +203,42 @@ fn sequential_generated_lifts_with_intervening_fold() {
     check_closed(&prog).unwrap();
 }
 
+#[test]
+fn guarded_mod_one_after_independent_loop_preserves_class() {
+    let prog = Prog {
+        trap_free: false,
+        open: true,
+        effectful: false,
+        helpers: vec![],
+        map_bodies: vec![],
+        fold_bodies: vec![],
+        map_cap_bodies: vec![],
+        map_acap_bodies: vec![],
+        fold_cap_bodies: vec![],
+        nest_bodies: vec![],
+        main: vec![
+            Step::LiftMap { arr: 0, cap: 0 },
+            Step::Index { arr: 0, idx: 207 },
+            Step::LoopCapMap {
+                k: 0,
+                arr: 0,
+                body: 0,
+            },
+            Step::PhiTrapArm {
+                a: 58,
+                b: 139,
+                c: 0,
+                on_true: false,
+                modulo: true,
+            },
+        ],
+        prints: vec![],
+        ret: 0,
+        args: vec![0],
+    };
+    check_open(&prog).unwrap();
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(48))]
 

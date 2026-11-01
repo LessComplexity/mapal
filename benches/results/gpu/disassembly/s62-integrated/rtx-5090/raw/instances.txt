@@ -1,0 +1,4 @@
+pre-existing (vastai show instances, 2026-10-23T02:36:55Z): 57065574 57100404 57126023 57133432 57285249
+created: 57310008 (RTX_5090, offer 51267580) 2026-10-23T02:40:38Z
+destroyed: 57310008 `vastai destroy instance 57310008 -y` 2026-10-23T02:48:04Z
+confirmed absent: 2026-10-23T02:48:10Z show instances = 57065574 57100404 57126023 57133432 57285249 57309646 (57309646 not created by this run, untouched)

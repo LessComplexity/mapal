@@ -1,0 +1,10 @@
+{
+  "private_recovery": "/Volumes/LessComplex/Personal/mapal/.claude/worktrees/_archive-s54-20261021/s59-smallm-comparison/private-recovery.tgz",
+  "private_recovery_sha256": "8d9b704551dcd83eb46a48dd760c5f6f16415897bc6073ee0bc0080e56b261b5",
+  "private_recovery_bytes": 18773053,
+  "privacy": "Private recovery includes provider API diagnostics and must remain mode0600 in ignored mode0700 directory. Public evidence excludes API/create/request/wrapper records.",
+  "raw_trace_sha256": "b11ab9f444498c62984bab0f3481055bc6ab54222850d6553ac27066ea981847",
+  "raw_trace_bytes": 1010727,
+  "raw_trace_files": 949,
+  "sealed_payload_sha256": "6f4535d08a49cc92ad8ffdd7863e814e7343cbbf6a916105ad864bc85a48b9b3"
+}

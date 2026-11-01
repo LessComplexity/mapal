@@ -1,0 +1,29 @@
+{
+  "utc": "2026-10-22T17:20:27.549495+00:00",
+  "command": "MAPAL_REQUIRE_CLANG=1 CARGO_TARGET_DIR=/private/tmp/mapal-s58-integration-target cargo test --offline --locked --workspace --release --no-fail-fast -- --test-threads=1",
+  "runs": [
+    {
+      "log": "workspace-tests.log",
+      "counts": [
+        1187,
+        3,
+        1
+      ],
+      "failed_tests": [
+        "test profile::tests::native_move_geometry_is_consistent ... FAILED",
+        "test profile::tests::native_reads_the_facts_it_claims_to ... FAILED",
+        "test profile::tests::native_sme_profile_is_consistent ... FAILED"
+      ]
+    },
+    {
+      "log": "backend-host-detection-recheck.log",
+      "counts": [
+        59,
+        0,
+        0
+      ],
+      "failed_tests": []
+    }
+  ],
+  "interpretation": "Sandbox workspace1187passed/3native-detection-failed/1ignored; complete backend lib rerun with host access59passed/0failed. Three failing native detection tests resolved with host access. Combined1190tests pass; no full unsandboxed workspace rerun claimed."
+}

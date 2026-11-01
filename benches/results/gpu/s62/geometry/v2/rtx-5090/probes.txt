@@ -1,0 +1,13 @@
+prog face arm | kernel-sum ms med (min-max) | iter ms med | kernel-sum arm/on
+pt_rmlp_128x1024x2048 _c off-grid-share | 0.0620 (0.061-0.062) | 0.0715 | 0.984
+pt_rmlp_128x1024x2048 _c off-panel-regs | 0.0830 (0.082-0.084) | 0.0904 | 1.317
+pt_rmlp_128x1024x2048 _c on | 0.0630 (0.063-0.064) | 0.0899 | 1.000
+pt_rmlp_128x1024x2048 _exact off-grid-share | 0.0910 (0.090-0.092) | 0.1079 | 0.752
+pt_rmlp_128x1024x2048 _exact off-panel-regs | 0.0840 (0.082-0.084) | 0.0903 | 0.694
+pt_rmlp_128x1024x2048 _exact on | 0.1210 (0.120-0.126) | 0.1679 | 1.000
+pt_rmlp_128x256x512 _c off-grid-share | 0.0220 (0.021-0.023) | 0.0354 | 1.000
+pt_rmlp_128x256x512 _c off-panel-regs | 0.0280 (0.028-0.029) | 0.0357 | 1.273
+pt_rmlp_128x256x512 _c on | 0.0220 (0.021-0.023) | 0.0489 | 1.000
+pt_rmlp_128x256x512 _exact off-grid-share | 0.0280 (0.027-0.031) | 0.0418 | 0.848
+pt_rmlp_128x256x512 _exact off-panel-regs | 0.0290 (0.028-0.029) | 0.0392 | 0.879
+pt_rmlp_128x256x512 _exact on | 0.0330 (0.033-0.034) | 0.0725 | 1.000

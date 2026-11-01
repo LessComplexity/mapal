@@ -116,18 +116,1664 @@ pub enum Machine {
 /// decide which are actually read, and any fact a GPU realization needs but
 /// cannot find here is an ADR-0033 D4(b) finding to report rather than a value
 /// to invent.
+///
+/// **S52: every field is a device-query attribute** (`cuDeviceGetAttribute`,
+/// printed by `benches/gpu/devquery.cu`), so a hand-written profile is the
+/// cross-compilation spelling of a part and the probe on the part is its check
+/// — the ADR-0038 D4 pattern the SME facts follow. Nothing here is swept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Gpu {
     /// Threads per warp — the cooperation quantum. 32 on every NVIDIA part.
     pub warp: u64,
-    /// Shared memory addressable by one block, in bytes. The budget the staged
-    /// panel is sized against — the GPU reading of `l2_bytes`.
-    pub smem_bytes: u64,
     /// The launch-geometry ceiling: threads in one block.
     pub max_threads_per_block: u64,
     /// The PTX target architecture, e.g. `sm_89`. Verified against the device
     /// rather than assumed: the box GPU reports compute capability 8.9.
     pub arch: &'static str,
+    /// Streaming multiprocessors — how many blocks one wave holds, per
+    /// resident slot. A property of the part, not the architecture.
+    pub sms: u64,
+    /// 32-bit registers one thread may address (255 on every part since
+    /// Kepler). The accumulator budget — the GPU reading of `vec_regs`.
+    pub regs_per_thread: u64,
+    /// 32-bit registers one SM holds. With the per-thread estimate it bounds
+    /// how many threads are resident at once.
+    pub regs_per_sm: u64,
+    /// Shared memory one SM holds, in bytes — split between its resident
+    /// blocks. The staged panels are sized against a block's share of it.
+    pub smem_per_sm: u64,
+    /// Shared memory one block may opt in to, in bytes (above 48 KB a launch
+    /// must raise `CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES`).
+    pub smem_per_block: u64,
+    /// Shared memory the driver reserves per resident block (1 KB on sm_80+).
+    pub smem_reserved_per_block: u64,
+    /// Resident threads per SM.
+    pub max_threads_per_sm: u64,
+    /// Resident blocks per SM.
+    pub max_blocks_per_sm: u64,
+    /// The device-wide L2, in bytes (`cudaDevAttrL2CacheSize`, the box's
+    /// `facts l2_bytes=`). One cache every SM shares — the GPU reading of the
+    /// CPU's shared last level, not a per-SM quantity (S54 `raster`,
+    /// `l2-window`).
+    pub l2_bytes: u64,
+    /// What a device site costs on this part, measured (S62 `place`). `None`:
+    /// every capable site is a device site — the behaviour before it existed.
+    pub cost: Option<DeviceCost>,
+    /// The part's launch-geometry constants (ADR-0034 D1): the row the
+    /// offline search writes, overridable per knob (`--geom=`).
+    pub geom: Geom,
+}
+
+/// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
+/// silicon's peak: the honest number for a gate choosing between two Mapal
+/// realizations of one site. Each field cites the calibration run it was read
+/// from ([`TargetProfile::device_pays`] is the only reader).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceCost {
+    /// Compute-bound rate of the shipped FMA tile kernel, flops per ns.
+    pub flops_per_ns: u64,
+    /// Memory-bound rate of a one-thread-per-cell kernel, bytes per ns.
+    pub bytes_per_ns: u64,
+    /// What placing one more site on the device costs before its arithmetic:
+    /// the launch, its operands' generation and its completion, in ns.
+    pub launch_ns: u64,
+}
+
+/// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
+/// An ISA rule on every NVIDIA part, so it is not a profile field.
+pub const GPU_VEC_BYTES: u64 = 16;
+
+/// The GPU tile geometry for one tile site (any `map` folding affine reads over `k`), every number derived from
+/// [`Gpu`] facts and the site's own extents by [`TargetProfile::gpu_tile`].
+///
+/// One block computes a `bm × bn` tile of the output (`bm = ty·tm`,
+/// `bn = tx·tn`); each of its `tx·ty` threads owns a `tm × tn` register tile;
+/// the reduction axis is staged through shared memory `bk` deep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuTile {
+    pub tm: u64,
+    pub tn: u64,
+    pub tx: u64,
+    pub ty: u64,
+    pub bk: u64,
+    /// Blocks resident on one SM at this geometry.
+    pub blocks_per_sm: u64,
+    /// Shared-memory panel buffers: 1 for the register-staged kernel, ≥ 2 when
+    /// panels stream in with `cp.async` ([`TargetProfile::gpu_tile_async`]).
+    pub stages: u64,
+    /// Words of padding on each transposed-`a` panel row (async staging, and
+    /// register staging under the S53 `pad` rung).
+    pub pad_a: u64,
+    /// Lanes that load one `a` panel row on the register-staged vector path
+    /// ([`TargetProfile::gpu_tile_sync_a`]); 0 = all `bk / lanes` of them, the
+    /// pre-S53 map.
+    pub a_row_lanes: u64,
+    /// Registers a thread holds when the whole-file rule derived this tile
+    /// ([`fma_held_regs`], S53 `wide-fma`); 0 under the S52 half-the-file rule.
+    pub held: u64,
+}
+
+/// Registers an FMA-tile thread spends on addresses and loop state, beyond
+/// accumulators and fragments. Policy, read off ptxas reports (S52 v6): the
+/// 8×8 cp.async kernel without the block cap used 125 (4090) / 126 (5090)
+/// registers for 64 accumulators + 32 fragments ⇒ 29–30.
+pub const FMA_ADDR_REGS: u64 = 32;
+
+/// What an FMA-tile thread holds, in 32-bit registers: `tm × tn`
+/// accumulators, both buffers of its `tm + tn` fragments, and
+/// [`FMA_ADDR_REGS`] — the `wide` rule's count, applied to the FMA tile.
+pub fn fma_held_regs(tm: u64, tn: u64, elem_bytes: u64) -> u64 {
+    (tm * tn + 2 * (tm + tn)) * elem_bytes.div_ceil(4) + FMA_ADDR_REGS
+}
+
+/// [`TargetProfile::gpu_tile`] step 1 (S52 rule): the largest square
+/// power-of-two register tile side `t`, at least one vector, whose
+/// accumulators fit half of `regs_per_thread`; and its per-thread register
+/// estimate, twice the accumulators.
+fn square_register_tile(g: &Gpu, elem_bytes: u64) -> (u64, u64) {
+    let regs_per_elem = elem_bytes.div_ceil(4);
+    let mut t = (GPU_VEC_BYTES / elem_bytes).max(1);
+    while (2 * t) * (2 * t) * regs_per_elem <= g.regs_per_thread / 2 {
+        t *= 2;
+    }
+    (t, 2 * t * t * regs_per_elem)
+}
+
+/// [`TargetProfile::gpu_tile`] step 2: threads per block — the resident-thread
+/// budget at `regs_est` registers a thread, split across
+/// [`GPU_RESIDENT_BLOCKS`], capped by the block limit.
+fn block_threads(g: &Gpu, regs_est: u64) -> u64 {
+    (g.regs_per_sm / regs_est / g.geom.resident).min(g.max_threads_per_block)
+}
+
+/// Blocks of `threads` threads at `regs` registers a thread one SM holds: the
+/// register file, the thread and the block-slot limits (every tile's step 5).
+fn residency(g: &Gpu, regs: u64, threads: u64) -> u64 {
+    (g.regs_per_sm / regs / threads)
+        .min(g.max_threads_per_sm / threads)
+        .min(g.max_blocks_per_sm)
+}
+
+impl Gpu {
+    /// The compute capability as a number: `sm_89` → 89. The capability
+    /// table below is read off it — ISA rules, not part facts.
+    pub fn sm(&self) -> u64 {
+        self.arch
+            .trim_start_matches("sm_")
+            .trim_end_matches('a')
+            .parse()
+            .unwrap_or(0)
+    }
+
+    /// `mma.sync` with TF32 operands and `cp.async` both arrived at sm_80.
+    pub fn has_mma_sync(&self) -> bool {
+        self.sm() >= 80
+    }
+
+    /// Warp schedulers per SM: four since sm_70 (Volta through Blackwell),
+    /// each issuing one warp per cycle. An ISA table fact, like
+    /// [`Self::has_mma_sync`]. Older parts are not profiled; 1 leaves the fill
+    /// rule no stronger than "a block per SM".
+    pub fn schedulers(&self) -> u64 {
+        if self.sm() >= 70 { 4 } else { 1 }
+    }
+
+    /// The warps a grid needs before every scheduler holds
+    /// [`GPU_RESIDENT_BLOCKS`] of them — that constant's reason applied per
+    /// scheduler: one warp issues while the other waits on a load.
+    pub fn fill_warps(&self) -> u64 {
+        self.geom.resident * self.schedulers() * self.sms
+    }
+
+    /// How full a grid of `blocks × threads` keeps the part: warps per warp
+    /// scheduler, across every SM.
+    pub fn warps_per_scheduler(&self, blocks: u64, threads: u64) -> u64 {
+        blocks * threads.div_ceil(self.warp) / (self.sms * self.schedulers())
+    }
+
+    /// `wgmma.mma_async` exists only on the arch-specific Hopper target
+    /// `sm_90a` (PTX ISA: "Requires sm_90a"); Blackwell replaced it.
+    pub fn has_wgmma(&self) -> bool {
+        self.sm() == 90 && self.arch.ends_with('a')
+    }
+
+    /// **The block-row group height a tile grid is walked in (S54 `raster`)**,
+    /// for a `rows × c × k` site in `bm × bn` blocks, `wave` of them in flight
+    /// (`sms · blocks_per_sm`), `elem` bytes per element; 1 = the hardware's
+    /// row-major order, the OFF text.
+    ///
+    /// The grid is `gx = c / bn` by `gy = rows / bm`: every `a` row-panel is
+    /// read by `gx` blocks, every `b` column-panel by `gy` (the reuse counts).
+    /// Row-major order (`ctaid.x` fastest) runs an `a` panel's readers back to
+    /// back but puts a `b` panel's `gx` launches apart, so one wave reads
+    /// `⌈wave / gx⌉` `a` panels and `min(wave, gx)` `b` panels. Walking `h`
+    /// block-rows per column instead, a wave reads `h` `a` panels and
+    /// `⌈wave / h⌉` `b` panels: the `h` minimising those bytes,
+    /// `(h·bm + ⌈wave / h⌉·bn)·k·elem` — a power of two dividing `gy`, the
+    /// smaller on a tie.
+    ///
+    /// `gate` (rung `l2-gate`): keep row-major while one block's panels over
+    /// the whole reduction, `(bm + bn)·k·elem`, fit [`Gpu::l2_bytes`] — what the
+    /// part streams between two launch neighbours, the readers of one `a`
+    /// slab, so their sharing survives in L2. The measured anchor: every part
+    /// with it in L2 holds its 4096 ratio to cuBLAS at 8192; the 3090 at 8192
+    /// (8 MB of panels, 6 MB of L2) is the one that drops (S54
+    /// `baseline-tables.md`). A grid that is one wave keeps row-major: every
+    /// block is in flight at once, whatever the order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn raster(
+        &self,
+        bm: u64,
+        bn: u64,
+        wave: u64,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: u64,
+        gate: bool,
+    ) -> u64 {
+        let (gx, gy) = (c / bn.max(1), rows / bm.max(1));
+        let wave = wave.max(1);
+        if gx < 2 || gy < 2 || gx * gy <= wave || (gate && (bm + bn) * k * elem <= self.l2_bytes) {
+            return 1;
+        }
+        (0..=gy.ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|h| gy.is_multiple_of(*h))
+            .min_by_key(|&h| h * bm + wave.div_ceil(h) * bn)
+            .unwrap_or(1)
+    }
+}
+
+/// Which grids a measured rung decision covers. The key is
+/// [`Gpu::warps_per_scheduler`] at the site: below [`GPU_RESIDENT_BLOCKS`] a
+/// scheduler has no second warp to issue while one waits — the reason the
+/// thread budget is split in two, applied per scheduler — so the site is
+/// latency-bound and a rung that hides latency pays differently.
+///
+/// Keyed at [`GPU_RESIDENT_BLOCKS`], not [`Geom::resident`]: the rows were
+/// measured there, and the grid they key ([`TargetProfile::gpu_tile`]) reads
+/// the seed row — a `resident` arm moves the launch, never which rows apply.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fill {
+    Any,
+    /// Fewer than [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
+    Under,
+    /// At least [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
+    Filled,
+    /// S64: `Under` with at least one warp per scheduler — the class a row
+    /// keeps when its rung pays on a grid that leaves schedulers empty
+    /// (fewer than one warp each) and costs on one that does not.
+    Partial,
+}
+
+impl Fill {
+    /// Whether a row keyed `self` covers a site at `wps` warps per scheduler.
+    pub fn covers(self, wps: u64) -> bool {
+        match self {
+            Fill::Any => true,
+            Fill::Under => wps < GPU_RESIDENT_BLOCKS,
+            Fill::Filled => wps >= GPU_RESIDENT_BLOCKS,
+            Fill::Partial => (1..GPU_RESIDENT_BLOCKS).contains(&wps),
+        }
+    }
+}
+
+/// Which face a measured rung decision covers: the conformance face (`mul.rn`
+/// + `add.rn`, two instructions per step) and the contract face (one `fma`)
+/// hold different registers live, so a staging rung can pay on one and cost
+/// on the other. The TF32 face is a contract face: a `Contract` row covers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Face {
+    Any,
+    Exact,
+    Contract,
+    /// The TF32 face alone (S54): its kernel is `mma`, not the FMA tile, so a
+    /// rung that shapes both (`min-blocks`) can pay on one and cost on the
+    /// other — the kernel the rung folds into, read off the face.
+    Tf32,
+}
+
+impl Face {
+    /// The face a site is emitted on.
+    pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
+        match (reduced, contract) {
+            (Some(crate::Reduced::Tf32), _) => Face::Tf32,
+            // ADR-0040: the order axis runs the scalar kernels, so the
+            // Exact/Contract rows cover it; its realizations are own rungs.
+            (None, true) => Face::Contract,
+            (None, false) => Face::Exact,
+        }
+    }
+
+    /// Whether a row keyed `self` covers a site on face `site`.
+    pub fn covers(self, site: Face) -> bool {
+        self == Face::Any || self == site || (self == Face::Contract && site == Face::Tf32)
+    }
+}
+
+/// One measured decision: `rung` ships OFF on `profile` for grids `fill` on
+/// face `face`, because the results row `cite` measured its arm not positive
+/// there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RungOff {
+    pub profile: &'static str,
+    pub rung: &'static str,
+    pub fill: Fill,
+    pub face: Face,
+    pub cite: &'static str,
+}
+
+/// **The GPU rung table: every rung a measured part ships OFF, with the row
+/// that says so** (S53; the [`DispatchCost`] precedent — a measured number
+/// lives only on the profile it was measured on). A profile is *measured* when
+/// it is in [`GPU_MEASURED`]; every rung not listed for it is ON. Rows cite
+/// `benches/results/gpu/kernels/optimization-ladder/<file>` or (`base-*`, S54) `benches/results/gpu/validation/baseline/<file>`
+/// (`-confirm` / `-run1` = another session, on a different box): the ON vs OFF
+/// arm medians, ms, or (S54) OFF/ON divided by each bench's own cuBLAS leg, which
+/// cancels the clock drift of a power-capped box. Box-to-box noise is ±5% at
+/// 4096–8192. The rule a row follows: a rung ships OFF in a (fill, face) class
+/// when no size in the class measured it positive with a stable sign (a sign
+/// that changes between sessions is no effect; S54: within ±1% is no effect, the
+/// median spread of one ratio between two boxes).
+pub const GPU_RUNGS_OFF: &[RungOff] = &[
+    RungOff {
+        profile: "rtx-4090",
+        rung: "async",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.368/3.027/28.393 vs off 0.359/2.823/25.554 ms, \
+               -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; _exact with fma-regs on \
+               (fma-regs-rtx-4090.txt) cp.async 0.508/4.437/39.162 vs register staging 0.492/4.245/37.149 ms, \
+               -run1.txt 0.520/4.520/39.002 vs 0.502/4.249/36.698 ms; kept under-filled (_c n=1024 on 0.070 vs \
+               off 0.101 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 0)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "warp",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-4090-confirm.txt _c n=2048/4096/8192 on 0.362/2.843/26.796 vs off 0.355/2.813/25.311 ms; \
+               arch-rungs-rtx-4090.txt (unroll on) on 0.359/2.823/25.554 vs off 0.364/2.863/25.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 1)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "ldmatrix",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 2)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.067 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 3)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.068 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 4)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "async",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "arch-rungs-h100-pcie.txt _c n=1024..8192 on 0.146/0.717/4.188/37.655 vs off 0.139/0.675/3.889/33.640 ms; \
+               _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 5)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "min-blocks",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-rungs-h100-pcie.txt _c n=1024 on 0.139 vs off 0.122 ms (v2/v4/v5/v6-h100*.txt the same sign); \
+               kept filled (n=2048/4096/8192 on 0.675/3.889/33.640 vs off 0.793/4.753/41.168 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 6)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "wide-fma",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "fma-regs-h100-pcie.txt register staging n=2048/4096/8192 _c on 0.795/4.054/33.097 vs off \
+               0.654/3.851/33.608 ms, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 7)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 8)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "affine",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; integrated-h100-pcie-confirm.txt _exact \
+               n=2048/4096/8192 off 1.08x/1.20x/1.23x faster than on; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 9)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms; integrated-h100-pcie.txt \
+               _c n=1024 on 0.921x of off; kept filled with min-blocks off (integrated-h100-pcie-confirm.txt _c \
+               n=2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 10)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pad",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
+               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; base-h100-pcie.txt / -confirm.txt \
+               (S54) _exact n=2048/4096/8192 OFF/ON cuBLAS-normalized 0.889/0.855/0.860 vs 0.884/0.842/0.825 (ms in \
+               the files); ON under-filled since (n=1024 1.037 vs 1.031, disjoint in both); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 11)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "min-blocks",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "integrated-h100-pcie.txt (with idx32+pad, the cap spills 8-16 B) _c n=2048/4096/8192 on \
+               0.656/3.950/36.832 vs off 0.618/3.729/37.530 ms, _exact on 1.118/6.521/57.781 vs off \
+               1.089/6.366/58.483 ms; kept under-filled on the exact face (n=1024 on 0.193 vs off 0.213 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 12)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "warp",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "integrated-h100-pcie.txt _c n=1024 on 0.139 vs off 0.136 ms; kept filled (n=2048/4096/8192 on \
+               0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 13)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "warp-fill",
+        fill: Fill::Partial,
+        face: Face::Contract,
+        cite: "arch-select-h100-pcie.txt / base-h100-pcie-verify.txt (S54) _c n=1024 on 0.1512 / 0.1524 vs off 0.1445 / \
+               0.1464 ms (cuBLAS-normalized OFF/ON 0.952 / 0.957, disjoint in both); kept on the exact face (on 0.2144 / \
+               0.2163 vs off 0.2192 / 0.2214 ms, 1.025 / 1.028, disjoint in both). S64 class split Under -> Partial \
+               (s64/warp-fill/h100-pcie/results-h100-pcie.txt, mlp_bench two processes ABBA, bit-exact): at 0 warps \
+               per scheduler the residual MLP's contract kernels ON 0.1501/0.1500 vs OFF 0.3726/0.3724 ms (d1024) and \
+               0.0332/0.0332 vs 0.1027/0.1028 ms (d256), null 0.000/0.001; SASS: OFF 8x8 tile, 32-thread blocks, 254 \
+               regs, 0.56/1.12 resident warps per SM; ON 4x4, 2.25/4.49",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "arch-rungs-rtx-5090.txt _c n=2048/4096/8192 on 0.320/2.346/20.277 vs off 0.315/2.328/19.542 ms, \
+               -confirm.txt on 0.358/3.043/27.908 vs off 0.352/2.991/27.069 ms; kept under-filled (n=1024 on 0.074 \
+               vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 15)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide-fma",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "fma-regs-rtx-5090.txt _c register staging n=2048/4096/8192 on 0.344/3.194/26.885 vs off \
+               0.348/2.947/28.434 ms, -run1.txt on 0.313/2.592/19.681 vs off 0.311/2.360/19.382 ms (4096 disjoint); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 16)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact cp.async n=1024..8192 on 0.076/0.588/4.920/40.005 vs off \
+               0.076/0.586/4.907/40.004 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 17)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "affine",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact cp.async n=2048/4096/8192 on 0.588/4.920/40.005 vs off \
+               0.580/4.876/39.878 ms; kept under-filled (n=1024 on 0.076 vs off 0.084 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 18)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pad",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "fma-regs-rtx-5090.txt _exact register staging n=2048/4096/8192 on 0.545/4.446/39.511 vs off \
+               0.541/4.613/38.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 19)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.074 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 20)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.078 ms, ranges overlap, one session: \
+               not established; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 21)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "warp-fill",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "warp-fill-rtx-5090.txt _tf n=2048 on 0.2314 vs off 0.2252 ms, disjoint; _c and _exact PTX \
+               byte-identical at every filled size; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 22)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-rtx-4090.txt decode_1024_256 wall, rung on (resident yields) 1589/1568 ms vs off \
+               (resident takes the loop) 905/886 ms exact/contract, 3 procs, disjoint; against S52 round trips the rung \
+               measured 1.57/1.65x (retain-delta-rtx-4090.txt) — resident is the better arm; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 23)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-h100-pcie.txt decode_1024_256 wall, rung on (resident yields) 1756/1906 ms vs off \
+               (resident takes the loop) 1109/1144 ms exact/contract, 3 procs; against S52 round trips 1.53/1.50x \
+               (retain-delta-h100-pcie.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 24)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "integrated-rtx-5090.txt (with warp-fill's 4x4 tile) n=1024 _c on 0.0635 vs off 0.0573 ms, _exact on \
+               0.0737 vs off 0.0676 ms, disjoint; before warp-fill it paid (arch-rungs-rtx-5090.txt n=1024 on 0.074 vs \
+               off 0.092 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 25)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "integrated-rtx-5090.txt _tf n=1024 on 0.0492 vs off 0.0389 ms, disjoint; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 26)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "integrated-rtx-5090.txt decode_1024_256 wall, rung on (resident yields) 825/847 ms vs off \
+               (resident takes the loop) 630/616 ms exact/contract, 3 procs, disjoint; against S52 round trips \
+               1.63/1.63x (retain-delta-rtx-5090.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 27)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wide",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "base-rtx-5090.txt / base-rtx-5090-confirm.txt (S54) _tf n=2048/4096/8192 OFF/ON cuBLAS-normalized \
+               0.981/0.993/1.006 vs 0.982/0.999/1.031 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 28)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "affine",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.996 vs 1.019; _exact n=1024 1.041 vs 1.006 (ms in the files): no size ON-faster in both sessions; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 29)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "async",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.906/0.896/0.928 vs 0.907/0.897/0.879; _exact n=2048/4096/8192 0.936/0.958/0.994 vs 0.925/0.930/0.958; _c n=1024 0.897 vs 0.878; _exact n=1024 1.000 vs 0.951 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 30)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.993/1.004/0.997 vs 1.000/1.005/0.995; _exact n=1024 1.003 vs 0.996 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 31)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: arch-select-rtx-3090-table.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 32)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "interleave",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 1.000; _exact n=1024 1.003 vs 0.991 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 33)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "ldmatrix",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 34)",
+    },
+    // S54 arch-select: the FMA tile takes `.minnctapersm` under register
+    // staging on both faces (exact n=1024 1.032 / 1.094 / 1.090, the first
+    // against the shipped bench's null repeat; arch-select-rtx-3090-table.txt exact
+    // n=1024 1.108, contract n=2048/8192 0.9933 / 68.68 ms vs old 1.0445 /
+    // 70.80), the TF32 `mma` kernel does not — the third face key.
+    RungOff {
+        profile: "rtx-3090",
+        rung: "min-blocks",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized: _tf n=1024 \
+               0.890/0.890/0.890 (ms 0.0993 shipped vs 0.1116 ON, cuBLAS 0.0881, both sessions), n=2048/4096/8192 \
+               0.997/1.002/1.000, 1.000/0.993/1.000, 0.994/0.994/1.006: never ON-faster; FMA face ON (_c n=1024 \
+               1.034/1.014/1.041, n=2048 1.057/1.052/1.086, n=8192 1.086/1.070/1.046; arch-select ms n=2048 0.8745 \
+               vs 0.8325, n=8192 51.971 vs 48.936); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 35)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "warp",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions; on warp-fill's tile it paid under-filled contract (arch-select-rtx-3090.txt / -verify2 / -verify 1.055/1.036/1.056); with warp-fill off there (S54 arch-select) it changes no text; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 36)",
+    },
+    // S54 arch-select, one coordinate step for the under-filled FMA class: four
+    // single flips each paid on the warp-fill tile (idx32 ON 1.070/1.050/1.071,
+    // warp ON 1.055/1.036/1.056, unroll OFF 0.948/0.959/0.940, min-blocks ON
+    // 1.033/1.014/1.041) but all of them with warp-fill OFF ran 6% slower than
+    // the S54 table (arch-select-rtx-3090-table.txt _c n=1024 0.1659 vs old 0.1546 ms;
+    // on that table idx32 ON 0.944, unroll OFF 0.931): warp-fill alone ships.
+    RungOff {
+        profile: "rtx-3090",
+        rung: "warp-fill",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
+               every session: _c n=1024 0.935/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
+               n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; arch-select-rtx-3090-table.txt 0.0881 vs \
+               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign). S64: open, \
+               the Partial split measured and not taken (s64/warp-fill/rtx-3090/results-rtx-3090.txt, \
+               s64/endcheck/rtx-3090/results-rtx-3090.txt, two processes ABBA): at 0 warps per scheduler the residual \
+               MLP's contract kernels ON 0.1630/0.1629 vs OFF 0.3092/0.3092 ms (d1024), 0.0338/0.0338 vs \
+               0.0707/0.0715 ms (d256), 128x2048x7168 _c ON/OFF 0.523, but the default and _rc faces 1.179 / 1.058 \
+               (null 0.003): the filled tile lowers the split count (atomic S 8 -> 2, workspace S 4 -> 2)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.812 vs 1.009 (ms in \
+               the files): no size ON-faster in both sessions; kept filled: _tf n=2048/4096/8192 1.011/1.017/1.023 vs \
+               1.008/1.010/1.004, and with it off base-rtx-3090-verify.txt _tf 2048/4096 0.781/5.358 vs 0.741/5.129 ms \
+               (cuBLAS 0.681/5.141 vs 0.677/5.090); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 38)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "wide-fma",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.959/0.936/0.991 vs 0.956/0.904/0.961 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 39)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-rtx-3090.txt decode_1024_256 wall, rung on (resident yields) 2.715/2.697 s vs off (resident takes \
+               the loop) 1.473/1.473 s exact/contract, 3 procs; base-rtx-3090-confirm.txt 1.386/1.396 vs 0.935/0.942 s (ms: \
+               the files' trace totals); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 40)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "affine",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 1.004/1.006/0.991 vs 1.019/1.012/0.986; _exact n=1024 0.997 vs 0.993 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "async",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.940/0.908/0.874 vs 0.951/0.917/0.883; _exact n=2048/4096/8192 0.790/0.894/0.901 vs 0.810/0.910/0.909; _c n=1024 0.862 vs 0.867; _exact n=1024 0.950 vs 0.940 (ms in the files): no size ON-faster in both sessions",
+    },
+    // S54 arch-select closes the open filled-contract row: two sessions on the
+    // shipped table (async and wide-fma off) put idx32 ON there.
+    RungOff {
+        profile: "a100",
+        rung: "idx32",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.979/0.996/0.997 vs \
+               1.008/1.003/1.004; _exact n=1024 0.993 vs 0.977 (ms in the files); arch-select-a100.txt / \
+               base-a100-verify3.txt _exact n=1024 0.900 / 0.899, n=2048/4096/8192 0.987/0.992/0.992 vs \
+               1.000/0.992/0.991: never ON-faster",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "idx32",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _c n=1024 0.987 / 0.989: never \
+               ON-faster; ON filled since (_c n=4096 1.015 / 1.013, n=8192 1.015 / 1.018; ms n=4096 8.153 / 7.904 \
+               shipped vs 8.034 / 7.800 ON, n=8192 62.890 / 59.666 vs 61.810 / 58.606)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "interleave",
+        fill: Fill::Under,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 0.993; _exact n=1024 1.009 vs 0.989 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "min-blocks",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized (cp.async): no size ON-faster in both sessions (_c n=2048/4096/8192 1.001/1.010/1.008 vs 1.013/1.001/1.002, ms in the files); with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 1.018/1.033/1.041 then 1.000/1.000/1.000, _exact 1.001/0.999/0.998 then 1.006/1.000/1.000: no stable sign; ON under-filled (_c n=1024 1.119 then 1.110, _exact 1.084 then 1.080)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "unroll",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.856/0.936/0.940 vs 0.871/0.941/0.944; _exact n=1024 1.018 vs 1.007 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "warp",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.991 vs 0.987; _exact n=1024 1.001 vs 0.991 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 0.986/0.970/0.966 (verify2: the on-warp contract kernel is byte-identical), _exact 0.988/0.995/0.995 then 1.016/1.006/1.005: no stable sign",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "wide",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.986 vs 0.962 (ms in the files): no size ON-faster in both sessions",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "wide-fma",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions; S54 arch-select (arch-select-a100.txt / base-a100-verify3.txt): alone +1.0-1.7% (_c n=4096/8192 1.010/1.013 vs 1.010/1.017), but with idx32 ON (which ships) it costs: on-fma-regs (= idx32 + wide-fma on this face) n=4096 8.195 / 7.942 ms vs idx32 alone 8.034 / 7.800 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "ldmatrix",
+        fill: Fill::Under,
+        face: Face::Tf32,
+        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _tf n=1024 0.967 / 0.951 (ms 0.0840 / \
+               0.0840 ON vs 0.0881 / 0.0799 OFF, cuBLAS 0.0471 / 0.0481 vs 0.0512 / 0.0481); kept filled (n=2048/4096/8192 \
+               1.049/1.020/1.024 vs 1.017/1.024/1.022)",
+    },
+    // S54 `rowfold-layout` (the reader-chosen store order): the strided fold the
+    // row-major store leaves costs 0.01–0.1 ms at 4096 (L1 serves each sector to
+    // the next 7 steps), and the column-major store costs the FMA tile more. Read
+    // on the device clock (traced kernel sums, site + fold, column-major vs
+    // row-major): the rung changes only kernels, and the probes' own clock is
+    // host-noise-bound at that size (probe_rungs.py).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-3090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 9.081 vs 8.994, 9.856 vs 9.790; _c 4096 5.637 vs 5.624, 5.936 vs 5.929; 2048 within 0.4%: no \
+               size faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 52)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-rtx-5090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 3.478 vs 3.432, 3.378 vs 3.330; _c 4096 2.216 vs 2.153, 2.161 vs 2.088 (2048 2.5-2.8% faster, \
+               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class); S64 evidence: open, re-measured ON slower, no static cost (benches/results/evidence/s64/judge.tsv row 53)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "rowfold-h100-pcie.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 7.851 vs 6.451, 9.101 vs 7.615; _c 4096 4.033 vs 3.760, 4.735 vs 4.441; 2048 the same sign; \
+               -v2.txt / -v2-confirm.txt too (_exact 4096 8.97 vs 7.52 ms): the HBM part pays 7-22% for the \
+               column-major tile store; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 54)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Exact,
+        cite: "rowfold-rtx-4090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
+               4096 4.189 vs 4.018, 4.267 vs 4.160 (the exact tile pays 4-6% for the store); kept on the contract \
+               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 55)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "rowfold-layout",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "rowfold-a100.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _c 4096 \
+               8.326 vs 8.162, 10.694 vs 10.488; kept on the exact face: _exact 2048 2.392 vs 2.428, 3.080 vs \
+               3.120 and 4096 15.479 vs 15.568, 19.911 vs 20.027 ms",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "retain-delta",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "base-a100.txt decode_1024_256 wall, rung on (resident yields) 2.229/2.233 s vs off (resident takes the \
+               loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
+               files' trace totals)",
+    },
+    // S54 `l2-raster` (benches/results/gpu/memory/l2-raster/l2-raster-tables.md). `raster`'s derivation groups
+    // only where one block's panels leave the L2 (the 3090 at 8192); there it measured no stable
+    // sign. S56 removes the disputed 5090 `l2-gate` OFF override: integrated a2/b Contract FMA
+    // lacks a repeatable >1% kernel gain. TF32/8192 retains ~1.5% null-corrected median gains,
+    // but all raster/gate distributions overlap, below the declared conservative acceptance bar.
+    // The derived gate and forced measurement arms remain; no whole-program gain is claimed.
+    // s56-selection-rtx-5090-{a2,b}.txt and docs/performance/gpu/validation/architecture-selection.md preserve
+    // that counterevidence. L2-window is OFF on all measured profiles after the S56 iteration check.
+    RungOff {
+        profile: "rtx-3090",
+        rung: "raster",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-3090-run2.txt / -run3.txt mm_8192 OFF/ON cuBLAS-normalized exact 0.986 / 1.029, \
+               contract 0.992 / 1.017, TF32 0.991 / 0.956 (ON ms 92.743/55.147/34.632 vs OFF 91.632/54.659/34.341; \
+               116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 58)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-3090*.txt: no probe has an operand within the 6 MB L2 (pt_* at 2048 are 16 MB), so no \
+               probe row has a window arm (0 ms measured): unmeasured, not shipped; S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 59)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-a100{,-confirm,-run2,-run3,-run5}.txt pt_{mlp,mlp2,diamond}_2048 traced kernel ms off/on: \
+               25 of 30 cells <= 1.000, none > 1.01 in every session (mlp2_2048_c 0.994/0.998/0.995/0.965/0.994)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-4090-run2.txt / -run4.txt / l2-raster-rtx-4090.txt traced kernel ms off/on: \
+               diamond_2048_c 0.933 / 0.939 / 0.959, mlp2_2048_c 0.938 / 0.949 / 0.954 (the window costs on \
+               contract); exact 0.977-1.003; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 61)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "l2-raster-rtx-5090{,-run2,-run3,-run4,-run5}.txt traced kernel ms off/on: 60 cells 0.976-1.005, \
+               none > 1.01 in any session (diamond_2048_c 0.988/0.989/0.976/0.991/0.986); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 62)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "l2-window",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "s56-selection-h100-pcie.txt integrated 15-rep OFF/ON iteration, contract 2048: diamond \
+               1.934879/1.969309, mlp2 2.589975/2.643185, mlp 1.291543/1.357854 ms (overlapping ranges). \
+               Traced kernels 0.998/1.007/1.007x do not establish an iteration win; 4096 arms are identical. \
+               Prior l2-raster-h100-pcie{-run2,-run3}.txt likewise lacks a stable iteration win. \
+               Disputed S54 selection fails initial acceptance; OFF is not claimed faster on every host; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 63)",
+    },
+    // Historical S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`) decisions used
+    // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
+    // own `load_ms` (context + module: 170–790 ms and, on the H100s, ±200 ms between processes,
+    // which no arm changes). ON where OFF/ON > 1.01 in both sessions (two boxes); the process wall
+    // is in the files beside it. `delta-h2d` and `lane-stride` measured ON on all five parts.
+    // S56 rechecks the disputed H100 choice per face on untraced process wall. Traced kernel
+    // savings are diagnostic, not proof of a process speedup; the initial S54 acceptance bar applies.
+    // cpu-gpu-boundary: retention ships ON on the H100 too — its S54/S56/S65 row is removed. Shipped vs
+    // `.on-retain-resident`, ABBA x5, program iter ms (benches/results/evidence/cpu-gpu-boundary/report.md,
+    // h100-pcie): causal 0.922 (null 0.020), prefill 0.949 (null 0.040), decode 0.940 (null 0.077, inside it,
+    // not slower); the flow sweep measured causal 0.678 / prefill 0.787 (null 0.027 / 0.025): the same sign in
+    // two sessions. Explained by the OFF trace (h100-pcie/prof-h100-pcie.tgz) and the ON emission: OFF rebuilds
+    // K/V in full every trip (stream-K tile 8065b046, 228 CTAs, 2048 x 11.6 us = 23.7 ms in causal, 23.8 in
+    // decode) plus 2048-3072 1 MB memsets (2.9 / 4.5 ms); ON emits the one-row site 3881eb4b (1 CTA, 8 LDG +
+    // 4 FFMA per hot-loop trip). Each saving (causal 15.1, prefill 5.0, decode 4.2 ms) is below the work it
+    // removes. The win shrank from the flow sweep because nest-cell keeps causal's K/V readers on the device:
+    // OFF no longer copies 2148 MB D2H per run (9.2 MB now).
+    // S65: with the loop residue gone (by-ref), retention ships ON on the 4090 and the 5090 — the S54
+    // rows for both are removed. decode_1024_256 shipped / retain-resident ON, 30 interleaved reps:
+    // 4090 40.58 vs 33.05 ms, ON/OFF 0.824 (per rep 1.192..1.252 faster, null 0.050); 5090 42.71 vs
+    // 36.69 ms, 0.857 (1.122..1.191, null 0.037). Explained by the traced kernels: the 1024-row K/V
+    // tile site (2048 launches, 22.34 / 23.69 ms) becomes its one-row site (2046 launches, 14.94 /
+    // 17.49 ms); benches/results/evidence/s65/{rtx-4090,rtx-5090}.
+    // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
+    // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
+    // `streams` ships ON (no row) on the A100, measured on the device-only shape
+    // (pt_twin, two independent sites): A100 n=512 one stream 1.040/0.972, 1.054/0.960, 0.518/0.486
+    // vs streams 1.000/0.937, 0.969/0.898, 0.483/0.437 ms and n=2048 (last waves merge) 7.936/5.030,
+    // 7.866/5.083, 6.039/3.807 vs 6.229/3.818, 6.204/3.716, 4.562/2.653 ms (streams-a100-confirm.txt,
+    // -final.txt, -shipped.txt). The disputed 5090 choice is superseded by the integrated S56
+    // comparison below; traced kernels serialize streams and cannot establish overlap.
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-3090-confirm.txt / -final.txt pt_twin_512 (device-only) on 0.971/0.941 vs off \
+               0.967/0.945 ms, on 0.706/0.700 vs off 0.711/0.696 ms: no effect in two sessions; every probe with a \
+               host join slower on streams (streams-rtx-3090.txt, -confirm.txt: diamond_512 0.82-0.88x, mlp2_512 \
+               0.62-0.84x); S62 after the dead-output DCE (s62/runtime-measurements/rtx-3090/summary-rtx-3090.md, \
+               two sessions): shipped/on-streams iter 0.02-0.40, 12 of 12 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 67)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-4090-final.txt pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms, pt_twin_1024 on \
+               0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
+               diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x); \
+               S62 after the dead-output DCE (s62/runtime-measurements/rtx-4090/summary-rtx-4090.md, \
+               two sessions): shipped/on-streams iter 0.18-0.31, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 68)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "s56-selection-rtx-5090-a2.txt / -b.txt, independent machines 55053/55265, 15 interleaved reps: \
+               all 16 changed probe/face cells per host favor OFF with disjoint iteration ranges. \
+               mlp2_4096 OFF/ON exact 0.836/0.791, contract 0.765/0.702; twin_4096 a2 exact \
+               7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established; \
+               S62 after the dead-output DCE \
+               (s62/runtime-measurements/rtx-5090/summary-rtx-5090.md, two sessions): shipped/on-streams iter \
+               0.11-0.19, 8 of 8 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 69)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "streams",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_twin_512: streams-h100-final.txt (H100 SXM, no PCIe box left) on 0.752/0.739 vs off \
+               0.763/0.762 ms, one session inside the H100 noise floor; streams-h100-pcie-confirm.txt on \
+               4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established; \
+               S62 after the dead-output DCE \
+               (s62/runtime-measurements/h100-pcie/summary-h100.md, H100 PCIe + H100 SXM sessions): shipped/on-streams \
+               iter 0.07-0.89, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 70)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048 (copies in the loop pinned): streams-rtx-3090.txt on 130.755/126.012 vs off \
+               131.314/125.685 ms, -confirm.txt on 107.350/103.422 vs off 103.603/98.630 ms, -final.txt on \
+               110.819/106.843 vs off 114.186/108.992 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 71)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-rtx-4090.txt on 108.529/105.036 vs off 105.843/105.855 ms, -final.txt on \
+               69.409/68.007 vs off 70.917/69.474 ms: no stable sign (the session-1 box copies pageable at the pinned \
+               rate, 13.3 vs 13.4 GB/s); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 72)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-h100-pcie.txt on 75.623/69.702 vs off 72.974/73.441 ms, -confirm.txt on \
+               70.811/69.016 vs off 72.437/69.029 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 73)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-a100.txt on 97.927/93.810 vs off 103.262/95.645 ms, -confirm.txt on \
+               100.516/90.376 vs off 105.920/94.261 ms, -final.txt on 128.398/119.525 vs off 129.161/118.392 ms: \
+               positive on the two boxes whose pageable copy runs at 0.56-0.84 of pinned, negative on the one at \
+               0.98 — a host fact, not the part's",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pinned",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "pt_loop_2048: streams-rtx-5090.txt on 77.545/75.830 vs off 92.102/88.746 ms, -confirm.txt on \
+               50.086/48.318 vs off 58.865/57.286 ms (pageable 9-19 GB/s vs pinned 26-52), -final.txt on \
+               57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 75)",
+    },
+    // cpu-gpu-boundary `async-h2d` (and `stage`, inert without it): no win on any part — the S63 rule
+    // (no win is a row). benches/results/evidence/cpu-gpu-boundary/report.md, shipped vs `.off-async-h2d`
+    // over 25 programs, ABBA x5, program iter ms: 0 faster / 0 slower beyond each arm's null; smoke
+    // (smoke-rtx-4090/ratios.txt, 32 arms) 0 faster, ew_4096 contract 1.108 slower. Explained by the
+    // movement: the only in-clock uploads are causal/prefill/decode's 1 KB row per trip (1024 x 0.3-1.0 us,
+    // nsys) and each trip ends in a copy-out the host reads, so no upload wait is left to hide; `stage`
+    // measured 1.00 the same way (4090 0.970-1.038, 5090 0.995-1.102, H100 0.913-1.105, 3090 0.970-1.161).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-4090/results-rtx-4090.txt.gz: ON/OFF median 1.001 (0.963 loopmm .. 1.031 \
+               ew_4096), 0/0 beyond null, iter summed ON 281.5 vs OFF 281.7 ms; smoke-rtx-4090/ratios.txt ew_4096 \
+               contract 1.108 slower",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-5090/results-rtx-5090.txt.gz: ON/OFF median 1.003 (0.997 softmax_rows .. \
+               1.157 ew_4096, null 0.147), 0/0 beyond null, iter summed ON 228.0 vs OFF 228.0 ms",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/h100-pcie/results-h100-pcie.txt.gz: ON/OFF median 1.001 (0.958 firew_rowsum .. \
+               1.077 attn, null 0.124), 0/0 beyond null, iter summed ON 436.1 vs OFF 433.7 ms",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "async-h2d",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "cpu-gpu-boundary/rtx-3090/results-rtx-3090.txt.gz: ON/OFF median 0.999 (0.983 attn .. 1.075 \
+               causal, null 0.134), 0/0 beyond null, iter summed ON 387.4 vs OFF 372.9 ms",
+    },
+    // recurrence-precision `fold-lanes`: its emission differs only on the 4090 (the one part whose
+    // rowsum keeps a standalone rowfold, cpu-gpu-boundary `tree-gate`), and there the rowfold reads a
+    // column-major operand, so one thread a row is already coalesced and the warp-a-row form strides
+    // its lanes across columns. Explained by the fold kernel alone (probe_kernels, 2 reps each).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "fold-lanes",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "recurrence-precision/sweep-rtx-4090/results-rtx-4090.txt.gz: ON/OFF rowfold kernel pt_rowsum_2048 \
+               0.024/0.023 vs off 0.020/0.020 ms, pt_rowsum_4096 0.088/0.088 vs off 0.075/0.075 ms; program \
+               OFF/ON 0.98 (null 1.3%) / 0.99 (null 0.6%), smoke-rtx-4090/ratios.txt 1.004 / 0.994: no \
+               positive sign",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "pdl",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-h100-pcie.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.211/1.174 vs off \
+               1.243/1.269 ms, then 1.936/1.808 vs 1.716/1.931 ms; pt_diamond_2048 10.037/9.153 vs 10.416/8.907, \
+               then 20.825/24.517 vs 26.320/24.602 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 76)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "pdl",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "streams-rtx-5090.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.031/1.069 vs off \
+               1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
+               6.119/5.545 vs 6.122/5.549 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 77)",
+    },
+    // S62 ordered tile geometry: benches/results/gpu/s62/geometry/v2/<part>/results-<part>.txt and
+    // -pass2.txt (ABBA), OFF/ON per pass, each bench normalized by its own cuBLAS leg; no effect
+    // within max(1%, that session's largest null-arm deviation).
+    RungOff {
+        profile: "rtx-5090",
+        rung: "wave-gate",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _c 16x18432x7168 OFF/ON 0.223/0.225: on 2.0659 ms (the \
+               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 78)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _exact 16x18432x7168 OFF/ON 0.988/0.994, no effect within \
+               the session null 7.9%: on 0.3420 vs off 0.3420 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 79)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
+               128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
+               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 80)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.965/0.963, _exact 0.963/0.965 \
+               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 81)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x2048x7168 OFF/ON 1.013/1.014, no effect within the \
+               session null 2.6% (ms in the files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 82)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 \
+               (disjoint; ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 83)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "wave-gate",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint; ms in the \
+               files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 84)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935; \
+               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 85)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 \
+               (ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 86)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-fit",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
+               no stable gain (null 4.3%; ms in the files); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 87)",
+    },
+    // S62 `asyncstage` (`benches/results/gpu/s62/asyncstage/`, r1 = round1/, r2 = round2/ on another
+    // box): its kernel gains are DRAM-latency hiding — with L2 flushed before every launch it wins on
+    // every part but the 3090, with operands left in L2 (`tile_bench --warm`) the signs split, and
+    // the composed residual MLP (operands device-produced, one iteration) is slower on all four. The
+    // fact that separates the cells (where an operand is read from: DRAM or L2) is not one the
+    // launch consumes yet, so the rung ships OFF in every class.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-5090.txt: flushed L2 wins (r1 _c 16x2048x7168 on 0.1065 vs off 0.1167 ms), \
+               warm L2 loses (r2 l2=warm _exact 128x1024x1024 on 0.0348 vs off 0.0287 ms); pt_rmlp256x512_128 \
+               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 88)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1/r2 results-rtx-4090.txt: flushed _c n=1024 on 0.0707 vs off 0.0666 ms (r1), warm L2 _c \
+               16x2048x7168 on 0.1208 vs off 0.1116 ms (r2); pt_rmlp256x512_128 _exact iter on 0.1179 vs off \
+               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 89)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-h100-pcie.txt (an H100 SXM box): flushed L2 wins 1.216-1.838 on every cell, but \
+               pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585 ms, _exact 0.2812 vs 0.1876 ms; \
+               pt_rmlp1024x2048_128 _exact 0.3402 vs 0.2914 ms; r2 results-h100-pcie.partial-50562987.txt (an \
+               H100 PCIe box): flushed _c n=1024 on 0.1724 vs off 0.1292 ms; r2 partial-41555537 (SXM) warm L2 \
+               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 90)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "r1 results-rtx-3090.txt: flushed L2 _c 16x2048x7168 on 0.3328 vs off 0.3113 ms, _c n=1024 \
+               0.2028 vs 0.1567 ms, _exact 128x2048x7168 0.5396 vs 0.4055 ms; pt_rmlp256x512_128 _exact iter \
+               on 0.1421 vs off 0.0913 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 91)",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "asyncstage",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "not measured on an A100: held OFF with the four measured parts, whose composed residual MLP is \
+               slower with it on every one (r1 results-rtx-4090.txt pt_rmlp256x512_128 _exact iter on 0.1179 vs \
+               off 0.0759 ms)",
+    },
+    // S62 `splitk` (ADR-0040): ON beats its ordered OFF arm beyond the box's null
+    // in every other split cell on all four parts, both step faces
+    // (`benches/results/gpu/s62/splitk-reassoc/<part>/results-<part>.txt`).
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk",
+        fill: Fill::Filled,
+        face: Face::Exact,
+        cite: "s62/splitk-reassoc/rtx-3090/results-rtx-3090.txt mm_16x2048x7168_r (S=4, the class's only split \
+               cell): ON 0.5458/0.5396 vs off-splitk 0.4813/0.4792 ms, ON/OFF 1.134/1.126 against a null of \
+               0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 93)",
+    },
+    // S62 integration (`benches/results/gpu/s62/integrated/<part>/results-<part>.txt`: every S62
+    // item merged, each gate/partial rung left out one at a time, two tile_bench processes ABBA
+    // and 30 whole-program processes). A rung ships OFF in a (fill, face) class only where every
+    // cell it changes there ran faster without it, beyond that run's null; the reassociation
+    // arms (`_r`, `_rc`) count in their step face's class (`Face::of`).
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-fit",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096_c (with cell-fill merged the \
+               fitted 8-block grid now loses to the cell tile): ON 0.4332/0.4327 vs off-row-fit 0.1018/0.1011 ms \
+               (null 0.001); the class's other cells unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 94)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off \
+               0.0947/0.0944 ms, _r ON 0.0712/0.0703 vs off 0.0429/0.0420 ms (kernel null 0.010); \
+               pt_rm_m128_d1024_h2048 iter ON 0.4060 vs off 0.2940 ms, pt_rm_m128_d256_h512 0.2390 vs 0.1937 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 95)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "fill-rows",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off-fill-rows \
+               0.0907/0.0904 ms (null 0.010; the cell tile takes the site); the class's whole programs unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 96)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "panel-regs",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/confirm/h100-pcie/results-h100-pcie.txt (with the three rows above, the class's \
+               kernel cells take the cell tile, which panel-regs leaves unchanged): pt_rm_m128_d1024_h2048 iter ON \
+               0.1865 vs off 0.1783 ms, pt_rm_m128_d256_h512 0.1022 vs 0.0684 ms (30 processes each, null \
+               0.001/0.003); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 97)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk",
+        fill: Fill::Under,
+        face: Face::Exact,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt mm_16x1024x4096_r (the class's only split cell): ON \
+               0.0758/0.0676 vs off-splitk 0.0655/0.0594 ms, ON/OFF 1.157/1.138 (kernel null 0.016); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 98)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "grid-share",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3701 \
+               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1591 ms (30 processes each, null 0.019/0.034); the class's \
+               kernel cells unchanged; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 99)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "panel-regs",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3668 \
+               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1574 ms (30 processes each, null 0.019/0.034); the class's \
+               kernel cells unchanged; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 100)",
+    },
+    // S63 (ADR-0040 D5) the default face's realizations, `benches/results/gpu/s63/default-float/<part>/
+    // results-<part>.txt`: per cell the ON arm against the next realization down (`.off-<rung>`), two
+    // tile_bench processes ABBA, L2 flushed, every arm inside ADR-0040 D2's bound first. A rung stays
+    // ON in a (fill, Contract) class only where no cell it changes there is slower than its OFF arm
+    // beyond that run's null and one is faster beyond it (the pre-registered rule): one loss, or no
+    // win, is a row — the class's wins it forgoes are cited with it.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "streamk",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-5090/results-rtx-5090.txt mm_16x2048x7168: ON 0.0860/0.0860 vs off-streamk \
+               0.0819/0.0819 ms, ON/OFF 1.050/1.050, null 0.012; forgone 128x2048x7168 0.851/0.863; \
+               16x1024x4096 inside null (0.958/1.000); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 101)",
+    },
+    RungOff {
+        profile: "rtx-4090",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-4090/results-rtx-4090.txt mm_16x18432x7168 (the only cell it changes): ON \
+               0.6537/0.6543 vs off-streamk 0.6185/0.6176 ms, ON/OFF 1.057/1.059, null 0.002; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 102)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt mm_4096x4096x4096: ON 5.0664/5.0721 vs \
+               off-streamk 4.4731/4.4743 ms, ON/OFF 1.133/1.134, null 0.000; forgone 16x18432x7168 0.748/0.748; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 103)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "splitk-atomic",
+        fill: Fill::Any,
+        face: Face::Contract,
+        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt against the workspace split, no win in either \
+               class: mm_16x1024x4096 (under) 0.0506/0.0508 vs 0.0510/0.0508 ms (0.992/1.000, null 0.004), \
+               mm_16x2048x7168 (filled) 0.0977/0.0978 vs 0.0981/0.0980 ms (0.996/0.998, null 0.002); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 104)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streamk",
+        fill: Fill::Under,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_128x2048x7168 against the atomic split: ON \
+               0.3338/0.3328 vs 0.3205/0.3185 ms, ON/OFF 1.041/1.045, null 0.003; forgone 16x1024x4096 \
+               0.880/0.863; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 105)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "streamk",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 against the atomic split: ON \
+               0.1495/0.1485 vs 0.1198/0.1178 ms (1.248/1.261, null 0.007); mm_4096x4096x4096 7.1977/7.3185 vs \
+               7.0277/7.1127 ms (1.024/1.029, null 0.014); forgone 16x18432x7168 0.924/0.928; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 106)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "splitk-atomic",
+        fill: Fill::Filled,
+        face: Face::Contract,
+        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 (the only cell it changes) \
+               against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
+               win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
+    },
+    // site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's 4-byte `cp.async` digit copies and
+    // cell-by-cell digit store never ran locally (the emulator runs no `mma.sync`): OFF on every part no box has
+    // value-gated it on yet. Lifted on rtx-3090 by the site-geometry sweep: the forced-ON arm of
+    // convmc_8_64_56_3_tf32 is within its a-priori bound (K=576) and ON 0.1327 vs OFF 0.1671 ms (null 1.1 %), also
+    // ahead of the FFMA tile with `fit-first` off (0.1477 ms): 32 `mma.sync` + 54 `cp.async` replace the 1024-FFMA
+    // hot loop (sweep/rtx-3090/evidence-rtx-3090.tsv).
+    RungOff {
+        profile: "h100-pcie",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt: values within the bound \
+               (K=576), ON 0.07003 vs OFF 0.08518 ms (null 1.0 %), but the FFMA tile with `fit-first` off (its row \
+               below) runs 0.06797 ms: the mma.sync tile loses to the tile it replaces once that tile is fitted",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "tf32-radix",
+        fill: Fill::Any,
+        face: Face::Tf32,
+        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
+               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
+               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
+    },
+    // site-geometry judge — stopgaps, each citing its open item in docs/performance/evidence/site-geometry.md
+    // (a rung whose sign turns on a fact the launch does not read yet ships OFF only where it lost every measured
+    // program; the fact that separates its winners is the item).
+    // `row-split` (open G2): on these parts the one-row pass takes the atomic combine — a naive kernel with
+    // `atom.add`, 1-2 FMA in its hot loop vs 8 unrolled OFF, and 2 more zero launches per decode trip
+    // (host.calls.zero 8 vs 6); on h100-pcie (no `splitk-atomic`) it takes the workspace split S=128 and wins
+    // 1.41-1.56. The missing fact: an atomic combine's per-trip zero pass and S-way contention on a short row.
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-4090/results-rtx-4090.txt iter ON vs OFF: decode 36.08 vs 30.65, prefill 22.69 vs 19.53, gen \
+               21.95 vs 18.60, causal 43.97 vs 37.12 ms (null 0.4-2.8 %); site-geometry.md G2",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: decode 47.00 vs 34.95, prefill 24.95 vs 22.41 ms \
+               (beyond null); gen 24.77 vs 24.64, causal 48.15 vs 50.93 ms inside a 11-16 % null; site-geometry.md G2",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-split",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt iter ON vs OFF: decode 38.74 vs 32.85, prefill 27.71 vs 23.37, gen \
+               25.93 vs 22.30, causal 46.92 vs 40.21 ms (causal null 25 %, others <= 2.6 %); site-geometry.md G2",
+    },
+    // `fit-first` (open G4): the 4090 keeps it (convmc ON 0.0948 vs OFF 0.1107 ms, mm_16x18432x7168 1.053 vs
+    // 0.972 ms: mixed). The reshape pays where its grid stays balanced over the SMs (4090 convmc 196 blocks on 128
+    // SMs) and loses where it leaves most SMs one block (5090 convmc 196 on 170, 4090 16x18432 144 on 128) or keeps
+    // the grid and only cuts residency (2 vs 5-8 blocks per SM: 3090, H100).
+    RungOff {
+        profile: "rtx-5090",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: convmc_8_64_56_3 0.08566 vs 0.06729 ms (null 0.3 %), \
+               _c 0.1099 vs 0.08686 ms; site-geometry.md G4",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/h100-pcie/results-h100-pcie.txt ON vs OFF: pj_m16_n18432_k7168 0.6217 vs 0.5794 ms (null 0.4 %), \
+               mm_16x18432x7168 1.485 vs 1.392 ms; convmc _c 0.2069 vs 0.2107 ms (no null); site-geometry.md G4",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "fit-first",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt ON vs OFF: convmc_8_64_56_3 0.1653 vs 0.1461 ms (null 0.0 %), _c \
+               0.3296 vs 0.2579 ms, mm_16x18432x7168 1.038 vs 0.9816 ms (_c 0.8926 vs 0.9223); site-geometry.md G4",
+    },
+    // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
+    // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
+    // 0.71/0.60/0.52/0.77, softmax_rows_4096 0.88/0.92/0.88/0.93 (4090/5090/H100/3090). Open: rowsum_4096 on
+    // rtx-4090 1.06 (5090/H100/3090 inside null) — the lone tree-fold class needs its own gate, not a part row.
+    // Closed by cpu-gpu-boundary `tree-gate` (ships ON, no row): rtx-4090 rowsum_4096 ON/OFF 0.944 (null 0.004)
+    // ~ 1/1.056; it changes no other part's emission (cpu-gpu-boundary/report.md).
+];
+
+/// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
+/// the rows of the measured part with its architecture (`cuda-ada` ← the
+/// 4090's, `h100` ← the H100 PCIe's); with none, every rung is ON — the S52
+/// baseline the arms are measured against — until its own session adds rows.
+/// Ampere since S54: the RTX 3090 and the A100 (`a100` is the SXM4 part; its
+/// two sessions ran on an A100 PCIe and an A100 SXM4).
+pub const GPU_MEASURED: [&TargetProfile; 5] = [&RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100];
+
+/// The tensor-core tile geometry for one tile site on the TF32 face (S52):
+/// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
+/// shared-memory buffers. Derived by [`TargetProfile::gpu_mma_tile`].
+///
+/// A warp owns a `wm × wn` output tile of `mt × nt` m16n8 tiles; the block is
+/// `warps_y × warps_x` warps. Panels are row-major in shared memory with their
+/// rows padded (`pad_a`, `pad_b` words) so a fragment load hits 32 banks once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuMmaTile {
+    pub mt: u64,
+    pub nt: u64,
+    pub warps_x: u64,
+    pub warps_y: u64,
+    pub bk: u64,
+    pub stages: u64,
+    pub pad_a: u64,
+    pub pad_b: u64,
+    pub blocks_per_sm: u64,
+}
+
+/// Registers a tensor-core thread spends on addresses and loop state, beyond
+/// accumulators and fragments. Policy, read off ptxas reports (S52): the
+/// 64×32 kernel used 120 registers for 64 accumulators and 24 fragments.
+pub const MMA_ADDR_REGS: u64 = 32;
+
+/// `mma.sync.m16n8k8`'s shape — an ISA rule.
+pub const MMA_M: u64 = 16;
+pub const MMA_N: u64 = 8;
+pub const MMA_K: u64 = 8;
+
+impl GpuMmaTile {
+    pub fn wm(&self) -> u64 {
+        self.mt * MMA_M
+    }
+    pub fn wn(&self) -> u64 {
+        self.nt * MMA_N
+    }
+    pub fn bm(&self) -> u64 {
+        self.warps_y * self.wm()
+    }
+    pub fn bn(&self) -> u64 {
+        self.warps_x * self.wn()
+    }
+    pub fn threads(&self, warp: u64) -> u64 {
+        self.warps_x * self.warps_y * warp
+    }
+    pub fn lda(&self) -> u64 {
+        self.bk + self.pad_a
+    }
+    pub fn ldb(&self) -> u64 {
+        self.bn() + self.pad_b
+    }
+    /// 32-bit words one stage holds: the `bm × bk` A panel and the `bk × bn`
+    /// B panel, each at its padded row length.
+    pub fn stage_words(&self) -> u64 {
+        self.bm() * self.lda() + self.bk * self.ldb()
+    }
+    pub fn smem_bytes(&self) -> u64 {
+        self.stages * self.stage_words() * 4
+    }
+}
+
+/// `wgmma.mma_async.m64nNk8.f32.tf32.tf32`'s fixed sides — ISA rules. One
+/// instruction is issued by a warpgroup of [`WARPGROUP_WARPS`] warps.
+pub const WGMMA_M: u64 = 64;
+pub const WGMMA_K: u64 = 8;
+/// `N` runs over the multiples of 8 up to 256.
+pub const WGMMA_N_STEP: u64 = 8;
+pub const WGMMA_N_MAX: u64 = 256;
+pub const WARPGROUP_WARPS: u64 = 4;
+/// Registers a `wgmma` thread spends beyond accumulators and fragments —
+/// [`MMA_ADDR_REGS`]'s policy for this kernel, read off ptxas 12.8 (S53): the
+/// m64n256 kernel used 213 = 128 accumulators + 16 fragments + 69 (its
+/// `cp.async` addresses), rounded up to the 8-register allocation unit.
+pub const WGMMA_ADDR_REGS: u64 = 72;
+/// Stages the `wgmma` panel pipeline needs at least: one landing, one read by
+/// the group being issued, one still read by the group in flight.
+pub const WGMMA_MIN_STAGES: u64 = 3;
+/// The `a` panel's shared-memory row in the 128-byte swizzle mode
+/// (`Swizzle<3,4,3>`, descriptor mode 1): one wavefront, eight 16-byte
+/// chunks. A warp then copies whole 128-byte global lines (8 lanes per row)
+/// and the XOR of chunk and row spreads those 8 lanes over all 32 banks; the
+/// no-swizzle layout forced half-line copies to stay conflict-free, and that
+/// copy pipeline bound the first S53 build (box: 1.20 of 1.52 ms at 4096).
+pub const WGMMA_SWIZZLE_BYTES: u64 = 128;
+/// Rows of one swizzle atom; an atom (8 × 128 B) must start 1024-aligned.
+pub const WGMMA_ATOM_ROWS: u64 = 8;
+
+/// The Hopper TF32 tile (S53 `wgmma-hopper`): the site's product transposed,
+/// `cᵀ = bᵀ·aᵀ`, because `wgmma` takes TF32 shared-memory operands only
+/// K-major — `a` (`ck = 1`) already is, `b` (lanes contiguous) is not. So `bᵀ`
+/// is the register operand (any layout loads), `aᵀ` the descriptor operand in
+/// `a`'s own layout, and one instruction covers `WGMMA_M` columns × `n` rows
+/// of `c`. A block is `groups` warpgroups side by side along `c`'s columns,
+/// all reading the same staged `a` panel. Derived by
+/// [`TargetProfile::gpu_wgmma_tile`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuWgmmaTile {
+    /// The instruction's `N`: rows of `c` per block.
+    pub n: u64,
+    /// Warpgroups per block.
+    pub groups: u64,
+    pub bk: u64,
+    pub stages: u64,
+    /// Words of padding on each `b` panel row (the register-operand loads).
+    pub pad_b: u64,
+    pub blocks_per_sm: u64,
+}
+
+impl GpuWgmmaTile {
+    pub fn bm(&self) -> u64 {
+        self.n
+    }
+    pub fn bn(&self) -> u64 {
+        self.groups * WGMMA_M
+    }
+    pub fn threads(&self, warp: u64) -> u64 {
+        self.groups * WARPGROUP_WARPS * warp
+    }
+    pub fn ldb(&self) -> u64 {
+        self.bn() + self.pad_b
+    }
+    /// Words of the `a` panel in one stage: `bk / 32` atom columns, each
+    /// `bm` swizzled 128-byte rows.
+    pub fn a_words(&self) -> u64 {
+        self.bm() * self.bk
+    }
+    /// One stage, rounded up to whole 1024-byte atoms so every stage's `a`
+    /// panel starts where the swizzle pattern does (base offset 0).
+    pub fn stage_words(&self) -> u64 {
+        let atom_words = WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES / 4;
+        (self.a_words() + self.bk * self.ldb()).next_multiple_of(atom_words)
+    }
+    pub fn smem_bytes(&self) -> u64 {
+        self.stages * self.stage_words() * 4
+    }
+    /// Stride-dimension byte offset: between 8-row groups, one atom.
+    pub fn sbo(&self) -> u64 {
+        WGMMA_ATOM_ROWS * WGMMA_SWIZZLE_BYTES
+    }
+    /// The matrix descriptor without its start address (PTX ISA "Matrix
+    /// Descriptor Format"): LBO field 1 (swizzled K-major layouts do not use
+    /// it, "assumed 1"), SBO>>4 at bit 32, swizzle mode 1 (128-byte) at bit 62.
+    pub fn desc_fields(&self) -> u64 {
+        (1 << 16) | ((self.sbo() >> 4) << 32) | (1 << 62)
+    }
+}
+
+/// The smallest row padding, in 32-bit words and a multiple of four (so every
+/// row stays 16-byte aligned for `cp.async`), under which one warp's fragment
+/// load touches each of the 32 banks once. `lane → (row, col)` is the
+/// fragment's access pattern; this is the bank-geometry deduction the CPU's
+/// move-panel rung makes for cache sets, applied to shared memory.
+pub(crate) fn conflict_free_pad(ld: u64, pattern: impl Fn(u64) -> (u64, u64)) -> Option<u64> {
+    (0..32).step_by(4).find(|pad| {
+        let mut banks = [false; 32];
+        (0..32).all(|lane| {
+            let (row, col) = pattern(lane);
+            let bank = ((row * (ld + pad) + col) % 32) as usize;
+            !std::mem::replace(&mut banks[bank], true)
+        })
+    })
+}
+
+impl GpuTile {
+    pub fn bm(&self) -> u64 {
+        self.ty * self.tm
+    }
+    pub fn bn(&self) -> u64 {
+        self.tx * self.tn
+    }
+    pub fn threads(&self) -> u64 {
+        self.tx * self.ty
+    }
+    /// Words one transposed-`a` panel row (one `k`) spans in shared memory.
+    pub fn sa(&self) -> u64 {
+        self.bm() + self.pad_a
+    }
+    /// Elements one stage holds: the transposed A panel and the B panel.
+    pub fn stage_elems(&self) -> u64 {
+        self.bk * (self.sa() + self.bn())
+    }
+    /// Dynamic shared memory one block uses, every stage.
+    pub fn smem_bytes(&self, elem_bytes: u64) -> u64 {
+        self.stages.max(1) * self.stage_elems() * elem_bytes
+    }
 }
 
 /// The ARM SME facts a profile carries, when the part has a streaming matrix
@@ -175,7 +1821,7 @@ pub struct Sme {
     /// (`apple_m_raises_the_kc_threshold_above_every_k_we_run`). Measured, the
     /// SME optimum is a **128 KB two-panel window** — L1D, not L2 — and the
     /// unblocked case loses **1.448×** at K=4096
-    /// (`docs/performance/s42-sme-roofline.md` §5, `benches/sme/kc.c`). One
+    /// (`docs/performance/cpu/matmul/sme-throughput-ceiling.md` §5, `benches/sme/kc.c`). One
     /// deduced depth serving two placements with different budgets is the defect;
     /// two `TrnLoc`s over one question is the fix.
     pub l1d_bytes: u64,
@@ -232,6 +1878,17 @@ pub struct DispatchCost {
     /// more run inline than dispatched: the dispatch buys one lane's share of
     /// the work and pays a whole wave for it.
     pub dispatch_ns: u64,
+}
+
+/// Nanoseconds a roofline gives `flops` and `bytes` at these rates.
+pub(crate) fn roofline_ns(flops: u64, bytes: u64, flops_per_ns: u64, bytes_per_ns: u64) -> u64 {
+    (flops / flops_per_ns.max(1)).max(bytes / bytes_per_ns.max(1))
+}
+
+/// A tile site's bytes: each operand panel and the output walked once.
+pub(crate) fn tile_bytes(rows: u64, c: u64, k: u64, elem: &Ty) -> u64 {
+    (rows.saturating_mul(k) + k.saturating_mul(c) + rows.saturating_mul(c))
+        .saturating_mul(elem_bytes(elem))
 }
 
 /// One target's machine facts, plus the two policy ratios that are honestly
@@ -395,7 +2052,7 @@ impl TargetProfile {
     /// standalone probe claimed **2.09×** there, and the emitted pipeline
     /// measured **every arm overlapping OFF, min-to-min 1.02×** — the term's
     /// prediction, on the machine where it was most at risk
-    /// (`benches/results-s45/deduced-move-panel.md` §3).
+    /// (`benches/results/cpu/memory/deduced-panel-movement/deduced-move-panel.md` §3).
     ///
     /// | case | pressure | read vs L2/core | verdict | measured |
     /// | --- | ---: | --- | --- | --- |
@@ -435,7 +2092,7 @@ impl TargetProfile {
     ///
     /// **What it does NOT reproduce, and why no version of it could.** The i9's
     /// measured optimum is **128**, and this returns 8. That gap was priced with
-    /// counters rather than argued (`benches/results-s45`, side 1024, P-core):
+    /// counters rather than argued (`benches/results/cpu/memory/deduced-panel-movement`, side 1024, P-core):
     ///
     /// | arm | ms | cycles | L1-dcache-load-misses | dTLB misses | LLC misses |
     /// | --- | ---: | ---: | ---: | ---: | ---: |
@@ -493,7 +2150,7 @@ impl TargetProfile {
     /// the M4 and 4–8 on the i9, i.e. carry the whole answer and derive nothing,
     /// which is the hand-typed flag with extra steps.
     ///
-    /// **Open defect S47 found and did not fix (`benches/results-s47`).** At side
+    /// **Open defect S47 found and did not fix (`benches/results/cpu/matmul/block-size`).** At side
     /// **1536 on the M4 this rung fires with B=32 and LOSES 1.75x (1t) / 1.41x
     /// (threaded)** — larger than any i9 shortfall above. It is a fire/decline
     /// defect, not a block one: no block wins there. Both terms vote to fire and
@@ -558,7 +2215,7 @@ impl TargetProfile {
         // **1.060x (1t) / 1.044x (threaded)**. Forgoing 6% beats shipping 1.75x.
         // Revisit only if the benefit ever becomes predictable — the plateau
         // there is B = 16..256 and reaching it needs a fact §4 of
-        // `benches/results-s47/block-size.md` shows is not readable.
+        // `benches/results/cpu/matmul/block-size/block-size.md` shows is not readable.
         if !site.width.is_power_of_two() {
             return None;
         }
@@ -586,6 +2243,24 @@ impl TargetProfile {
             .find(|b| tile.is_multiple_of(*b))
     }
 
+    /// **S62 `place`: does a site of `flops` and `bytes` finish sooner on the
+    /// device than on one host lane?** `launch_ns + roofline(device)` against
+    /// `roofline(lane)` — the device's [`DeviceCost`] and the host's one-lane
+    /// rates ([`DispatchCost`]: a site placed on the host of a GPU build runs
+    /// on one lane, the entry of a program with device work being sequential).
+    /// Without both facts the answer is the device — what every GPU build did
+    /// before this existed. Transfers
+    /// are not a term: a site with a device-produced operand stays on the
+    /// device by placement (`func/gpu.rs:placement`), so a host placement never
+    /// adds a copy-out, and closed-form operands are built where they are read.
+    pub fn device_pays(&self, flops: u64, bytes: u64) -> bool {
+        let (Some(d), Some(h)) = (self.gpu().and_then(|g| g.cost), self.dispatch) else {
+            return true;
+        };
+        let dev = d.launch_ns + roofline_ns(flops, bytes, d.flops_per_ns, d.bytes_per_ns);
+        dev < roofline_ns(flops, bytes, h.flops_per_ns, h.bytes_per_ns)
+    }
+
     /// The GPU facts, when this profile describes one. `None` for every CPU
     /// profile — callers that need a GPU fact must ask for it, so a CPU profile
     /// reaching a GPU-only path is a `None` at the seam rather than a silently
@@ -595,6 +2270,911 @@ impl TargetProfile {
             Machine::Cpu => None,
             Machine::Gpu(g) => Some(g),
         }
+    }
+
+    /// **The GPU rungs this part ships at a site this full, on this face**
+    /// (S53): every rung on, minus this profile's rows of [`GPU_RUNGS_OFF`]
+    /// that cover the fill and the face. An unmeasured profile takes the
+    /// measured part of its architecture ([`GPU_MEASURED`]); with none, every
+    /// rung: another architecture's losses are not this one's.
+    pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
+        self.gpu_rungs_on(warps_per_scheduler, Face::of(contract, None))
+    }
+
+    /// [`Self::gpu_rungs`] on a site's face, TF32 included.
+    pub fn gpu_rungs_on(&self, warps_per_scheduler: u64, face: Face) -> crate::GpuRungs {
+        let arch = self.gpu().map(|g| g.arch);
+        let same: Vec<&str> = GPU_MEASURED
+            .iter()
+            .filter(|p| p.name == self.name || p.gpu().map(|g| g.arch) == arch)
+            .map(|p| p.name)
+            .collect();
+        let mut r = crate::GpuRungs::ALL;
+        for d in GPU_RUNGS_OFF {
+            if same.contains(&d.profile)
+                && d.fill.covers(warps_per_scheduler)
+                && d.face.covers(face)
+            {
+                *r.rung(d.rung).expect("a GpuRungs name") = false;
+            }
+        }
+        r
+    }
+
+    /// **The `cp.async` panel pipeline for an FMA tile (sm_80+).** Panels stream
+    /// into `stages` shared-memory buffers while earlier ones are consumed, so
+    /// the prefetch holds no registers. `a` is copied element by element into
+    /// its transposed panel — `GPU_VEC_BYTES / elem` lanes along `k` per row,
+    /// so four lanes read one 16-byte global run — and its rows are padded by
+    /// [`conflict_free_pad`] for exactly that copy pattern. `bk` is the largest
+    /// power of two for which two stages fit a block's share of shared memory
+    /// and every thread copies whole units; then as many stages as fit, up to
+    /// the number of panels. `None` on a part without `cp.async`.
+    pub fn gpu_tile_async(&self, g: GpuTile, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let gpu = self.gpu()?;
+        if !gpu.has_mma_sync() {
+            return None;
+        }
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let (bm, bn, threads) = (g.bm(), g.bn(), g.threads());
+        let pad_a = conflict_free_pad(bm, |l| (l % lanes, l / lanes))?;
+        let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let mut best = None;
+        let mut bk = lanes;
+        while bk <= k {
+            let geom = GpuTile {
+                bk,
+                stages: 2,
+                pad_a,
+                ..g
+            };
+            if geom.smem_bytes(e) > share {
+                break;
+            }
+            let whole =
+                (bm * bk).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads);
+            // ADR-0034 D1: a forced panel depth is the only one taken.
+            if k.is_multiple_of(bk) && whole && (gpu.geom.bk == 0 || bk == gpu.geom.bk) {
+                best = Some(geom);
+            }
+            bk *= 2;
+        }
+        let geom = best?;
+        let stages = (share / (geom.stage_elems() * e)).min(k / geom.bk).max(2);
+        // A forced stage count that fits the share replaces the derived one.
+        let stages = Some(gpu.geom.stages)
+            .filter(|&s| s >= 2 && GpuTile { stages: s, ..geom }.smem_bytes(e) <= share)
+            .unwrap_or(stages);
+        Some(GpuTile { stages, ..geom })
+    }
+
+    /// **One output per thread as a staged tile (S62 rung `cell-fill`)**, for
+    /// a shaped `rows × c × k` site [`Self::gpu_tile`] does not divide (its
+    /// thread grid, halved to fill the SMs, outgrows `rows`). The fold of each
+    /// cell stays one register's in-order chain (`tm = tn = 1`); what changes
+    /// is who reads a panel element: the block's `bm` rows share one `b`
+    /// lane panel and its `bn` lanes one `a` row panel, where the
+    /// one-thread-per-cell block (one row, `threads` lanes) reads `b` once per
+    /// output row.
+    ///
+    /// - Threads: [`Self::gpu_tile`] step 2's count — the one-thread-per-cell
+    ///   grid's block size on every profiled part.
+    /// - Block: square-most, `bm` the largest power of two dividing `rows`
+    ///   with `bm² ≤ threads`, `bn = threads / bm` (fewest panel bytes,
+    ///   `(bm + bn)·bk`, per `bm·bn` cells); `c % bn == 0`.
+    /// - Blocks per SM from what such a thread holds ([`fma_held_regs`] at
+    ///   1 × 1), the thread and block-slot limits.
+    /// - `bk`: [`Self::gpu_tile`] step 5 at that share — every thread copies
+    ///   whole vectors, so a one-row block (`bm = 1`) needs `bk ≥ lanes·threads`
+    ///   and is refused by the share: one-row sites keep `naive`.
+    pub fn gpu_cell_tile(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let g = self.gpu()?;
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let threads = block_threads(g, square_register_tile(g, e).1);
+        let bm = (0..=rows.max(1).ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|&b| rows.is_multiple_of(b) && b * b <= threads)
+            .max()?;
+        let bn = threads / bm;
+        if !c.is_multiple_of(bn) {
+            return None;
+        }
+        let blocks_per_sm = residency(g, fma_held_regs(1, 1, e), threads).max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+        let loads_whole = |bk: u64| {
+            (bm * bk / lanes).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads)
+        };
+        let bk = (0..=k.max(1).ilog2())
+            .map(|p| 1u64 << p)
+            .filter(|&bk| {
+                bk >= lanes
+                    && k.is_multiple_of(bk)
+                    && (bm + bn) * bk * e <= share
+                    && loads_whole(bk)
+            })
+            .max()?;
+        Some(GpuTile {
+            tm: 1,
+            tn: 1,
+            tx: bn,
+            ty: bm,
+            bk,
+            blocks_per_sm,
+            stages: 1,
+            pad_a: 0,
+            a_row_lanes: 0,
+            held: 0,
+        })
+    }
+
+    /// **Panel stages from the wave the grid actually puts on an SM (S62
+    /// rung `asyncstage`).** A tile's shared memory is budgeted for
+    /// `blocks_per_sm` resident blocks; a grid of `blocks` puts
+    /// `w = min(blocks_per_sm, ⌈blocks / sms⌉)` on the fullest SM. When
+    /// `w < blocks_per_sm` the share a block may take is larger than the tile
+    /// was sized for and nothing else will use it, so the panels stream with
+    /// `cp.async` through as many stages as `w` blocks' shares hold, up to the
+    /// number of panels. Fewer resident blocks is also fewer warps to issue
+    /// while one waits at the panel barrier: the stages in flight are what
+    /// covers the load latency instead.
+    ///
+    /// The panel depth is the tile's own when the element/vector copies divide
+    /// among the threads (the register-staged arm's depth: only the pipeline
+    /// changes), else [`Self::gpu_tile_async`]'s at the larger share.
+    /// `blocks_per_sm` becomes `w` (`.minnctapersm`, the wave, the raster agree
+    /// with the shared memory allocated). `None` when the wave fills every slot
+    /// (`w = blocks_per_sm`: the share is the one [`Self::gpu_tile_async`]
+    /// already derives — that rung's decision stands), on a part without
+    /// `cp.async`, or when two stages do not fit.
+    pub fn gpu_tile_stages(&self, g: GpuTile, blocks: u64, k: u64, elem: &Ty) -> Option<GpuTile> {
+        let gpu = self.gpu()?;
+        let w = blocks.div_ceil(gpu.sms).clamp(1, g.blocks_per_sm.max(1));
+        if w >= g.blocks_per_sm || !gpu.has_mma_sync() {
+            return None;
+        }
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let (bm, bn, threads) = (g.bm(), g.bn(), g.threads());
+        let share = (gpu.smem_per_sm / w)
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let wave = GpuTile {
+            blocks_per_sm: w,
+            ..g
+        };
+        let whole = (bm * g.bk).is_multiple_of(threads)
+            && (g.bk * bn / lanes).is_multiple_of(threads)
+            && k.is_multiple_of(g.bk);
+        let held = whole
+            .then(|| conflict_free_pad(bm, |l| (l % lanes, l / lanes)))
+            .flatten()
+            .map(|pad_a| GpuTile {
+                stages: 2,
+                pad_a,
+                ..wave
+            })
+            .filter(|h| h.smem_bytes(e) <= share);
+        let geom = match held {
+            Some(h) => h,
+            None => self.gpu_tile_async(wave, k, elem)?,
+        };
+        let stages = (share / (geom.stage_elems() * e)).min(k / geom.bk).max(2);
+        Some(GpuTile { stages, ..geom })
+    }
+
+    /// **The register-staged transposed-A store (S53 rung `pad`).** A thread
+    /// loads `lanes` consecutive `k` of one `a` row and stores them as `lanes`
+    /// scalar stores, one `k` row of `As` apart. With all `bk / lanes` lanes of a
+    /// row in one warp, the lanes sharing a panel row sit `lanes` `k` rows
+    /// apart, and no 16-byte-aligned pad separates more than two of them: the
+    /// S52 map is a 4-way bank conflict (SASS review). So: the most lanes per
+    /// row `L` (a power of two, ≤ `bk / lanes`) for which [`conflict_free_pad`]
+    /// finds a pad for lane `l` → (`k` = `lanes·(l mod L)`, row `l / L`), and
+    /// the panel still fits the block's share of shared memory. f32 on a
+    /// 128-row panel: `L` = 2 (one 32-byte sector per row), pad 4. 4-byte
+    /// elements only: the bank model counts one word per element.
+    pub fn gpu_tile_sync_a(&self, g: GpuTile, elem: &Ty) -> GpuTile {
+        let (Some(gpu), 4) = (self.gpu(), elem_bytes(elem)) else {
+            return g;
+        };
+        let lanes = GPU_VEC_BYTES / 4;
+        let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let kv = g.bk / lanes;
+        (0..=kv.max(1).ilog2())
+            .rev()
+            .map(|p| 1u64 << p)
+            .find_map(|l| {
+                let pad_a = conflict_free_pad(g.bm(), |x| (lanes * (x % l), x / l))?;
+                let geom = GpuTile {
+                    pad_a,
+                    a_row_lanes: l,
+                    ..g
+                };
+                (geom.smem_bytes(4) <= share).then_some(geom)
+            })
+            .unwrap_or(g)
+    }
+
+    /// **The tensor-core geometry for a `rows × c × k` f32 site on the TF32
+    /// face** — [`Self::gpu_tile`]'s rules with an `m16n8` tile as the unit.
+    ///
+    /// 1. **Warp tile.** Each m16n8 tile holds 4 f32 accumulators per thread;
+    ///    the most tiles (a power of two) whose accumulators fit half of
+    ///    `regs_per_thread`, square-most: 255 registers ⇒ 16 tiles ⇒ 4 × 4,
+    ///    a 64 × 32 warp tile.
+    /// 2. **Warps per block** from `regs_per_sm` over twice the accumulators,
+    ///    split across [`GPU_RESIDENT_BLOCKS`]; halved while the grid has fewer
+    ///    blocks than SMs. Before that, `fill` (S53 rung `warp-fill`) halves the
+    ///    warp tile's longer side (`wn` on a tie), down to one m16n8 tile, while
+    ///    the grid has fewer warps than [`Gpu::fill_warps`] — overriding `wide`
+    ///    on a small site. Warps per block stay those of the unshrunk tile.
+    /// 3. **Padding** from the fragment access patterns ([`conflict_free_pad`]).
+    /// 4. **Panel depth and stages.** `bk` is the largest power of two (≥ the
+    ///    mma's k) for which two stages fit a block's share of shared memory
+    ///    and every thread copies whole 16-byte chunks; then as many stages as
+    ///    the share holds, up to the number of panels.
+    ///
+    /// `wide` (S52 rung, the SASS review's rule): instead of "accumulators ≤
+    /// half the file", count what a thread actually holds — accumulators, both
+    /// buffers of its A and B fragments (`2·(4·mt + 2·nt)`), and
+    /// [`MMA_ADDR_REGS`] of addresses — against the whole file. 255 registers
+    /// ⇒ 32 tiles, 4 × 8 = a 64 × 64 warp tile (CUTLASS's), 224 registers.
+    pub fn gpu_mma_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wide: bool,
+        fill: bool,
+    ) -> Option<GpuMmaTile> {
+        let g = self.gpu()?;
+        if !g.has_mma_sync() {
+            return None;
+        }
+        let acc_per_tile = MMA_M * MMA_N / g.warp; // 4
+        let (mt, nt, regs_est) = if wide {
+            // nt = 2·mt keeps the warp tile square (16·mt = 8·nt).
+            let held = |mt: u64| {
+                let nt = 2 * mt;
+                acc_per_tile * mt * nt + 2 * (4 * mt + 2 * nt) + MMA_ADDR_REGS
+            };
+            let mut mt = 1;
+            while held(2 * mt) <= g.regs_per_thread {
+                mt *= 2;
+            }
+            (mt, 2 * mt, held(mt))
+        } else {
+            let budget = g.regs_per_thread / 2;
+            let mut tiles = 1;
+            while 2 * tiles * acc_per_tile <= budget {
+                tiles *= 2;
+            }
+            let mut mt = 1;
+            while mt * mt < tiles {
+                mt *= 2;
+            }
+            (mt, tiles / mt, 2 * tiles * acc_per_tile)
+        };
+        let (mut mt, mut nt) = (mt, nt);
+        while fill && (rows / (mt * MMA_M)) * (c / (nt * MMA_N)) < g.fill_warps() {
+            if nt * MMA_N >= mt * MMA_M && nt > 1 {
+                nt /= 2;
+            } else if mt > 1 {
+                mt /= 2;
+            } else {
+                break;
+            }
+        }
+        let resident_threads = g.regs_per_sm / regs_est;
+        let warps = (resident_threads / g.geom.resident / g.warp).max(1);
+        // Square-most block tile: warps_y·wm ≈ warps_x·wn.
+        let (wm, wn) = (mt * MMA_M, nt * MMA_N);
+        let aspect = |wy: u64| {
+            let (h, w) = (wy * wm, warps / wy * wn);
+            h.max(w) / h.min(w)
+        };
+        let mut warps_y = (0..=warps.ilog2())
+            .map(|p| 1u64 << p)
+            .min_by_key(|&wy| aspect(wy))
+            .unwrap_or(1);
+        let mut warps_x = warps / warps_y;
+        let mut halve_x = true;
+        while (rows / (warps_y * wm)) * (c / (warps_x * wn)) < g.sms && warps_x * warps_y > 1 {
+            if halve_x && warps_x > 1 {
+                warps_x /= 2;
+            } else if warps_y > 1 {
+                warps_y /= 2;
+            }
+            halve_x = !halve_x;
+        }
+        let (bm, bn) = (warps_y * wm, warps_x * wn);
+        if rows % bm != 0 || c % bn != 0 {
+            return None;
+        }
+        let threads = warps_x * warps_y * g.warp;
+        let blocks_per_sm = residency(g, regs_est, threads).max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+
+        // Fragment patterns of m16n8k8 (PTX ISA): lane = 4·group + t.
+        // A (row-major): row = group, col = t.  B (k × n): row = t, col = group.
+        let pad_b = conflict_free_pad(bn, |l| (l % 4, l / 4))?;
+        let mut best = None;
+        let mut bk = MMA_K;
+        while bk <= k {
+            let pad_a = conflict_free_pad(bk, |l| (l / 4, l % 4))?;
+            let geom = GpuMmaTile {
+                mt,
+                nt,
+                warps_x,
+                warps_y,
+                bk,
+                stages: 2,
+                pad_a,
+                pad_b,
+                blocks_per_sm,
+            };
+            let whole =
+                (bm * bk / 4).is_multiple_of(threads) && (bk * bn / 4).is_multiple_of(threads);
+            if geom.smem_bytes() > share {
+                break;
+            }
+            if k.is_multiple_of(bk) && whole {
+                best = Some(geom);
+            }
+            bk *= 2;
+        }
+        let geom = best?;
+        let stages = (share / (geom.stage_words() * 4)).min(k / geom.bk).max(2);
+        Some(GpuMmaTile { stages, ..geom })
+    }
+
+    /// **The Hopper `wgmma` geometry for a `rows × c × k` f32 site on the TF32
+    /// face** ([`GpuWgmmaTile`]). `None` off `sm_90a`. For each panel depth
+    /// `bk` (a power of two ≥ the instruction's k, dividing `k`):
+    ///
+    /// 1. **`n`** — the largest multiple of 8 ≤ 256 dividing `rows` whose
+    ///    `n/2` accumulators, the panel's `4·bk/8` A fragments and
+    ///    [`WGMMA_ADDR_REGS`] fit `regs_per_thread` (the whole-thread rule).
+    /// 2. **Warpgroups per block** (a power of two) from `regs_per_sm` over
+    ///    that count, all in **one** resident block, not split across
+    ///    [`GPU_RESIDENT_BLOCKS`]: that policy keeps a second block computing
+    ///    while one waits at the panel barrier, and here the MMA group in
+    ///    flight computes through it. Measured (S53 run 1, H100 PCIe): the
+    ///    split geometry ran 0.61–0.64× of this one at 2048–8192, and with
+    ///    128-byte swizzle rows (`bk` ≥ 32) it has no three-stage tile at all.
+    /// 3. **Fill** — while the grid has fewer blocks than SMs, halve the
+    ///    warpgroups, then `n`.
+    /// 4. **Smem** — `b` rows padded by [`conflict_free_pad`] for the A
+    ///    fragment pattern; the panel must fit [`WGMMA_MIN_STAGES`] stages
+    ///    in a block's share, copy in whole 16-byte chunks per thread, and
+    ///    fill whole [`WGMMA_SWIZZLE_BYTES`] rows.
+    ///
+    /// The deepest valid `bk` wins; then as many stages as the share holds.
+    ///
+    /// ADR-0034 D1 (site-geometry B4): a forced `n` / warpgroup count
+    /// ([`Geom::wg_n`], `wg_groups`) replaces steps 1–3; one the site cannot
+    /// take falls back to the derived tile, never to another kernel class.
+    pub fn gpu_wgmma_tile(&self, rows: u64, c: u64, k: u64) -> Option<GpuWgmmaTile> {
+        let q = self.gpu()?.geom;
+        self.wgmma_tile_at(rows, c, k, q.wg_n, q.wg_groups)
+            .or_else(|| {
+                (q.wg_n + q.wg_groups > 0)
+                    .then(|| self.wgmma_tile_at(rows, c, k, 0, 0))
+                    .flatten()
+            })
+    }
+
+    fn wgmma_tile_at(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        wg_n: u64,
+        wg_groups: u64,
+    ) -> Option<GpuWgmmaTile> {
+        let g = self.gpu()?;
+        if !g.has_wgmma() {
+            return None;
+        }
+        let wg_threads = WARPGROUP_WARPS * g.warp;
+        // The largest legal `n` ≤ `cap` dividing `rows`.
+        let fit_n = |cap: u64| {
+            (1..=cap.min(WGMMA_N_MAX) / WGMMA_N_STEP)
+                .rev()
+                .map(|i| i * WGMMA_N_STEP)
+                .find(|n| rows.is_multiple_of(*n))
+        };
+        let regs = |n: u64, bk: u64| n / 2 + 4 * (bk / WGMMA_K) + WGMMA_ADDR_REGS;
+        let mut best = None;
+        let mut bk = WGMMA_K;
+        while bk <= k {
+            let frag_regs = regs(0, bk);
+            let geom = (|| {
+                if !k.is_multiple_of(bk) || frag_regs >= g.regs_per_thread {
+                    return None;
+                }
+                let cap = 2 * (g.regs_per_thread - frag_regs);
+                // site-geometry B4: a forced `n` that divides the rows and fits.
+                let forced_n = Some(wg_n).filter(|&n| {
+                    n > 0
+                        && n % WGMMA_N_STEP == 0
+                        && n <= cap.min(WGMMA_N_MAX)
+                        && rows.is_multiple_of(n)
+                });
+                let mut n = forced_n.or_else(|| fit_n(cap))?;
+                let resident = g.regs_per_sm / regs(n, bk);
+                let per_block = (resident / wg_threads)
+                    .min(g.max_threads_per_block / wg_threads)
+                    .max(1);
+                let forced_g = Some(wg_groups).filter(|&x| x.is_power_of_two() && x <= per_block);
+                let mut groups = forced_g.unwrap_or(1 << per_block.ilog2());
+                while forced_n.is_none()
+                    && forced_g.is_none()
+                    && (rows / n) * (c / (groups * WGMMA_M)) < g.sms
+                {
+                    if groups > 1 {
+                        groups /= 2;
+                    } else if let Some(m) = fit_n(n / 2) {
+                        n = m;
+                    } else {
+                        break;
+                    }
+                }
+                let (bn, threads) = (groups * WGMMA_M, groups * wg_threads);
+                if !c.is_multiple_of(bn) {
+                    return None;
+                }
+                let blocks_per_sm = residency(g, regs(n, bk), threads).max(1);
+                let share = (g.smem_per_sm / blocks_per_sm)
+                    .saturating_sub(g.smem_reserved_per_block)
+                    .min(g.smem_per_block);
+                // A fragment pattern: lane = 4·group + t reads row k = t,
+                // column n = group of the `b` panel.
+                let pad_b = conflict_free_pad(bn, |l| (l % 4, l / 4))?;
+                let geom = GpuWgmmaTile {
+                    n,
+                    groups,
+                    bk,
+                    stages: WGMMA_MIN_STAGES,
+                    pad_b,
+                    blocks_per_sm,
+                };
+                // Whole 16-byte chunks per thread, and whole swizzle rows.
+                let whole = (n * bk / 4).is_multiple_of(threads)
+                    && (bk * bn / 4).is_multiple_of(threads)
+                    && (bk * 4).is_multiple_of(WGMMA_SWIZZLE_BYTES);
+                (whole && geom.smem_bytes() <= share).then(|| {
+                    let stages = (share / (geom.stage_words() * 4))
+                        .min(k / bk)
+                        .max(WGMMA_MIN_STAGES);
+                    GpuWgmmaTile { stages, ..geom }
+                })
+            })();
+            best = geom.or(best);
+            bk *= 2;
+        }
+        best
+    }
+
+    /// **The GPU tile geometry for a `rows × c × k` site — the same three
+    /// budgets the CPU rungs read, at their GPU locations.** `None` when the
+    /// site does not divide into any geometry this derives; the emitter then
+    /// takes the one-thread-per-cell kernel, which is slower and never wrong.
+    ///
+    /// | CPU rule | GPU reading here |
+    /// | --- | --- |
+    /// | [`Self::tile_i`]: half the vector file holds accumulators | half of `regs_per_thread` holds the `tm × tn` register tile |
+    /// | [`Self::tile_kc`]: half of L2 holds one packed panel | a block's share of `smem_per_sm` holds the `bk`-deep A and B panels |
+    /// | the parallel driver's slice count | blocks: at least one per SM |
+    ///
+    /// Steps, each a fact or a stated policy:
+    /// 1. **Register tile.** The largest square power-of-two `t`, at least one
+    ///    vector wide, with `t² · regs(elem) ≤ regs_per_thread / 2` (the CPU's
+    ///    half-the-file headroom). f32 on 255 registers: `8 × 8`.
+    /// 2. **Threads per block.** Registers per thread are estimated at twice
+    ///    the accumulators; `regs_per_sm` over that is the resident-thread
+    ///    budget, split across [`GPU_RESIDENT_BLOCKS`] blocks so one computes
+    ///    while another waits at the barrier. 65 536 / 128 / 2 = 256 = 16 × 16.
+    /// 3. **Fill the schedulers** (`fill`, S53 rung `warp-fill`). While the
+    ///    grid has fewer warps than [`Gpu::fill_warps`], halve the register
+    ///    tile's longer side (`tn` on a tie), down to one vector. Grid warps
+    ///    are `rows·c / (tm·tn·warp)`, which no thread-grid split changes;
+    ///    threads per block stay those of the unshrunk tile (step 2).
+    /// 4. **Fill the machine.** While the grid has fewer blocks than SMs, halve
+    ///    the thread grid (x then y), down to one warp — a block left idle is a
+    ///    whole SM idle, which no tile shape wins back.
+    /// 5. **Panel depth.** Blocks per SM = the tightest of registers, threads
+    ///    and the block-slot limit; `bk` is the largest power of two whose two
+    ///    panels fit one block's share of shared memory, dividing `k`, at least
+    ///    one vector deep, and loadable in whole vectors by every thread.
+    ///
+    /// `wide` (S53 rung `wide-fma`, the TF32 `wide` rule on the FMA tile):
+    /// step 1 counts what a thread holds ([`fma_held_regs`]) against the whole
+    /// file — the largest `tm × tn`, `tn ∈ {tm, 2·tm}`, square first: 255 ⇒
+    /// 8 × 16 (128 + 48 + 32 = 208). Step 2: threads = `regs_per_sm` over that
+    /// count over [`GPU_RESIDENT_BLOCKS`], rounded down to a power of two
+    /// (65 536 / 208 / 2 ⇒ 128), split square-most on the *block* tile
+    /// (`ty·tm ≈ tx·tn` ⇒ 16 × 8 ⇒ 128 × 128). Steps 3 and 4 never shrink it:
+    /// a site with fewer such blocks than SMs — or, under `fill`, fewer warps
+    /// than [`Gpu::fill_warps`] — takes the S52 geometry instead, which they
+    /// then fill.
+    ///
+    /// The S62 geometry rungs ([`Self::gpu_tile_with`]) are all off here: this
+    /// is the geometry the rung table's fill key reads (`gpu.rs:launch`).
+    pub fn gpu_tile(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        fill: bool,
+    ) -> Option<GpuTile> {
+        let r = crate::GpuRungs {
+            fill,
+            ..crate::GpuRungs::default()
+        };
+        // The rung table's rows were measured on grids this geometry keys at
+        // the seed row (`resident` 2, nothing forced): a `--geom=` arm or a
+        // searched table row moves the launch, never which rows apply.
+        self.with_geom(GEOM)
+            .gpu_tile_with(rows, c, k, elem, wide, r)
+    }
+
+    /// This profile with its GPU part's geometry row replaced by `geom`.
+    fn with_geom(&self, geom: Geom) -> TargetProfile {
+        let mut p = *self;
+        if let Machine::Gpu(g) = &mut p.machine {
+            g.geom = geom;
+        }
+        p
+    }
+
+    /// [`Self::gpu_tile`] under the rungs `r` reads: `fill` (`warp-fill`) and
+    /// the S62 ordered-geometry rungs. Each re-partitions the independent
+    /// output domain (`rows × c`, every cell's `k` fold kept whole and in
+    /// order on one thread, `TilePlan`) or moves a panel boundary — never the
+    /// order a cell folds:
+    ///
+    /// - `fill-rows` (step 3): the fill rule may shrink `tm` to 1, not one
+    ///   vector — the vector floor was the emitter's `<lanes x t>` fragment
+    ///   load, not a fact. `tn` keeps it (the output's vector store). Only
+    ///   where the vector-floor tile has no geometry on these rows: a scalar
+    ///   `a` row costs a shared load per FMA row, which pays against the
+    ///   one-thread-per-cell kernel, not against a vector tile (S62 v1 on the
+    ///   5090, 4090, H100 PCIe and 3090: 1.15–5.7× over the former in every
+    ///   cell; against the latter 0.53–0.96× in 12 cells, ±2% in 5, 1.18–1.40× in 2).
+    /// - `row-fit` (after step 4): a thread grid taller than the site
+    ///   (`ty·tm > rows`) halves `ty` and doubles `tx`, thread count kept.
+    /// - `wave-gate`: a row-fitted grid with fewer blocks than SMs is `None` —
+    ///   an SM without a block is idle for the whole launch (S59: 64 and 32
+    ///   blocks on 170 SMs measured 1.37–1.47× the one-thread-per-cell time).
+    /// - `grid-share` (step 5): one SM holds at most `⌈blocks / sms⌉` of this
+    ///   grid's blocks, so the panel share is sized against that residency.
+    pub fn gpu_tile_with(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+    ) -> Option<GpuTile> {
+        self.gpu_tile_split(rows, c, k, elem, wide, r, 1)
+    }
+
+    /// [`Self::gpu_tile_with`] for a grid whose fold is cut in `split`
+    /// partitions (site-geometry `fill-wave`): `grid-share` counts the
+    /// `blocks · split` the launch puts on the part. 1 = the unsplit grid.
+    ///
+    /// ADR-0034 D1 (site-geometry B4): the part's forced tile knobs
+    /// ([`Geom::tm`], `tn`, `warps`, `bk`) replace the step they name — the
+    /// register tile (steps 1 and 3), the threads (steps 2 and 4), the panel
+    /// depth (step 5) — and every other step derives as before; a forced tile
+    /// the site cannot take falls back to the derived one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gpu_tile_split(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+        split: u64,
+    ) -> Option<GpuTile> {
+        let q = self.gpu()?.geom;
+        self.tile_split_at(rows, c, k, elem, wide, r, split)
+            .or_else(|| {
+                (q.tm + q.tn + q.warps + q.bk > 0)
+                    .then(|| {
+                        let derived = Geom {
+                            tm: 0,
+                            tn: 0,
+                            warps: 0,
+                            bk: 0,
+                            ..q
+                        };
+                        self.with_geom(derived)
+                            .tile_split_at(rows, c, k, elem, wide, r, split)
+                    })
+                    .flatten()
+            })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tile_split_at(
+        &self,
+        rows: u64,
+        c: u64,
+        k: u64,
+        elem: &Ty,
+        wide: bool,
+        r: crate::GpuRungs,
+        split: u64,
+    ) -> Option<GpuTile> {
+        let fill = r.fill;
+        if r.fill_rows && fill && !wide {
+            let floor = crate::GpuRungs {
+                fill_rows: false,
+                ..r
+            };
+            if let Some(t) = self.gpu_tile_split(rows, c, k, elem, wide, floor, split) {
+                return Some(t);
+            }
+        }
+        let g = self.gpu()?;
+        let q = g.geom;
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+
+        let (mut tm, mut tn, mut regs_est) = if wide {
+            let (mut tm, mut tn) = (lanes, lanes);
+            loop {
+                let (m, n) = if tn == tm { (tm, 2 * tm) } else { (2 * tm, tn) };
+                if fma_held_regs(m, n, e) > g.regs_per_thread {
+                    break;
+                }
+                (tm, tn) = (m, n);
+            }
+            (tm, tn, fma_held_regs(tm, tn, e))
+        } else {
+            let (t, regs_est) = square_register_tile(g, e);
+            (t, t, regs_est)
+        };
+        let mut held = if wide { regs_est } else { 0 };
+        // A forced register tile: a thread holds its accumulators twice over
+        // (the derived budget), or what it holds when that outgrows the file.
+        let forced_tile = q.tm + q.tn > 0;
+        if forced_tile {
+            tm = if q.tm > 0 { q.tm } else { tm };
+            tn = if q.tn > 0 { q.tn } else { tn };
+            if !(tm.is_power_of_two() && tn.is_power_of_two()) || !tn.is_multiple_of(lanes) {
+                return None;
+            }
+            let twice = 2 * tm * tn * e.div_ceil(4);
+            held = if wide || twice > g.regs_per_thread {
+                fma_held_regs(tm, tn, e)
+            } else {
+                0
+            };
+            regs_est = if held > 0 { held } else { twice };
+        }
+        let under_warps =
+            |tm: u64, tn: u64| fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
+        let tm_floor = if r.fill_rows { 1 } else { lanes };
+        while !wide && !forced_tile && under_warps(tm, tn) {
+            if tn >= tm && tn > lanes {
+                tn /= 2;
+            } else if tm > tm_floor {
+                tm /= 2;
+            } else {
+                break;
+            }
+        }
+
+        let threads = match q.warps {
+            0 => block_threads(g, regs_est),
+            w if (w * g.warp).is_power_of_two() && w * g.warp <= g.max_threads_per_block => {
+                w * g.warp
+            }
+            _ => return None,
+        };
+        // The block tile square-most (`ty·tm ≈ tx·tn`) for the wide or a forced
+        // tile, else the thread grid.
+        let (mut tx, mut ty) = if wide || forced_tile || q.warps > 0 {
+            let threads = 1 << threads.max(1).ilog2();
+            let aspect = |ty: u64| {
+                let (h, w) = (ty * tm, threads / ty * tn);
+                h.max(w) / h.min(w)
+            };
+            let ty = (0..=threads.ilog2())
+                .map(|p| 1u64 << p)
+                .min_by_key(|&ty| aspect(ty))
+                .unwrap_or(1);
+            (threads / ty, ty)
+        } else {
+            // Square-most power-of-two split of the thread grid, x the wider.
+            let mut tx = 1;
+            while tx * tx < threads {
+                tx *= 2;
+            }
+            (tx, (threads / tx).max(1))
+        };
+
+        // The wide tile buys reuse with threads; a site that cannot give every
+        // SM a block at its full grid keeps the S52 tile, which step 3 then
+        // fills (S53: halving the wide grid at 1024² measured 0.70× on Ada and
+        // Blackwell — half the warps per block over the same tiles).
+        if wide && ((rows / (ty * tm)) * (c / (tx * tn)) < g.sms || under_warps(tm, tn)) {
+            return self.gpu_tile_split(rows, c, k, elem, false, r, split);
+        }
+        // site-geometry `fit-first` (R1): a grid short only because its thread
+        // grid outgrows the rows — reshaped (`row-fit`'s move, threads kept),
+        // it gives every SM a block — reshapes instead of losing threads.
+        if r.fit_first && rows > 0 && ty * tm > rows {
+            let (mut fy, mut fx) = (ty, tx);
+            while fy > 1 && fy * tm > rows {
+                fy /= 2;
+                fx *= 2;
+            }
+            let divides = rows.is_multiple_of(fy * tm) && c.is_multiple_of(fx * tn);
+            if divides && (rows / (fy * tm)) * (c / (fx * tn)) >= g.sms {
+                (ty, tx) = (fy, fx);
+            }
+        }
+        let mut halve_x = q.warps == 0;
+        while q.warps == 0 && (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
+            if halve_x && tx > 1 {
+                tx /= 2;
+            } else if ty > 1 {
+                ty /= 2;
+            }
+            halve_x = !halve_x;
+        }
+        // S62 `row-fit`: a successful geometry already has `bm ≤ rows`, so
+        // this moves only a grid that would otherwise be rejected below.
+        let fit = r.row_fit && rows > 0 && ty > 1 && ty * tm > rows;
+        while fit && ty > 1 && ty * tm > rows {
+            ty /= 2;
+            tx *= 2;
+        }
+        let blocks = (rows / (ty * tm)) * (c / (tx * tn));
+        if fit && r.wave_gate && blocks < g.sms {
+            return None;
+        }
+
+        let geom = |bk| GpuTile {
+            tm,
+            tn,
+            tx,
+            ty,
+            bk,
+            blocks_per_sm: 0,
+            stages: 1,
+            pad_a: 0,
+            a_row_lanes: 0,
+            held,
+        };
+        let (bm, bn, threads) = (geom(0).bm(), geom(0).bn(), tx * ty);
+        if rows % bm != 0 || c % bn != 0 {
+            return None;
+        }
+        let grid = if r.grid_share {
+            (blocks * split.max(1)).div_ceil(g.sms)
+        } else {
+            u64::MAX
+        };
+        let blocks_per_sm = residency(g, regs_est, threads).min(grid).max(1);
+        let share = (g.smem_per_sm / blocks_per_sm)
+            .saturating_sub(g.smem_reserved_per_block)
+            .min(g.smem_per_block);
+
+        let loads_whole = |bk: u64| {
+            (bm * bk / lanes).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads)
+        };
+        let mut bk = lanes;
+        let mut best = None;
+        while bk <= k && (bm + bn) * bk * e <= share {
+            if k.is_multiple_of(bk) && loads_whole(bk) && (q.bk == 0 || bk == q.bk) {
+                best = Some(bk);
+            }
+            bk *= 2;
+        }
+        Some(GpuTile {
+            blocks_per_sm,
+            ..geom(best?)
+        })
+    }
+
+    /// **The blocks of tile `g` one SM can hold** at its registers and
+    /// threads — [`Self::gpu_tile_with`] step 5 without `grid-share`'s cap at
+    /// the unsplit grid (site-geometry `fill-wave`). The panel share follows
+    /// the residency, so shared memory does not bound it here.
+    pub fn tile_capacity(&self, g: &GpuTile, elem: &Ty) -> u64 {
+        let Some(gpu) = self.gpu() else {
+            return g.blocks_per_sm;
+        };
+        let regs = if g.held > 0 {
+            g.held
+        } else {
+            square_register_tile(gpu, elem_bytes(elem)).1
+        };
+        residency(gpu, regs, g.threads().max(1))
+            .max(g.blocks_per_sm)
+            .max(1)
+    }
+
+    /// **S62/S63 split-K sizing (ADR-0040 D4, gap map M1): how many contiguous
+    /// `k` partitions a tile site's fold is cut into**; 1 = the ordered kernel.
+    /// `blocks` is the site's grid, `wave` the blocks the part holds at that
+    /// geometry at once (`Launch::wave`), `panels` the fold's whole panels
+    /// (`k / GpuTile::bk`; `k` for one thread per cell), `cells` the output
+    /// extent, `elem` its bytes; `workspace` when the partials are materialized
+    /// (`splitk`) rather than added into the output (`splitk-atomic`).
+    ///
+    /// Every output cell is independent (`TilePlan`), so the grid already is
+    /// every block the output domain gives; when it leaves resident slots
+    /// empty, the fold is the only parallel axis left. The largest `S` that
+    /// divides the panels (each partition's affine reads stay inside the
+    /// bounds the site proved, no remainder path), keeps the split grid inside
+    /// one wave (`blocks·S ≤ wave`: no tail wave, G6) and, for a workspace,
+    /// keeps the partials the reduce reads back in L2 (`S·cells·elem ≤ l2`,
+    /// the S62 derivation's invariant). Only device facts and site extents
+    /// enter.
+    pub fn split_count(
+        &self,
+        blocks: u64,
+        wave: u64,
+        panels: u64,
+        cells: u64,
+        elem: u64,
+        workspace: bool,
+    ) -> u64 {
+        let Some(g) = self.gpu() else {
+            return 1;
+        };
+        (1..=panels.min(wave / blocks.max(1)))
+            .rev()
+            .find(|&d| panels.is_multiple_of(d) && (!workspace || d * cells * elem <= g.l2_bytes))
+            .unwrap_or(1)
+    }
+
+    /// **site-geometry `fill-wave`: the fewest partitions that fill the
+    /// part** — the smallest `S` dividing the panels for which the split
+    /// grid's `blocks · S · warps` reaches [`Gpu::fill_warps`], inside `cap`
+    /// blocks (the wave the part holds at the tile's own registers and
+    /// threads, [`Self::tile_capacity`]) and, for a workspace, the L2 (as
+    /// [`Self::split_count`]). A fold too short to fill takes the largest such
+    /// `S` — [`Self::split_count`] at `cap`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn split_fill(
+        &self,
+        blocks: u64,
+        warps: u64,
+        cap: u64,
+        panels: u64,
+        cells: u64,
+        elem: u64,
+        workspace: bool,
+    ) -> u64 {
+        let Some(g) = self.gpu() else {
+            return 1;
+        };
+        let most = self.split_count(blocks, cap, panels, cells, elem, workspace);
+        (1..=most)
+            .find(|&d| panels.is_multiple_of(d) && blocks * d * warps >= g.fill_warps())
+            .unwrap_or(most)
     }
 
     /// The streaming matrix unit's facts, when this part has one. Same seam
@@ -691,6 +3271,104 @@ impl TargetProfile {
     /// The caller gates on `site.k > sme_kc`, so at shallow k the nest disables
     /// itself by derivation — which is correct, because the probe shows blocking
     /// is a **loss** at K ≤ 512 where the panel already fits.
+    /// Does packing `b` pay at a site of this size? `true` keeps today's
+    /// unconditional pack.
+    ///
+    /// **The pack computes nothing.** It exists only to give `b` a second
+    /// `DataLoc` in a friendlier layout (FRAMEWORK §4.2), so its cost is a
+    /// transmission price — `2·k·c·sizeof` bytes moved — against a benefit that
+    /// exists only while `b`'s re-reads actually miss. The cost is O(N²) and the
+    /// matmul it serves is O(N³), so below some size the pack is pure loss.
+    ///
+    /// **Measured, plan-s51 H1** (`benches/nn/pack_ab.sh`, M4 Pro, 15
+    /// interleaved cycles, values bit-identical on every arm, and a
+    /// byte-identical control arm carried through every cell as the noise
+    /// floor — 0.990–1.071×, all overlapping):
+    ///
+    /// | d | working set | `--no-pack` / pack, 1 thread | threaded |
+    /// | ---: | ---: | ---: | ---: |
+    /// | 128 | 0.2 MB | **1.46–1.52× faster WITHOUT** | 1.45–1.51× |
+    /// | 256 | 0.8 MB | 1.20–1.21× | **1.41–1.46×** |
+    /// | 512 | 3.1 MB | 1.13× | 1.23–1.32× |
+    /// | 1024 | **12.6 MB** | **1.000× / 0.992× — the crossover** | ~1.0 |
+    /// | 2048 | 50 MB | 0.65× — packing WINS 1.53× | 0.66–0.67× |
+    ///
+    /// **The crossover was not fitted; it lands on a knee measured by a
+    /// different instrument.** S43's `loadlevel.c` put this part's one real
+    /// cache boundary — shared L2 → DRAM — between 8 and 12 MB, and the sign
+    /// flip is at a 12.6 MB working set. Three sizes below and one above are
+    /// all predicted correctly by `working_set > l2_bytes`, so that is the rule,
+    /// and `l2_bytes` is already a recorded field. No constant is added.
+    ///
+    /// The data does not separate this from `k·c·sizeof > l2_bytes` (B alone) —
+    /// both predicates are right at all five measured sizes. The whole working
+    /// set is chosen because A and the output really do compete with `b` for the
+    /// same L2, which is the mechanism; if a later size ever separates them,
+    /// that measurement decides.
+    ///
+    /// **Scope is the CALLER's job, and it is narrower than "this profile has an
+    /// SME unit".** [`crate::func::packing_site`] asks this only for sites that
+    /// take the SME rung, because that is the only kernel the crossover was
+    /// measured on. An f64 or exact-face site on this very profile runs the NEON
+    /// packing rung and packs exactly as it did before — nobody has taken its
+    /// crossover, and a threshold is not transplanted between kernels on the
+    /// strength of an argument. That scoping is what keeps `generic`
+    /// byte-identical, and it is S50's rule in the same words: **no part is made
+    /// worse by a number nobody took.**
+    pub fn pack_pays(&self, rows: u64, c: u64, k: u64, elem: &Ty) -> bool {
+        let working_set = (rows * k + k * c + rows * c) * elem_bytes(elem);
+        working_set > self.l2_bytes
+    }
+
+    /// How deep a k block the A pack should copy at a time, or `None` to copy
+    /// the whole k axis in one pass — which is what shipped before this existed.
+    ///
+    /// **The A pack's waste is on the STORE side, and it is conditional.** The
+    /// emitted pack is row-outer / k-inner (S42), so reads walk a row
+    /// contiguously — that side is already right. The stores go to
+    /// `ap[pk·panel_rows + pi]`, and consecutive `pk` are `panel_rows` elements
+    /// apart, which at f32 with a 2×2 block is 128 B — **exactly one cache line,
+    /// of which each store writes 4 bytes.** The next row then comes back and
+    /// writes the next 4 bytes of those same lines.
+    ///
+    /// That costs nothing *if* the lines are still resident when the next row
+    /// arrives, i.e. if `ap` = `panel_rows · kc · sizeof` fits L1D. Past that,
+    /// every line is evicted before its other 31 rows fill it, and the pack pays
+    /// 32× the line traffic it uses.
+    ///
+    /// Measured (`benches/sme/packconflict.c`, the loops the emitter actually
+    /// emits, best of 7, checksum-gated across arms — and the gate verified to
+    /// fail on an injected bug before the run was trusted):
+    ///
+    /// | N | `ap` | 32×32 blocked vs shipped |
+    /// | ---: | ---: | ---: |
+    /// | 128–512 | ≤ 64 KB | 1.000–1.051× — **flat, nothing to win** |
+    /// | 1024 | 128 KB = L1D | 1.612×, but that cell is **VOID** (drift 1.507×) |
+    /// | 2048 | 256 KB | **2.752×** |
+    /// | 4096 | 512 KB | 1.771× |
+    ///
+    /// So the gate is exactly "does `ap` fit L1D", and the block is one cache
+    /// line's worth of `k` — `line_bytes / sizeof` — which makes both sides
+    /// local: `panel_rows` read lines and `block` write lines live at once,
+    /// independent of `k`.
+    ///
+    /// **Not a swept constant.** Both numbers are detected machine facts
+    /// (`hw.pagesize`-class `sysctl` reads in [`L1d`]); a profile with no L1D
+    /// geometry gets `None` and keeps today's single-pass copy.
+    ///
+    /// Note what this does NOT do: it does not revert S42. The pre-S42 k-outer
+    /// order is 1.455× *faster* than what ships at N=2048 and ~2× slower at
+    /// N≤512; blocking beats both (1.89× over the pre-S42 order at N=2048), so
+    /// the answer is to block the traversal, not to swap the loops back.
+    pub fn pack_block(&self, panel_rows: u64, kc: u64, elem: &Ty) -> Option<u64> {
+        let l1d = self.l1d.as_ref()?;
+        let width = elem_bytes(elem);
+        if panel_rows.saturating_mul(kc).saturating_mul(width) <= l1d.bytes {
+            return None;
+        }
+        Some((l1d.line_bytes / width.max(1)).max(1))
+    }
+
     pub fn sme_kc(&self, elem: &Ty) -> Option<u64> {
         let sme = self.sme.as_ref()?;
         // A detected machine fact times a SWEPT policy ratio — see
@@ -700,6 +3378,20 @@ impl TargetProfile {
         let t = self.sme_tile_side(elem)?;
         let (ti, tj) = self.sme_block(elem)?;
         Some((budget / (elem_bytes(elem) * (ti + tj) * t)).max(1))
+    }
+}
+
+/// **S62 `hostopt`: a GPU build's one profile** — the device's facts
+/// (`name`, `machine`) and the host's CPU facts for everything outside an
+/// offloaded site. Not one field with two readings (the S45 lesson): every
+/// CPU-shaped field of a GPU profile always described the host, and this
+/// fills them from a host profile instead of [`GENERIC`]. `name` stays the
+/// device's — the rung table and kernel names key on it.
+pub fn with_host(dev: &TargetProfile, host: &TargetProfile) -> TargetProfile {
+    TargetProfile {
+        name: dev.name,
+        machine: dev.machine,
+        ..*host
     }
 }
 
@@ -790,33 +3482,340 @@ pub const RAPTORLAKE: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
-/// NVIDIA Ada (`sm_89`) — the box GPU, an RTX 4070 Ti (compute capability 8.9,
-/// driver 610.43.03, 12 GB). plan-s41 step 1.
-///
-/// **No realization consumes this yet.** It exists so the GPU class is
-/// expressible and the resolver knows the name; steps 3–4 build the realization
-/// that reads it. The CPU-shaped fields are inherited from [`GENERIC`] and are
-/// **placeholders, not GPU measurements** — `vec_bytes`/`vec_regs`/`l2_bytes`
-/// describe a vector register file and a cache hierarchy, and their GPU
-/// readings (per-thread registers, shared memory) are the open question S38
-/// already flagged: *"`<TJ x elem>` means SIMD lanes on CPU and per-thread
-/// registers on GPU — one record field, two readings."* Which of them a GPU
-/// realization actually reads, and which need their own value, is ADR-0033
-/// D4(a)/(b) and is answered by building, not here.
-///
-/// `sm_89` has 4th-generation tensor cores but no MXFP block-scale (that is
-/// `sm_100`), so those intrinsics are emittable and not runnable on this part.
-/// Irrelevant to the S41 leg — `mma` is out of scope (plan-s41 §7).
-pub const CUDA_ADA: TargetProfile = TargetProfile {
-    name: "cuda-ada",
-    machine: Machine::Gpu(Gpu {
-        warp: 32,
-        smem_bytes: 48 * 1024,
-        max_threads_per_block: 1024,
-        arch: "sm_89",
+/// **The rented GPU boxes' host (S62 `hostopt`): x86-64-v3** — the ISA level
+/// (AVX2 + FMA: 32 B vectors, 16 registers) every vast.ai host CPU met so far
+/// implements, and the `-march` `benches/gpu/bundle.sh` compiles its host
+/// objects for. A level, not a family: the boxes' CPUs vary per rental
+/// (`lscpu` is recorded in every results file), so only the ISA facts are
+/// written down; the cache facts stay [`GENERIC`]'s lower bounds (512 KB L2
+/// per core, no L1D geometry ⇒ move-panel declines), which no cell of the
+/// S62 set reads.
+pub const X86_64_V3: TargetProfile = TargetProfile {
+    name: "x86-64-v3",
+    vec_bytes: 32,
+    vec_regs: 16,
+    // MEASURED ON THE BOXES (S62, `benches/results/gpu/s62/cpugpu/`), each the
+    // most conservative of the boxes it was read on:
+    //
+    // `flops_per_ns` — one lane of this build, `run1/results-*.txt` `lane` rows
+    //   (the CPU build at MAPAL_PAR=1): pt_pc_128, 3 × 2·128³ / iter ms — 47
+    //   (EPYC 7402), 30 (EPYC 7402), 26 (Xeon 8480+), 24 (EPYC 7B12). A slower
+    //   lane only ever keeps a site on the device, and dispatches a task.
+    // `bytes_per_ns` — pt_pj_m1_n2048_k7168, its site's 58.76 MB / iter ms on
+    //   the same rows: 5, 5, 7, 6.
+    // `dispatch_ns` — the S51 difference method, `run2/results-*.txt`:
+    //   pt_pc_32's CPU build minus its every-task-inline build (a scratch
+    //   profile, deleted after the run), over the 3 tile tasks between its
+    //   clocks — 28.1 us (EPYC 7742, 128 threads), 34.5 us (EPYC 7452, 128),
+    //   16.7 us (Xeon SPR, 32). The smallest dispatches the most tasks: the
+    //   behaviour before this was measured is dispatch_ns = 0.
+    dispatch: Some(DispatchCost {
+        flops_per_ns: 24,
+        bytes_per_ns: 5,
+        dispatch_ns: 16_700,
     }),
     ..GENERIC
 };
+
+/// **MEASUREMENT SCRATCH — S51b, DELETE AFTER USE. Not a machine.**
+///
+/// `raptorlake` with one field changed: a `dispatch_ns` so large that
+/// [`FnEmit::under_dispatch_cost`]'s roofline answers "inline" for every tile
+/// site in the program. It exists to make the `dispatch_ns` A/B possible at all,
+/// because that constant can only be measured as a DIFFERENCE — dispatch
+/// everything (`raptorlake`, `dispatch: None`) against inline everything (this)
+/// — divided by the number of dispatches that flipped.
+///
+/// `flops_per_ns` is the real measured 144; `bytes_per_ns` is a placeholder and
+/// is not read for any decision here, because `ns < dispatch_ns` holds for every
+/// site at this `dispatch_ns` whatever the rate. Only the huge value matters.
+///
+/// **Do not ship a program built against this.** It is the `kc_nest` mistake in
+/// miniature — a measurement lever that must not outlive its measurement — and
+/// the repo already carries a P1 to delete that one.
+pub const RAPTORLAKE_INLINE: TargetProfile = TargetProfile {
+    name: "raptorlake-inline",
+    dispatch: Some(DispatchCost {
+        flops_per_ns: 144,
+        bytes_per_ns: 100,
+        dispatch_ns: 1_000_000_000,
+    }),
+    ..RAPTORLAKE
+};
+
+/// NVIDIA Ada (`sm_89`) — the box GPU, an RTX 4070 Ti (compute capability 8.9,
+/// driver 610.43.03, 12 GB). plan-s41 step 1; S52 gave it the facts the tile
+/// geometry reads ([`TargetProfile::gpu_tile`]).
+///
+/// The CPU-shaped fields are inherited from [`GENERIC`]: on a GPU profile they
+/// describe the **host** that runs everything outside an offloaded site, and
+/// no GPU realization reads them. S52 deliberately did NOT give them GPU
+/// readings (plan-s41 §2.1 proposed `vec_bytes` → per-thread registers,
+/// `l2_bytes` → shared memory): one field with two readings is the `l2_bytes`
+/// per-core/shared ambiguity that cost S45 a session, so every GPU quantity is
+/// its own [`Gpu`] field.
+///
+/// `sm_89` has 4th-generation tensor cores; `mma` is the precision-face rung
+/// (ADR-0032 D1/D3), not this one.
+pub const CUDA_ADA: TargetProfile = TargetProfile {
+    name: "cuda-ada",
+    machine: Machine::Gpu(ADA_SM),
+    ..GENERIC
+};
+
+/// The `sm_89` per-SM facts (CUDA C Programming Guide, compute capability 8.9),
+/// with the RTX 4070 Ti's 60 SMs and its 48 MB L2 (AD104, Ada whitepaper).
+const ADA_SM: Gpu = Gpu {
+    warp: 32,
+    max_threads_per_block: 1024,
+    arch: "sm_89",
+    sms: 60,
+    regs_per_thread: 255,
+    regs_per_sm: 65536,
+    smem_per_sm: 100 * 1024,
+    smem_per_block: 99 * 1024,
+    smem_reserved_per_block: 1024,
+    max_threads_per_sm: 1536,
+    max_blocks_per_sm: 24,
+    l2_bytes: 48 * 1024 * 1024,
+    cost: None,
+    geom: GEOM,
+};
+
+/// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
+/// cross-compilation spelling, `benches/gpu/devquery.cu` on the box is its check.
+pub const RTX_4090: TargetProfile = TargetProfile {
+    name: "rtx-4090",
+    // 72 MB L2: `facts l2_bytes=75497472` (base-rtx-4090.txt).
+    machine: Machine::Gpu(Gpu {
+        sms: 128,
+        l2_bytes: 72 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-4090.txt: mm_4096 contract Mapal 41.69 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 58.76 MB at 490 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 41690,
+            bytes_per_ns: 490,
+            launch_ns: 13723,
+        }),
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// H100 SXM5 — Hopper, 132 SMs, 228 KB shared memory per SM. The target is
+/// the arch-specific `sm_90a` (S53): it is what admits `wgmma`, and every
+/// sm_90 instruction is in it.
+pub const H100: TargetProfile = TargetProfile {
+    name: "h100",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_90a",
+        sms: 132,
+        smem_per_sm: 228 * 1024,
+        smem_per_block: 227 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        // 50 MB (H100 whitepaper; unmeasured on the SXM part).
+        l2_bytes: 50 * 1024 * 1024,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// H100 PCIe — the same Hopper SM as [`H100`], 114 of them.
+pub const H100_PCIE: TargetProfile = TargetProfile {
+    name: "h100-pcie",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_90a",
+        sms: 114,
+        smem_per_sm: 228 * 1024,
+        smem_per_block: 227 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        // `facts l2_bytes=52428800` (base-h100-pcie.txt).
+        l2_bytes: 50 * 1024 * 1024,
+        // S62 `place`, measured. `launch_ns` on the H100 PCIe
+        // (`s62/cpugpu/run2/results-h100-pcie.txt`: pt_pc_64's all-device
+        // build, `off-place`, iter ms / 3 sites). The rates on an H100 80GB HBM3
+        // (SXM) box running this build, the only H100 rentable for run 1
+        // (`run1/results-h100-pcie.txt`: mm_4096 contract Mapal 49.07 Tflop/s;
+        // pt_pj_m1_n2048_k7168's site kernel 135 B/ns) — no site of the S62 set
+        // is placed by them (`placediff.sh`: only `launch_ns` moves a site).
+        // The SXM box's `launch_ns`, 28 799, put the 64³ chains on the host,
+        // which the PCIe box measured 1.6–2.2% slower (run2 `pt_pm_2048_64`).
+        cost: Some(DeviceCost {
+            flops_per_ns: 49070,
+            bytes_per_ns: 135,
+            launch_ns: 11315,
+        }),
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// RTX 5090 — consumer Blackwell (`sm_120`, not the datacenter `sm_100`),
+/// 170 SMs. Resident blocks per SM is 24, as on Ada: the box's device query
+/// reports `max_blocks_per_sm=24` (`v6-rtx-5090.txt`, `facts` line).
+pub const RTX_5090: TargetProfile = TargetProfile {
+    name: "rtx-5090",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_120",
+        sms: 170,
+        // `facts l2_bytes=100663296` (base-rtx-5090.txt).
+        l2_bytes: 96 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-5090.txt: mm_4096 contract Mapal 53.41 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 494 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 53410,
+            bytes_per_ns: 494,
+            launch_ns: 17015,
+        }),
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// RTX 3090 — Ampere GA102 (`sm_86`), 82 SMs (S54). Compute capability 8.6
+/// differs from Ada's per-SM facts in one field: 16 resident blocks per SM, not
+/// 24 (CUDA C Programming Guide, compute-capability table); 100 KB shared memory
+/// per SM, 99 KB per block, 1536 threads per SM, as on Ada.
+/// **UNMEASURED** — not in [`GPU_MEASURED`], so every rung is ON until its own
+/// session measures the arms.
+pub const RTX_3090: TargetProfile = TargetProfile {
+    name: "rtx-3090",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_86",
+        sms: 82,
+        max_blocks_per_sm: 16,
+        // `facts l2_bytes=6291456` (base-rtx-3090.txt).
+        l2_bytes: 6 * 1024 * 1024,
+        // S62 `place`, measured (s62/cpugpu/run1/results-rtx-3090.partial-51025609.txt (the box dropped before its mm_4096 timing): pt_pj_m128_n18432_k7168 contract site kernel 22.33 Tflop/s; pt_pj_m1_n2048_k7168 site kernel 161 B/ns; pt_pc_64 all-device iter ms / 3 sites).
+        cost: Some(DeviceCost {
+            flops_per_ns: 22325,
+            bytes_per_ns: 161,
+            launch_ns: 18217,
+        }),
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// A100 SXM4 — Ampere GA100 (`sm_80`), 108 SMs (S54; the 40 GB and 80 GB SXM4
+/// parts have the same SM). 164 KB shared memory per SM (`167936`), 163 KB per
+/// block opt-in (`166912`), 2048 threads and 32 blocks per SM (CUDA C
+/// Programming Guide, compute capability 8.0). The SXM4 variant because vast
+/// listed four rentable single-GPU SXM4 offers to one PCIe on 2026-10-21; the
+/// PCIe part (same SM facts, lower clocks) is a separate name, `a100-pcie`,
+/// when it is measured — the `h100` / `h100-pcie` split.
+/// **UNMEASURED** — every rung ON (see [`RTX_3090`]).
+pub const A100: TargetProfile = TargetProfile {
+    name: "a100",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_80",
+        sms: 108,
+        smem_per_sm: 164 * 1024,
+        smem_per_block: 163 * 1024,
+        max_threads_per_sm: 2048,
+        max_blocks_per_sm: 32,
+        // `facts l2_bytes=41943040` (base-a100*.txt, PCIe 40GB and SXM4).
+        l2_bytes: 40 * 1024 * 1024,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
+/// How many blocks the thread budget is split across on one SM: two, so one
+/// computes while the other waits at the panel barrier. Policy, like
+/// [`Sme::panel_l1d_ratio`] — not a property of the silicon.
+pub const GPU_RESIDENT_BLOCKS: u64 = 2;
+
+/// **A GPU part's launch-geometry constants (ADR-0034 D1)** — the per-target
+/// table the offline search (D2, `benches/gpu/knobs.json`) writes; a measurement
+/// arm replaces one with `--geom=<knob>=<value>` ([`Geom::with`]). Every knob is
+/// value-invariant: it re-partitions independent cells, or a fold the face
+/// leaves free, never an output bit. A count of 0 is "derived" — the rule that
+/// computes it from the site's extents and the part's facts — and a forced
+/// value the site cannot take falls back to that rule. [`GEOM`] is the seed
+/// row: today's literals and derivations, byte for byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Geom {
+    /// Warps each scheduler should hold: the FMA and `mma` tiles split the
+    /// resident-thread budget across this many blocks, and the fill rule
+    /// ([`Gpu::fill_warps`]) aims at it ([`GPU_RESIDENT_BLOCKS`]).
+    pub resident: u64,
+    /// Contiguous partitions of a cut `k` fold (`splitk`, `splitk-atomic`);
+    /// 0 = [`TargetProfile::split_count`]. Ignored where it does not divide
+    /// the fold's panels.
+    pub split: u64,
+    /// The FMA tile's candidates (site-geometry B4: the 128-accumulator
+    /// `8 × 16` tile, `cp.async` stages, the panel depth at `K = 1024`):
+    /// a thread's register tile `tm × tn`, warps per block, the panel depth
+    /// `bk` and its stages (1 = register staging, ≥ 2 = `cp.async`); 0 =
+    /// derived ([`TargetProfile::gpu_tile_split`], [`TargetProfile::gpu_tile_async`]).
+    pub tm: u64,
+    pub tn: u64,
+    pub warps: u64,
+    pub bk: u64,
+    pub stages: u64,
+    /// The `wgmma` tile's candidates: rows of one warpgroup's instruction
+    /// (`n`) and warpgroups per block (T1: the grid's last wave); 0 = derived.
+    pub wg_n: u64,
+    pub wg_groups: u64,
+}
+
+/// The seed row: every part's table before a search wrote one.
+pub const GEOM: Geom = Geom {
+    resident: GPU_RESIDENT_BLOCKS,
+    split: 0,
+    tm: 0,
+    tn: 0,
+    warps: 0,
+    bk: 0,
+    stages: 0,
+    wg_n: 0,
+    wg_groups: 0,
+};
+
+/// A `--geom=` override per knob, in [`Geom::NAMES`] order (`None` = the
+/// table's value).
+pub type GeomOver = [Option<u64>; Geom::NAMES.len()];
+
+impl Geom {
+    pub const NAMES: [&'static str; 9] = [
+        "resident",
+        "split",
+        "tm",
+        "tn",
+        "warps",
+        "bk",
+        "stages",
+        "wg_n",
+        "wg_groups",
+    ];
+
+    /// The knob called `name`, `None` for an unknown name.
+    pub fn knob(&mut self, name: &str) -> Option<&mut u64> {
+        Some(match name {
+            "resident" => &mut self.resident,
+            "split" => &mut self.split,
+            "tm" => &mut self.tm,
+            "tn" => &mut self.tn,
+            "warps" => &mut self.warps,
+            "bk" => &mut self.bk,
+            "stages" => &mut self.stages,
+            "wg_n" => &mut self.wg_n,
+            "wg_groups" => &mut self.wg_groups,
+            _ => return None,
+        })
+    }
+
+    /// This row with the overrides in `over` applied.
+    pub fn with(mut self, over: &GeomOver) -> Self {
+        for (name, v) in Self::NAMES.iter().zip(over) {
+            if let Some(v) = v {
+                *self.knob(name).expect("a listed knob") = *v;
+            }
+        }
+        self
+    }
+}
 
 /// Apple M4 with the streaming matrix unit enabled: [`APPLE_M`] plus the SME
 /// facts measured on the part (`benches/sme/svl.c` — SVL 64 B, 4 f32 tiles;
@@ -883,13 +3882,21 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 6] = [
+const PROFILES: [&TargetProfile; 14] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
     &CUDA_ADA,
+    &RTX_4090,
+    &H100,
+    &H100_PCIE,
+    &RTX_5090,
+    &RTX_3090,
+    &A100,
     &APPLE_M4_SME,
     &RAPTORLAKE,
+    &RAPTORLAKE_INLINE,
+    &X86_64_V3,
 ];
 
 /// Resolve a profile by name. `None` for an unknown name — never a silent
@@ -913,6 +3920,14 @@ pub fn resolve(name: &str) -> Option<&'static TargetProfile> {
         // rung that needs it declines: the compiler goes conservative instead of
         // guessing, which is the same contract as before this became default.
         .or_else(|| (name == "native").then_some(&GENERIC))
+}
+
+impl TargetProfile {
+    /// [`resolve`] from outside the crate: a test's oracle reads the same
+    /// facts the emitter derived from (S62 `splitk`).
+    pub fn named(name: &str) -> Option<&'static TargetProfile> {
+        resolve(name)
+    }
 }
 
 /// The known profile names, for the error message on an unknown one.
@@ -1217,9 +4232,33 @@ mod tests {
         );
     }
 
+    /// plan-s51 H2 — the A pack's block depth, and the two ways it declines.
+    ///
+    /// The pack's stores land one cache line apart, so a line is filled 4 bytes
+    /// at a time across the `panel_rows` rows that revisit it. Free while `ap`
+    /// is resident, 32x the line traffic once it is not — so the decision is
+    /// exactly "does `32 · k · sizeof` fit L1D", and 1024 is the last `k` that
+    /// does on this part.
+    ///
+    /// The depth is `line_bytes / sizeof` — one line's worth of `k` — and both
+    /// numbers are DETECTED, so nothing here is swept.
+    #[test]
+    fn pack_block_fires_only_once_the_pack_buffer_leaves_l1d() {
+        // 32 x 1024 x 4 = 131072 = L1D exactly. Fits, so no block.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 1024, &F32), None);
+        // One k-block deeper and it does not fit.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 1056, &F32), Some(32));
+        assert_eq!(APPLE_M4_SME.pack_block(32, 4096, &F32), Some(32));
+        // f64 halves the elements per line, so the block halves with it.
+        assert_eq!(APPLE_M4_SME.pack_block(32, 4096, &F64), Some(16));
+        // A profile with no L1D geometry cannot decide and must keep the
+        // single-pass copy — the same contract every other derived factor has.
+        assert_eq!(GENERIC.pack_block(32, 4096, &F32), None);
+    }
+
     /// The SME k-panel depth is **derived from L1D**, and the derivation
     /// reproduces the swept optimum — `plan-s31-deduced-blocking.md`'s rule.
-    /// `512` appears in no source file; it falls out of 128 KB / 256 B.
+    /// The 1024-step depth follows from (2 × 128 KB) / 256 B.
     #[test]
     fn sme_kc_reproduces_the_measured_optimum() {
         assert_eq!(
@@ -1251,7 +4290,7 @@ mod tests {
             sme < neon,
             "the matrix unit's window is smaller than the NEON k-panel's; \
              a shared derivation would size SME's panel 8x too deep and lose \
-             1.448x at K=4096 (docs/performance/s42-sme-roofline.md §5)"
+             1.448x at K=4096 (docs/performance/cpu/matmul/sme-throughput-ceiling.md §5)"
         );
         // And the gate this feeds: at K=4096 the SME nest must OPEN...
         assert!(4096 > sme, "KC nest must fire at K=4096");
@@ -1437,7 +4476,7 @@ mod tests {
         // The i9's 12 reachable slots put the ceiling at 6 against a floor of
         // 16, so the mean is 9 and the block is 8. Its measured optimum is 128,
         // which no L1-derived rule can reach — see `move_block`'s note and the
-        // counter evidence in benches/results-s45.
+        // counter evidence in benches/results/cpu/memory/deduced-panel-movement.
         assert_eq!(RAPTORLAKE.move_block(&transpose(1024)), Some(8));
         assert_eq!(RAPTORLAKE.move_block(&transpose(2048)), Some(8));
         assert_eq!(
@@ -1844,9 +4883,562 @@ mod tests {
             "verified against the device: compute capability 8.9 (RTX 4070 Ti)"
         );
         assert!(
-            g.smem_bytes < CUDA_ADA.l2_bytes,
-            "smem is the smaller budget"
+            g.smem_per_block <= g.smem_per_sm,
+            "a block cannot opt in to more than its SM holds"
         );
+    }
+
+    /// The GPU tile geometry is arithmetic over device facts — these pins are
+    /// the derivation worked by hand, so a changed rule shows up as a changed
+    /// number here rather than as a slower kernel on a box.
+    #[test]
+    fn gpu_tile_geometry_is_derived_from_device_facts() {
+        let f32 = Ty::f32();
+        // `fill` on and off: `warp-fill` is a no-op on these 4096 sites.
+        let g = |p: &TargetProfile, n, fill| {
+            let x = p
+                .gpu_tile(n, n, n, &f32, false, fill)
+                .expect("divisible square site");
+            (x.bm(), x.bn(), x.threads(), x.bk, x.blocks_per_sm)
+        };
+        for fill in [false, true] {
+            // 255 registers ⇒ 8×8 accumulators; 65 536 / 128 / 2 ⇒ 256 threads;
+            // 4090 4096²: 1024 blocks ≥ 128 SMs, 2 per SM ⇒ 49 KB ⇒ bk 32.
+            assert_eq!(g(&RTX_4090, 4096, fill), (128, 128, 256, 32, 2));
+            // H100's 228 KB per SM doubles the panel depth.
+            assert_eq!(g(&H100, 4096, fill), (128, 128, 256, 64, 2));
+        }
+        // OFF arm, 1024²: 64 blocks < 128 SMs ⇒ halve x once ⇒ 128 blocks.
+        assert_eq!(g(&RTX_4090, 1024, false), (128, 64, 128, 32, 4));
+        // 132 SMs: 128 blocks is still short ⇒ halve y too.
+        assert_eq!(g(&H100, 1024, false), (64, 64, 64, 32, 8));
+        // A CPU profile has no GPU geometry, and an indivisible site has none.
+        assert_eq!(GENERIC.gpu_tile(4096, 4096, 4096, &f32, true, true), None);
+        assert_eq!(RTX_4090.gpu_tile(1000, 1000, 1000, &f32, true, true), None);
+        // 5090: 24 resident blocks per SM (the box's device query, S53), which
+        // the thread and register budgets never reach here: 1024² halves to
+        // 64-thread blocks ⇒ 256 blocks ≥ 170 SMs, 8 per SM by registers ⇒
+        // 11.8 KB each ⇒ bk 16.
+        assert_eq!(RTX_5090.gpu().map(|g| g.max_blocks_per_sm), Some(24));
+        assert_eq!(g(&RTX_5090, 4096, false), (128, 128, 256, 32, 2));
+        assert_eq!(g(&RTX_5090, 1024, false), (64, 64, 64, 16, 8));
+
+        // S53 `wide-fma`: 8×16 holds 128 + 2·24 + 32 = 208 ≤ 255 (16×16 would
+        // be 352); 65 536 / 208 / 2 = 157 ⇒ 128 threads; ty·8 = tx·16 ⇒ 16 × 8
+        // ⇒ a 128 × 128 block; 315 / 128 ⇒ 2 blocks per SM — on every part.
+        let w = |p: &TargetProfile, n| {
+            let x = p
+                .gpu_tile(n, n, n, &f32, true, false)
+                .expect("divisible square site");
+            (
+                x.tm,
+                x.tn,
+                x.bm(),
+                x.bn(),
+                x.threads(),
+                x.bk,
+                x.blocks_per_sm,
+            )
+        };
+        assert_eq!(fma_held_regs(8, 16, 4), 208);
+        assert_eq!(w(&RTX_4090, 4096), (8, 16, 128, 128, 128, 32, 2));
+        assert_eq!(w(&H100_PCIE, 4096), (8, 16, 128, 128, 128, 64, 2));
+        assert_eq!(w(&H100, 4096), (8, 16, 128, 128, 128, 64, 2));
+        assert_eq!(w(&RTX_5090, 4096), (8, 16, 128, 128, 128, 32, 2));
+        // A small site keeps the S52 tile, and the fill rule still halves it:
+        // 1024² is 64 wide blocks < every part's SMs.
+        for p in [&RTX_4090, &H100_PCIE, &H100, &RTX_5090] {
+            assert_eq!(
+                p.gpu_tile(1024, 1024, 1024, &f32, true, false),
+                p.gpu_tile(1024, 1024, 1024, &f32, false, false),
+                "{}",
+                p.name
+            );
+        }
+        assert_eq!(w(&RTX_4090, 1024), (8, 8, 128, 64, 128, 32, 4));
+        // 2048² is 256 wide blocks ≥ 170 SMs (5090): wide, unhalved.
+        assert_eq!(w(&RTX_5090, 2048), (8, 16, 128, 128, 128, 32, 2));
+        // f64 counts two registers per element: 8 × 8 (224).
+        let d = RTX_4090
+            .gpu_tile(4096, 4096, 4096, &Ty::f64(), true, false)
+            .expect("f64");
+        assert_eq!((d.tm, d.tn, fma_held_regs(8, 8, 8)), (8, 8, 224));
+        // With `warp-fill`, the 5090's 2048² wide grid (1024 warps < 1360) is
+        // under-filled too: the S52 tile, then filled.
+        assert_eq!(
+            RTX_5090.gpu_tile(2048, 2048, 2048, &f32, true, true),
+            RTX_5090.gpu_tile(2048, 2048, 2048, &f32, false, true)
+        );
+        // The 4090's (1024 warps = 1024) is not.
+        assert_eq!(
+            RTX_4090.gpu_tile(2048, 2048, 2048, &f32, true, true),
+            RTX_4090.gpu_tile(2048, 2048, 2048, &f32, true, false)
+        );
+    }
+
+    /// The fill a site's base geometry gives: 4090 1024² is 128 blocks of 4
+    /// warps over 128 × 4 schedulers = 1 (under-filled); 2048² is 256 blocks
+    /// of 8 warps = 4.
+    #[test]
+    fn warps_per_scheduler_reads_the_base_grid() {
+        let f32 = Ty::f32();
+        let wps = |p: &TargetProfile, n| {
+            let g = p
+                .gpu_tile(n, n, n, &f32, false, false)
+                .expect("divisible square site");
+            let blocks = (n / g.bm()) * (n / g.bn());
+            p.gpu()
+                .expect("gpu")
+                .warps_per_scheduler(blocks, g.threads())
+        };
+        assert_eq!(wps(&RTX_4090, 1024), 1);
+        assert_eq!(wps(&RTX_4090, 2048), 4);
+        assert_eq!(wps(&RTX_5090, 1024), 0);
+        assert_eq!(wps(&H100_PCIE, 1024), 1);
+        // S54 arch-select: `benches/gpu/rungs.py` classes a measured size by
+        // this fill — Under at n ≤ 1024, Filled above — on every measured part.
+        for p in GPU_MEASURED {
+            for n in [512, 1024, 2048, 4096, 8192] {
+                let under = wps(p, n) < GPU_RESIDENT_BLOCKS;
+                assert_eq!(under, n <= 1024, "{} {n}: {}", p.name, wps(p, n));
+            }
+        }
+    }
+
+    /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
+    /// Hopper or Blackwell's contract face; every OFF names its results row; an unmeasured part takes the
+    /// measured part of its architecture.
+    #[test]
+    fn gpu_rungs_are_the_measured_table() {
+        assert!(RTX_4090.gpu_rungs(1, true).cp_async);
+        assert!(!RTX_4090.gpu_rungs(4, true).cp_async);
+        // With fma-regs' register-staged tile, the exact face streams by
+        // registers when filled too (S53 integration).
+        assert!(!RTX_4090.gpu_rungs(4, false).cp_async);
+        assert!(RTX_4090.gpu_rungs(1, false).cp_async);
+        assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
+        // 5090 under-filled: async paid on the S52 tile, not on warp-fill's.
+        assert!(!RTX_5090.gpu_rungs(0, true).cp_async);
+        // S54: `devmap` and `cell-law` measured positive on all five parts
+        // (`devmap-<part>.txt`; the evidence is on the `GpuRungs` fields).
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
+                assert!(r.devmap && r.cell_law, "{}", p.name);
+            }
+        }
+
+        let measured = GPU_MEASURED;
+        for d in GPU_RUNGS_OFF {
+            assert!(
+                measured.iter().any(|p| p.name == d.profile),
+                "{d:?}: not a measured profile"
+            );
+            assert!(crate::GpuRungs::NAMES.contains(&d.rung), "{d:?}");
+            assert!(d.cite.contains(".txt") && d.cite.contains("ms"), "{d:?}");
+        }
+        for wps in [0, 1, 2, 4, 64] {
+            // S54: a `Contract` row covers the TF32 face (a contract face);
+            // a `Tf32` row covers it alone.
+            for face in [Face::Exact, Face::Contract, Face::Tf32] {
+                for p in measured {
+                    let r = p.gpu_rungs_on(wps, face);
+                    assert!(r.arch);
+                    for n in crate::GpuRungs::NAMES {
+                        let cited = GPU_RUNGS_OFF.iter().any(|d| {
+                            d.profile == p.name
+                                && d.rung == n
+                                && d.fill.covers(wps)
+                                && (d.face == Face::Any
+                                    || d.face == face
+                                    || (d.face == Face::Contract && face == Face::Tf32))
+                        });
+                        assert_eq!(!r.get(n), cited, "{} {n} {wps} {face:?}", p.name);
+                    }
+                }
+                // An unmeasured part takes its architecture's measured part;
+                // with none, every rung (another architecture's losses are not its own).
+                for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
+                    assert_eq!(p.gpu_rungs_on(wps, face), m.gpu_rungs_on(wps, face));
+                }
+                let mut other = A100;
+                other.name = "unmeasured";
+                if let Machine::Gpu(g) = &mut other.machine {
+                    g.arch = "sm_87";
+                }
+                assert_eq!(other.gpu_rungs_on(wps, face), crate::GpuRungs::ALL);
+            }
+            for contract in [false, true] {
+                assert_eq!(
+                    RTX_3090.gpu_rungs(wps, contract),
+                    RTX_3090.gpu_rungs_on(wps, Face::of(contract, None))
+                );
+            }
+        }
+        let tf32 = Some(crate::Reduced::Tf32);
+        assert_eq!(Face::of(true, tf32), Face::Tf32);
+        assert_eq!(Face::of(true, None), Face::Contract);
+        assert_eq!(Face::of(false, None), Face::Exact);
+    }
+
+    /// S54: `Gpu::l2_bytes` is the box's `facts l2_bytes=` on every measured
+    /// part (`benches/results/gpu/validation/baseline/base-<part>.txt`), and the whitepaper
+    /// figure on the two parts no box has reported (the 4070 Ti, H100 SXM).
+    #[test]
+    fn l2_bytes_is_the_device_query() {
+        let mb = 1024 * 1024;
+        for (p, facts) in [
+            (&RTX_3090, 6_291_456),
+            (&A100, 41_943_040),
+            (&RTX_4090, 75_497_472),
+            (&H100_PCIE, 52_428_800),
+            (&RTX_5090, 100_663_296),
+            (&H100, 50 * mb),
+            (&CUDA_ADA, 48 * mb),
+        ] {
+            assert_eq!(p.gpu().expect("gpu").l2_bytes, facts, "{}", p.name);
+        }
+    }
+
+    /// S54 `raster`: the group height minimises the panels one wave reads,
+    /// keeps row-major under the L2 gate and on a one-wave grid, and only
+    /// ever divides the grid's height.
+    #[test]
+    fn raster_is_the_wave_panel_minimum_behind_the_l2_gate() {
+        let g = RTX_3090.gpu().expect("gpu");
+        let wave = 82 * 2;
+        // 128×128 blocks, f32: one block's panels are 1 KB per k.
+        assert_eq!(g.raster(128, 128, wave, 4096, 4096, 4096, 4, true), 1); // 4 MB ≤ 6 MB
+        assert_eq!(g.raster(128, 128, wave, 8192, 8192, 8192, 4, true), 16); // 8 MB > 6 MB
+        // h + ⌈164 / h⌉ panels: 8 → 29, 16 → 27, 32 → 38.
+        assert_eq!(g.raster(128, 128, wave, 8192, 8192, 8192, 4, false), 16);
+        assert_eq!(g.raster(128, 128, wave, 4096, 4096, 4096, 4, false), 16);
+        // One wave (16 × 8 blocks ≤ 164): order changes nothing.
+        assert_eq!(g.raster(128, 128, wave, 1024, 2048, 8192, 4, false), 1);
+        // A grid 3 blocks high: the largest power of two dividing it is 1.
+        assert_eq!(g.raster(128, 128, wave, 384, 8192, 8192, 4, false), 1);
+        let big = RTX_4090.gpu().expect("gpu");
+        assert_eq!(big.raster(128, 128, 256, 8192, 8192, 8192, 4, true), 1); // 8 MB ≤ 72 MB
+    }
+
+    /// S54 R5: the delta upload and the strided one-row site ship on every
+    /// measured part. Retention on the resident buffer ships on the 3090,
+    /// A100, 4090 and 5090 (S65) and the H100 (cpu-gpu-boundary).
+    #[test]
+    fn r5_rungs_are_the_measured_table() {
+        for p in GPU_MEASURED {
+            for wps in [0, 64] {
+                for contract in [false, true] {
+                    let r = p.gpu_rungs(wps, contract);
+                    assert!(r.resident && r.delta_h2d && r.lane_stride, "{}", p.name);
+                    assert!(r.retain_resident, "{}", p.name);
+                }
+            }
+        }
+    }
+
+    /// S54: `rowfold` ships on every measured part; the reader-chosen store
+    /// order only where its device time measured faster in two sessions — the
+    /// 4090's contract face and the A100's exact face.
+    #[test]
+    fn rowfold_rungs_are_the_measured_table() {
+        for p in GPU_MEASURED {
+            for contract in [false, true] {
+                let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
+                assert!(r.rowfold, "{} {contract}", p.name);
+                let layout = matches!((p.name, contract), ("rtx-4090", true) | ("a100", false));
+                assert_eq!(r.rowfold_layout, layout, "{} {contract}", p.name);
+            }
+        }
+    }
+
+    /// S53 `pad`: the register-staged transposed-A store. With all four lanes
+    /// of a row in one warp no 16-byte-aligned pad is conflict-free; two lanes
+    /// per row (one 32-byte sector) are, at a 4-word pad.
+    #[test]
+    fn gpu_tile_sync_a_is_derived_from_the_bank_geometry() {
+        let f32 = Ty::f32();
+        assert_eq!(conflict_free_pad(128, |l| (4 * (l % 4), l / 4)), None);
+        for p in [&RTX_4090, &H100_PCIE, &RTX_5090] {
+            let g = p
+                .gpu_tile(4096, 4096, 4096, &f32, true, true)
+                .expect("tile");
+            for bk in [8, 16, 32] {
+                let s = p.gpu_tile_sync_a(GpuTile { bk, ..g }, &f32);
+                assert_eq!((s.a_row_lanes, s.pad_a), (2, 4), "{} bk {bk}", p.name);
+            }
+            // f64 keeps the S52 map: the bank model counts words.
+            let d = p.gpu_tile_sync_a(g, &Ty::f64());
+            assert_eq!((d.a_row_lanes, d.pad_a), (0, 0));
+        }
+    }
+
+    /// The tensor-core geometry, worked by hand from the device facts.
+    #[test]
+    fn gpu_mma_tile_is_derived_from_device_facts() {
+        let t = |p: &TargetProfile, n| {
+            let x = p
+                .gpu_mma_tile(n, n, n, false, true)
+                .expect("divisible square site");
+            (
+                x.wm(),
+                x.wn(),
+                x.bm(),
+                x.bn(),
+                x.bk,
+                x.stages,
+                x.pad_a,
+                x.pad_b,
+            )
+        };
+        // 255 regs ⇒ 16 m16n8 tiles = 64×32 warp tile; 65 536 / 128 / 2 ⇒ 8
+        // warps ⇒ 2×4 ⇒ 128×128. Pads: A rows of bk+4 words put the 8 fragment
+        // rows 4 banks apart; B rows of 128+8 put the 4 k-rows 8 banks apart.
+        // 4090: 49 KB per block ⇒ bk 16 (two 18.4 KB stages), 2 stages.
+        assert_eq!(t(&RTX_4090, 4096), (64, 32, 128, 128, 16, 2, 4, 8));
+        // H100: 113 KB per block ⇒ bk 32 (35.8 KB) ⇒ 3 stages.
+        assert_eq!(t(&H100, 4096), (64, 32, 128, 128, 32, 3, 4, 8));
+        // Pre-sm_80 has no `mma.sync` TF32; a CPU has no tile at all.
+        assert_eq!(GENERIC.gpu_mma_tile(4096, 4096, 4096, false, true), None);
+        // The wide rule: 4×8 tiles (64×64 warp, 224 registers) ⇒ 292 resident
+        // threads ⇒ 4 warps per block ⇒ 2×2 warps = 128×128 (CUTLASS's).
+        let w = RTX_4090
+            .gpu_mma_tile(4096, 4096, 4096, true, true)
+            .expect("wide");
+        assert_eq!(
+            (w.wm(), w.wn(), w.bm(), w.bn(), w.bk, w.stages),
+            (64, 64, 128, 128, 16, 2)
+        );
+    }
+
+    /// S62: the skinny geometries the ordered-geometry rungs derive, worked
+    /// from the device facts; and the squares they leave alone.
+    #[test]
+    fn ordered_skinny_geometry_is_derived_from_shape_and_device_facts() {
+        let f32 = Ty::f32();
+        let on = crate::GpuRungs::ALL;
+        let without = |names: &[&str]| {
+            let mut r = on;
+            for n in names {
+                *r.rung(n).expect("a rung") = false;
+            }
+            r
+        };
+        let geo = |p: &TargetProfile, m, n, k, r| {
+            p.gpu_tile_with(m, n, k, &f32, false, r).map(|x| {
+                (
+                    x.tm,
+                    x.tn,
+                    x.bm(),
+                    x.bn(),
+                    x.threads(),
+                    x.bk,
+                    x.blocks_per_sm,
+                )
+            })
+        };
+        // 5090 16×2048×7168: 8×8 ⇒ fill (1360 warps) ⇒ 4×4 ⇒ `fill-rows` 1×4
+        // (256 warps: tn keeps its vector); 256 threads halve to 8 × 4 ⇒ 8 × 16
+        // blocks, 256 ≥ 170 SMs. `grid-share`: ⌈256 / 170⌉ = 2 per SM ⇒ 49 KB
+        // ⇒ bk 512 (24 · 512 · 4 B); without it 16 per SM ⇒ 5.2 KB ⇒ bk 32.
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, on),
+            Some((1, 4, 8, 16, 32, 512, 2))
+        );
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, without(&["grid-share"])),
+            Some((1, 4, 8, 16, 32, 32, 16))
+        );
+        // Wide: the vector floor has a geometry — 4×4 at 32 threads row-fits to
+        // 16 × 32, 576 blocks ≥ 170 SMs — so `fill-rows` keeps it; ⌈576 / 170⌉ =
+        // 4 per SM ⇒ bk 128. Likewise M128: a vector tile exists, no scalar rows.
+        assert_eq!(
+            geo(&RTX_5090, 16, 18432, 7168, on),
+            Some((4, 4, 16, 32, 32, 128, 4))
+        );
+        for (m, n, k) in [(16, 18432, 7168), (128, 2048, 7168), (128, 1024, 4096)] {
+            assert_eq!(
+                geo(&RTX_5090, m, n, k, on),
+                geo(&RTX_5090, m, n, k, without(&["fill-rows"])),
+                "{m}x{n}x{k}"
+            );
+        }
+        // `fill-rows` off: 4×4 at 32 threads is 32 rows tall ⇒ `row-fit` 16 × 32,
+        // 64 blocks < 170 SMs ⇒ `wave-gate` ⇒ the one-thread-per-cell kernel;
+        // with the gate off too, the S59 geometry — one SM's share, bk 512.
+        assert_eq!(
+            geo(&RTX_5090, 16, 2048, 7168, without(&["fill-rows"])),
+            None
+        );
+        assert_eq!(
+            geo(
+                &RTX_5090,
+                16,
+                2048,
+                7168,
+                without(&["fill-rows", "wave-gate"])
+            ),
+            Some((4, 4, 16, 32, 32, 512, 1))
+        );
+        // Every new rung off is the S53 geometry: no tile fits 16 rows.
+        let old = without(&["row-fit", "wave-gate", "grid-share", "fill-rows"]);
+        assert_eq!(geo(&RTX_5090, 16, 2048, 7168, old), None);
+        assert_eq!(
+            RTX_5090.gpu_tile(16, 2048, 7168, &f32, false, true),
+            RTX_5090.gpu_tile_with(16, 2048, 7168, &f32, false, old)
+        );
+        // M1: one row of 32 threads, 1 × 128 blocks. 2048 columns are 16
+        // blocks < 170 SMs: gated. 18432 columns are 144 blocks: gated on the
+        // 5090; on 128- and 82-SM parts no whole-copy panel fits a 100 KB SM
+        // (bk ≥ 128 for whole A vectors, 129 · 128 · 4 B > its share); the
+        // A100's and H100's 164/228 KB hold it.
+        assert_eq!(geo(&RTX_5090, 1, 2048, 7168, on), None);
+        assert_eq!(geo(&RTX_5090, 1, 18432, 7168, on), None);
+        for p in [&RTX_4090, &RTX_3090] {
+            assert_eq!(geo(p, 1, 18432, 7168, on), None, "{}", p.name);
+        }
+        for p in [&A100, &H100_PCIE] {
+            assert_eq!(
+                geo(p, 1, 18432, 7168, on),
+                Some((1, 4, 1, 128, 32, 128, 2)),
+                "{}",
+                p.name
+            );
+        }
+        // The squares: every subset of the new rungs, `fill` and `wide` both
+        // ways, is the old geometry at 2048² and 4096² on every part; at 1024²
+        // only `grid-share` moves anything (the 4090's 128 blocks: one per SM).
+        let new = ["row-fit", "wave-gate", "grid-share", "fill-rows"];
+        for p in GPU_MEASURED {
+            for n in [1024, 2048, 4096] {
+                for mask in 0..16u32 {
+                    let names: Vec<&str> = (0..4)
+                        .filter(|b| mask >> b & 1 == 0)
+                        .map(|b| new[b])
+                        .collect();
+                    for (wide, fill) in [(false, false), (false, true), (true, false), (true, true)]
+                    {
+                        let r = crate::GpuRungs {
+                            fill,
+                            ..without(&names)
+                        };
+                        let got = p.gpu_tile_with(n, n, n, &f32, wide, r);
+                        let want = p.gpu_tile(n, n, n, &f32, wide, fill);
+                        if n > 1024 || !r.grid_share {
+                            assert_eq!(got, want, "{} {n} {names:?}", p.name);
+                        } else {
+                            let (g, w) = (got.expect("tile"), want.expect("tile"));
+                            assert_eq!((g.tm, g.tn, g.tx, g.ty), (w.tm, w.tn, w.tx, w.ty));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `warp-fill` (S53): the tile shrinks until the grid holds
+    /// 2 · 4 schedulers · SMs warps, before the thread grid splits for blocks.
+    #[test]
+    fn gpu_warp_fill_shrinks_the_tile_until_every_scheduler_has_two_warps() {
+        let f32 = Ty::f32();
+        let gpu = |p: &TargetProfile| *p.gpu().expect("gpu");
+        assert_eq!(gpu(&RTX_4090).schedulers(), 4);
+        assert_eq!(gpu(&RTX_4090).fill_warps(), 1024);
+        let fma = |p: &TargetProfile, n, fill| {
+            let x = p.gpu_tile(n, n, n, &f32, false, fill).expect("divisible");
+            let warps = (n / x.tm) * (n / x.tn) / 32;
+            (x.tm, x.tn, x.bm(), x.bn(), x.threads(), warps)
+        };
+        // 4090 1024²: 8×8 gives 512 warps (1 per scheduler) ⇒ halve tn ⇒ 8×4,
+        // 1024 warps (2 per scheduler); 16×16 threads ⇒ 128×64, 128 blocks.
+        assert_eq!(fma(&RTX_4090, 1024, false), (8, 8, 128, 64, 128, 512));
+        assert_eq!(fma(&RTX_4090, 1024, true), (8, 4, 128, 64, 256, 1024));
+        // H100 PCIe (114 SMs) needs 912 ⇒ 8×4; H100 SXM (132) 1056 and the
+        // 5090 (170) 1360 ⇒ 4×4, 64×64 blocks, 2048 warps.
+        assert_eq!(fma(&H100_PCIE, 1024, true), (8, 4, 128, 64, 256, 1024));
+        assert_eq!(fma(&H100, 1024, true), (4, 4, 64, 64, 256, 2048));
+        assert_eq!(fma(&RTX_5090, 1024, true), (4, 4, 64, 64, 256, 2048));
+        // Never below one vector: a 256² site floors at 4×4 and then splits
+        // the thread grid for blocks as before.
+        assert_eq!(fma(&RTX_4090, 256, true).0, 4);
+        assert_eq!(fma(&RTX_4090, 256, true).1, 4);
+
+        let mma = |p: &TargetProfile, n, fill| {
+            let x = p.gpu_mma_tile(n, n, n, true, fill).expect("divisible");
+            (x.wm(), x.wn(), x.bm(), x.bn(), (n / x.wm()) * (n / x.wn()))
+        };
+        // Wide 64×64 warp tile at 1024²: 256 warps (0.5 per scheduler) ⇒
+        // 64×32 ⇒ 32×32, 1024 warps; 2×2 warps per block ⇒ 64×64.
+        assert_eq!(mma(&RTX_4090, 1024, false), (64, 64, 128, 64, 256));
+        assert_eq!(mma(&RTX_4090, 1024, true), (32, 32, 64, 64, 1024));
+        // No-op wherever the grid already fills the schedulers.
+        for p in [&RTX_4090, &H100, &H100_PCIE, &RTX_5090] {
+            for n in [3072, 4096] {
+                assert_eq!(
+                    p.gpu_tile(n, n, n, &f32, false, true),
+                    p.gpu_tile(n, n, n, &f32, false, false)
+                );
+                assert_eq!(
+                    p.gpu_mma_tile(n, n, n, true, true),
+                    p.gpu_mma_tile(n, n, n, true, false)
+                );
+            }
+        }
+    }
+
+    /// The Hopper `wgmma` geometry (S53), worked by hand from the device facts.
+    #[test]
+    fn gpu_wgmma_tile_is_derived_from_hopper_facts() {
+        let t = |n| {
+            let x = H100_PCIE
+                .gpu_wgmma_tile(n, n, n)
+                .expect("sm_90a, divisible square site");
+            assert_eq!(x.stage_words() * 4 % 1024, 0, "stages start on atoms");
+            (
+                x.bm(),
+                x.bn(),
+                x.groups,
+                x.bk,
+                x.stages,
+                x.pad_b,
+                x.blocks_per_sm,
+            )
+        };
+        // 4096: n = 256 (128 acc + 16 fragments + 72 ≤ 255 at bk 32);
+        // 65 536 / 216 = 303 threads ⇒ 2 warpgroups in one block ⇒ 256 × 128;
+        // the 227 KB share holds 4 bk-32 stages of 49 KB, not 3 of bk 64.
+        // 2048 and 8192 already fill 114 SMs with it.
+        for n in [2048, 4096, 8192] {
+            assert_eq!(t(n), (256, 128, 2, 32, 4, 8, 1), "{n}");
+        }
+        // 1024: 4 × 8 blocks < 114 SMs ⇒ one warpgroup, then n 128 ⇒ 128
+        // blocks; 3 resident ⇒ 75 KB ⇒ exactly three bk-32 stages.
+        assert_eq!(t(1024), (128, 64, 1, 32, 3, 8, 3));
+        // `wgmma` is sm_90a only: not Ada, not consumer Blackwell, not a CPU.
+        for p in [&RTX_4090, &RTX_5090, &CUDA_ADA, &GENERIC] {
+            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None, "{}", p.name);
+        }
+        assert!(H100.gpu().is_some_and(Gpu::has_wgmma));
+    }
+
+    /// The matrix descriptor's constant fields for the S52 bench geometries:
+    /// K-major, 128-byte swizzle — LBO field 1 (unused, "assumed 1"), SBO =
+    /// one 8 × 128 B atom between 8-row groups, mode 1. Start address and
+    /// base offset stay zero (the stage is filled in per panel, on an atom).
+    #[test]
+    fn wgmma_descriptor_fields_are_the_128b_swizzle_k_major_ones() {
+        for n in [1024, 2048, 4096, 8192] {
+            let d = H100_PCIE
+                .gpu_wgmma_tile(n, n, n)
+                .expect("geometry")
+                .desc_fields();
+            assert_eq!(d & 0x3fff, 0, "start address");
+            assert_eq!((d >> 16) & 0x3fff, 1, "LBO");
+            assert_eq!((d >> 32) & 0x3fff, 1024 >> 4, "SBO");
+            assert_eq!((d >> 49) & 0x7, 0, "base offset");
+            assert_eq!(d >> 62, 1, "128-byte swizzle");
+            assert_eq!(d, 0x4000_0040_0001_0000);
+        }
     }
 
     /// The placeholder honesty pin. `cuda-ada` inherits CPU-shaped constants it
@@ -1860,5 +5452,142 @@ mod tests {
         assert_eq!(CUDA_ADA.vec_regs, GENERIC.vec_regs);
         assert_eq!(CUDA_ADA.l2_bytes, GENERIC.l2_bytes);
         assert_eq!(CUDA_ADA.acc_vecs_per_row, GENERIC.acc_vecs_per_row);
+    }
+
+    /// S54 Ampere: the compute-capability facts (CUDA C Programming Guide
+    /// tables for 8.0 and 8.6; the `deviceQuery` values), the ISA gates they
+    /// open, and the geometry derived from them; the rung rows two S54 sessions
+    /// measured.
+    #[test]
+    fn ampere_profiles_carry_the_compute_capability_facts() {
+        let f32 = Ty::f32();
+        let facts = |p: &TargetProfile| {
+            let g = *p.gpu().expect("gpu");
+            (
+                g.arch,
+                g.sms,
+                g.smem_per_sm,
+                g.smem_per_block,
+                g.max_threads_per_sm,
+                g.max_blocks_per_sm,
+            )
+        };
+        assert_eq!(facts(&RTX_3090), ("sm_86", 82, 102_400, 101_376, 1536, 16));
+        assert_eq!(facts(&A100), ("sm_80", 108, 167_936, 166_912, 2048, 32));
+        for p in [&RTX_3090, &A100] {
+            assert_eq!(resolve(p.name).map(|r| r.name), Some(p.name));
+            let g = *p.gpu().expect("gpu");
+            // cp.async, ldmatrix (sm_75) and `mma.sync` TF32 all hold from
+            // sm_80; `wgmma` is sm_90a only.
+            assert!(g.has_mma_sync() && !g.has_wgmma(), "{}", p.name);
+            assert_eq!(p.gpu_wgmma_tile(4096, 4096, 4096), None);
+            assert!(p.gpu_mma_tile(4096, 4096, 4096, true, true).is_some());
+            let t = p
+                .gpu_tile(4096, 4096, 4096, &f32, false, false)
+                .expect("tile");
+            assert!(p.gpu_tile_async(t, 4096, &f32).is_some());
+            // S54, both parts: register staging beats cp.async on every grid
+            // and face; resident beats retain-delta on decode; tensor cores stay.
+            for wps in [0, 1, 2, 64] {
+                for contract in [false, true] {
+                    let r = p.gpu_rungs(wps, contract);
+                    assert!(!r.cp_async && !r.retain_delta && r.mma, "{} {wps}", p.name);
+                }
+            }
+        }
+        // 2 warps × 4 schedulers × SMs.
+        assert_eq!(RTX_3090.gpu().map(Gpu::fill_warps), Some(656));
+        assert_eq!(A100.gpu().map(Gpu::fill_warps), Some(864));
+        let g = |p: &TargetProfile, n| {
+            let x = p.gpu_tile(n, n, n, &f32, false, false).expect("square");
+            (x.bm(), x.bn(), x.threads(), x.bk, x.blocks_per_sm)
+        };
+        // 3090: Ada's 100 KB SM ⇒ the 4090's 4096² tile; 1024² is 64 blocks
+        // < 82 SMs ⇒ halve x once.
+        assert_eq!(g(&RTX_3090, 4096), (128, 128, 256, 32, 2));
+        assert_eq!(g(&RTX_3090, 1024), (128, 64, 128, 32, 4));
+        // A100: 164 KB / 2 blocks − 1 KB ⇒ bk 64, as on Hopper.
+        assert_eq!(g(&A100, 4096), (128, 128, 256, 64, 2));
+        let m = |p: &TargetProfile| {
+            let x = p.gpu_mma_tile(4096, 4096, 4096, false, true).expect("mma");
+            (x.wm(), x.wn(), x.bm(), x.bn(), x.bk, x.stages)
+        };
+        assert_eq!(m(&RTX_3090), (64, 32, 128, 128, 16, 2));
+        assert_eq!(m(&A100), (64, 32, 128, 128, 32, 2));
+    }
+
+    /// site-geometry `fit-first` (integrate review): the reshape is taken
+    /// only where its block tile divides the site, so it never loses the tile
+    /// OFF finds (rows 64 over `c = 2⁷·257`: a 256-lane block row does not
+    /// divide `c`; OFF's shrunk 64-lane one does). A forced tile knob the site
+    /// cannot take falls back to the derived tile; the fill key ignores it.
+    #[test]
+    fn fit_first_divides_and_forced_tiles_fall_back() {
+        let f32 = Ty::f32();
+        let mut seen = 0;
+        for p in GPU_MEASURED {
+            let on = crate::GpuRungs::ALL;
+            let off = crate::GpuRungs {
+                fit_first: false,
+                ..on
+            };
+            let t = |r| p.gpu_tile_with(64, 128 * 257, 1024, &f32, false, r);
+            if let Some(o) = t(off) {
+                seen += 1;
+                let n =
+                    t(on).unwrap_or_else(|| panic!("{}: fit-first lost OFF's tile {o:?}", p.name));
+                assert!(64 % n.bm() == 0 && (128 * 257) % n.bn() == 0, "{}", p.name);
+            }
+            // tm = 3 is no power of two: the derived tile stands.
+            let mut forced = *p;
+            if let Machine::Gpu(g) = &mut forced.machine {
+                g.geom.tm = 3;
+                g.geom.resident = 4;
+            }
+            let r = crate::GpuRungs::default();
+            let derived = p.with_geom(Geom {
+                resident: 4,
+                ..GEOM
+            });
+            assert_eq!(
+                forced.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
+                derived.gpu_tile_split(4096, 4096, 4096, &f32, false, r, 1),
+                "{}",
+                p.name
+            );
+            assert_eq!(
+                forced.gpu_tile(4096, 4096, 4096, &f32, false, true),
+                p.gpu_tile(4096, 4096, 4096, &f32, false, true)
+            );
+        }
+        assert!(seen > 0, "OFF tiles the shape somewhere");
+    }
+
+    /// ADR-0034 D1: the search's knob file lists every knob of [`Geom`] for
+    /// every measured part, the part's table value first (the shipped arm),
+    /// and an override replaces exactly its knob.
+    #[test]
+    fn knobs_json_lists_every_knob_table_value_first() {
+        let json = include_str!("../../../../benches/gpu/knobs.json");
+        for p in GPU_MEASURED {
+            let mut g = p.gpu().expect("a GPU part").geom;
+            let row = json
+                .split(&format!("\"{}\":", p.name))
+                .nth(1)
+                .and_then(|r| r.split('}').next())
+                .unwrap_or_else(|| panic!("knobs.json has no `{}` row", p.name));
+            for n in Geom::NAMES {
+                let v = *g.knob(n).expect("a listed knob");
+                assert!(
+                    row.contains(&format!("\"{n}\": [{v}")),
+                    "{}: `{n}` must list {v} first",
+                    p.name
+                );
+            }
+        }
+        let mut over = GeomOver::default();
+        over[1] = Some(4);
+        assert_eq!(GEOM.with(&over), Geom { split: 4, ..GEOM });
+        assert_eq!(GEOM.with(&GeomOver::default()), GEOM);
     }
 }

@@ -105,7 +105,7 @@ Static text counts, asserted in `crates/backends/cuda/tests/golden_cu.rs` (idiom
 
 Plus: every emitted `o{n} = nullptr;`-initialized array local that receives a zone pointer compiles clean; zero-iteration loops leave the pointer `nullptr` (no site executed → no init → no use, same as today).
 
-Measured rows (box, marathon sweep): malloc/API-call **dynamic** counts (instrumented or nsys) and wall deltas go in `docs/performance/arena.md` (new file per the one-file-per-benchmark convention + README index row); matmul.md gets arena rows only under kernel-time instrumentation — never mix process-wall with per-iteration kinds (the S19 gotcha).
+Measured rows (box, marathon sweep): malloc/API-call **dynamic** counts (instrumented or nsys) and wall deltas go in `docs/performance/gpu/memory/arena-allocation.md` (new file per the one-file-per-benchmark convention + README index row); matmul.md gets arena rows only under kernel-time instrumentation — never mix process-wall with per-iteration kinds (the S19 gotcha).
 
 ## 8. Risks / honest unknowns
 

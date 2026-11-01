@@ -1,0 +1,13 @@
+{
+  "created_utc": "2026-10-21T19:53:14.588421+00:00",
+  "all_match": true,
+  "file_count": 850,
+  "bytes": 4832758,
+  "excludes": [
+    "active integrated runs and mutable operational ledger",
+    "PTX/SASS analysis under review",
+    "handwritten kit and new matrix packet under construction"
+  ],
+  "archive": ".claude/worktrees/_archive-s54-20261021/s57-supporting-proof-recovery",
+  "receipt_sha256": "f505d60ced623584bd2c2c24aa5ff8b283ad62cc0805753fcc7c70b9bee6d2f5"
+}

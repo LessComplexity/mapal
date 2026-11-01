@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "files": 453,
+  "receipt_sha256": "26645b9bf2d5b0195bb9aa55ab95d1530d8e72e6203fbe07132dbb1bb7d7b611",
+  "archive": {
+    "bytes": 7003841,
+    "sha256": "26453f6d0cfbdba31c111f4eee9824204f123e0d919d0e2b8304f7f723b82a80"
+  },
+  "cleanup": {
+    "instance": 57265999,
+    "confirmed_absent": true,
+    "verified_utc": "2026-10-22T20:05:14.534589+00:00",
+    "method": "Independent exact-ID inventory absence"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "queried_utc": "2026-10-21T22:41:00.605930+00:00",
+  "offers": [
+    {
+      "id": 51088733,
+      "machine_id": 55337,
+      "host_id": 356230,
+      "gpu_name": "RTX 5090",
+      "num_gpus": 1,
+      "cpu_arch": "amd64",
+      "dph_total": 0.7613888888888888,
+      "cuda_max_good": 13.3,
+      "inet_down_cost": 0.0026041666666666665,
+      "inet_up_cost": 0.00390625,
+      "inet_down": 602.4,
+      "inet_up": 475.1,
+      "reliability2": 0.9991778
+    },
+    {
+      "id": 34376038,
+      "machine_id": 56842,
+      "host_id": 416420,
+      "gpu_name": "RTX 5090",
+      "num_gpus": 1,
+      "cpu_arch": "amd64",
+      "dph_total": 0.7680555555555555,
+      "cuda_max_good": 13.2,
+      "inet_down_cost": 1.3020833333333333e-06,
+      "inet_up_cost": 1.3020833333333333e-06,
+      "inet_down": 781.2,
+      "inet_up": 778.1,
+      "reliability2": 0.9714731
+    }
+  ]
+}

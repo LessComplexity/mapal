@@ -1,0 +1,19 @@
+fn main() {
+    25 -> iota -> i_w;
+    i_w -> map { t -> (t * 5 + 3) % 97 - 48 -> widen_f32 -> v; v / 11.0 } -> w;
+    4210704 -> iota -> i_img;
+    i_img -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 } -> img;
+    () -> time -> t0;
+    4194304 -> iota -> o_y;
+    25 -> iota -> k_y;
+    o_y -> map { t ->
+        t / 2048 -> i;
+        t % 2048 -> j;
+        (0.0, k_y) -> fold { acc, k -> acc + w[k] * img[(i + k / 5) * 2052 + j + k % 5] }
+    } -> y;
+    () -> time -> t1;
+    y[0] -> println;
+    y[4194303] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

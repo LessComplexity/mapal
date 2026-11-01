@@ -1,0 +1,10 @@
+{
+  "status": "unvalidated",
+  "timing_admissible": false,
+  "max_seconds": 90,
+  "case": "rtx-5090__timing__qwen_expert_m16_n1024_k4096__contract",
+  "commands": [],
+  "reason": "ordinary smallM incomplete or instrumented",
+  "elapsed_seconds": 0.006,
+  "files": {}
+}

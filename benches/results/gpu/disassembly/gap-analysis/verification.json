@@ -1,0 +1,39 @@
+{
+  "pass": true,
+  "checks": [
+    {
+      "profile": "a100",
+      "pass": true,
+      "ptx_manifests_matched": 6,
+      "median_records_matched": 18,
+      "accepted_archive_sha256": "065e6623a19289d0b1763a9efb1e1b1ccf43e0867f3c541f9ad06efea75e3386"
+    },
+    {
+      "profile": "rtx-4090",
+      "pass": true,
+      "ptx_manifests_matched": 6,
+      "median_records_matched": 18,
+      "accepted_archive_sha256": "287508440b51e0a13ab8b80d89a5e5985c259922eea742164eaafaf02dc26226"
+    },
+    {
+      "profile": "rtx-5090",
+      "pass": true,
+      "ptx_manifests_matched": 6,
+      "median_records_matched": 18,
+      "accepted_archive_sha256": "3ea980a915bf4ae61ab768c9817c93252009c55559f58a26d0d2b55bd0ad5092"
+    }
+  ],
+  "source_head": "b4152c5f4d9ad802d0388c1c64b628091d494e6a",
+  "source_files_unchanged": 328,
+  "matching_cutlass_actual_kernel_names": 9,
+  "large_stdout_hashes_and_medians": 12,
+  "tie_example": {
+    "input_bits": "0x3f801000",
+    "input": 1.00048828125,
+    "rn_ties_even": 1.0,
+    "rna_ties_away": 1.0009765625,
+    "kind": "Exact scalar arithmetic from documented PTX rounding; not a GPU test"
+  },
+  "no_new_compilation_or_gpu_execution": true,
+  "semble_search": "MCP request made, returned no output before termination; no source implementation claims inferred from it"
+}

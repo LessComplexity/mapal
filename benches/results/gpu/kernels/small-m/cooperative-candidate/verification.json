@@ -1,0 +1,69 @@
+{
+  "status": "reviewable_combined_candidate_pending_gpu_numeric_and_timing_acceptance",
+  "production_delta": "after unchanged wide fallback and occupancy shrinking, redistribute only oversized positive-row thread grid by halving ty and doubling tx; final thread count unchanged; original legality checks retained",
+  "old_code_fail": "old-code-test.log: M16 geometry absent",
+  "tests": "57 portable backend library tests passed, 3 native hardware-probe tests filtered after sandbox sysctl failures; 2 dedicated skinny proofs passed",
+  "proofs": [
+    "all M16 family/profile/fill/wide geometry passes existing divisibility/shared/warp checks",
+    "panel copies exact-once/in-bounds and affine across five GPU profiles, three projection families, row/column operand layouts, f32/f64 and all rung combinations",
+    "Exact PTX preserves separate mul.rn/add.rn; Contract preserves fma.rn; no K decomposition or accumulator reassociation added",
+    "M1, M128 and 16K before/after device LLVM are byte-identical across both profiles and three faces"
+  ],
+  "emissions": {
+    "cases": 60,
+    "variants": 120,
+    "changed_cases": 15,
+    "unchanged_cases": 45,
+    "changed_scope": "M16 only",
+    "tf32_route_caveat": "base geometry changes fill classification and therefore existing TF32 rung choices; dense both profiles and A100 expert TF32 emission change, requiring numeric GPU gates"
+  },
+  "rejected_candidate": [
+    "preserving threads BEFORE occupancy failed A100 dense M16 whole-copy/shared-capacity check",
+    "shrinking ty BEFORE occupancy changed135previously successful geometries and removed75in2440-caseinventory; rejected-prefill-inventory.json preserves counterevidence"
+  ],
+  "remaining": [
+    "actual GPU ordered bitwise validation (all outputs where feasible)",
+    "actual same-host event timing and both pinned libraries, no speedup claim yet",
+    "actual executed machine-image evidence/resource checks",
+    "integrated build review, bounds/alias/epilogue numeric acceptance, docs reconciliation/drift/archive by root"
+  ],
+  "commands": {
+    "tests": "CARGO_TARGET_DIR=/private/tmp/mapal-s58-smallm/target cargo test -p mapal-backend-llvm --lib -- --skip native_move_geometry_is_consistent --skip native_reads_the_facts_it_claims_to --skip native_sme_profile_is_consistent",
+    "emission": "python3 /private/tmp/mapal-s58-smallm/evidence/replay.py",
+    "review": "git apply --check /private/tmp/mapal-s58-smallm/evidence/candidate.patch"
+  },
+  "geometry_inventory": {
+    "cases": 2440,
+    "same": 2276,
+    "none_to_some": 164,
+    "some_changed": 0,
+    "parts": [
+      "a100",
+      "rtx-4090",
+      "h100",
+      "h100-pcie",
+      "rtx-5090"
+    ],
+    "domains": "boundary rows4/8/16/32/48/64/96/128,3N/Kfamilies,transposed dimensions,f32/f64,wide/fill,tiny/zero/ragged,4096/16Kcontrols"
+  },
+  "public_geometry_inventory": "geometry-inventory.json",
+  "public_rejected_candidate_inventory": "rejected-prefill-inventory.json",
+  "combined_source_provenance": "combined-source-provenance.json",
+  "combined_ptx_equality": "combined-vs-isolated-correct-flags.json",
+  "packet_receipt": "final-packet-receipt.json",
+  "packet_local_tests": 13,
+  "quarantine_protocol": {
+    "expected_records_per_profile": 234,
+    "bounded_full": 54,
+    "actual_sampled_admission": 60,
+    "timing_or_skipped_markers": 120,
+    "numeric_failure": "not admitted; skip dependent timing; independent cells continue",
+    "candidate_regression": "baseline passes and candidate fails denies overall candidate acceptance",
+    "overall_pass": "false if any requested cell quarantined; integrity and comparable accepted subset reported separately"
+  },
+  "independent_reviews": {
+    "prior_gap_analysis": "../s57-ptx-sass-gap/independent-review.md",
+    "new_candidate_review": "root final review pending; no independent GPU verdict yet"
+  },
+  "source_patch_sha256": "019870a820e4a2c5cb6aa5389e1229a685b01ea8f9876fc98fc1d247b736ea2b"
+}

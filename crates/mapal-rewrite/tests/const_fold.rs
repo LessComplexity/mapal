@@ -4,9 +4,9 @@
 //! aliases a value that the builder then rejects at re-seal — inputs no generated
 //! program produces, so these are the only regression net for those guards.
 
-use mapal_interp::{Outcome, RValue, eval_call, run};
-use mapal_ir::{Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value, validate};
-use mapal_rewrite::{analyze_const_fold, is_canonical, rewrite};
+use mapal_interp::{Outcome, RValue, TrapKind, eval_call, run};
+use mapal_ir::{CategoryIr, Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value, validate};
+use mapal_rewrite::{PassId, analyze_const_fold, is_canonical, rewrite, rewrite_with};
 
 const BUDGET: u64 = 100_000;
 const L: SourceLoc = SourceLoc { start: 0, end: 0 };
@@ -304,4 +304,215 @@ fn loop_carried_mul_zero_not_constified() {
         BUDGET,
     );
     assert_eq!(after, before);
+}
+
+fn guarded_oob_fold(
+    op: Operation,
+    on_true: bool,
+    used: bool,
+    condition: Option<bool>,
+) -> CategoryIr {
+    let mut b = IrBuilder::new();
+    let f = b
+        .declare(FuncKind::Named, "main", Ty::Bool, Ty::i32(), L)
+        .unwrap();
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let cond = condition
+            .map(|v| fb.constant(Value::Bool(v), L).unwrap())
+            .unwrap_or_else(|| fb.input());
+        let seven = fb.constant(Value::I32(7), L).unwrap();
+        let zero = fb.constant(Value::I32(0), L).unwrap();
+        let one = fb.constant(Value::I32(1), L).unwrap();
+        let arr = fb.pack_array(&[seven], Dest::Fresh(None), L).unwrap();
+        let risky = fb.index(arr, one, Dest::Fresh(None), L).unwrap();
+        let arm = match op {
+            Operation::Mod => fb.binop(op, risky, one, Dest::Fresh(None), L).unwrap(),
+            Operation::Mul => fb.binop(op, risky, zero, Dest::Fresh(None), L).unwrap(),
+            Operation::Proj { index: 1 } => {
+                let pair = fb.pack(&[risky, zero], Dest::Fresh(None), L).unwrap();
+                fb.proj(pair, 1, Dest::Fresh(None), L).unwrap()
+            }
+            _ => unreachable!(),
+        };
+        let (t, e) = if on_true { (arm, seven) } else { (seven, arm) };
+        let phi = fb.phi(t, e, cond, Dest::Fresh(None), L).unwrap();
+        fb.output(if used { phi } else { seven }, None, L).unwrap();
+        fb.finish().unwrap();
+    }
+    b.seal(f).unwrap()
+}
+
+/// Constifying or forwarding an arm must not detach its Index dependency and
+/// turn an untaken trap into unconditional work (R1/R4).
+#[test]
+fn guarded_folds_preserve_trap_dependencies() {
+    for op in [Operation::Mod, Operation::Mul, Operation::Proj { index: 1 }] {
+        for on_true in [false, true] {
+            for used in [false, true] {
+                for condition in [None, Some(false), Some(true)] {
+                    for full in [false, true] {
+                        let ir = guarded_oob_fold(op, on_true, used, condition);
+                        let before: Vec<_> = [false, true]
+                            .map(|v| {
+                                eval_call(&ir, ir.entry(), RValue::Scalar(Value::Bool(v)), BUDGET)
+                            })
+                            .into();
+                        for (arg, outcome) in [false, true].into_iter().zip(&before) {
+                            let want = if condition.unwrap_or(arg) == on_true {
+                                Outcome::Trapped(TrapKind::IndexOob)
+                            } else {
+                                Outcome::Done(RValue::Scalar(Value::I32(7)))
+                            };
+                            assert_eq!(*outcome, want, "raw {op:?}");
+                        }
+                        let res = if full {
+                            rewrite(ir)
+                        } else {
+                            rewrite_with(ir, &[PassId::ConstFold])
+                        };
+                        assert!(validate(&res.ir).is_empty());
+                        for (arg, before) in [false, true].into_iter().zip(before) {
+                            let after = eval_call(
+                                &res.ir,
+                                res.ir.entry(),
+                                RValue::Scalar(Value::Bool(arg)),
+                                BUDGET,
+                            );
+                            assert_eq!(
+                                after, before,
+                                "{op:?}, on_true={on_true}, used={used}, condition={condition:?}, full={full}, arg={arg}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Guard ownership represents a whole driver unit by its LoopEnter handle;
+/// non-SCC decide/advance payloads still need their original dependencies.
+#[test]
+fn guarded_loop_payload_folds_preserve_driver_dependencies() {
+    for exit_payload in [true, false] {
+        for full in [false, true] {
+            let mut b = IrBuilder::new();
+            let f = b
+                .declare(FuncKind::Named, "main", Ty::Bool, Ty::i32(), L)
+                .unwrap();
+            {
+                let mut fb = b.build_fn(f).unwrap();
+                let cond = fb.input();
+                let zero = fb.constant(Value::I32(0), L).unwrap();
+                let one = fb.constant(Value::I32(1), L).unwrap();
+                let seven = fb.constant(Value::I32(7), L).unwrap();
+                let arr = fb.pack_array(&[seven], Dest::Fresh(None), L).unwrap();
+                let lh = fb.begin_loop(zero, L).unwrap();
+                let merge = fb.merge_of(&lh);
+                let more = fb
+                    .binop(Operation::Lt, merge, one, Dest::Fresh(None), L)
+                    .unwrap();
+                let next = fb
+                    .binop(Operation::Add, merge, one, Dest::Fresh(None), L)
+                    .unwrap();
+                let idx = if exit_payload {
+                    fb.binop(Operation::Add, merge, one, Dest::Fresh(None), L)
+                        .unwrap()
+                } else {
+                    one
+                };
+                let risky = fb.index(arr, idx, Dest::Fresh(None), L).unwrap();
+                let payload = fb
+                    .binop(Operation::Mod, risky, one, Dest::Fresh(None), L)
+                    .unwrap();
+                let next = if exit_payload {
+                    next
+                } else {
+                    fb.binop(Operation::Add, next, payload, Dest::Fresh(None), L)
+                        .unwrap()
+                };
+                fb.loop_back(&lh, next, more, L).unwrap();
+                let exit = fb
+                    .loop_exit(
+                        &lh,
+                        if exit_payload { payload } else { merge },
+                        more,
+                        Dest::Fresh(None),
+                        L,
+                    )
+                    .unwrap();
+                fb.end_loop(lh).unwrap();
+                let phi = fb.phi(exit, seven, cond, Dest::Fresh(None), L).unwrap();
+                fb.output(phi, None, L).unwrap();
+                fb.finish().unwrap();
+            }
+            let ir = b.seal(f).unwrap();
+            assert!(validate(&ir).is_empty());
+            for (arg, want) in [
+                (false, Outcome::Done(RValue::Scalar(Value::I32(7)))),
+                (true, Outcome::Trapped(TrapKind::IndexOob)),
+            ] {
+                assert_eq!(
+                    eval_call(&ir, f, RValue::Scalar(Value::Bool(arg)), BUDGET),
+                    want
+                );
+            }
+            let res = if full {
+                rewrite(ir)
+            } else {
+                rewrite_with(ir, &[PassId::ConstFold])
+            };
+            assert!(validate(&res.ir).is_empty());
+            for (arg, want) in [
+                (false, Outcome::Done(RValue::Scalar(Value::I32(7)))),
+                (true, Outcome::Trapped(TrapKind::IndexOob)),
+            ] {
+                assert_eq!(
+                    eval_call(
+                        &res.ir,
+                        res.ir.entry(),
+                        RValue::Scalar(Value::Bool(arg)),
+                        BUDGET
+                    ),
+                    want,
+                    "exit_payload={exit_payload}, full={full}, arg={arg}"
+                );
+            }
+        }
+    }
+}
+
+/// Outside a guard `% 1` still folds, while its unconditional OOB dependency
+/// remains observable (R4).
+#[test]
+fn unconditional_trap_survives_mod_one_folding() {
+    let mut b = IrBuilder::new();
+    let f = b
+        .declare(FuncKind::Named, "main", Ty::Unit, Ty::i32(), L)
+        .unwrap();
+    let folded;
+    {
+        let mut fb = b.build_fn(f).unwrap();
+        let one = fb.constant(Value::I32(1), L).unwrap();
+        let arr = fb.pack_array(&[one], Dest::Fresh(None), L).unwrap();
+        let risky = fb.index(arr, one, Dest::Fresh(None), L).unwrap();
+        folded = fb
+            .binop(Operation::Mod, risky, one, Dest::Fresh(None), L)
+            .unwrap();
+        fb.output(folded, None, L).unwrap();
+        fb.finish().unwrap();
+    }
+    let ir = b.seal(f).unwrap();
+    assert_eq!(analyze_const_fold(&ir).constify[folded], Value::I32(0));
+    assert_eq!(
+        run(&ir, BUDGET).outcome,
+        Outcome::Trapped(TrapKind::IndexOob)
+    );
+    let res = rewrite(ir);
+    assert!(validate(&res.ir).is_empty());
+    assert_eq!(
+        run(&res.ir, BUDGET).outcome,
+        Outcome::Trapped(TrapKind::IndexOob)
+    );
 }

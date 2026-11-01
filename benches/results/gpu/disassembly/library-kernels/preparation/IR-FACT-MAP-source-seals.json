@@ -1,0 +1,14 @@
+{
+  "scope": "Read-only source fact map; Semble stalled with no results, root authorized known-path/degraded literal reads; no runtime causation inferred",
+  "files": {
+    "crates/mapal-ir/src/algo.rs": "71628cdccbf95abe27dfe73e7eeb3580ef3df2d66b2030826d03788dfcd497d8",
+    "crates/mapal-ir/src/graph.rs": "5734817b93e88f47b7f1e7b85e5140b4e85b7e046b570255341e87918b099a88",
+    "crates/backends/llvm/src/func/gpu.rs": "0a0835736bd2a31f72a53e311607ec63b5c6842f4830b250b7c8537f55bb4e7e",
+    "crates/backends/llvm/src/func/resident.rs": "af817704dec9cc42775ec959c7311cb5102421e0ba6ff3d11b31dbe35dfa4995",
+    "crates/backends/llvm/src/profile.rs": "f9d7aa257ba6ef2da2ea73c630158c0524d10004eedc54f41600201f24398ec8"
+  },
+  "frozen_geometry_log_seals": {
+    "/private/tmp/mapal-s60-kernel/evidence/S58-launch-context.log": "b56f45166aa6e8cfedeacbdeea76e0bfd8ea85cb16b2690f2649d95fac6e3437",
+    "/private/tmp/mapal-s60-kernel/evidence/B-launch-context.log": "eb3fe7fe8f475475d28a4fd07a726fe5f41425d3aa7d6d588607ddee9331dfb1"
+  }
+}
