@@ -759,7 +759,7 @@ class Scope(dict):
         raise Missing(k)
 
 
-SAFE = dict(ceil=math.ceil, set=set, max=max, min=min, len=len, sum=sum, any=any, all=all, abs=abs)
+SAFE = dict(ceil=math.ceil, set=set, max=max, min=min, len=len, sum=sum, any=any, all=all, abs=abs, float=float, str=str)
 NAMES = re.compile(r'\b(plan|flow|host|launch|ptx|ptxas|sass|occ|remarks|exec|jit|table|device|mod|dev)(\.\w+)+')
 
 

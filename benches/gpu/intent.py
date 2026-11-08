@@ -94,6 +94,16 @@ INTENT = {
     'cell-fill': dict(applies_on=TILE + ' and plan.tm * plan.tn == 1', on=[
         ('one output per thread, staged through shared memory', 'sass.hot.lds > 0')]),
     # ---- fold realizations (ADR-0040 D4) --------------------------------------------------------------
+    # plan-cost (design §5): on a part with plan rates the site's fold is the cost model's argmin; the plan line
+    # carries the pick, its predicted ns, the runner-up and the scale where it takes over (D3).
+    'plan-cost': dict(applies="'pick' in plan", on=[
+        ('the plan line carries pick, ns, the runner-up and the crossover', "len(str(plan.ns)) > 0 and len(str(plan.alt)) > 0 and len(str(plan.cross)) > 0"),
+        ('the pick is the argmin of the predicted ns', "plan.alt == 'none' or float(plan.ns) <= float(str(plan.alt).split(':')[1])")]),
+    # plan-cost `linear` (§4a concat): a sum of folds over one k range as one site table launch.
+    'linear': dict(applies="'terms' in plan", on=[
+        ('every partial adds into the zeroed sum: one red.global.add per accumulator', "plan.combine == 'atomic' and ptx.atom_add + ptx.red_add >= (plan.tm * plan.tn if plan.kind == 'tile' else 1)"),
+        ('each chain <= k; S*T partials per cell within the source bound (D6)', 'plan.S * plan.terms <= plan.k + plan.terms - 1'),
+        ('one launch for the T terms: grid y = gy * S * T', "launch.gy == plan.gy * plan.S * plan.terms")]),
     'splitk': dict(applies_on="plan.combine == 'splitk'", on=[
         ('S partial folds, then one reduce launch', "launch.S == plan.S and launch.combine == 'splitk'"),
         ('no atomics', 'ptx.atom_add + ptx.red_add == 0')]),
