@@ -2028,9 +2028,24 @@ impl Chain {
                         let bi = format!("{b}[k * {c} + j]");
                         (x.iota(c), ai, bi)
                     };
-                    x.s += &format!(
-                        "    {tm} -> map {{ t ->\n        t / {c} -> i;\n        t % {c} -> j;\n        (0.0, {kr}) -> fold {{ acc, k -> acc + {ai} * {bi} }}\n    }} -> {o};\n"
-                    );
+                    let site = |o: &str, ai: &str, bi: &str| {
+                        format!(
+                            "    {tm} -> map {{ t ->\n        t / {c} -> i;\n        t % {c} -> j;\n        (0.0, {kr}) -> fold {{ acc, k -> acc + {ai} * {bi} }}\n    }} -> {o};\n"
+                        )
+                    };
+                    if op == 6 && flags & 0xC0 == 0xC0 {
+                        // plan-cost `linear_plan`: a sum of two folds over one
+                        // `k` range, each read only by the sum (operands may
+                        // repeat: a shared `a` or `b`).
+                        let (a2, b2) = (x.pick(Shape::A, p ^ 0x5a), x.pick(Shape::B, q ^ 0x33));
+                        let (ai2, bi2) =
+                            (format!("{a2}[i * {k} + k]"), format!("{b2}[k * {c} + j]"));
+                        x.s += &site(&format!("{o}p"), &ai, &bi);
+                        x.s += &site(&format!("{o}q"), &ai2, &bi2);
+                        x.s += &format!("    {tm} -> map {{ t -> {o}p[t] + {o}q[t] }} -> {o};\n");
+                    } else {
+                        x.s += &site(&o, &ai, &bi);
+                    }
                     Shape::M
                 }
                 8 => {

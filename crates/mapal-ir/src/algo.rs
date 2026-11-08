@@ -13,8 +13,10 @@ use slotmap::SecondaryMap;
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, ObjectKind, Operation};
 use crate::ty::{Ty, Value, ty_contains_token};
 
+mod linear;
 mod precision;
 mod radix;
+pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};
 
