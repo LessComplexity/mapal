@@ -596,13 +596,29 @@ impl<'a> FnEmit<'a> {
         if held > gpu.regs_per_thread {
             return Err("budget");
         }
-        if let Some(d) = gpu.cost {
+        if let Some(d) = gpu.cost.filter(|d| d.flops_per_ns > 0) {
             let (fused, unfused) = self.unit_roofline(&members, rows, &gmem, elem);
             let ns = |(f, b): (u64, u64)| {
                 crate::profile::roofline_ns(f, b, d.flops_per_ns, d.bytes_per_ns)
             };
-            let unfused: u64 = unfused.into_iter().map(|x| d.launch_ns + ns(x)).sum();
-            if d.launch_ns + ns(fused) > unfused {
+            // plan-cost (D1, D2): a launch costs its in-stream idle after the
+            // op before it, not a host round trip; `launch_ns` where the part
+            // has no plan rates (D8).
+            let launch = |prev: u64| {
+                self.profile
+                    .op_ns(prev as f64, 0)
+                    .map_or(d.launch_ns, |x| x.round() as u64)
+            };
+            let mut prev = u64::MAX;
+            let unfused: u64 = unfused
+                .into_iter()
+                .map(|x| {
+                    let t = launch(prev) + ns(x);
+                    prev = ns(x);
+                    t
+                })
+                .sum();
+            if launch(u64::MAX) + ns(fused) > unfused {
                 return Err("cost");
             }
         }

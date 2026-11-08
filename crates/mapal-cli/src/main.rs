@@ -31,7 +31,8 @@ const USAGE: &str = "usage: mapal <build|run|dump-ir|test|fmt> <file.mapal> [opt
 common: --target=<profile> --no-rewrite -v, and the emitter flags
   --perf --no-tile --no-pack --kc --move-panel=off|W:B
   --exact --no-contract --contract --order=sequential|fixed|free
-  --gpu-off=<rung,..> --gpu-on=<rung,..> --splitk=<S>
+  --gpu-off=<rung,..> --gpu-on=<rung,..> --splitk=<S> --geom=<knob>=<n>
+  --cost=<rate>=<n> --plan-cands          plan-cost fit arms (rates, ; mapal.cand lines)
   (default face: fma steps, order free, bounded — ADR-0040)
 env: CC (clang), MAPAL_RT (libmapal_rt.a), LLVM (opt/llc dir), MAPAL_CUDA, MAPAL_LD";
 

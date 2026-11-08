@@ -486,6 +486,17 @@ pub struct GpuRungs {
     /// unsplit grid's share), and the split kernel's panels are sized for the
     /// split grid. Off: the largest split inside the unsplit grid's wave.
     pub fill_wave: bool,
+    /// plan-cost (design §2): on a part with calibrated plan rates
+    /// ([`profile::TargetProfile::plan_rates`]), a free-order site's fold
+    /// realization and split count are the argmin of the predicted
+    /// [`profile::TargetProfile::site_ns`] over the candidates the other rungs
+    /// admit. Off, or on a part without the rates: the rules (`combine`).
+    pub plan_cost: bool,
+    /// plan-cost `linear` (design §4a concat): a sum of tile sites over one
+    /// `k` range (`linear_plan`) runs as one site table launch — `z` selects
+    /// term and partition, every partial added into the zeroed sum — where
+    /// [`profile::TargetProfile::site_ns`] says it beats the sites' own plans.
+    pub linear: bool,
     /// site-geometry `fit-first` (R1): an FMA tile's thread grid taller than
     /// the site (`ty·tm > rows`) takes `row-fit`'s reshape — `ty` halved, `tx`
     /// doubled, threads kept — before the fill-the-SMs step halves its
@@ -571,13 +582,15 @@ impl GpuRungs {
         tf32_tile: true,
         row_split: true,
         fill_wave: true,
+        plan_cost: true,
+        linear: true,
         fit_first: true,
         tf32_radix: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 72] = [
+    pub const NAMES: [&'static str; 74] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -648,6 +661,8 @@ impl GpuRungs {
         "tf32-tile",
         "row-split",
         "fill-wave",
+        "plan-cost",
+        "linear",
         "fit-first",
         "tf32-radix",
     ];
@@ -725,6 +740,8 @@ impl GpuRungs {
             "tf32-tile" => &mut self.tf32_tile,
             "row-split" => &mut self.row_split,
             "fill-wave" => &mut self.fill_wave,
+            "plan-cost" => &mut self.plan_cost,
+            "linear" => &mut self.linear,
             "fit-first" => &mut self.fit_first,
             "tf32-radix" => &mut self.tf32_radix,
             _ => return None,
@@ -756,6 +773,10 @@ pub struct GpuArms {
     /// instead of the derived count, when `S` cuts `k` into whole units.
     /// 0 = derive.
     pub splitk: u64,
+    /// plan-cost `--plan-cands`: one `; mapal.cand` comment line per tile
+    /// site and candidate plan on the device unit, beside its `; mapal.plan`
+    /// line (the fit harness's features). Comments only: no kernel changes.
+    pub cands: bool,
     /// The emission's order is free (ADR-0040 D1), set from
     /// [`EmitOpts::order`] by [`emit_detailed`]: a device-only site may take
     /// the fused step the bound admits (`radix-tile`).
@@ -903,6 +924,9 @@ pub struct EmitOpts {
     /// ADR-0034 D1: `--geom=<knob>=<value>` over the GPU part's geometry table
     /// ([`profile::Geom`]); all `None` = the table.
     pub geom: profile::GeomOver,
+    /// plan-cost: `--cost=<rate>=<value>` over the GPU part's plan rates
+    /// ([`profile::DeviceCost::NAMES`]); all `None` = the profile's.
+    pub cost: profile::CostOver,
 }
 
 impl Default for EmitOpts {
@@ -926,6 +950,7 @@ impl Default for EmitOpts {
             host: "native",
             gpu: GpuArms::default(),
             geom: Default::default(),
+            cost: Default::default(),
         }
     }
 }
@@ -1003,6 +1028,14 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
         });
         profile = Box::leak(Box::new(p));
     }
+    // plan-cost: a fit arm's rates, on a copy of the part.
+    if opts.cost.iter().any(Option::is_some)
+        && let profile::Machine::Gpu(g) = profile.machine
+    {
+        let mut p = *profile;
+        p.machine = profile::Machine::Gpu(g.with_cost(&opts.cost));
+        profile = Box::leak(Box::new(p));
+    }
     if profile.gpu().is_none() {
         return emit_module(ir, opts, profile);
     }
@@ -1035,7 +1068,17 @@ pub fn emit_detailed(ir: &CategoryIr, opts: &EmitOpts) -> Result<Emission, EmitE
     if !rungs.place
         && let profile::Machine::Gpu(g) = &mut both.machine
     {
-        g.cost = None;
+        // plan-cost: the plan rates stay — `place` decides where a site
+        // runs, not how (a zero placement rate is "no measured cost").
+        g.cost = g
+            .cost
+            .map(|d| profile::DeviceCost {
+                flops_per_ns: 0,
+                bytes_per_ns: 0,
+                launch_ns: 0,
+                ..d
+            })
+            .filter(|d| d.issue_ns > 0);
     }
     let both: &'static TargetProfile = Box::leak(Box::new(both));
     let name: &'static str = format!("{}+{}", profile.name, host.name).leak();
@@ -1538,6 +1581,7 @@ mod place_tests {
                 flops_per_ns: 20_000,
                 bytes_per_ns: 500,
                 launch_ns: 20_000,
+                ..crate::profile::NO_PLAN
             });
         }
         Box::leak(Box::new(p))

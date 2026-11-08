@@ -73,9 +73,11 @@ fn emit_face(ir: &CategoryIr, base: EmitOpts, off: &[&str]) -> mapal_backend_llv
     // emulator runs only that kernel (no barriers). `place` off: the small
     // interpretable site stays on the device (its roofline says host).
     // site-geometry `fill-wave` / `fit-first` off: the S62 count and tile
-    // (their arms: site_geometry.rs).
+    // (their arms: site_geometry.rs); `plan-cost` off: the rules' combine
+    // (the cost model's picks: plan_cost.rs).
     for r in [
         "place",
+        "plan-cost",
         "fill-wave",
         "fit-first",
         "row-fit",
@@ -378,8 +380,10 @@ fn tiled_combines_emulated() {
         let at = |base: EmitOpts| {
             let mut opts = EmitOpts { target, ..base };
             opts.gpu.off.place = true;
-            // The S63 chooser (`fill-wave`'s arm: site_geometry.rs).
+            // The S63 chooser (`fill-wave`'s arm: site_geometry.rs; the
+            // cost model's: plan_cost.rs).
             opts.gpu.off.fill_wave = true;
+            opts.gpu.off.plan_cost = true;
             opts.gpu.off.fit_first = true;
             let em = emit_detailed(&ir, &opts).expect("emits");
             let dev = em.device.clone().expect("a device unit");

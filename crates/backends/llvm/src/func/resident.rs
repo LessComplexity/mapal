@@ -160,6 +160,11 @@ pub(crate) struct Epi {
     /// A reader outside the group exists: the site's own output is stored.
     pub store_out: bool,
     pub chain: Vec<Member>,
+    /// plan-cost `linear` (§4a concat): the other terms of a site table this
+    /// site launches (their sites emit nothing; `chain` is the sum, stored),
+    /// and each term's partitions. Empty on an epilogue group.
+    pub terms: Vec<MorphismId>,
+    pub split: u64,
 }
 
 impl Epi {
@@ -922,7 +927,26 @@ impl<'a> FnEmit<'a> {
             made.insert(target(s), s);
         }
         let mut taken: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        // plan-cost `linear` (§4a concat): a sum of device tile sites over one
+        // `k` range (`linear_plan`) is one site table launch where it beats
+        // the sites' own plans (D1): the latest term launches it; the other
+        // terms and the sum emit nothing.
+        let mut tabled: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
+        for (sum, ls) in self.ir.linear_plan(self.f).iter() {
+            let Some((anchor, epi)) = self.site_table(sum, ls, &sites, &region) else {
+                continue;
+            };
+            for &t in &ls.terms {
+                tabled.insert(t, ());
+            }
+            taken.insert(sum, ());
+            made.insert(target(sum), anchor);
+            out.insert(anchor, epi);
+        }
         for &s in &order {
+            if tabled.contains_key(s) {
+                continue;
+            }
             // A row fold's store is a scalar per row: no group (S54 `rowfold`).
             let DevSite::Tile(site) = &sites[s] else {
                 continue;
@@ -1026,6 +1050,8 @@ impl<'a> FnEmit<'a> {
                 let mut trial = Epi {
                     store_out: true,
                     chain: chain.clone(),
+                    terms: Vec::new(),
+                    split: 1,
                 };
                 trial.chain.push(mb.clone());
                 if 3 + trial.caps().len() + trial.chain.len() > gpu::LAUNCHV_MAX {
@@ -1036,19 +1062,37 @@ impl<'a> FnEmit<'a> {
                 made.insert(mb.out, s);
                 chain.push(mb);
             }
-            if !chain.is_empty() {
-                out.insert(
-                    s,
-                    Epi {
-                        store_out: true,
-                        chain,
-                    },
-                );
+            if chain.is_empty() {
+                continue;
             }
+            // plan-cost (design #10): absorbing the members keeps the site
+            // unsplit; leaving them their own cell launches frees its fold to
+            // split. The cheaper by `site_ns` and `op_ns` (D1); the absorbed
+            // group where the part has no plan rates (D8).
+            if !self.absorb_pays(site, &l, n, &chain) {
+                for mb in &chain {
+                    taken.remove(mb.m);
+                    made.remove(mb.out);
+                }
+                continue;
+            }
+            out.insert(
+                s,
+                Epi {
+                    store_out: true,
+                    chain,
+                    terms: Vec::new(),
+                    split: 1,
+                },
+            );
         }
         // Stores from the use count, once every group is known (a later
         // group's operand is an outside reader of an earlier group's value).
         for (s, g) in out.iter_mut() {
+            if !g.terms.is_empty() {
+                g.chain[0].store = true;
+                continue;
+            }
             let ms: Vec<MorphismId> = g.chain.iter().map(|mb| mb.m).collect();
             g.store_out = self.read_outside(target(s), &ms);
             for mb in &mut g.chain {
@@ -1056,6 +1100,150 @@ impl<'a> FnEmit<'a> {
             }
         }
         out
+    }
+
+    /// plan-cost `linear`: the site table of linear site `ls` (summing map
+    /// `sum`) — its launching term and group — when every term is a device
+    /// tile site of one kernel shape, all in one region with the sum, the
+    /// order is free, and [`gpu::concat_plan`] costs less than the terms' own
+    /// picks plus the latest term's store reading the others' outputs.
+    fn site_table(
+        &self,
+        sum: MorphismId,
+        ls: &mapal_ir::LinearSite,
+        sites: &SecondaryMap<MorphismId, DevSite>,
+        region: &SecondaryMap<MorphismId, (Option<ObjectId>, bool)>,
+    ) -> Option<(MorphismId, Epi)> {
+        if !self.gpu_arms.free {
+            return None;
+        }
+        let tile = |t: MorphismId| match sites.get(t) {
+            Some(DevSite::Tile(x)) => Some(x),
+            _ => None,
+        };
+        let pos = |m: MorphismId| self.lup.position(m).unwrap_or(u32::MAX);
+        let anchor = *ls.terms.iter().max_by_key(|&&t| pos(t))?;
+        let site = tile(anchor)?;
+        let shape = |x: &TileSite| {
+            let mut y = x.clone();
+            (y.a.slot, y.b.slot) = (0, 0);
+            y
+        };
+        let target = |m: MorphismId| self.ir.morphism(m).expect("morphism resolves").target;
+        for &t in ls.terms.iter().chain([&sum]) {
+            let ok = region.get(t).is_some() && region.get(t) == region.get(anchor);
+            if !ok || self.retain.contains_key(target(t)) {
+                return None;
+            }
+        }
+        let n = ls.terms.len() as u64;
+        let (split, table) = gpu::concat_plan(site, self.profile, self.contract, self.gpu_arms, n)?;
+        let mut today = 0.0;
+        for &t in &ls.terms {
+            let x = tile(t)?;
+            if shape(x) != shape(site) {
+                return None;
+            }
+            let l = gpu::launch(x, self.profile, self.contract, self.gpu_arms);
+            let cands = gpu::plan_cands(
+                &l,
+                x,
+                self.profile,
+                self.contract,
+                self.gpu_arms,
+                crate::Order::Free,
+            );
+            // The latest term keeps the sum as its epilogue: unsplit.
+            let own = match t == anchor {
+                true => cands.iter().find(|c| c.combine == gpu::Combine::None),
+                false => cands.first(),
+            };
+            today += own?.cost.ns;
+        }
+        let bytes = (n - 1) * site.rows * site.c * crate::profile::elem_bytes(&site.elem);
+        today +=
+            self.profile.op_ns(f64::INFINITY, bytes)? - self.profile.op_ns(f64::INFINITY, 0)?;
+        if table.ns >= today {
+            return None;
+        }
+        let morph = self.ir.morphism(sum)?;
+        let Operation::Map { body, captures } = morph.op else {
+            return None;
+        };
+        let mut srcs = vec![EpiSrc::Value(0); captures as usize];
+        srcs.push(EpiSrc::Index);
+        Some((
+            anchor,
+            Epi {
+                store_out: false,
+                chain: vec![Member {
+                    m: sum,
+                    body,
+                    out: morph.target,
+                    store: true,
+                    srcs,
+                }],
+                terms: ls.terms.iter().copied().filter(|&t| t != anchor).collect(),
+                split,
+            },
+        ))
+    }
+
+    /// plan-cost: does site `site` (launch `l`, `n` cells) evaluating `chain`
+    /// in its store beat its cheapest split plus each member as its own cell
+    /// launch? Absorbed: the unsplit candidate, each member's operand loads
+    /// added to its store. Split: the split candidate, then per member one
+    /// dependent op ([`TargetProfile::op_ns`]) reading its operands and the
+    /// value(s) the group kept in registers and storing its output. True where
+    /// the free order has no split candidate or the part no plan rates.
+    fn absorb_pays(&self, site: &TileSite, l: &gpu::Launch, n: u64, chain: &[Member]) -> bool {
+        let order = if self.gpu_arms.free {
+            crate::Order::Free
+        } else {
+            crate::Order::Sequential
+        };
+        if !l.rungs.plan_cost {
+            return true;
+        }
+        let cands = gpu::plan_cands(l, site, self.profile, self.contract, self.gpu_arms, order);
+        let (Some(pick), Some(unsplit)) = (
+            cands.first(),
+            cands.iter().find(|c| c.combine == gpu::Combine::None),
+        ) else {
+            return true;
+        };
+        if pick.combine == gpu::Combine::None {
+            return true;
+        }
+        let e = crate::profile::elem_bytes(&site.elem);
+        let loads = |mb: &Member| {
+            mb.srcs
+                .iter()
+                .filter(|s| !matches!(s, EpiSrc::Index))
+                .count() as u64
+        };
+        let gmem = |mb: &Member| {
+            mb.srcs
+                .iter()
+                .filter(|s| matches!(s, EpiSrc::Gmem(_)))
+                .count() as u64
+        };
+        let mut absorbed = unsplit.cost.ns;
+        let mut split = pick.cost.ns;
+        let mut prev = pick.cost.kernel_ns;
+        for mb in chain {
+            absorbed += self
+                .profile
+                .op_ns(f64::INFINITY, gmem(mb) * n * e)
+                .unwrap_or(0.0)
+                - self.profile.op_ns(f64::INFINITY, 0).unwrap_or(0.0);
+            let Some(op) = self.profile.op_ns(prev, (loads(mb) + 1) * n * e) else {
+                return true;
+            };
+            split += op;
+            prev = op;
+        }
+        absorbed <= split
     }
 
     /// The `upload`s a loop's iteration writes only rows of (`delta-h2d`): the
@@ -1728,6 +1916,9 @@ impl<'a> FnEmit<'a> {
             for mb in &g.chain {
                 plan.skip.insert(mb.m, ());
             }
+            for &t in &g.terms {
+                plan.skip.insert(t, ());
+            }
         }
         for c in cells.values() {
             for (o, _) in c.operands() {
@@ -1889,7 +2080,7 @@ impl<'a> FnEmit<'a> {
                 continue;
             }
             let produced_once = self.ir.in_edges(o).iter().all(|&p| line.contains_key(p));
-            let Some(death) = self.lup.death(o) else {
+            let Some(death) = self.death_of(o) else {
                 continue;
             };
             if let Some(&(_, d)) = by_pos.iter().find(|&&(p, _)| p == death)
@@ -2122,6 +2313,28 @@ impl<'a> FnEmit<'a> {
     /// host morphism writes or reads whole — kept, device-built or never built
     /// — has no host slot. Carry objects keep both: the loop state holds the
     /// array inline.
+    /// `o`'s last use on the device: its IR death, or (plan-cost `linear`)
+    /// the launch of the site table that reads it for an earlier term.
+    fn death_of(&self, o: ObjectId) -> Option<u32> {
+        let d = self.lup.death(o)?;
+        let reads = |t: MorphismId| {
+            let src = self.ir.morphism(t).expect("term").source;
+            let site = self.tile_plan.as_ref().and_then(|p| p.sites.get(t));
+            site.is_some_and(|x| {
+                [x.a.slot, x.b.slot]
+                    .iter()
+                    .any(|&k| self.pair_source(src, k) == Some(o))
+            })
+        };
+        let table = self
+            .groups
+            .iter()
+            .filter(|(_, g)| g.terms.iter().any(|&t| reads(t)))
+            .filter_map(|(m, _)| self.lup.position(m))
+            .max();
+        Some(table.map_or(d, |p| d.max(p)))
+    }
+
     fn arena(&self, plan: &ResidentPlan) -> Arena {
         let gated_use = |o: ObjectId| {
             self.ir.out_edges(o).iter().any(|&m| {
@@ -2157,7 +2370,7 @@ impl<'a> FnEmit<'a> {
                     .chain(plan.unit_writer(o))
                     .filter_map(|p| self.lup.position(p))
                     .min();
-                let death = self.lup.death(o);
+                let death = self.death_of(o);
                 let bytes = self.array_bytes(&self.obj_ty(o));
                 (
                     birth.expect("produced"),
@@ -2817,6 +3030,45 @@ impl<'a> FnEmit<'a> {
         true
     }
 
+    /// Operand `slot` of `source` on the device: its producer's copy, or
+    /// (a parameter, an exit object) copied in here, every time the site
+    /// runs, into a temporary `temps` frees after the launch.
+    fn dev_operand(
+        &mut self,
+        source: ObjectId,
+        slot: u32,
+        ms: MorphismId,
+        temps: &mut Vec<String>,
+    ) -> String {
+        let src_ty = self.obj_ty(source);
+        let bytes = self.array_bytes(src_ty.component_ty(slot).expect("tile operand"));
+        let feeder = self.pair_source(source, slot);
+        if let Some(f) = feeder
+            && self
+                .dvalid
+                .contains_key(self.resident.as_ref().map_or(f, |p| p.alias(f)))
+        {
+            return self.dload(f);
+        }
+        let h = self
+            .array_operand_ptr(source, Some(slot))
+            .expect("tile operand ptr");
+        let slot_name = format!("%d{}", self.fresh());
+        self.allocas.push_str(&format!(
+            "  {slot_name} = alloca i64\n  store i64 0, ptr {slot_name}\n"
+        ));
+        let d = self.tmp();
+        self.line(format!(
+            "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
+        ));
+        self.pin(ms, &h, bytes, true);
+        self.line(format!(
+            "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
+        ));
+        temps.push(slot_name);
+        d
+    }
+
     /// The device half of a site under `resident`: operands from their device
     /// copies (copied in here only when no producer did), output kept on the
     /// device, copied out whole only when the host reads it whole.
@@ -2831,39 +3083,11 @@ impl<'a> FnEmit<'a> {
         grouped: Option<(i64, String)>,
         call: impl Fn(&[String], &str) -> String,
     ) {
-        let src_ty = self.obj_ty(source);
         let ms = self.ir.in_edges(target)[0];
         let mut ops = Vec::new();
         let mut temps = Vec::new();
         for &slot in slots {
-            let bytes = self.array_bytes(src_ty.component_ty(slot).expect("tile operand"));
-            let feeder = self.pair_source(source, slot);
-            if let Some(f) = feeder
-                && self
-                    .dvalid
-                    .contains_key(self.resident.as_ref().map_or(f, |p| p.alias(f)))
-            {
-                ops.push(self.dload(f));
-                continue;
-            }
-            // No producer copied it in (a parameter, an exit object): copy
-            // it in here, every time the site runs.
-            let h = self
-                .array_operand_ptr(source, Some(slot))
-                .expect("tile operand ptr");
-            let slot_name = format!("%d{}", self.fresh());
-            self.allocas.push_str(&format!(
-                "  {slot_name} = alloca i64\n  store i64 0, ptr {slot_name}\n"
-            ));
-            let d = self.tmp();
-            self.line(format!(
-                "{d} = call i64 @mapal_gpu_alloc(ptr {slot_name}, i64 {bytes})"
-            ));
-            self.pin(ms, &h, bytes, true);
-            self.line(format!(
-                "call void @mapal_gpu_h2d(i64 {d}, ptr {h}, i64 {bytes})"
-            ));
-            temps.push(slot_name);
+            let d = self.dev_operand(source, slot, ms, &mut temps);
             ops.push(d);
         }
         let plan = self.resident.clone().expect("resident site");
@@ -2910,6 +3134,25 @@ impl<'a> FnEmit<'a> {
         // The pointers of a `launchv`: an epilogue group's, or a chained site's
         // own three.
         let ptrs = match (&group, &grouped) {
+            (Some((_, g)), _) if !g.terms.is_empty() => {
+                let sum = g.chain[0].out;
+                let bytes = self.array_bytes(&self.obj_ty(sum));
+                let d = self.dalloc(sum, bytes);
+                self.line(format!("call void @mapal_gpu_zero(i64 {d}, i64 {bytes})"));
+                stored.push((sum, d.clone()));
+                let mut ptrs = vec![ops[0].clone(), ops[1].clone(), d];
+                for &t in &g.terms {
+                    let src = self.ir.morphism(t).expect("term").source;
+                    let x = match self.tile_plan.as_ref().and_then(|p| p.sites.get(t)) {
+                        Some(x) => (x.a.slot, x.b.slot),
+                        None => unreachable!("a term is a tile site"),
+                    };
+                    for slot in [x.0, x.1] {
+                        ptrs.push(self.dev_operand(src, slot, ms, &mut temps));
+                    }
+                }
+                Some(ptrs)
+            }
             (Some((_, g)), _) => {
                 let mut ptrs = vec![ops[0].clone(), ops[1].clone(), dout.clone()];
                 for o in g.caps() {
@@ -3416,6 +3659,8 @@ mod tests {
         groups.insert(
             site,
             Epi {
+                terms: Vec::new(),
+                split: 1,
                 store_out: false,
                 chain: vec![Member {
                     m: site,

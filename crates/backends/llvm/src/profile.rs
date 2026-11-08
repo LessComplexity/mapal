@@ -162,6 +162,12 @@ pub struct Gpu {
     /// The part's launch-geometry constants (ADR-0034 D1): the row the
     /// offline search writes, overridable per knob (`--geom=`).
     pub geom: Geom,
+    /// plan-cost: FP32 FMA lanes one SM issues per cycle (128 on sm_86+
+    /// consumer and sm_89/sm_90 parts); 0 = not given, no plan cost.
+    pub fp32_lanes: u64,
+    /// plan-cost: the SM clock under load, kHz (device query `clockRate`,
+    /// box `facts sm_clock_khz=`); 0 = not given.
+    pub clock_khz: u64,
 }
 
 /// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
@@ -177,6 +183,194 @@ pub struct DeviceCost {
     /// What placing one more site on the device costs before its arithmetic:
     /// the launch, its operands' generation and its completion, in ns.
     pub launch_ns: u64,
+    /// plan-cost: the rates [`TargetProfile::site_ns`] reads; every field 0
+    /// ([`NO_PLAN`]) on a part nobody calibrated, which keeps its plans the
+    /// rules' (decision D8). Host issue time of one asynchronous op, issued
+    /// back to back on one stream, in ns (D2).
+    pub issue_ns: u64,
+    /// The device's idle time between two dependent ops of one stream when
+    /// the host issue is hidden behind the earlier op, in ns (D2).
+    pub gap_ns: u64,
+    /// A zero pass's device time beyond its bytes (`cuMemsetD8Async`), in ns.
+    pub zero_ns: u64,
+    /// `red.global.add.f32` adders into distinct outputs, ops per ns.
+    pub atomic_ops_per_ns: u64,
+    /// L2-resident read rate: the panel feed of a tile kernel, bytes per ns.
+    pub l2_bytes_per_ns: u64,
+    /// DRAM read rate of a streaming kernel, bytes per ns (`bytes_per_ns` is
+    /// Mapal's achieved placement rate, about half of it).
+    pub dram_bytes_per_ns: u64,
+    /// Fitted: the FMA tile's achieved fraction of FFMA peak at saturation,
+    /// per mille ([`plan_eff`]).
+    pub eff_max_pm: u64,
+    /// Fitted: the independent FMA chains per warp scheduler (warps × a
+    /// thread's accumulators) at which the tile reaches half of `eff_max_pm`.
+    pub eff_half: u64,
+}
+
+/// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
+/// rules' plans (D8). `..NO_PLAN` fills them.
+pub const NO_PLAN: DeviceCost = DeviceCost {
+    flops_per_ns: 0,
+    bytes_per_ns: 0,
+    launch_ns: 0,
+    issue_ns: 0,
+    gap_ns: 0,
+    zero_ns: 0,
+    atomic_ops_per_ns: 0,
+    l2_bytes_per_ns: 0,
+    dram_bytes_per_ns: 0,
+    eff_max_pm: 0,
+    eff_half: 0,
+};
+
+impl DeviceCost {
+    /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
+    /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
+    pub const NAMES: [&'static str; 13] = [
+        "flops_per_ns",
+        "bytes_per_ns",
+        "launch_ns",
+        "issue_ns",
+        "gap_ns",
+        "zero_ns",
+        "atomic_ops_per_ns",
+        "l2_bytes_per_ns",
+        "dram_bytes_per_ns",
+        "eff_max_pm",
+        "eff_half",
+        "fp32_lanes",
+        "clock_khz",
+    ];
+}
+
+/// A `--cost=` override per rate, in [`DeviceCost::NAMES`] order (`None` =
+/// the profile's value) — the `--geom=` precedent for the fit harness
+/// (`benches/gpu/plancost.py`).
+pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
+
+impl Gpu {
+    /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field.
+    const NAMES_COST: usize = DeviceCost::NAMES.len() - 2;
+
+    /// This part with the overrides in `over` applied (a part without a
+    /// [`DeviceCost`] takes one from [`NO_PLAN`]).
+    pub fn with_cost(mut self, over: &CostOver) -> Self {
+        let mut d = self.cost.unwrap_or(NO_PLAN);
+        for (name, v) in DeviceCost::NAMES.iter().zip(over) {
+            let Some(v) = *v else { continue };
+            *match *name {
+                "flops_per_ns" => &mut d.flops_per_ns,
+                "bytes_per_ns" => &mut d.bytes_per_ns,
+                "launch_ns" => &mut d.launch_ns,
+                "issue_ns" => &mut d.issue_ns,
+                "gap_ns" => &mut d.gap_ns,
+                "zero_ns" => &mut d.zero_ns,
+                "atomic_ops_per_ns" => &mut d.atomic_ops_per_ns,
+                "l2_bytes_per_ns" => &mut d.l2_bytes_per_ns,
+                "dram_bytes_per_ns" => &mut d.dram_bytes_per_ns,
+                "eff_max_pm" => &mut d.eff_max_pm,
+                "eff_half" => &mut d.eff_half,
+                "fp32_lanes" => &mut self.fp32_lanes,
+                _ => &mut self.clock_khz,
+            } = v;
+        }
+        // The `DeviceCost` fields: every name but the last two (`Gpu`'s).
+        if over.iter().take(Self::NAMES_COST).any(Option::is_some) {
+            self.cost = Some(d);
+        }
+        self
+    }
+
+    /// The rate `--cost=<name>` sets, as this part has it (0 = not given).
+    pub fn rate(&self, name: &str) -> u64 {
+        let d = self.cost.unwrap_or(NO_PLAN);
+        match name {
+            "flops_per_ns" => d.flops_per_ns,
+            "bytes_per_ns" => d.bytes_per_ns,
+            "launch_ns" => d.launch_ns,
+            "issue_ns" => d.issue_ns,
+            "gap_ns" => d.gap_ns,
+            "zero_ns" => d.zero_ns,
+            "atomic_ops_per_ns" => d.atomic_ops_per_ns,
+            "l2_bytes_per_ns" => d.l2_bytes_per_ns,
+            "dram_bytes_per_ns" => d.dram_bytes_per_ns,
+            "eff_max_pm" => d.eff_max_pm,
+            "eff_half" => d.eff_half,
+            "fp32_lanes" => self.fp32_lanes,
+            "clock_khz" => self.clock_khz,
+            _ => 0,
+        }
+    }
+}
+
+/// How a candidate plan combines its partial folds (plan-cost §2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanComb {
+    None,
+    Atomic,
+    Workspace,
+    StreamK,
+}
+
+/// **One candidate plan of a tile site, as the cost model reads it**
+/// (plan-cost design §2): the site's extents and the launch the candidate
+/// emits. Built by `func/gpu.rs` from its `Launch`; plain numbers, so the
+/// harness's mirror (`benches/gpu/plancost.py`) reads them off `; mapal.cand`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlanShape {
+    pub rows: u64,
+    pub c: u64,
+    pub k: u64,
+    /// Element bytes.
+    pub e: u64,
+    /// One block's output tile.
+    pub bm: u64,
+    pub bn: u64,
+    pub threads: u64,
+    /// Blocks one SM holds at this geometry.
+    pub per_sm: u64,
+    /// A thread's accumulators (`tm · tn`): its independent FMA chains.
+    pub acc: u64,
+    /// Output tiles (`gx · gy`).
+    pub tiles: u64,
+    /// Blocks launched: `tiles · s`, or stream-K's `ctas`.
+    pub blocks: u64,
+    /// The `k` depth one block folds: `k / s`, or stream-K's `iters · bk`.
+    pub kb: u64,
+    /// Partitions (`S`); 1 unsplit and for stream-K.
+    pub s: u64,
+    pub comb: PlanComb,
+}
+
+/// [`TargetProfile::site_ns`]'s terms, each printed on a `; mapal.cand` line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlanCost {
+    /// Waves of the launch and the blocks of its last one.
+    pub waves: u64,
+    pub tail: u64,
+    /// Warps per scheduler in a full wave (the last one's when it is the only).
+    pub wps: f64,
+    /// Σ over waves of the FFMA time, of the L2 panel feed; the DRAM bound.
+    pub f_ns: f64,
+    pub l_ns: f64,
+    pub d_ns: f64,
+    pub kernel_ns: f64,
+    pub combine_ns: f64,
+    /// Zero pass and launch idle (D2).
+    pub fixed_ns: f64,
+    pub launches: u64,
+    pub zeros: u64,
+    pub atomics: u64,
+    pub ns: f64,
+}
+
+/// The FMA tile's achieved fraction of FFMA peak with `p` independent FMA
+/// chains per warp scheduler: `eff_max · p / (p + eff_half)` — latency hidden
+/// by warps and by a thread's accumulators alike (the 2-parameter `eff` of
+/// plan-cost §2, fitted by `benches/gpu/plancost.py`).
+pub fn plan_eff(d: &DeviceCost, p: f64) -> f64 {
+    d.eff_max_pm as f64 / 1000.0 * p / (p + d.eff_half as f64)
 }
 
 /// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
@@ -2254,11 +2448,149 @@ impl TargetProfile {
     /// device by placement (`func/gpu.rs:placement`), so a host placement never
     /// adds a copy-out, and closed-form operands are built where they are read.
     pub fn device_pays(&self, flops: u64, bytes: u64) -> bool {
-        let (Some(d), Some(h)) = (self.gpu().and_then(|g| g.cost), self.dispatch) else {
+        let placed = self
+            .gpu()
+            .and_then(|g| g.cost)
+            .filter(|d| d.flops_per_ns > 0);
+        let (Some(d), Some(h)) = (placed, self.dispatch) else {
             return true;
         };
         let dev = d.launch_ns + roofline_ns(flops, bytes, d.flops_per_ns, d.bytes_per_ns);
         dev < roofline_ns(flops, bytes, h.flops_per_ns, h.bytes_per_ns)
+    }
+
+    /// **plan-cost: the part's calibrated plan rates**, `None` on a part
+    /// without them ([`NO_PLAN`], no `fp32_lanes` / `clock_khz`): its plans
+    /// stay the rules' byte for byte (decision D8).
+    pub fn plan_rates(&self) -> Option<(&Gpu, &DeviceCost)> {
+        let g = self.gpu()?;
+        let d = g.cost.as_ref()?;
+        let given = [
+            d.dram_bytes_per_ns,
+            d.issue_ns,
+            d.atomic_ops_per_ns,
+            d.l2_bytes_per_ns,
+            d.eff_max_pm,
+            g.fp32_lanes,
+            g.clock_khz,
+        ];
+        given.iter().all(|&v| v > 0).then_some((g, d))
+    }
+
+    /// **plan-cost §2: the predicted time of one candidate plan of a tile
+    /// site**, `None` without [`Self::plan_rates`]. `kernel` = the waves'
+    /// `max(FFMA, L2 panel feed)` summed (the last wave holds what is left, at
+    /// its own warps per scheduler), bounded below by the DRAM bytes; `combine`
+    /// = the atomic adds or the workspace reduce's bytes; `fixed` = the zero
+    /// pass and each op's idle: `gap` when the previous op hides the host issue,
+    /// `issue − previous op` when it does not (D2). The first op of a site
+    /// follows a hidden issue. Only terms that differ between a site's
+    /// candidates matter; the caller compares those.
+    pub fn site_ns(&self, p: &PlanShape) -> Option<PlanCost> {
+        self.site_ns_at(p, 1.0)
+    }
+
+    /// plan-cost D2: the time one more dependent op adds to a stream beyond
+    /// its own device time — the in-stream gap when the op before it (`prev`
+    /// ns of device time) hides the host issue, the issue's remainder when it
+    /// does not — plus `bytes` at the part's DRAM rate. `None` without the
+    /// plan rates. The one launch term `site_ns`, the epilogue choice and the
+    /// flow units read (D1).
+    pub fn op_ns(&self, prev: f64, bytes: u64) -> Option<f64> {
+        let (_, d) = self.plan_rates()?;
+        let idle = (d.gap_ns as f64).max(d.issue_ns as f64 - prev);
+        Some(idle + bytes as f64 / d.dram_bytes_per_ns as f64)
+    }
+
+    /// [`Self::site_ns`] with the extents scaled by `x` (rows, c, k jointly;
+    /// tiles and blocks by `x²`): the curve [`Self::crossover`] walks.
+    fn site_ns_at(&self, p: &PlanShape, x: f64) -> Option<PlanCost> {
+        let (g, d) = self.plan_rates()?;
+        let f = |v: u64| v as f64;
+        let (rows, c, k, e) = (f(p.rows) * x, f(p.c) * x, f(p.k) * x, f(p.e));
+        let blocks = (f(p.blocks) * x * x).ceil().max(1.0);
+        let tiles = f(p.tiles) * x * x;
+        let kb = f(p.kb) * x;
+        let w = f(g.sms * p.per_sm.max(1));
+        let waves = (blocks / w).ceil();
+        let tail = blocks - (waves - 1.0) * w;
+        let warps = f(p.threads.div_ceil(g.warp));
+        let peak = f(g.fp32_lanes) * f(g.clock_khz) / 1e6 * 2.0;
+        let (l2, dram) = (f(d.l2_bytes_per_ns), f(d.dram_bytes_per_ns));
+        let tile = f(p.bm * p.bn);
+        let wave = |bw: f64| {
+            let used = bw.min(f(g.sms));
+            let wps = bw / used * warps / f(g.schedulers());
+            let rate = used * peak * plan_eff(d, wps * f(p.acc));
+            let ff = bw * 2.0 * tile * kb / rate;
+            let lf = bw * f(p.bm + p.bn) * kb * e / l2;
+            (ff, lf, wps)
+        };
+        let (ff, lf, wps_full) = wave(w.min(blocks));
+        let (ft, lt, wps_tail) = wave(tail);
+        let full = waves - 1.0;
+        let out = rows * c * e;
+        let ws = if p.comb == PlanComb::Workspace {
+            f(p.s)
+        } else {
+            1.0
+        };
+        let d_ns = ((rows * k + k * c) * e + out * ws) / dram;
+        let kernel_ns = (full * ff.max(lf) + ft.max(lt)).max(d_ns);
+        let atomics = match p.comb {
+            PlanComb::Atomic => f(p.s) * rows * c,
+            PlanComb::StreamK => (tiles + blocks) * tile,
+            _ => 0.0,
+        };
+        let mut combine_ns = atomics / f(d.atomic_ops_per_ns);
+        let (gap, issue) = (f(d.gap_ns), f(d.issue_ns));
+        let idle = |prev: f64| gap.max(issue - prev);
+        let zero = f(d.zero_ns) + out / l2;
+        let (launches, zeros, fixed_ns) = match p.comb {
+            PlanComb::None => (1, 0, gap),
+            PlanComb::Atomic | PlanComb::StreamK => (1, 1, gap + zero + idle(zero)),
+            PlanComb::Workspace => {
+                combine_ns += (ws + 1.0) * out / dram;
+                (2, 0, gap + idle(kernel_ns))
+            }
+        };
+        Some(PlanCost {
+            waves: waves as u64,
+            tail: tail as u64,
+            wps: if waves > 1.0 { wps_full } else { wps_tail },
+            f_ns: full * ff + ft,
+            l_ns: full * lf + lt,
+            d_ns,
+            kernel_ns,
+            combine_ns,
+            fixed_ns,
+            launches,
+            zeros,
+            atomics: atomics as u64,
+            ns: kernel_ns + combine_ns + fixed_ns,
+        })
+    }
+
+    /// **plan-cost: the scale where `pick` stops being the cheaper of the
+    /// two** — the power of two nearest 1 (`2^±j`, `j` = 1…6) of a joint factor
+    /// on (rows, c, k) at which `alt` costs less, `pick` having cost no more
+    /// at every power between; `None` when it never does in 1/64…64 (or
+    /// without plan rates). Powers of two keep a scaled grid a whole number of
+    /// tiles, the way a size ladder (512 / 1024 / 2048) grows. Derived per site
+    /// on demand and printed on the plan line, never stored (D3).
+    pub fn crossover(&self, pick: &PlanShape, alt: &PlanShape) -> Option<f64> {
+        let cheaper = |j: i32| {
+            let x = f64::from(j).exp2();
+            Some(self.site_ns_at(pick, x)?.ns <= self.site_ns_at(alt, x)?.ns)
+        };
+        for j in 1..=6 {
+            for x in [j, -j] {
+                if !cheaper(x)? {
+                    return Some(f64::from(x).exp2());
+                }
+            }
+        }
+        None
     }
 
     /// The GPU facts, when this profile describes one. `None` for every CPU
@@ -3580,6 +3912,8 @@ const ADA_SM: Gpu = Gpu {
     l2_bytes: 48 * 1024 * 1024,
     cost: None,
     geom: GEOM,
+    fp32_lanes: 0,
+    clock_khz: 0,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -3595,7 +3929,28 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             flops_per_ns: 41690,
             bytes_per_ns: 490,
             launch_ns: 13723,
+            // plan-cost, measured (E1 = `.claude/sprints/plan-cost/evidence/E1-small-chains.md`, rtx-4090):
+            // issue: (c) empty-kernel launch back to back, 2.85 µs [2.77–2.90];
+            // gap: (a) device gap between dependent kernels at 1024/2048, 0.6–0.7 µs;
+            // zero: (c) memset 1 MB device time 1.25 µs less 1 MB at the L2 rate;
+            // atomic: (c) f32 RED, M = 262144, S = 2…64, ~2.5 ps an add;
+            // l2: (c) L2-resident read, 16–128 MB plateau 4.5–4.6 TB/s;
+            // eff: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
+            // fit half of the site-geometry sweep's plan arms
+            // (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`).
+            issue_ns: 2850,
+            gap_ns: 600,
+            zero_ns: 1017,
+            atomic_ops_per_ns: 400,
+            l2_bytes_per_ns: 4500,
+            // dram: (c) DRAM read, 2 GB `__ldcg`, 981 GB/s.
+            dram_bytes_per_ns: 981,
+            eff_max_pm: 475,
+            eff_half: 6,
         }),
+        // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
+        fp32_lanes: 128,
+        clock_khz: 2_520_000,
         ..ADA_SM
     }),
     ..GENERIC
@@ -3645,6 +4000,7 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
             flops_per_ns: 49070,
             bytes_per_ns: 135,
             launch_ns: 11315,
+            ..NO_PLAN
         }),
         ..ADA_SM
     }),
@@ -3666,7 +4022,28 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             flops_per_ns: 53410,
             bytes_per_ns: 494,
             launch_ns: 17015,
+            // plan-cost, measured (E1 = `.claude/sprints/plan-cost/evidence/E1-small-chains.md`, rtx-5090):
+            // issue: (c) empty-kernel launch back to back, 2.37 µs [2.35–2.49];
+            // gap: (a) device gap between dependent kernels, 0.3 µs;
+            // zero: (c) memset 1 MB device time 0.9 µs less 1 MB at the L2 rate;
+            // atomic: (c) f32 RED, M = 262144, S = 2…64, ~1.7 ps an add;
+            // l2: (c) L2-resident read, 16–128 MB plateau 6.5–6.9 TB/s;
+            // eff: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
+            // fit half of the site-geometry sweep's plan arms
+            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`).
+            issue_ns: 2370,
+            gap_ns: 300,
+            zero_ns: 739,
+            atomic_ops_per_ns: 560,
+            l2_bytes_per_ns: 6500,
+            // dram: (c) DRAM read, 2 GB `__ldcg`, 1690 GB/s.
+            dram_bytes_per_ns: 1690,
+            eff_max_pm: 150,
+            eff_half: 1,
         }),
+        // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
+        fp32_lanes: 128,
+        clock_khz: 2_410_000,
         ..ADA_SM
     }),
     ..GENERIC
@@ -3691,6 +4068,7 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             flops_per_ns: 22325,
             bytes_per_ns: 161,
             launch_ns: 18217,
+            ..NO_PLAN
         }),
         ..ADA_SM
     }),
@@ -5589,5 +5967,127 @@ mod tests {
         over[1] = Some(4);
         assert_eq!(GEOM.with(&over), Geom { split: 4, ..GEOM });
         assert_eq!(GEOM.with(&GeomOver::default()), GEOM);
+    }
+
+    /// A 512³ f32 site's plan on the 4090 at `blocks` blocks of 128 threads,
+    /// 4 a SM, a 32×32 tile with 16 accumulators a thread.
+    fn shape(blocks: u64, s: u64, comb: PlanComb) -> PlanShape {
+        PlanShape {
+            rows: 512,
+            c: 512,
+            k: 512,
+            e: 4,
+            bm: 32,
+            bn: 32,
+            threads: 128,
+            per_sm: 4,
+            acc: 16,
+            tiles: blocks / s,
+            blocks,
+            kb: 512 / s,
+            s,
+            comb,
+        }
+    }
+
+    #[test]
+    fn plan_rates_only_on_calibrated_parts() {
+        for p in [&RTX_4090, &RTX_5090] {
+            assert!(p.plan_rates().is_some(), "{}", p.name);
+        }
+        for p in [&H100_PCIE, &H100, &RTX_3090, &A100, &CUDA_ADA, &GENERIC] {
+            assert!(p.plan_rates().is_none(), "{}", p.name);
+            assert!(p.site_ns(&shape(256, 1, PlanComb::None)).is_none());
+        }
+        // A `--cost=` arm on an uncalibrated part leaves it uncalibrated
+        // until every rate is given.
+        let mut over = CostOver::default();
+        over[4] = Some(500);
+        let g = RTX_3090.gpu().unwrap().with_cost(&over);
+        assert_eq!(g.cost.unwrap().gap_ns, 500);
+        assert_eq!(g.cost.unwrap().launch_ns, 18217);
+    }
+
+    /// plan-cost §5: `kernel_ns` is non-decreasing in every extent of a fixed
+    /// plan, steps up where the grid crosses a wave multiple, and the step is
+    /// the tail wave's time.
+    #[test]
+    fn kernel_ns_is_monotone_and_steps_at_waves() {
+        let p = &RTX_4090;
+        let ns = |sh: &PlanShape| p.site_ns(sh).unwrap();
+        let base = shape(256, 1, PlanComb::None);
+        let k0 = ns(&base).kernel_ns;
+        for grow in [
+            PlanShape { rows: 1024, ..base },
+            PlanShape { c: 1024, ..base },
+            PlanShape { k: 1024, ..base },
+            PlanShape { kb: 1024, ..base },
+            PlanShape {
+                blocks: 300,
+                ..base
+            },
+            PlanShape { acc: 8, ..base },
+        ] {
+            assert!(ns(&grow).kernel_ns >= k0, "{grow:?}");
+        }
+        let w = 128 * 4;
+        let one = ns(&shape(w, 1, PlanComb::None));
+        let two = ns(&shape(w + 1, 1, PlanComb::None));
+        assert_eq!((one.waves, one.tail, two.waves, two.tail), (1, w, 2, 1));
+        // The step is the tail wave: one block at a lone block's rate.
+        let lone = ns(&shape(1, 1, PlanComb::None));
+        let step = two.kernel_ns - one.kernel_ns;
+        assert!(
+            (step - lone.f_ns.max(lone.l_ns)).abs() <= 1e-6 * step,
+            "{step}"
+        );
+        let mut prev = 0.0;
+        for b in (64..=4 * w).step_by(64) {
+            let t = ns(&shape(b, 1, PlanComb::None)).kernel_ns;
+            assert!(t >= prev, "{b}");
+            prev = t;
+        }
+        // The split's fixed cost: the zero pass and the idle it leaves (D2).
+        let at = ns(&shape(512, 4, PlanComb::Atomic));
+        assert_eq!((at.zeros, at.launches, at.atomics), (1, 1, 4 * 512 * 512));
+        let ws = ns(&shape(512, 4, PlanComb::Workspace));
+        assert_eq!((ws.zeros, ws.launches), (0, 2));
+    }
+
+    /// plan-cost D3: a crossover is where the two cost curves meet — `alt`
+    /// cheaper at the reported power of two, `pick` at every power nearer 1 —
+    /// over unsplit vs split plans of 4…512 tiles on both calibrated parts.
+    #[test]
+    fn crossover_is_where_the_curves_meet() {
+        let mut met = 0;
+        for p in [&RTX_4090, &RTX_5090] {
+            let ns = |sh: &PlanShape, x: f64| p.site_ns_at(sh, x).unwrap().ns;
+            for tiles in [4, 16, 64, 128, 512] {
+                for (s, comb) in [2, 4, 8]
+                    .iter()
+                    .flat_map(|&s| [PlanComb::Atomic, PlanComb::Workspace].map(move |c| (s, c)))
+                {
+                    let none = shape(tiles, 1, PlanComb::None);
+                    let split = shape(tiles * s, s, comb);
+                    let (pick, alt) = if ns(&split, 1.0) <= ns(&none, 1.0) {
+                        (split, none)
+                    } else {
+                        (none, split)
+                    };
+                    let Some(x) = p.crossover(&pick, &alt) else {
+                        continue;
+                    };
+                    met += 1;
+                    let side = |y: f64| ns(&pick, y) <= ns(&alt, y);
+                    assert!(!side(x), "x{x}");
+                    assert!(side(1.0));
+                    for i in 1..(x.log2().abs() as i32) {
+                        let y = f64::from(i).exp2();
+                        assert!(side(y) && side(1.0 / y), "x{y}");
+                    }
+                }
+            }
+        }
+        assert!(met >= 4, "crossovers in range ({met})");
     }
 }

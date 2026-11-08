@@ -26,7 +26,8 @@ use super::resident::Window;
 use super::*;
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
-    MMA_N, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
+    MMA_N, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M,
+    WGMMA_SWIZZLE_BYTES, fma_held_regs,
 };
 use crate::{Order, Reduced};
 use mapal_ir::{RowFoldOp, RowFoldSite};
@@ -805,10 +806,253 @@ pub(crate) fn launch_in(
     order: Order,
 ) -> Launch {
     let l = launch(site, profile, contract, arms);
-    let c = combine(&l, site, profile, order, arms);
+    let cands = match l.rungs.plan_cost {
+        true => plan_cands(&l, site, profile, contract, arms, order),
+        false => Vec::new(),
+    };
+    let c = match cands.first() {
+        Some(pick) => pick.combine,
+        None => combine(&l, site, profile, order, arms),
+    };
     let mut l = resized(site, profile, contract, arms, l, c);
     l.combine = c;
     l
+}
+
+/// One candidate plan of a site's chooser: its fold realization, the launch
+/// it emits and the cost model's reading of both (plan-cost §2).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Cand {
+    pub combine: Combine,
+    pub shape: PlanShape,
+    pub cost: PlanCost,
+}
+
+impl Cand {
+    /// The candidate's name on the plan line.
+    pub(crate) fn label(&self) -> String {
+        match self.combine {
+            Combine::None => "none".into(),
+            Combine::Atomic { s } => format!("atomic{s}"),
+            Combine::Workspace { s } => format!("splitk{s}"),
+            Combine::StreamK { ctas, iters } => format!("streamk{ctas}x{iters}"),
+        }
+    }
+}
+
+/// **plan-cost: the chooser.** On a part with calibrated plan rates
+/// ([`TargetProfile::plan_rates`]), a free-order scalar
+/// site's candidates — the ordered kernel, the atomic and the workspace split
+/// at every `S` dividing the panels, stream-K, each at the geometry its split
+/// grid takes ([`resized`]), each admitted by its own rung as in [`combine`],
+/// and the rules' own pick — ranked by [`TargetProfile::site_ns`], cheapest
+/// first (a tie keeps the earlier: the ordered kernel, then the rules').
+/// Empty where the rules decide: another order, a part without the rates, the
+/// tensor-core kernels and a window (whose `k` is never cut). [`launch_in`]
+/// takes the first under rung `plan-cost`; its OFF arm keeps the rules' plan
+/// and still prints the ranking (the fit harness reads every arm's).
+pub(crate) fn plan_cands(
+    l: &Launch,
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+) -> Vec<Cand> {
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
+    let rungs = l.rungs;
+    if order != Order::Free
+        || profile.plan_rates().is_none()
+        || l.mma.is_some()
+        || l.wgmma.is_some()
+        || window
+    {
+        return Vec::new();
+    }
+    let gpu = profile.gpu().expect("a GPU site has a GPU profile");
+    let e = elem_bytes_of(&site.elem);
+    let panels = site.k / l.tiled.map_or(1, |g| g.bk);
+    let blocks = l.gx * l.gy;
+    let wave = l.wave(gpu);
+    let atomic = e == 4 || gpu.sm() >= 60;
+    let forced = if arms.splitk > 0 {
+        arms.splitk
+    } else {
+        gpu.geom.split
+    };
+    let mut combos = vec![Combine::None, combine(l, site, profile, order, arms)];
+    for s in (2..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
+        if forced > 0 && s != forced {
+            continue;
+        }
+        if rungs.splitk_atomic && atomic && l.raster == 1 {
+            combos.push(Combine::Atomic { s });
+        }
+        if rungs.splitk && l.raster == 1 && s * site.rows * site.c * e <= gpu.l2_bytes {
+            combos.push(Combine::Workspace { s });
+        }
+    }
+    // Stream-K at the rules' one wave (see [`combine`]).
+    if rungs.streamk
+        && atomic
+        && l.tiled.is_some_and(|g| g.stages < 2)
+        && panels >= 2
+        && blocks * panels > wave
+    {
+        let iters = (blocks * panels).div_ceil(wave);
+        combos.push(Combine::StreamK {
+            ctas: (blocks * panels).div_ceil(iters),
+            iters,
+        });
+    }
+    let mut seen = Vec::new();
+    let mut cands: Vec<Cand> = combos
+        .into_iter()
+        .filter(|c| {
+            let new = !seen.contains(c);
+            seen.push(*c);
+            new
+        })
+        .filter_map(|c| {
+            let r = resized(site, profile, contract, arms, *l, c);
+            let shape = plan_shape(site, &r, c, gpu);
+            let cost = profile.site_ns(&shape)?;
+            Some(Cand {
+                combine: c,
+                shape,
+                cost,
+            })
+        })
+        .collect();
+    cands.sort_by(|a, b| a.cost.ns.total_cmp(&b.cost.ns));
+    cands
+}
+
+/// The cost model's reading of launch `l` folding the site as `c`.
+fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
+    let (bm, bn, acc, per_sm, bk) = match l.tiled {
+        Some(g) => (g.bm(), g.bn(), g.tm * g.tn, g.blocks_per_sm, g.bk),
+        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1),
+    };
+    let tiles = l.gx * l.gy;
+    let (blocks, kb, s, comb) = match c {
+        Combine::None => (tiles, site.k, 1, PlanComb::None),
+        Combine::Atomic { s } => (tiles * s, site.k / s, s, PlanComb::Atomic),
+        Combine::Workspace { s } => (tiles * s, site.k / s, s, PlanComb::Workspace),
+        Combine::StreamK { ctas, iters } => (ctas, iters * bk, 1, PlanComb::StreamK),
+    };
+    PlanShape {
+        rows: site.rows,
+        c: site.c,
+        k: site.k,
+        e: elem_bytes_of(&site.elem),
+        bm,
+        bn,
+        threads: l.block,
+        per_sm,
+        acc,
+        tiles,
+        blocks,
+        kb,
+        s,
+        comb,
+    }
+}
+
+/// plan-cost: what a site's plan line adds — ` pick= ns= alt=<cand>:<ns>
+/// cross=x<scale>` (the runner-up and the scale where it takes over,
+/// [`TargetProfile::crossover`]) — and, under `--plan-cands` on a row-major
+/// kernel of the site (`cands_here`), one `; mapal.cand` line per candidate,
+/// keyed by the site's ordered [`kernel_id`].
+/// Empty where the rules decide.
+fn plan_pick(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    cands_here: bool,
+) -> String {
+    let order = if arms.free {
+        Order::Free
+    } else {
+        Order::Sequential
+    };
+    let l = launch(site, profile, contract, arms);
+    let cands = plan_cands(&l, site, profile, contract, arms, order);
+    let Some(pick) = cands.first() else {
+        return String::new();
+    };
+    let id = kernel_id(site, profile, contract);
+    let mut f = format!(
+        " site={id:016x} pick={} ns={:.1}",
+        pick.label(),
+        pick.cost.ns
+    );
+    match cands.get(1) {
+        Some(alt) => {
+            let cross = profile
+                .crossover(&pick.shape, &alt.shape)
+                .map_or("none".into(), |x| format!("x{x}"));
+            f += &format!(" alt={}:{:.1} cross={cross}", alt.label(), alt.cost.ns);
+        }
+        None => f += " alt=none cross=none",
+    }
+    if arms.cands && cands_here {
+        // The rates the candidates were costed at (the harness's mirror).
+        let g = profile.gpu().expect("a GPU site has a GPU profile");
+        f += "\n; mapal.rates";
+        for name in crate::profile::DeviceCost::NAMES {
+            f += &format!(" {name}={}", g.rate(name));
+        }
+        f += &format!(
+            " sms={} warp={} schedulers={}\n",
+            g.sms,
+            g.warp,
+            g.schedulers()
+        );
+        for (i, c) in cands.iter().enumerate() {
+            let (p, t) = (c.shape, c.cost);
+            f += &format!(
+                "; mapal.cand site={:016x} cand={} pick={} ns={:.1} rows={} c={} k={} e={} \
+                 bm={} bn={} threads={} per_sm={} acc={} tiles={} blocks={} kb={} s={} \
+                 waves={} tail={} wps={:.3} f={:.1} l={:.1} d={:.1} kernel={:.1} combine={:.1} \
+                 fixed={:.1} launches={} zeros={} atomics={}",
+                id,
+                c.label(),
+                u8::from(i == 0),
+                t.ns,
+                p.rows,
+                p.c,
+                p.k,
+                p.e,
+                p.bm,
+                p.bn,
+                p.threads,
+                p.per_sm,
+                p.acc,
+                p.tiles,
+                p.blocks,
+                p.kb,
+                p.s,
+                t.waves,
+                t.tail,
+                t.wps,
+                t.f_ns,
+                t.l_ns,
+                t.d_ns,
+                t.kernel_ns,
+                t.combine_ns,
+                t.fixed_ns,
+                t.launches,
+                t.zeros,
+                t.atomics
+            );
+            if i + 1 < cands.len() {
+                f.push('\n');
+            }
+        }
+    }
+    f
 }
 
 /// `l` re-sized for the split grid of `combine` under `fill-wave`
@@ -850,6 +1094,77 @@ fn launch_for(
         launch(site, profile, contract, arms),
         combine,
     )
+}
+
+/// **plan-cost `linear` (§4a concat): the site table of `terms` sites of
+/// `site`'s shape** — one launch, `z = term·S + part`, every partial added
+/// into the zeroed sum — at the cheapest `S` by [`TargetProfile::site_ns`]:
+/// `T×` the blocks and operand bytes, `S·T` adders per cell. Each term's chain
+/// stays ≤ `k` and a cell takes `S·T ≤ k + T − 1` partials (D6: within
+/// `linear_plan`'s bound). `None` where the scalar kernels do not run, the
+/// part has no plan rates, or a launch's pointer table (≤ 16) is too short.
+pub(crate) fn concat_plan(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    terms: u64,
+) -> Option<(u64, PlanCost)> {
+    let l = launch(site, profile, contract, arms);
+    let gpu = profile.gpu()?;
+    let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
+    let atomic = elem_bytes_of(&site.elem) == 4 || gpu.sm() >= 60;
+    if l.mma.is_some() || l.wgmma.is_some() || window || !atomic || l.raster != 1 {
+        return None;
+    }
+    if !l.rungs.linear || 2 * terms + 1 > 16 || profile.plan_rates().is_none() {
+        return None;
+    }
+    let panels = site.k / l.tiled.map_or(1, |g| g.bk);
+    let mut best: Option<(u64, PlanCost)> = None;
+    for s in (1..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
+        let c = Combine::Atomic { s };
+        let r = resized(site, profile, contract, arms, l, c);
+        if s * terms > site.k + terms - 1
+            || !(site.k / s).is_multiple_of(r.tiled.map_or(1, |g| g.bk))
+        {
+            continue;
+        }
+        let mut shape = plan_shape(site, &r, c, gpu);
+        shape.blocks *= terms;
+        shape.k *= terms;
+        shape.s *= terms;
+        let cost = profile.site_ns(&shape)?;
+        if best.is_none_or(|(_, b)| cost.ns < b.ns) {
+            best = Some((s, cost));
+        }
+    }
+    best
+}
+
+/// The device text of [`concat_plan`]'s kernel: the atomic split kernel of
+/// `S` partitions over a table of `terms` sites.
+fn concat_kernel_text(
+    name: &str,
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    terms: u64,
+    s: u64,
+) -> String {
+    let c = Combine::Atomic { s };
+    let mut k = kernel(site, profile, contract, arms, false, None, c);
+    k.terms = terms;
+    let l = launch_for(site, profile, contract, arms, c);
+    k.out = plan_line(name, site, profile, &l, k.idx, c, false, false);
+    k.out.pop();
+    k.out += &format!(" terms={terms}\n");
+    match l.tiled {
+        Some(g) => k.tiled(name, g),
+        None => k.naive(name, l.block),
+    }
+    k.out
 }
 
 /// **The chooser (ADR-0040 D4, gap map M1/G2/G6)**: how a site's `k` fold is
@@ -1159,6 +1474,10 @@ pub(crate) struct EpiSite {
     pub m: mapal_ir::MorphismId,
     pub site: TileSite,
     pub k: EpiKernel,
+    /// plan-cost `linear` (§4a concat): the site table's terms and each
+    /// term's partitions (`z = term·S + part`); 0 on an epilogue group.
+    pub terms: u64,
+    pub s: u64,
 }
 
 pub(crate) fn kernel_name(id: u64) -> String {
@@ -1930,6 +2249,14 @@ pub(crate) fn device_module(
         kernels.entry(name).or_insert(text);
     }
     for e in epis {
+        if e.terms > 1 {
+            let part = format!("concat{}x{}", e.terms, e.s);
+            let name = kernel_name(kernel_id_split(&e.site, profile, contract, &part));
+            kernels.entry(name.clone()).or_insert_with(|| {
+                concat_kernel_text(&name, &e.site, profile, contract, arms, e.terms, e.s)
+            });
+            continue;
+        }
         let l = launch(&e.site, profile, contract, arms);
         if l.mma.is_some() || l.wgmma.is_some() {
             reduced = site_reduced(&e.site);
@@ -2091,6 +2418,14 @@ fn kernel_text(
     );
     debug_assert!(combine == Combine::None || (!col && epi.is_none()));
     k.out = plan_line(name, site, profile, &l, k.idx, combine, col, epi.is_some());
+    // plan-cost: the site's pick on every kernel's line (D3); its candidates
+    // on every row-major one (the harness keys them by `site=`).
+    let pick = plan_pick(site, profile, contract, arms, !col);
+    if !pick.is_empty() {
+        k.out.pop();
+        k.out += &pick;
+        k.out.push('\n');
+    }
     match (l.wgmma, l.mma, l.tiled) {
         (Some(w), _, _) => k.wgmma(name, w),
         (None, Some(m), _) => k.mma(name, m),
@@ -2196,6 +2531,7 @@ fn kernel<'s>(
         gy_out: l.gy,
         z: None,
         atomic: matches!(combine, Combine::Atomic { .. } | Combine::StreamK { .. }),
+        terms: 1,
         streamk: match combine {
             Combine::StreamK { iters, .. } => Some(iters),
             _ => None,
@@ -2449,6 +2785,10 @@ struct Kernel<'s> {
     /// S63 `splitk-atomic` / `streamk`: the partials add into `%o` itself
     /// (`atomicrmw fadd`), which the host zeroed; no workspace slab.
     atomic: bool,
+    /// plan-cost `linear` (§4a concat): the site table's terms — term
+    /// `ctaid.y ÷ (gy_out·S)` reads `%a<t>`, `%b<t>` and adds into `%o`; 1 =
+    /// one site.
+    terms: u64,
     /// S63 `streamk`: the units of the `tiles × panels` space one block walks.
     streamk: Option<u64>,
     /// S63 `streamk`: the current piece's first panel (the seed rides the
@@ -2500,9 +2840,17 @@ impl Kernel<'_> {
         // S62 `splitk`: the partition rides above the output rows in `y`
         // (`gy_out` a constant: LLVM folds the division). No raster here —
         // the two are exclusive by derivation (`launch`).
-        if self.splitk > 1 {
+        if self.splitk > 1 || self.terms > 1 {
             let row = self.op("urem", &by, self.gy_out);
-            self.z = Some(self.op("udiv", &by, self.gy_out));
+            let z = self.op("udiv", &by, self.gy_out);
+            if self.splitk > 1 {
+                // plan-cost `linear`: `z = term·S + part`.
+                let part = match self.terms {
+                    1 => z,
+                    _ => self.op("urem", &z, self.splitk),
+                };
+                self.z = Some(part);
+            }
             return (bx, row);
         }
         let (gx, h) = self.raster;
@@ -2897,14 +3245,58 @@ impl Kernel<'_> {
         } else {
             String::new()
         };
+        // plan-cost `linear`: one `(a, b)` pair per term; `%a`, `%b` select
+        // the block's term in the entry block.
+        let ab = |t: u64| match t {
+            0 if self.terms < 2 => ("%a".to_string(), "%b".to_string()),
+            _ => (format!("%a{t}"), format!("%b{t}")),
+        };
+        let (a0, b0) = ab(0);
+        let mut more = String::new();
+        for t in 1..self.terms {
+            let (a, b) = ab(t);
+            more += &format!(
+                ", ptr addrspace(1) readonly align {align} {a}, ptr addrspace(1) readonly align {align} {b}"
+            );
+        }
+        let ro = if self.terms < 2 {
+            "noalias readonly"
+        } else {
+            "readonly"
+        };
         self.out.push_str(&format!(
             "define ptx_kernel void @{name}(\
-             ptr addrspace(1) noalias readonly align {align} %a, \
-             ptr addrspace(1) noalias readonly align {align} %b, \
-             ptr addrspace(1) noalias align {align} %o{}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
+             ptr addrspace(1) {ro} align {align} {a0}, \
+             ptr addrspace(1) {ro} align {align} {b0}, \
+             ptr addrspace(1) noalias align {align} %o{}{more}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
              entry:\n",
             self.epi_params(align)
         ));
+        if self.terms > 1 {
+            let y = self.tmp();
+            self.line(format!("{y} = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.y()"));
+            let term = self.tmp();
+            self.line(format!(
+                "{term} = udiv i32 {y}, {}",
+                self.gy_out * self.splitk
+            ));
+            for (x, last) in [("a", "%a"), ("b", "%b")] {
+                let mut prev = format!("%{x}0");
+                for t in 1..self.terms {
+                    let (hit, sel) = (self.tmp(), self.tmp());
+                    let sel = if t + 1 == self.terms {
+                        last.to_string()
+                    } else {
+                        sel
+                    };
+                    self.line(format!("{hit} = icmp eq i32 {term}, {t}"));
+                    self.line(format!(
+                        "{sel} = select i1 {hit}, ptr addrspace(1) %{x}{t}, ptr addrspace(1) {prev}"
+                    ));
+                    prev = sel;
+                }
+            }
+        }
         self.epi_entry();
         // A dependent launch may start while its producer drains: nothing is
         // read before the producer's grid is complete. Then let this grid's
@@ -2928,7 +3320,11 @@ impl Kernel<'_> {
         let bx = self.sreg("ctaid.x");
         // S62 `splitk`: the grid's `y` is the partition.
         if self.splitk > 1 {
-            self.z = Some(self.sreg("ctaid.y"));
+            let y = self.sreg("ctaid.y");
+            self.z = Some(match self.terms {
+                1 => y,
+                _ => self.op("urem", &y, self.splitk),
+            });
         }
         let cell0 = self.op("mul", &bx, threads);
         let cell = self.op("add", &cell0, &tid);
@@ -4425,6 +4821,35 @@ impl<'a> FnEmit<'a> {
                     matches!(mb.kind, super::flow::UKind::Fold { colmajor: Some(c), .. } if c == m)
                 });
             let streams = !plan.chain.is_empty();
+            // plan-cost `linear`: the site table — the sum zeroed, one launch
+            // (`emit_site_resident` passes every term's operands).
+            if let Some(g) = self.groups.get(m).filter(|g| !g.terms.is_empty()) {
+                let (t, s) = (g.terms.len() as u64 + 1, g.split);
+                let id =
+                    kernel_id_split(site, self.profile, self.contract, &format!("concat{t}x{s}"));
+                let l = launch_for(
+                    site,
+                    self.profile,
+                    self.contract,
+                    self.gpu_arms,
+                    Combine::Atomic { s },
+                );
+                let geom = format!(
+                    "i32 {}, i32 {}, i32 {}, i32 {}",
+                    l.gx,
+                    l.gy * s * t,
+                    l.block,
+                    l.smem
+                );
+                self.emit_site_resident(
+                    source,
+                    target,
+                    &[site.a.slot, site.b.slot],
+                    Some((id as i64, geom)),
+                    |_, _| unreachable!("a site table launches through its pointer table"),
+                );
+                return;
+            }
             // S54 `epilogue`: the per-cell consumers this site's store evaluates
             // (none when a fold is its only reader: `col` and a group exclude).
             let epi = self.epi_kernel(m);
@@ -4649,6 +5074,21 @@ impl<'a> FnEmit<'a> {
                 .and_then(|p| p.sites.get(m))
                 .expect("a grouped site is a tile site")
                 .clone();
+            if !g.terms.is_empty() {
+                sites.push(EpiSite {
+                    f: self.f,
+                    m,
+                    site,
+                    k: EpiKernel {
+                        store_out: false,
+                        caps: 0,
+                        calls: Vec::new(),
+                    },
+                    terms: g.terms.len() as u64 + 1,
+                    s: g.split,
+                });
+                continue;
+            }
             let k = self.epi_kernel(m).expect("a group");
             for (mb, c) in g.chain.iter().zip(&k.calls) {
                 let slots = c
@@ -4665,6 +5105,8 @@ impl<'a> FnEmit<'a> {
                 m,
                 site,
                 k,
+                terms: 0,
+                s: 0,
             });
         }
         (sites, bodies)
@@ -4932,6 +5374,7 @@ mod tests {
             on: GpuRungs::default(),
             off,
             splitk: 0,
+            cands: false,
             free: false,
         }
     }
@@ -5048,6 +5491,7 @@ mod tests {
                             gy_out: l.gy,
                             z: None,
                             atomic: false,
+                            terms: 1,
                             streamk: None,
                             p0: None,
                             head: "entry",
@@ -5435,6 +5879,7 @@ mod tests {
                 on: GpuRungs::default(),
                 off,
                 splitk: 0,
+                cands: false,
                 free: false,
             }
         };
@@ -5526,7 +5971,9 @@ mod tests {
             (4096, 4096, 4096),
         ];
         let parts = [&RTX_5090, &RTX_4090, &H100_PCIE, &crate::profile::RTX_3090];
-        let arms = crate::GpuArms::default();
+        // The rules (plan-cost's OFF arm; `plan_cost_picks_the_argmin` is ON's).
+        let mut arms = crate::GpuArms::default();
+        arms.off.plan_cost = true;
         let off = |names: &[&str]| {
             let mut a = arms;
             for n in names {
@@ -5655,6 +6102,138 @@ mod tests {
         assert_eq!(l.combine, Combine::None);
         let l = launch_in(&s16, r3090, true, pre, None, Order::Fixed);
         assert!(matches!(l.combine, Combine::Workspace { .. }));
+    }
+
+    /// plan-cost: on a part with plan rates, a free-order site's fold is the
+    /// cheapest candidate the rungs admit — never dearer than the rules' pick
+    /// (a candidate itself) — every candidate cuts `k` into whole panels, and
+    /// each rung's OFF arm removes its candidates; on a part without the
+    /// rates, and on the other orders, the plan is the rules' byte for byte
+    /// (D8: the rules' launch, every cell, part, face and order).
+    #[test]
+    fn plan_cost_picks_the_argmin() {
+        let cells = [
+            (16, 2048, 7168),
+            (16, 1024, 4096),
+            (128, 2048, 7168),
+            (512, 512, 512),
+            (1024, 1024, 1024),
+            (2048, 2048, 2048),
+            (4096, 4096, 4096),
+        ];
+        let on = crate::GpuArms::default();
+        let mut rules = on;
+        rules.off.plan_cost = true;
+        let mut no_atomic = on;
+        no_atomic.off.splitk_atomic = true;
+        no_atomic.off.streamk = true;
+        let mut costed = 0;
+        // The launch but for the rung set the arms differ in.
+        let same = |a: Launch, b: Launch| {
+            Launch {
+                rungs: b.rungs,
+                ..a
+            } == b
+        };
+        for p in crate::profile::GPU_MEASURED {
+            for (m, n, k) in cells {
+                let s = site(m, n, k, true, true, Ty::f32());
+                for contract in [false, true] {
+                    let l = launch(&s, p, contract, on, None);
+                    let cands = plan_cands(&l, &s, p, contract, on, Order::Free);
+                    for o in [Order::Sequential, Order::Fixed] {
+                        assert!(plan_cands(&l, &s, p, contract, on, o).is_empty());
+                        let at = |a| launch_in(&s, p, contract, a, None, o);
+                        assert!(same(at(on), at(rules)), "{} {o:?}", p.name);
+                    }
+                    let at = |a| launch_in(&s, p, contract, a, None, Order::Free);
+                    if p.plan_rates().is_none() {
+                        assert!(cands.is_empty(), "{}", p.name);
+                        assert!(same(at(on), at(rules)), "D8: {} {m}x{n}x{k}", p.name);
+                        continue;
+                    }
+                    costed += 1;
+                    let pick = cands.first().expect("the ordered kernel is a candidate");
+                    assert_eq!(at(on).combine, pick.combine);
+                    let rule = at(rules).combine;
+                    let rule_ns = cands.iter().find(|c| c.combine == rule).expect("rules'");
+                    assert!(pick.cost.ns <= rule_ns.cost.ns);
+                    assert!(cands.windows(2).all(|w| w[0].cost.ns <= w[1].cost.ns));
+                    for c in &cands {
+                        let r = resized(&s, p, contract, on, l, c.combine);
+                        let bk = r.tiled.map_or(1, |t| t.bk);
+                        assert!(k.is_multiple_of(c.combine.splits() * bk), "{c:?}");
+                    }
+                    let l = launch(&s, p, contract, no_atomic, None);
+                    let few = plan_cands(&l, &s, p, contract, no_atomic, Order::Free);
+                    assert!(
+                        few.iter().all(|c| matches!(
+                            c.combine,
+                            Combine::None | Combine::Workspace { .. }
+                        ))
+                    );
+                }
+            }
+        }
+        assert!(
+            costed >= 20,
+            "the calibrated parts reach the chooser ({costed})"
+        );
+    }
+
+    /// plan-cost §5 pick stability, over sites of the generator's sizes
+    /// (`testgen::geom_prog_strategy`: rows 1…1024, c and k 64…4096): ±10 %
+    /// on any one rate moves every candidate's time by at most the factor the
+    /// rate does, so it changes a pick only where the runner-up the plan line
+    /// reports is within that band (`alt.ns ≤ 1.1/0.9 · pick.ns`).
+    #[test]
+    fn plan_pick_is_stable_under_rate_noise() {
+        let on = crate::GpuArms::default();
+        let (mut flips, mut checked) = (0, 0);
+        for p in [&RTX_4090, &RTX_5090] {
+            let g = *p.gpu().unwrap();
+            for (m, n, k) in [1u64, 16, 64, 128, 256, 512, 1024]
+                .iter()
+                .flat_map(|&m| [64u64, 256, 1024, 4096].map(move |n| (m, n)))
+                .flat_map(|(m, n)| [64u64, 512, 4096].map(move |k| (m, n, k)))
+            {
+                let s = site(m, n, k, true, true, Ty::f32());
+                let l = launch(&s, p, true, on, None);
+                let cands = plan_cands(&l, &s, p, true, on, Order::Free);
+                let (Some(pick), Some(alt)) = (cands.first(), cands.get(1)) else {
+                    continue;
+                };
+                for (i, name) in crate::profile::DeviceCost::NAMES.iter().enumerate() {
+                    let v = g.rate(name);
+                    for f in [0.9, 1.1] {
+                        let mut over = crate::profile::CostOver::default();
+                        over[i] = Some(((v as f64) * f).round() as u64);
+                        let q = TargetProfile {
+                            machine: crate::profile::Machine::Gpu(g.with_cost(&over)),
+                            ..*p
+                        };
+                        let lq = launch(&s, &q, true, on, None);
+                        let moved = plan_cands(&lq, &s, &q, true, on, Order::Free);
+                        checked += 1;
+                        if moved.first().map(|c| c.combine) != Some(pick.combine) {
+                            flips += 1;
+                            assert!(
+                                alt.cost.ns <= pick.cost.ns * 1.1 / 0.9 + 1.0,
+                                "{} {m}x{n}x{k} {name}×{f}: {} → {:?}, runner-up {} at {} vs {}",
+                                p.name,
+                                pick.label(),
+                                moved.first().map(|c| c.label()),
+                                alt.label(),
+                                alt.cost.ns,
+                                pick.cost.ns
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("plan-cost stability: {flips} flips in {checked} perturbed picks");
+        assert!(checked > 1000);
     }
 
     /// S64 evidence pass: each kernel's `; mapal.plan` line reads back as the
@@ -5991,6 +6570,7 @@ mod tests {
             on: GpuRungs::default(),
             off,
             splitk: 0,
+            cands: false,
             free: false,
         }
     }

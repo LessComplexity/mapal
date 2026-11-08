@@ -116,6 +116,26 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
             };
             opts.geom[i] = Some(v);
         }
+        // plan-cost: one plan rate of the GPU part, for the fit harness's
+        // arms (`benches/gpu/plancost.py`). Repeatable.
+        _ if a.starts_with("--cost=") => {
+            let spec = &a["--cost=".len()..];
+            let rate = spec.split_once('=').and_then(|(k, v)| {
+                let i = crate::profile::DeviceCost::NAMES
+                    .iter()
+                    .position(|n| *n == k)?;
+                Some((i, v.parse::<u64>().ok()?))
+            });
+            let Some((i, v)) = rate else {
+                return Err(format!(
+                    "--cost expects <rate>=<value> with a rate of {}, got `{spec}`",
+                    crate::profile::DeviceCost::NAMES.join(", ")
+                ));
+            };
+            opts.cost[i] = Some(v);
+        }
+        // plan-cost: the candidate plans' `; mapal.cand` lines.
+        "--plan-cands" => opts.gpu.cands = true,
         // Machine facts by name (plan-s31-target-profiles); never probed
         // unless the name is `native`. A box run names its machine.
         _ if a.starts_with("--target=") => {
