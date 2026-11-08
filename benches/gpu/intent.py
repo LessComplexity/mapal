@@ -102,7 +102,8 @@ INTENT = {
     # plan-cost `linear` (§4a concat): a sum of folds over one k range as one site table launch.
     'linear': dict(applies="'terms' in plan", on=[
         ('every partial adds into the zeroed sum: one red.global.add per accumulator', "plan.combine == 'atomic' and ptx.atom_add + ptx.red_add >= (plan.tm * plan.tn if plan.kind == 'tile' else 1)"),
-        ('each chain <= k; S*T partials per cell within the source bound (D6)', 'plan.S * plan.terms <= plan.k + plan.terms - 1'),
+        ('depth k/S + S*T - 1 (partial, then adds into the zeroed sum) within the source k + T - 1 (D6)',
+         'plan.k // plan.S + plan.S * plan.terms - 1 <= plan.k + plan.terms - 1'),
         ('one launch for the T terms: grid y = gy * S * T', "launch.gy == plan.gy * plan.S * plan.terms")]),
     'splitk': dict(applies_on="plan.combine == 'splitk'", on=[
         ('S partial folds, then one reduce launch', "launch.S == plan.S and launch.combine == 'splitk'"),

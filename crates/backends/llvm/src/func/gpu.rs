@@ -847,8 +847,9 @@ impl Cand {
 /// grid takes ([`resized`]), each admitted by its own rung as in [`combine`],
 /// and the rules' own pick — ranked by [`TargetProfile::site_ns`], cheapest
 /// first (a tie keeps the earlier: the ordered kernel, then the rules').
-/// Empty where the rules decide: another order, a part without the rates, the
-/// tensor-core kernels and a window (whose `k` is never cut). [`launch_in`]
+/// A forced count leaves only its own splits. Empty where the rules decide:
+/// another order, a part without the rates, the tensor-core kernels, a window
+/// (whose `k` is never cut) and a forced count no split admits. [`launch_in`]
 /// takes the first under rung `plan-cost`; its OFF arm keeps the rules' plan
 /// and still prints the ranking (the fit harness reads every arm's).
 pub(crate) fn plan_cands(
@@ -880,7 +881,12 @@ pub(crate) fn plan_cands(
     } else {
         gpu.geom.split
     };
-    let mut combos = vec![Combine::None, combine(l, site, profile, order, arms)];
+    // A forced count (`--splitk=S`, the part's `Geom::split`) is the only
+    // plan: the ordered kernel and the rules' pick are not candidates.
+    let mut combos = match forced {
+        0 => vec![Combine::None, combine(l, site, profile, order, arms)],
+        _ => Vec::new(),
+    };
     for s in (2..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
         if forced > 0 && s != forced {
             continue;
@@ -893,7 +899,8 @@ pub(crate) fn plan_cands(
         }
     }
     // Stream-K at the rules' one wave (see [`combine`]).
-    if rungs.streamk
+    if forced == 0
+        && rungs.streamk
         && atomic
         && l.tiled.is_some_and(|g| g.stages < 2)
         && panels >= 2
@@ -1099,16 +1106,19 @@ fn launch_for(
 /// **plan-cost `linear` (§4a concat): the site table of `terms` sites of
 /// `site`'s shape** — one launch, `z = term·S + part`, every partial added
 /// into the zeroed sum — at the cheapest `S` by [`TargetProfile::site_ns`]:
-/// `T×` the blocks and operand bytes, `S·T` adders per cell. Each term's chain
-/// stays ≤ `k` and a cell takes `S·T ≤ k + T − 1` partials (D6: within
-/// `linear_plan`'s bound). `None` where the scalar kernels do not run, the
-/// part has no plan rates, or a launch's pointer table (≤ 16) is too short.
+/// `T×` the blocks and operand bytes, `S·T` adders per cell. A product goes
+/// through `k/S` roundings in its partial and `S·T − 1` adds into the zeroed
+/// sum: `S` is admitted only where `γ` of that depth stays within `bound`,
+/// `linear_plan`'s source bound `γ_{k+T−1}` (D6; for `S > 1`, `S·T ≤ k`).
+/// `None` where the scalar kernels do not run, the part has no plan rates, or
+/// a launch's pointer table (≤ 16) is too short.
 pub(crate) fn concat_plan(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
     terms: u64,
+    bound: f64,
 ) -> Option<(u64, PlanCost)> {
     let l = launch(site, profile, contract, arms);
     let gpu = profile.gpu()?;
@@ -1125,7 +1135,7 @@ pub(crate) fn concat_plan(
     for s in (1..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
         let c = Combine::Atomic { s };
         let r = resized(site, profile, contract, arms, l, c);
-        if s * terms > site.k + terms - 1
+        if mapal_ir::bound_coef(site.k / s + s * terms - 1, site.tf32) > bound
             || !(site.k / s).is_multiple_of(r.tiled.map_or(1, |g| g.bk))
         {
             continue;
@@ -6179,6 +6189,63 @@ mod tests {
             costed >= 20,
             "the calibrated parts reach the chooser ({costed})"
         );
+    }
+
+    /// A forced count (`--splitk=S`, the part's `Geom::split`) stays the plan
+    /// under plan-cost: the chooser ranks only that count's splits, so the
+    /// ordered kernel or the rules' pick never replaces it.
+    #[test]
+    fn a_forced_split_is_the_only_plan() {
+        let mut forced = crate::GpuArms::default();
+        forced.splitk = 4;
+        let mut ranked = 0;
+        for p in [&RTX_4090, &RTX_5090] {
+            for (m, n, k) in [(16, 2048, 7168), (512, 512, 512), (4096, 4096, 4096)] {
+                let s = site(m, n, k, true, true, Ty::f32());
+                let l = launch(&s, p, true, forced, None);
+                let cands = plan_cands(&l, &s, p, true, forced, Order::Free);
+                let got = launch_in(&s, p, true, forced, None, Order::Free).combine;
+                assert!(cands.iter().all(|c| c.combine.splits() == 4), "{cands:?}");
+                if !cands.is_empty() {
+                    ranked += 1;
+                    assert_eq!(got.splits(), 4, "{} {m}x{n}x{k}", p.name);
+                }
+            }
+        }
+        assert!(ranked > 0, "the forced count reaches the chooser");
+    }
+
+    /// plan-cost `linear` (D6): a site table's `S` keeps each product's depth
+    /// — `k/S` roundings in its partial, `S·T − 1` adds into the zeroed sum —
+    /// within the source's `k + T − 1` (`S·T ≤ k` for `S > 1`: `k = 4, T = 3`
+    /// takes no `S = 2`), over skinny and short-`k` sites.
+    #[test]
+    fn site_table_split_stays_within_the_source_bound() {
+        let on = crate::GpuArms::default();
+        let (mut tables, mut split) = (0, 0);
+        for p in [&RTX_4090, &RTX_5090] {
+            for (m, n, k) in [1u64, 2, 16]
+                .iter()
+                .flat_map(|&m| [32u64, 128, 1024].map(move |n| (m, n)))
+                .flat_map(|(m, n)| [4u64, 6, 8, 12, 16, 24, 64, 1024].map(move |k| (m, n, k)))
+            {
+                let s = site(m, n, k, true, true, Ty::f32());
+                for t in 2..=7 {
+                    let bound = mapal_ir::bound_coef(k + t - 1, false);
+                    let Some((sp, _)) = concat_plan(&s, p, true, on, t, bound) else {
+                        continue;
+                    };
+                    tables += 1;
+                    split += u64::from(sp > 1);
+                    assert!(
+                        k / sp + sp * t - 1 <= k + t - 1,
+                        "{} {m}x{n}x{k} T={t}: S={sp}",
+                        p.name
+                    );
+                }
+            }
+        }
+        assert!(tables > 0 && split > 0, "{tables} tables, {split} split");
     }
 
     /// plan-cost §5 pick stability, over sites of the generator's sizes

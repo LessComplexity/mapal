@@ -9,8 +9,13 @@
    (`; mapal.rates`) and the plan it emitted (`; mapal.plan … combine= S=`); an arm's predicted time is the sum over its
    sites of the emitted candidate's ns, plus one constant per program (the work no candidate changes);
 3. mirror: `site_ns` re-evaluated here from each line's inputs must equal the printed ns (to its printed 0.1 ns);
-4. fit `eff_max_pm`, `eff_half` (log-time least squares) on the programs of one hash half; report on the other:
-   pick accuracy (the argmin arm within max(null, 2 %) of the measured best), pairwise sign accuracy, median |log err|.
+4. split the decisions by rung class (the rungs whose arms move the plan off `on`'s), hash-ordered and alternating
+   within each class; fit `eff_max_pm`, `eff_half` (log-time L1) on one half; report on the other: pick accuracy (the
+   argmin arm within max(null, 2 %) of the measured best), pairwise sign accuracy, median |log err| of each arm's
+   predicted time anchored at the program's `on` arm (`pred_i − pred_on + meas_on`: no constant fitted on the half
+   it scores);
+5. compiler: each hold-out program emitted with plan-cost ON; its picks are scored against the measured arm that
+   emitted the same plan (within max(null, 2 %) of the best), unknown where no arm did.
 Tables only go to --out; raw output stays outside git (CLAUDE.md).
 """
 import hashlib, math, os, re, statistics as st, subprocess, sys
@@ -99,15 +104,15 @@ def flags(arm):
     return None
 
 
-def emit(mapal, arch, prog, arm, work):
+def emit(mapal, arch, prog, arm, work, cost_on=False):
     src = f'{ROOT}/benches/algorithms/{prog}.mapal'
     fl = flags(arm)
     if fl is None or not os.path.exists(src):
         return None
-    out = f'{work}/{prog}__{arm}'
+    out = f'{work}/{prog}__{arm}' + ('__pc' if cost_on else '')
     if not os.path.exists(out + '.ll'):
-        r = subprocess.run([mapal, 'build', src, f'--target={arch}', '--emit-only', '--plan-cands', '-o', out,
-                            '--gpu-off=plan-cost'] + fl, capture_output=True, text=True)
+        r = subprocess.run([mapal, 'build', src, f'--target={arch}', '--emit-only', '--plan-cands', '-o', out]
+                           + ([] if cost_on else ['--gpu-off=plan-cost']) + fl, capture_output=True, text=True)
         if r.returncode or not os.path.exists(out + '.dev.ll'):
             return None
     ids = {f'{int(x) & (2 ** 64 - 1):016x}' for x in
@@ -136,6 +141,31 @@ def shape(f):
                                 'kb', 's')}
     p['comb'] = comb_of(f['cand'])
     return p
+
+
+def plan_of(cands, picks):
+    """Each site's emitted candidate shape (frozen, comparable across emissions); None if a pick has no candidate."""
+    if any(lab not in cands.get(s, {}) for s, lab in picks.items()):
+        return None
+    return tuple(sorted((s, tuple(sorted(shape(cands[s][lab]).items()))) for s, lab in picks.items()))
+
+
+def rung(arm):
+    m = re.match(r'on-g-(\w+?)-\d+$', arm)
+    return f'g-{m[1]}' if m else arm.split('-', 1)[-1]
+
+
+def split(rows):
+    """half per decision: hash order within each rung class, alternating from a class-hashed start."""
+    h = lambda x: int(hashlib.md5(x.encode()).hexdigest(), 16)
+    by = defaultdict(list)
+    for x in rows:
+        by[x[1]].append(x)
+    out = []
+    for cls, xs in by.items():
+        for i, x in enumerate(sorted(xs, key=lambda x: h(x[0]))):
+            out.append((x[0], (i + h(cls)) % 2, x[2], x[3]))
+    return sorted(out)
 
 
 def main():
@@ -168,25 +198,32 @@ def main():
                 for c in site.values():
                     mirror[0] += 1
                     mirror[1] += abs(site_ns(r, shape(c)) - float(c['ns'])) <= 0.051
-            sites = [cands[s][lab] for s, lab in picks.items() if lab in cands.get(s, {})]
-            if len(sites) == len(picks):
-                arms.append((arm, st.median(t[(prog, arm)]) * 1e6, [shape(c) for c in sites]))
-        # a decision: two or more carried arms that emit different plans
-        if len({repr(x[2]) for x in arms}) >= 2:
-            half = int(hashlib.md5(prog.encode()).hexdigest(), 16) % 2
-            rows.append((prog, half, max(null, 0.02), arms))
+            plan = plan_of(cands, picks)
+            if plan is not None:
+                arms.append((arm, st.median(t[(prog, arm)]) * 1e6, plan))
+        # a decision: two or more carried arms that emit different plans; its class: the rungs that move the plan
+        if len({x[2] for x in arms}) >= 2:
+            ref = next((x[2] for x in arms if x[0] == 'on'), arms[0][2])
+            cls = ','.join(sorted({rung(a) for a, _, pl in arms if pl != ref}))
+            rows.append((prog, cls, max(null, 0.02), arms))
     assert mirror[0] == mirror[1], f'mirror: {mirror[1]}/{mirror[0]} candidate ns reproduced'
+    rows = split(rows)
+    shapes = lambda pl: [dict(p) for _, p in pl]
 
     def judge(part, rr, emax, ehalf):
         r = dict(rr, eff_max_pm=emax, eff_half=ehalf)
         sq, picks, signs, errs = 0.0, [], [], []
         for prog, _, null, arms in part:
-            pred = [sum(site_ns(r, p) for p in sh) for _, _, sh in arms]
+            pred = [sum(site_ns(r, p) for p in shapes(pl)) for _, _, pl in arms]
             meas = [m for _, m, _ in arms]
+            # the fit: one constant per program from its own (fit-half) arms
             cst = st.mean(m - q for m, q in zip(meas, pred))
-            le = [math.log(max(q + cst, 1.0) / m) for q, m in zip(pred, meas)]
-            sq += sum(abs(x) for x in le)  # L1: a cliff arm (spills) must not set the slope
-            errs += [abs(x) for x in le]
+            sq += sum(abs(math.log(max(q + cst, 1.0) / m)) for q, m in zip(pred, meas))  # L1: cliffs (spills)
+            # the report: anchored at the program's `on` arm, nothing fitted on the scored arms
+            on = next((i for i, x in enumerate(arms) if x[0] == 'on'), None)
+            if on is not None:
+                errs += [abs(math.log(max(q - pred[on] + meas[on], 1.0) / m))
+                         for i, (q, m) in enumerate(zip(pred, meas)) if i != on]
             best = min(meas)
             picks.append(meas[pred.index(min(pred))] <= best * (1 + null))
             for i in range(len(arms)):
@@ -197,6 +234,16 @@ def main():
 
     fit = [x for x in rows if x[1] == 0]
     hold = [x for x in rows if x[1] == 1]
+    # the compiler's own pick (plan-cost ON, its built-in rates) on the hold-out: ok / unknown (no arm emitted it)
+    comp_ok, comp_unknown = 0, 0
+    for prog, _, null, arms in hold:
+        e = emit(mapal, arch, prog, 'on', work, cost_on=True)
+        plan = e and plan_of(e[2], e[3])
+        hit = [m for _, m, pl in arms if pl == plan]
+        if not hit:
+            comp_unknown += 1
+            continue
+        comp_ok += hit[0] <= min(m for _, m, _ in arms) * (1 + null)
     best = None
     for emax in range(100, 1001, 25):  # at most the FFMA peak
         for ehalf in [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]:
@@ -219,15 +266,20 @@ def main():
         fh.write('program\thalf\tnull\tarm\tmeasured_ns\tpredicted_ns_fitted\n')
         r = dict(rates, eff_max_pm=emax, eff_half=ehalf)
         for prog, half, null, arms in rows:
-            for arm, m, sh in arms:
+            for arm, m, pl in arms:
                 fh.write(f'{prog}\t{"fit" if half == 0 else "hold"}\t{null:.4f}\t{arm}\t{m:.0f}\t'
-                         f'{sum(site_ns(r, p) for p in sh):.0f}\n')
+                         f'{sum(site_ns(r, p) for p in shapes(pl)):.0f}\n')
     print(f'{arch}: carried {carried} arms ({dropped} dropped: kernel ids not re-emitted), {len(rows)} decisions '
           f'({len(fit)} fit / {len(hold)} hold-out); mirror {mirror[1]}/{mirror[0]}; fitted eff_max_pm={emax} '
           f'eff_half={ehalf}')
     for x in report:
         print(f'  {x[0]:8} {x[1]:6} eff=({x[2]},{x[3]}) picks {x[5]}/{x[6]}  signs {x[7]}/{x[8]}  '
               f'median|log err| {x[9]:.3f}')
+    print(f'  hold-out compiler picks {comp_ok}/{len(hold) - comp_unknown} ({comp_unknown} unknown: no arm emitted '
+          f'the pick)')
+    with open(f'{out}/compiler-{arch}.tsv', 'w') as fh:
+        fh.write('decisions\tpick_ok\tunknown\n')
+        fh.write(f'{len(hold)}\t{comp_ok}\t{comp_unknown}\n')
 
 
 if __name__ == '__main__':

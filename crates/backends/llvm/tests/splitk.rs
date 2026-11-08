@@ -316,6 +316,22 @@ fn default_face_is_within_the_a_priori_bound() {
     }
 }
 
+/// A forced count (`--splitk=4`) under plan-cost ON (every other rung at its
+/// default): the cost model ranks only the count's splits (here it takes the
+/// workspace one), so the site still splits in four.
+#[test]
+fn forced_split_holds_under_plan_cost() {
+    let ir = lower(&src(2, 64, 12));
+    let mut opts = EmitOpts {
+        target: "rtx-5090",
+        ..EmitOpts::default()
+    };
+    opts.gpu.splitk = 4;
+    opts.gpu.off.place = true;
+    let host = emit_detailed(&ir, &opts).expect("emits").text;
+    assert!(host.contains("; splitk=4"), "{host}");
+}
+
 /// An `m × n × k` product of integer-valued f32 operands (`gen_tiles.py`'s
 /// law): every partial sum is exact, so every order — and every correct
 /// realization — prints the same bits; a lost or doubled piece does not.

@@ -1137,7 +1137,14 @@ impl<'a> FnEmit<'a> {
             }
         }
         let n = ls.terms.len() as u64;
-        let (split, table) = gpu::concat_plan(site, self.profile, self.contract, self.gpu_arms, n)?;
+        let (split, table) = gpu::concat_plan(
+            site,
+            self.profile,
+            self.contract,
+            self.gpu_arms,
+            n,
+            ls.bound,
+        )?;
         let mut today = 0.0;
         for &t in &ls.terms {
             let x = tile(t)?;
