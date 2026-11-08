@@ -1,0 +1,3 @@
+section	pass	fail
+differential (every program, every arm)	95	0
+probe arms (programs 69)	272	0

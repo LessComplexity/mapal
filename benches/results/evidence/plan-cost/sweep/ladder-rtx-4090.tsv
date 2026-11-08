@@ -1,0 +1,19 @@
+program	changed	on	off	base	null	tol	best_other	best_ms	on_over_best	base_over_best	on_over_base	verdict
+pt_diamond_1024	n	0.17688	=ON	=ON	0.000	0.044	streams	0.1352	1.308	1.308		=
+pt_diamond_2048	n	1.1394	=ON	=ON	0.001	0.110	torch-compile	0.9339	1.220	1.220		=
+pt_diamond_512	y	0.048671	0.060671	0.058811	0.026	0.056	lt	0.0471	1.033	1.249	0.828	win
+pt_fanout_1024	n	0.12347	=ON	=ON	0.001	0.050	streams	0.0923	1.338	1.338		=
+pt_fanout_2048	n	0.76171	=ON	=ON	0.005	0.101	streams	0.6236	1.221	1.221		=
+pt_fanout_512	y	0.03712	0.040571	0.040671	0.005	0.077	eager	0.0348	1.067	1.169	0.913	win
+pt_indep_1024	n	0.12232	=ON	=ON	0.001	0.020	streams	0.0899	1.361	1.361		=
+pt_indep_2048	n	0.75762	=ON	=ON	0.002	0.107	lt	0.6287	1.205	1.205		=
+pt_indep_512	y	0.037291	0.04317	0.043211	0.001	0.063	streams	0.0348	1.072	1.242	0.863	win
+pt_mlp2_1024	n	0.24037	=ON	=ON	0.002	0.045	lt2	0.1669	1.440	1.440		=
+pt_mlp2_2048	n	1.5401	=ON	=ON	0.001	0.108	lt2	1.2524	1.230	1.230		=
+pt_mlp2_512	y	0.070971	0.07773	0.078191	0.002	0.076	streams	0.0573	1.239	1.365	0.908	win
+pt_mlp_1024	n	0.12169	=ON	=ON	0.000	0.048	lt	0.0891	1.366	1.366		=
+pt_mlp_2048	n	0.74636	=ON	=ON	0.001	0.108	lt	0.6185	1.207	1.207		=
+pt_mlp_512	y	0.03723	0.04072	0.040541	0.005	0.039	lt	0.0348	1.070	1.165	0.918	win
+pt_twin_1024	n	0.12172	=ON	=ON	0.000	0.020	torch-eager	0.0911	1.336	1.336		=
+pt_twin_2048	n	0.75388	=ON	=ON	0.002	0.116	torch-compile	0.6216	1.213	1.213		=
+pt_twin_512	y	0.03675	0.0454	0.04766	0.008	0.043	torch-eager	0.0379	0.970	1.258	0.771	win

@@ -23,6 +23,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 LLVM="${LLVM:-/opt/homebrew/opt/llvm/bin}"
 EMIT="${EMIT:-$ROOT/target/release/examples/emit}"
+MAIN_EMIT=$EMIT
 CELLS=${CELLS-"16x2048x7168 16x1024x4096 16x18432x7168 128x2048x7168 4096x4096x4096"}
 PROGS=${PROGS-"pt_rm_m128_d256_h512 pt_rm_m128_d1024_h2048"}
 SUITE=${SUITE-""}
@@ -147,7 +148,10 @@ for spec in "$@"; do
         emit_one "$f" "$b.off-place" "$prof" "$sm" --gpu-off=place
         if same "$b.off-place" "$b"; then drop "$b.off-place"; fi
         # mlp_bench: each launch with its argument roles (benches/gpu/mlp_k.py).
-        python3 "$ROOT/benches/gpu/mlp_k.py" "$b.host.ll" "${b}_x.host.ll" "${b}_c.host.ll" >/dev/null
+        # plan-cost: the default face may now pick a split plan (workspace launches) that mlp_k.py cannot describe;
+        # mlp_bench uses only the _x / _c stems, so its `.k` is best-effort.
+        python3 "$ROOT/benches/gpu/mlp_k.py" "$b.host.ll" >/dev/null 2>&1 || true
+        python3 "$ROOT/benches/gpu/mlp_k.py" "${b}_x.host.ll" "${b}_c.host.ll" >/dev/null
         cp "${b}_c.ptx" "${b}_c.null.ptx"; cp "${b}_c.k" "${b}_c.null.k"
     done
     # S64 evidence suite: the default face, CPU-only, GPU-only, the realization chain, null.
@@ -175,25 +179,30 @@ for spec in "$@"; do
     for a in $ARMS; do
         IFS=: read -r ap stem face rung dir <<< "$a"
         [ "$ap" = "$prof" ] || continue
+        EMIT=$MAIN_EMIT
         flag="--gpu-$dir=$rung"; tag="$dir-${rung//,/+}"
+        # plan-cost: `<profile>:<stem>:<face>:base:base` is the arm emitted by BASE_EMIT (the shipped baseline's emitter), tag on-base.
+        if [ "$dir" = base ]; then flag=""; tag=on-base; fi
         if [ "$dir" = geom ]; then flag="--geom=$rung"; tag=$(tr '=.' '-p' <<< "on-g-$rung"); fi
         f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$tag"
         [ "$face" = _tf ] && f=$(tf32_src "$f")
         [ -f "$b.host.ll" ] || emit_one "$f" "$b" "$prof" "$sm" $(flags_of "$face")
         # cpu-gpu-boundary sweep: emission alone (0.3 s) decides first; an arm whose host and device IR
         # equal the shipped build's is dropped before clang / opt / llc (hundreds of rung arms per part).
+        [ "$dir" = base ] && EMIT=${BASE_EMIT:?BASE_EMIT}
         q="$d/.q"; rm -f "$q".*
-        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") "$flag" > "$q.host.ll"
+        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") ${flag:+"$flag"} > "$q.host.ll"
         if cmp -s <(grep -sv '^; mapal\.' "$q.host.ll") <(grep -sv '^; mapal\.' "$b.host.ll") &&
            { { [ ! -f "$q.dev.ll" ] && [ ! -f "$b.dev.ll" ]; } || cmp -s "$q.dev.ll" "$b.dev.ll"; }; then
             rm -f "$q".*; echo "rejudge $prof $stem$face $tag = shipped"; continue
         fi
         rm -f "$q".*
-        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") "$flag"
+        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") ${flag:+"$flag"}
         if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $tag = shipped"; continue; fi
         echo "rejudge $prof $stem$face $tag $(cat "$s.launch" 2>/dev/null)"
         case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
     done
+    EMIT=$MAIN_EMIT
     # S64: the evidence — ptxas -v / SASS of every distinct PTX (cudatool.sh), the facts, the intent check.
     python3 "$ROOT/benches/gpu/evidence.py" static "$d" "$sm"
     python3 "$ROOT/benches/gpu/evidence.py" facts "$d" "$sm"

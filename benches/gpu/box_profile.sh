@@ -167,5 +167,6 @@ for n, _ in sorted(k.items(), key=lambda a: -a[1])[:2]:
         done
     done < prof/sweep/top_kernels.txt
 fi
+[ -f ops_nsys.sh ] && bash ops_nsys.sh "$PROF" "$SM"
 tar czf "prof-$PROF.tgz" prof
 echo "profile done: $(ls prof | wc -l) files"
