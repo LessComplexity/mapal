@@ -64,7 +64,12 @@ fn shape(dev: &str) -> Vec<String> {
     dev.lines()
         .filter(|l| l.starts_with("; mapal.plan"))
         .map(|l| {
-            let keep = |w: &&str| !w.starts_with("kernel=") && !w.starts_with("set=");
+            // Names, not shape: the kernel's, plan-cost's site id, the set.
+            let keep = |w: &&str| {
+                !["kernel=", "site=", "set="]
+                    .iter()
+                    .any(|p| w.starts_with(p))
+            };
             l.split(' ').filter(keep).collect::<Vec<_>>().join(" ")
         })
         .collect::<std::collections::BTreeSet<_>>()
