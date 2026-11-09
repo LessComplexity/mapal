@@ -252,6 +252,27 @@ stops losing elsewhere ([end check](docs/performance/evidence/plan-cost.md)).
 | 16×1024×4096 | 0.92 | 0.62 |
 | 16×18432×7168 | 0.91 | 0.81 |
 
+### Tile efficiency, November 2026
+
+Mapal / cuBLAS, time, plan-cost emitter → tile-efficiency sweep (`881cb0b`); the k-major A panel ships only where the
+panel streams by `cp.async` ([end check](docs/performance/evidence/tile-efficiency.md)).
+
+| shape | RTX 4090 | RTX 5090 | RTX 3090 | H100 PCIe |
+| --- | ---: | ---: | ---: | ---: |
+| 512³ | 1.10 → **0.86** | 1.00 → 1.00 | 2.43 → 2.43 | 1.23 → 1.27 |
+| 1024³ | 1.28 → 1.06 | 1.29 → 1.43 | 1.56 → 3.13 | 1.03 → 1.19 |
+| 2048³ | 0.98 → 1.22 | 1.11 → 1.14 | 1.16 → 1.52 | 1.37 → 1.62 |
+| 128×1024×1024 | 1.11 → **0.64** | 1.87 → 1.87 | 2.07 → 2.07 | 1.58 → 1.52 |
+| 128×2048×7168 | 1.07 → **0.76** | 1.80 → 2.18 | 1.49 → 1.49 | 2.20 → 2.46 |
+| 16×1024×4096 | 1.09 → 1.09 | 1.59 → 1.59 | 2.51 → 1.70 | 1.39 → 1.11 |
+| 16×18432×7168 | 1.10 → 1.09 | 1.25 → 1.25 | 0.99 → 1.02 | 1.38 → 1.43 |
+
+| `kmajor-a`, shipped / OFF (W / L) | RTX 4090 | RTX 5090 | RTX 3090 | H100 PCIe |
+| --- | ---: | ---: | ---: | ---: |
+| cells | **0.82** (5 / 2) | 1.08 (0 / 1) | 0.99 (2 / 2) | 1.02 (3 / 4) |
+| programs | **0.96** (24 / 4) | 1.03 (4 / 28) | 1.14 (2 / 41) | 1.16 (3 / 50) |
+| ships | streamed panels | OFF | OFF | OFF |
+
 ### Three builds
 
 | build                                        | what you get                                                     |

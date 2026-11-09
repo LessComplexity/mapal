@@ -1867,6 +1867,53 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
                pt_indep_4096 4.1837 vs 4.2098 ms, pt_diamond_4096 6.2586 vs 6.2664 ms (tol 2 %): null, the only \
                programs whose emission `linear` changes",
     },
+    // plan-cost re-time on tile-efficiency (sweep/rungs-detail-*.tsv, `on-plan-cost+linear` / shipped): still
+    // mixed, rows kept — 4090 cells 3 W / 1 L, programs 8 W / 2 L (pt_pj_m16_n1024_k4096 1.37, decode_1024_256
+    // 1.14, mm_1x1024x4096 1.10); 5090 cells 3 W / 1 L, programs 11 W / 10 L (M=1 / M=16 projections 1.07–1.52).
+    // Every loss is a DRAM-streaming M ≤ 16 site: the missing fact is the loaded DRAM latency in `c_ns`.
+    //
+    // kmajor-a (tile-efficiency, stopgap, open missing fact): it wins where the panel streams by `cp.async`
+    // (4090 under-filled: 48 LDGSTS.32 → 0, FFMA/LSU 4.2 → 6.6, cells 0.56–0.72) and loses on register-staged
+    // panels: STS −2/3 with LDS / LDG / FFMA / BAR unchanged, but registers rise (4090 wide 220 → 255 halves bk
+    // 16 → 8; 4090 128x18432 spills 8 → 40 B; H100 128 → 167) and 5090 / 3090 lose 5–22 % at +1…+6 registers.
+    // Missing fact: the k-major panel's register and bank cost on a register-staged copy (sweep/sass.tsv, judge).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "kmajor-a",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-detail-rtx-4090.tsv (raw results-rtx-4090.txt, \
+               raw-raw.tar.gz) shipped vs OFF: mm_4096x4096x4096 2.9952 vs 2.4566 ms, mm_128x18432x7168 1.3088 vs \
+               1.1435 ms; ratios pt_loop_2048 1.19, pt_pj_m128_n18432_k7168 1.12 \
+               (filled = register-staged, the `async` row); sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 (bk 16 → 8)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-5090.tsv (raw results-rtx-5090.txt) shipped/OFF \
+               programs 1.03 (4 W / 28 L, null 0.040), mm_128x2048x7168 0.2007 vs 0.1659 ms; sass: pt_mlp2_1024 STS 15 → 6, regs 77 → 83, \
+               LDS / LDG / FFMA / BAR equal: loss unexplained by counts (bank geometry open, ncu blocked)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-3090.tsv (raw results-rtx-3090.txt) shipped/OFF \
+               programs 1.14 (2 W / 41 L, null 0.043), mm_4096x4096x4096 15.0374 vs 11.0418 ms; sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 \
+               (bk 16 → 8); loses the skinny wins (mm_16x1024x4096 0.68: LDS.32 128 → LDS.128 16 + LDS.32 64)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-h100-pcie.tsv (raw results-h100-pcie.txt) shipped/OFF \
+               programs 1.16 (3 W / 50 L, null 0.026), pt_mlp2_1024 iter 0.629 vs 0.497 ms; sass (local ptxas): pt_mlp2_1024 regs 128 → 167, \
+               mm_4096 111 → 151, STS −2/3, LDS / LDG / FFMA / BAR equal",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

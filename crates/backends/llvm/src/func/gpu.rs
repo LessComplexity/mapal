@@ -5973,9 +5973,15 @@ mod tests {
         assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
         // tile-efficiency T2: the k-major panel needs no pad, so the largest
         // `bk` whose two stages fit doubles (the stages that fit drop to 2).
+        // The 5090 ships `kmajor-a` OFF (a `GPU_RUNGS_OFF` row), so the arm
+        // forces it; shipped, the padded 4x4 `cp.async` panel is too shallow
+        // (`async-depth`) and register staging's deeper panel takes the site.
+        let mut kmajor = on("row-fit");
+        *kmajor.on.rung("kmajor-a").expect("a rung") = true;
+        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 2)));
         assert_eq!(
             geo(18432, false, on("row-fit")),
-            Some((4, 4, 16, 32, 32, 64, 2))
+            Some((4, 4, 16, 32, 32, 64, 1))
         );
         assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
         // Gated, the site has no register tile: `cell-fill` (S62 asyncstage

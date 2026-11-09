@@ -514,6 +514,9 @@ pub struct GpuRungs {
     /// 128-bit `a` fragments along `k` per `lanes` steps. Each cell's `k`
     /// order is unchanged. Only where one quarter-warp reads one panel row
     /// (`tx ≥ 8`, row-major store). Off: `a` transposed, 4-byte copies.
+    /// Ships OFF where the panel is register-staged (`GPU_RUNGS_OFF` rows:
+    /// rtx-4090 Filled, rtx-5090 / rtx-3090 / h100-pcie Any; stopgap, missing
+    /// fact: its register and bank cost on a staged copy).
     pub kmajor_a: bool,
     /// tile-efficiency T1: on a part with plan rates under `plan-cost`, a
     /// free-order split kernel (`S > 1`) keeps the full register tile and its
