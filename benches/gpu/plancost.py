@@ -2,6 +2,7 @@
 """plan-cost (design §3): fit the cost model's `eff` on half of the measured plan arms and judge the picks on the other half.
 
     plancost.py <arch> <results-<arch>.txt> [--out benches/results/evidence/plan-cost] [--mapal target/release/mapal]
+                [--lat N]  (lat_ns calibrated: fixed at N, only eff fitted)
 
 1. carry: the sweep's `probe` rows (default face) whose arm the current build re-emits — the launched kernel ids of the
    arm's emission (`--gpu-off=plan-cost`: the rules the sweep ran) equal the arm's measured `probe_kernels` ids;
@@ -293,11 +294,13 @@ def main():
     # the fit (log-time L1, fit half only): the declared fitted rates — eff_max_pm, eff_half and, with the terms,
     # lat_ns (0 = the sprint `plan-cost` model: no busiest-SM, latency-chain or warp-occupancy term)
     EM, EH, LAT = range(100, 1001, 25), [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256], range(50, 1601, 50)
+    lat_fixed = '--lat' in a  # lat_ns calibrated (`calib.cu`): not a fitted rate
+    LAT = [int(a[a.index('--lat') + 1])] if lat_fixed else LAT
     grid = lambda part, lats: min((judge(part, rates, em, eh, lat)[0], em, eh, lat) for lat in lats
                                   for em in EM for eh in EH)[1:]
     # eff_half 0 is the floor (no ramp), not an edge
     edge = lambda em, eh, la: ','.join(n for n, hit in (('eff_max', em in (EM[0], EM[-1])), ('eff_half', eh == EH[-1]),
-                                                          ('lat', la in (LAT[0], LAT[-1]))) if hit) or '-'
+                                                          ('lat', not lat_fixed and la in (LAT[0], LAT[-1]))) if hit) or '-'
     seed = (rates['eff_max_pm'], rates['eff_half'], rates.get('lat_ns', 0))
     report = []
     for f, (fit, hold) in enumerate(fs):

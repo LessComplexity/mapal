@@ -1813,6 +1813,9 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // loses where its picks leave SMs idle — a few-block GEMV whose DRAM feed it models as the whole chip's, and
     // (5090) 256 tiles on 170 SMs it averages instead of loading the busiest SM. Hold-out picks 22/33 (4090),
     // 27/43 (5090): docs/performance/evidence/plan-cost.md. Main ships the rules (the sweep's OFF arm, ≈ BASE).
+    // plan-cost v2 (2026-11-09, `benches/results/evidence/plan-cost/v2/summary.tsv`): still mixed — box list ON /
+    // shipped 4090 17 W / 5 L (M=1 GEMV 1.16–1.50, decode 1.32), 5090 9 W / 13 L (M=1, M=16 1.17–1.74); blind set
+    // 4090 2 W / 2 L, 5090 10 W / 6 L. Open facts: L2-resident vs DRAM operand latency, smem bytes per FMA.
     RungOff {
         profile: "rtx-4090",
         rung: "plan-cost",
@@ -4037,12 +4040,15 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 1.25 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~2.5 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 4.5–4.6 TB/s;
-            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time), not
-            // calibrated: over 6 program folds the fit moves eff_max 400..600,
-            // eff_half 0..1, lat 150..450 and the terms do not beat lat 0 on the
-            // hold-out (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`);
-            // open: the pointer-chase microbenchmark fixes lat before eff
-            // (`.claude/sprints/plan-cost/terms.md`).
+            // lat: (c) `benches/gpu/calib.cu`, the model's own quantity — bytes in
+            // flight over the achieved DRAM rate below 90 % of peak, median 380 ns
+            // [IQR 369–407] over 87 grid points (`B-bw-rtx-4090.tsv`, plan-cost/v2);
+            // the L2 one is 240 ns [233–281] (open: the L2-residency fact picks it);
+            // the idle chases read 146 (DRAM) / 106 (L2) ns. B agrees with dram
+            // (958 GB/s) and l2 (4895 GB/s peak) within 2.3 % / 8.8 %.
+            // eff: fitted by `benches/gpu/plancost.py --lat 380` (L1 in log time)
+            // over 6 program folds: 400..600, eff_half 0..1, all-decision (525, 0)
+            // (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`).
             issue_ns: 2850,
             gap_ns: 600,
             zero_ns: 1017,
@@ -4050,9 +4056,9 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             l2_bytes_per_ns: 4500,
             // dram: (c) DRAM read, 2 GB `__ldcg`, 981 GB/s.
             dram_bytes_per_ns: 981,
-            eff_max_pm: 700,
-            eff_half: 6,
-            lat_ns: 150,
+            eff_max_pm: 525,
+            eff_half: 0,
+            lat_ns: 380,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4134,11 +4140,15 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 0.9 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~1.7 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 6.5–6.9 TB/s;
-            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time), not
-            // calibrated: over 6 program folds eff_max 825..1000 (the grid's edge,
-            // FFMA peak, in 2 folds and the all-decision fit: a misspecified term,
-            // open L2-residency item), lat 150..300
-            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`).
+            // lat: (c) `benches/gpu/calib.cu`, the model's own quantity — bytes in
+            // flight over the achieved DRAM rate below 90 % of peak, median 510 ns
+            // [IQR 500–528] over 111 grid points (`B-bw-rtx-5090.tsv`, plan-cost/v2);
+            // the L2 one is 290 ns [282–350] (open: the L2-residency fact picks it);
+            // the idle chases read 195 (DRAM) / 141 (L2) ns. B agrees with dram
+            // (1701 GB/s) and l2 (6683 GB/s peak) within 0.7 % / 2.8 %.
+            // eff: fitted by `benches/gpu/plancost.py --lat 510` (L1 in log time)
+            // over 6 program folds: 700..950, eff_half 6..8, all-decision (800, 6), off
+            // the grid edge (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`).
             issue_ns: 2370,
             gap_ns: 300,
             zero_ns: 739,
@@ -4146,9 +4156,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             l2_bytes_per_ns: 6500,
             // dram: (c) DRAM read, 2 GB `__ldcg`, 1690 GB/s.
             dram_bytes_per_ns: 1690,
-            eff_max_pm: 1000,
-            eff_half: 8,
-            lat_ns: 300,
+            eff_max_pm: 800,
+            eff_half: 6,
+            lat_ns: 510,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,

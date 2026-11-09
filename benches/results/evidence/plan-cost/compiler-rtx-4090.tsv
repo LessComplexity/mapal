@@ -7,15 +7,15 @@ mm_128x1024x4096	hold	0.0496	?	on-g-warps-8
 mm_128x1024x4096@pc	hold	0.0200	?	on		
 mm_128x2048x1024	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
 mm_128x2048x1024@pc	fit	0.0200	on	on	1.000	1
-mm_128x2048x7168	fit	0.0200	?	on-g-warps-8		
+mm_128x2048x7168	fit	0.0200	off-fill-wave	on-g-warps-8	1.231	0
 mm_128x2048x7168@pc	fit	0.0200	?	off-plan-cost+linear		
 mm_128x256x256@pc	fit	0.0200	on	on	1.000	1
 mm_128x256x512	fit	0.0306	?	on		
 mm_128x256x512@pc	fit	0.0200	?	off-plan-cost+linear		
 mm_128x512x256	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
 mm_128x512x256@pc	fit	0.0539	on	on	1.000	1
-mm_16x1024x4096	fit	0.0200	?	off-fill-wave		
-mm_16x1024x4096@pc	fit	0.0200	on	on	1.000	1
+mm_16x1024x4096	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
+mm_16x1024x4096@pc	fit	0.0200	?	on		
 mm_16x18432x7168	hold	0.0200	on	on-g-split-16	1.088	0
 mm_16x2048x7168	hold	0.0200	off-fill-wave	on	1.037	0
 mm_16x2048x7168@pc	hold	0.0200	on	off-plan-cost+linear	1.033	0
@@ -40,10 +40,10 @@ pt_mlp_512	hold	0.4696	off-fill-wave	on-g-bk-8	1.334	1
 pt_mlp_512@pc	hold	0.0200	on	on	1.000	1
 pt_pj_m128_n1024_k4096	fit	0.0441	?	on		
 pt_pj_m128_n1024_k4096@pc	fit	0.0200	?	on		
-pt_pj_m128_n2048_k7168	hold	0.0200	?	on		
+pt_pj_m128_n2048_k7168	hold	0.0200	off-fill-wave	on	1.058	0
 pt_pj_m128_n2048_k7168@pc	hold	0.0200	?	off-plan-cost+linear		
-pt_pj_m16_n1024_k4096	fit	0.0342	?	on		
-pt_pj_m16_n1024_k4096@pc	fit	0.0381	on	on	1.000	1
+pt_pj_m16_n1024_k4096	fit	0.0342	off-fill-wave	on	1.358	0
+pt_pj_m16_n1024_k4096@pc	fit	0.0381	?	on		
 pt_pj_m16_n18432_k7168	hold	0.0200	on	off-fit-first	1.089	0
 pt_pj_m16_n2048_k7168	fit	0.0729	off-fill-wave	on	1.247	0
 pt_pj_m16_n2048_k7168@pc	fit	0.0200	on	off-plan-cost+linear	1.247	0

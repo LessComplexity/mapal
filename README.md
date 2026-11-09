@@ -235,6 +235,23 @@ stops losing elsewhere ([end check](docs/performance/evidence/plan-cost.md)).
 | mm_1x1024x4096 | 2.74 | 3.37 |
 | decode_1024_256 | 1.94 | 1.32 |
 
+| plan-cost v2, ON / shipped | RTX 4090 | RTX 5090 |
+| --- | ---: | ---: |
+| box list: geomean (programs), W / L / null | 0.945 (25), 17 / 5 / 3 | 1.033 (47), 9 / 13 / 25 |
+| blind set: geomean (programs), W / L / null | 0.960 (8), 2 / 2 / 4 | **0.788** (19), 10 / 6 / 3 |
+| hold-out picks, 6 folds: terms (no terms) | 74.1 % (71.2 %) | **78.6 %** (58.4 %) |
+| `lat_ns` calibrated: DRAM (L2) | 380 (240) ns | 510 (290) ns |
+
+| tile kernel, Mapal / best library (TFLOP/s ratio) | RTX 4090 | RTX 5090 |
+| --- | ---: | ---: |
+| 512³ | 0.88 | 1.00 |
+| 1024³ | 0.79 | 0.79 |
+| 2048³ | **1.06** | 0.89 |
+| 128×1024×1024 | 0.92 | 0.57 |
+| 128×2048×7168 | 0.93 | 0.54 |
+| 16×1024×4096 | 0.92 | 0.62 |
+| 16×18432×7168 | 0.91 | 0.81 |
+
 ### Three builds
 
 | build                                        | what you get                                                     |

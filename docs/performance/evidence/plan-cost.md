@@ -93,3 +93,77 @@ terms, so the rates stay as shipped (no re-timing owed).
 
 Each needs its property test over `testgen` programs before the gate rows go; then re-time only the rows whose
 emission changes (`benches/gpu/changed.py`).
+
+## plan-cost v2 judge (2026-11-09): calibrated `lat_ns`, refit `eff`, verdict
+
+Box runs `920d3df` (rtx-4090, rtx-5090): `benches/results/evidence/plan-cost/v2/`, kernel tables
+`benches/results/evidence/tile-efficiency/`. ON = `--gpu-on=plan-cost,linear` at the v2 rates (4090 `(700, 6, 150)`,
+5090 `(1000, 8, 300)`); tolerance per program max(2 %, null arm, half the spread).
+
+### Rates
+
+`lat_ns` is the model's own quantity (`site_ns`: feed rate `Σ fly·panel / lat_ns`), so it is calibrated as bytes in
+flight over the achieved rate, below 90 % of peak (`benches/gpu/calib.cu`, `B-bw-<arch>.tsv`, valid points):
+
+| arch | DRAM median [IQR] (points) | L2 median [IQR] (points) | idle chase DRAM / L2 | shipped `lat_ns` |
+| --- | --- | --- | --- | ---: |
+| rtx-4090 | 380 [369–407] (87) | 240 [233–281] (113) | 146 / 106 | 150 → **380** |
+| rtx-5090 | 510 [500–528] (111) | 290 [282–350] (129) | 195 / 141 | 300 → **510** |
+
+DRAM, because the term's cap is the DRAM roofline (`D / dram`); the L2 value is what the open residency fact would
+select. `dram_bytes_per_ns` / `l2_bytes_per_ns` stay at E1 (B agrees within 2.3 % / 8.8 % on the 4090, 0.7 % / 2.8 %
+on the 5090; they feed shipped rungs). `eff` refit with lat fixed (`plancost.py --lat N`, 6 program folds, same pool
+as "Review fixes"): 4090 `(525, 0)` (folds 400–600, eff_half 0–1), 5090 `(800, 6)` (folds 700–950, 6–8), no rate on a
+grid edge (the 5090 fit sat on eff_max 1000 before). `holdout-<arch>.tsv`, `decisions-`, `compiler-<arch>.tsv`.
+
+| arch | decisions | no-terms hold picks mean (min–max) | terms, lat calibrated | terms − no-terms per fold | compiler picks, fold-0 hold |
+| --- | ---: | ---: | ---: | --- | --- |
+| rtx-4090 | 68 | 71.2 % (61.8–81.8) | 74.1 % (65.7–81.8) | −1, +2, 0, +4, 0, +1 | 9/14 (19 unknown) |
+| rtx-5090 | 84 | 58.4 % (41.0–71.1) | **78.6 % (71.4–85.7)** | +9, +7, +9, +7, +3, +15 | 13/17 (24 unknown) |
+
+Fixing lat at the calibrated value beats the free-lat fit on both (4090 72.6 → 74.1 %, 5090 73.7 → 78.6 %).
+
+### Box list and blind set (ON vs shipped, at the v2 rates)
+
+| arch | box list timed: geomean, W / L / null | blind set (40 programs) differing: geomean, W / L / null | blind score |
+| --- | --- | --- | --- |
+| rtx-4090 | 25: 0.945, 17 / 5 / 3 | 8: 0.960, 2 / 2 / 4 | faster 2 of 4 decisive (6/8 within null) |
+| rtx-5090 | 47: 1.033, 9 / 13 / 25 | 19: **0.788**, 10 / 6 / 3 | faster 10 of 16 decisive (13/19 within null) |
+
+0 `VALUE-FAIL`. Losses: 4090 `pt_pj_m1_n2048_k7168` 1.50, `mm_1x1024x4096` 1.40, `pt_decode_1024_256` 1.32,
+`pt_pj_m1_n1024_k4096` 1.24, `mm_1x2048x7168` 1.16; blind b08 1.10, b22 1.04. 5090 `mm_1x1024x4096` 1.74,
+`pt_pj_m16_n2048_k7168` 1.44, `mm_1x2048x7168` 1.36, `mm_16x2048x7168` 1.29, `pt_pj_m16_n1024_k4096` 1.27,
+`mm_128x256x256` 1.24, `pt_pj_m1_n1024_k4096` 1.17; blind b37 1.29, b08 1.23, b22 1.18, b17 1.13, b23 1.10, b38 1.09.
+
+### Verdict: both `GPU_RUNGS_OFF` plan-cost rows stay (open, missing facts)
+
+Neither arch meets "no loss beyond null on the box list and the blind set agrees". The losses are the skinny
+cells (M = 1 GEMV, M = 16, decode); the wins are the `_512` chains, `mm_128x1024x*`, `mm_512x512x512`, attention.
+
+1. **L2-resident vs DRAM operand latency.** Calibrated: the effective latency of an L2-resident stream is 0.63×
+   (4090) / 0.57× (5090) the DRAM one, and loaded latency climbs steeply toward peak (4090 218 ns at 50 %, 2437 ns at
+   90 %; 5090 472 / 1154 ns): one `lat_ns` cannot price both. Same plan, same shape, different residency:
+   `pt_pj_m1_n1024_k4096` 1.24 vs `mm_1x1024x4096` 1.40 (4090). Needed: the operand bytes that persist in L2 across
+   trips (`ResidentPlan` + `l2_bytes` + `loop_plan` reuse) → `l2_lat_ns`, `dram_lat_ns` weighted by missed bytes.
+   The M = 1 losers' own SASS was not captured in v2, so their per-kernel cause is **open**.
+2. **Shared-memory bytes per FMA.** Calibrated LDS: 64 / 126 / 127 B per clock per SM (.32 / .64 / .128; both parts),
+   i.e. one non-broadcast warp LDS.128 per 4 clocks against 4 warp FFMA per clock: a tile below 16 FFMA per LDS.128 is LDS-bound.
+   SASS (`D-sass-<arch>.tsv`): Mapal's 512/1024 hot loops have 16 accumulators and 7.6–10 FFMA per LDS (cap
+   0.48–0.63 of FFMA peak); the cutlass 128×128×8 loop has 64 and 16 (cap 1.0); the 5090 2048 loop reaches 64 / 16
+   and ties or wins. The skinny 5090 cells sit at that cap: 128×1024×1024 0.57, 128×2048×7168 0.54, 16×1024×4096
+   0.62 of the best library. Needed: `eff` capped by `lds_bytes_per_clk` against the tile's FFMA per LDS
+   (`(tm + tn) / (tm · tn)` at its load width) — a `TargetProfile` fact plus the tile's shape, no new IR fact.
+
+Unresolved in this run: `evidence.tsv` intent mismatches (4090 104, 5090 192) not triaged; the 4090 chase vs cold
+sweep gap (146 vs 253 ns) unexplained; probe timings single-shot over 5 reps.
+
+### Re-timing owed
+
+Shipped emission is unchanged (`site_ns` is only reached when `plan-cost` is ON; both parts ship it OFF). ON at the
+new rates vs ON at the v2 rates over the 243 bundle programs (`v2/retime-<arch>.tsv`):
+4090 **25** of 243 moved, 5090 **37**. They hold every 4090 loss above (5/5 box list, 2/2 blind) and
+6/7 + 4/6 of the 5090 ones (not `mm_128x256x256`, b17, b23), so the v2 losses do not judge the calibrated rates: the
+next box run times these rows, ON vs shipped (host IR moved nowhere else).
+
+- rtx-4090: `decode_1024_256`, `deep_16x1024x4096`, `mm_128x2048x7168`, `mm_1536`, `mm_1536x1536x1536`, `mm_16x1024x4096`, `mm_1x1024x4096`, `mm_1x2048x7168`, `pt_bl_b02`, `pt_bl_b04`, `pt_bl_b08`, `pt_bl_b11`, `pt_bl_b12`, `pt_bl_b13`, `pt_bl_b18`, `pt_bl_b22`, `pt_bl_b24`, `pt_bl_b29`, `pt_bl_b31`, `pt_bl_b39`, `pt_decode_1024_256`, `pt_pj_m1_n1024_k4096`, `pt_pj_m1_n2048_k7168`, `pt_pj_m128_n2048_k7168`, `pt_pj_m16_n1024_k4096`
+- rtx-5090: `chain_256`, `deep_16x1024x4096`, `deep_16x2048x7168`, `mm_128x512x256`, `mm_16x1024x4096`, `mm_16x2048x7168`, `mm_1x1024x4096`, `mm_1x18432x7168`, `mm_1x2048x7168`, `pt_bl_b03`, `pt_bl_b04`, `pt_bl_b05`, `pt_bl_b08`, `pt_bl_b12`, `pt_bl_b18`, `pt_bl_b22`, `pt_bl_b25`, `pt_bl_b32`, `pt_bl_b33`, `pt_bl_b34`, `pt_bl_b37`, `pt_bl_b38`, `pt_bl_b39`, `pt_diamond_2048`, `pt_indep_2048`, `pt_pj_m1_n1024_k4096`, `pt_pj_m1_n18432_k7168`, `pt_pj_m1_n2048_k7168`, `pt_pj_m16_n1024_k4096`, `pt_pj_m16_n2048_k7168`, `pt_rg_indep_2048`, `pt_rg_mlp2_2048`, `pt_rt_indep_2048`, `pt_rt_mlp2_2048`, `rm_256`, `share_256`, `skinny_1x16384x512`
