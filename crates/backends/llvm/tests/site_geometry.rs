@@ -590,3 +590,106 @@ fn tf32_radix_counted_on_unseen_programs() {
         "the generator reaches the radix mma tile ({tensor})"
     );
 }
+
+/// The default face with `on` / `off` rung arms, and the rungs the emulator
+/// does not run (`pdl`, `streams`) and `place` off.
+fn emission_arms(
+    ir: &CategoryIr,
+    target: &'static str,
+    on: &[&str],
+    off: &[&str],
+) -> mapal_backend_llvm::Emission {
+    let mut gpu = GpuArms::default();
+    for r in off.iter().chain(&["pdl", "streams", "place"]) {
+        *gpu.off.rung(r).expect("rung") = true;
+    }
+    for r in on {
+        *gpu.on.rung(r).expect("rung") = true;
+    }
+    let opts = EmitOpts {
+        host: "generic",
+        target,
+        gpu,
+        ..EmitOpts::default()
+    };
+    emit_detailed(ir, &opts).expect("emits")
+}
+
+/// Each tile kernel of a device module: its `; mapal.plan` line and its text.
+fn tile_kernels(dev: Option<&str>) -> Vec<(String, String)> {
+    dev.unwrap_or("")
+        .split("; mapal.plan ")
+        .skip(1)
+        .filter(|k| k.contains(" kind=tile "))
+        .map(|k| {
+            let (plan, body) = k.split_once('\n').unwrap_or((k, ""));
+            (plan.to_string(), body.to_string())
+        })
+        .collect()
+}
+
+/// tile-efficiency T2 (`kmajor-a`) on generator programs it was not designed
+/// on, on the four GPU profiles: a k-major `a` panel is copied by 16-byte
+/// copies only — `cp.async.cg … 16` under `async` (no 4-byte copy where `b`
+/// is vector too), one vector store register-staged (no scalar store) — and
+/// the values through the emulator (its `cp.async` queue) equal the
+/// transposed register-staged kernel's byte for byte (integer operands; each
+/// cell's `k` order is kept).
+#[test]
+fn kmajor_a_counted_and_valued_on_unseen_programs() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::geom_prog_strategy();
+    let clang = emu::clang();
+    let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
+    let (mut streamed, mut staged, mut valued) = (0, 0, 0);
+    for z in 0..48 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let (src, _) = testgen::geom_src(&p);
+        let ir = lower(&src);
+        let target = targets[z % targets.len()];
+        let arms = [
+            emission_arms(&ir, target, &["async", "kmajor-a"], &[]),
+            emission_arms(&ir, target, &["kmajor-a"], &["async"]),
+            emission_arms(&ir, target, &[], &["async", "kmajor-a"]),
+        ];
+        for (arm, e) in arms.iter().enumerate() {
+            for (plan, body) in tile_kernels(e.device.as_deref()) {
+                if !plan.contains(" kmajor=1") {
+                    continue;
+                }
+                assert!(arm < 2, "#{z} {target}: kmajor-a off\n{plan}");
+                if plan.contains(" stages=1 ") {
+                    staged += 1;
+                    assert!(
+                        !body.contains("cp.async") && body.contains("store <"),
+                        "#{z} {target}\n{plan}"
+                    );
+                } else {
+                    streamed += 1;
+                    assert!(
+                        body.contains("cp.async.cg.shared.global.16")
+                            && (p.bt || !body.contains("cp.async.ca.")),
+                        "#{z} {target}: 16-byte copies\n{plan}\n{src}"
+                    );
+                }
+            }
+            launches_give_planned_smem(e, &format!("#{z} {target} arm {arm}\n{src}"));
+        }
+        if let Some(cc) = &clang {
+            let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
+            let runs: Vec<String> = arms
+                .iter()
+                .map(|e| emu::run_emulated(cc, &e.text, &dev(e)))
+                .collect();
+            assert_eq!(runs[0].lines().count(), 3, "#{z}\n{}\n{src}", runs[0]);
+            assert_eq!(runs[0], runs[2], "#{z} {target} async k-major\n{src}");
+            assert_eq!(runs[1], runs[2], "#{z} {target} staged k-major\n{src}");
+            valued += 1;
+        }
+    }
+    eprintln!("kmajor-a: {streamed} streamed, {staged} staged k-major kernels, {valued} valued");
+    assert!(
+        streamed >= 4 && staged >= 8,
+        "the generator reaches kmajor-a"
+    );
+}

@@ -458,6 +458,9 @@ pub struct GpuTile {
     /// Registers a thread holds when the whole-file rule derived this tile
     /// ([`fma_held_regs`], S53 `wide-fma`); 0 under the S52 half-the-file rule.
     pub held: u64,
+    /// tile-efficiency T2 (`kmajor-a`): `a` is staged untransposed,
+    /// `bm` rows of `bk + pad_a` words, by 16-byte copies.
+    pub kmajor: bool,
 }
 
 /// Registers an FMA-tile thread spends on addresses and loop state, beyond
@@ -2052,9 +2055,17 @@ impl GpuTile {
     pub fn sa(&self) -> u64 {
         self.bm() + self.pad_a
     }
-    /// Elements one stage holds: the transposed A panel and the B panel.
+    /// Elements the `a` panel of one stage holds: `bk` transposed rows of
+    /// [`Self::sa`], or (`kmajor`) `bm` rows of `bk + pad_a`.
+    pub fn a_elems(&self) -> u64 {
+        match self.kmajor {
+            true => self.bm() * (self.bk + self.pad_a),
+            false => self.bk * self.sa(),
+        }
+    }
+    /// Elements one stage holds: the A panel and the B panel.
     pub fn stage_elems(&self) -> u64 {
-        self.bk * (self.sa() + self.bn())
+        self.a_elems() + self.bk * self.bn()
     }
     /// Dynamic shared memory one block uses, every stage.
     pub fn smem_bytes(&self, elem_bytes: u64) -> u64 {
@@ -2783,7 +2794,13 @@ impl TargetProfile {
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
         let (bm, bn, threads) = (g.bm(), g.bn(), g.threads());
-        let pad_a = conflict_free_pad(bm, |l| (l % lanes, l / lanes))?;
+        // tile-efficiency T2: a k-major panel's 16-byte copies write
+        // consecutive chunks of contiguous rows — conflict-free unpadded.
+        let pad_a = match g.kmajor {
+            true => 0,
+            false => conflict_free_pad(bm, |l| (l % lanes, l / lanes))?,
+        };
+        let a_units = if g.kmajor { lanes } else { 1 };
         let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
             .saturating_sub(gpu.smem_reserved_per_block)
             .min(gpu.smem_per_block);
@@ -2799,8 +2816,8 @@ impl TargetProfile {
             if geom.smem_bytes(e) > share {
                 break;
             }
-            let whole =
-                (bm * bk).is_multiple_of(threads) && (bk * bn / lanes).is_multiple_of(threads);
+            let whole = (bm * bk / a_units).is_multiple_of(threads)
+                && (bk * bn / lanes).is_multiple_of(threads);
             // ADR-0034 D1: a forced panel depth is the only one taken.
             if k.is_multiple_of(bk) && whole && (gpu.geom.bk == 0 || bk == gpu.geom.bk) {
                 best = Some(geom);
@@ -2875,6 +2892,7 @@ impl TargetProfile {
             pad_a: 0,
             a_row_lanes: 0,
             held: 0,
+            kmajor: false,
         })
     }
 
@@ -2913,11 +2931,15 @@ impl TargetProfile {
             blocks_per_sm: w,
             ..g
         };
-        let whole = (bm * g.bk).is_multiple_of(threads)
+        let a_units = if g.kmajor { lanes } else { 1 };
+        let whole = (bm * g.bk / a_units).is_multiple_of(threads)
             && (g.bk * bn / lanes).is_multiple_of(threads)
             && k.is_multiple_of(g.bk);
         let held = whole
-            .then(|| conflict_free_pad(bm, |l| (l % lanes, l / lanes)))
+            .then(|| match g.kmajor {
+                true => Some(0),
+                false => conflict_free_pad(bm, |l| (l % lanes, l / lanes)),
+            })
             .flatten()
             .map(|pad_a| GpuTile {
                 stages: 2,
@@ -3285,8 +3307,10 @@ impl TargetProfile {
         wide: bool,
         fill: bool,
     ) -> Option<GpuTile> {
+        // tile-efficiency T2: no site layout here, so no k-major fragments.
         let r = crate::GpuRungs {
             fill,
+            kmajor_a: false,
             ..crate::GpuRungs::default()
         };
         // The rung table's rows were measured on grids this geometry keys at
@@ -3403,16 +3427,21 @@ impl TargetProfile {
         let e = elem_bytes(elem);
         let lanes = (GPU_VEC_BYTES / e).max(1);
 
+        // tile-efficiency T2: a k-major `a` fragment holds `lanes` steps of
+        // its `tm` rows (`lanes − 1` more registers a row).
+        let held_at = |m: u64, n: u64| {
+            fma_held_regs(m, n, e) + u64::from(r.kmajor_a) * (lanes - 1) * m * e.div_ceil(4)
+        };
         let (mut tm, mut tn, mut regs_est) = if wide {
             let (mut tm, mut tn) = (lanes, lanes);
             loop {
                 let (m, n) = if tn == tm { (tm, 2 * tm) } else { (2 * tm, tn) };
-                if fma_held_regs(m, n, e) > g.regs_per_thread {
+                if held_at(m, n) > g.regs_per_thread {
                     break;
                 }
                 (tm, tn) = (m, n);
             }
-            (tm, tn, fma_held_regs(tm, tn, e))
+            (tm, tn, held_at(tm, tn))
         } else {
             let (t, regs_est) = square_register_tile(g, e);
             (t, t, regs_est)
@@ -3429,7 +3458,7 @@ impl TargetProfile {
             }
             let twice = 2 * tm * tn * e.div_ceil(4);
             held = if wide || twice > g.regs_per_thread {
-                fma_held_regs(tm, tn, e)
+                held_at(tm, tn)
             } else {
                 0
             };
@@ -3530,6 +3559,7 @@ impl TargetProfile {
             pad_a: 0,
             a_row_lanes: 0,
             held,
+            kmajor: false,
         };
         let (bm, bn, threads) = (geom(0).bm(), geom(0).bn(), tx * ty);
         if rows % bm != 0 || c % bn != 0 {
@@ -5855,6 +5885,7 @@ mod tests {
                     {
                         let r = crate::GpuRungs {
                             fill,
+                            kmajor_a: false,
                             ..without(&names)
                         };
                         let got = p.gpu_tile_with(n, n, n, &f32, wide, r);

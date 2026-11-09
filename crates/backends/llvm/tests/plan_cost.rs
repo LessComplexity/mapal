@@ -22,14 +22,11 @@ fn lower(src: &str) -> CategoryIr {
 }
 
 /// `base` on `target` with `off` rungs off, and the ones the emulator cannot
-/// run (`async`, `pdl`, `streams`, `pinned`); `place` off puts every capable
-/// site on the device.
+/// run (`pdl`, `streams`, `pinned`; `cp.async` it queues, tile-efficiency
+/// T2); `place` off puts every capable site on the device.
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str], base: EmitOpts) -> Emission {
     let mut gpu = GpuArms::default();
-    for r in off
-        .iter()
-        .chain(&["place", "async", "pdl", "streams", "pinned"])
-    {
+    for r in off.iter().chain(&["place", "pdl", "streams", "pinned"]) {
         *gpu.off.rung(r).expect("rung") = true;
     }
     let opts = EmitOpts {

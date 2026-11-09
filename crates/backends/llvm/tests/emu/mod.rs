@@ -57,8 +57,9 @@ impl Drop for Slot {
 /// emulator's `emu_*` (`mapal_gpu_emu.c`), global and shared pointers generic
 /// (shared memory is `emu_smem`, `barrier0` is `emu_barrier`), the PTX-only
 /// inline asm (`griddepcontrol`, the raster's opaque `mov`) dropped or an
-/// identity, and an atomic's device scope the host's. `cp.async` is not
-/// emulated: tests that reach a staged kernel turn `async` off.
+/// identity, and an atomic's device scope the host's. `cp.async` is the
+/// emulator's deferred per-thread copy queue (`emu_cp_async`, applied at
+/// `emu_cp_wait`), so a missing wait reads stale shared memory.
 pub fn host_device(dev: &str) -> String {
     let mut out = String::new();
     for line in dev.lines() {
@@ -88,6 +89,20 @@ pub fn host_device(dev: &str) -> String {
                 l = format!("{}add {ty} {v}, 0", &l[..i]);
             }
         }
+        // tile-efficiency T2: `cp.async.{ca,cg}.shared.global.<n>(dst, src)`
+        // queues an `n`-byte copy; commit and wait drive the queue.
+        if let Some(i) = l.find("@llvm.nvvm.cp.async.")
+            && let Some(j) = l[i..].find(".shared.global.")
+        {
+            let rest = &l[i + j + ".shared.global.".len()..];
+            if let Some((n, args)) = rest.split_once('(') {
+                let args = args.trim_end_matches(')');
+                l = format!("{}@emu_cp_async({args}, i32 {n})", &l[..i]);
+            }
+        }
+        l = l
+            .replace("@llvm.nvvm.cp.async.commit.group()", "@emu_cp_commit()")
+            .replace("@llvm.nvvm.cp.async.wait.group(", "@emu_cp_wait(");
         // A generic-to-global cast is an identity once both are generic.
         if let Some((lhs, rest)) = l.split_once(" = addrspacecast ptr ")
             && let Some(v) = rest.strip_suffix(" to ptr")
@@ -124,7 +139,9 @@ pub fn host_device(dev: &str) -> String {
     out + lanes
         + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
-           declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n"
+           declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n\
+           declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\
+           declare void @emu_cp_wait(i32)\n"
 }
 
 /// Emulation runs every device thread on the host, so it gets 8x the native timeout.

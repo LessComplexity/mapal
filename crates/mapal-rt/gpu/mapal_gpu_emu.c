@@ -36,6 +36,35 @@ void emu_barrier(void) {
   }
   pthread_mutex_unlock(&b_mu);
 }
+/* tile-efficiency T2: `cp.async` as a per-thread deferred copy queue —
+ * committed in groups, applied at `wait_group n` with the newest `n` groups
+ * left pending, so a missing or short wait reads stale shared memory. */
+#define EMU_ASYNC_MAX 1024
+struct emu_copy {
+  void *d;
+  const void *s;
+  uint32_t n, g;
+};
+static _Thread_local struct emu_copy aq[EMU_ASYNC_MAX];
+static _Thread_local uint32_t aq_len, aq_group;
+void emu_cp_async(void *d, const void *s, uint32_t n) {
+  if (aq_len == EMU_ASYNC_MAX) {
+    fprintf(stderr, "emu: cp.async queue full\n");
+    exit(103);
+  }
+  aq[aq_len++] = (struct emu_copy){d, s, n, aq_group};
+}
+void emu_cp_commit(void) { aq_group++; }
+void emu_cp_wait(uint32_t n) {
+  uint32_t keep = 0;
+  for (uint32_t i = 0; i < aq_len; i++) {
+    if (aq[i].g + n < aq_group)
+      memcpy(aq[i].d, aq[i].s, aq[i].n);
+    else
+      aq[keep++] = aq[i];
+  }
+  aq_len = keep;
+}
 struct emu_thread {
   void (*k)(void *, void *, void *);
   void *a, *b, *o;
@@ -44,6 +73,7 @@ struct emu_thread {
 static void *emu_run(void *p) {
   struct emu_thread *x = p;
   tid_x = x->t;
+  aq_len = aq_group = 0;
   x->k(x->a, x->b, x->o);
   return 0;
 }

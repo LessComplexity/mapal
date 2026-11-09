@@ -507,6 +507,19 @@ pub struct GpuRungs {
     /// copied element by element (`cp.async` 4 B), its digit-affine output
     /// stored cell by cell. Off: the FFMA radix tile.
     pub tf32_radix: bool,
+    /// tile-efficiency T2: an `a` whose panel rows run along `k` (`a.ck == 1`,
+    /// aligned) is staged untransposed, `As[m][k]`, by one 16-byte copy per
+    /// vector (`cp.async.cg … 16` or one vector store); the kk loop reads `tm`
+    /// 128-bit `a` fragments along `k` per `lanes` steps. Each cell's `k`
+    /// order is unchanged. Only where one quarter-warp reads one panel row
+    /// (`tx ≥ 8`, row-major store). Off: `a` transposed, 4-byte copies.
+    pub kmajor_a: bool,
+    /// tile-efficiency T1: on a part with plan rates under `plan-cost`, a
+    /// free-order split kernel (`S > 1`) keeps the full register tile and its
+    /// threads — the machine is filled along `k`, not by shrinking the tile;
+    /// the rules' shrunk tile stays the unsplit candidate. Off: a split
+    /// kernel takes the rules' (`fill-wave`) tile.
+    pub full_tile: bool,
 }
 
 impl GpuRungs {
@@ -586,11 +599,13 @@ impl GpuRungs {
         linear: true,
         fit_first: true,
         tf32_radix: true,
+        kmajor_a: true,
+        full_tile: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 74] = [
+    pub const NAMES: [&'static str; 76] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -665,6 +680,8 @@ impl GpuRungs {
         "linear",
         "fit-first",
         "tf32-radix",
+        "kmajor-a",
+        "full-tile",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -744,6 +761,8 @@ impl GpuRungs {
             "linear" => &mut self.linear,
             "fit-first" => &mut self.fit_first,
             "tf32-radix" => &mut self.tf32_radix,
+            "kmajor-a" => &mut self.kmajor_a,
+            "full-tile" => &mut self.full_tile,
             _ => return None,
         })
     }

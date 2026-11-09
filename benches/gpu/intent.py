@@ -42,7 +42,9 @@ INTENT = {
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
     # ---- FMA tile rungs ------------------------------------------------------------------------------
     'unroll': dict(applies=TILE + ' and plan.bk > 1', on=[
-        ('LLVM fully unrolled the bk-step loop (loop-unroll FullyUnrolled = bk)', 'remarks.opt.full_unroll == plan.bk'),
+        # tile-efficiency T2: a k-major (f32) trip takes 4 k steps
+        ('LLVM fully unrolled the bk-step loop (loop-unroll FullyUnrolled = bk, bk/4 k-major)',
+         'remarks.opt.full_unroll == (plan.bk // 4 if plan.kmajor == 1 else plan.bk)'),
         ('one hot-loop trip holds >= bk k-steps', 'sass.hot.ksteps >= plan.bk')],
         off=[('LLVM did not fully unroll it', 'remarks.opt.full_unroll != plan.bk'),
              ('fewer than bk k-steps per trip', 'sass.hot.ksteps < plan.bk')]),
@@ -57,6 +59,22 @@ INTENT = {
     'asyncstage': dict(applies_on=TILE + ' and plan.stages > 2', on=[
         ('stages-2 groups left in flight at the wait', 'ptx.wait_n_max == plan.stages - 2'),
         ('LDGSTS', 'sass.ldgsts > 0')]),
+    # tile-efficiency T2: `a` k-major (f32), staged by 16-byte copies, its fragments 128-bit along k.
+    'kmajor-a': dict(applies_on=TILE + ' and plan.kmajor == 1', on=[
+        ('async: every A copy a 128-bit LDGSTS', 'plan.stages < 2 or sass.hot.ldgsts128 >= plan.ty * plan.tm * plan.bk // 4 '
+         '// (plan.tx * plan.ty)'),
+        ('register staging: 128-bit STS only', 'plan.stages >= 2 or sass.hot.sts == sass.hot.sts128'),
+        ('A fragments: 128-bit LDS only', 'sass.hot.lds == sass.hot.lds128')]),
+    # tile-efficiency T4: the plan's LSU count is what ptxas issued (FFMA per LSU within 15 %).
+    'lsu': dict(applies=TILE + ' and plan.lsu > 0 and sass.hot.lsu > 0', on=[
+        ('SASS FFMA/LSU = plan tm*tn*bk/lsu (+-15 %)',
+         'abs(sass.hot.ffma_per_lsu / (plan.tm * plan.tn * plan.bk / plan.lsu) - 1) <= 0.15')]),
+    # tile-efficiency T1: a free-order split kernel keeps the full register tile at >= 4 warps.
+    'full-tile': dict(applies_on=TILE + " and plan.combine in ('atomic', 'splitk') and 'pick' in plan", on=[
+        ('>= 64 accumulators live in the hot loop', 'plan.tm * plan.tn >= 64 and sass.hot.acc >= plan.tm * plan.tn'),
+        ('>= 128 threads', 'plan.block >= 128'),
+        ('FFMA per LDS >= 16', 'sass.hot.ffma_per_lds >= 16'),
+        ('no spill', 'ptxas.spill_st == 0')]),
     'interleave': dict(applies_on=TILE + ' and plan.tm * plan.tn > 1', on=[
         ('128-bit shared fragment loads', 'sass.hot.lds128 > 0')]),
     'min-blocks': dict(applies="plan.kind in ('tile', 'mma', 'wgmma')", on=[

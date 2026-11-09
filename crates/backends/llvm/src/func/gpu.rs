@@ -544,6 +544,14 @@ pub(crate) fn launch_split(
     }
     let arithmetic = Arithmetic::scalar(site, contract, arms.free);
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
+    // tile-efficiency T2: `a`'s panel rows run along `k` (`vector_a`), so it
+    // can stay untransposed — where one quarter-warp's fragment read is one
+    // panel row (`tx` ≥ the lanes a wavefront serves, [`Kernel::tiled`]).
+    let kmajor = rungs.kmajor_a && vector_a(site) && rx.is_none_or(|x| x.a.is_none());
+    let tile_rungs = crate::GpuRungs {
+        kmajor_a: kmajor,
+        ..rungs
+    };
     let tiled = shaped
         .then(|| {
             profile.gpu_tile_split(
@@ -552,7 +560,7 @@ pub(crate) fn launch_split(
                 site.k,
                 &site.elem,
                 rungs.wide_fma,
-                rungs,
+                tile_rungs,
                 split,
             )
         })
@@ -563,6 +571,10 @@ pub(crate) fn launch_split(
             (shaped && rungs.cell_fill)
                 .then(|| profile.gpu_cell_tile(site.rows, site.c, site.k, &site.elem))
                 .flatten()
+        })
+        .map(|g| GpuTile {
+            kmajor: kmajor && g.tx >= GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES,
+            ..g
         })
         .map(|g| {
             // ADR-0034 D1: a forced stage count picks the pipeline (1 =
@@ -596,7 +608,7 @@ pub(crate) fn launch_split(
                 true => prefetch_depth(g, e, g.tm + g.tn),
                 false => g,
             };
-            if rungs.pad && vector_a(site) {
+            if rungs.pad && vector_a(site) && !g.kmajor {
                 profile.gpu_tile_sync_a(g, &site.elem)
             } else {
                 g
@@ -700,7 +712,8 @@ fn plan_line(
     );
     if let Some(g) = l.tiled {
         f += &format!(
-            " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={}",
+            " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={} \
+             kmajor={}",
             g.tm,
             g.tn,
             g.tx,
@@ -710,7 +723,8 @@ fn plan_line(
             g.pad_a,
             g.held,
             g.blocks_per_sm,
-            lsu_per_panel(site, &g)
+            lsu_per_panel(site, &g),
+            u8::from(g.kmajor && !col)
         );
     }
     if let Some(m) = l.mma {
@@ -770,7 +784,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 33] = [
+const KERNEL_RUNGS: [&str; 35] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -804,6 +818,8 @@ const KERNEL_RUNGS: [&str; 33] = [
     "fill-wave",
     "fit-first",
     "tf32-radix",
+    "kmajor-a",
+    "full-tile",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -2747,13 +2763,21 @@ fn affine_delta(map: LaneMap, threads: u64, p: u64) -> Option<(u64, u64)> {
 /// cannot do): `lanes` lanes along `k` within one row, then rows — four lanes
 /// read one 16-byte global run, a warp covers 8 rows, and `pad_a` keeps those
 /// 32 writes on 32 banks. Register staging under `pad`: `a_row_lanes` per row.
-fn lane_maps(s: &TileSite, g: &GpuTile) -> [(LaneMap, u64); 2] {
+fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool) -> [(LaneMap, u64); 2] {
     let e = elem_bytes_of(&s.elem);
     let lanes = GPU_VEC_BYTES / e;
     let (bm, bn, bk, threads) = (g.bm(), g.bn(), g.bk, g.threads());
     let (kv, nv) = (bk / lanes, bn / lanes);
     let streamed = g.stages >= 2;
-    let a = if streamed {
+    // tile-efficiency T2: a k-major `a` panel is copied as it lies — `kv`
+    // 16-byte copies along each row, async or register-staged alike.
+    let a = if kmajor {
+        let map = LaneMap::RowMajor {
+            per_row: kv,
+            unit: lanes,
+        };
+        (map, bm * kv / threads)
+    } else if streamed {
         let map = LaneMap::Split {
             l: lanes,
             rows: bm,
@@ -2799,12 +2823,15 @@ fn lane_maps(s: &TileSite, g: &GpuTile) -> [(LaneMap, u64); 2] {
 /// is staged transposed).
 pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile) -> u64 {
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
-    let [(_, a), (_, b)] = lane_maps(s, g);
-    let lds_a = g.bk * g.tm / g.tm.min(lanes);
+    let [(_, a), (_, b)] = lane_maps(s, g, g.kmajor);
+    let lds_a = match g.kmajor {
+        true => g.bk * g.tm / lanes,
+        false => g.bk * g.tm / g.tm.min(lanes),
+    };
     let lds_b = g.bk * g.tn / g.tn.min(lanes);
     let sts = match g.stages >= 2 {
         true => 0,
-        false if vector_a(s) => a * lanes + b,
+        false if vector_a(s) && !g.kmajor => a * lanes + b,
         false => a + b,
     };
     lds_a + lds_b + a + b + sts
@@ -4265,8 +4292,16 @@ impl Kernel<'_> {
         // `stages` buffers; register staging has one buffer, padded under the
         // `pad` rung ([`TargetProfile::gpu_tile_sync_a`]).
         let streamed = g.stages >= 2;
-        let sa = g.sa();
-        let bs_off = bk * sa;
+        // tile-efficiency T2: `a` k-major (`As[m][k]`, rows `bk + pad_a`
+        // apart) unless this kernel stores column-major — its quarter-warps
+        // read eight panel rows — which keeps the transposed panel.
+        let kmaj = g.kmajor && !self.col;
+        let sa = match (g.kmajor, kmaj) {
+            (true, true) => bk + g.pad_a,
+            (true, false) => bm,
+            _ => g.sa(),
+        };
+        let bs_off = g.a_elems();
         let stage_elems = g.stage_elems();
 
         if seg.is_none() {
@@ -4290,7 +4325,7 @@ impl Kernel<'_> {
         // Loop-invariant load coordinates, one set per load this thread issues:
         // `(global index at k0 = 0, + constant, shared index, + constant)`.
         let (a_vec, b_vec) = (vector_a(s), vector_b(s));
-        let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g);
+        let [(a_map, a_loads), (b_map, b_loads)] = lane_maps(s, &g, kmaj);
         // recurrence-precision `radix-tile`: a mixed-radix operand's copy holds
         // its row (lane) digits at `k = 0` and its own `k` offset `kc`; each
         // panel adds the `k` digits of `k0 + kc` (not affine: no constant
@@ -4321,10 +4356,17 @@ impl Kernel<'_> {
                 let g0 = k.op("add", &gr, &gk);
                 let gsrc = k.op("add", &g0, s.a.base);
                 let gsrc = k.at_z(gsrc, kext * s.a.ck);
+                if kmaj {
+                    let sr = k.op("mul", r, sa);
+                    return (gsrc, k.op("add", &sr, kc));
+                }
                 let skc = k.op("mul", kc, sa);
                 (gsrc, k.op("add", &skc, r))
             },
-            |dr, dk| (dr * s.a.ci + dk * s.a.ck, dk * sa + dr),
+            |dr, dk| match kmaj {
+                true => (dr * s.a.ci + dk * s.a.ck, dr * sa + dk),
+                false => (dr * s.a.ci + dk * s.a.ck, dk * sa + dr),
+            },
         );
         let b_src = self.copies(
             b_map,
@@ -4440,6 +4482,14 @@ impl Kernel<'_> {
                     k.line(format!("store {t} {v}, ptr addrspace(3) {sp}, align {e}"));
                     continue;
                 }
+                if kmaj {
+                    let si = k.plus(sdst.clone(), *soff);
+                    let sp = k.gep(3, smem, &si);
+                    k.line(format!(
+                        "store {vt} {v}, ptr addrspace(3) {sp}, align {GPU_VEC_BYTES}"
+                    ));
+                    continue;
+                }
                 // `a` is staged transposed: one vector along k scatters to
                 // `lanes` panel rows.
                 for j in 0..lanes {
@@ -4480,8 +4530,13 @@ impl Kernel<'_> {
                     let si = k.op("add", sdst, &so);
                     let si = k.plus(si, *soff);
                     let sp = k.gep(3, smem, &si);
+                    let (kind, n) = if kmaj {
+                        ("cg", GPU_VEC_BYTES)
+                    } else {
+                        ("ca", e)
+                    };
                     k.line(format!(
-                        "call void @llvm.nvvm.cp.async.ca.shared.global.{e}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
+                        "call void @llvm.nvvm.cp.async.{kind}.shared.global.{n}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
                     ));
                 }
                 for (p, (gsrc, goff, sdst, soff)) in b_src.iter().enumerate() {
@@ -4582,8 +4637,8 @@ impl Kernel<'_> {
         self.out.push_str("kk:\n");
         let (kk, kkn) = (self.tmp(), self.tmp());
         self.line(format!("{kk} = phi {ix} [0, %{pre}], [{kkn}, %kk]"));
-        let frag = |k: &mut Self, row: u64, first: &str, n: u64, off: u64, chunk: u64| {
-            let r = k.op("mul", &kk, row);
+        let frag = |k: &mut Self, ki: &str, row: u64, first: &str, n: u64, off: u64, chunk: u64| {
+            let r = k.op("mul", ki, row);
             let r = k.op("add", &r, first);
             let r = k.op("add", &r, off);
             let r = k.op("add", &r, &cbase);
@@ -4616,20 +4671,58 @@ impl Kernel<'_> {
             }
             vals
         };
-        let av = frag(self, sa, &a_frag0, tm, 0, a_chunk);
-        let bv = frag(self, bn, &b_frag0, tn, bs_off, b_chunk);
-        for i in 0..tm as usize {
-            for j in 0..tn as usize {
-                let p = acc_slot(self, i * tn as usize + j);
-                let cur = self.tmp();
-                self.line(format!("{cur} = load {t}, ptr {p}, align {e}"));
-                let r = self.step(&cur, &av[i], &bv[j]);
-                self.line(format!("store {t} {r}, ptr {p}, align {e}"));
+        let fma = |k: &mut Self, av: &[String], bv: &[String]| {
+            for i in 0..tm as usize {
+                for j in 0..tn as usize {
+                    let p = acc_slot(k, i * tn as usize + j);
+                    let cur = k.tmp();
+                    k.line(format!("{cur} = load {t}, ptr {p}, align {e}"));
+                    let r = k.step(&cur, &av[i], &bv[j]);
+                    k.line(format!("store {t} {r}, ptr {p}, align {e}"));
+                }
             }
+        };
+        // tile-efficiency T2: a k-major trip takes `lanes` `k` steps — one
+        // 128-bit `a` load along `k` per owned row, then per step its `b`
+        // fragment and the `tm × tn` FMAs, `k` ascending as before.
+        let steps = if kmaj { bk / lanes } else { bk };
+        if kmaj {
+            let k0 = self.op("mul", &kk, lanes);
+            let k0 = self.op("add", &k0, &cbase);
+            let mut rows = Vec::new();
+            for i in 0..tm {
+                let r = self.op("add", &a_frag0, (i / aw) * a_chunk + i % aw);
+                let r = self.op("mul", &r, sa);
+                let si = self.op("add", &r, &k0);
+                let sp = self.gep(3, smem, &si);
+                let x = self.tmp();
+                self.line(format!(
+                    "{x} = load {vt}, ptr addrspace(3) {sp}, align {GPU_VEC_BYTES}"
+                ));
+                let row: Vec<String> = (0..lanes)
+                    .map(|j| {
+                        let y = self.tmp();
+                        self.line(format!("{y} = extractelement {vt} {x}, i64 {j}"));
+                        y
+                    })
+                    .collect();
+                rows.push(row);
+            }
+            for j in 0..lanes as usize {
+                let kj = self.op("mul", &kk, lanes);
+                let kj = self.op("add", &kj, j as u64);
+                let bv = frag(self, &kj, bn, &b_frag0, tn, bs_off, b_chunk);
+                let av: Vec<String> = rows.iter().map(|r| r[j].clone()).collect();
+                fma(self, &av, &bv);
+            }
+        } else {
+            let av = frag(self, &kk, sa, &a_frag0, tm, 0, a_chunk);
+            let bv = frag(self, &kk, bn, &b_frag0, tn, bs_off, b_chunk);
+            fma(self, &av, &bv);
         }
         self.line(format!("{kkn} = add {ix} {kk}, 1"));
         let kkd = self.tmp();
-        self.line(format!("{kkd} = icmp eq {ix} {kkn}, {bk}"));
+        self.line(format!("{kkd} = icmp eq {ix} {kkn}, {steps}"));
         // Fully unrolled: every shared-memory offset becomes an immediate.
         let unroll = if self.rungs.unroll {
             ", !llvm.loop !@LOOP@"
@@ -5790,9 +5883,11 @@ mod tests {
             );
         }
         assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
+        // tile-efficiency T2: the k-major panel needs no pad, so the largest
+        // `bk` whose two stages fit doubles (the stages that fit drop to 2).
         assert_eq!(
             geo(18432, false, on("row-fit")),
-            Some((4, 4, 16, 32, 32, 32, 3))
+            Some((4, 4, 16, 32, 32, 64, 2))
         );
         assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
         // Gated, the site has no register tile: `cell-fill` (S62 asyncstage
@@ -5859,10 +5954,10 @@ mod tests {
                                         continue;
                                     };
                                     for (i, (map, loads)) in
-                                        lane_maps(&s, &g).into_iter().enumerate()
+                                        lane_maps(&s, &g, g.kmajor).into_iter().enumerate()
                                     {
                                         let vec = if i == 0 {
-                                            vector_a(&s) && g.stages < 2
+                                            vector_a(&s) && (g.stages < 2 || g.kmajor)
                                         } else {
                                             vector_b(&s)
                                         };
@@ -6597,7 +6692,7 @@ mod tests {
                     let Some(g) = launch(&s, p, false, force(r), None).tiled else {
                         continue;
                     };
-                    for (map, n) in lane_maps(&s, &g) {
+                    for (map, n) in lane_maps(&s, &g, g.kmajor) {
                         for c in 0..n {
                             let d = affine_delta(map, g.threads(), c);
                             assert!(d.is_some(), "{} {s:?} {map:?} copy {c}", p.name);
@@ -6638,7 +6733,7 @@ mod tests {
     #[test]
     fn sync_a_store_is_conflict_free_under_pad() {
         let worst_way = |s: &TileSite, g: &GpuTile| {
-            let [(map, n), _] = lane_maps(s, g);
+            let [(map, n), _] = lane_maps(s, g, g.kmajor);
             let lanes = GPU_VEC_BYTES / 4;
             let mut worst = 0;
             for warp in 0..g.threads() / 32 {
@@ -6658,9 +6753,11 @@ mod tests {
         };
         for p in PARTS {
             for wide_fma in [true, false] {
+                // tile-efficiency T2's k-major panel has no transposed store.
                 let on = GpuRungs {
                     cp_async: false,
                     async_stage: false,
+                    kmajor_a: false,
                     wide_fma,
                     ..GpuRungs::ALL
                 };
@@ -6784,6 +6881,8 @@ mod tests {
             "grid-share",
             "panel-regs",
             "fill-rows",
+            "kmajor-a",
+            "full-tile",
         ]);
         let s = site(16, 2048, 7168, true, true, Ty::f32());
         let l = launch(&s, &RTX_5090, false, arms, None);

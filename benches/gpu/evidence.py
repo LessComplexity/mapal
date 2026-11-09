@@ -236,6 +236,12 @@ def sass_facts(body):
             insns=len(loop), ffma=lc['FFMA'], fmul=lc['FMUL'], fadd=lc['FADD'], hmma=lc['HMMA'], hgmma=lc['HGMMA'],
             ldg=lc['LDG'], ldgsts=lc['LDGSTS'], lds=lc['LDS'], ldsm=lc['LDSM'], sts=lc['STS'], bar=lc['BAR'],
             bra=lc['BRA'], ldg128=lw.get('LDG.128', 0), lds128=lw.get('LDS.128', 0),
+            # tile-efficiency: copy widths and the LSU mix (T2 / T4)
+            ldgsts128=sum(o.startswith('LDGSTS') and o.endswith('.128') for o in ops),
+            sts128=sum(o.startswith('STS') and o.endswith('.128') for o in ops),
+            lsu=lc['LDS'] + lc['STS'] + lc['LDG'] + lc['LDGSTS'],
+            ffma_per_lsu=round(mac / (lc['LDS'] + lc['STS'] + lc['LDG'] + lc['LDGSTS']), 2)
+            if lc['LDS'] + lc['STS'] + lc['LDG'] + lc['LDGSTS'] else 0,
             imad_wide=sum(o.startswith('IMAD.WIDE') for o in ops), mac=mac, acc=acc,
             ksteps=round(mac / acc, 2) if acc else 0,
             span=round(len(loop) / (mac / acc), 2) if acc and mac else 0,
