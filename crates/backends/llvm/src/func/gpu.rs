@@ -458,18 +458,20 @@ pub(crate) fn launch(
     contract: bool,
     arms: crate::GpuArms,
 ) -> Launch {
-    launch_split(site, profile, contract, arms, 1)
+    launch_split(site, profile, contract, arms, 1, false)
 }
 
 /// [`launch`] for the kernel that folds `split` partitions (site-geometry
 /// `fill-wave`): the FMA tile's panels and stages are sized for the
 /// `blocks · split` grid ([`TargetProfile::gpu_tile_split`]). 1 = [`launch`].
+/// `full` (tile-efficiency T1): the split grid keeps the full register tile.
 pub(crate) fn launch_split(
     site: &TileSite,
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
     split: u64,
+    full: bool,
 ) -> Launch {
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
@@ -550,6 +552,7 @@ pub(crate) fn launch_split(
     let kmajor = rungs.kmajor_a && vector_a(site) && rx.is_none_or(|x| x.a.is_none());
     let tile_rungs = crate::GpuRungs {
         kmajor_a: kmajor,
+        full_tile: full,
         ..rungs
     };
     let tiled = shaped
@@ -1121,13 +1124,32 @@ fn resized(
     combine: Combine,
 ) -> Launch {
     let s = combine.splits();
-    if !(l.rungs.fill_wave && s > 1) {
-        return l;
-    }
-    let r = launch_split(site, profile, contract, arms, s);
-    match r.tiled {
-        Some(g) if (site.k / s).is_multiple_of(g.bk) => r,
-        _ => l,
+    let whole = |r: &Launch| r.tiled.is_some_and(|g| (site.k / s).is_multiple_of(g.bk));
+    let rule = match l.rungs.fill_wave && s > 1 {
+        true => Some(launch_split(site, profile, contract, arms, s, false))
+            .filter(whole)
+            .unwrap_or(l),
+        false => l,
+    };
+    // tile-efficiency T1: where the plan is the cost model's (`plan-cost`, a
+    // part with its rates) and the order free, a split kernel may fill the
+    // machine along `k` with the full register tile instead — a candidate
+    // beside the rules' (shrunk) tile at the same `S`, taken where
+    // [`TargetProfile::site_ns`] says it is cheaper (never a smaller tile).
+    let full = s > 1 && arms.free && l.rungs.full_tile && l.rungs.plan_cost && l.tiled.is_some();
+    let Some(gpu) = profile.gpu().filter(|_| full) else {
+        return rule;
+    };
+    let r = launch_split(site, profile, contract, arms, s, true);
+    let acc = |x: &Launch| x.tiled.map_or(0, |g| g.tm * g.tn);
+    let ns = |x: &Launch| {
+        profile
+            .site_ns(&plan_shape(site, x, combine, gpu))
+            .map(|c| c.ns)
+    };
+    match (ns(&r), ns(&rule)) {
+        (Some(a), Some(b)) if whole(&r) && acc(&r) > acc(&rule) && a < b => r,
+        _ => rule,
     }
 }
 

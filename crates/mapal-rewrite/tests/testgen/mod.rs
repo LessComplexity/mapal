@@ -2881,6 +2881,28 @@ pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
             &[32, 64, 256, 1024]
         },
     );
+    geom_src_at(p, m, n, k)
+}
+
+/// tile-efficiency T1: [`GeomProg`] at mid extents — rows 64–256 (192 not a
+/// power of two), lanes 256–512, `k` 512–2048 — where a full register tile
+/// divides the site and the fold is deep enough to cut, still small enough
+/// for the emulator. `retained` and `wide` are ignored.
+pub fn mid_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let q = GeomProg {
+        retained: false,
+        wide: false,
+        ..p.clone()
+    };
+    let m = pick(p.dims[0], &[64, 128, 192, 256]);
+    let n = pick(p.dims[1], &[256, 512]);
+    let k = pick(p.dims[2], &[512, 1024, 2048]);
+    geom_src_at(&q, m, n, k)
+}
+
+/// [`geom_src`] at the extents `(m, n, k)`.
+fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)) {
     let (a1, a2) = (
         u64::from(p.law[0] % 13) * 2 + 3,
         u64::from(p.law[1] % 11) * 2 + 5,

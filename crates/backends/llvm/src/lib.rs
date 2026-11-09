@@ -27,6 +27,7 @@ mod ty;
 
 pub use crate::profile::TargetProfile;
 pub use crate::profile::resolve as resolve_profile;
+pub use crate::profile::{CostOver, DeviceCost};
 
 /// The profile a target name resolves to (`native` included), `None` for an
 /// unknown name — what [`EmitOpts::target`] and [`EmitOpts::host`] accept.

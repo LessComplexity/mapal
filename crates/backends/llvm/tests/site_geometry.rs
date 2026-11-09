@@ -693,3 +693,82 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
         "the generator reaches kmajor-a"
     );
 }
+
+/// tile-efficiency T1 (`full-tile`) under `plan-cost` on the calibrated parts,
+/// on generator programs it was not designed on (`testgen::mid_src`): a split kernel the cost
+/// model gives the full register tile holds more accumulators than the rules'
+/// split tile at ≥ 4 warps, and the
+/// values through the emulator equal the rules' plan byte for byte (integer
+/// operands: every cut of the fold is exact).
+#[test]
+fn full_tile_counted_and_valued_on_unseen_programs() {
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::geom_prog_strategy();
+    let clang = emu::clang();
+    let targets = ["rtx-4090", "rtx-5090"];
+    let field = |l: &str, k: &str| -> u64 {
+        l.split(' ')
+            .find_map(|f| f.strip_prefix(k))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    };
+    let split_tiles = |e: &mapal_backend_llvm::Emission| -> Vec<(u64, u64)> {
+        tile_kernels(e.device.as_deref())
+            .iter()
+            .filter(|(l, _)| l.contains("combine=atomic") || l.contains("combine=splitk"))
+            .map(|(l, _)| (field(l, "tm=") * field(l, "tn="), field(l, "block=")))
+            .collect()
+    };
+    let (mut full, mut valued) = (0, 0);
+    for z in 0..24 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let (src, _) = testgen::mid_src(&p);
+        let ir = lower(&src);
+        let target = targets[z % targets.len()];
+        // An LSU-bound rate (`lsu_ipc_pm` 20, not the part's 500) makes the
+        // cost model take the full tile wherever it divides the site.
+        let arm = |off: &[&str]| {
+            let mut gpu = GpuArms::default();
+            *gpu.on.rung("plan-cost").expect("rung") = true;
+            for r in off.iter().chain(&["pdl", "streams", "place"]) {
+                *gpu.off.rung(r).expect("rung") = true;
+            }
+            let mut cost = mapal_backend_llvm::CostOver::default();
+            let i = mapal_backend_llvm::DeviceCost::NAMES
+                .iter()
+                .position(|n| *n == "lsu_ipc_pm");
+            cost[i.expect("a rate")] = Some(20);
+            let opts = EmitOpts {
+                host: "generic",
+                target,
+                gpu,
+                cost,
+                ..EmitOpts::default()
+            };
+            emit_detailed(&ir, &opts).expect("emits")
+        };
+        let (on, off) = (arm(&[]), arm(&["full-tile"]));
+        let (t_on, t_off) = (split_tiles(&on), split_tiles(&off));
+        let rule = t_off.iter().map(|t| t.0).max().unwrap_or(0);
+        for &(acc, block) in t_on.iter().filter(|t| !t_off.contains(t)) {
+            full += 1;
+            assert!(
+                acc > rule && block >= 128,
+                "#{z} {target} acc={acc} block={block}\n{src}"
+            );
+        }
+        launches_give_planned_smem(&on, &format!("#{z} {target}\n{src}"));
+        if let Some(cc) = &clang {
+            let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
+            let (x, y) = (
+                emu::run_emulated(cc, &on.text, &dev(&on)),
+                emu::run_emulated(cc, &off.text, &dev(&off)),
+            );
+            assert_eq!(x.lines().count(), 3, "#{z}\n{x}\n{src}");
+            assert_eq!(x, y, "#{z} {target} values\n{src}");
+            valued += 1;
+        }
+    }
+    eprintln!("full-tile: {full} full-tile split kernels, {valued} valued");
+    assert!(full >= 4, "the generator reaches full-tile ({full})");
+}

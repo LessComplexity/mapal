@@ -3464,8 +3464,13 @@ impl TargetProfile {
             };
             regs_est = if held > 0 { held } else { twice };
         }
+        // tile-efficiency T1: a split grid that keeps the full tile fills the
+        // machine along `k` — no shrink of the tile or its threads, and the
+        // grid's fill counts its `split` partitions.
+        let fill_k = r.full_tile && split > 1;
+        let parts = if fill_k { split } else { 1 };
         let under_warps =
-            |tm: u64, tn: u64| fill && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
+            |tm: u64, tn: u64| fill && !fill_k && (rows / tm) * (c / tn) / g.warp < g.fill_warps();
         let tm_floor = if r.fill_rows { 1 } else { lanes };
         while !wide && !forced_tile && under_warps(tm, tn) {
             if tn >= tm && tn > lanes {
@@ -3510,7 +3515,7 @@ impl TargetProfile {
         // SM a block at its full grid keeps the S52 tile, which step 3 then
         // fills (S53: halving the wide grid at 1024² measured 0.70× on Ada and
         // Blackwell — half the warps per block over the same tiles).
-        if wide && ((rows / (ty * tm)) * (c / (tx * tn)) < g.sms || under_warps(tm, tn)) {
+        if wide && ((rows / (ty * tm)) * (c / (tx * tn)) * parts < g.sms || under_warps(tm, tn)) {
             return self.gpu_tile_split(rows, c, k, elem, false, r, split);
         }
         // site-geometry `fit-first` (R1): a grid short only because its thread
@@ -3523,12 +3528,16 @@ impl TargetProfile {
                 fx *= 2;
             }
             let divides = rows.is_multiple_of(fy * tm) && c.is_multiple_of(fx * tn);
-            if divides && (rows / (fy * tm)) * (c / (fx * tn)) >= g.sms {
+            if divides && (rows / (fy * tm)) * (c / (fx * tn)) * parts >= g.sms {
                 (ty, tx) = (fy, fx);
             }
         }
         let mut halve_x = q.warps == 0;
-        while q.warps == 0 && (rows / (ty * tm)) * (c / (tx * tn)) < g.sms && tx * ty > g.warp {
+        while !fill_k
+            && q.warps == 0
+            && (rows / (ty * tm)) * (c / (tx * tn)) < g.sms
+            && tx * ty > g.warp
+        {
             if halve_x && tx > 1 {
                 tx /= 2;
             } else if ty > 1 {
@@ -3544,7 +3553,7 @@ impl TargetProfile {
             tx *= 2;
         }
         let blocks = (rows / (ty * tm)) * (c / (tx * tn));
-        if fit && r.wave_gate && blocks < g.sms {
+        if fit && r.wave_gate && blocks * parts < g.sms {
             return None;
         }
 
