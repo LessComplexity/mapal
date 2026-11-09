@@ -206,6 +206,12 @@ pub struct DeviceCost {
     /// Fitted: the independent FMA chains per warp scheduler (warps × a
     /// thread's accumulators) at which the tile reaches half of `eff_max_pm`.
     pub eff_half: u64,
+    /// plan-cost-terms: the latency of one panel load under load, in ns —
+    /// Little's law's `L`: a block keeps `fly` panels in flight, so it moves at
+    /// most `fly · panel / lat_ns` bytes per ns and folds a partition in no
+    /// less than `(trips + fly − 1) · lat_ns / fly` ([`PlanCost::c_ns`]). 0 =
+    /// not given: no latency term (the sprint `plan-cost` model).
+    pub lat_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -222,12 +228,13 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     dram_bytes_per_ns: 0,
     eff_max_pm: 0,
     eff_half: 0,
+    lat_ns: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 13] = [
+    pub const NAMES: [&'static str; 14] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -239,6 +246,7 @@ impl DeviceCost {
         "dram_bytes_per_ns",
         "eff_max_pm",
         "eff_half",
+        "lat_ns",
         "fp32_lanes",
         "clock_khz",
     ];
@@ -271,6 +279,7 @@ impl Gpu {
                 "dram_bytes_per_ns" => &mut d.dram_bytes_per_ns,
                 "eff_max_pm" => &mut d.eff_max_pm,
                 "eff_half" => &mut d.eff_half,
+                "lat_ns" => &mut d.lat_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 _ => &mut self.clock_khz,
             } = v;
@@ -297,6 +306,7 @@ impl Gpu {
             "dram_bytes_per_ns" => d.dram_bytes_per_ns,
             "eff_max_pm" => d.eff_max_pm,
             "eff_half" => d.eff_half,
+            "lat_ns" => d.lat_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             _ => 0,
@@ -341,7 +351,19 @@ pub struct PlanShape {
     /// Partitions (`S`); 1 unsplit and for stream-K.
     pub s: u64,
     pub comb: PlanComb,
+    /// plan-cost-terms: the `k` one panel trip folds (the tile's `bk`; the
+    /// naive kernel's [`NAIVE_UNROLL`]) and the panels a block keeps in
+    /// flight (`stages − 1` under `cp.async`, 1 register-staged or naive).
+    pub bk: u64,
+    pub fly: u64,
 }
+
+/// plan-cost-terms: the `k` steps one trip of the naive kernel's loop issues
+/// before its first add needs a load — LLVM's unroll of that loop, read off
+/// the PTX (`mm_1x1024x4096` rtx-4090: 8 `ld.global.nc` of `b` per trip).
+/// ponytail: LLVM's choice, not Mapal's; emit `llvm.loop.unroll.count` if a
+/// later LLVM unrolls otherwise.
+pub const NAIVE_UNROLL: u64 = 8;
 
 /// [`TargetProfile::site_ns`]'s terms, each printed on a `; mapal.cand` line.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -355,6 +377,10 @@ pub struct PlanCost {
     pub f_ns: f64,
     pub l_ns: f64,
     pub d_ns: f64,
+    /// plan-cost-terms: Σ over waves of a block's latency chain — its panel
+    /// trips at `fly` loads in flight (Little's law, k-depth); 0 without
+    /// `lat_ns`.
+    pub c_ns: f64,
     pub kernel_ns: f64,
     pub combine_ns: f64,
     /// Zero pass and launch idle (D2).
@@ -371,6 +397,17 @@ pub struct PlanCost {
 /// plan-cost §2, fitted by `benches/gpu/plancost.py`).
 pub fn plan_eff(d: &DeviceCost, p: f64) -> f64 {
     d.eff_max_pm as f64 / 1000.0 * p / (p + d.eff_half as f64)
+}
+
+/// plan-cost-terms: [`plan_eff`] at `wps` warps per scheduler of a thread's
+/// `acc` chains, on a part with `lat_ns`: below one warp a scheduler only
+/// issues for the fraction of schedulers that hold one (`min(wps, 1)`), and
+/// each of those hides latency with its own warps' chains (`max(wps, 1)·acc`)
+/// — it falls with the warps instead of staying flat where `wps·acc` alone
+/// saturates.
+pub fn plan_eff_at(d: &DeviceCost, wps: f64, acc: f64) -> f64 {
+    let q = wps.max(1.0) * acc;
+    d.eff_max_pm as f64 / 1000.0 * wps.min(1.0) * q / (q + d.eff_half as f64)
 }
 
 /// Bytes one thread moves in its widest global or shared access — `ld.v4.b32`.
@@ -2554,13 +2591,41 @@ impl TargetProfile {
         let peak = f(g.fp32_lanes) * f(g.clock_khz) / 1e6 * 2.0;
         let (l2, dram) = (f(d.l2_bytes_per_ns), f(d.dram_bytes_per_ns));
         let tile = f(p.bm * p.bn);
+        // plan-cost-terms, on a part with `lat_ns` (else the sprint
+        // `plan-cost` model, op for op): a wave lasts as long as its busiest
+        // SM, which holds `⌈bw / sms⌉` blocks (site-geometry G4), not the
+        // average `bw / sms`.
+        let terms = d.lat_ns > 0;
         let wave = |bw: f64| {
             let used = bw.min(f(g.sms));
-            let wps = bw / used * warps / f(g.schedulers());
-            let rate = used * peak * plan_eff(d, wps * f(p.acc));
-            let ff = bw * 2.0 * tile * kb / rate;
+            let busy = match terms {
+                true => (bw / f(g.sms)).ceil(),
+                false => bw / used,
+            };
+            let wps = busy * warps / f(g.schedulers());
+            let eff = match terms {
+                true => plan_eff_at(d, wps, f(p.acc)),
+                false => plan_eff(d, wps * f(p.acc)),
+            };
+            let ff = match terms {
+                true => busy * 2.0 * tile * kb / (peak * eff),
+                false => bw * 2.0 * tile * kb / (used * peak * eff),
+            };
             let lf = bw * f(p.bm + p.bn) * kb * e / l2;
             (ff, lf, wps)
+        };
+        // Little's law and k-depth (G3): a block's trips (`kb / bk` panels)
+        // wait `lat_ns` each, `fly` at a time, plus the pipeline's fill — the
+        // floor of every wave whatever its SMs' bandwidth: a grid on few SMs or
+        // few warps keeps too few bytes in flight to pull the chip's L2 / DRAM
+        // rate (`min(bw, Σ in flight / lat)`), and a split trades trips for
+        // its combine.
+        let chain = match terms {
+            true => {
+                let (trips, fly) = ((kb / f(p.bk.max(1))).ceil().max(1.0), f(p.fly.max(1)));
+                (trips + fly - 1.0) / fly * f(d.lat_ns)
+            }
+            false => 0.0,
         };
         let (ff, lf, wps_full) = wave(w.min(blocks));
         let (ft, lt, wps_tail) = wave(tail);
@@ -2572,7 +2637,7 @@ impl TargetProfile {
             1.0
         };
         let d_ns = ((rows * k + k * c) * e + out * ws) / dram;
-        let kernel_ns = (full * ff.max(lf) + ft.max(lt)).max(d_ns);
+        let kernel_ns = (full * ff.max(lf).max(chain) + ft.max(lt).max(chain)).max(d_ns);
         let atomics = match p.comb {
             PlanComb::Atomic => f(p.s) * rows * c,
             PlanComb::StreamK => (tiles + blocks) * tile,
@@ -2597,6 +2662,7 @@ impl TargetProfile {
             f_ns: full * ff + ft,
             l_ns: full * lf + lt,
             d_ns,
+            c_ns: waves * chain,
             kernel_ns,
             combine_ns,
             fixed_ns,
@@ -3971,9 +4037,11 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 1.25 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~2.5 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 4.5–4.6 TB/s;
-            // eff: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
-            // fit half of the site-geometry sweep's plan arms
-            // (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`).
+            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
+            // fit half of the site-geometry + plan-cost sweeps' plan arms
+            // (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`); lat is
+            // fitted until calibrated (open: the pointer-chase microbenchmark,
+            // `.claude/sprints/plan-cost/terms.md`).
             issue_ns: 2850,
             gap_ns: 600,
             zero_ns: 1017,
@@ -3981,8 +4049,9 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             l2_bytes_per_ns: 4500,
             // dram: (c) DRAM read, 2 GB `__ldcg`, 981 GB/s.
             dram_bytes_per_ns: 981,
-            eff_max_pm: 475,
+            eff_max_pm: 700,
             eff_half: 6,
+            lat_ns: 150,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4064,9 +4133,10 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 0.9 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~1.7 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 6.5–6.9 TB/s;
-            // eff: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
-            // fit half of the site-geometry sweep's plan arms
-            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`).
+            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
+            // fit half of the site-geometry + plan-cost sweeps' plan arms
+            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`); lat is
+            // fitted until calibrated (eff_max at the FFMA peak, the grid's edge).
             issue_ns: 2370,
             gap_ns: 300,
             zero_ns: 739,
@@ -4074,8 +4144,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             l2_bytes_per_ns: 6500,
             // dram: (c) DRAM read, 2 GB `__ldcg`, 1690 GB/s.
             dram_bytes_per_ns: 1690,
-            eff_max_pm: 150,
-            eff_half: 1,
+            eff_max_pm: 1000,
+            eff_half: 8,
+            lat_ns: 300,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -6023,6 +6094,8 @@ mod tests {
             kb: 512 / s,
             s,
             comb,
+            bk: 16,
+            fly: 1,
         }
     }
 
@@ -6074,7 +6147,7 @@ mod tests {
         let lone = ns(&shape(1, 1, PlanComb::None));
         let step = two.kernel_ns - one.kernel_ns;
         assert!(
-            (step - lone.f_ns.max(lone.l_ns)).abs() <= 1e-6 * step,
+            (step - lone.f_ns.max(lone.l_ns).max(lone.c_ns)).abs() <= 1e-6 * step,
             "{step}"
         );
         let mut prev = 0.0;
@@ -6088,6 +6161,98 @@ mod tests {
         assert_eq!((at.zeros, at.launches, at.atomics), (1, 1, 4 * 512 * 512));
         let ws = ns(&shape(512, 4, PlanComb::Workspace));
         assert_eq!((ws.zeros, ws.launches), (0, 2));
+    }
+
+    /// plan-cost-terms G4: a wave lasts as long as its busiest SM. On the
+    /// 5090 (170 SMs) 171 or 256 blocks leave some SMs with two: the same
+    /// FFMA time as 340 (two everywhere), not the average's `B / 170`.
+    #[test]
+    fn a_wave_is_its_busiest_sm() {
+        let p = &RTX_5090;
+        let f = |blocks| {
+            let sh = PlanShape {
+                per_sm: 2,
+                k: 1 << 16,
+                kb: 1 << 16,
+                ..shape(blocks, 1, PlanComb::None)
+            };
+            p.site_ns(&sh).unwrap().f_ns
+        };
+        assert_eq!(f(171), f(340));
+        assert_eq!(f(256), f(340));
+        assert!(f(171) > 1.5 * f(170));
+    }
+
+    /// plan-cost-terms Little's law: the bytes a grid pulls per ns grow with
+    /// the bytes it keeps in flight (blocks × `fly` panels) and saturate at
+    /// the part's DRAM rate; below it the latency chain sets the time.
+    #[test]
+    fn bandwidth_saturates_with_bytes_in_flight() {
+        for p in [&RTX_4090, &RTX_5090] {
+            let (_, d) = p.plan_rates().unwrap();
+            let gemv = |s: u64, fly: u64| PlanShape {
+                rows: 1,
+                c: 1024,
+                k: 1 << 14,
+                bm: 1,
+                bn: 256,
+                threads: 256,
+                per_sm: 6,
+                acc: 1,
+                tiles: 4,
+                blocks: 4 * s,
+                kb: (1 << 14) / s,
+                s,
+                comb: PlanComb::Atomic,
+                bk: NAIVE_UNROLL,
+                fly,
+                ..shape(1, 1, PlanComb::None)
+            };
+            let mut prev = 0.0;
+            for (s, fly) in [(1, 1), (2, 1), (4, 1), (4, 2), (16, 1), (64, 1), (64, 4)] {
+                let c = p.site_ns(&gemv(s, fly)).unwrap();
+                let rate = (1 << 14) as f64 * 1024.0 * 4.0 / c.kernel_ns;
+                assert!(rate >= prev * (1.0 - 1e-9), "{} S={s} fly={fly}", p.name);
+                assert!(rate <= d.dram_bytes_per_ns as f64 * 1.001, "{}", p.name);
+                prev = rate;
+            }
+            assert!(
+                prev >= d.dram_bytes_per_ns as f64 * 0.99,
+                "{} saturates",
+                p.name
+            );
+            // Few blocks: the chain, not DRAM, is the time.
+            let one = p.site_ns(&gemv(1, 1)).unwrap();
+            assert!(one.c_ns > one.d_ns, "{}", p.name);
+        }
+    }
+
+    /// plan-cost-terms k-depth (G3): a split shortens each partition's panel
+    /// trips — the chain falls with `S` while the adds grow; without
+    /// `lat_ns` there is no chain and the busiest-SM / warp terms are off
+    /// (decision D8: the sprint `plan-cost` model, op for op).
+    #[test]
+    fn a_split_trades_trips_for_its_combine() {
+        let p = &RTX_4090;
+        let mut prev = f64::INFINITY;
+        for s in [1, 2, 4, 8] {
+            let c = p.site_ns(&shape(16 * s, s, PlanComb::Atomic)).unwrap();
+            assert!(c.c_ns < prev && c.c_ns > 0.0, "S={s}");
+            prev = c.c_ns;
+        }
+        let mut over = CostOver::default();
+        let lat = DeviceCost::NAMES
+            .iter()
+            .position(|n| *n == "lat_ns")
+            .unwrap();
+        over[lat] = Some(0);
+        let q = TargetProfile {
+            machine: Machine::Gpu(RTX_4090.gpu().unwrap().with_cost(&over)),
+            ..RTX_4090
+        };
+        let c = q.site_ns(&shape(300, 1, PlanComb::None)).unwrap();
+        assert_eq!(c.c_ns, 0.0);
+        assert_eq!(c.kernel_ns, (c.f_ns.max(c.l_ns)).max(c.d_ns));
     }
 
     /// plan-cost D3: a crossover is where the two cost curves meet — `alt`

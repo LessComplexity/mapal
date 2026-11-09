@@ -26,8 +26,8 @@ use super::resident::Window;
 use super::*;
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
-    MMA_N, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K, WGMMA_M,
-    WGMMA_SWIZZLE_BYTES, fma_held_regs,
+    MMA_N, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K,
+    WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
 };
 use crate::{Order, Reduced};
 use mapal_ir::{RowFoldOp, RowFoldSite};
@@ -937,9 +937,20 @@ pub(crate) fn plan_cands(
 
 /// The cost model's reading of launch `l` folding the site as `c`.
 fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
-    let (bm, bn, acc, per_sm, bk) = match l.tiled {
-        Some(g) => (g.bm(), g.bn(), g.tm * g.tn, g.blocks_per_sm, g.bk),
-        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1),
+    // A cp.async pipeline keeps `stages − 1` panels in flight; the
+    // register-staged tile its one prefetch panel; the naive kernel one
+    // unrolled trip.
+    let (bm, bn, acc, per_sm, bk, step, fly) = match l.tiled {
+        Some(g) => (
+            g.bm(),
+            g.bn(),
+            g.tm * g.tn,
+            g.blocks_per_sm,
+            g.bk,
+            g.bk,
+            g.stages.saturating_sub(1).max(1),
+        ),
+        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1, NAIVE_UNROLL, 1),
     };
     let tiles = l.gx * l.gy;
     let (blocks, kb, s, comb) = match c {
@@ -963,6 +974,8 @@ fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
         kb,
         s,
         comb,
+        bk: step,
+        fly,
     }
 }
 
@@ -1022,8 +1035,8 @@ fn plan_pick(
             f += &format!(
                 "; mapal.cand site={:016x} cand={} pick={} ns={:.1} rows={} c={} k={} e={} \
                  bm={} bn={} threads={} per_sm={} acc={} tiles={} blocks={} kb={} s={} \
-                 waves={} tail={} wps={:.3} f={:.1} l={:.1} d={:.1} kernel={:.1} combine={:.1} \
-                 fixed={:.1} launches={} zeros={} atomics={}",
+                 bk={} fly={} waves={} tail={} wps={:.3} f={:.1} l={:.1} d={:.1} chain={:.1} \
+                 kernel={:.1} combine={:.1} fixed={:.1} launches={} zeros={} atomics={}",
                 id,
                 c.label(),
                 u8::from(i == 0),
@@ -1041,12 +1054,15 @@ fn plan_pick(
                 p.blocks,
                 p.kb,
                 p.s,
+                p.bk,
+                p.fly,
                 t.waves,
                 t.tail,
                 t.wps,
                 t.f_ns,
                 t.l_ns,
                 t.d_ns,
+                t.c_ns,
                 t.kernel_ns,
                 t.combine_ns,
                 t.fixed_ns,
