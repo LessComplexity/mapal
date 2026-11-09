@@ -521,6 +521,11 @@ pub struct GpuRungs {
     /// the rules' shrunk tile stays the unsplit candidate. Off: a split
     /// kernel takes the rules' (`fill-wave`) tile.
     pub full_tile: bool,
+    /// tile-efficiency T3: a `cp.async` panel below `tm·tn·bk ≥ 1024` FFMA
+    /// per barrier yields to register staging where staging's panel is
+    /// deeper ([`crate::func::gpu`] `launch_split`). Off: the deepest
+    /// `cp.async` panel that fits, whatever its depth.
+    pub async_depth: bool,
 }
 
 impl GpuRungs {
@@ -602,11 +607,12 @@ impl GpuRungs {
         tf32_radix: true,
         kmajor_a: true,
         full_tile: true,
+        async_depth: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 76] = [
+    pub const NAMES: [&'static str; 77] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -683,6 +689,7 @@ impl GpuRungs {
         "tf32-radix",
         "kmajor-a",
         "full-tile",
+        "async-depth",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -764,6 +771,7 @@ impl GpuRungs {
             "tf32-radix" => &mut self.tf32_radix,
             "kmajor-a" => &mut self.kmajor_a,
             "full-tile" => &mut self.full_tile,
+            "async-depth" => &mut self.async_depth,
             _ => return None,
         })
     }

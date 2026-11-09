@@ -599,6 +599,17 @@ fn emission_arms(
     on: &[&str],
     off: &[&str],
 ) -> mapal_backend_llvm::Emission {
+    emission_face(ir, target, on, off, EmitOpts::default())
+}
+
+/// [`emission_arms`] on `base`'s face.
+fn emission_face(
+    ir: &CategoryIr,
+    target: &'static str,
+    on: &[&str],
+    off: &[&str],
+    base: EmitOpts,
+) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
     for r in off.iter().chain(&["pdl", "streams", "place"]) {
         *gpu.off.rung(r).expect("rung") = true;
@@ -610,7 +621,7 @@ fn emission_arms(
         host: "generic",
         target,
         gpu,
-        ..EmitOpts::default()
+        ..base
     };
     emit_detailed(ir, &opts).expect("emits")
 }
@@ -631,17 +642,19 @@ fn tile_kernels(dev: Option<&str>) -> Vec<(String, String)> {
 /// tile-efficiency T2 (`kmajor-a`) on generator programs it was not designed
 /// on, on the four GPU profiles: a k-major `a` panel is copied by 16-byte
 /// copies only — `cp.async.cg … 16` under `async` (no 4-byte copy where `b`
-/// is vector too), one vector store register-staged (no scalar store) — and
-/// the values through the emulator (its `cp.async` queue) equal the
-/// transposed register-staged kernel's byte for byte (integer operands; each
-/// cell's `k` order is kept).
+/// is vector too), one vector store register-staged (no scalar store), an
+/// `f64` panel read as `<2 x double>` — and on the exact face, with
+/// non-integer operands (a moved `k` order changes bits), `f64`, `a` read
+/// along `i` and `k = 8·odd`, the values through the emulator (its
+/// `cp.async` queue) of all three arms equal the interpreter's byte for byte.
 #[test]
 fn kmajor_a_counted_and_valued_on_unseen_programs() {
     let mut runner = TestRunner::deterministic();
-    let strat = testgen::geom_prog_strategy();
+    let strat = testgen::order_prog_strategy();
     let clang = emu::clang();
     let targets = ["rtx-4090", "h100-pcie", "rtx-5090", "rtx-3090"];
     let (mut streamed, mut staged, mut valued) = (0, 0, 0);
+    let (mut wide64, mut exact_kmajor, mut ci, mut k8) = (0, 0, 0, 0);
     for z in 0..48 {
         let p = strat.new_tree(&mut runner).unwrap().current();
         let (src, _) = testgen::geom_src(&p);
@@ -658,6 +671,10 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
                     continue;
                 }
                 assert!(arm < 2, "#{z} {target}: kmajor-a off\n{plan}");
+                if p.f64 {
+                    assert!(body.contains("<2 x double>"), "#{z} {target}\n{plan}");
+                    wide64 += 1;
+                }
                 if plan.contains(" stages=1 ") {
                     staged += 1;
                     assert!(
@@ -675,21 +692,34 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
             }
             launches_give_planned_smem(e, &format!("#{z} {target} arm {arm}\n{src}"));
         }
+        let exact = [
+            emission_face(&ir, target, &["async", "kmajor-a"], &[], EmitOpts::exact()),
+            emission_face(&ir, target, &["kmajor-a"], &["async"], EmitOpts::exact()),
+            emission_face(&ir, target, &[], &["async", "kmajor-a"], EmitOpts::exact()),
+        ];
+        exact_kmajor += tile_kernels(exact[0].device.as_deref())
+            .iter()
+            .filter(|(plan, _)| plan.contains(" kmajor=1"))
+            .count();
         if let Some(cc) = &clang {
-            let dev = |e: &mapal_backend_llvm::Emission| e.device.clone().unwrap_or_default();
-            let runs: Vec<String> = arms
-                .iter()
-                .map(|e| emu::run_emulated(cc, &e.text, &dev(e)))
-                .collect();
-            assert_eq!(runs[0].lines().count(), 3, "#{z}\n{}\n{src}", runs[0]);
-            assert_eq!(runs[0], runs[2], "#{z} {target} async k-major\n{src}");
-            assert_eq!(runs[1], runs[2], "#{z} {target} staged k-major\n{src}");
+            let rr = mapal_interp::run(&ir, 2_000_000_000);
+            let want = rr.output;
+            assert_eq!(want.lines().count(), 3, "#{z} {:?}\n{src}", rr.outcome);
+            for (arm, e) in exact.iter().enumerate() {
+                let got = emu::run_emulated(cc, &e.text, &e.device.clone().unwrap_or_default());
+                assert_eq!(got, want, "#{z} {target} exact arm {arm}\n{src}");
+            }
             valued += 1;
+            ci += usize::from(p.ci);
+            k8 += usize::from(p.k8);
         }
     }
-    eprintln!("kmajor-a: {streamed} streamed, {staged} staged k-major kernels, {valued} valued");
+    eprintln!(
+        "kmajor-a: {streamed} streamed, {staged} staged, {wide64} f64, {exact_kmajor} exact-face \
+         k-major kernels; {valued} valued ({ci} ci, {k8} k8)"
+    );
     assert!(
-        streamed >= 4 && staged >= 8,
+        streamed >= 2 && staged >= 4 && wide64 >= 1 && exact_kmajor >= 1,
         "the generator reaches kmajor-a"
     );
 }

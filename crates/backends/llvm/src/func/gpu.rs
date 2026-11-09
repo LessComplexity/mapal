@@ -589,7 +589,14 @@ pub(crate) fn launch_split(
             let streamed = stream
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
                 .flatten();
-            if let Some(a) = streamed {
+            // tile-efficiency T3 (`async-depth`): a thread does `tm·tn·bk ≥
+            // 1024` FFMA per barrier and wait. A `cp.async` panel shallower
+            // than that yields to register staging only where staging's
+            // panel is deeper (`k = 8·odd` offers neither a deeper one); a
+            // forced ADR-0034 depth stands.
+            let floor = 1024 / (g.tm * g.tn).max(1);
+            let shallow = |a: &GpuTile| rungs.async_depth && gpu.geom.bk == 0 && a.bk < floor;
+            if let Some(a) = streamed.filter(|a| !shallow(a)) {
                 return a;
             }
             // Register staging: the prefetch panel takes what a whole-file tile
@@ -611,10 +618,14 @@ pub(crate) fn launch_split(
                 true => prefetch_depth(g, e, g.tm + g.tn),
                 false => g,
             };
-            if rungs.pad && vector_a(site) && !g.kmajor {
+            let staged = if rungs.pad && vector_a(site) && !g.kmajor {
                 profile.gpu_tile_sync_a(g, &site.elem)
             } else {
                 g
+            };
+            match streamed {
+                Some(a) if a.bk >= staged.bk => a,
+                _ => staged,
             }
         })
         // S62 `asyncstage`: stages from the blocks this grid puts on an SM.
@@ -787,7 +798,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 35] = [
+const KERNEL_RUNGS: [&str; 36] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -823,6 +834,7 @@ const KERNEL_RUNGS: [&str; 35] = [
     "tf32-radix",
     "kmajor-a",
     "full-tile",
+    "async-depth",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -5910,6 +5922,29 @@ mod tests {
     /// one-thread-per-cell kernel, 4.5× slower on the 5090). `panel-regs`
     /// reads only grids that leave a scheduler without a warp: not 1024² or
     /// 128 × 18432 (3 warps per scheduler), whose launch is its OFF arm's.
+    /// tile-efficiency T3 `async-depth`: a `cp.async` panel below `tm·tn·bk
+    /// ≥ 1024` yields to register staging only where staging's panel is
+    /// deeper (4090 128×1024²: 4×4 at bk 16 → staged bk 32); at equal depth
+    /// it stays (5090 16×18432×7168, bk 64). There is no `k` test: a `k`
+    /// with no deeper panel gives staging none either. OFF: the deepest
+    /// `cp.async` panel that fits.
+    #[test]
+    fn async_depth_yields_only_to_a_deeper_staged_panel() {
+        let geo = |p: &TargetProfile, (m, n, k), off: bool| {
+            let mut a = crate::GpuArms::default();
+            a.off.async_depth = off;
+            let s = site(m, n, k, true, true, Ty::f32());
+            launch(&s, p, false, a, None)
+                .tiled
+                .map(|g| (g.tm * g.tn, g.bk, g.stages))
+        };
+        let mm = (128, 1024, 1024);
+        assert_eq!(geo(&RTX_4090, mm, true), Some((16, 16, 2)));
+        assert_eq!(geo(&RTX_4090, mm, false), Some((16, 32, 1)));
+        let skinny = (16, 18432, 7168);
+        assert_eq!(geo(&RTX_5090, skinny, false), geo(&RTX_5090, skinny, true));
+    }
+
     #[test]
     fn skinny_projections_take_the_ordered_cooperative_tile() {
         let geo = |n, contract, arms| {

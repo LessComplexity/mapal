@@ -2801,15 +2801,11 @@ impl TargetProfile {
             false => conflict_free_pad(bm, |l| (l % lanes, l / lanes))?,
         };
         let a_units = if g.kmajor { lanes } else { 1 };
-        // tile-efficiency T3: at least 16 `k` a panel — one barrier and one
-        // wait per `tm·tn·16` FFMA a thread (F4: a 4×4 tile at bk 8 waited
-        // every 64).
-        let floor = lanes.max(16);
         let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
             .saturating_sub(gpu.smem_reserved_per_block)
             .min(gpu.smem_per_block);
         let mut best = None;
-        let mut bk = floor;
+        let mut bk = lanes;
         while bk <= k {
             let geom = GpuTile {
                 bk,

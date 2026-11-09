@@ -2833,6 +2833,15 @@ pub struct GeomProg {
     pub retained: bool,
     pub law: [u8; 2],
     pub wide: bool,
+    /// Operands `v / 7.0`, `v / 9.0`: partial sums round, so a cell whose `k`
+    /// order moved prints other bits ([`order_prog_strategy`]).
+    pub frac: bool,
+    /// `f64` operands and products.
+    pub f64: bool,
+    /// `a` read along `i` (`a[q·m + i]`, `ci == 1`), not along `k`.
+    pub ci: bool,
+    /// `k = 8·odd` (40, 72, 136, 264): no power-of-two panel ≥ 16 divides it.
+    pub k8: bool,
 }
 
 pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
@@ -2849,6 +2858,31 @@ pub fn geom_prog_strategy() -> impl Strategy<Value = GeomProg> {
             retained,
             law,
             wide: wide && !retained,
+            frac: false,
+            f64: false,
+            ci: false,
+            k8: false,
+        })
+}
+
+/// [`geom_prog_strategy`] for order and layout oracles: non-integer operands
+/// (`frac`) and, at random, `f64`, `ci == 1` and `k = 8·odd` (neither
+/// retained nor wide: the interpreter is the oracle).
+pub fn order_prog_strategy() -> impl Strategy<Value = GeomProg> {
+    (
+        geom_prog_strategy(),
+        prop::bool::weighted(0.5),
+        prop::bool::weighted(0.25),
+        prop::bool::weighted(0.25),
+    )
+        .prop_map(|(p, f64, ci, k8)| GeomProg {
+            retained: false,
+            wide: false,
+            frac: true,
+            f64,
+            ci,
+            k8,
+            ..p
         })
 }
 
@@ -2877,6 +2911,8 @@ pub fn geom_src(p: &GeomProg) -> (String, (u64, u64, u64)) {
         p.dims[2],
         if p.wide {
             &[32, 64]
+        } else if p.k8 {
+            &[40, 72, 136, 264]
         } else {
             &[32, 64, 256, 1024]
         },
@@ -2912,17 +2948,25 @@ fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)
     } else {
         format!("b[q * {n} + j]")
     };
+    let ai = match p.ci && !p.retained {
+        true => format!("q * {m} + i"),
+        false => format!("i * {k} + q"),
+    };
     let y = |a: &str| {
         format!(
-            "ic -> map {{ c -> c / {n} -> i; c % {n} -> j; (0.0, kr) -> fold {{ acc, q -> acc + {a}[i * {k} + q] * {bi} }} }} -> y;"
+            "ic -> map {{ c -> c / {n} -> i; c % {n} -> j; (0.0, kr) -> fold {{ acc, q -> acc + {a}[{ai}] * {bi} }} }} -> y;"
         )
+    };
+    let (da, db) = match p.frac {
+        true => (" -> v; v / 7.0", " -> v; v / 9.0"),
+        false => ("", ""),
     };
     let head = format!(
         "fn main() {{
     {mk} -> iota -> ia;
-    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32 }} -> a;
+    ia -> map {{ t -> (t * {a1} + 13) % 101 - 50 -> widen_f32{da} }} -> a;
     {kn} -> iota -> ib;
-    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32 }} -> b;
+    ib -> map {{ t -> (t * {a2} + 57) % 103 - 51 -> widen_f32{db} }} -> b;
     {mn} -> iota -> ic;
     {k} -> iota -> kr;
 ",
@@ -2987,7 +3031,11 @@ fn geom_src_at(p: &GeomProg, m: u64, n: u64, k: u64) -> (String, (u64, u64, u64)
             last = m * n - 1
         )
     };
-    (head + &body, (m, n, k))
+    let src = head + &body;
+    match p.f64 {
+        true => (src.replace("f32", "f64"), (m, n, k)),
+        false => (src, (m, n, k)),
+    }
 }
 
 // --- plan-cost blind set: tile sites at bench sizes --------------------------
