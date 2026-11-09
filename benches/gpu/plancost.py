@@ -10,12 +10,16 @@
    sites of the emitted candidate's ns, plus one constant per program (the work no candidate changes);
 3. mirror: `site_ns` re-evaluated here from each line's inputs must equal the printed ns (to its printed 0.1 ns);
 4. split the decisions by rung class (the rungs whose arms move the plan off `on`'s), hash-ordered and alternating
-   within each class; fit `eff_max_pm`, `eff_half` (log-time L1) on one half; report on the other: pick accuracy (the
-   argmin arm within max(null, 2 %) of the measured best), pairwise sign accuracy, median |log err| of each arm's
-   predicted time anchored at the program's `on` arm (`pred_i − pred_on + meas_on`: no constant fitted on the half
-   it scores);
-5. compiler: each hold-out program emitted with plan-cost ON; its picks are scored against the measured arm that
-   emitted the same plan (within max(null, 2 %) of the best), unknown where no arm did.
+   within each class (a program and its `@pc` rows in one half); a decision's null is max(the `null` arm, the spread
+   of two arms that emit one plan, 2 %); fit `eff_max_pm`, `eff_half` and `lat_ns` (log-time L1; plan-cost-terms:
+   busiest SM, latency chain, warp occupancy — `lat_ns` 0 is the sprint `plan-cost` model, reported as `no-terms`)
+   on one half; report on the other: pick accuracy (the argmin arm within the null of the measured best), pairwise
+   sign accuracy, median |log err| of each arm's predicted time anchored at the program's `on` arm
+   (`pred_i − pred_on + meas_on`: no constant fitted on the half it scores). The sweep's ON arm is re-emitted at
+   the rates it ran with (`SWEEP_RATES`), so its measured plan is carried;
+5. compiler: every decision's program emitted with plan-cost ON at the profile's rates; its plan is scored against
+   the measured arm that emitted the same plan (within the null of the best), unknown where no arm did
+   (`compiler-<arch>.tsv`, one row per decision).
 Tables only go to --out; raw output stays outside git (CLAUDE.md).
 """
 import hashlib, math, os, re, statistics as st, subprocess, sys
@@ -41,21 +45,32 @@ def site_ns(r, p):
     peak = f(r['fp32_lanes']) * f(r['clock_khz']) / 1e6 * 2.0
     l2, dram = f(r['l2_bytes_per_ns']), f(r['dram_bytes_per_ns'])
     tile = f(p['bm'] * p['bn'])
+    terms = r.get('lat_ns', 0) > 0  # plan-cost-terms: busiest SM, latency chain
 
     def wave(bw):
         used = min(bw, f(r['sms']))
-        wps = bw / used * warps / f(r['schedulers'])
-        q = wps * f(p['acc'])
-        rate = used * peak * (f(r['eff_max_pm']) / 1000.0 * q / (q + f(r['eff_half'])))
-        return bw * 2.0 * tile * kb / rate, bw * f(p['bm'] + p['bn']) * kb * e / l2
+        busy = float(math.ceil(bw / f(r['sms']))) if terms else bw / used
+        wps = busy * warps / f(r['schedulers'])
+        if terms:
+            q = max(wps, 1.0) * f(p['acc'])
+            eff = f(r['eff_max_pm']) / 1000.0 * min(wps, 1.0) * q / (q + f(r['eff_half']))
+        else:
+            q = wps * f(p['acc'])
+            eff = f(r['eff_max_pm']) / 1000.0 * q / (q + f(r['eff_half']))
+        ff = busy * 2.0 * tile * kb / (peak * eff) if terms else bw * 2.0 * tile * kb / (used * peak * eff)
+        return ff, bw * f(p['bm'] + p['bn']) * kb * e / l2
 
+    chain = 0.0
+    if terms:
+        trips, fly = max(float(math.ceil(kb / f(max(p['bk'], 1)))), 1.0), f(max(p['fly'], 1))
+        chain = (trips + fly - 1.0) / fly * f(r['lat_ns'])
     ff, lf = wave(min(w, blocks))
     ft, lt = wave(tail)
     full = waves - 1.0
     out = rows * c * e
     ws = f(p['s']) if p['comb'] == 'splitk' else 1.0
     d_ns = ((rows * k + k * c) * e + out * ws) / dram
-    kernel = max(full * max(ff, lf) + max(ft, lt), d_ns)
+    kernel = max(full * max(ff, lf, chain) + max(ft, lt, chain), d_ns)
     atomics = {'atomic': f(p['s']) * rows * c, 'streamk': (tiles + blocks) * tile}.get(p['comb'], 0.0)
     combine = atomics / f(r['atomic_ops_per_ns'])
     gap, issue = f(r['gap_ns']), f(r['issue_ns'])
@@ -114,6 +129,9 @@ def flags(arm):
 
 
 # the plan-cost sweep's arms (there `on` is plan-cost ON, `off-plan-cost+linear` / `on-base` the rules)
+# The rates the sweep's ON arm was emitted at (e32dcfb's profile): its measured plans re-emit only under them.
+SWEEP_RATES = {'rtx-4090': {'eff_max_pm': 475, 'eff_half': 6, 'lat_ns': 0},
+               'rtx-5090': {'eff_max_pm': 150, 'eff_half': 1, 'lat_ns': 0}}
 PC_ARMS = {'on': [], 'on-base': ['--gpu-off=plan-cost,linear'], 'off-plan-cost+linear': ['--gpu-off=plan-cost,linear'],
            'off-streamk+splitk-atomic+splitk': ['--gpu-off=streamk,splitk-atomic,splitk']}
 
@@ -154,7 +172,7 @@ def emit(mapal, arch, prog, arm, work, cost_on=False, fl=None):
 
 def shape(f):
     p = {k: int(f[k]) for k in ('rows', 'c', 'k', 'e', 'bm', 'bn', 'threads', 'per_sm', 'acc', 'tiles', 'blocks',
-                                'kb', 's')}
+                                'kb', 's', 'bk', 'fly')}
     p['comb'] = comb_of(f['cand'])
     return p
 
@@ -195,6 +213,7 @@ def main():
     work = os.environ.get('PLANCOST_WORK', f'/tmp/plancost-{arch}')
     os.makedirs(work, exist_ok=True)
     os.makedirs(out, exist_ok=True)
+    PC_ARMS['on'] = [f'--cost={k}={v}' for k, v in SWEEP_RATES.get(arch, {}).items()]
     rows, mirror, carried, dropped = [], [0, 0], 0, 0
     rates = None
     sources = [(load(results), '', lambda x: PLAN.match(x) and flags(x), False)]
@@ -225,13 +244,16 @@ def main():
             if len({x[2] for x in arms}) >= 2:
                 ref = next((x[2] for x in arms if x[0] == 'on'), arms[0][2])
                 cls = ','.join(sorted({rung(a) for a, _, pl in arms if pl != ref}))
+                # two arms that emit one plan measure the box's null (`on-base` / `off-plan-cost+linear`)
+                null = max([null] + [abs(x[1] / y[1] - 1) for i, x in enumerate(arms) for y in arms[i + 1:]
+                                     if x[2] == y[2]])
                 rows.append((prog + tag, cls, max(null, 0.02), arms))
     assert mirror[0] == mirror[1], f'mirror: {mirror[1]}/{mirror[0]} candidate ns reproduced'
     rows = split(rows)
     shapes = lambda pl: [dict(p) for _, p in pl]
 
-    def judge(part, rr, emax, ehalf):
-        r = dict(rr, eff_max_pm=emax, eff_half=ehalf)
+    def judge(part, rr, emax, ehalf, lat=None):
+        r = dict(rr, eff_max_pm=emax, eff_half=ehalf, lat_ns=rr.get('lat_ns', 0) if lat is None else lat)
         sq, picks, signs, errs = 0.0, [], [], []
         for prog, _, null, arms in part:
             pred = [sum(site_ns(r, p) for p in shapes(pl)) for _, _, pl in arms]
@@ -254,53 +276,57 @@ def main():
 
     fit = [x for x in rows if x[1] == 0]
     hold = [x for x in rows if x[1] == 1]
-    # the compiler's own pick (plan-cost ON, its built-in rates) on the hold-out: ok / unknown (no arm emitted it)
-    comp_ok, comp_unknown = 0, 0
-    for prog, _, null, arms in hold:
-        e = emit(mapal, arch, prog.split('@')[0], 'on', work, cost_on=True, fl=[])
+    # the compiler's own pick (plan-cost ON, its built-in rates) on every decision: the measured arm that emitted the
+    # same plan, ok when within max(null, 2 %) of the best; unknown where no arm did
+    comp = []
+    for prog, half, null, arms in rows:
+        e = emit(mapal, arch, prog.split('@')[0], 'compiler', work, cost_on=True, fl=[])
         plan = e and plan_of(e[2], e[3])
-        hit = [m for _, m, pl in arms if pl == plan]
-        if not hit:
-            comp_unknown += 1
-            continue
-        comp_ok += hit[0] <= min(m for _, m, _ in arms) * (1 + null)
-    best = None
-    for emax in range(100, 1001, 25):  # at most the FFMA peak
-        for ehalf in [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512]:
-            sq = judge(fit, rates, emax, ehalf)[0]
-            if best is None or sq < best[0]:
-                best = (sq, emax, ehalf)
-    _, emax, ehalf = best
+        hit = [(a, m) for a, m, pl in arms if pl == plan]
+        best = min(arms, key=lambda x: x[1])
+        ok = '' if not hit else int(hit[0][1] <= best[1] * (1 + null))
+        comp.append((prog, half, null, hit[0][0] if hit else '?', best[0], f'{best[1] and (hit[0][1] / best[1]):.3f}'
+                     if hit else '', ok))
+    # the fit (log-time L1, fit half only): the declared fitted rates — eff_max_pm, eff_half and, with the terms,
+    # lat_ns (0 = the sprint `plan-cost` model: no busiest-SM, latency-chain or warp-occupancy term)
+    grid = lambda lats: min(((judge(fit, rates, em, eh, lat)[0], em, eh, lat) for lat in lats
+                             for em in range(100, 1001, 25)
+                             for eh in [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256]))
+    _, em0, eh0, _ = grid([0])
+    _, emax, ehalf, lat = grid(range(50, 1601, 50))
     report = []
     for name, part in (('fit', fit), ('hold-out', hold), ('hold-pc', [x for x in hold if x[0].endswith('@pc')])):
-        for label, (em, eh) in (('seed', (rates['eff_max_pm'], rates['eff_half'])), ('fitted', (emax, ehalf))):
-            _, picks, signs, errs = judge(part, rates, em, eh)
-            report.append((name, label, em, eh, len(part), sum(picks), len(picks), sum(signs), len(signs),
+        for label, (em, eh, la) in (('seed', (rates['eff_max_pm'], rates['eff_half'], rates.get('lat_ns', 0))),
+                                    ('no-terms', (em0, eh0, 0)), ('fitted', (emax, ehalf, lat))):
+            _, picks, signs, errs = judge(part, rates, em, eh, la)
+            report.append((name, label, em, eh, la, len(part), sum(picks), len(picks), sum(signs), len(signs),
                            st.median(errs) if errs else float('nan')))
     tsv = f'{out}/holdout-{arch}.tsv'
     with open(tsv, 'w') as fh:
-        fh.write('half\trates\teff_max_pm\teff_half\tdecisions\tpick_ok\tpicks\tsign_ok\tpairs\tmedian_abs_log_err\n')
+        fh.write('half\trates\teff_max_pm\teff_half\tlat_ns\tdecisions\tpick_ok\tpicks\tsign_ok\tpairs\t'
+                 'median_abs_log_err\n')
         for x in report:
             fh.write('\t'.join(str(v) if not isinstance(v, float) else f'{v:.4f}' for v in x) + '\n')
     with open(f'{out}/decisions-{arch}.tsv', 'w') as fh:
         fh.write('program\thalf\tnull\tarm\tmeasured_ns\tpredicted_ns_fitted\n')
-        r = dict(rates, eff_max_pm=emax, eff_half=ehalf)
+        r = dict(rates, eff_max_pm=emax, eff_half=ehalf, lat_ns=lat)
         for prog, half, null, arms in rows:
             for arm, m, pl in arms:
                 fh.write(f'{prog}\t{"fit" if half == 0 else "hold"}\t{null:.4f}\t{arm}\t{m:.0f}\t'
                          f'{sum(site_ns(r, p) for p in shapes(pl)):.0f}\n')
     print(f'{arch}: carried {carried} arms ({dropped} dropped: kernel ids not re-emitted), {len(rows)} decisions '
           f'({len(fit)} fit / {len(hold)} hold-out); mirror {mirror[1]}/{mirror[0]}; fitted eff_max_pm={emax} '
-          f'eff_half={ehalf}')
+          f'eff_half={ehalf} lat_ns={lat} (no-terms eff {em0},{eh0})')
     for x in report:
-        print(f'  {x[0]:8} {x[1]:6} eff=({x[2]},{x[3]}) picks {x[5]}/{x[6]}  signs {x[7]}/{x[8]}  '
-              f'median|log err| {x[9]:.3f}')
-    print(f'  hold-out compiler picks {comp_ok}/{len(hold) - comp_unknown} ({comp_unknown} unknown: no arm emitted '
-          f'the pick)')
+        print(f'  {x[0]:8} {x[1]:8} eff=({x[2]},{x[3]}) lat={x[4]} picks {x[6]}/{x[7]}  signs {x[8]}/{x[9]}  '
+              f'median|log err| {x[10]:.3f}')
+    ch = [c for c in comp if c[1] == 1]
+    print(f'  hold-out compiler picks {sum(c[6] == 1 for c in ch)}/{sum(c[6] != "" for c in ch)} '
+          f'({sum(c[6] == "" for c in ch)} unknown: no arm emitted the pick)')
     with open(f'{out}/compiler-{arch}.tsv', 'w') as fh:
-        fh.write('decisions\tpick_ok\tunknown\n')
-        fh.write(f'{len(hold)}\t{comp_ok}\t{comp_unknown}\n')
-
+        fh.write('program\thalf\tnull\tcompiler_arm\tmeasured_best_arm\tcompiler_over_best\tok\n')
+        for c in comp:
+            fh.write(f'{c[0]}\t{"fit" if c[1] == 0 else "hold"}\t{c[2]:.4f}\t{c[3]}\t{c[4]}\t{c[5]}\t{c[6]}\n')
 
 if __name__ == '__main__':
     main()

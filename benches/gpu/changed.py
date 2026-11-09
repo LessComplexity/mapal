@@ -6,6 +6,7 @@ diff   — emit every bench program (gen_tiles.py) per arch x face on a base ref
          every changed row, each rung's OFF arm is emitted at HEAD; one whose emission differs from the shipped
          build is a differing arm. A row whose HEAD emission the arch's result cache already holds is `cached`.
            changed.py diff <out> [--base REF] [--base-emit PATH] [--archs ..] [--faces ..] [--rungs ..] [--jobs N]
+                           [--head-flags FLAG..]   (HEAD emitted with these flags, e.g. a gated rung ON)
            A runtime / harness change (RT_PATHS at the base vs the working tree) makes every row `changed`;
            OFF arms are probed only where the emission moved. Parts with GPU_RUNGS_OFF rows also probe
            `--gpu-on=<r>` for those rungs (arms `on-<r>`).
@@ -150,7 +151,7 @@ def diff(a):
             ROOT / 'benches/gpu/gen_tiles.py', Path(t) / 'tiles'))
         rows = [(p, arch, face) for p in sorted(set(head) | set(base)) for arch in a.archs for face in a.faces]
         hb = pool.map(lambda r: emission(bemit, base[r[0]], r[1], r[2]) if r[0] in base else '-', rows)
-        hh = pool.map(lambda r: emission(EMIT, head[r[0]], r[1], r[2]) if r[0] in head else '-', rows)
+        hh = pool.map(lambda r: emission(EMIT, head[r[0]], r[1], r[2], a.head_flags) if r[0] in head else '-', rows)
         cached = {arch: cached_keys(arch, rt) for arch in a.archs}
         if rt != rt_base:
             print(f'runtime/harness changed since {a.base} ({rt_base} -> {rt}): every row is measured again',
@@ -333,6 +334,9 @@ def main():
     d.add_argument('--faces', nargs='+', default=list(FACES), choices=list(FACES))
     d.add_argument('--rungs', nargs='+', help='the rungs whose arms to probe (default: every rung)')
     d.add_argument('--jobs', type=int)
+    d.add_argument('--head-flags', nargs='*', default=[],
+                   help="HEAD's emission flags (e.g. --head-flags=--gpu-on=plan-cost,linear: a gated rung's ON emission "
+                        "against the shipped one, with --base-emit HEAD's emitter)")
     e = sub.add_parser('env')
     e.add_argument('out')
     e.add_argument('arch')
