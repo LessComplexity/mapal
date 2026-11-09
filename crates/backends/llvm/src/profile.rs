@@ -1772,6 +1772,42 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // rtx-4090 1.06 (5090/H100/3090 inside null) — the lone tree-fold class needs its own gate, not a part row.
     // Closed by cpu-gpu-boundary `tree-gate` (ships ON, no row): rtx-4090 rowsum_4096 ON/OFF 0.944 (null 0.004)
     // ~ 1/1.056; it changes no other part's emission (cpu-gpu-boundary/report.md).
+    // plan-cost (stopgap, open missing facts): the cost model wins the `_512` chains (zero passes and ops cut) and
+    // loses where its picks leave SMs idle — a few-block GEMV whose DRAM feed it models as the whole chip's, and
+    // (5090) 256 tiles on 170 SMs it averages instead of loading the busiest SM. Hold-out picks 22/33 (4090),
+    // 27/43 (5090): docs/performance/evidence/plan-cost.md. Main ships the rules (the sweep's OFF arm, ≈ BASE).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "plan-cost",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-4090.tsv (raw results-rtx-4090.txt, \
+               raw-plan-cost-sweep.tar.gz) ON vs BASE: mm_1x1024x4096 0.0840 vs 0.0307 ms, pt_pj_m1_n1024_k4096 \
+               0.0381 vs 0.0170 ms, pt_decode_1024_256 46.54 vs 24.05 ms, pt_pj_m16_n2048_k7168 0.0707 vs 0.0567 ms; \
+               wins pt_twin_512 0.0368 vs 0.0477 ms, pt_diamond_512 0.0487 vs 0.0588 ms: mixed (45 changed: 24 W / \
+               8 L / 13 null)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "plan-cost",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-5090.tsv (raw results-rtx-5090.txt, \
+               raw-plan-cost-sweep.tar.gz) ON vs BASE: mm_1x1024x4096 0.0553 vs 0.0164 ms, mm_128x1024x2048 \
+               0.0737 vs 0.0450 ms, pt_mlp_2048 0.6170 vs 0.5619 ms, pt_decode_1024_256 48.48 vs 36.70 ms; wins \
+               pt_twin_512 0.0366 vs 0.0525 ms, pt_indep_512 0.0371 vs 0.0503 ms: mixed (77 changed: 23 W / 34 L / \
+               20 null)",
+    },
+    // linear changes two 5090 programs' emission (plan-cost on or off; none on the 4090): null.
+    RungOff {
+        profile: "rtx-5090",
+        rung: "linear",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-5090.tsv (raw results-rtx-5090.txt) ON vs BASE: \
+               pt_indep_4096 4.1837 vs 4.2098 ms, pt_diamond_4096 6.2586 vs 6.2664 ms (tol 2 %): null, the only \
+               programs whose emission `linear` changes",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

@@ -1,34 +1,39 @@
-# Continue after `site-geometry`
+# Continue after `plan-cost`
 
-Main checkout: branch **`site-geometry-latest`**, pushed, with a PR open to `main` (`gh pr view site-geometry-latest`). Plain summary: [`summary.md`](../summary.md). Rules every agent follows:
-[`CLAUDE.md`](../CLAUDE.md) (`AGENTS.md` → symlink). History: [session log](sessions/2026-10-29-summary-and-pr.md) (sprint: [site-geometry](sessions/2026-10-26-site-geometry.md)).
+Main checkout: branch **`plan-cost`** (local, not pushed; `site-geometry-latest` has the open PR to `main`). Rules
+every agent follows: [`CLAUDE.md`](../CLAUDE.md) (`AGENTS.md` → symlink). History: [session log](sessions/2026-11-08-plan-cost.md)
+(previous: [site-geometry](sessions/2026-10-26-site-geometry.md)).
 
 ## Where Mapal stands (best-of library legs and torch)
 
-End check, gaps and missing facts: [`site-geometry.md`](performance/evidence/site-geometry.md) (previous:
-[`recurrence-precision.md`](performance/evidence/recurrence-precision.md)). Only changed programs are re-run
+End check, gaps and missing facts: [`plan-cost.md`](performance/evidence/plan-cost.md) (previous:
+[`site-geometry.md`](performance/evidence/site-geometry.md)). Only changed programs are re-run
 (`benches/gpu/changed.py`, result cache `benches/results/cache/`); unchanged rows are carried.
 
 | | result (Mapal / best other) |
 | --- | --- |
-| ahead | causal 0.16–0.25, prefill 0.18–0.26, natural one-loop gen 0.17–0.25 on all four GPUs; conv / FIR / ew chains |
-| about even | rowsum, softmax, 2048 MLPs on 4090 |
-| behind | convmc_tf32 1.81–2.62, attn 4090 2.09, 512 chains 4090 1.86–2.18, 5090 GEMM cells 1.8, decode 1.1–1.5, convmc 1.13–1.61 |
+| shipped | the rules (plan-cost and 5090 `linear` gated OFF by stopgap rows); the README table holds |
+| plan-cost ON, measured | `_512` chains 4090 0.97–1.24 (BASE 1.17–1.37), 5090 1.15–1.77 (BASE 1.33–1.86) |
+| plan-cost ON, why gated | M=1 GEMV 2–3.6×, decode 1.94× / 1.32×, 5090 2048 sizes 1.07–1.16 vs BASE |
 
-## Candidate next sprint (not yet approved) — the missing facts (site-geometry G1–G4)
+## Candidate next sprint (not yet approved) — the missing facts that gate plan-cost
 
-The site-geometry rungs split by program on every GPU. Per CLAUDE.md ("a mixed result is a missing fact") the next
-step is the facts that separate winners from losers, each read by its rule; then the stopgap rows go:
+The launch side of the cost model is right (`_512` chains: zero passes → 0, ops 3→2, idle gaps 6.6 → 0.6 µs); the
+kernel side picks grids that leave SMs idle. Add, each as one fact with its `testgen` property test, then drop the
+stopgap rows and re-time only the rows whose emission changes:
 
-1. **G1 search reach**: `search.py plan` times every row a knob moves; then ship the picks (4090 `resident` 1 0.915,
-   `warps` 8 0.911; H100 `split` 16 0.713; 3090 `warps` 4 0.855).
-2. **G2 combine cost** of a one-row site (atomic: a zero pass per trip + contention on the row; workspace: neither) →
-   `row-split` per case (H100 workspace wins 41–56 %, atomic loses 14–26 % elsewhere).
-3. **G3** panel trips per partition (k/S)/bk' from the split grid's residency, and operands' L2 residency at launch →
-   `fill-wave`.
-4. **G4** last-wave balance of the reshaped grid, blocks / (sms · ⌈blocks/sms⌉) → `fit-first`.
-5. G6 emitter bug on H100's generic path (value gate −0.8 % on decode `off-arch-rungs`); G7 ptxas/SASS for probes;
-   runtime spin rule vs external load (measure first).
+1. **In-flight bytes per SM** (`TargetProfile`: DRAM / L2 latency; per warp `stages · (bm+bn) · bk · e` in flight):
+   feed and FFMA rate capped by `Σ_SM inflight / latency`. Closes M=1 GEMV, decode, `pj_m16` (4090), 5090
+   `mm_128x1024x{1024,2048}`.
+2. **Per-SM load of a wave** (site-geometry G4): the busiest SM's `⌈B_w/sms⌉` blocks. Closes 5090 2048/4096 (256 tiles
+   on 170 SMs; stream-K's balance lost).
+3. **k-depth** (G3): panel trips per partition `(k/S)/bk` × per-trip latency at the site's stages.
+4. Then hold-out ≥ 90 % per part → delete the 4090 / 5090 plan rows (design step 9: 7 / 14).
+5. Still open from the plan-cost design: grid union 6(b) (one grid vs 2 launches vs streams), tile flags (c) and the
+   zero-free split with epilogue (step 8), the prologue, CUDA graph / PDL for loops (`pdl` needs sm ≥ 90; OFF on
+   5090 by row).
+6. Unmeasured: `px_diamond_128` 5090 rules emission ≠ BASE; 20 changed programs with no library leg (`NO_LEG`);
+   `skinny_8x4096x256_f64` hot-loop intent MISMATCH (not a plan-cost rung). Site-geometry G1, G2, G6, G7 stay open.
 
 ## Live state
 
@@ -43,7 +48,7 @@ step is the facts that separate winners from losers, each read by its rule; then
 
 ```sh
 cd /Volumes/LessComplex/Personal/mapal
-git status --short && git log --oneline -3
-cat CLAUDE.md docs/performance/evidence/site-geometry.md
+git switch plan-cost && git status --short && git log --oneline -3
+cat CLAUDE.md docs/performance/evidence/plan-cost.md
 vastai show instances --raw | python3 -c 'import json,sys; print([(x["id"],x.get("label")) for x in json.load(sys.stdin)])'
 ```

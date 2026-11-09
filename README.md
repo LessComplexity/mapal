@@ -215,6 +215,26 @@ unchanged there) ([end check, gaps and causes](docs/performance/evidence/site-ge
 | ewconvew_2048_5 † | **0.53** | **0.51** | **0.51** | **0.53** |
 | gen_1024_512_256 | **0.17** | **0.24** | **0.25** | **0.15** |
 
+### Cost-model plans (plan-cost), November 2026 — measured, shipped OFF
+
+Mapal / best other, rules → cost model, on the November boxes; the cost model ships OFF on both parts until it
+stops losing elsewhere ([end check](docs/performance/evidence/plan-cost.md)).
+
+| chain | RTX 4090 512 | RTX 5090 512 | RTX 5090 2048 |
+| --- | ---: | ---: | ---: |
+| indep | 1.24 → 1.07 | 1.75 → 1.29 | 1.10 → 1.18 |
+| twin | 1.26 → **0.97** | 1.71 → 1.19 | 1.07 → 1.25 |
+| mlp | 1.17 → 1.07 | 1.33 → 1.15 | 1.09 → 1.20 |
+| mlp2 | 1.37 → 1.24 | 1.86 → 1.77 | 1.10 → 1.20 |
+| fanout | 1.17 → 1.07 | 1.38 → 1.23 | 1.16 → 1.26 |
+| diamond | 1.25 → 1.03 | 1.52 → 1.21 | 1.09 → 1.20 |
+
+| other changed programs, ON / rules | RTX 4090 | RTX 5090 |
+| --- | ---: | ---: |
+| geomean (45 / 77 programs) | 1.026 | 1.033 |
+| mm_1x1024x4096 | 2.74 | 3.37 |
+| decode_1024_256 | 1.94 | 1.32 |
+
 ### Three builds
 
 | build                                        | what you get                                                     |

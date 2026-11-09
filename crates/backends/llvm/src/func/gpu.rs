@@ -6131,8 +6131,11 @@ mod tests {
             (2048, 2048, 2048),
             (4096, 4096, 4096),
         ];
-        let on = crate::GpuArms::default();
+        // The rung forced on: the 4090/5090 rows ship it off (plan-cost stopgap).
+        let mut on = crate::GpuArms::default();
+        on.on.plan_cost = true;
         let mut rules = on;
+        rules.on.plan_cost = false;
         rules.off.plan_cost = true;
         let mut no_atomic = on;
         no_atomic.off.splitk_atomic = true;
@@ -6198,6 +6201,7 @@ mod tests {
     fn a_forced_split_is_the_only_plan() {
         let mut forced = crate::GpuArms::default();
         forced.splitk = 4;
+        forced.on.plan_cost = true;
         let mut ranked = 0;
         for p in [&RTX_4090, &RTX_5090] {
             for (m, n, k) in [(16, 2048, 7168), (512, 512, 512), (4096, 4096, 4096)] {

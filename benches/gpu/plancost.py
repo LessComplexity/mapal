@@ -85,6 +85,15 @@ def load(path):
         if m:
             t[(m[1], m[2])].append(float(m[3]))
             continue
+        # splitk cells (default-face legs `<cell>` / `<cell>.<arm>`; `_c`/`_r`/… are other faces): med_ms per pass
+        m = re.match(r'pass=\d+ cell=(\S+) time leg=(\S+) .*med_ms=([\d.]+)', l)
+        if m and (m[2] == m[1] or m[2].startswith(m[1] + '.')):
+            t[(m[1], m[2][len(m[1]) + 1:] or 'on')].append(float(m[3]))
+            continue
+        m = re.match(r'pass=\d+ cell=(\S+) arm stem=(\S+) face=default\S* (.*)', l)
+        if m and (m[2] == m[1] or m[2].startswith(m[1] + '.')):
+            ks[(m[1], m[2][len(m[1]) + 1:] or 'on')] |= set(re.findall(r'=mapal_tile_([0-9a-f]{16})', m[3]))
+            continue
         m = re.match(r'probe_kernels prog=(\S+) face=_default arm=(\S+) rep=\d+ (.*)', l)
         if m:
             ks[(m[1], m[2])] |= {k for k, _ in re.findall(r'(\w+) ms=([\d.]+)', m[3])}
@@ -104,15 +113,22 @@ def flags(arm):
     return None
 
 
-def emit(mapal, arch, prog, arm, work, cost_on=False):
+# the plan-cost sweep's arms (there `on` is plan-cost ON, `off-plan-cost+linear` / `on-base` the rules)
+PC_ARMS = {'on': [], 'on-base': ['--gpu-off=plan-cost,linear'], 'off-plan-cost+linear': ['--gpu-off=plan-cost,linear'],
+           'off-streamk+splitk-atomic+splitk': ['--gpu-off=streamk,splitk-atomic,splitk']}
+
+
+def emit(mapal, arch, prog, arm, work, cost_on=False, fl=None):
     src = f'{ROOT}/benches/algorithms/{prog}.mapal'
-    fl = flags(arm)
+    fl = flags(arm) if fl is None else fl
     if fl is None or not os.path.exists(src):
         return None
     out = f'{work}/{prog}__{arm}' + ('__pc' if cost_on else '')
-    if not os.path.exists(out + '.ll'):
+    # plan-cost ON forced where the arm does not turn it off: 4090/5090 ship it off (stopgap rows)
+    on = [] if any('plan-cost' in x for x in fl) else ['--gpu-on=plan-cost,linear']
+    if not os.path.exists(out + '.dev.ll'):  # a killed run leaves .ll alone
         r = subprocess.run([mapal, 'build', src, f'--target={arch}', '--emit-only', '--plan-cands', '-o', out]
-                           + ([] if cost_on else ['--gpu-off=plan-cost']) + fl, capture_output=True, text=True)
+                           + (on if cost_on else ['--gpu-off=plan-cost']) + fl, capture_output=True, text=True)
         if r.returncode or not os.path.exists(out + '.dev.ll'):
             return None
     ids = {f'{int(x) & (2 ** 64 - 1):016x}' for x in
@@ -163,49 +179,53 @@ def split(rows):
         by[x[1]].append(x)
     out = []
     for cls, xs in by.items():
-        for i, x in enumerate(sorted(xs, key=lambda x: h(x[0]))):
-            out.append((x[0], (i + h(cls)) % 2, x[2], x[3]))
+        # by program, not row: `prog` and `prog@pc` (the plan-cost sweep's rows of it) land in the same half
+        base = sorted({x[0].split('@')[0] for x in xs}, key=h)
+        for x in xs:
+            out.append((x[0], (base.index(x[0].split('@')[0]) + h(cls)) % 2, x[2], x[3]))
     return sorted(out)
 
 
 def main():
     a = sys.argv[1:]
     arch, results = a[0], a[1]
+    pc = [a[i + 1] for i, x in enumerate(a) if x == '--pc']  # plan-cost sweep results (ladder + changed programs)
     out = a[a.index('--out') + 1] if '--out' in a else f'{ROOT}/benches/results/evidence/plan-cost'
     mapal = a[a.index('--mapal') + 1] if '--mapal' in a else f'{ROOT}/target/release/mapal'
     work = os.environ.get('PLANCOST_WORK', f'/tmp/plancost-{arch}')
     os.makedirs(work, exist_ok=True)
     os.makedirs(out, exist_ok=True)
-    t, ks = load(results)
-    progs = sorted({p for p, _ in t if (p, 'on') in t})
     rows, mirror, carried, dropped = [], [0, 0], 0, 0
     rates = None
-    for prog in progs:
-        on = st.median(t[(prog, 'on')])
-        null = abs(st.median(t[(prog, 'null')]) / on - 1) if (prog, 'null') in t else 0.02
-        arms = []
-        for arm in sorted({x for (q, x) in t if q == prog and PLAN.match(x)}):
-            e = emit(mapal, arch, prog, arm, work)
-            if e is None or not e[3]:
-                continue
-            ids, r, cands, picks = e
-            if ks.get((prog, arm)) and not ks[(prog, arm)] <= ids:
-                dropped += 1
-                continue
-            carried += 1
-            rates = rates or r
-            for site in cands.values():
-                for c in site.values():
-                    mirror[0] += 1
-                    mirror[1] += abs(site_ns(r, shape(c)) - float(c['ns'])) <= 0.051
-            plan = plan_of(cands, picks)
-            if plan is not None:
-                arms.append((arm, st.median(t[(prog, arm)]) * 1e6, plan))
-        # a decision: two or more carried arms that emit different plans; its class: the rungs that move the plan
-        if len({x[2] for x in arms}) >= 2:
-            ref = next((x[2] for x in arms if x[0] == 'on'), arms[0][2])
-            cls = ','.join(sorted({rung(a) for a, _, pl in arms if pl != ref}))
-            rows.append((prog, cls, max(null, 0.02), arms))
+    sources = [(load(results), '', lambda x: PLAN.match(x) and flags(x), False)]
+    sources += [(load(x), '@pc', PC_ARMS.get, True) for x in pc]
+    for (t, ks), tag, armfl, cost_on in sources:
+        for prog in sorted({p for p, _ in t if (p, 'on') in t}):
+            on = st.median(t[(prog, 'on')])
+            null = abs(st.median(t[(prog, 'null')]) / on - 1) if (prog, 'null') in t else 0.02
+            arms = []
+            for arm in sorted({x for (q, x) in t if q == prog and armfl(x) is not None}):
+                e = emit(mapal, arch, prog, arm, work, cost_on, armfl(arm))
+                if e is None or not e[3]:
+                    continue
+                ids, r, cands, picks = e
+                if ks.get((prog, arm)) and not ks[(prog, arm)] <= ids:
+                    dropped += 1
+                    continue
+                carried += 1
+                rates = rates or r
+                for site in cands.values():
+                    for c in site.values():
+                        mirror[0] += 1
+                        mirror[1] += abs(site_ns(r, shape(c)) - float(c['ns'])) <= 0.051
+                plan = plan_of(cands, picks)
+                if plan is not None:
+                    arms.append((arm, st.median(t[(prog, arm)]) * 1e6, plan))
+            # a decision: two or more carried arms that emit different plans; its class: the rungs that move the plan
+            if len({x[2] for x in arms}) >= 2:
+                ref = next((x[2] for x in arms if x[0] == 'on'), arms[0][2])
+                cls = ','.join(sorted({rung(a) for a, _, pl in arms if pl != ref}))
+                rows.append((prog + tag, cls, max(null, 0.02), arms))
     assert mirror[0] == mirror[1], f'mirror: {mirror[1]}/{mirror[0]} candidate ns reproduced'
     rows = split(rows)
     shapes = lambda pl: [dict(p) for _, p in pl]
@@ -237,7 +257,7 @@ def main():
     # the compiler's own pick (plan-cost ON, its built-in rates) on the hold-out: ok / unknown (no arm emitted it)
     comp_ok, comp_unknown = 0, 0
     for prog, _, null, arms in hold:
-        e = emit(mapal, arch, prog, 'on', work, cost_on=True)
+        e = emit(mapal, arch, prog.split('@')[0], 'on', work, cost_on=True, fl=[])
         plan = e and plan_of(e[2], e[3])
         hit = [m for _, m, pl in arms if pl == plan]
         if not hit:
@@ -252,7 +272,7 @@ def main():
                 best = (sq, emax, ehalf)
     _, emax, ehalf = best
     report = []
-    for name, part in (('fit', fit), ('hold-out', hold)):
+    for name, part in (('fit', fit), ('hold-out', hold), ('hold-pc', [x for x in hold if x[0].endswith('@pc')])):
         for label, (em, eh) in (('seed', (rates['eff_max_pm'], rates['eff_half'])), ('fitted', (emax, ehalf))):
             _, picks, signs, errs = judge(part, rates, em, eh)
             report.append((name, label, em, eh, len(part), sum(picks), len(picks), sum(signs), len(signs),

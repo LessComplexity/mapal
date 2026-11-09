@@ -1,5 +1,7 @@
 half	rates	eff_max_pm	eff_half	decisions	pick_ok	picks	sign_ok	pairs	median_abs_log_err
-fit	seed	475	6	10	4	10	166	222	0.1013
-fit	fitted	475	6	10	4	10	166	222	0.1013
-hold-out	seed	475	6	7	5	7	8	10	0.1376
-hold-out	fitted	475	6	7	5	7	8	10	0.1376
+fit	seed	475	6	35	26	35	225	355	0.0778
+fit	fitted	100	1	35	27	35	238	355	0.0827
+hold-out	seed	475	6	33	18	33	188	261	0.0749
+hold-out	fitted	100	1	33	22	33	206	261	0.1081
+hold-pc	seed	475	6	19	13	19	15	28	0.0546
+hold-pc	fitted	100	1	19	15	19	21	28	0.1395
