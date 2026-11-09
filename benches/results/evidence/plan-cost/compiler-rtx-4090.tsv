@@ -2,67 +2,67 @@ program	half	null	compiler_arm	measured_best_arm	compiler_over_best	ok
 mm_128x1024x1024	fit	0.0200	?	off-fill-wave		
 mm_128x1024x1024@pc	fit	0.0200	?	on		
 mm_128x1024x2048	hold	0.0200	?	off-fill-wave		
-mm_128x1024x2048@pc	fit	0.0200	?	on		
+mm_128x1024x2048@pc	hold	0.0200	?	on		
 mm_128x1024x4096	hold	0.0496	?	on-g-warps-8		
 mm_128x1024x4096@pc	hold	0.0200	?	on		
-mm_128x2048x1024	hold	0.0200	off-fill-wave	off-fill-wave	1.000	1
+mm_128x2048x1024	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
 mm_128x2048x1024@pc	fit	0.0200	on	on	1.000	1
-mm_128x2048x7168	hold	0.0200	?	on-g-warps-8		
-mm_128x2048x7168@pc	hold	0.0200	?	off-plan-cost+linear		
+mm_128x2048x7168	fit	0.0200	?	on-g-warps-8		
+mm_128x2048x7168@pc	fit	0.0200	?	off-plan-cost+linear		
 mm_128x256x256@pc	fit	0.0200	on	on	1.000	1
 mm_128x256x512	fit	0.0306	?	on		
 mm_128x256x512@pc	fit	0.0200	?	off-plan-cost+linear		
-mm_128x512x256	hold	0.0200	off-fill-wave	off-fill-wave	1.000	1
-mm_128x512x256@pc	hold	0.0539	on	on	1.000	1
-mm_16x1024x4096	hold	0.0200	?	off-fill-wave		
+mm_128x512x256	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
+mm_128x512x256@pc	fit	0.0539	on	on	1.000	1
+mm_16x1024x4096	fit	0.0200	?	off-fill-wave		
 mm_16x1024x4096@pc	fit	0.0200	on	on	1.000	1
 mm_16x18432x7168	hold	0.0200	on	on-g-split-16	1.088	0
-mm_16x2048x7168	fit	0.0200	off-fill-wave	on	1.037	0
+mm_16x2048x7168	hold	0.0200	off-fill-wave	on	1.037	0
 mm_16x2048x7168@pc	hold	0.0200	on	off-plan-cost+linear	1.033	0
-mm_1x1024x4096	fit	0.0200	?	on		
-mm_1x1024x4096@pc	fit	0.0200	?	off-plan-cost+linear		
-mm_1x18432x7168	fit	0.0200	?	on		
-mm_1x18432x7168@pc	fit	0.0200	on	on	1.000	1
-mm_1x2048x7168	fit	0.0200	?	off-fill-wave		
+mm_1x1024x4096	hold	0.0200	?	on		
+mm_1x1024x4096@pc	hold	0.0200	?	off-plan-cost+linear		
+mm_1x18432x7168	hold	0.0200	?	on		
+mm_1x18432x7168@pc	hold	0.0200	on	on	1.000	1
+mm_1x2048x7168	hold	0.0200	?	off-fill-wave		
 mm_1x2048x7168@pc	hold	0.0200	?	off-plan-cost+linear		
 pt_attn_1024_128	fit	0.0200	?	on		
 pt_attn_1024_128@pc	fit	0.0339	?	on		
 pt_attn_1024_64	hold	0.0200	?	on		
 pt_attn_1024_64@pc	hold	0.0200	?	on		
-pt_attn_2048_128	hold	0.0200	off-fill-wave	off-fill-wave	1.000	1
+pt_attn_2048_128	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1
 pt_attn_2048_128@pc	fit	0.0200	?	on-base		
-pt_attn_2048_64	hold	0.0200	?	on		
-pt_attn_2048_64@pc	hold	0.0200	on	on	1.000	1
+pt_attn_2048_64	fit	0.0200	?	on		
+pt_attn_2048_64@pc	fit	0.0200	on	on	1.000	1
 pt_causal_1024_256@pc	fit	0.0251	on	on	1.000	1
 pt_decode_1024_256@pc	hold	0.0200	?	off-plan-cost+linear		
 pt_gen_1024_512_256@pc	hold	0.0645	on	on	1.000	1
-pt_mlp_512	fit	0.4696	off-fill-wave	on-g-bk-8	1.334	1
+pt_mlp_512	hold	0.4696	off-fill-wave	on-g-bk-8	1.334	1
 pt_mlp_512@pc	hold	0.0200	on	on	1.000	1
 pt_pj_m128_n1024_k4096	fit	0.0441	?	on		
 pt_pj_m128_n1024_k4096@pc	fit	0.0200	?	on		
-pt_pj_m128_n2048_k7168	fit	0.0200	?	on		
+pt_pj_m128_n2048_k7168	hold	0.0200	?	on		
 pt_pj_m128_n2048_k7168@pc	hold	0.0200	?	off-plan-cost+linear		
 pt_pj_m16_n1024_k4096	fit	0.0342	?	on		
-pt_pj_m16_n1024_k4096@pc	hold	0.0381	on	on	1.000	1
-pt_pj_m16_n18432_k7168	fit	0.0200	on	off-fit-first	1.089	0
-pt_pj_m16_n2048_k7168	hold	0.0729	off-fill-wave	on	1.247	0
-pt_pj_m16_n2048_k7168@pc	hold	0.0200	on	off-plan-cost+linear	1.247	0
-pt_pj_m1_n1024_k4096	fit	0.0223	?	on		
-pt_pj_m1_n1024_k4096@pc	fit	0.0200	?	on-base		
+pt_pj_m16_n1024_k4096@pc	fit	0.0381	on	on	1.000	1
+pt_pj_m16_n18432_k7168	hold	0.0200	on	off-fit-first	1.089	0
+pt_pj_m16_n2048_k7168	fit	0.0729	off-fill-wave	on	1.247	0
+pt_pj_m16_n2048_k7168@pc	fit	0.0200	on	off-plan-cost+linear	1.247	0
+pt_pj_m1_n1024_k4096	hold	0.0223	?	on		
+pt_pj_m1_n1024_k4096@pc	hold	0.0200	?	on-base		
 pt_pj_m1_n18432_k7168	hold	0.0200	?	off-fill-wave		
 pt_pj_m1_n18432_k7168@pc	hold	0.0200	on	on	1.000	1
-pt_pj_m1_n2048_k7168	hold	0.0818	?	off-fill-wave		
-pt_pj_m1_n2048_k7168@pc	hold	0.0267	?	on-base		
+pt_pj_m1_n2048_k7168	fit	0.0818	?	off-fill-wave		
+pt_pj_m1_n2048_k7168@pc	fit	0.0267	?	on-base		
 pt_prefill_1024_512_256@pc	fit	0.0631	on	on	1.000	1
-pt_rm_m128_d1024_h2048@pc	fit	0.0200	?	on		
-pt_rm_m128_d256_h512@pc	hold	0.0209	?	off-streamk+splitk-atomic+splitk		
-pt_rmlp1024x2048_128	hold	0.0200	?	on		
+pt_rm_m128_d1024_h2048@pc	hold	0.0200	?	on		
+pt_rm_m128_d256_h512@pc	fit	0.0209	?	off-streamk+splitk-atomic+splitk		
+pt_rmlp1024x2048_128	fit	0.0200	?	on		
 pt_rmlp1024x2048_128@pc	fit	0.0232	?	on		
 pt_rmlp256x512_128@pc	fit	0.0200	?	on		
 pt_rmlp_128x1024x2048@pc	hold	0.0200	?	on		
 pt_rmlp_128x256x512@pc	hold	0.0200	?	on-base		
-pt_rq_mlp_512	fit	0.2444	off-fill-wave	on	1.083	1
-pt_rq_mlp_512@pc	fit	0.0905	on	on	1.000	1
+pt_rq_mlp_512	hold	0.2444	off-fill-wave	on	1.083	1
+pt_rq_mlp_512@pc	hold	0.0905	on	on	1.000	1
 pt_rq_twin_512	hold	0.1519	off-fill-wave	off-fill-wave	1.000	1
 pt_rq_twin_512@pc	hold	0.0200	on	on	1.000	1
 pt_twin_512	fit	0.0200	off-fill-wave	off-fill-wave	1.000	1

@@ -9,15 +9,17 @@
    (`; mapal.rates`) and the plan it emitted (`; mapal.plan … combine= S=`); an arm's predicted time is the sum over its
    sites of the emitted candidate's ns, plus one constant per program (the work no candidate changes);
 3. mirror: `site_ns` re-evaluated here from each line's inputs must equal the printed ns (to its printed 0.1 ns);
-4. split the decisions by rung class (the rungs whose arms move the plan off `on`'s), hash-ordered and alternating
-   within each class (a program and its `@pc` rows in one half); a decision's null is max(the `null` arm, the spread
-   of two arms that emit one plan, 2 %); fit `eff_max_pm`, `eff_half` and `lat_ns` (log-time L1; plan-cost-terms:
-   busiest SM, latency chain, warp occupancy — `lat_ns` 0 is the sprint `plan-cost` model, reported as `no-terms`)
-   on one half; report on the other: pick accuracy (the argmin arm within the null of the measured best), pairwise
-   sign accuracy, median |log err| of each arm's predicted time anchored at the program's `on` arm
-   (`pred_i − pred_on + meas_on`: no constant fitted on the half it scores). The sweep's ON arm is re-emitted at
+4. split the decisions by program (a program and its `@pc` rows in one half: no kernel timed in the fit is scored),
+   2-fold per hash salt, each split used both ways (`SALTS`: 6 folds); a decision's null is max(the `null` arm, the
+   spread of two arms that emit one plan, 2 %); per fold fit `eff_max_pm`, `eff_half` and `lat_ns` (log-time L1;
+   plan-cost-terms: busiest SM, latency chain, warp occupancy — `lat_ns` 0 is the sprint `plan-cost` model, reported
+   as `no-terms`, eff refit) on the fit half; report on the other: pick accuracy (the argmin arm within the null of
+   the measured best), pairwise sign accuracy, median |log err| of each arm's predicted time anchored at the
+   program's `on` arm (`pred_i − pred_on + meas_on`: no constant fitted on the half it scores); then mean / min / max
+   over the folds and the per-fold terms − no-terms pick gain. A fitted rate on its grid's edge is flagged `edge` (a
+   model finding, not a rate). `all`: the rates fitted on every decision. The sweep's ON arm is re-emitted at
    the rates it ran with (`SWEEP_RATES`), so its measured plan is carried;
-5. compiler: every decision's program emitted with plan-cost ON at the profile's rates; its plan is scored against
+5. compiler: every decision's program (half: fold 0's) emitted with plan-cost ON at the profile's rates; its plan is scored against
    the measured arm that emitted the same plan (within the null of the best), unknown where no arm did
    (`compiler-<arch>.tsv`, one row per decision).
 Tables only go to --out; raw output stays outside git (CLAUDE.md).
@@ -189,19 +191,19 @@ def rung(arm):
     return f'g-{m[1]}' if m else arm.split('-', 1)[-1]
 
 
-def split(rows):
-    """half per decision: hash order within each rung class, alternating from a class-hashed start."""
-    h = lambda x: int(hashlib.md5(x.encode()).hexdigest(), 16)
-    by = defaultdict(list)
-    for x in rows:
-        by[x[1]].append(x)
+SALTS = ('', 'b', 'c')
+
+
+def folds(rows, salts=SALTS):
+    """[(fit, hold)]: per salt a 2-way split by program (hash order, alternating), used both ways."""
+    base = lambda x: x[0].split('@')[0]
     out = []
-    for cls, xs in by.items():
-        # by program, not row: `prog` and `prog@pc` (the plan-cost sweep's rows of it) land in the same half
-        base = sorted({x[0].split('@')[0] for x in xs}, key=h)
-        for x in xs:
-            out.append((x[0], (base.index(x[0].split('@')[0]) + h(cls)) % 2, x[2], x[3]))
-    return sorted(out)
+    for s in salts:
+        progs = sorted({base(x) for x in rows}, key=lambda q: hashlib.md5((s + q).encode()).hexdigest())
+        half = [[x for x in rows if progs.index(base(x)) % 2 == i] for i in (0, 1)]
+        assert not {base(x) for x in half[0]} & {base(x) for x in half[1]}, 'a program in both halves'
+        out += [tuple(half), tuple(half[::-1])]
+    return out
 
 
 def main():
@@ -249,14 +251,17 @@ def main():
                                      if x[2] == y[2]])
                 rows.append((prog + tag, cls, max(null, 0.02), arms))
     assert mirror[0] == mirror[1], f'mirror: {mirror[1]}/{mirror[0]} candidate ns reproduced'
-    rows = split(rows)
-    shapes = lambda pl: [dict(p) for _, p in pl]
+    rows = sorted(rows)
+    fs = folds(rows)
+    hold0 = {x[0] for x in fs[0][1]}
 
     def judge(part, rr, emax, ehalf, lat=None):
         r = dict(rr, eff_max_pm=emax, eff_half=ehalf, lat_ns=rr.get('lat_ns', 0) if lat is None else lat)
+        ns = {}  # one site shape, one rate set: one site_ns
         sq, picks, signs, errs = 0.0, [], [], []
         for prog, _, null, arms in part:
-            pred = [sum(site_ns(r, p) for p in shapes(pl)) for _, _, pl in arms]
+            pred = [sum(ns[p] if p in ns else ns.setdefault(p, site_ns(r, dict(p))) for _, p in pl)
+                    for _, _, pl in arms]
             meas = [m for _, m, _ in arms]
             # the fit: one constant per program from its own (fit-half) arms
             cst = st.mean(m - q for m, q in zip(meas, pred))
@@ -274,59 +279,71 @@ def main():
                         signs.append((pred[i] < pred[j]) == (meas[i] < meas[j]))
         return sq, picks, signs, errs
 
-    fit = [x for x in rows if x[1] == 0]
-    hold = [x for x in rows if x[1] == 1]
     # the compiler's own pick (plan-cost ON, its built-in rates) on every decision: the measured arm that emitted the
     # same plan, ok when within max(null, 2 %) of the best; unknown where no arm did
     comp = []
-    for prog, half, null, arms in rows:
+    for prog, _, null, arms in rows:
         e = emit(mapal, arch, prog.split('@')[0], 'compiler', work, cost_on=True, fl=[])
         plan = e and plan_of(e[2], e[3])
         hit = [(a, m) for a, m, pl in arms if pl == plan]
         best = min(arms, key=lambda x: x[1])
         ok = '' if not hit else int(hit[0][1] <= best[1] * (1 + null))
-        comp.append((prog, half, null, hit[0][0] if hit else '?', best[0], f'{best[1] and (hit[0][1] / best[1]):.3f}'
-                     if hit else '', ok))
+        comp.append((prog, int(prog in hold0), null, hit[0][0] if hit else '?', best[0],
+                     f'{best[1] and (hit[0][1] / best[1]):.3f}' if hit else '', ok))
     # the fit (log-time L1, fit half only): the declared fitted rates — eff_max_pm, eff_half and, with the terms,
     # lat_ns (0 = the sprint `plan-cost` model: no busiest-SM, latency-chain or warp-occupancy term)
-    grid = lambda lats: min(((judge(fit, rates, em, eh, lat)[0], em, eh, lat) for lat in lats
-                             for em in range(100, 1001, 25)
-                             for eh in [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256]))
-    _, em0, eh0, _ = grid([0])
-    _, emax, ehalf, lat = grid(range(50, 1601, 50))
+    EM, EH, LAT = range(100, 1001, 25), [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256], range(50, 1601, 50)
+    grid = lambda part, lats: min((judge(part, rates, em, eh, lat)[0], em, eh, lat) for lat in lats
+                                  for em in EM for eh in EH)[1:]
+    # eff_half 0 is the floor (no ramp), not an edge
+    edge = lambda em, eh, la: ','.join(n for n, hit in (('eff_max', em in (EM[0], EM[-1])), ('eff_half', eh == EH[-1]),
+                                                          ('lat', la in (LAT[0], LAT[-1]))) if hit) or '-'
+    seed = (rates['eff_max_pm'], rates['eff_half'], rates.get('lat_ns', 0))
     report = []
-    for name, part in (('fit', fit), ('hold-out', hold), ('hold-pc', [x for x in hold if x[0].endswith('@pc')])):
-        for label, (em, eh, la) in (('seed', (rates['eff_max_pm'], rates['eff_half'], rates.get('lat_ns', 0))),
-                                    ('no-terms', (em0, eh0, 0)), ('fitted', (emax, ehalf, lat))):
-            _, picks, signs, errs = judge(part, rates, em, eh, la)
-            report.append((name, label, em, eh, la, len(part), sum(picks), len(picks), sum(signs), len(signs),
-                           st.median(errs) if errs else float('nan')))
+    for f, (fit, hold) in enumerate(fs):
+        for label, (em, eh, la) in (('seed', seed), ('no-terms', grid(fit, [0])), ('terms', grid(fit, LAT))):
+            _, picks, signs, errs = judge(hold, rates, em, eh, la)
+            report.append((f, label, em, eh, la, edge(em, eh, la) if label != 'seed' else '-', len(fit), len(hold),
+                           sum(picks), len(picks), sum(signs), len(signs), st.median(errs) if errs else float('nan')))
+    allr = grid(rows, LAT)
+    acc = lambda lab: [x[8] / x[9] for x in report if x[1] == lab]
+    gain = [t[8] - n[8] for t, n in zip(*[[x for x in report if x[1] == lab] for lab in ('terms', 'no-terms')])]
     tsv = f'{out}/holdout-{arch}.tsv'
     with open(tsv, 'w') as fh:
-        fh.write('half\trates\teff_max_pm\teff_half\tlat_ns\tdecisions\tpick_ok\tpicks\tsign_ok\tpairs\t'
+        fh.write('fold\trates\teff_max_pm\teff_half\tlat_ns\tedge\tfit\tdecisions\tpick_ok\tpicks\tsign_ok\tpairs\t'
                  'median_abs_log_err\n')
         for x in report:
             fh.write('\t'.join(str(v) if not isinstance(v, float) else f'{v:.4f}' for v in x) + '\n')
+        for lab in ('seed', 'no-terms', 'terms'):
+            a = acc(lab)
+            fh.write(f'mean/min/max\t{lab}\t\t\t\t\t\t\t{st.mean(a):.3f}\t{min(a):.3f}\t{max(a):.3f}\t\t\n')
+        fh.write(f'gain\tterms-no-terms\t\t\t\t\t\t\t{",".join(map(str, gain))}\t\t\t\t\n')
+        fh.write(f'all\tterms\t{allr[0]}\t{allr[1]}\t{allr[2]}\t{edge(*allr)}\t{len(rows)}\t\t\t\t\t\t\n')
     with open(f'{out}/decisions-{arch}.tsv', 'w') as fh:
-        fh.write('program\thalf\tnull\tarm\tmeasured_ns\tpredicted_ns_fitted\n')
-        r = dict(rates, eff_max_pm=emax, eff_half=ehalf, lat_ns=lat)
-        for prog, half, null, arms in rows:
+        fh.write('program\thalf\tnull\tarm\tmeasured_ns\tpredicted_ns_all\n')
+        r = dict(rates, eff_max_pm=allr[0], eff_half=allr[1], lat_ns=allr[2])
+        for prog, _, null, arms in rows:
             for arm, m, pl in arms:
-                fh.write(f'{prog}\t{"fit" if half == 0 else "hold"}\t{null:.4f}\t{arm}\t{m:.0f}\t'
-                         f'{sum(site_ns(r, p) for p in shapes(pl)):.0f}\n')
-    print(f'{arch}: carried {carried} arms ({dropped} dropped: kernel ids not re-emitted), {len(rows)} decisions '
-          f'({len(fit)} fit / {len(hold)} hold-out); mirror {mirror[1]}/{mirror[0]}; fitted eff_max_pm={emax} '
-          f'eff_half={ehalf} lat_ns={lat} (no-terms eff {em0},{eh0})')
+                fh.write(f'{prog}\t{"hold" if prog in hold0 else "fit"}\t{null:.4f}\t{arm}\t{m:.0f}\t'
+                         f'{sum(site_ns(r, dict(p)) for _, p in pl):.0f}\n')
+    print(f'{arch}: carried {carried} arms ({dropped} dropped: kernel ids not re-emitted), {len(rows)} decisions, '
+          f'{len(fs)} program folds; mirror {mirror[1]}/{mirror[0]}; all-decision fit eff=({allr[0]},{allr[1]}) '
+          f'lat={allr[2]} edge {edge(*allr)}')
     for x in report:
-        print(f'  {x[0]:8} {x[1]:8} eff=({x[2]},{x[3]}) lat={x[4]} picks {x[6]}/{x[7]}  signs {x[8]}/{x[9]}  '
-              f'median|log err| {x[10]:.3f}')
+        print(f'  fold {x[0]} {x[1]:8} eff=({x[2]},{x[3]}) lat={x[4]} edge {x[5]}  picks {x[8]}/{x[9]}  '
+              f'signs {x[10]}/{x[11]}  median|log err| {x[12]:.3f}')
+    for lab in ('seed', 'no-terms', 'terms'):
+        a = acc(lab)
+        print(f'  {lab:8} hold picks mean {st.mean(a):.1%} min {min(a):.1%} max {max(a):.1%}')
+    print(f'  terms - no-terms picks per fold: {gain}')
     ch = [c for c in comp if c[1] == 1]
-    print(f'  hold-out compiler picks {sum(c[6] == 1 for c in ch)}/{sum(c[6] != "" for c in ch)} '
+    print(f'  fold-0 hold-out compiler picks {sum(c[6] == 1 for c in ch)}/{sum(c[6] != "" for c in ch)} '
           f'({sum(c[6] == "" for c in ch)} unknown: no arm emitted the pick)')
     with open(f'{out}/compiler-{arch}.tsv', 'w') as fh:
         fh.write('program\thalf\tnull\tcompiler_arm\tmeasured_best_arm\tcompiler_over_best\tok\n')
         for c in comp:
             fh.write(f'{c[0]}\t{"fit" if c[1] == 0 else "hold"}\t{c[2]:.4f}\t{c[3]}\t{c[4]}\t{c[5]}\t{c[6]}\n')
+
 
 if __name__ == '__main__':
     main()

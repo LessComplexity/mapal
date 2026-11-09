@@ -4037,11 +4037,12 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 1.25 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~2.5 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 4.5–4.6 TB/s;
-            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
-            // fit half of the site-geometry + plan-cost sweeps' plan arms
-            // (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`); lat is
-            // fitted until calibrated (open: the pointer-chase microbenchmark,
-            // `.claude/sprints/plan-cost/terms.md`).
+            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time), not
+            // calibrated: over 6 program folds the fit moves eff_max 400..600,
+            // eff_half 0..1, lat 150..450 and the terms do not beat lat 0 on the
+            // hold-out (`benches/results/evidence/plan-cost/holdout-rtx-4090.tsv`);
+            // open: the pointer-chase microbenchmark fixes lat before eff
+            // (`.claude/sprints/plan-cost/terms.md`).
             issue_ns: 2850,
             gap_ns: 600,
             zero_ns: 1017,
@@ -4133,10 +4134,11 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // zero: (c) memset 1 MB device time 0.9 µs less 1 MB at the L2 rate;
             // atomic: (c) f32 RED, M = 262144, S = 2…64, ~1.7 ps an add;
             // l2: (c) L2-resident read, 16–128 MB plateau 6.5–6.9 TB/s;
-            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time) on the
-            // fit half of the site-geometry + plan-cost sweeps' plan arms
-            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`); lat is
-            // fitted until calibrated (eff_max at the FFMA peak, the grid's edge).
+            // eff, lat: fitted by `benches/gpu/plancost.py` (L1 in log time), not
+            // calibrated: over 6 program folds eff_max 825..1000 (the grid's edge,
+            // FFMA peak, in 2 folds and the all-decision fit: a misspecified term,
+            // open L2-residency item), lat 150..300
+            // (`benches/results/evidence/plan-cost/holdout-rtx-5090.tsv`).
             issue_ns: 2370,
             gap_ns: 300,
             zero_ns: 739,

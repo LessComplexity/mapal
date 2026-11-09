@@ -519,5 +519,22 @@ class MeasureTests(unittest.TestCase):
         self.assertIn("cached", st)
 
 
+class PlanCostFoldTests(unittest.TestCase):
+    def test_folds_split_by_program_across_rung_classes(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("plancost", HERE / "plancost.py")
+        pc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pc)
+        # a program's site-geometry row and its `@pc` row in different rung classes (the class-hashed split's leak)
+        rows = [(f"p{i}{tag}", cls, 0.02, []) for i in range(12) for tag, cls in (("", "splitk"), ("@pc", "g-tile"))]
+        fs = pc.folds(rows)
+        self.assertEqual(len(fs), 2 * len(pc.SALTS))
+        for fit, hold in fs:
+            base = lambda part: {x[0].split("@")[0] for x in part}
+            self.assertFalse(base(fit) & base(hold))
+            self.assertEqual(sorted(fit + hold), sorted(rows))
+        self.assertEqual(fs[0], fs[1][::-1])
+
+
 if __name__ == "__main__":
     unittest.main()
