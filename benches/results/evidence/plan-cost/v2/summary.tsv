@@ -1,0 +1,5 @@
+table	arch	programs_with_distinct_ON	geomean_ON_over_shipped	win	loss	null
+A-boxlist	rtx-4090	25	0.945	17	5	3
+C-blind	rtx-4090	8	0.960	2	2	4
+A-boxlist	rtx-5090	47	1.033	9	13	25
+C-blind	rtx-5090	19	0.788	10	6	3

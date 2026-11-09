@@ -1,0 +1,3 @@
+arch	sms	l2	lat_l2_ns_1warp	lat_l2_ns_8/32warps	lat_dram_ns_1warp_1GiB	lat_dram_ns_8/32warps	dram_peak_GBs	l2_peak_GBs	loaded_lat_ns@GBs_50pct	loaded_lat_ns@GBs_90pct	lds_bytes_per_clk_per_SM	littles_dram_median_|log_err|/below-90pct_signed	littles_l2_median_|log_err|/below-90pct_signed
+rtx-4090	128	72MB	106 (268 cyc)	106/106	146 (368 cyc)	267/516	958	4895	217.9 @ 321	2436.9 @ 889	32b:64.0 64b:126.4 128b:126.9	0.92/0.93	0.79/0.80
+rtx-5090	170	96MB	141 (359 cyc)	140/140	195 (498 cyc)	325/394	1701	6683	471.7 @ 854	1154.3 @ 1471	32b:64.0 64b:126.6 128b:127.8	0.92/0.94	0.70/0.71

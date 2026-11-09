@@ -1,0 +1,107 @@
+kind	name	n	grid	block	regs	smem_kb	med_us	shape	tflops_leg
+mapal	mapal_tile_36f6dedfad53c618	7	16x16x1	128x1x1	72	41.0	16.96	512x512x512	11.21
+cublas	ampere_sgemm_32x32_sliced1x4_nn	6	16x16x1	128x1x1	86	33.8	15.71	512x512x512	12.66
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	4x4x1	256x1x1	122	17.4	42.85	512x512x512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	32x8x1	128x1x1	56	10.2	19.44	512x512x512	
+TFLOPs	"{""mapal"": 11.21, ""mapal_on"": 13.77, ""cublas"": 12.66, ""cutlass"": 6.1, ""cutlass_tuned"": 11.37}"							512x512x512	
+mapal	mapal_tile_565ffde502536326	7	16x8x1	256x1x1	95	78.8	62.59	1024x1024x1024	33.27
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	6	128x1x1	128x1x1	126	31.7	48.69	1024x1024x1024	41.94
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	8x8x1	256x1x1	122	17.4	83.54	1024x1024x1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	64x16x1	128x1x1	56	10.2	108.69	1024x1024x1024	
+TFLOPs	"{""mapal"": 33.27, ""mapal_on"": """", ""cublas"": 41.94, ""cutlass"": 24.81, ""cutlass_tuned"": 19.78}"							1024x1024x1024	
+mapal	mapal_tile_59027ed417ac8177	7	16x16x1	128x1x1	220	17.4	305.44	2048x2048x2048	50.69
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(T1::Params)	6	128x1x4	256x1x1	202	50.2	321.81	2048x2048x2048	46.54
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	16x16x1	256x1x1	122	17.4	320.63	2048x2048x2048	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	128x32x1	128x1x1	56	10.2	815.69	2048x2048x2048	
+TFLOPs	"{""mapal"": 50.69, ""mapal_on"": """", ""cublas"": 46.54, ""cutlass"": 48.03, ""cutlass_tuned"": 18.12}"							2048x2048x2048	
+mapal	mapal_tile_18c223c47375c2ad	7	32x16x1	64x1x1	79	18.4	16.16	128x1024x1024	8.47
+cublas	ampere_sgemm_128x32_nn	6	8x4x8	256x1x1	57	16.4	17.62	128x1024x1024	9.18
+cublas	void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, f	6	32x8x1	32x16x1	44	0.0	2.43	128x1024x1024	9.18
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x8x1	256x1x1	122	17.4	79.55	128x1024x1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	8x16x1	128x1x1	56	10.2	30.11	128x1024x1024	
+TFLOPs	"{""mapal"": 8.47, ""mapal_on"": 10.28, ""cublas"": 9.18, ""cutlass"": 3.49, ""cutlass_tuned"": 6.22}"							128x1024x1024	
+mapal	mapal_tile_726b4078bfd38bc7	7	64x4x1	128x1x1	89	41.0	151.2	128x2048x7168	23.14
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	6	16x2x23	128x1x1	126	31.7	138.9	128x2048x7168	24.86
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x16x1	256x1x1	122	17.4	534.13	128x2048x7168	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	8x32x1	128x1x1	56	10.2	213.83	128x2048x7168	
+TFLOPs	"{""mapal"": 23.14, ""mapal_on"": 23.39, ""cublas"": 24.86, ""cutlass"": 7.04, ""cutlass_tuned"": 16.35}"							128x2048x7168	
+mapal	mapal_tile_edfc2be44ee31f13	7	64x16x1	32x1x1	83	9.2	17.6	16x1024x4096	3.54
+cublas	ampere_sgemm_32x32_sliced1x4_nn	6	32x1x7	128x1x1	86	33.8	22.88	16x1024x4096	3.75
+cublas	void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, f	6	32x1x1	32x16x1	44	0.0	1.68	16x1024x4096	3.75
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x8x1	256x1x1	122	17.4	303.75	16x1024x4096	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x16x1	128x1x1	56	10.2	94.39	16x1024x4096	
+TFLOPs	"{""mapal"": 3.54, ""mapal_on"": 3.74, ""cublas"": 3.75, ""cutlass"": 0.47, ""cutlass_tuned"": 1.17}"							16x1024x4096	
+mapal	mapal_tile_0ca772afc3771626	7	144x1x1	256x1x1	108	38.9	621.89	16x18432x7168	6.31
+cublas	ampere_sgemm_128x32_sliced1x4_nn	6	144x1x5	256x1x1	134	43.0	608.42	16x18432x7168	6.65
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x144x1	256x1x1	122	17.4	1040.17	16x18432x7168	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	6	1x288x1	128x1x1	56	10.2	586.6	16x18432x7168	
+TFLOPs	"{""mapal"": 6.31, ""mapal_on"": """", ""cublas"": 6.65, ""cutlass"": 4.28, ""cutlass_tuned"": 6.87}"							16x18432x7168	
+mapal	mapal_tile_36f6dedfad53c618	1	16x16x1	128x1x1	72	41.0	15.07	pt_indep_512	
+mapal	mapal_tile_cd28b48d084bd179	1	16x8x1	128x1x1	83	81.9	13.5	pt_indep_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.92	pt_indep_512	
+cublas	ampere_sgemm_32x32_sliced1x4_nn	36	16x16x1	128x1x1	86	33.8	16.45	pt_indep_512	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	1024x1x1	256x1x1	22	0.0	2.02	pt_indep_512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	4x4x1	256x1x1	122	17.4	42.4	pt_indep_512	
+mapal	mapal_tile_36f6dedfad53c618	2	16x16x1	128x1x1	72	41.0	16.34	pt_twin_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.92	pt_twin_512	
+mapal	mapal_tile_0a76a70e4e3117e4	1	16x8x1	128x1x1	80	81.9	14.43	pt_mlp_512	
+mapal	mapal_tile_36f6dedfad53c618	1	16x16x1	128x1x1	72	41.0	16.26	pt_mlp_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.95	pt_mlp_512	
+cublas	ampere_sgemm_32x32_sliced1x4_nn	24	16x16x1	128x1x1	86	33.8	13.3	pt_mlp_512	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	6	1024x1x1	256x1x1	22	0.0	2.08	pt_mlp_512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	4x4x1	256x1x1	122	17.4	41.52	pt_mlp_512	
+mapal	mapal_tile_2f4f679e77497fe8	1	16x8x1	128x1x1	80	81.9	14.62	pt_mlp2_512	
+mapal	mapal_tile_36f6dedfad53c618	2	16x16x1	128x1x1	72	41.0	16.0	pt_mlp2_512	
+mapal	mapal_tile_ff92503672037fa1	1	16x8x1	128x1x1	80	81.9	14.08	pt_mlp2_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.92	pt_mlp2_512	
+cublas	ampere_sgemm_32x32_sliced1x4_nn	96	16x16x1	128x1x1	86	33.8	14.5	pt_mlp2_512	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	24	1024x1x1	256x1x1	22	0.0	3.09	pt_mlp2_512	
+cublas	void cublasLt::epilogue::impl::globalKernel<(int)8, (int)32, float, float, float, (bool)1, (bool)1, (int)1>(in	24	64x8x1	8x32x1	26	0.0	2.69	pt_mlp2_512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	4x4x1	256x1x1	122	17.4	42.48	pt_mlp2_512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	4x4x1	256x1x1	122	17.4	41.17	pt_mlp2_512	
+mapal	mapal_tile_f8413fd73a081171	1	16x8x1	128x1x1	85	81.9	14.62	pt_fanout_512	
+mapal	mapal_tile_36f6dedfad53c618	1	16x16x1	128x1x1	72	41.0	16.32	pt_fanout_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.92	pt_fanout_512	
+cublas	ampere_sgemm_32x32_sliced1x4_nn	24	16x16x1	128x1x1	86	33.8	14.32	pt_fanout_512	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	1024x1x1	256x1x1	22	0.0	2.08	pt_fanout_512	
+mapal	mapal_tile_36f6dedfad53c618	2	16x16x1	128x1x1	72	41.0	16.21	pt_diamond_512	
+mapal	mapal_tile_fb1bdc744936fbde	1	16x8x1	128x1x1	83	81.9	14.66	pt_diamond_512	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	1024x1x1	256x1x1	18	0.0	1.95	pt_diamond_512	
+cublas	ampere_sgemm_32x32_sliced1x4_nn	54	16x16x1	128x1x1	86	33.8	14.56	pt_diamond_512	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	1024x1x1	256x1x1	22	0.0	2.02	pt_diamond_512	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	18	4x4x1	256x1x1	122	17.4	41.7	pt_diamond_512	
+mapal	mapal_tile_565ffde502536326	1	16x8x1	256x1x1	95	78.8	61.92	pt_indep_1024	
+mapal	mapal_tile_ee0c23f6292e5ec8	1	16x8x1	256x1x1	95	78.8	61.15	pt_indep_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.1	pt_indep_1024	
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	36	128x1x1	128x1x1	126	31.7	47.2	pt_indep_1024	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	4096x1x1	256x1x1	22	0.0	4.3	pt_indep_1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	8x8x1	256x1x1	122	17.4	81.06	pt_indep_1024	
+mapal	mapal_tile_565ffde502536326	2	16x8x1	256x1x1	95	78.8	60.0	pt_twin_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.13	pt_twin_1024	
+mapal	mapal_tile_ec8b1844f339a1df	1	16x8x1	256x1x1	95	78.8	61.41	pt_mlp_1024	
+mapal	mapal_tile_565ffde502536326	1	16x8x1	256x1x1	95	78.8	58.59	pt_mlp_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.13	pt_mlp_1024	
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	24	128x1x1	128x1x1	126	31.7	44.8	pt_mlp_1024	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	6	4096x1x1	256x1x1	22	0.0	3.84	pt_mlp_1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	8x8x1	256x1x1	122	17.4	80.24	pt_mlp_1024	
+mapal	mapal_tile_e73cd2f736c7b83b	1	16x8x1	256x1x1	95	78.8	61.7	pt_mlp2_1024	
+mapal	mapal_tile_565ffde502536326	2	16x8x1	256x1x1	95	78.8	58.21	pt_mlp2_1024	
+mapal	mapal_tile_2cfa420c9fd353de	1	16x8x1	256x1x1	95	78.8	58.24	pt_mlp2_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.13	pt_mlp2_1024	
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	96	128x1x1	128x1x1	126	31.7	59.71	pt_mlp2_1024	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	24	4096x1x1	256x1x1	22	0.0	5.04	pt_mlp2_1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	8x8x1	256x1x1	122	17.4	80.77	pt_mlp2_1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	12	8x8x1	256x1x1	122	17.4	79.46	pt_mlp2_1024	
+mapal	mapal_tile_f0397a0748a2fa00	1	16x8x1	256x1x1	95	78.8	63.49	pt_fanout_1024	
+mapal	mapal_tile_565ffde502536326	1	16x8x1	256x1x1	95	78.8	58.53	pt_fanout_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.13	pt_fanout_1024	
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	24	128x1x1	128x1x1	126	31.7	46.11	pt_fanout_1024	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	4096x1x1	256x1x1	22	0.0	4.02	pt_fanout_1024	
+mapal	mapal_tile_565ffde502536326	2	16x8x1	256x1x1	95	78.8	60.08	pt_diamond_1024	
+mapal	mapal_tile_8eb284e53db0f591	1	16x8x1	256x1x1	95	78.8	59.39	pt_diamond_1024	
+cublas	gen_op(float *, long long, int, int, int, int, float)	9	4096x1x1	256x1x1	18	0.0	4.16	pt_diamond_1024	
+cublas	void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_nn_align1>(T1::Params)	54	128x1x1	128x1x1	126	31.7	45.76	pt_diamond_1024	
+cublas	cell(int, float *, const float *, const float *, long long, int, float, float)	12	4096x1x1	256x1x1	22	0.0	4.13	pt_diamond_1024	
+cutlass(harness)	void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::gemm::GemmS	18	8x8x1	256x1x1	122	17.4	80.3	pt_diamond_1024	
+mapal	mapal_tile_edfc2be44ee31f13	1	64x16x1	32x1x1	83	9.2	17.22	pt_pj_m16_n1024_k4096	
+mapal	mapal_tile_0ca772afc3771626	1	144x1x1	256x1x1	108	38.9	678.38	pt_pj_m16_n18432_k7168	

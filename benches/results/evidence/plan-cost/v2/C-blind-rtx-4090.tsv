@@ -1,0 +1,9 @@
+program	shipped_ms	on_ms	on_over_shipped	tol	verdict	in_boxlist
+pt_bl_b04	0.34056	0.32025	0.940	0.020	win	blind
+pt_bl_b08	0.55098	0.60775	1.103	0.020	loss	blind
+pt_bl_b19	0.58437	0.58367	0.999	0.020	null	blind
+pt_bl_b22	3.8622	4.0203	1.041	0.020	loss	blind
+pt_bl_b23	0.090186	0.089214	0.989	0.101	null	blind
+pt_bl_b32	26.326	26.329	1.000	0.020	null	blind
+pt_bl_b33	4.2918	4.286	0.999	0.020	null	blind
+pt_bl_b39	1.0154	0.68515	0.675	0.020	win	blind
