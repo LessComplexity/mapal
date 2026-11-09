@@ -235,3 +235,48 @@ fn site_tables_launch_once_and_keep_the_values() {
     eprintln!("site tables: {tables} of {runs} sums");
     assert!(tables >= 8, "site tables taken: {tables} of {runs}");
 }
+
+/// The plan-cost blind set (`MAPAL_BLIND=<dir> cargo test -- --ignored
+/// write_blind_set`): 40 `testgen::tile_prog_strategy` programs from a seed no
+/// fit used, each product 0.01–5 ms at a 4090's ~40 TFLOP/s and ~0.9 TB/s, as
+/// `<dir>/b<i>.mapal`, the same program at interpreter sizes as
+/// `<dir>/small/b<i>.mapal`, and each product's `m×n×k` in `<dir>/sites.tsv`
+/// (`mapal fmt` the programs after).
+#[test]
+#[ignore]
+fn write_blind_set() {
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng};
+    let dir = std::env::var("MAPAL_BLIND").expect("MAPAL_BLIND=<dir>");
+    std::fs::create_dir_all(format!("{dir}/small")).unwrap();
+    let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &[0xb1; 32]);
+    let mut runner = TestRunner::new_with_rng(Config::default(), rng);
+    let ms = |(m, n, k): (u64, u64, u64)| {
+        let flops = 2.0 * (m * n * k) as f64 / 40e12;
+        flops.max(4.0 * (m * k + k * n + m * n) as f64 / 0.9e12) * 1e3
+    };
+    let (strat, mut tsv) = (
+        testgen::tile_prog_strategy(),
+        String::from("prog\tkind\tsites\n"),
+    );
+    let mut i = 0;
+    while i < 40 {
+        let p = strat.new_tree(&mut runner).unwrap().current();
+        let (src, sites) = testgen::tile_src(&p, false);
+        if !sites.iter().all(|&s| (0.01..=5.0).contains(&ms(s))) {
+            continue;
+        }
+        std::fs::write(format!("{dir}/b{i:02}.mapal"), src).unwrap();
+        std::fs::write(
+            format!("{dir}/small/b{i:02}.mapal"),
+            testgen::tile_src(&p, true).0,
+        )
+        .unwrap();
+        let s: Vec<String> = sites
+            .iter()
+            .map(|(m, n, k)| format!("{m}x{n}x{k}"))
+            .collect();
+        tsv += &format!("b{i:02}\t{}\t{}\n", p.kind, s.join(","));
+        i += 1;
+    }
+    std::fs::write(format!("{dir}/sites.tsv"), tsv).unwrap();
+}
