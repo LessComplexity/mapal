@@ -1,0 +1,8 @@
+cell	mapal_ship	mapal_base	pc	pc+ft	best_lib	lib_leg	mapal_vs_lib(ship)	mapal_vs_lib(base)
+512x512x512	8.9	9.2	=ship	=ship	11.3	cublas	0.790	0.812
+1024x1024x1024	18.2	21.0	=ship	=ship	21.6	cublas	0.839	0.972
+2048x2048x2048	17.4	20.7	=ship	=ship	28.3	cublas	0.616	0.732
+128x1024x1024	7.5	7.2	=ship	=ship	11.4	cublas	0.659	0.633
+128x2048x7168	11.4	12.8	=ship	=ship	28.1	cublas	0.407	0.455
+16x1024x4096	3.9	3.1	=ship	=ship	4.3	cublas	0.901	0.717
+16x18432x7168	7.6	7.9	=ship	=ship	10.9	cublas	0.701	0.725

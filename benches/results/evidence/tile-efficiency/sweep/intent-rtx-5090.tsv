@@ -1,0 +1,12 @@
+rung	status	n
+async	ok	972
+async-depth	MISMATCH	9
+async-depth	ok	28
+full-tile	MISMATCH	264
+full-tile	ok	88
+kmajor-a	MISMATCH	26
+kmajor-a	ok	811
+linear	n/a	9
+linear	ok	18
+plan-cost	ok	1186
+warp-fill	ok	609

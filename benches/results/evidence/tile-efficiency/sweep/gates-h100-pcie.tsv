@@ -1,0 +1,4 @@
+check	result
+differential	differential: 296 pass, 0 fail
+traps	traps: 9 pass, 0 fail
+cell values within_bound=no	0

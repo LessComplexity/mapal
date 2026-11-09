@@ -183,6 +183,8 @@ for spec in "$@"; do
         flag="--gpu-$dir=$rung"; tag="$dir-${rung//,/+}"
         # plan-cost: `<profile>:<stem>:<face>:base:base` is the arm emitted by BASE_EMIT (the shipped baseline's emitter), tag on-base.
         if [ "$dir" = base ]; then flag=""; tag=on-base; fi
+        # tile-efficiency: `<stem>:<face>:<off-rungs>:pcoff` is plan-cost,linear ON with those rungs OFF (full-tile: arm PC), tag pc-off-<rungs>.
+        if [ "$dir" = pcoff ]; then flag="--gpu-on=plan-cost,linear --gpu-off=$rung"; tag="pc-off-${rung//,/+}"; fi
         if [ "$dir" = geom ]; then flag="--geom=$rung"; tag=$(tr '=.' '-p' <<< "on-g-$rung"); fi
         f="$OUT/tiles/$stem.mapal"; b="$d/$stem$face"; s="$b.$tag"
         [ "$face" = _tf ] && f=$(tf32_src "$f")
@@ -191,13 +193,13 @@ for spec in "$@"; do
         # equal the shipped build's is dropped before clang / opt / llc (hundreds of rung arms per part).
         [ "$dir" = base ] && EMIT=${BASE_EMIT:?BASE_EMIT}
         q="$d/.q"; rm -f "$q".*
-        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") ${flag:+"$flag"} > "$q.host.ll"
+        "$EMIT" "$f" - --rewrite "--target=$prof" --host=x86-64-v3 "--device-out=$q.dev.ll" $(flags_of "$face") ${flag} > "$q.host.ll"
         if cmp -s <(grep -sv '^; mapal\.' "$q.host.ll") <(grep -sv '^; mapal\.' "$b.host.ll") &&
            { { [ ! -f "$q.dev.ll" ] && [ ! -f "$b.dev.ll" ]; } || cmp -s "$q.dev.ll" "$b.dev.ll"; }; then
             rm -f "$q".*; echo "rejudge $prof $stem$face $tag = shipped"; continue
         fi
         rm -f "$q".*
-        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") ${flag:+"$flag"}
+        emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") ${flag}
         if same "$s" "$b"; then drop "$s"; echo "rejudge $prof $stem$face $tag = shipped"; continue; fi
         echo "rejudge $prof $stem$face $tag $(cat "$s.launch" 2>/dev/null)"
         case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac

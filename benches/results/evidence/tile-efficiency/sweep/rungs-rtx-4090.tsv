@@ -1,0 +1,14 @@
+arm	kind	n	geomean	W	L	null_thr
+off-kmajor-a	cells	9	0.8227	5	2	0.054
+off-kmajor-a	progs	62	0.9581	24	4	0.075
+off-async	cells	4	0.9107	3	0	0.054
+off-async	progs	6	1.1279	0	3	0.075
+on-base	cells	16	0.8938	7	4	0.054
+on-base	progs	68	0.9592	25	4	0.075
+on-plan-cost+linear	cells	7	0.9645	3	1	0.054
+on-plan-cost+linear	progs	17	0.9293	8	2	0.075
+pc-off-full-tile	cells	4	1.0891	0	3	0.054
+ft	cells	4	1.0056	0	0	0.054
+on-async	cells	1	0.8441	1	0	0.054
+null	cells	20	1.0078	0	1	0.054
+null	progs	90	0.9939	4	1	0.075

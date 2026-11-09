@@ -1,0 +1,6 @@
+arch	box	status	note
+rtx-4090	vast offer 57669401 (GB), 15 reps	complete	differential 376/0, traps 11/0, probe gate 0 fail; torch, timing, profile fetched
+rtx-5090	vast offer 58382721 (KR), 15 reps	complete	differential 285/0, traps 9/0, probe gate 0 fail
+rtx-3090	vast offer 52756395-class, 15 reps	complete	first two runs aborted by the TF32 differential (px_{fanout,indep,residual}_128_tf and their off-epilogue reference arm, 5 fails: atomic-order noise above 1e-4); those 35 px_*_tf objects removed from the 3090 bundle for the third run (256/0 pass). No plan-cost rates: PC arms equal shipped.
+h100-pcie	vast itur offer 56885484 (ZA)	partial	host died during the probes section (ssh refused); results taken from the box_run stdout (differential 296/0, splitk cells, mlp, e2e, probes); no torch / timing / profile / box evidence.tsv. First two rentals failed at upload (itur key not on instance; key attached per instance, gpu_itur).
+all	harness	-	benches/gpu/integrated_bundle.sh: new ARMS dir pcoff (plan-cost,linear ON with the named rungs OFF); px_convmc .expect files stripped of the clock line (bundle data, not repo).

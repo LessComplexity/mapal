@@ -1,0 +1,8 @@
+cell	mapal_ship	mapal_base	pc	pc+ft	best_lib	lib_leg	mapal_vs_lib(ship)	mapal_vs_lib(base)
+512x512x512	14.6	11.4	17.4	17.4	12.5	cublas	1.168	0.911
+1024x1024x1024	39.5	32.8	=ship	=ship	41.9	cublas	0.943	0.782
+2048x2048x2048	45.1	56.5	=ship	=ship	55.2	cutlass	0.817	1.024
+128x1024x1024	14.6	8.4	16.4	16.4	9.3	cublas	1.565	0.897
+128x2048x7168	32.5	23.1	32.2	32.5	24.8	cublas	1.310	0.931
+16x1024x4096	3.5	3.5	3.7	3.6	3.9	cublas	0.918	0.918
+16x18432x7168	6.3	6.2	=ship	=ship	6.9	cutlass_tuned	0.918	0.909

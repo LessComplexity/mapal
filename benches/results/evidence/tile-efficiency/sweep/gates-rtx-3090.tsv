@@ -1,0 +1,5 @@
+check	result
+differential	differential: 256 pass, 0 fail
+traps	traps: 9 pass, 0 fail
+probe	probe value gate: 0 program(s) failed
+cell values within_bound=no	0

@@ -1,0 +1,7 @@
+arm	kind	n	geomean	W	L	null_thr
+off-kmajor-a	cells	5	0.9887	2	2	0.049
+off-kmajor-a	progs	48	1.1371	2	41	0.043
+on-base	cells	7	1.1398	2	4	0.049
+on-base	progs	48	1.1358	2	41	0.043
+null	cells	19	0.9634	1	0	0.049
+null	progs	78	0.9997	1	3	0.043

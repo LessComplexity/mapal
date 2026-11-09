@@ -1,0 +1,13 @@
+prog	ship_us	base_us	best_lib_us	lib_leg	torch_compile_us	ship/lib	base/lib	ship/compile
+pt_indep_512	88.1	87.1	41.4	streams	-	2.13	2.10	-
+pt_indep_1024	334.3	292.1	180.2	streams	-	1.86	1.62	-
+pt_twin_512	81.2	=ship	-	None	-	-	-	-
+pt_twin_1024	254.4	220.6	-	None	-	-	-	-
+pt_mlp_512	72.1	68.6	44.4	lt	-	1.62	1.54	-
+pt_mlp_1024	318.4	256.5	188.0	lt	-	1.69	1.36	-
+pt_mlp2_512	144.6	135.7	70.1	lt2	-	2.06	1.94	-
+pt_mlp2_1024	627.7	501.1	332.9	lt2	-	1.89	1.51	-
+pt_fanout_512	71.4	68.6	46.4	streams	-	1.54	1.48	-
+pt_fanout_1024	293.4	259.5	189.4	streams	-	1.55	1.37	-
+pt_diamond_512	115.3	109.1	61.8	streams	-	1.87	1.77	-
+pt_diamond_1024	442.2	385.6	275.8	streams	-	1.60	1.40	-

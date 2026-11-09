@@ -1,0 +1,103 @@
+stem	arm	tile(tm x tn, threads, bk/stages, kmajor, combine)
+mm_512x512x512	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140
+mm_512x512x512	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone
+mm_512x512x512	off-kmajor-a	=ship
+mm_512x512x512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280
+mm_512x512x512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280
+mm_512x512x512	on-async	=ship
+mm_1024x1024x1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204
+mm_1024x1024x1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+mm_1024x1024x1024	off-kmajor-a	=ship
+mm_1024x1024x1024	on-plan-cost+linear	=ship
+mm_1024x1024x1024	pc-off-full-tile	=ship
+mm_1024x1024x1024	on-async	=ship
+mm_2048x2048x2048	ship	8x16,128t,bk8/s1,km1,none:S1,lsu56
+mm_2048x2048x2048	on-base	8x16,128t,bk16/s1,kmNone,none:S1,lsuNone
+mm_2048x2048x2048	off-kmajor-a	=ship
+mm_2048x2048x2048	on-plan-cost+linear	=ship
+mm_2048x2048x2048	pc-off-full-tile	=ship
+mm_2048x2048x2048	on-async	8x16,128t,bk16/s3,km1,none:S1,lsu104
+mm_128x1024x1024	ship	4x4,64t,bk32/s3,km1,atomic:S4,lsu72
+mm_128x1024x1024	on-base	4x4,64t,bk32/s2,kmNone,atomic:S4,lsuNone
+mm_128x1024x1024	off-kmajor-a	4x4,64t,bk32/s2,km0,atomic:S4,lsu84
+mm_128x1024x1024	on-plan-cost+linear	4x4,64t,bk64/s3,km1,splitk:S2,lsu144
+mm_128x1024x1024	pc-off-full-tile	4x4,64t,bk64/s3,km1,splitk:S2,lsu144
+mm_128x1024x1024	on-async	=ship
+mm_128x2048x7168	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140
+mm_128x2048x7168	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone
+mm_128x2048x7168	off-kmajor-a	4x4,128t,bk32/s3,km0,atomic:S2,lsu82
+mm_128x2048x7168	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280
+mm_128x2048x7168	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280
+mm_128x2048x7168	on-async	=ship
+mm_16x1024x4096	ship	1x4,32t,bk32/s3,km0,atomic:S8,lsu76
+mm_16x1024x4096	on-base	1x4,32t,bk32/s3,kmNone,atomic:S8,lsuNone
+mm_16x1024x4096	off-kmajor-a	=ship
+mm_16x1024x4096	on-plan-cost+linear	1x4,32t,bk512/s2,km0,none:S1,lsu1216
+mm_16x1024x4096	pc-off-full-tile	1x4,32t,bk512/s2,km0,none:S1,lsu1216
+mm_16x1024x4096	on-async	=ship
+mm_16x18432x7168	ship	2x4,256t,bk64/s1,km1,none:S1,lsu114
+mm_16x18432x7168	on-base	2x4,256t,bk64/s1,kmNone,none:S1,lsuNone
+mm_16x18432x7168	off-kmajor-a	2x4,256t,bk64/s1,km0,none:S1,lsu149
+mm_16x18432x7168	on-plan-cost+linear	=ship
+mm_16x18432x7168	pc-off-full-tile	=ship
+mm_16x18432x7168	on-async	=ship
+pt_indep_512	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_indep_512	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone | 4x4,128t,bk64/s3,kmNone,none:S1,lsuNone
+pt_indep_512	off-kmajor-a	4x4,128t,bk32/s3,km0,atomic:S2,lsu82 | 4x4,128t,bk64/s3,km0,none:S1,lsu164
+pt_indep_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_indep_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_indep_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_indep_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_indep_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_indep_1024	on-plan-cost+linear	=ship
+pt_indep_1024	pc-off-full-tile	=ship
+pt_twin_512	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140
+pt_twin_512	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone
+pt_twin_512	off-kmajor-a	4x4,128t,bk32/s3,km0,atomic:S2,lsu82
+pt_twin_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_twin_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_twin_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_twin_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_twin_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_twin_1024	on-plan-cost+linear	=ship
+pt_twin_1024	pc-off-full-tile	=ship
+pt_mlp_512	ship	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk64/s2,km1,atomic:S2,lsu140
+pt_mlp_512	on-base	4x4,128t,bk64/s3,kmNone,none:S1,lsuNone | 4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone
+pt_mlp_512	off-kmajor-a	4x4,128t,bk64/s3,km0,none:S1,lsu164 | 4x4,128t,bk32/s3,km0,atomic:S2,lsu82
+pt_mlp_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_mlp_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_mlp_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_mlp_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_mlp_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_mlp_1024	on-plan-cost+linear	=ship
+pt_mlp_1024	pc-off-full-tile	=ship
+pt_mlp2_512	ship	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk64/s2,km1,atomic:S2,lsu140 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_mlp2_512	on-base	4x4,128t,bk64/s3,kmNone,none:S1,lsuNone | 4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone | 4x4,128t,bk64/s3,kmNone,none:S1,lsuNone
+pt_mlp2_512	off-kmajor-a	4x4,128t,bk64/s3,km0,none:S1,lsu164 | 4x4,128t,bk32/s3,km0,atomic:S2,lsu82 | 4x4,128t,bk64/s3,km0,none:S1,lsu164
+pt_mlp2_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_mlp2_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_mlp2_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_mlp2_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_mlp2_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_mlp2_1024	on-plan-cost+linear	=ship
+pt_mlp2_1024	pc-off-full-tile	=ship
+pt_fanout_512	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_fanout_512	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone | 4x4,128t,bk64/s3,kmNone,none:S1,lsuNone
+pt_fanout_512	off-kmajor-a	4x4,128t,bk32/s3,km0,atomic:S2,lsu82 | 4x4,128t,bk64/s3,km0,none:S1,lsu164
+pt_fanout_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_fanout_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_fanout_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_fanout_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_fanout_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_fanout_1024	on-plan-cost+linear	=ship
+pt_fanout_1024	pc-off-full-tile	=ship
+pt_diamond_512	ship	4x4,128t,bk64/s2,km1,atomic:S2,lsu140 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_diamond_512	on-base	4x4,128t,bk32/s3,kmNone,atomic:S2,lsuNone | 4x4,128t,bk64/s3,kmNone,none:S1,lsuNone
+pt_diamond_512	off-kmajor-a	4x4,128t,bk32/s3,km0,atomic:S2,lsu82 | 4x4,128t,bk64/s3,km0,none:S1,lsu164
+pt_diamond_512	on-plan-cost+linear	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_diamond_512	pc-off-full-tile	4x4,128t,bk128/s2,km1,none:S1,lsu280 | 4x4,128t,bk128/s2,km1,none:S1,lsu280
+pt_diamond_1024	ship	8x4,256t,bk64/s2,km1,none:S1,lsu204 | 8x4,256t,bk64/s2,km1,none:S1,lsu204
+pt_diamond_1024	on-base	8x4,256t,bk32/s3,kmNone,none:S1,lsuNone | 8x4,256t,bk32/s3,kmNone,none:S1,lsuNone
+pt_diamond_1024	off-kmajor-a	8x4,256t,bk32/s3,km0,none:S1,lsu114 | 8x4,256t,bk32/s3,km0,none:S1,lsu114
+pt_diamond_1024	on-plan-cost+linear	=ship
+pt_diamond_1024	pc-off-full-tile	=ship
