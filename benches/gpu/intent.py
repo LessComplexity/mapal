@@ -53,6 +53,10 @@ INTENT = {
         off=[('panel LDGs consumed before the math', 'sass.hot.ldg_cover_min <= 0')]),
     'async': dict(applies_on=TILE + ' and plan.stages >= 2', on=[
         ('cp.async + wait_group in PTX', 'ptx.cp_async > 0 and ptx.cp_async_wait > 0'),
+        # tile-efficiency T3: >= 16 k a panel; one barrier a panel; the stage a rotating i32 counter
+        ('bk >= 16 and one BAR per panel trip', 'plan.bk >= 16 and sass.hot.bar <= 1'),
+        ('no 64-bit stage arithmetic in the loop head (IMAD.WIDE only for global addresses)',
+         'sass.hot.imad_wide <= sass.hot.ldg + sass.hot.ldgsts'),
         ('LDGSTS in the hot loop, no register-staged STS', 'sass.hot.ldgsts > 0 and sass.hot.sts == 0')],
         # asyncstage streams through cp.async whatever `async` says (stages > 2 implies it).
         applies_off=TILE + ' and plan.stages < 2', off=[('register staging: no cp.async', 'ptx.cp_async == 0 and sass.ldgsts == 0')]),

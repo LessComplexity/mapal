@@ -4541,11 +4541,12 @@ impl Kernel<'_> {
         let (cbase, pre) = if streamed {
             debug_assert!(seg.is_none(), "stream-K runs the register-staged tile");
             // Issue panel `tile` into stage `stage`: one `cp.async` per unit.
-            let issue = |k: &mut Self, tile: &str, stage: &str| {
+            // `so`: the stage's first element (index type).
+            let issue = |k: &mut Self, tile: &str, so: &str| {
                 let k0 = k.op("mul", tile, bk);
                 let ka = k.op("mul", &k0, s.a.ck);
                 let kb = k.op("mul", &k0, s.b.ck);
-                let so = k.op("mul", stage, stage_elems);
+                let so = so.to_string();
                 for (p, (gsrc, goff, sdst, soff)) in a_src.iter().enumerate() {
                     let gi = gidx(k, ra, &a_kc, p, gsrc, *goff, &k0, &ka);
                     let gp = k.gep(1, "%a", &gi);
@@ -4579,7 +4580,7 @@ impl Kernel<'_> {
             };
             let nk = kext / bk;
             for st in 0..(g.stages - 1).min(nk) {
-                issue(self, &st.to_string(), &st.to_string());
+                issue(self, &st.to_string(), &(st * stage_elems).to_string());
                 self.line("call void @llvm.nvvm.cp.async.commit.group()");
             }
             for _ in nk..g.stages - 1 {
@@ -4589,6 +4590,10 @@ impl Kernel<'_> {
             self.out.push_str("kt:\n");
             let (it, itn) = (self.tmp(), self.tmp());
             self.line(format!("{it} = phi {ix} [0, %entry], [{itn}, %ktl]"));
+            // tile-efficiency T3: the stage the compute reads, a rotating i32
+            // counter (no `urem`, no 64-bit stage arithmetic): `it mod stages`.
+            let (cs, csn) = (self.tmp(), self.tmp());
+            self.line(format!("{cs} = phi i32 [0, %entry], [{csn}, %ktl]"));
             self.line(format!(
                 "call void @llvm.nvvm.cp.async.wait.group(i32 {})",
                 g.stages - 2
@@ -4600,14 +4605,40 @@ impl Kernel<'_> {
             let more = self.tmp();
             self.line(format!("{more} = icmp ult {ix} {nxt}, {nk}"));
             self.line(format!("br i1 {more}, label %issue, label %issued"));
+            // A stage's first element in the index type: `stage · stage_elems`
+            // in i32 (every stage offset fits the 1 MiB-bounded shared memory).
+            let stage_off = |k: &mut Self, st32: &str| {
+                let x = k.tmp();
+                k.line(format!("{x} = mul nuw i32 {st32}, {stage_elems}"));
+                if ix == "i32" {
+                    return x;
+                }
+                let y = k.tmp();
+                k.line(format!("{y} = zext i32 {x} to {ix}"));
+                y
+            };
             self.out.push_str("issue:\n");
-            let nst = self.op("urem", &nxt, g.stages);
-            issue(self, &nxt, &nst);
+            // panel `it + stages − 1` lands in stage `(cs + stages − 1) mod stages`.
+            let first = self.tmp();
+            self.line(format!("{first} = icmp eq i32 {cs}, 0"));
+            let back = self.tmp();
+            self.line(format!("{back} = add i32 {cs}, -1"));
+            let nst = self.tmp();
+            self.line(format!(
+                "{nst} = select i1 {first}, i32 {}, i32 {back}",
+                g.stages - 1
+            ));
+            let nso = stage_off(self, &nst);
+            issue(self, &nxt, &nso);
             self.line("br label %issued");
             self.out.push_str("issued:\n");
             self.line("call void @llvm.nvvm.cp.async.commit.group()");
-            let cst = self.op("urem", &it, g.stages);
-            let cbase = self.op("mul", &cst, stage_elems);
+            let cbase = stage_off(self, &cs);
+            let up = self.tmp();
+            self.line(format!("{up} = add nuw i32 {cs}, 1"));
+            let wrap = self.tmp();
+            self.line(format!("{wrap} = icmp eq i32 {up}, {}", g.stages));
+            self.line(format!("{csn} = select i1 {wrap}, i32 0, i32 {up}"));
             self.line("br label %kk");
             self.async_tail = Some((it, itn, nk));
             (cbase, "issued")
