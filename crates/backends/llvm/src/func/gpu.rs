@@ -700,8 +700,17 @@ fn plan_line(
     );
     if let Some(g) = l.tiled {
         f += &format!(
-            " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={}",
-            g.tm, g.tn, g.tx, g.ty, g.bk, g.stages, g.pad_a, g.held, g.blocks_per_sm
+            " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={}",
+            g.tm,
+            g.tn,
+            g.tx,
+            g.ty,
+            g.bk,
+            g.stages,
+            g.pad_a,
+            g.held,
+            g.blocks_per_sm,
+            lsu_per_panel(site, &g)
         );
     }
     if let Some(m) = l.mma {
@@ -940,7 +949,7 @@ fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
     // A cp.async pipeline keeps `stages − 1` panels in flight; the
     // register-staged tile its one prefetch panel; the naive kernel one
     // unrolled trip.
-    let (bm, bn, acc, per_sm, bk, step, fly) = match l.tiled {
+    let (bm, bn, acc, per_sm, bk, step, fly, lsu) = match l.tiled {
         Some(g) => (
             g.bm(),
             g.bn(),
@@ -949,8 +958,9 @@ fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
             g.bk,
             g.bk,
             g.stages.saturating_sub(1).max(1),
+            lsu_per_panel(site, &g),
         ),
-        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1, NAIVE_UNROLL, 1),
+        None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1, NAIVE_UNROLL, 1, 0),
     };
     let tiles = l.gx * l.gy;
     let (blocks, kb, s, comb) = match c {
@@ -976,6 +986,7 @@ fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
         comb,
         bk: step,
         fly,
+        lsu,
     }
 }
 
@@ -1035,8 +1046,9 @@ fn plan_pick(
             f += &format!(
                 "; mapal.cand site={:016x} cand={} pick={} ns={:.1} rows={} c={} k={} e={} \
                  bm={} bn={} threads={} per_sm={} acc={} tiles={} blocks={} kb={} s={} \
-                 bk={} fly={} waves={} tail={} wps={:.3} f={:.1} l={:.1} d={:.1} chain={:.1} \
-                 kernel={:.1} combine={:.1} fixed={:.1} launches={} zeros={} atomics={}",
+                 bk={} fly={} lsu={} ffma_lsu={:.2} waves={} tail={} wps={:.3} f={:.1} l={:.1} \
+                 d={:.1} chain={:.1} u={:.1} kernel={:.1} combine={:.1} fixed={:.1} launches={} \
+                 zeros={} atomics={}",
                 id,
                 c.label(),
                 u8::from(i == 0),
@@ -1056,6 +1068,8 @@ fn plan_pick(
                 p.s,
                 p.bk,
                 p.fly,
+                p.lsu,
+                (p.acc * p.bk) as f64 / p.lsu.max(1) as f64,
                 t.waves,
                 t.tail,
                 t.wps,
@@ -1063,6 +1077,7 @@ fn plan_pick(
                 t.l_ns,
                 t.d_ns,
                 t.c_ns,
+                t.u_ns,
                 t.kernel_ns,
                 t.combine_ns,
                 t.fixed_ns,
@@ -2775,6 +2790,24 @@ fn lane_maps(s: &TileSite, g: &GpuTile) -> [(LaneMap, u64); 2] {
         (map, bk * bn / threads)
     };
     [a, b]
+}
+
+/// tile-efficiency T4: the LSU warp-instructions one thread of tile `g` issues
+/// per panel trip, as [`Kernel::tiled`] emits them: `bk` steps of `a` and `b`
+/// fragment loads, each copy's global load or `cp.async`, and the
+/// register-staged copies' shared stores (`a` scattered `lanes` ways when it
+/// is staged transposed).
+pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile) -> u64 {
+    let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
+    let [(_, a), (_, b)] = lane_maps(s, g);
+    let lds_a = g.bk * g.tm / g.tm.min(lanes);
+    let lds_b = g.bk * g.tn / g.tn.min(lanes);
+    let sts = match g.stages >= 2 {
+        true => 0,
+        false if vector_a(s) => a * lanes + b,
+        false => a + b,
+    };
+    lds_a + lds_b + a + b + sts
 }
 
 /// String builder for one kernel — the device twin of [`FnEmit`]'s

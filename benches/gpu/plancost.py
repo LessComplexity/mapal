@@ -61,6 +61,12 @@ def site_ns(r, p):
             q = wps * f(p['acc'])
             eff = f(r['eff_max_pm']) / 1000.0 * q / (q + f(r['eff_half']))
         ff = busy * 2.0 * tile * kb / (peak * eff) if terms else bw * 2.0 * tile * kb / (used * peak * eff)
+        # tile-efficiency T4: the busiest SM's LSU issue time floors the FFMA time
+        ipc = r.get('lsu_ipc_pm', 0)
+        if ipc > 0:
+            uf = float(math.ceil(bw / f(r['sms']))) * warps * (kb / f(max(p['bk'], 1))) * f(p.get('lsu', 0)) \
+                / (f(ipc) / 1000.0 * f(r['clock_khz']) / 1e6)
+            ff = max(ff, uf)
         return ff, bw * f(p['bm'] + p['bn']) * kb * e / l2
 
     chain = 0.0
@@ -133,8 +139,8 @@ def flags(arm):
 
 # the plan-cost sweep's arms (there `on` is plan-cost ON, `off-plan-cost+linear` / `on-base` the rules)
 # The rates the sweep's ON arm was emitted at (e32dcfb's profile): its measured plans re-emit only under them.
-SWEEP_RATES = {'rtx-4090': {'eff_max_pm': 475, 'eff_half': 6, 'lat_ns': 0},
-               'rtx-5090': {'eff_max_pm': 150, 'eff_half': 1, 'lat_ns': 0}}
+SWEEP_RATES = {'rtx-4090': {'eff_max_pm': 475, 'eff_half': 6, 'lat_ns': 0, 'lsu_ipc_pm': 0},
+               'rtx-5090': {'eff_max_pm': 150, 'eff_half': 1, 'lat_ns': 0, 'lsu_ipc_pm': 0}}
 PC_ARMS = {'on': [], 'on-base': ['--gpu-off=plan-cost,linear'], 'off-plan-cost+linear': ['--gpu-off=plan-cost,linear'],
            'off-streamk+splitk-atomic+splitk': ['--gpu-off=streamk,splitk-atomic,splitk']}
 
@@ -176,6 +182,7 @@ def emit(mapal, arch, prog, arm, work, cost_on=False, fl=None):
 def shape(f):
     p = {k: int(f[k]) for k in ('rows', 'c', 'k', 'e', 'bm', 'bn', 'threads', 'per_sm', 'acc', 'tiles', 'blocks',
                                 'kb', 's', 'bk', 'fly')}
+    p['lsu'] = int(f.get('lsu', 0))  # tile-efficiency T4 (absent on older lines)
     p['comb'] = comb_of(f['cand'])
     return p
 

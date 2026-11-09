@@ -212,6 +212,10 @@ pub struct DeviceCost {
     /// less than `(trips + fly − 1) · lat_ns / fly` ([`PlanCost::c_ns`]). 0 =
     /// not given: no latency term (the sprint `plan-cost` model).
     pub lat_ns: u64,
+    /// tile-efficiency T4: shared/LSU warp-instructions one SM issues per
+    /// clock, per mille — the floor `warps · trips · lsu / lsu_ipc` under a
+    /// wave's FFMA time ([`PlanShape::lsu`]). 0 = not given: no LSU term.
+    pub lsu_ipc_pm: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -229,12 +233,13 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     eff_max_pm: 0,
     eff_half: 0,
     lat_ns: 0,
+    lsu_ipc_pm: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 14] = [
+    pub const NAMES: [&'static str; 15] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -247,6 +252,7 @@ impl DeviceCost {
         "eff_max_pm",
         "eff_half",
         "lat_ns",
+        "lsu_ipc_pm",
         "fp32_lanes",
         "clock_khz",
     ];
@@ -280,6 +286,7 @@ impl Gpu {
                 "eff_max_pm" => &mut d.eff_max_pm,
                 "eff_half" => &mut d.eff_half,
                 "lat_ns" => &mut d.lat_ns,
+                "lsu_ipc_pm" => &mut d.lsu_ipc_pm,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 _ => &mut self.clock_khz,
             } = v;
@@ -307,6 +314,7 @@ impl Gpu {
             "eff_max_pm" => d.eff_max_pm,
             "eff_half" => d.eff_half,
             "lat_ns" => d.lat_ns,
+            "lsu_ipc_pm" => d.lsu_ipc_pm,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             _ => 0,
@@ -356,6 +364,11 @@ pub struct PlanShape {
     /// flight (`stages − 1` under `cp.async`, 1 register-staged or naive).
     pub bk: u64,
     pub fly: u64,
+    /// tile-efficiency T4: the shared/LSU warp-instructions one thread issues
+    /// per panel trip, counted from the geometry as the emitter issues them —
+    /// `bk` steps of fragment `LDS`, the panel copies (`LDG` / `LDGSTS`) and
+    /// their `STS` — against `acc · bk` FFMA. 0 for the naive kernel (no term).
+    pub lsu: u64,
 }
 
 /// plan-cost-terms: the `k` steps one trip of the naive kernel's loop issues
@@ -381,6 +394,9 @@ pub struct PlanCost {
     /// trips at `fly` loads in flight (Little's law, k-depth); 0 without
     /// `lat_ns`.
     pub c_ns: f64,
+    /// tile-efficiency T4: Σ over waves of the busiest SM's LSU issue time —
+    /// the floor `f_ns` already takes ([`DeviceCost::lsu_ipc_pm`]).
+    pub u_ns: f64,
     pub kernel_ns: f64,
     pub combine_ns: f64,
     /// Zero pass and launch idle (D2).
@@ -2615,7 +2631,18 @@ impl TargetProfile {
                 false => bw * 2.0 * tile * kb / (used * peak * eff),
             };
             let lf = bw * f(p.bm + p.bn) * kb * e / l2;
-            (ff, lf, wps)
+            // tile-efficiency T4: the busiest SM issues `warps · trips · lsu`
+            // LSU warp-instructions at `lsu_ipc` a clock; the FFMA pipe waits
+            // on them when the tile's FFMA per LSU is below `4 / lsu_ipc`.
+            let busy_u = (bw / f(g.sms)).ceil();
+            let uf = match d.lsu_ipc_pm {
+                0 => 0.0,
+                r => {
+                    let trips = kb / f(p.bk.max(1));
+                    busy_u * warps * trips * f(p.lsu) / (f(r) / 1000.0 * f(g.clock_khz) / 1e6)
+                }
+            };
+            (ff.max(uf), lf, wps, uf)
         };
         // Little's law and k-depth (G3): a block's trips (`kb / bk` panels)
         // wait `lat_ns` each, `fly` at a time, plus the pipeline's fill — the
@@ -2630,8 +2657,8 @@ impl TargetProfile {
             }
             false => 0.0,
         };
-        let (ff, lf, wps_full) = wave(w.min(blocks));
-        let (ft, lt, wps_tail) = wave(tail);
+        let (ff, lf, wps_full, uf) = wave(w.min(blocks));
+        let (ft, lt, wps_tail, ut) = wave(tail);
         let full = waves - 1.0;
         let out = rows * c * e;
         let ws = if p.comb == PlanComb::Workspace {
@@ -2666,6 +2693,7 @@ impl TargetProfile {
             l_ns: full * lf + lt,
             d_ns,
             c_ns: waves * chain,
+            u_ns: full * uf + ut,
             kernel_ns,
             combine_ns,
             fixed_ns,
@@ -4059,6 +4087,11 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             eff_max_pm: 525,
             eff_half: 0,
             lat_ns: 380,
+            // lsu (tile-efficiency T4): calib B `lds`, LDS.32 at 256 and 1024
+            // threads, 64.0 B/clk/SM = 0.5 warp-instructions a clock
+            // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
+            // `B-lds-rtx-4090.tsv`); the LDS.128 broadcast rate is open (no ncu).
+            lsu_ipc_pm: 500,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4159,6 +4192,11 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             eff_max_pm: 800,
             eff_half: 6,
             lat_ns: 510,
+            // lsu (tile-efficiency T4): calib B `lds`, LDS.32 at 256 and 1024
+            // threads, 64.0 B/clk/SM = 0.5 warp-instructions a clock
+            // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
+            // `B-lds-rtx-5090.tsv`); the LDS.128 broadcast rate is open (no ncu).
+            lsu_ipc_pm: 500,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -6108,6 +6146,67 @@ mod tests {
             comb,
             bk: 16,
             fly: 1,
+            lsu: 0,
+        }
+    }
+
+    /// tile-efficiency T4: the LSU floor is monotone in `lsu`, absent at
+    /// `lsu = 0` or without `lsu_ipc_pm`, and binds a 4×4 tile (FFMA/LSU 6,
+    /// under the break-even 8) but not an 8×8 one (13); the pick between them
+    /// holds under ±20 % on the rate.
+    #[test]
+    fn lsu_floor_is_monotone_and_separates_the_tiles() {
+        let p = &RTX_4090;
+        let base = shape(128, 1, PlanComb::None);
+        let at = |lsu, p: &TargetProfile| p.site_ns(&PlanShape { lsu, ..base }).unwrap();
+        let mut prev = at(0, p).ns;
+        assert_eq!(at(0, p).u_ns, 0.0);
+        for lsu in [8, 32, 64, 128, 256] {
+            let c = at(lsu, p);
+            assert!(c.ns >= prev && c.f_ns >= c.u_ns, "lsu={lsu}");
+            prev = c.ns;
+        }
+        let over_ipc = |pm| {
+            let mut over = CostOver::default();
+            let i = DeviceCost::NAMES.iter().position(|n| *n == "lsu_ipc_pm");
+            over[i.unwrap()] = Some(pm);
+            TargetProfile {
+                machine: Machine::Gpu(RTX_4090.gpu().unwrap().with_cost(&over)),
+                ..RTX_4090
+            }
+        };
+        assert_eq!(at(256, &over_ipc(0)).u_ns, 0.0);
+        // 512³: a 4×4 tile (16 acc; 2 LDS.128 a k step, 10 copies and stores
+        // a panel ⇒ FFMA/LSU 256/42 ≈ 6) against an 8×8 tile split 8 ways
+        // (64 acc; 4 LDS.128 a step, 12 a panel ⇒ 1024/76 ≈ 13.5).
+        let small = PlanShape {
+            lsu: 16 * 2 + 10,
+            ..base
+        };
+        let big = PlanShape {
+            bm: 128,
+            bn: 128,
+            threads: 256,
+            per_sm: 1,
+            acc: 64,
+            tiles: 16,
+            blocks: 16 * 8,
+            kb: 64,
+            s: 8,
+            comb: PlanComb::Atomic,
+            lsu: 16 * 4 + 12,
+            ..base
+        };
+        let ratio = |s: &PlanShape| (s.acc * s.bk) as f64 / s.lsu as f64;
+        assert!(ratio(&small) < 8.0 && ratio(&big) > 12.0);
+        let pick = |q: &TargetProfile| {
+            let (a, b) = (q.site_ns(&small).unwrap(), q.site_ns(&big).unwrap());
+            assert!(a.u_ns > 0.0 && b.u_ns > 0.0);
+            a.ns <= b.ns
+        };
+        let want = pick(p);
+        for pm in [400, 450, 550, 600] {
+            assert_eq!(pick(&over_ipc(pm)), want, "lsu_ipc_pm={pm}");
         }
     }
 
