@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mapal_choice.h"
+
 static _Thread_local int32_t tid_x;
 static int32_t ctaid_x, ctaid_y;
 /* One block's shared memory (blocks run one at a time). */
@@ -220,20 +222,45 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
  * Run thread by thread (an epilogue kernel stages no shared memory here:
  * tests that reach a staged one turn `async` off, as for `launch`). */
 typedef void (*kv_t)();
+typedef void *P;
 static void call_v(kv_t k, uint32_t n, void **p) {
   switch (n) {
-  case 1: ((void (*)(void *))k)(p[0]); break;
-  case 2: ((void (*)(void *, void *))k)(p[0], p[1]); break;
-  case 3: ((void (*)(void *, void *, void *))k)(p[0], p[1], p[2]); break;
-  case 4: ((void (*)(void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3]); break;
-  case 5: ((void (*)(void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4]); break;
-  case 6: ((void (*)(void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
-  case 7:
-    ((void (*)(void *, void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
+  case 1: ((void (*)(P))k)(p[0]); break;
+  case 2: ((void (*)(P, P))k)(p[0], p[1]); break;
+  case 3: ((void (*)(P, P, P))k)(p[0], p[1], p[2]); break;
+  case 4: ((void (*)(P, P, P, P))k)(p[0], p[1], p[2], p[3]); break;
+  case 5: ((void (*)(P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4]); break;
+  case 6: ((void (*)(P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
+  case 7: ((void (*)(P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6]); break;
+  case 8: ((void (*)(P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]); break;
+  case 9: ((void (*)(P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8]); break;
+  case 10:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9]);
     break;
-  case 8:
-    ((void (*)(void *, void *, void *, void *, void *, void *, void *, void *))k)(p[0], p[1], p[2], p[3], p[4], p[5],
-                                                                               p[6], p[7]);
+  case 11:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
+                                                    p[10]);
+    break;
+  case 12:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9],
+                                                       p[10], p[11]);
+    break;
+  case 13:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8],
+                                                          p[9], p[10], p[11], p[12]);
+    break;
+  case 14:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8],
+                                                             p[9], p[10], p[11], p[12], p[13]);
+    break;
+  case 15:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
+                                                                p[8], p[9], p[10], p[11], p[12], p[13], p[14]);
+    break;
+  case 16:
+    ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P))k)(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7],
+                                                                   p[8], p[9], p[10], p[11], p[12], p[13], p[14],
+                                                                   p[15]);
     break;
   default: fprintf(stderr, "emu: launchv with %u pointers\n", n); exit(102);
   }
@@ -277,6 +304,75 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
         for (tid_x = 0; tid_x < (int32_t)block; tid_x++) call_v(k, nptr, p);
   }
   n_launch++;
+}
+/* S54 `l2-window`: the window is a cache policy, never a value. */
+void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t gx, uint32_t gy, uint32_t block,
+                         uint32_t smem, uint64_t win, uint64_t win_bytes) {
+  (void)win, (void)win_bytes;
+  mapal_gpu_launch(id, a, b, o, gx, gy, block, smem);
+}
+/* per-site-choice: `mapal_gpu.c`'s site entry over the emulated launches.
+ * `MAPAL_GPU_PICK=<index>` (default 0) runs that candidate, `all` every
+ * candidate in order (the last one's output stays: the re-run check). With
+ * `MAPAL_EMU_NS=<ns>,<ns>,..` (a fake clock: candidate i takes the i-th, the
+ * last for the rest) the shipped decision code runs — wisdom, trial, margin —
+ * against the device `emu`; without it nothing is read or written. */
+struct site_env {
+  const struct mapal_cand *c;
+  uint32_t stream, nptr, out;
+  const uint64_t *ptrs;
+  uint64_t *ws_slot, ws_max;
+};
+static void site_run(void *e, uint32_t i) {
+  struct site_env *x = e;
+  const struct mapal_cand *c = &x->c[i];
+  uint64_t p[16];
+  memcpy(p, x->ptrs, x->nptr * sizeof *p);
+  if (c->zero) mapal_gpu_zero(x->ptrs[x->out], c->zero);
+  if (c->ws) p[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+  if (x->nptr == 3)
+    mapal_gpu_launch(c->id, p[0], p[1], p[2], c->gx, c->gy, c->block, c->smem);
+  else
+    mapal_gpu_launchv(c->id, x->stream, x->nptr, p, c->gx, c->gy, c->block, c->smem);
+  if (c->ws) mapal_gpu_launch(c->rid, p[x->out], 0, x->ptrs[x->out], c->rgx, 1, c->rblock, 0);
+}
+static uint64_t site_timed(void *e, uint32_t i) {
+  site_run(e, i);
+  const char *ns = getenv("MAPAL_EMU_NS");
+  uint64_t t = 0;
+  for (uint32_t j = 0; ns && *ns; j++) {
+    char *end;
+    t = strtoull(ns, &end, 10);
+    if (j == i || *end != ',') break;
+    ns = end + 1;
+  }
+  return t;
+}
+void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, const struct mapal_cand *cands,
+                    uint32_t nptr, const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
+  if (nptr > 16 || out >= nptr || !n) {
+    fprintf(stderr, "emu: site with %u pointers, out %u, %u candidates\n", nptr, out, n);
+    exit(102);
+  }
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0};
+  for (uint32_t i = 0; i < n; i++)
+    if (cands[i].ws > x.ws_max) x.ws_max = cands[i].ws;
+  const char *pick = getenv("MAPAL_GPU_PICK");
+  if (pick && !strcmp(pick, "all")) {
+    for (uint32_t i = 0; i < n; i++) site_run(&x, i);
+    return;
+  }
+  if (!getenv("MAPAL_EMU_NS")) {
+    uint32_t i = pick ? (uint32_t)atoi(pick) : 0;
+    site_run(&x, i < n ? i : n - 1);
+    return;
+  }
+  const char *t = getenv("MAPAL_GPU_TRACE");
+  choice_init("emu-sm0", 0, 1, t && atoi(t));
+  int safe = 1;
+  for (uint32_t p = 0; p < nptr; p++) safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
+  struct choice_dev d = {site_run, site_timed, &x};
+  choice_site(site, flags, n, cands, safe, &d);
 }
 void mapal_gpu_pin(const void *h, uint64_t bytes) { (void)h, (void)bytes; }
 void mapal_gpu_unpin(void) {}
