@@ -450,6 +450,7 @@ fn candidate_zero_is_the_rules_plan() {
 #[test]
 fn candidate_sets_cap_dedupe_and_keep_the_order() {
     let (mut capped, mut ordered, mut lines) = (0, 0, 0);
+    let (mut flips, mut conflict_free) = ([0usize; 2], 0);
     let fixed = EmitOpts {
         contract: false,
         order: Order::Fixed,
@@ -484,6 +485,23 @@ fn candidate_sets_cap_dedupe_and_keep_the_order() {
                     .unwrap_or_else(|| panic!("#{z} {target}: no site line"));
                 assert_eq!(field(site, "n="), n.to_string(), "#{z}: {site}");
                 lines += 1;
+                // per-site-choice A4 x B1: the `kmajor-a` axis flips what the
+                // register rule decided — the forced k-major panel beside a
+                // declined (transposed) candidate 0, the transposed one beside
+                // a taken one.
+                let kmaj = |id: i64| plan(dev, id).is_some_and(|p| p.contains(" kmajor=1"));
+                for (r, ax) in t.rows.iter().zip(field(site, "axes=").split(',')) {
+                    let on = match ax {
+                        "+kmajor-a" => true,
+                        "-kmajor-a" => false,
+                        _ => continue,
+                    };
+                    let c0 = kmaj(t.rows[0][0]);
+                    assert_eq!((c0, kmaj(r[0])), (!on, on), "#{z} {target}: {site}");
+                    flips[usize::from(on)] += 1;
+                    let p = plan(dev, if on { r[0] } else { t.rows[0][0] }).unwrap_or("");
+                    conflict_free += usize::from(p.contains(" adeg=1 "));
+                }
                 let combine = |id: i64| {
                     let p = plan(dev, id).unwrap_or_else(|| panic!("#{z}: no plan line {id:x}"));
                     (field(p, "combine=").to_string(), field(p, "S=").to_string())
@@ -498,8 +516,13 @@ fn candidate_sets_cap_dedupe_and_keep_the_order() {
             }
         }
     }
-    eprintln!("site-choice sets: {lines} tables, {capped} at their cap, {ordered} fixed/exact");
+    eprintln!(
+        "site-choice sets: {lines} tables, {capped} at their cap, {ordered} fixed/exact; \
+         kmajor-a flips -{} +{}, {conflict_free} k-major kernels adeg=1",
+        flips[0], flips[1]
+    );
     assert!(capped >= 8 && ordered >= 8 && lines >= 40);
+    assert!(flips[0] + flips[1] > 0, "the kmajor-a axis reaches a table");
 }
 
 /// B4 excluded classes: no table without `resident` (the round trip), in a

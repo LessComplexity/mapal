@@ -592,7 +592,9 @@ fn tf32_radix_counted_on_unseen_programs() {
 }
 
 /// The default face with `on` / `off` rung arms, and the rungs the emulator
-/// does not run (`pdl`, `streams`) and `place` off.
+/// does not run (`pdl`, `streams`) and `place` off. The rules' plan only
+/// (`--cands=1`): this file checks the rules' geometry; a site's candidate
+/// table (per-site-choice B1) is `site_choice.rs`'s.
 fn emission_arms(
     ir: &CategoryIr,
     target: &'static str,
@@ -610,7 +612,10 @@ fn emission_face(
     off: &[&str],
     base: EmitOpts,
 ) -> mapal_backend_llvm::Emission {
-    let mut gpu = GpuArms::default();
+    let mut gpu = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
     for r in off.iter().chain(&["pdl", "streams", "place"]) {
         *gpu.off.rung(r).expect("rung") = true;
     }

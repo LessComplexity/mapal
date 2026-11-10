@@ -1288,11 +1288,16 @@ fn realized(
 
 /// `arms` with axis `ax` applied against candidate 0's rungs `c0`, and its
 /// label (`+async`: flipped on). `None` where a measurement arm pins the rung:
-/// an A/B arm stays what it forces, in every candidate.
+/// an A/B arm stays what it forces, in every candidate. `kmajor-a` flips what
+/// the launch it builds on (`kmajor`: took the k-major panel) realized, not
+/// the rung: its register rule (per-site-choice A4, [`launch_split`]) may
+/// decline the panel with the rung on, and there the alternative is the
+/// forced k-major panel (`+kmajor-a`; forced, the rule is skipped).
 fn axis_arms(
     arms: crate::GpuArms,
     ax: &crate::profile::ChoiceAxis,
     c0: crate::GpuRungs,
+    kmajor: bool,
 ) -> Option<(crate::GpuArms, String)> {
     let mut a = arms;
     if ax.full {
@@ -1307,7 +1312,10 @@ fn axis_arms(
     if arms.on.get(ax.rung) || arms.off.get(ax.rung) {
         return None;
     }
-    let on = !c0.get(ax.rung);
+    let on = !match ax.rung {
+        "kmajor-a" => kmajor,
+        r => c0.get(r),
+    };
     *(if on {
         a.on.rung(ax.rung)
     } else {
@@ -1350,6 +1358,7 @@ pub(crate) fn site_cands(
             ..*a
         } == *b
     };
+    let took = |l: &Launch| l.tiled.is_some_and(|t| t.kmajor);
     let keep = |out: &mut Vec<SiteCand>, c: SiteCand| {
         let order_ok = order == Order::Free || c.launch.combine == base.combine;
         if out.len() < cap && order_ok && !out.iter().any(|o| same(&o.launch, &c.launch)) {
@@ -1359,7 +1368,7 @@ pub(crate) fn site_cands(
     let singles: Vec<(&crate::profile::ChoiceAxis, SiteCand)> = crate::profile::CHOICE_AXES
         .iter()
         .filter_map(|ax| {
-            let (a, axes) = axis_arms(arms, ax, base.rungs)?;
+            let (a, axes) = axis_arms(arms, ax, base.rungs, took(&base))?;
             Some((
                 ax,
                 SiteCand {
@@ -1382,7 +1391,7 @@ pub(crate) fn site_cands(
             if out.len() >= cap {
                 return out;
             }
-            if let Some((a, axes)) = axis_arms(x.arms, ay, base.rungs) {
+            if let Some((a, axes)) = axis_arms(x.arms, ay, base.rungs, took(&x.launch)) {
                 let axes = format!("{}{axes}", x.axes);
                 keep(
                     &mut out,
