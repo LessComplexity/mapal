@@ -69,10 +69,10 @@ def plan(a):
     cands = [(p, f, k, v) for p in a.programs for f in a.faces for k, vs in knobs.items() for v in vs[1:]]
     with cf.ThreadPoolExecutor(jobs) as pool:
         shipped = dict(zip([(p, f) for p in a.programs for f in a.faces], pool.map(
-            lambda pf: changed.emission(changed.EMIT, tiles[pf[0]], a.arch, pf[1]),
+            lambda pf: changed.emission(changed.EMIT, tiles[pf[0]], a.arch, pf[1], ['--cands=1']),
             [(p, f) for p in a.programs for f in a.faces])))
         hashes = list(pool.map(lambda c: changed.emission(changed.EMIT, tiles[c[0]], a.arch, c[1],
-                                                          [f'--geom={c[2]}={c[3]}']), cands))
+                                                          ['--cands=1', f'--geom={c[2]}={c[3]}']), cands))
     rows, seen, arms = [], {}, []
     for (p, f, k, v), h in zip(cands, hashes):
         sh, name = shipped[(p, f)], arm_name(k, v)

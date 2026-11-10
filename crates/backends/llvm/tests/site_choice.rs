@@ -969,3 +969,92 @@ fn the_winner_runs_last() {
     }
     panic!("no generated program whose two candidates differ in bits");
 }
+
+/// per-site-choice harness: a site executed in a loop is decided once per
+/// process (the memo in `mapal_choice.h`): one `op=site` line, the trial's
+/// launches once, then one launch of the pick per trip — after a trial, from
+/// the wisdom file, and forced.
+#[test]
+fn a_looped_site_decides_once() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP site_choice loop: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let (n, trips) = (64, 4);
+    let src = format!(
+        "fn main() {{
+    {nn} -> iota -> ta;
+    {n} -> iota -> krange;
+    ta -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 7.0 }} -> x0;
+    ta -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> w;
+    mut x: [f32; {nn}] <- x0;
+    mut it: i32 <- 0;
+    loop {{
+        (it < {trips}) -> {{
+            -true-> {{
+                ta -> map {{ t ->
+                    t / {n} -> i;
+                    t % {n} -> j;
+                    (0.0, krange) -> fold {{ acc, k -> acc + x[i * {n} + k] * w[k * {n} + j] }}
+                }} -> x;
+                it + 1 -> it;
+                -> loop;
+            }}
+            -false-> x -> out;
+        }}
+    }}
+    out[0] -> println;
+}}
+",
+        nn = n * n
+    );
+    let e = emission(&lower(&src), "rtx-4090", EmitOpts::default(), 8, &[], &[]);
+    let ts = tables(&e.text);
+    assert_eq!(ts.len(), 1, "one tabled site in the loop body\n{}", e.text);
+    let m = ts[0].rows.len();
+    assert!(m >= 2 && ts[0].flags & 1 == 1);
+    let ids: Vec<String> = ts[0]
+        .rows
+        .iter()
+        .map(|r| format!("kernel=mapal_tile_{:016x}", r[0] as u64))
+        .collect();
+    let built = emu::build_emulated(&clang, &e.text, e.device.as_deref().unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    let wis = dir.path().join("w");
+    // Candidate 1 fastest on the fake clock.
+    let mut ns = vec!["1000000"; m];
+    ns[1] = "500000";
+    let ns = ns.join(",");
+    let run = |extra: &[(&str, &str)]| {
+        let mut env = vec![
+            ("MAPAL_EMU_NS", ns.as_str()),
+            ("MAPAL_WISDOM", wis.to_str().unwrap()),
+            ("MAPAL_GPU_TRACE", "1"),
+        ];
+        env.extend_from_slice(extra);
+        let err = built.run(&env).1;
+        let site_launches = err
+            .lines()
+            .filter(|l| l.starts_with("mapal_gpu_trace op=launch "))
+            .filter(|l| ids.iter().any(|k| l.split(' ').any(|f| f == k)))
+            .count();
+        let trials = err.lines().filter(|l| l.contains("op=trial ")).count();
+        (decisions(&err), trials, site_launches, err)
+    };
+    // The trial: candidate 0 sizes it, 5 rotated reps, 3 confirming pairs,
+    // then trips 2.. launch the pick alone.
+    let (d, trials, launches, err) = run(&[]);
+    assert_eq!(d, vec![("trial".into(), 1)], "one decision\n{err}");
+    assert_eq!(trials, 5 * m + 6, "{err}");
+    assert_eq!(launches, 1 + trials + (trips - 1), "{err}");
+    // From the wisdom file, and forced: one decision, one launch per trip.
+    for (extra, want) in [
+        (vec![], ("wisdom", 1)),
+        (vec![("MAPAL_GPU_PICK", "rules")], ("forced", 0)),
+    ] {
+        let (d, trials, launches, err) = run(&extra);
+        assert_eq!(d, vec![(want.0.into(), want.1)], "{err}");
+        assert_eq!((trials, launches), (0, trips), "{err}");
+    }
+}

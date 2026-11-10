@@ -21,7 +21,12 @@
  * appended line per decision (`key site n pick reps ns0 .. kernel names`, tab
  * separated); the last line of a key wins, unreadable lines are ignored.
  * `MAPAL_WISDOM=off` reads and writes nothing (candidate 0);
- * `MAPAL_GPU_TUNE=0` reads but never trials. */
+ * `MAPAL_GPU_TUNE=0` reads but never trials.
+ *
+ * The pick is decided once per table and process: later executions of the
+ * site find it by the table's address (the host's constant) in a small
+ * direct-mapped memo, so a decided site costs a pointer compare; the trace
+ * prints one `op=site` line per decision, none per memo hit. */
 #ifndef MAPAL_CHOICE_H
 #define MAPAL_CHOICE_H
 
@@ -91,6 +96,14 @@ static struct {
   } *w;
   size_t nw, cap, nfile; /* entries; the first `nfile` read from the file */
 } choice;
+
+/* Decided sites by table address; a collision only re-decides (and a re-decision
+ * finds this process's wisdom entry). */
+#define CHOICE_MEMO 256
+static struct choice_memo {
+  const struct mapal_cand *c;
+  uint32_t n, pick;
+} choice_memo[CHOICE_MEMO];
 
 static uint64_t choice_fnv(const void *p, size_t n, uint64_t h) {
   const unsigned char *b = p;
@@ -180,16 +193,24 @@ static void choice_init(const char *dev, uint64_t module, int tune, int trace) {
 static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
                             const struct mapal_cand *c, int safe,
                             const struct choice_dev *d) {
-  uint64_t key = choice_fnv(c, (size_t)n * sizeof *c, CHOICE_FNV0) ^ choice.module;
+  struct choice_memo *memo = &choice_memo[(((uintptr_t)c * 0x9e3779b97f4a7c15ull) >> 32) % CHOICE_MEMO];
+  if (memo->c == c && memo->n == n) {
+    d->run(d->env, memo->pick);
+    return memo->pick;
+  }
+  uint64_t key = 0;
   uint32_t pick = 0;
   const char *src = "rules";
   int found = 0;
   uint32_t reps = 0;
   uint64_t ns0 = 0, nsw = 0;
   if (choice.pick >= 0) {
+    /* Forced: no key, no wisdom. */
     pick = (uint32_t)choice.pick < n ? (uint32_t)choice.pick : n - 1;
     src = "forced";
     found = 1;
+  } else {
+    key = choice_fnv(c, (size_t)n * sizeof *c, CHOICE_FNV0) ^ choice.module;
   }
   /* `tune`: only this process's decisions stand (a site in a loop trials once). */
   size_t lo = choice.pick == CHOICE_TUNE ? choice.nfile : 0;
@@ -275,6 +296,9 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
   } else {
     d->run(d->env, pick);
   }
+  /* An unsafe execution's candidate 0 is not a decision: a later one may trial. */
+  if (safe || found)
+    *memo = (struct choice_memo){c, n, pick};
   if (choice.trace) {
     fprintf(stderr, "mapal_gpu_trace op=site site=%016llx key=%016llx n=%u pick=%u src=%s reps=%u",
             (unsigned long long)site, (unsigned long long)key, n, pick, src, reps);

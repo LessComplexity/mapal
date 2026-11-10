@@ -16,6 +16,11 @@ diff   — emit every bench program (gen_tiles.py) per arch x face on a base ref
                                   tag new | cause (off at HEAD == off at base: the change is this rung's) | carried)
               <out>/changed.tsv   program status arch/face.. rungs              (the summary)
               <out>/tiles/        HEAD's programs (the cache's source hashes)
+              <out>/tables.tsv    program arch face head_hash tables max_n      (per-site-choice: HEAD rows whose
+                                  emission has site tables — "to tune": one binary, arms chosen by the environment)
+           per-site-choice B5: a tabled row's cache key is (emission hash, selection): `<hash>@auto` (the `on` arm:
+           the box's wisdom), `@rules`, `@pick<i>`; a row the box carried (every pick = rules) is cached as
+           `<hash>@auto` = `carried`. Such a row is `cached` when `<hash>@auto` is.
 env    — one arch's selection as shell assignments for integrated_bundle.sh / bundle.sh (changed_bundle.sh);
          CPU-only changes go to one box (--cpu-box, default this arch).
            changed.py env <out> <arch> [--cpu-box ARCH]
@@ -59,8 +64,12 @@ def norm(text):
     return ''.join(l for l in text.splitlines(True) if not l.startswith('; mapal.'))
 
 
+TABLES = {}  # emission hash -> (site tables, largest n) of a HEAD emission with `mapal_gpu_site` calls
+
+
 def emission(emit, src, arch, face, extra=()):
-    """Hash of one emission's host IR + device IR (16 hex), `err` when the emitter refuses."""
+    """Hash of one emission's host IR + device IR (16 hex), `err` when the emitter refuses. A host IR with site
+    tables (per-site-choice) records (tables, largest n) in TABLES under its hash."""
     with tempfile.TemporaryDirectory() as t:
         dev = Path(t) / 'd.ll'
         cmd = [str(emit), str(src), '-', '--rewrite', f'--target={arch}', *FACES[face], *extra]
@@ -70,7 +79,11 @@ def emission(emit, src, arch, face, extra=()):
         if r.returncode:
             return 'err'
         body = norm(r.stdout) + '\0' + (norm(dev.read_text()) if dev.exists() else '')
-    return hashlib.sha256(body.encode()).hexdigest()[:16]
+    h = hashlib.sha256(body.encode()).hexdigest()[:16]
+    ns = [int(n) for n in re.findall(r'call void @mapal_gpu_site\(i64 -?\d+, i32 \d+, i32 \d+, i32 (\d+)', r.stdout)]
+    if ns:
+        TABLES[h] = (len(ns), max(ns))
+    return h
 
 
 def rungs(emit, src):
@@ -158,8 +171,9 @@ def diff(a):
                   file=sys.stderr)
         em = []
         for (p, arch, face), b, h in zip(rows, hb, hh):
+            hit = f'{h}@auto' if h in TABLES else h  # a tabled row: its AUTO arm (the selection) is the key
             st = 'new' if b == '-' else 'gone' if h == '-' else 'same' if b == h and rt == rt_base else \
-                'cached' if h in cached[arch] else 'changed'
+                'cached' if hit in cached[arch] else 'changed'
             em.append((p, arch, face, st, b, h))
         # Arms only where the emission moved (a runtime-only change re-measures the shipped build).
         todo = [(p, arch, face, h) for p, arch, face, st, b, h in em if st in ('changed', 'new') and b != h]
@@ -178,6 +192,8 @@ def diff(a):
         arms = [(p, arch, face, arm, o, 'new' if b == 'new' else 'cause' if b == o else 'carried')
                 for ((p, arch, face, h, arm), o), b in zip(live, boffs)]
     write(out / 'emission.tsv', ['program', 'arch', 'face', 'status', 'base_hash', 'head_hash'], em)
+    write(out / 'tables.tsv', ['program', 'arch', 'face', 'head_hash', 'tables', 'max_n'],
+          [(p, arch, face, h, *TABLES[h]) for p, arch, face, _, _, h in em if h in TABLES])
     write(out / 'arms.tsv', ['program', 'arch', 'face', 'arm', 'hash', 'tag'], arms)
     summary = defaultdict(lambda: [set(), set(), set()])
     for p, arch, face, st, _, _ in em:
@@ -196,7 +212,8 @@ def diff(a):
         count[r[3]] += 1
     print(f'diff {a.base} -> HEAD: {len(head)} programs x {len(a.archs)} archs x {len(a.faces)} faces: '
           + ' '.join(f'{k}={v}' for k, v in sorted(count.items()))
-          + f'; {len(summary)} programs to measure; differing arms: '
+          + f'; {len(summary)} programs to measure ({len({r[0] for r in em if r[5] in TABLES})} with site tables: '
+          f'to tune); differing arms: '
           + ' '.join(f'{t}={sum(r[5] == t for r in arms)}' for t in ('new', 'cause', 'carried')) + f' -> {out}/changed.tsv')
 
 
@@ -211,7 +228,8 @@ def read(path):
 
 def env(a):
     """integrated_bundle.sh: SUITE (pt_*, default face) / SUITE_C (contract face too) / PROGS (pt_rm_*) / CELLS
-    (mm_MxNxK) / ARMS (their `new` and `cause` arms; ALL_ARMS=1 adds the `carried` ones) / SUITE_CPU (the suite
+    (mm_MxNxK) / ARMS (their `new` and `cause` arms; ALL_ARMS=1 adds the `carried` ones) / TUNE (the moved programs
+    with site tables: box_run.sh tunes them, then times AUTO vs RULES where a pick is not candidate 0) / SUITE_CPU (the suite
     programs whose CPU-only build changed: their `cpu` arm); bundle.sh: ONLY (every other program: the differential)
     with its differing rungs as HOST_RUNGS / KERNEL_RUNGS / TF32_RUNGS (NOARMS where it has none) and DEFAULT (those
     whose default face moved: gated against the exact oracle within D2's bound, box_run.sh `_d`; UNCHECKED where no
@@ -252,7 +270,8 @@ def env(a):
             rungs_only.add(r)
     rr = ' '.join(sorted(rungs_only)) or ' '  # a blank, not empty: bundle.sh's `${X:-default}` keeps it
     noarms = '' if rungs_only else ' '.join(only)
-    for k, v in [('SUITE', suite), ('SUITE_C', suite_c), ('SUITE_CPU', suite_cpu), ('PROGS', progs),
+    tune = sorted({r[0] for r in read(out / 'tables.tsv') if r[1] == arch and r[0] in moved})
+    for k, v in [('SUITE', suite), ('SUITE_C', suite_c), ('SUITE_CPU', suite_cpu), ('PROGS', progs), ('TUNE', tune),
                  ('CELLS', cells), ('ARMS', arms), ('ONLY', only), ('DEFAULT', default), ('UNCHECKED', unchecked),
                  ('NOARMS', noarms.split())]:
         print(f"{k}='{' '.join(v)}'")
@@ -279,13 +298,17 @@ def ingest(a):
     head = {(p, face): h for p, ar, face, _, _, h in read(out / 'emission.tsv') if ar == arch}
     cpu = {(p, face): h for p, ar, face, _, _, h in read(out / 'emission.tsv') if ar == CPU}
     arm_h = {(p, face, arm): h for p, ar, face, arm, h, _ in read(out / 'arms.tsv') if ar == arch}
+    tabled = {r[3] for r in read(out / 'tables.tsv') if r[1] == arch}
     stamp, nvcc, tv = box_stamp(text)
     rt = (out / 'stamp').read_text().strip() if (out / 'stamp').exists() else '-'
     ver = f'{rt}|{nvcc}|{stamp.split("|")[-1]}'  # runtime stamp | nvcc | driver
 
     def key(p, face, arm):
+        h = head.get((p, face))
+        if h in tabled and (arm in ('on', 'null', 'rules') or re.fullmatch(r'pick\d+', arm)):
+            return f"{h}@{'auto' if arm in ('on', 'null') else arm}"  # per-site-choice: (emission, selection)
         if arm in ('on', 'null'):
-            return head.get((p, face))
+            return h
         if arm == 'cpu':
             return cpu.get((p, face))
         return arm_h.get((p, face, arm)) or (f'{head[(p, face)]}/{arm}' if (p, face) in head else None)
@@ -313,6 +336,11 @@ def ingest(a):
                          f'med_ms={statistics.median(v):.6g} n={len(v)} prog={p} face={face} arm={arm}', stamp))
     for (p, leg, ver), v in lib.items():
         rows.append((src_hash(out, p), leg, ver, f'med_ms={statistics.median(v):.6g} n={len(v)} prog={p}', stamp))
+    # per-site-choice: a program the box carried (every pick = rules) is its rules build, measured before
+    for m in re.finditer(r'^carried prog=(\S+)', text, re.M):
+        for face in FACES:
+            if (h := head.get((m[1], face))) in tabled:
+                rows.append((f'{h}@auto', 'mapal', ver, f'carried pick=rules prog={m[1]} face={face}', stamp))
     CACHE.mkdir(parents=True, exist_ok=True)
     f = CACHE / f'{arch}.tsv'
     new = not f.exists()

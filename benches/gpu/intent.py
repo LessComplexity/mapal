@@ -35,6 +35,13 @@ INTENT = {
     'exec': dict(applies=ANY + " and exec.regs >= 0", on=[
         ('JIT image registers == ptxas -v', 'exec.regs == ptxas.regs'),
         ('JIT image local bytes == ptxas stack frame', 'exec.local == ptxas.stack')]),
+    # per-site-choice B5: every kernel a site table names is emitted with its plan line (the evidence joins a
+    # measured candidate to its plan by kernel name). Measured (evidence.py `choice_rows`, rows `choice:on`): each
+    # stored pick is the argmin of its trial's minima beyond max(3 %, 1 us); AUTO runs launch the stored pick
+    # (`op=site … src=wisdom`); AUTO <= RULES x (1 + null) per program and face.
+    'choice': dict(applies='mod.cand == 1', on=[
+        ('a table candidate has its plan line', 'len(plan) > 0'),
+        ('a table candidate is in the module (PTX)', 'len(ptx) > 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
     'arch-rungs': dict(applies=ANY, on=[

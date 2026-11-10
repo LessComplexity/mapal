@@ -6,6 +6,10 @@
 # probe section (whole programs, value-gated, ABBA per repetition) — and, per part, the evidence
 # (evidence.py: ptxas -v, SASS, LLVM remarks, the intent check) in `<part>/evidence/`.
 #
+# per-site-choice B5: a program with site tables is one binary whose arms box_run.sh picks by environment (AUTO,
+# RULES, each candidate); `.sites` lists its candidates, `.pick<i>.launch` the first table's for tile_bench, `.c1`
+# a looped program's `--cands=1` build (the overhead arm); a rung arm the tables cover is dropped (`= table`).
+#
 # usage: benches/gpu/integrated_bundle.sh <outdir> <profile:sm>...
 # Faces (stem suffix): "" default (no flags: fma, order free), _x --exact, _c --order=sequential
 # (contract), _r --no-contract --order=fixed (the fixed test/debug face), _rc --order=fixed.
@@ -85,16 +89,10 @@ emit_one() { # <src> <stem> <prof> <sm> [flags...]
     "$LLVM/llc" -O3 -mcpu="$sm" -nvptx-fma-level=0 "$stem.dev.opt.ll" -o "$stem.ptx" \
         -pass-remarks-output="$stem.dev.llc.remarks.yaml"
     # `kernel gx gy block smem`, then `S rkernel rgx rgy rblock rsmem` (workspace split),
-    # `S atomic` (splitk-atomic) or `1 streamk` (stream-K).
-    { grep -oE 'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 [-0-9]*.*' "$stem.host.ll" || true; } | head -2 |
-        python3 -c 'import sys,re
-ls = sys.stdin.read().splitlines()
-k = lambda l: "mapal_tile_%016x" % (int(re.search(r"i64 (-?\d+)", l).group(1)) & (2**64 - 1))
-n = lambda l: re.findall(r"i32 (\d+)", l.split(";")[0])
-s = ls and re.search(r"; splitk=(\d+)( atomic)?", ls[0])
-sk = ls and re.search(r"; streamk=", ls[0])
-tail = ([s.group(1), "atomic"] if s and s.group(2) else [s.group(1), k(ls[1]), *n(ls[1])]) if s else (["1", "streamk"] if sk else [])
-ls and print(k(ls[0]), *n(ls[0]), *tail)' > "$stem.launch"
+    # `S atomic` (splitk-atomic) or `1 streamk` (stream-K). per-site-choice: a site table's candidate 0 when the
+    # table comes first; `.sites` (every table's candidates) and `.pick<i>.launch` (the first table's candidate i,
+    # its `.ptx` a link to this module: tile_bench's per-candidate legs).
+    python3 "$ROOT/benches/gpu/evidence.py" launch "$stem"
 }
 # The CPU-only build on the host profile (S62 `emit_cpu`).
 emit_cpu() { # <src> <stem> [flags...]
@@ -107,7 +105,13 @@ same() { local x; for x in host.ll ptx launch; do
     if [ -f "$1.$x" ] || [ -f "$2.$x" ]; then
         cmp -s <(grep -sv '^; mapal\.' "$1.$x") <(grep -sv '^; mapal\.' "$2.$x") || return 1
     fi; done; }
-drop() { rm -f "$1".host.* "$1".dev.* "$1".ptx "$1".launch "$1".k; }
+drop() { rm -f "$1".host.* "$1".dev.* "$1".ptx "$1".launch "$1".k "$1".sites "$1".pick*.launch "$1".pick*.ptx; }
+# per-site-choice B5 overhead arm: a looped program with site tables also as its `--cands=1` build (`.c1`):
+# box_run.sh times its RULES arm against it (the cost of going through mapal_gpu_site).
+c1() { # <src> <stem> <prof> <sm>
+    [ -s "$2.sites" ] && grep -q 'loop {' "$1" || return 0
+    emit_one "$1" "$2.c1" "$3" "$4" --cands=1
+}
 # The default face's realization chain: each arm turns the next rung off; one equal to the arm
 # above it (the rung leaves that launch alone) is dropped.
 chain() { # <src> <stem> <prof> <sm>
@@ -141,6 +145,7 @@ for spec in "$@"; do
             emit_one "$f" "$b$face" "$prof" "$sm" $(flags_of "$face")
         done
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
+        c1 "$f" "$b" "$prof" "$sm"
         if same "$b" "${b}_c"; then echo "prog $prof $p default = contract (host, PTX identical)"; fi
         chain "$f" "$b" "$prof" "$sm"
         # S64: CPU-only and GPU-only arms of the default face.
@@ -160,6 +165,7 @@ for spec in "$@"; do
         emit_one "$f" "$b" "$prof" "$sm"
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
         if [[ " $SUITE_C " == *" $p "* ]]; then emit_one "$f" "${b}_c" "$prof" "$sm" --order=sequential; fi
+        c1 "$f" "$b" "$prof" "$sm"
         # site-geometry: SUITE_ARMS=0 (search.py, changed_bundle.sh) keeps the shipped build and its null, plus the
         # `cpu` arm of SUITE_CPU (its CPU-only build changed); every other arm comes from ARMS.
         if [ "${SUITE_ARMS:-1}" != 1 ]; then
@@ -197,6 +203,11 @@ for spec in "$@"; do
         if cmp -s <(grep -sv '^; mapal\.' "$q.host.ll") <(grep -sv '^; mapal\.' "$b.host.ll") &&
            { { [ ! -f "$q.dev.ll" ] && [ ! -f "$b.dev.ll" ]; } || cmp -s "$q.dev.ll" "$b.dev.ll"; }; then
             rm -f "$q".*; echo "rejudge $prof $stem$face $tag = shipped"; continue
+        fi
+        # per-site-choice B5: a CHOICE_AXES rung whose every kernel is already a candidate of the shipped
+        # tables is measured by the tune pass, not as an emission arm.
+        if { [ "$dir" = on ] || [ "$dir" = off ]; } && python3 "$ROOT/benches/gpu/evidence.py" covered "$q" "$b" "$rung"; then
+            rm -f "$q".*; echo "rejudge $prof $stem$face $tag = table"; continue
         fi
         rm -f "$q".*
         emit_one "$f" "$s" "$prof" "$sm" $(flags_of "$face") ${flag}

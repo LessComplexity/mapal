@@ -17,6 +17,15 @@
 # (torch_bench.py, installed in the background from the start; TORCH=0 skips them), timing.
 # Every line lands in results-<profile>.txt the moment it is produced.
 #
+# per-site-choice B5: a binary with site tables (`<stem>.sites`) is one build whose arms the environment picks:
+# `on` = AUTO (the wisdom, ./wisdom), `rules` (MAPAL_GPU_PICK=rules: candidate 0), `pick<i>` (candidate i). Every run
+# reads the wisdom and never trials (MAPAL_GPU_TUNE=0) except the probe section's one untimed tune run per stem
+# (`tune` lines; RETUNE=1 ignores a wisdom file left by an earlier run). Value gates cover every candidate index
+# up to the stem's largest table. A program whose every pick is candidate 0 is `carried` (no timing, no library
+# leg); a looped program keeps its `.c1` (`--cands=1`) arm: RULES vs `.c1` is the cost of `mapal_gpu_site`.
+# `load` lines: module load ms on a cold driver JIT cache and on a later (warm) run. PICKS=1 also times every
+# candidate. The driver's JIT cache must be on and writable (JIT_CACHE_OK=1 runs without it).
+#
 # usage: bash box_run.sh <profile> <sm_NN> [reps]
 set -uo pipefail
 PROF=$1; SM=$2; REPS=${3:-30}
@@ -25,6 +34,14 @@ LOG=results-$PROF.txt
 # S64: a looped program's CPU build (pt_rt_mlp2_1024 `.cpu`) overflows the default 8 MB stack.
 ulimit -s unlimited 2>/dev/null || ulimit -s 65536 2>/dev/null || true
 say() { echo "$@" | tee -a "$LOG"; }
+# per-site-choice: the wisdom of this box; only the tune pass trials. The tables grow the PTX x4-11: the JIT
+# cache must hold every image across the runs (the driver's default size does not).
+export MAPAL_WISDOM=$PWD/wisdom MAPAL_GPU_TUNE=0 CUDA_CACHE_MAXSIZE=${CUDA_CACHE_MAXSIZE:-4294967296}
+# The candidate indexes a stem's value gates run (`auto` without a table).
+picks() { local n; n=$(awk '{ if ($3 > m) m = $3 } END { print m + 0 }' "$1.sites" 2>/dev/null)
+    if [ "${n:-0}" -gt 0 ]; then seq 0 $((n - 1)); else echo auto; fi; }
+# MAPAL_GPU_PICK of an arm: `rules`, `pick<i>` -> i, every other arm AUTO.
+sel() { case $1 in rules) echo rules ;; pick*) echo "${1#pick}" ;; *) echo auto ;; esac; }
 link() { cc "$1" mapal_gpu.c libmapal_rt.a -I"$CUDA/include" -L"$CUDA/lib64/stubs" -lcuda -lpthread -ldl -lm -o "$2" 2>&1 | tail -3; }
 : > "$LOG"
 say "== $PROF $SM $(date -u +%FT%TZ)"
@@ -37,6 +54,12 @@ for x in index0 index2; do
     c=/sys/devices/system/cpu/cpu0/cache/$x
     say "cache $x size=$(cat $c/size 2>/dev/null) line=$(cat $c/coherency_line_size 2>/dev/null) sets=$(cat $c/number_of_sets 2>/dev/null) shared=$(cat $c/shared_cpu_list 2>/dev/null)"
 done
+
+jc=${CUDA_CACHE_PATH:-$HOME/.nv/ComputeCache}
+if [ "${CUDA_CACHE_DISABLE:-0}" = 1 ] || ! { mkdir -p "$jc" && touch "$jc/.mapal_w" && rm -f "$jc/.mapal_w"; }; then
+    say "JIT CACHE OFF OR NOT WRITABLE path=$jc disable=${CUDA_CACHE_DISABLE:-0}"; [ "${JIT_CACHE_OK:-0}" = 1 ] || exit 1
+fi
+say "jit_cache path=$jc max_bytes=$CUDA_CACHE_MAXSIZE used_kb=$(du -sk "$jc" 2>/dev/null | cut -f1)"
 
 say "-- differential (GPU stdout vs oracle)"
 pass=0; fail=0
@@ -65,7 +88,10 @@ for o in "$PROF"/*.host.o; do
     if ! link "$o" "prog_$b"; then
         fail=$((fail + 1)); say "FAIL $b link failed"; continue
     fi
-    got=$(MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
+    # per-site-choice: every candidate index of a tabled stem answers to the oracle (`<stem>@<i>`).
+    for pk in $(picks "$PROF/$b"); do
+    bp=$b; [ "$pk" = auto ] || bp="$b@$pk"
+    got=$(MAPAL_GPU_PICK=$pk MAPAL_PTX="$PROF/$b.ptx" "./prog_$b" 2>&1); rc=$?
     # The clock is not a value: a program's `iter ms=` line drops on both sides.
     got=$(grep -v '^iter ms=' <<< "$got"); want=$(grep -v '^iter ms=' "$exp")
     if [ -n "$dflt" ]; then
@@ -73,23 +99,24 @@ for o in "$PROF"/*.host.o; do
         grep -q ': tf32' "tiles/$base.mapal" 2>/dev/null && tf+=(--tf32)
         g="process exit $rc"
         if [ $rc -eq 0 ] && g=$(python3 value_gate.py "$exp" "$(tr '\n' ' ' <<< "$got")" "$(cat "tiles/$base.kmax")" ${tf[@]+"${tf[@]}"}); then
-            pass=$((pass + 1)); say "PASS-BOUND $b K=$(cat "tiles/$base.kmax") $g $(tr '\n' ' ' <<< "$got")"
+            pass=$((pass + 1)); say "PASS-BOUND $bp K=$(cat "tiles/$base.kmax") $g $(tr '\n' ' ' <<< "$got")"
         else
-            fail=$((fail + 1)); say "FAIL $b rc=$rc default face outside D2's bound: $g got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
+            fail=$((fail + 1)); say "FAIL $bp rc=$rc default face outside D2's bound: $g got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
         fi
         continue
     fi
     if [ $rc -eq 0 ] && [ "$got" = "$want" ]; then
-        pass=$((pass + 1)); say "PASS $b $(tr '\n' ' ' <<< "$got")"
+        pass=$((pass + 1)); say "PASS $bp $(tr '\n' ' ' <<< "$got")"
     # TF32: a split-K atomic combine adds in no fixed order, so two runs of one build differ in the
     # last bits; within 1e-4 relative of the reference (TF32 itself is 2^-11).
     elif [ $rc -eq 0 ] && [[ $stem == *_tf ]] && python3 -c 'import sys
 g, w = sys.argv[1].split(), sys.argv[2].split()
 sys.exit(not (len(g) == len(w) and all(abs(float(a) - float(b)) <= 1e-4 * max(abs(float(a)), abs(float(b)), 1.0) for a, b in zip(g, w))))' "$got" "$want"; then
-        pass=$((pass + 1)); say "PASS-ORDER $b $(tr '\n' ' ' <<< "$got")"
+        pass=$((pass + 1)); say "PASS-ORDER $bp $(tr '\n' ' ' <<< "$got")"
     else
-        fail=$((fail + 1)); say "FAIL $b rc=$rc got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
+        fail=$((fail + 1)); say "FAIL $bp rc=$rc got=[$(tr '\n' ' ' <<< "$got")] want=[$(tr '\n' ' ' < "$exp")]"
     fi
+    done
 done
 say "differential: $pass pass, $fail fail"
 
@@ -217,7 +244,7 @@ fi
 # E2E=0 (S62): skip this section (a kernel item's session).
 [ "${E2E:-1}" = 1 ] && say "-- e2e: host-link arms, process wall + MAPAL_GPU_TRACE totals"
 ARMS=${E2E_ARMS:-on off-resident off-devgen off-eager-init off-arena off-arch-rungs s52}
-arm_stem() { [ "$2" = on ] && echo "$1" || echo "$1.$2"; }
+arm_stem() { case $2 in on|rules|pick*) echo "$1" ;; *) echo "$1.$2" ;; esac; }
 e2e() { # <prog> <floor: n gemms ops>
     local p=$1; shift
     compgen -G "$PROF/$p.*host.o" > /dev/null || compgen -G "$PROF/${p}_c.*host.o" > /dev/null ||
@@ -266,34 +293,52 @@ say "-- probes: Mapal (wall, iter ms, MAPAL_GPU_TRACE) vs the library legs (chai
 # S64: and every `.on-<rung>` arm (the re-judged rows' flipped arms).
 off_arms() { local o; for o in "$PROF/$1".off-*.host.o "$PROF/$1".on-*.host.o; do [ -f "$o" ] && { o=${o%.host.o}; echo "${o##*.}"; }; done; }
 # S62: the CPU-only build and the null copy, where the bundle built them.
-xtra_arms() { local x; for x in cpu cpu-inline cpu-off-by-ref null; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
-# probe_out <stem>: one untraced process's stdout, one line (`iter ms` included).
-probe_out() { MAPAL_PTX="$PROF/$1.ptx" "./pt_$1" 2>/dev/null | tr '\n' ' '; }
+xtra_arms() { local x; for x in cpu cpu-inline cpu-off-by-ref null c1; do [ -f "$PROF/$1.$x.host.o" ] && echo "$x"; done; }
+# probe_out <stem> [arm]: one untraced process's stdout, one line (`iter ms` included).
+probe_out() { MAPAL_GPU_PICK=$(sel "${2:-on}") MAPAL_PTX="$PROF/$1.ptx" "./pt_$1" 2>/dev/null | tr '\n' ' '; }
+# A trace's site decisions: `key:pick:src` per `op=site` line.
+site_picks() { sed -nE 's/.*op=site site=[0-9a-f]+ key=([0-9a-f]+) n=[0-9]+ pick=([0-9]+) src=([a-z]+).*/\1:\2:\3/p' <<< "$1" | tr '\n' ' '; }
+module_ms() { grep -m1 mapal_gpu_trace_total <<< "$1" | grep -o 'module_ms=[0-9.]*' | cut -d= -f2; }
 val_fail=0
 for o in "$PROF"/pt_*.host.o; do
     [ -f "$o" ] || continue
     b=$(basename "$o" .host.o)
     case $b in *.*|*_c|*_x) continue ;; esac
-    pa=$( (off_arms "$b"; off_arms "${b}_c"; off_arms "${b}_x"; xtra_arms "$b") | sort -u | tr "\n" " "); pa=${PROBE_ARMS:-on $pa}
+    pa=$( (off_arms "$b"; off_arms "${b}_c"; off_arms "${b}_x"; xtra_arms "$b") | sort -u | tr "\n" " ")
+    tabled=; compgen -G "$PROF/$b.sites" > /dev/null || compgen -G "$PROF/${b}_[cx].sites" > /dev/null && tabled=1
+    pa=${PROBE_ARMS:-on ${tabled:+rules }$pa}
     probe=${b#pt_}; n=${probe##*_}; probe=${probe%_*}
     # S63 (ADR-0040 D2): the program's longest fold, off the stem (`_d<d>_h<h>`).
     # S64: `tiles/<stem>.kmax` (gen_tiles.py) first.
     kmax=$(cat "tiles/$b.kmax" 2>/dev/null || { sed -nE 's/.*_d([0-9]+)_h([0-9]+).*/\1 \2/p' <<< "$b" | awk '{ print ($1 > $2) ? $1 : $2 }'; })
     faces=("" _c); [ -f "$PROF/${b}_x.host.o" ] && faces=("" _x _c)
-    runs=()
+    runs=(); gates=()
     for face in "${faces[@]}"; do
         for arm in $pa; do
             s=$(arm_stem "$b$face" "$arm")
-            [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "pt_$s"
+            case $arm in
+                rules|pick*) [ -s "$PROF/$b$face.sites" ] || continue; [ -x "pt_$s" ] || link "$PROF/$s.host.o" "pt_$s" ;;
+                *) [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "pt_$s" ;;
+            esac
             [ -x "pt_$s" ] && runs+=("$face:$arm")
         done
+        # per-site-choice: the value gate runs every candidate index (timed only under PICKS=1).
+        if [ -s "$PROF/$b$face.sites" ] && [ -x "pt_$b$face" ]; then
+            for pk in $(picks "$PROF/$b$face"); do
+                gates+=("$face:pick$pk"); [ "${PICKS:-0}" = 1 ] && runs+=("$face:pick$pk")
+            done
+        fi
     done
+    gates=(${runs[@]+"${runs[@]}"} ${gates[@]+"${gates[@]}"})
     # The value gate, before any timing: every arm prints its face's oracle. site-geometry: a failing arm
     # drops alone (its VALUE-FAIL line stays); the others are timed (a search bundle's other knob values).
     bad=0; failed=" "
-    for fa in "${runs[@]}"; do
+    for fa in ${gates[@]+"${gates[@]}"}; do
+        case " $failed " in *" $fa "*) continue ;; esac
         face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
-        got=$(probe_out "$s"); got=${got%%iter ms=*}
+        got=$(probe_out "$s" "$arm"); got=${got%%iter ms=*}
+        # A failing candidate fails the arms that may run it (AUTO and its null) with it.
+        fails() { bad=1; failed+="$fa "; case $arm in pick*) failed+="$face:on $face:null " ;; esac; }
         # S63: the default face answers to the exact face within D2's bound (value_gate.py).
         if [ -z "$face" ] && [ -s "tiles/${b}_x.expect" ] && [ -n "$kmax" ]; then
             # S65: against D2's M (absolute) where the bundle has the program's magnitude oracle.
@@ -301,7 +346,7 @@ for o in "$PROF"/pt_*.host.o; do
             # ADR-0041 D3: a program whose products admit TF32 answers to D3's bound.
             grep -q ': tf32' "tiles/$b.mapal" 2>/dev/null && xabs+=(--tf32)
             if ! g=$(python3 value_gate.py "tiles/${b}_x.expect" "$got" "$kmax" ${xabs[@]+"${xabs[@]}"}); then
-                bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
+                fails; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] $g"
             else
                 say "value-bound prog=$b face=_default arm=$arm K=$kmax $g got=[$got] exact=[$(tr '\n' ' ' < "tiles/${b}_x.expect")]"
             fi
@@ -311,22 +356,48 @@ for o in "$PROF"/pt_*.host.o; do
         # flow: a default face without its bound is a gate failure, never a bit comparison against
         # another order-free build (the facts-on-graph sweep failed split-K / stream-K that way).
         if [ -z "$face" ] && [ ! -s "$exp" ]; then
-            bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] no bound (tiles/${b}_x.expect, K)"
+            fails; say "VALUE-FAIL prog=$b face=_default arm=$arm got=[$got] no bound (tiles/${b}_x.expect, K)"
             continue
         fi
         if [ -s "$exp" ]; then want=$(tr '\n' ' ' < "$exp"); else want=$(probe_out "$b$face.cpu"); want=${want%%iter ms=*}; fi
         if [ "$got" != "$want" ]; then
-            bad=1; failed+="$fa "; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
+            fails; say "VALUE-FAIL prog=$b face=${face:-_exact} arm=$arm got=[$got] want=[$want]"
         fi
     done
     kept=(); for fa in "${runs[@]}"; do [[ "$failed" == *" $fa "* ]] || kept+=("$fa"); done
     if [ "$bad" != 0 ]; then
-        val_fail=$((val_fail + 1)); say "value-gate prog=$b arms=${#runs[@]} failed=$(wc -w <<< "$failed") timing the rest"
+        val_fail=$((val_fail + 1)); say "value-gate prog=$b arms=${#gates[@]} failed=$(wc -w <<< "$failed") timing the rest"
     else
-        say "value-gate prog=$b arms=${#runs[@]} pass"
+        say "value-gate prog=$b arms=${#gates[@]} pass"
     fi
     [ ${#kept[@]} -gt 0 ] || continue
     runs=("${kept[@]}")
+    # per-site-choice: the tune run (untimed, traced) of each tabled face, and its module load on a cold JIT
+    # cache (a fresh CUDA_CACHE_PATH) against this run's (the gates warmed it); `.c1` the same.
+    tuned=
+    for face in "${faces[@]}"; do
+        s=$b$face; [ -s "$PROF/$s.sites" ] && [ -x "pt_$s" ] || continue
+        mkdir -p tune
+        tr=$(MAPAL_GPU_TUNE=1 MAPAL_GPU_PICK=$([ "${RETUNE:-0}" = 1 ] && echo tune || echo auto) MAPAL_GPU_TRACE=1 \
+            MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); rc=$?
+        echo "$tr" > "tune/$s.trace"
+        sp=$(site_picks "$tr")
+        say "tune prog=$b face=${face:-_default} rc=$rc sites=$(( $(wc -w <<< "$sp") )) trials=$(grep -c 'op=trial ' <<< "$tr") picks=[$sp] module_ms=$(module_ms "$tr")"
+        [ "$rc" -eq 0 ] || { say "VALIDATION FAILED (tune $s process exit)"; exit 1; }
+        grep -qE ':[1-9][0-9]*:' <<< "$sp" && tuned=1
+        for t in "$s" "$s.c1"; do
+            if [ -x "pt_$t" ] && { [ -x "pt_$s.c1" ] || [ "${LOAD_ALL:-0}" = 1 ]; }; then
+                cold=$(mktemp -d)
+                a=$(CUDA_CACHE_PATH=$cold MAPAL_GPU_PICK=rules MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$t.ptx" "./pt_$t" 2>&1 >/dev/null)
+                w=$(MAPAL_GPU_PICK=rules MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$t.ptx" "./pt_$t" 2>&1 >/dev/null)
+                rm -rf "$cold"
+                say "load prog=$b face=${face:-_default} stem=$t ptx_kb=$(( $(wc -c < "$PROF/$t.ptx") / 1024 )) cold_module_ms=$(module_ms "$a") warm_module_ms=$(module_ms "$w")"
+            fi
+        done
+    done
+    if [ -n "$tabled" ] && [ -z "$tuned" ] && [ -z "${PROBE_ARMS:-}" ] && ! compgen -G "pt_$b*.c1" > /dev/null; then
+        say "carried prog=$b (pick = rules everywhere)"; continue
+    fi
     mkdir -p vals
     vals=""
     for r in $(seq "${PROBE_REPS:-5}"); do
@@ -337,13 +408,14 @@ for o in "$PROF"/pt_*.host.o; do
         for fa in "${order[@]}"; do
             face=${fa%%:*}; arm=${fa#*:}; s=$(arm_stem "$b$face" "$arm")
             t0=$(date +%s%N)
-            got=$(probe_out "$s"); rc=$?
+            got=$(probe_out "$s" "$arm"); rc=$?
             t1=$(date +%s%N)
             tr=""; trace_rc=0
             if [ "$r" -le "${PROBE_TRACE_REPS:-2}" ]; then
-                tr=$(MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
+                tr=$(MAPAL_GPU_PICK=$(sel "$arm") MAPAL_GPU_TRACE=1 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>&1 >/dev/null); trace_rc=$?
             fi
-            say "probe prog=$b face=${face:-_default} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc"
+            sp=; [ -n "$tr" ] && grep -q 'op=site ' <<< "$tr" && sp=" sites=[$(site_picks "$tr")]"
+            say "probe prog=$b face=${face:-_default} arm=$arm rep=$r wall_us=$(( (t1 - t0) / 1000 )) out=[$got] $(grep -m1 mapal_gpu_trace_total <<< "$tr") rc=$rc trace_rc=$trace_rc$sp"
             # S54: each launch's kernel time under the trace, in launch order.
             [ -n "$tr" ] && say "probe_kernels prog=$b face=${face:-_default} arm=$arm rep=$r $(grep -o 'op=launch kernel=mapal_tile_[0-9a-f]* ms=[0-9.]*' <<< "$tr" | sed 's/op=launch kernel=mapal_tile_//' | tr '\n' ' ')"
             [ "$rc" -eq 0 ] && [ "$trace_rc" -eq 0 ] || { say "VALIDATION FAILED (probe $s rep=$r process exit)"; exit 1; }
@@ -352,7 +424,7 @@ for o in "$PROF"/pt_*.host.o; do
             # S62 SUBMIT="<arm>...": a third process under MAPAL_GPU_TRACE=2 (no
             # post-launch synchronize), so each launch's ms is its CPU enqueue.
             case " ${SUBMIT:-} " in *" $arm "*)
-                got2=$(MAPAL_GPU_TRACE=2 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>submit.err | tr '\n' ' '); submit_rc=$?
+                got2=$(MAPAL_GPU_PICK=$(sel "$arm") MAPAL_GPU_TRACE=2 MAPAL_PTX="$PROF/$s.ptx" "./pt_$s" 2>submit.err | tr '\n' ' '); submit_rc=$?
                 say "submit prog=$b face=${face:-_exact} arm=$arm rep=$r out=[$got2] $(grep -m1 mapal_gpu_trace_total submit.err) rc=$submit_rc"
                 say "submit_ops prog=$b face=${face:-_exact} arm=$arm rep=$r $(grep -oE 'op=(launch kernel=mapal_tile_[0-9a-f]*|gen kernel=mapal_gen_[0-9a-f]*|event record=[0-9]* wait=[0-9]* auto=[0-9]*) ms=[0-9.]*' submit.err | sed -E 's/op=(launch|gen) kernel=mapal_//; s/op=event /event:/; s/ (wait|auto)=/,\1=/g' | tr '\n' ' ')"
                 [ "$submit_rc" -eq 0 ] || { say "VALIDATION FAILED (submit $s rep=$r process exit)"; exit 1; } ;;
@@ -474,5 +546,10 @@ for pass in $(seq "${PASSES:-1}"); do
         done
     done
 done
+fi
+# per-site-choice: this box's decisions (benches/results/evidence/per-site-choice/wisdom-<arch>.tsv via plancost.py).
+if compgen -G "wisdom/wisdom-*.tsv" > /dev/null; then
+    cat wisdom/wisdom-*.tsv > "wisdom-$PROF.tsv"
+    say "wisdom: $(( $(wc -l < "wisdom-$PROF.tsv") )) decisions, $(awk -F'\t' '$4 != 0' "wisdom-$PROF.tsv" | wc -l | tr -d ' ') not candidate 0; carried $(grep -c '^carried prog=' "$LOG") programs; jit_cache used_kb=$(du -sk "$jc" 2>/dev/null | cut -f1)"
 fi
 say "== done"

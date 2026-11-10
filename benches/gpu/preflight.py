@@ -10,7 +10,10 @@ Per part (box_run.sh's own rules, read off the bundle):
   - every probe face has its gate: the default face D2's bound (tiles/<b>_x.expect + K) or tiles/<b>.expect,
     the others tiles/<b><face>.expect or their CPU build;
   - every probe has a library leg: chain_bench (box_run.sh's probe list) or a torch_bench.py workload
-    (NO_LEG="<glob>.." names programs measured without one).
+    (NO_LEG="<glob>.." names programs measured without one);
+  - per-site-choice: every stem with site tables has its `.sites` (box_run.sh's candidate gates and tune pass) with
+    every table's candidates, each candidate kernel an `.entry` of its PTX, every `.pick<i>.launch` its PTX link;
+    a looped tabled probe its `.c1` (`--cands=1`) arm; box_run.sh the B5 flow (MAPAL_WISDOM).
 usage: preflight.py <bundle> <profile>...   (exit 1 on any finding; vast_run.sh runs it before renting)
 """
 import fnmatch
@@ -111,7 +114,40 @@ def check(bundle, prof):
         has_chain = n.isdigit() and any(fnmatch.fnmatchcase(probe, g) for g in chain if g)
         if not (has_chain or maps(b) or any(fnmatch.fnmatchcase(b, g) for g in no_leg)):
             bad.append(f'{b}: no library leg (chain_bench or a torch_bench.py workload; NO_LEG to accept)')
+    bad += choice(part, tiles, objs, box)
     return bad, len(probes), len(objs)
+
+
+def choice(part, tiles, objs, box):
+    """per-site-choice B5: what box_run.sh's candidate gates, tune pass and overhead arm read."""
+    sys.path.insert(0, str(HERE))
+    from evidence import site_tables
+    bad, tabled = [], 0
+    for b in objs:
+        host = part / f'{b}.host.ll'
+        ts = site_tables(host.read_text(errors='replace')) if host.exists() else []
+        if not ts:
+            continue
+        tabled += 1
+        sites = part / f'{b}.sites'
+        rows = [l.split() for l in sites.read_text().splitlines()] if sites.exists() else []
+        if len(rows) != sum(t['n'] for t in ts):
+            bad.append(f'{b}: {len(rows)} .sites rows for {sum(t["n"] for t in ts)} candidates (evidence.py launch)')
+        ptx = (part / f'{b}.ptx').read_text(errors='replace') if (part / f'{b}.ptx').exists() else ''
+        entries = set(re.findall(r'\.entry (mapal_\w+)', ptx))
+        miss = sorted({c['kernel'] for t in ts for c in t['cands']} - entries)
+        if miss:
+            bad.append(f'{b}: {len(miss)} candidate kernels not in its PTX (e.g. {miss[0]})')
+        src = tiles / f'{b}.mapal'
+        if b.startswith('pt_') and '.' not in b and src.exists() and 'loop {' in src.read_text() \
+                and f'{b}.c1' not in objs:
+            bad.append(f'{b}: a looped program with tables without its .c1 arm (the mapal_gpu_site overhead)')
+    for l in part.glob('*.pick*.launch'):
+        if not (part / (l.name[:-len('.launch')] + '.ptx')).exists():
+            bad.append(f'{part.name}/{l.name}: its .ptx link does not resolve')
+    if tabled and 'MAPAL_WISDOM' not in box:
+        bad.append('box_run.sh predates per-site-choice B5 (no MAPAL_WISDOM): the tables would not be tuned')
+    return bad
 
 
 def main():

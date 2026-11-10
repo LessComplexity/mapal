@@ -3,6 +3,12 @@
 
     plancost.py <arch> <results-<arch>.txt> [--out benches/results/evidence/plan-cost] [--mapal target/release/mapal]
                 [--lat N]  (lat_ns calibrated: fixed at N, only eff fitted)
+                [--wisdom <box wisdom-<arch>.tsv> --bundle <bundle>/<profile> [--trials <box tune/ dir>]]
+
+per-site-choice B5: `--wisdom` adds every measured site table as an exactly-labelled decision: one site, its candidates'
+`; mapal.plan` lines (the bundle's, joined by kernel name) as site shapes, the trial's minima as their ns; its null is
+max(3 %, the trial's median rep spread from the `op=trial` lines). Written to `--wisdom-out` (default
+benches/results/evidence/per-site-choice/wisdom-<arch>.tsv): stem site key cand axis kernel ns pick argmin shape.
 
 1. carry: the sweep's `probe` rows (default face) whose arm the current build re-emits — the launched kernel ids of the
    arm's emission (`--gpu-off=plan-cost`: the rules the sweep ran) equal the arm's measured `probe_kernels` ids;
@@ -25,7 +31,7 @@
    (`compiler-<arch>.tsv`, one row per decision).
 Tables only go to --out; raw output stays outside git (CLAUDE.md).
 """
-import hashlib, math, os, re, statistics as st, subprocess, sys
+import glob, hashlib, math, os, re, statistics as st, subprocess, sys
 from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -194,6 +200,75 @@ def plan_of(cands, picks):
     return tuple(sorted((s, tuple(sorted(shape(cands[s][lab]).items()))) for s, lab in picks.items()))
 
 
+def plan_shape(f, e):
+    """A candidate kernel's `; mapal.plan` line as `site_ns`'s site shape (the `; mapal.cand` fields)."""
+    g = lambda k, d=0: int(f.get(k, d))
+    S, comb = max(g('S', 1), 1), f.get('combine', 'none')
+    tiles = g('gx') * g('gy')
+    # ponytail: `fly` read as the panel stages (the plan line has no in-flight count); `e` off the kernel's IR type
+    p = dict(rows=g('rows'), c=g('c'), k=g('k'), e=e, bm=g('ty') * g('tm'), bn=g('tx') * g('tn'), threads=g('block'),
+             per_sm=g('blocks_per_sm'), acc=g('tm') * g('tn'), tiles=tiles,
+             blocks=g('ctas') if comb == 'streamk' else tiles * (S if comb in ('atomic', 'splitk') else 1),
+             kb=-(-g('k') // S), s=S, bk=g('bk'), fly=max(g('stages', 1), 1), lsu=g('lsu'))
+    p['comb'] = comb
+    return p
+
+
+def site_decisions(arch, wisdom, part, trials, out):
+    """per-site-choice: the box's wisdom lines as decisions [(stem@site, axes, null, [(cand:axis, ns, plan)])]."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from evidence import argmin_pick, plan_lines, read, site_tables, wisdom_lines
+    owner, axes, shapes = {}, {}, {}
+    for h in sorted(glob.glob(os.path.join(part, '*.host.ll'))):
+        stem = os.path.basename(h)[:-len('.host.ll')]
+        ts = site_tables(read(h) or '')
+        if not ts or '.null' in stem:
+            continue
+        dev = read(os.path.join(part, stem + '.dev.ll')) or ''
+        plans = plan_lines(dev)
+        for m in re.finditer(r'^; mapal\.site site=(\w+) n=\d+ cands=\S+ axes=(\S+)', dev, re.M):
+            axes[f'mapal_tile_{m[1]}'] = m[2].split(',')
+        for t in ts:
+            ks = tuple(c['kernel'] for c in t['cands'])
+            owner.setdefault((t['site'], ks), stem)
+            for k in ks:
+                body = re.search(r'^define ptx_kernel void @' + k + r'\((.*?)^}$', dev, re.M | re.S)
+                shapes[k] = plan_shape(plans.get(k, {}), 8 if body and ' double' in body[1] else 4)
+    spread = defaultdict(list)  # site -> each candidate's rep spread (max / min - 1, warm-up rep 0 left out)
+    for f in glob.glob(os.path.join(trials, '*.trace')) if trials else []:
+        reps = defaultdict(list)
+        for m in re.finditer(r'op=trial site=(\w+) cand=(\d+) \S+ rep=(\d+) ns=(\d+)$', open(f).read(), re.M):
+            if int(m[3]) > 0:
+                reps[(m[1], m[2])].append(int(m[4]))
+        for (site, _), v in reps.items():
+            if len(v) > 1 and min(v):
+                spread[site].append(max(v) / min(v) - 1)
+    rows, lines = [], []
+    for w in wisdom_lines(wisdom).values():
+        stem = owner.get((w['site'], w['kernels']))
+        if stem is None or any(k not in shapes for k in w['kernels']):
+            continue
+        ax = axes.get(w['site'], ['?'] * w['n'])
+        sid = w['site'].rsplit('_', 1)[-1]
+        null = max(0.03, st.median(spread[sid]) if spread[sid] else 0)
+        arms = [(f'cand{i}:{ax[i] if i < len(ax) else "?"}', ns, ((sid, tuple(sorted(shapes[k].items()))),))
+                for i, (ns, k) in enumerate(zip(w['ns'], w['kernels']))]
+        # a decision the model can price: every candidate a tile kernel (a naive / row kernel has no register tile)
+        priced = all(shapes[k]['acc'] > 0 and shapes[k]['per_sm'] > 0 for k in w['kernels'])
+        if priced and len({a[2] for a in arms}) >= 2:
+            rows.append((f'{stem}@site{sid}', ','.join(a[0].split(':', 1)[1] for a in arms[1:]), null, arms))
+        want = argmin_pick(w['ns'])
+        lines += [(stem, sid, w['key'], i, a[0].split(':', 1)[1], k, ns, w['pick'], want,
+                   ' '.join(f'{x}={y}' for x, y in sorted(shapes[k].items())))
+                  for i, (a, ns, k) in enumerate(zip(arms, w['ns'], w['kernels']))]
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, 'w') as fh:
+        fh.write('stem\tsite\tkey\tcand\taxis\tkernel\tns\tpick\targmin\tshape\n')
+        fh.writelines('\t'.join(map(str, x)) + '\n' for x in lines)
+    print(f'{arch}: wisdom {len(lines)} candidate rows, {len(rows)} site decisions -> {out}')
+    return rows
+
+
 def rung(arm):
     m = re.match(r'on-g-(\w+?)-\d+$', arm)
     return f'g-{m[1]}' if m else arm.split('-', 1)[-1]
@@ -259,6 +334,10 @@ def main():
                                      if x[2] == y[2]])
                 rows.append((prog + tag, cls, max(null, 0.02), arms))
     assert mirror[0] == mirror[1], f'mirror: {mirror[1]}/{mirror[0]} candidate ns reproduced'
+    if '--wisdom' in a:
+        opt = lambda k, d=None: a[a.index(k) + 1] if k in a else d
+        rows += site_decisions(arch, opt('--wisdom'), opt('--bundle'), opt('--trials'),
+                               opt('--wisdom-out', f'{ROOT}/benches/results/evidence/per-site-choice/wisdom-{arch}.tsv'))
     rows = sorted(rows)
     fs = folds(rows)
     hold0 = {x[0] for x in fs[0][1]}

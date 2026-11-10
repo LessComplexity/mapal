@@ -10,6 +10,12 @@ usage:
   evidence.py check <dir> [results.txt]      -> TSV on stdout: arch stem kernel rung check expected realized status
   evidence.py diff <dir> <stemA> <stemB>     every numeric fact that differs, per kernel
   evidence.py jit <capture dir> <sass>...    the box's JIT image vs ptxas, opcode sequence per mapal kernel
+  evidence.py launch <stem>                  per-site-choice: <stem>.launch (the first launch; a table's candidate 0),
+                                             <stem>.sites (one line per candidate) and <stem>.pick<i>.launch
+                                             (+ .ptx link) per candidate of the first table, off <stem>.host.ll
+  evidence.py covered <arm> <shipped> <rungs> exit 0 when the shipped stem has site tables, the arm's rungs are all
+                                             CHOICE_AXES rungs and every kernel of the arm's device IR is one of the
+                                             shipped module's kernels (body equal up to its name)
 <dir> is one profile's bundle directory (`<bundle>/<profile>`); its name is the arch's profile.
 Static counts only: no claim about dynamic instructions, stalls or traffic follows from them.
 """
@@ -22,7 +28,7 @@ import os
 import re
 import subprocess
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -40,7 +46,8 @@ PARTS = {
 # The rungs a kernel's text reads (func/gpu.rs KERNEL_RUNGS); the rest are host rungs.
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
-                'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix').split()
+                'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
+                'async-depth bank-plan').split()
 GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
             'zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
@@ -551,7 +558,110 @@ def launches(host_ll):
         elif re.search(r'; streamk=', m.group(3)):
             f['combine'] = 'streamk'
         out[int(m.group(2))] = f
+    # per-site-choice: a table's candidates (S and the combine come from the plan line: `facts`)
+    for t in site_tables(host_ll):
+        for i, c in enumerate(t['cands']):
+            out.setdefault(kid(c['kernel']), dict(gx=c['gx'], gy=c['gy'], block=c['block'], smem=c['smem'],
+                                                  site=t['site'], cand=i))
     return out
+
+
+MASK = (1 << 64) - 1
+SITE_CALL = re.compile(r'call void @mapal_gpu_site\(i64 (-?\d+), i32 (\d+), i32 (\d+), i32 (\d+), ptr (@[\w.]+)')
+CAND_FIELDS = ('id', 'rid', 'zero', 'ws', 'gx', 'gy', 'block', 'smem', 'rgx', 'rblock')
+ENV_ARM = re.compile(r'^(rules|pick\d+)$')  # per-site-choice B5: arms of one binary chosen by MAPAL_GPU_PICK
+
+
+def kname(v):
+    return f'mapal_tile_{v & MASK:016x}'
+
+
+def site_tables(host_ll):
+    """per-site-choice B2: each `mapal_gpu_site` call in host order: site (candidate 0's kernel), flags, n and each
+    candidate's recipe (the `%mapal_cand` constant: kernel, reduce kernel, zero / workspace bytes, grids)."""
+    consts = dict(re.findall(r'^(@[\w.]+) = .*?constant \[\d+ x %mapal_cand\] \[(.*)\]$', host_ll, re.M))
+    out = []
+    for m in SITE_CALL.finditer(host_ll):
+        rows = [dict(zip(CAND_FIELDS, (int(x.split()[1]) for x in r.split(', '))))
+                for r in re.findall(r'%mapal_cand \{ ([^}]*) \}', consts.get(m[5], ''))]
+        for r in rows:
+            r['kernel'], r['rkernel'] = kname(r['id']), kname(r['rid']) if r['rid'] else None
+        out.append(dict(site=kname(int(m[1])), flags=int(m[2]), n=int(m[4]), cands=rows, at=m.start()))
+    return out
+
+
+def choice_axes(path=PROFILE_RS):
+    """The rungs of `CHOICE_AXES` (profile.rs): what a site table measures instead of a rung arm."""
+    t = read(path) or ''
+    m = re.search(r'pub\(crate\) const CHOICE_AXES: &\[ChoiceAxis\] = &\[(.*?)\n\];', t, re.S)
+    return sorted(set(re.findall(r'rung: "([^"]+)"', m[1]))) if m else []
+
+
+def plan_lines(dev):
+    return {p['kernel']: p for p in (kv(m) for m in re.findall(r'^; mapal\.plan (.*)$', dev or '', re.M))}
+
+
+def recipe(c, plan):
+    """A candidate as a `.launch` line: `kernel gx gy block smem [S rkernel rgx rgy rblock rsmem | S atomic |
+    1 streamk]` (S and the combine off the kernel's plan line)."""
+    head = [c['kernel'], c['gx'], c['gy'], c['block'], c['smem']]
+    S = plan.get('S', 1)
+    if c['ws']:
+        return head + [S, c['rkernel'], c['rgx'], 1, c['rblock'], 0]
+    if c['zero']:
+        return head + ([1, 'streamk'] if plan.get('combine') == 'streamk' else [S, 'atomic'])
+    return head
+
+
+def launch_file(stem):
+    """`<stem>.launch`: the first of the host's launches and site tables (a table: its candidate 0); `<stem>.sites`:
+    `site i n kernel gx gy block smem [tail]` per candidate of every table; `<stem>.pick<i>.launch` + `.ptx` (a
+    link to the shipped module) per candidate i >= 1 of the first table (tile_bench's per-candidate legs)."""
+    host = read(stem + '.host.ll') or ''
+    plans = plan_lines(read(stem + '.dev.ll'))
+    ts = site_tables(host)
+    first = re.search(r'call void @mapal_gpu_(tile|launch|launch_l2)\(i64 (-?\d+)', host)
+    for f in glob.glob(stem + '.pick*.launch') + glob.glob(stem + '.pick*.ptx'):
+        if re.fullmatch(r'\.pick\d+\.(launch|ptx)', f[len(stem):]):
+            os.remove(f)
+    line = ''
+    if ts and (not first or ts[0]['at'] < first.start()):
+        t = ts[0]
+        line = ' '.join(map(str, recipe(t['cands'][0], plans.get(t['cands'][0]['kernel'], {}))))
+        for i, c in enumerate(t['cands'][1:], 1):
+            open(f'{stem}.pick{i}.launch', 'w').write(' '.join(map(str, recipe(c, plans.get(c['kernel'], {})))) + '\n')
+            if os.path.exists(stem + '.ptx'):
+                os.symlink(os.path.basename(stem) + '.ptx', f'{stem}.pick{i}.ptx')
+    elif first:  # the pre-sprint rule: the first launch, the split's second (reduce) launch off the next call
+        ls = re.findall(r'call void @mapal_gpu_(?:tile|launch|launch_l2)\(i64 (-?\d+)(.*)', host)[:2]
+        n = lambda l: re.findall(r'i32 (\d+)', l.split(';')[0])
+        s = re.search(r'; splitk=(\d+)( atomic)?', ls[0][1])
+        tail = ([s[1], 'atomic'] if s[2] else [s[1], kname(int(ls[1][0])), *n(ls[1][1])]) if s else \
+            (['1', 'streamk'] if re.search(r'; streamk=', ls[0][1]) else [])
+        line = ' '.join([kname(int(ls[0][0])), *n(ls[0][1]), *tail])
+    open(stem + '.launch', 'w').write(line + '\n' if line else '')
+    if ts:
+        open(stem + '.sites', 'w').write(''.join(
+            f"{t['site']} {i} {t['n']} {' '.join(map(str, recipe(c, plans.get(c['kernel'], {}))))}\n"
+            for t in ts for i, c in enumerate(t['cands'])))
+    elif os.path.exists(stem + '.sites'):
+        os.remove(stem + '.sites')
+
+
+def kernel_bodies(dev):
+    """Each kernel's body in a device unit, its own name and metadata numbers taken out."""
+    out = set()
+    for m in re.finditer(r'^define ptx_kernel void @(mapal_\w+)\((.*?)^}$', dev or '', re.M | re.S):
+        out.add(re.sub(r'!\d+', '!', m[2]).replace(m[1], '@'))
+    return out
+
+
+def covered(arm, shipped, rungs):
+    """An arm a site table measures: every rung a CHOICE_AXES one, every kernel already a candidate's."""
+    host = read(shipped + '.host.ll') or ''
+    if not site_tables(host) or not set(rungs.replace('+', ',').split(',')) <= set(choice_axes()):
+        return False
+    return kernel_bodies(read(arm + '.dev.ll')) <= kernel_bodies(read(shipped + '.dev.ll'))
 
 
 def source_text(d, stem):
@@ -679,8 +789,10 @@ def facts(d, sm):
                max_warps=part.get('threads', 1536) // 32, smem=part.get('smem', 102400), smem_reserved=1024)
     ev = os.path.join(d, 'evidence')
     rows = rows_off() if os.path.exists(PROFILE_RS) else []
+    # (a `.pick<i>` PTX is the shipped module linked under a tile_bench leg's name: its stem's facts)
     stems = sorted({os.path.basename(p).split('.host.o')[0] for p in glob.glob(os.path.join(d, '*.host.o'))}
-                   | {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(d, '*.ptx'))})
+                   | {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(d, '*.ptx'))
+                      if not re.search(r'\.pick\d+\.ptx$', p)})
     out = {}
     for stem in stems:
         base = os.path.join(d, stem)
@@ -690,6 +802,11 @@ def facts(d, sm):
             src = json.load(open(al))['same_as']
         dev = read(base + '.dev.ll') or read(os.path.join(d, src + '.dev.ll')) or ''
         plans = {p['kernel']: p for p in (kv(m) for m in re.findall(r'^; mapal\.plan (.*)$', dev, re.M))}
+        # per-site-choice: a table's candidate i flips its axes' rungs against candidate 0 (`; mapal.site … axes=`)
+        flips, names = {}, '|'.join(sorted(KERNEL_RUNGS + ['plan-cost'], key=len, reverse=True))
+        for ids, axes in re.findall(r'^; mapal\.site site=\w+ n=\d+ cands=(\S+) axes=(\S+)', dev, re.M):
+            for k, ax in zip(ids.split(','), axes.split(',')):
+                flips[f'mapal_tile_{k}'] = re.findall(rf'([+-])({names})(?![a-z])', ax)
         flows = {f['kernel']: flow_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.flow (.*)$', dev, re.M))}
         devm = re.search(r'^; mapal\.device (.*)$', dev, re.M)
         ptx = read(os.path.join(d, src + '.ptx'))
@@ -716,16 +833,22 @@ def facts(d, sm):
             e['host_table'] = [r for r in table_rungs(rows, prof, 2, face, arm) if r not in KERNEL_RUNGS]
         hll = read(base + '.host.ll') or ''
         lau = launches(hll)
+        cands = {c['kernel'] for t in site_tables(hll) for c in t['cands']}
         for k in sorted(set(plans) | set(pf)):
             p = plans.get(k, {})
+            la = lau.get(kid(k), {})
+            if 'site' in la:
+                la = dict(la, S=p.get('S', 1), combine=p.get('combine', 'none'))
             kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
-                      mod=dict(launched=launched(k, hll)),
-                      launch=lau.get(kid(k), {}),
+                      mod=dict(launched=launched(k, hll), cand=int(k in cands)),
+                      launch=la,
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
             if 'face' in p and rows:
-                kf['table'] = dict(rungs_on=[r for r in table_rungs(rows, prof, p['wps'], face_of(p['face']), arm)
-                                             if r in KERNEL_RUNGS])
+                tr = set(table_rungs(rows, prof, p['wps'], face_of(p['face']), arm))
+                for sign, r in flips.get(k, []):
+                    tr = tr | {r} if sign == '+' else tr - {r}
+                kf['table'] = dict(rungs_on=[r for r in tr if r in KERNEL_RUNGS])
             r = kf['ptxas']
             blk = p.get('block') or kf['ptx'].get('maxntid')
             if blk and 'regs' in r:
@@ -797,7 +920,7 @@ def exec_facts(results):
     for line in open(results, errors='replace'):
         m = re.search(r' arm stem=(\S+) .*kernel=(\S+) .*smem=(\d+) regs=(\d+) local_bytes=(\d+)', line)
         if m:
-            out[(m.group(1), m.group(2))] = dict(smem=int(m.group(3)), regs=int(m.group(4)), local=int(m.group(5)))
+            out[(re.sub(r'\.pick\d+$', '', m.group(1)), m.group(2))] = dict(smem=int(m.group(3)), regs=int(m.group(4)), local=int(m.group(5)))
     return out
 
 
@@ -836,7 +959,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host'):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):
@@ -874,6 +997,7 @@ def check(d, results=None, out=sys.stdout):
             state = 'off' if rung in off else 'on' if rung in hon or rung not in e.get('host_rungs', [rung]) else 'off'
             rows += [(prof, stem, '-', f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
     rows += runtime_moves(prof, fx, results)
+    rows += choice_rows(prof, d, fx, results)
     print('arch\tstem\tkernel\trung\tcheck\texpected\trealized\tstatus', file=out)
     for r in rows:
         print('\t'.join(map(str, r)), file=out)
@@ -908,7 +1032,8 @@ def runtime_moves(prof, fx, results):
     rows = []
     for stem, t in sorted(traces(results).items()):
         # The null arm is the shipped build's object copied: the shipped stem's facts predict it.
-        mv = fx.get(stem.removesuffix('.null'), {}).get('host', {}).get('move', {})
+        # (and an environment arm: the shipped binary)
+        mv = fx.get(re.sub(r'\.(null|rules|pick\d+)$', '', stem), {}).get('host', {}).get('move', {})
         if 'runtime_h2d_n' not in mv:
             continue
         for tk, mk in TRACE_KEYS:
@@ -920,6 +1045,79 @@ def runtime_moves(prof, fx, results):
 
 
 # ---- diff (the re-judge instrument) -------------------------------------------------------------------
+def margin(t):
+    """`CHOICE_MARGIN` (mapal_choice.h): candidate 0 stays unless beaten by more than max(3 %, 1 us)."""
+    return max(t * 3 // 100, 1000)
+
+
+def wisdom_lines(path):
+    """A wisdom file's decisions (`key site n pick reps ns.. kernels..`), the last line of a key winning."""
+    out = {}
+    for l in open(path, errors='replace'):
+        f = l.rstrip('\n').split('\t')
+        try:
+            n = int(f[2])
+            w = dict(key=f[0], site=kname(int(f[1], 16)), n=n, pick=int(f[3]), reps=int(f[4]),
+                     ns=[int(x) for x in f[5:5 + n]], kernels=tuple(f[5 + n:5 + 2 * n]))
+        except (IndexError, ValueError):
+            continue
+        if len(w['ns']) == n == len(w['kernels']) and w['pick'] < n:
+            out[w['key']] = w
+    return out
+
+
+def argmin_pick(ns):
+    """The decision the trial's minima make: the argmin when it beats candidate 0 beyond the margin, else 0."""
+    w = min(range(len(ns)), key=ns.__getitem__)
+    return w if w and ns[w] + margin(ns[0]) < ns[0] else 0
+
+
+def choice_rows(prof, d, fx, results):
+    """per-site-choice intent `choice` (intent.py), measured: every stored pick is the argmin of its minima beyond
+    the margin; every AUTO run launched the stored pick (`op=site … src=wisdom`, box_run.sh `sites=`); AUTO <=
+    RULES x (1 + null) per program and face (`on` = AUTO, `rules`; null: the `null` arm against `on`)."""
+    rows = []
+    if not results or not os.path.exists(results):
+        return rows
+    wis = {}
+    for f in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(results)), 'wisdom', 'wisdom-*.tsv'))):
+        wis.update(wisdom_lines(f))
+    owner = defaultdict(list)  # (site, kernels) -> stems whose host IR holds that table
+    for stem in fx:
+        for t in site_tables(read(os.path.join(d, stem + '.host.ll')) or ''):
+            owner[(t['site'], tuple(c['kernel'] for c in t['cands']))].append(stem)
+    for w in wis.values():
+        want = argmin_pick(w['ns'])
+        for stem in owner.get((w['site'], w['kernels']), ['?']):
+            rows.append((prof, stem, w['site'], 'choice:on', 'stored pick = measured argmin beyond max(3 %, 1 us)',
+                         f'pick={want}', f"pick={w['pick']} ns={','.join(map(str, w['ns']))}",
+                         'ok' if w['pick'] == want else 'MISMATCH'))
+    ms = defaultdict(list)
+    for line in open(results, errors='replace'):
+        m = re.match(r'probe prog=(\S+) face=(\S+) arm=(\S+) rep=\d+ .*?out=\[[^\]]*iter ms=([\d.]+)', line)
+        if not m:
+            continue
+        stem = m[1] + ('' if m[2] in ('_default', '_exact') else m[2])
+        ms[(stem, m[3])].append(float(m[4]))
+        sites = line.split(' sites=[', 1)[1].split(']')[0] if m[3] == 'on' and ' sites=[' in line else ''
+        for key, pick, src in re.findall(r'([0-9a-f]{16}):(\d+):(\w+)', sites):
+            stored = wis.get(key)
+            rows.append((prof, stem, key, 'choice:on', 'AUTO launches the stored pick (src=wisdom)',
+                         f"pick={stored['pick'] if stored else '?'} src=wisdom", f'pick={pick} src={src}',
+                         'n/a' if not stored else 'ok' if (src, int(pick)) == ('wisdom', stored['pick']) else 'MISMATCH'))
+    med = {k: sorted(v)[len(v) // 2] for k, v in ms.items()}
+    for (stem, arm), rules in sorted(med.items()):
+        if arm != 'rules' or (stem, 'on') not in med:
+            continue
+        auto, prog = med[(stem, 'on')], re.sub(r'_[cx]$', '', stem)
+        null = abs(med[(prog, 'null')] / med[(prog, 'on')] - 1) if (prog, 'null') in med and (prog, 'on') in med \
+            else None
+        rows.append((prof, stem, '-', 'choice:on', 'AUTO <= RULES x (1 + null)', 'auto <= rules*(1+null)',
+                     f'auto={auto:.4g} rules={rules:.4g} null={"n/a" if null is None else f"{null:.4f}"}',
+                     'n/a' if null is None else 'ok' if auto <= rules * (1 + null) else 'MISMATCH'))
+    return rows
+
+
 def flat(x, pre=''):
     if isinstance(x, dict):
         for k, v in x.items():
@@ -994,6 +1192,10 @@ if __name__ == '__main__':
             print('\t'.join(map(str, r)))
     elif cmd == 'jit':
         jit(sys.argv[2], sys.argv[3:])
+    elif cmd == 'launch':
+        launch_file(sys.argv[2])
+    elif cmd == 'covered':
+        sys.exit(0 if covered(sys.argv[2], sys.argv[3], sys.argv[4]) else 1)
     else:
         print(__doc__)
         sys.exit(2)

@@ -34,6 +34,7 @@ class HarnessTests(unittest.TestCase):
             "PROFILE": "1",
             "START_TRIES": "1",
             "PREFLIGHT": "0",  # the stub bundles hold no harness (MeasureTests checks preflight.py)
+            "CUDA_CACHE_PATH": str(self.root / "jit"),  # box_run.sh checks the driver's JIT cache is writable
         }
         self.stub("nvidia-smi", "echo test-device")
         self.stub("nvcc", 'echo nvcc >> "$STUB_LOG"; exit 99')
@@ -170,6 +171,76 @@ exit 0
                     (self.root / "test" / f"{name}.host.o").unlink()
                     for binary in self.root.glob(f"*_{name}"):
                         binary.unlink()
+
+    def test_box_tunes_gates_every_candidate_and_carries_rules_only_programs(self):
+        """per-site-choice B5 on stub binaries: the value gate runs every candidate index; one traced tune run per
+        tabled stem writes the wisdom; a program whose picks are all candidate 0 is carried; the others time AUTO
+        (`on`, reading the wisdom) against RULES; a failing candidate drops AUTO with it."""
+        self.timing_stubs()
+        self.env.pop("PROBE_ARMS")
+        for name, key, win, bad in (("pt_a_64", "aa", 1, 0), ("pt_b_64", "bb", 0, 0), ("pt_c_64", "cc", 1, 1)):
+            (self.root / "tiles" / f"{name}.expect").write_text("42\n")
+            (self.root / "test" / f"{name}.sites").write_text(
+                f"mapal_tile_{key:0>16} 0 2 k0 1 1 32 0\nmapal_tile_{key:0>16} 1 2 k1 1 1 32 0\n")
+            self.executable(self.root / "test" / f"{name}.host.o", f'''
+p=${{MAPAL_GPU_PICK:-auto}}; pick=0; src=rules; w="$MAPAL_WISDOM/wisdom-{key}.tsv"
+if [ "$p" = rules ]; then src=forced
+elif [ "$p" != auto ] && [ "$p" != tune ]; then pick=$p; src=forced
+elif [ "${{MAPAL_GPU_TUNE:-0}}" = 1 ]; then
+    pick={win}; src=trial; mkdir -p "$MAPAL_WISDOM"; printf '{key:0>16}\\t1\\t2\\t%s\\t5\\t100\\t50\\tk0\\tk1\\n' $pick >> "$w"
+elif [ -s "$w" ]; then pick={win}; src=wisdom
+fi
+if [ "$pick" = 1 ] && [ {bad} = 1 ]; then echo 41; else echo 42; fi
+echo 'iter ms=1'
+if [ "${{MAPAL_GPU_TRACE:-0}}" = 1 ]; then
+    echo "mapal_gpu_trace op=site site={key:0>16} key={key:0>16} n=2 pick=$pick src=$src" >&2
+    echo 'mapal_gpu_trace_total module_ms=3.5 launches=1' >&2
+fi
+exit 0
+''')
+        log = self.run_box(True, mode="0", nvcc=True)
+        self.assertIn("value-gate prog=pt_a_64 arms=4 pass", log)  # on, rules, pick0, pick1
+        self.assertIn("tune prog=pt_a_64 face=_default rc=0 sites=1 trials=0 picks=[00000000000000aa:1:trial ] "
+                      "module_ms=3.5", log)
+        self.assertIn("carried prog=pt_b_64 (pick = rules everywhere)", log)
+        self.assertNotIn("probe prog=pt_b_64", log)
+        self.assertRegex(log, r"probe prog=pt_a_64 face=_default arm=on rep=1 .* sites=\[00000000000000aa:1:wisdom \]")
+        self.assertIn("probe prog=pt_a_64 face=_default arm=rules rep=1", log)
+        self.assertIn("VALUE-FAIL prog=pt_c_64 face=_exact arm=pick1", log)  # (an exact oracle's label)
+        self.assertNotIn("probe prog=pt_c_64 face=_default arm=on", log)
+        self.assertIn("probe prog=pt_c_64 face=_default arm=rules", log)
+        self.assertIn("wisdom: 3 decisions, 2 not candidate 0; carried 1 programs", log)
+
+    def test_choice_rows_judge_the_wisdom_and_auto_against_rules(self):
+        import sys
+        sys.path.insert(0, str(HERE))
+        import evidence
+        part = self.root / "rtx-4090"
+        part.mkdir()
+        ids = [5, -7]
+        (part / "pt_a_64.host.ll").write_text(
+            "  call void @mapal_gpu_site(i64 5, i32 1, i32 0, i32 2, ptr @m.cands1, i32 3, ptr %p, i32 2, ptr null)\n"
+            "@m.cands1 = private unnamed_addr constant [2 x %mapal_cand] ["
+            + ", ".join(f"%mapal_cand {{ i64 {i}, i64 0, i64 0, i64 0, i32 1, i32 1, i32 32, i32 0, i32 0, i32 0 }}"
+                        for i in ids) + "]\n")
+        t = evidence.site_tables((part / "pt_a_64.host.ll").read_text())
+        self.assertEqual([c["kernel"] for c in t[0]["cands"]], [evidence.kname(i) for i in ids])
+        k = "\t".join(evidence.kname(i) for i in ids)
+        (self.root / "wisdom").mkdir()
+        (self.root / "wisdom" / "wisdom-x.tsv").write_text(
+            f"00000000000000aa\t0000000000000005\t2\t1\t5\t100000\t90000\t{k}\n"  # 10 % faster: pick 1
+            f"00000000000000bb\t0000000000000005\t2\t1\t5\t100000\t98000\t{k}\n")  # 2 %: within the margin
+        res = self.root / "results.txt"
+        res.write_text("".join(
+            f"probe prog=pt_a_64 face=_default arm={a} rep={r} wall_us=1 out=[1 iter ms={ms} ] rc=0{x}\n"
+            for r in (1, 2) for a, ms, x in (("on", 9.0, " sites=[00000000000000aa:1:wisdom ]"), ("rules", 10.0, ""),
+                                             ("null", 9.05, ""))))
+        rows = evidence.choice_rows("rtx-4090", str(part), {"pt_a_64": {}}, str(res))
+        got = {(r[4], r[5]): r[7] for r in rows}
+        self.assertEqual(got[("stored pick = measured argmin beyond max(3 %, 1 us)", "pick=1")], "ok")
+        self.assertEqual(got[("stored pick = measured argmin beyond max(3 %, 1 us)", "pick=0")], "MISMATCH")
+        self.assertEqual(got[("AUTO launches the stored pick (src=wisdom)", "pick=1 src=wisdom")], "ok")
+        self.assertEqual(got[("AUTO <= RULES x (1 + null)", "auto <= rules*(1+null)")], "ok")
 
     def test_decode_status_after_differential_passes(self):
         self.timing_stubs()
@@ -416,6 +487,25 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(got[(src, "chain-cublas", "12.8")], "med_ms=2.5")
         self.assertEqual(got[(src, "torch-eager", "2.11.0")], "med_ms=3.5")
         self.assertTrue(all(r[4] == "NVIDIA X|570.1" for r in rows))
+
+    def test_ingest_keys_a_tabled_row_by_its_selection(self):
+        self.tsv("emission.tsv", [["program", "arch", "face", "status", "b", "h"],
+                                  ["pt_a_64", "rtx-4090", "default", "changed", "1", "h0"],
+                                  ["pt_b_64", "rtx-4090", "default", "changed", "1", "h1"]])
+        self.tsv("arms.tsv", [["program", "arch", "face", "arm", "hash", "tag"]])
+        self.tsv("tables.tsv", [["program", "arch", "face", "head_hash", "tables", "max_n"],
+                                ["pt_a_64", "rtx-4090", "default", "h0", "1", "2"],
+                                ["pt_b_64", "rtx-4090", "default", "h1", "1", "2"]])
+        res = self.root / "results.txt"
+        res.write_text("name, driver_version, clocks\nNVIDIA X, 570.1, 3000\n"
+                       + "".join(f"probe prog=pt_a_64 face=_default arm={a} rep=1 wall_us=1 out=[1 iter ms={t} ] rc=0\n"
+                                 for a, t in (("on", 9), ("rules", 10), ("pick1", 8)))
+                       + "carried prog=pt_b_64 (pick = rules everywhere)\n")
+        self.py(HERE / "changed.py", "ingest", self.root, "rtx-4090", res)
+        rows = [l.split("\t") for l in (self.root / "cache" / "rtx-4090.tsv").read_text().splitlines()[1:]]
+        got = {r[0]: r[3].split()[0] for r in rows}
+        self.assertEqual((got["h0@auto"], got["h0@rules"], got["h0@pick1"]), ("med_ms=9", "med_ms=10", "med_ms=8"))
+        self.assertEqual(got["h1@auto"], "carried")
 
     def bundle(self):
         b = self.root / "bundle"
