@@ -855,6 +855,14 @@ static uint64_t site_timed(void *e, uint32_t i) {
   return now_ns() - t0;
 }
 
+/* Before a trial: the workspace any candidate takes, so none is timed with
+ * its first allocation. */
+static void site_warm(void *e) {
+  struct site_env *x = e;
+  if (x->ws_max)
+    mapal_gpu_alloc(x->ws_slot, x->ws_max);
+}
+
 void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
                     const struct mapal_cand *cands, uint32_t nptr,
                     const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
@@ -883,7 +891,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
   int safe = 1;
   for (uint32_t p = 0; p < nptr; p++)
     safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
-  struct choice_dev d = {site_run, site_timed, &x};
+  struct choice_dev d = {site_run, site_timed, site_warm, &x};
   choice_site(site, flags, n, cands, safe, &d);
 }
 

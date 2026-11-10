@@ -185,8 +185,15 @@ static void *sym(const char *prefix, uint64_t id) {
   }
   return f;
 }
+/* `MAPAL_GPU_TRACE=1`: one line per launch, `mapal_gpu.c`'s `op=launch` (the
+ * kernel only: no clock here). */
+static void emu_trace_launch(uint64_t id) {
+  const char *t = getenv("MAPAL_GPU_TRACE");
+  if (t && atoi(t)) fprintf(stderr, "mapal_gpu_trace op=launch kernel=mapal_tile_%016llx\n", (unsigned long long)id);
+}
 void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t gx, uint32_t gy, uint32_t block,
                       uint32_t smem) {
+  emu_trace_launch(id);
   void (*k)(void *, void *, void *) = (void (*)(void *, void *, void *))sym("mapal_tile", id);
   /* A module with shuffles (`emu_threaded`: `fold-lanes`) runs threaded too. */
   if (smem || dlsym(RTLD_DEFAULT, "emu_threaded")) {
@@ -280,6 +287,7 @@ static void *emu_vrun(void *q) {
 void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64_t *ptrs, uint32_t gx, uint32_t gy,
                        uint32_t block, uint32_t smem) {
   (void)stream;
+  emu_trace_launch(id);
   kv_t k = (kv_t)sym("mapal_tile", id);
   void *p[16];
   for (uint32_t i = 0; i < nptr && i < 16; i++) p[i] = (void *)ptrs[i];
@@ -312,7 +320,7 @@ void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32
   mapal_gpu_launch(id, a, b, o, gx, gy, block, smem);
 }
 /* per-site-choice: `mapal_gpu.c`'s site entry over the emulated launches.
- * `MAPAL_GPU_PICK=<index>` (default 0) runs that candidate, `all` every
+ * `MAPAL_GPU_PICK=<index>` (default 0; `rules`, `auto`, `tune` 0) runs that candidate, `all` every
  * candidate in order (the last one's output stays: the re-run check). With
  * `MAPAL_EMU_NS=<ns>,<ns>,..` (a fake clock: candidate i takes the i-th, the
  * last for the rest) the shipped decision code runs — wisdom, trial, margin —
@@ -348,6 +356,10 @@ static uint64_t site_timed(void *e, uint32_t i) {
   }
   return t;
 }
+static void site_warm(void *e) {
+  struct site_env *x = e;
+  if (x->ws_max) mapal_gpu_alloc(x->ws_slot, x->ws_max);
+}
 void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, const struct mapal_cand *cands,
                     uint32_t nptr, const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
   if (nptr > 16 || out >= nptr || !n) {
@@ -363,15 +375,15 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, 
     return;
   }
   if (!getenv("MAPAL_EMU_NS")) {
-    uint32_t i = pick ? (uint32_t)atoi(pick) : 0;
-    site_run(&x, i < n ? i : n - 1);
+    int i = choice_pick_env();
+    site_run(&x, i < 0 ? 0 : (uint32_t)i < n ? (uint32_t)i : n - 1);
     return;
   }
   const char *t = getenv("MAPAL_GPU_TRACE");
   choice_init("emu-sm0", 0, 1, t && atoi(t));
   int safe = 1;
   for (uint32_t p = 0; p < nptr; p++) safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
-  struct choice_dev d = {site_run, site_timed, &x};
+  struct choice_dev d = {site_run, site_timed, site_warm, &x};
   choice_site(site, flags, n, cands, safe, &d);
 }
 void mapal_gpu_pin(const void *h, uint64_t bytes) { (void)h, (void)bytes; }

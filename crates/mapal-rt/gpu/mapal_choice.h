@@ -12,6 +12,9 @@
  *   no entry, RERUN, tuning on       trial, then store               src=trial
  *   otherwise                        candidate 0                     src=rules
  *
+ * MAPAL_GPU_PICK unset or `auto` is the table above; `tune` ignores the file's
+ * entries (trial again, append); anything else is an error (exit 2).
+ *
  * Key = FNV-1a of the table's bytes xor a hash of the module text: any codegen
  * change re-tunes. Wisdom:
  * `${MAPAL_WISDOM:-${XDG_CACHE_HOME:-~/.cache}/mapal}/wisdom-<device>.tsv`, one
@@ -44,16 +47,40 @@ _Static_assert(sizeof(struct mapal_cand) == 56, "the host's %mapal_cand");
 #define MAPAL_SITE_RERUN 1u
 
 /* How the decision runs a candidate: `run` enqueues its recipe, `timed` runs
- * it to completion and returns its nanoseconds. */
+ * it to completion and returns its nanoseconds, `warm` makes what any
+ * candidate allocates (the workspace) before a trial times it. */
 struct choice_dev {
   void (*run)(void *env, uint32_t i);
   uint64_t (*timed)(void *env, uint32_t i);
+  void (*warm)(void *env);
   void *env;
 };
 
+#define CHOICE_AUTO (-1)
+#define CHOICE_TUNE (-2)
+
+/* MAPAL_GPU_PICK, strictly: unset / `auto` CHOICE_AUTO, `rules` 0, `tune`
+ * CHOICE_TUNE, a decimal index; anything else exits (a typo must not force
+ * candidate 0). */
+static int choice_pick_env(void) {
+  const char *p = getenv("MAPAL_GPU_PICK");
+  if (!p || !strcmp(p, "auto"))
+    return CHOICE_AUTO;
+  if (!strcmp(p, "rules"))
+    return 0;
+  if (!strcmp(p, "tune"))
+    return CHOICE_TUNE;
+  char *end;
+  unsigned long v = strtoul(p, &end, 10);
+  if (*p >= '0' && *p <= '9' && !*end && v <= 0x7fffffff)
+    return (int)v;
+  fprintf(stderr, "mapal: MAPAL_GPU_PICK=%s: expected auto, rules, tune or a candidate index\n", p);
+  exit(2);
+}
+
 static struct {
   int ready;
-  int pick; /* forced index, -1 = none */
+  int pick; /* forced index, CHOICE_AUTO, CHOICE_TUNE */
   int tune; /* trials allowed */
   int trace;
   uint64_t module;
@@ -62,7 +89,7 @@ static struct {
     uint64_t key;
     uint32_t n, pick;
   } *w;
-  size_t nw, cap;
+  size_t nw, cap, nfile; /* entries; the first `nfile` read from the file */
 } choice;
 
 static uint64_t choice_fnv(const void *p, size_t n, uint64_t h) {
@@ -96,6 +123,7 @@ static void choice_load(void) {
       choice_remember(key, n, pick);
   }
   fclose(f);
+  choice.nfile = choice.nw;
 }
 
 /* `mkdir -p` of the wisdom file's directory; a failure shows at the fopen. */
@@ -119,8 +147,7 @@ static void choice_init(const char *dev, uint64_t module, int tune, int trace) {
   choice.ready = 1;
   choice.module = module;
   choice.trace = trace;
-  const char *p = getenv("MAPAL_GPU_PICK");
-  choice.pick = !p ? -1 : !strcmp(p, "rules") ? 0 : atoi(p) < 0 ? 0 : atoi(p);
+  choice.pick = choice_pick_env();
   const char *t = getenv("MAPAL_GPU_TUNE");
   choice.tune = tune && !(t && !strcmp(t, "0"));
   const char *w = getenv("MAPAL_WISDOM");
@@ -157,25 +184,33 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
   uint32_t pick = 0;
   const char *src = "rules";
   int found = 0;
+  uint32_t reps = 0;
+  uint64_t ns0 = 0, nsw = 0;
   if (choice.pick >= 0) {
     pick = (uint32_t)choice.pick < n ? (uint32_t)choice.pick : n - 1;
     src = "forced";
     found = 1;
   }
-  for (size_t i = choice.nw; !found && i-- > 0;)
+  /* `tune`: only this process's decisions stand (a site in a loop trials once). */
+  size_t lo = choice.pick == CHOICE_TUNE ? choice.nfile : 0;
+  for (size_t i = choice.nw; !found && i-- > lo;)
     if (choice.w[i].key == key && choice.w[i].n == n) {
       pick = choice.w[i].pick;
       src = "wisdom";
       found = 1;
     }
   if (!found && (flags & MAPAL_SITE_RERUN) && safe && choice.tune && choice.path[0]) {
-    /* The trial: candidate 0 once sizes it (R = 5 below 2 ms, 3 below 50 ms,
-     * else 1); rep r runs the candidates rotated by r, rep 0 a warm-up when
-     * R > 1; a candidate's time is its minimum. */
+    /* The trial: what any candidate allocates is made first; candidate 0 once
+     * sizes it (R = 5 below 2 ms, 3 below 50 ms, 2 below 500 ms, else 1); rep
+     * r runs the candidates rotated by r, rep 0 a warm-up when R > 1; a
+     * candidate's time is its minimum. */
     /* ponytail: the first 64 candidates are trialled; the host caps a table
      * at `--cands` (8). */
+    if (d->warm)
+      d->warm(d->env);
     uint64_t best[64], t0 = d->timed(d->env, 0);
-    uint32_t reps = t0 < 2000000 ? 5 : t0 < 50000000 ? 3 : 1, last = 0;
+    uint32_t last = 0;
+    reps = t0 < 2000000 ? 5 : t0 < 50000000 ? 3 : t0 < 500000000 ? 2 : 1;
     uint32_t m = n < 64 ? n : 64;
     for (uint32_t i = 0; i < m; i++)
       best[i] = UINT64_MAX;
@@ -196,10 +231,30 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
     for (uint32_t i = 1; i < m; i++)
       if (best[i] < best[pick])
         pick = i;
-    /* Candidate 0 stays unless beaten by more than max(3 %, 1 us). */
-    uint64_t margin = best[0] * 3 / 100 > 1000 ? best[0] * 3 / 100 : 1000;
-    if (pick && !(best[pick] + margin < best[0]))
+    /* Candidate 0 stays unless beaten by more than max(3 %, 1 us) — in the
+     * trial, then again head to head: 3 alternating pairs (0, w), (w, 0),
+     * (0, w), their minima merged with the trial's (one disturbed trial is
+     * not stored forever). */
+#define CHOICE_MARGIN(t) ((t) * 3 / 100 > 1000 ? (t) * 3 / 100 : 1000)
+    if (pick && !(best[pick] + CHOICE_MARGIN(best[0]) < best[0]))
       pick = 0;
+    for (uint32_t r = 0; pick && r < 6; r++) {
+      uint32_t i = ((r / 2 + r) & 1) ? pick : 0;
+      uint64_t ns = d->timed(d->env, i);
+      last = i;
+      if (ns < best[i])
+        best[i] = ns;
+      if (choice.trace)
+        fprintf(stderr,
+                "mapal_gpu_trace op=trial site=%016llx cand=%u kernel=mapal_tile_%016llx "
+                "rep=%u ns=%llu confirm=1\n",
+                (unsigned long long)site, i, (unsigned long long)c[i].id, reps + r / 2,
+                (unsigned long long)ns);
+    }
+    if (pick && !(best[pick] + CHOICE_MARGIN(best[0]) < best[0]))
+      pick = 0;
+    ns0 = best[0];
+    nsw = best[pick];
     /* The output is the winner's. */
     if (last != pick)
       d->run(d->env, pick);
@@ -220,9 +275,13 @@ static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
   } else {
     d->run(d->env, pick);
   }
-  if (choice.trace)
-    fprintf(stderr, "mapal_gpu_trace op=site site=%016llx key=%016llx n=%u pick=%u src=%s\n",
-            (unsigned long long)site, (unsigned long long)key, n, pick, src);
+  if (choice.trace) {
+    fprintf(stderr, "mapal_gpu_trace op=site site=%016llx key=%016llx n=%u pick=%u src=%s reps=%u",
+            (unsigned long long)site, (unsigned long long)key, n, pick, src, reps);
+    if (reps)
+      fprintf(stderr, " ns0=%llu nsw=%llu", (unsigned long long)ns0, (unsigned long long)nsw);
+    fputc('\n', stderr);
+  }
   return pick;
 }
 
