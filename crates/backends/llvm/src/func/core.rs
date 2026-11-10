@@ -90,6 +90,8 @@ impl<'a> FnEmit<'a> {
             path_plan: None,
             split_slots: Vec::new(),
             dallocs: Vec::new(),
+            site_table: None,
+            cand_tables: String::new(),
             views: SecondaryMap::new(),
             views_done: false,
             outside_memo: Default::default(),

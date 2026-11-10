@@ -795,7 +795,7 @@ impl GpuRungs {
 
 /// Measurement arms over the profile's rung table (S53): a rung in `on` is
 /// forced on, one in `off` forced off. Both empty by default — the shipped path.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuArms {
     pub on: GpuRungs,
     pub off: GpuRungs,
@@ -812,6 +812,31 @@ pub struct GpuArms {
     /// [`EmitOpts::order`] by [`emit_detailed`]: a device-only site may take
     /// the fused step the bound admits (`radix-tile`).
     pub free: bool,
+    /// per-site-choice `--cands=N` (B1): the most candidates one site's table
+    /// holds, the rules' plan first. 1 = the rules' launch alone (the OFF arm:
+    /// the emission before candidates, byte for byte).
+    pub site_cands: u64,
+    /// per-site-choice: every split kernel takes the full register tile where
+    /// it cuts `k / S` whole — `plan-cost`'s argmin among full-tile plans, one
+    /// site candidate (`profile::CHOICE_AXES`). Never a flag.
+    pub full: bool,
+}
+
+/// [`GpuArms::site_cands`]'s default (design B1).
+pub const SITE_CANDS: u64 = 8;
+
+impl Default for GpuArms {
+    fn default() -> Self {
+        Self {
+            on: GpuRungs::default(),
+            off: GpuRungs::default(),
+            splitk: 0,
+            cands: false,
+            free: false,
+            site_cands: SITE_CANDS,
+            full: false,
+        }
+    }
 }
 
 /// A reduced-precision face — ADR-0032 D1's lattice below `contract`. Unlike
@@ -1392,6 +1417,10 @@ fn emit_module(
     // `epilogue`, `devmap` and `streams` launch over n pointers: one declaration.
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
+    }
+    // per-site-choice: a site with candidates launches its table.
+    if funcs.contains("@mapal_gpu_site(") {
+        out.push_str(crate::func::gpu::SITE_DECL);
     }
     let sme_store = funcs.contains("@mapal_sme_panel(");
     let sme_acc = funcs.contains("@mapal_sme_panel_acc(");

@@ -300,6 +300,8 @@ fn radix_one_output_and_tf32_plain_operands() {
             // (ON as an arm: parts no box has value-gated it on ship it OFF.)
             opts.gpu.off.tf32_radix = off;
             opts.gpu.on.tf32_radix = !off;
+            // The rules' kernel (`--cands=1`), not a table's alternatives.
+            opts.gpu.site_cands = 1;
             let e = emit_detailed(&ir, &opts).expect("emits");
             let tiles = e.device.as_deref().map_or(0, |d| {
                 d.lines()

@@ -411,6 +411,12 @@ pub(crate) struct FnEmit<'a> {
     /// `entry-arena`: every `mapal_gpu_alloc` the walk emits on a slot of its
     /// own (an object's buffer, a split workspace), with its bytes.
     dallocs: Vec<(String, u64)>,
+    /// per-site-choice: the table of the site being emitted, taken by its
+    /// launch point in place of the single launch (`gpu.rs` `site_call`).
+    site_table: Option<gpu::SiteTable>,
+    /// per-site-choice: this function's candidate tables, module globals
+    /// placed after its text.
+    cand_tables: String,
     /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions
     /// (component paths) that hold a pointer to bytes elsewhere instead of
     /// the bytes — forwarding does not copy. A bare array view is

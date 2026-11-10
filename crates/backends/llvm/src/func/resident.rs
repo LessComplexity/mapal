@@ -3020,7 +3020,11 @@ impl<'a> FnEmit<'a> {
         self.line(format!("{o_off} = mul i64 {row}, {}", site.c * eb));
         let o_row = self.tmp();
         self.line(format!("{o_row} = add i64 {o}, {o_off}"));
-        self.line(call(&a_row, &b, &o_row));
+        // per-site-choice: a row with candidates launches its table.
+        match self.site_table.take() {
+            Some(t) => self.site_call(t, &[a_row, b, o_row]),
+            None => self.line(call(&a_row, &b, &o_row)),
+        }
         let keep = self
             .resident
             .as_ref()
@@ -3181,6 +3185,14 @@ impl<'a> FnEmit<'a> {
             _ => None,
         };
         match (ptrs, grouped) {
+            // per-site-choice: a site with candidates launches its table over
+            // the same pointers.
+            (ptrs, _) if self.site_table.is_some() => {
+                let t = self.site_table.take().expect("a table");
+                let ptrs =
+                    ptrs.unwrap_or_else(|| vec![ops[0].clone(), ops[1].clone(), dout.clone()]);
+                self.site_call(t, &ptrs);
+            }
             (Some(ptrs), Some((id, geom))) => {
                 let n = ptrs.len();
                 let arr = format!("%p{}", self.fresh());

@@ -301,7 +301,7 @@ done
 cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
 # PROBE_ARMS="on off-<rung>...": the probe arms box_run.sh times (its default otherwise).
 if [ -n "${PROBE_ARMS:-}" ]; then echo "$PROBE_ARMS" > "$OUT/probe_arms"; fi
-cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
+cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 if [ ! -d "$OUT/cutlass" ]; then
     git clone -q --depth 1 https://github.com/NVIDIA/cutlass "$OUT/cutlass.git"

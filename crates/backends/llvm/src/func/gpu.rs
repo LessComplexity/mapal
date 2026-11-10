@@ -1201,8 +1201,10 @@ fn resized(
             .site_ns(&plan_shape(site, x, combine, gpu))
             .map(|c| c.ns)
     };
+    // per-site-choice: `arms.full` (a site candidate) takes it wherever it
+    // divides — the cost model then ranks the full-tile plans.
     match (ns(&r), ns(&rule)) {
-        (Some(a), Some(b)) if whole(&r) && acc(&r) > acc(&rule) && a < b => r,
+        (Some(a), Some(b)) if whole(&r) && acc(&r) > acc(&rule) && (a < b || arms.full) => r,
         _ => rule,
     }
 }
@@ -1224,6 +1226,300 @@ fn launch_for(
         launch(site, profile, contract, arms),
         combine,
     )
+}
+
+/// per-site-choice B2: a site's candidate table (`mapal_choice.h`'s
+/// `struct mapal_cand`) and the one call that runs its pick. Declared only
+/// beside a call, so a module without a table keeps its text.
+pub(crate) const SITE_DECL: &str = "%mapal_cand = type { i64, i64, i64, i64, i32, i32, i32, i32, i32, i32 }\n\
+     declare void @mapal_gpu_site(i64, i32, i32, i32, ptr, i32, ptr, i32, ptr)\n";
+
+/// `mapal_gpu_site`'s flag: running the site again is value-safe.
+const SITE_RERUN: u32 = 1;
+
+/// **per-site-choice B1: one candidate of a site's table** — the launch it
+/// realizes, the arms its kernels are emitted under, and the axes flipped
+/// against candidate 0 (`rules` for candidate 0 itself).
+#[derive(Clone, Debug)]
+pub(crate) struct SiteCand {
+    pub arms: crate::GpuArms,
+    pub launch: Launch,
+    pub axes: String,
+}
+
+/// per-site-choice B2: a site's table on its way to the launch point
+/// (`emit_site_resident`, `emit_row_resident`), which emits it through
+/// [`FnEmit::site_call`] in place of the single launch.
+#[derive(Clone, Debug)]
+pub(crate) struct SiteTable {
+    /// Candidate 0's main kernel id.
+    pub site: u64,
+    pub flags: u32,
+    /// One `%mapal_cand` constant per candidate.
+    pub rows: Vec<String>,
+    /// The largest workspace a candidate takes (0: none).
+    pub ws: u64,
+}
+
+/// The launch a site realizes under `arms`: [`launch_in`]'s. A retained
+/// row's one-row pass (`row`) cuts its fold only under `row-split` — a
+/// workspace only on a free order (a fixed face replays one count per fold) —
+/// and launches unsplit otherwise.
+fn realized(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+    row: bool,
+) -> Launch {
+    let l = launch_in(site, profile, contract, arms, order);
+    let split = match l.combine {
+        _ if !row => true,
+        Combine::None => false,
+        Combine::Workspace { .. } => l.rungs.row_split && order == Order::Free,
+        _ => l.rungs.row_split,
+    };
+    match split {
+        true => l,
+        false => launch(site, profile, contract, arms),
+    }
+}
+
+/// `arms` with axis `ax` applied against candidate 0's rungs `c0`, and its
+/// label (`+async`: flipped on). `None` where a measurement arm pins the rung:
+/// an A/B arm stays what it forces, in every candidate.
+fn axis_arms(
+    arms: crate::GpuArms,
+    ax: &crate::profile::ChoiceAxis,
+    c0: crate::GpuRungs,
+) -> Option<(crate::GpuArms, String)> {
+    let mut a = arms;
+    if ax.full {
+        if arms.off.get("plan-cost") || arms.off.get("full-tile") {
+            return None;
+        }
+        *a.on.rung("plan-cost")? = true;
+        *a.on.rung("full-tile")? = true;
+        a.full = true;
+        return Some((a, "+full-tile".into()));
+    }
+    if arms.on.get(ax.rung) || arms.off.get(ax.rung) {
+        return None;
+    }
+    let on = !c0.get(ax.rung);
+    *(if on {
+        a.on.rung(ax.rung)
+    } else {
+        a.off.rung(ax.rung)
+    })? = true;
+    Some((a, format!("{}{}", if on { '+' } else { '-' }, ax.rung)))
+}
+
+/// **per-site-choice B1: a site's candidates.** Candidate 0 is exactly the
+/// rules' plan ([`realized`] under `arms`); then each
+/// [`crate::profile::CHOICE_AXES`] entry flipped against its rungs, then the
+/// pairs of two flips that each changed the launch (async × kmajor-a). A
+/// candidate is kept when its launch — kernel and grid; a flipped rung shows
+/// only through them — differs from every one before it, and on an order
+/// other than free only with candidate 0's `Combine` (a fixed face replays one
+/// partition count, an exact one has none). At most `arms.site_cands`.
+/// `row`: the retained one-row pass of [`realized`].
+pub(crate) fn site_cands(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+    row: bool,
+) -> Vec<SiteCand> {
+    let at = |a: crate::GpuArms| realized(site, profile, contract, a, order, row);
+    let base = at(arms);
+    let mut out = vec![SiteCand {
+        arms,
+        launch: base,
+        axes: "rules".into(),
+    }];
+    let cap = usize::try_from(arms.site_cands).unwrap_or(usize::MAX);
+    if cap <= 1 {
+        return out;
+    }
+    let same = |a: &Launch, b: &Launch| {
+        Launch {
+            rungs: b.rungs,
+            ..*a
+        } == *b
+    };
+    let keep = |out: &mut Vec<SiteCand>, c: SiteCand| {
+        let order_ok = order == Order::Free || c.launch.combine == base.combine;
+        if out.len() < cap && order_ok && !out.iter().any(|o| same(&o.launch, &c.launch)) {
+            out.push(c);
+        }
+    };
+    let singles: Vec<(&crate::profile::ChoiceAxis, SiteCand)> = crate::profile::CHOICE_AXES
+        .iter()
+        .filter_map(|ax| {
+            let (a, axes) = axis_arms(arms, ax, base.rungs)?;
+            Some((
+                ax,
+                SiteCand {
+                    arms: a,
+                    launch: at(a),
+                    axes,
+                },
+            ))
+        })
+        .collect();
+    for (_, c) in &singles {
+        keep(&mut out, c.clone());
+    }
+    let moved: Vec<&(&crate::profile::ChoiceAxis, SiteCand)> = singles
+        .iter()
+        .filter(|(_, c)| !same(&c.launch, &base))
+        .collect();
+    for (i, (_, x)) in moved.iter().enumerate() {
+        for (ay, _) in &moved[i + 1..] {
+            if out.len() >= cap {
+                return out;
+            }
+            if let Some((a, axes)) = axis_arms(x.arms, ay, base.rungs) {
+                let axes = format!("{}{axes}", x.axes);
+                keep(
+                    &mut out,
+                    SiteCand {
+                        arms: a,
+                        launch: at(a),
+                        axes,
+                    },
+                );
+            }
+        }
+    }
+    out
+}
+
+/// FNV-1a of `key`: the kernel ids' hash.
+fn fnv(key: &str) -> u64 {
+    key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// What a candidate kernel's id keys beyond its kind: the launch with only
+/// its kernel rungs (the ones its plan line lists).
+fn launch_key(l: &Launch) -> String {
+    let mut r = crate::GpuRungs::default();
+    for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
+        *r.rung(n).expect("a kernel rung") = true;
+    }
+    format!("{:?}", Launch { rungs: r, ..*l })
+}
+
+/// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
+/// workspace. Candidate 0 (`first`) keeps the ids the site had before
+/// candidates; another keys its launch onto them.
+fn cand_ids(
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    epi: Option<&EpiKernel>,
+    l: &Launch,
+    first: bool,
+) -> (u64, u64) {
+    let split = |part| kernel_id_split(site, profile, contract, part);
+    let (main, rid) = match l.combine {
+        Combine::None => (kernel_id_with(site, profile, contract, epi), 0),
+        Combine::Atomic { .. } => (split("atomic"), 0),
+        Combine::StreamK { .. } => (split("streamk"), 0),
+        Combine::Workspace { .. } => (split("splitk"), split("reduce")),
+    };
+    if first {
+        return (main, rid);
+    }
+    let key = launch_key(l);
+    let id = |x: u64| fnv(&format!("{x:016x}|{key}"));
+    (id(main), if rid == 0 { 0 } else { id(rid) })
+}
+
+/// A candidate's launch recipe (B2) as the host's `%mapal_cand` constant,
+/// and its workspace bytes.
+fn recipe(site: &TileSite, l: &Launch, (id, rid): (u64, u64)) -> (String, u64) {
+    let cells = site.rows * site.c;
+    let bytes_o = cells * elem_bytes_of(&site.elem);
+    let (cgx, cblock) = cell_grid(cells);
+    let (zero, ws, gx, gy, rgx, rblock) = match l.combine {
+        Combine::None => (0, 0, l.gx, l.gy, 0, 0),
+        Combine::Atomic { s } => (bytes_o, 0, l.gx, l.gy * s, 0, 0),
+        Combine::StreamK { ctas, .. } => (bytes_o, 0, ctas, 1, 0, 0),
+        Combine::Workspace { s } => (0, s * bytes_o, l.gx, l.gy * s, cgx, cblock),
+    };
+    let text = format!(
+        "%mapal_cand {{ i64 {}, i64 {}, i64 {zero}, i64 {ws}, i32 {gx}, i32 {gy}, i32 {}, i32 {}, \
+         i32 {rgx}, i32 {rblock} }}",
+        id as i64, rid as i64, l.block, l.smem
+    );
+    (text, ws)
+}
+
+/// A table's evidence line (B1): candidate 0's id, the count, every
+/// candidate's main kernel and the axes it flipped.
+fn site_line(ids: &[(u64, u64)], cands: &[SiteCand]) -> String {
+    let ks: Vec<String> = ids.iter().map(|(i, _)| format!("{i:016x}")).collect();
+    let axes: Vec<&str> = cands.iter().map(|c| c.axes.as_str()).collect();
+    format!(
+        "; mapal.site site={:016x} n={} cands={} axes={}\n",
+        ids[0].0,
+        ids.len(),
+        ks.join(","),
+        axes.join(",")
+    )
+}
+
+/// The device half of a site's table: every candidate's kernels but candidate
+/// 0's (the site's own, emitted as before), and the site's `; mapal.site`
+/// line — only where the host's table names them (`live`).
+#[allow(clippy::too_many_arguments)]
+fn cand_kernels(
+    kernels: &mut std::collections::BTreeMap<String, String>,
+    lines: &mut std::collections::BTreeSet<String>,
+    live: &std::collections::BTreeSet<String>,
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+    order: Order,
+    row: bool,
+    epi: Option<&EpiKernel>,
+) {
+    let cands = site_cands(site, profile, contract, arms, order, row);
+    let ids: Vec<(u64, u64)> = cands
+        .iter()
+        .enumerate()
+        .map(|(i, c)| cand_ids(site, profile, contract, epi, &c.launch, i == 0))
+        .collect();
+    if !ids[1..]
+        .iter()
+        .any(|(i, _)| live.contains(&kernel_name(*i)))
+    {
+        return;
+    }
+    for (c, &(id, rid)) in cands.iter().zip(&ids).skip(1) {
+        let name = kernel_name(id);
+        let comb = c.launch.combine;
+        kernels.entry(name.clone()).or_insert_with(|| {
+            kernel_text(&name, site, profile, contract, c.arms, false, epi, comb)
+        });
+        if let Combine::Workspace { s } = comb {
+            let red = kernel_name(rid);
+            kernels.entry(red.clone()).or_insert_with(|| {
+                format!(
+                    "; mapal.plan kernel={red} kind=reduce rows={} c={} S={s}\n",
+                    site.rows, site.c
+                ) + &reduce_kernel_text(&red, site, profile, contract, c.arms, s)
+            });
+        }
+    }
+    lines.insert(site_line(&ids, &cands));
 }
 
 /// **plan-cost `linear` (§4a concat): the site table of `terms` sites of
@@ -2262,6 +2558,20 @@ pub(crate) fn launched_kernels(host: &str) -> std::collections::BTreeSet<String>
             live.insert(format!("{prefix}_{id:016x}"));
         }
     }
+    // per-site-choice: every kernel a site's table names
+    // (`%mapal_cand { i64 <id>, i64 <reduce id>, … }`).
+    for (i, pat) in host.match_indices("%mapal_cand { i64 ") {
+        let mut f = host[i + pat.len()..].split(", ");
+        let main = f.next();
+        let red = f.next().and_then(|r| r.strip_prefix("i64 "));
+        for lit in [main, red].into_iter().flatten() {
+            if let Ok(id) = lit.parse::<i64>()
+                && id != 0
+            {
+                live.insert(kernel_name(id as u64));
+            }
+        }
+    }
     live
 }
 
@@ -2291,6 +2601,8 @@ pub(crate) fn device_module(
     live: &std::collections::BTreeSet<String>,
 ) -> Option<String> {
     let mut kernels = std::collections::BTreeMap::new();
+    // per-site-choice: each candidate table's `; mapal.site` line.
+    let mut site_lines = std::collections::BTreeSet::new();
     // The module's reduced face, for the evidence header: any kernel realized on the tensor cores (ADR-0041 D6).
     let mut reduced = None;
     for (f, _) in ir.funcs() {
@@ -2333,6 +2645,22 @@ pub(crate) fn device_module(
                         Combine::None,
                     )
                 });
+                // per-site-choice: the candidates of a table (no column-major
+                // store: its consumer reads the one layout).
+                if !col {
+                    cand_kernels(
+                        &mut kernels,
+                        &mut site_lines,
+                        live,
+                        site,
+                        profile,
+                        contract,
+                        arms,
+                        order,
+                        !whole,
+                        None,
+                    );
+                }
                 // S62/S63 (ADR-0040 D4): a whole site whose fold is cut gets
                 // its combine kernels too; the host picks per function
                 // (resident, no epilogue, one stream), so the ordered one stays.
@@ -2408,6 +2736,19 @@ pub(crate) fn device_module(
                 Combine::None,
             )
         });
+        // An epilogue group's kernel is ordered: its candidates are too.
+        cand_kernels(
+            &mut kernels,
+            &mut site_lines,
+            live,
+            &e.site,
+            profile,
+            contract,
+            arms,
+            Order::Sequential,
+            false,
+            Some(&e.k),
+        );
     }
     if kernels.is_empty() && gens.is_empty() && cells.is_empty() && units.is_empty() {
         return None;
@@ -2422,6 +2763,9 @@ pub(crate) fn device_module(
         u8::from(contract),
         reduced
     ));
+    for l in &site_lines {
+        out.push_str(l);
+    }
     out.push_str(DEVICE_PREAMBLE);
     let mut md = String::new();
     for (i, k) in kernels.values().enumerate() {
@@ -5220,6 +5564,114 @@ struct Segment {
 }
 
 impl<'a> FnEmit<'a> {
+    /// per-site-choice B2: table `t` as a module constant and its one
+    /// `mapal_gpu_site` call over the launch's pointers `ptrs` (the output
+    /// third). The workspace slot, when a candidate takes one, is sized at the
+    /// table's largest (`entry-arena` seeds it like any split workspace).
+    pub(super) fn site_call(&mut self, t: SiteTable, ptrs: &[String]) {
+        let global = format!("@{}.cands{}", self.fnames[self.f], self.fresh());
+        self.cand_tables.push_str(&format!(
+            "{global} = private unnamed_addr constant [{} x %mapal_cand] [{}]\n",
+            t.rows.len(),
+            t.rows.join(", ")
+        ));
+        let ws = match t.ws {
+            0 => "null".to_string(),
+            bytes => {
+                let slot = format!("%d{}", self.fresh());
+                self.allocas.push_str(&format!(
+                    "  {slot} = alloca i64\n  store i64 0, ptr {slot}\n"
+                ));
+                self.split_slots.push(slot.clone());
+                self.dallocs.push((slot.clone(), bytes));
+                slot
+            }
+        };
+        let n = ptrs.len();
+        let arr = format!("%p{}", self.fresh());
+        self.allocas
+            .push_str(&format!("  {arr} = alloca [{n} x i64]\n"));
+        for (i, p) in ptrs.iter().enumerate() {
+            let g = self.tmp();
+            self.line(format!(
+                "{g} = getelementptr [{n} x i64], ptr {arr}, i64 0, i64 {i}"
+            ));
+            self.line(format!("store i64 {p}, ptr {g}"));
+        }
+        self.line(format!(
+            "call void @mapal_gpu_site(i64 {}, i32 {}, i32 0, i32 {}, ptr {global}, i32 {n}, \
+             ptr {arr}, i32 2, ptr {ws})",
+            t.site as i64,
+            t.flags,
+            t.rows.len()
+        ));
+    }
+
+    /// per-site-choice: whether site `m`'s launch may run again (`RERUN`) —
+    /// no buffer it writes (the output, an epilogue's stored results) is one
+    /// it reads (an operand, an epilogue's complete operand). Every morphism
+    /// writes a fresh object and the arena keeps a launch's objects apart
+    /// (abi-map §3), so only a residency alias can join them.
+    fn rerun_safe(
+        &self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        m: MorphismId,
+    ) -> bool {
+        let alias = |o| self.resident.as_ref().map_or(o, |p| p.alias(o));
+        let mut reads: Vec<ObjectId> = [site.a.slot, site.b.slot]
+            .iter()
+            .filter_map(|&k| self.pair_source(source, k))
+            .collect();
+        let mut writes = vec![target];
+        if let Some(g) = self.groups.get(m) {
+            reads.extend(g.caps());
+            writes.extend(g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out));
+        }
+        reads
+            .iter()
+            .all(|&r| writes.iter().all(|&w| alias(r) != alias(w)))
+    }
+
+    /// per-site-choice B1/B2: site `site`'s table, `one` its retained row's
+    /// one-row site (`row`) or the whole site. `None` with fewer than two
+    /// candidates.
+    fn make_table(
+        &self,
+        source: ObjectId,
+        target: ObjectId,
+        site: &TileSite,
+        cands: &[SiteCand],
+        one: &TileSite,
+        epi: Option<&EpiKernel>,
+    ) -> Option<SiteTable> {
+        if cands.len() < 2 {
+            return None;
+        }
+        let m = self.ir.in_edges(target)[0];
+        let ids: Vec<(u64, u64)> = cands
+            .iter()
+            .enumerate()
+            .map(|(i, c)| cand_ids(one, self.profile, self.contract, epi, &c.launch, i == 0))
+            .collect();
+        let (rows, ws): (Vec<String>, Vec<u64>) = cands
+            .iter()
+            .zip(&ids)
+            .map(|(c, &id)| recipe(one, &c.launch, id))
+            .unzip();
+        Some(SiteTable {
+            site: ids[0].0,
+            flags: if self.rerun_safe(source, target, site, m) {
+                SITE_RERUN
+            } else {
+                0
+            },
+            rows,
+            ws: ws.into_iter().max().unwrap_or(0),
+        })
+    }
+
     /// Host half: hand the site's operands and output to the runtime, which
     /// copies them in, launches [`kernel_name`]`(id)`, and copies the output
     /// back before returning — so everything after the site sees the values a
@@ -5279,6 +5731,50 @@ impl<'a> FnEmit<'a> {
             let cells = site.rows * site.c;
             let bytes_o = cells * elem_bytes_of(&site.elem);
             let combined = epi.is_none() && !col && !streams;
+            // per-site-choice B1/B2: a site with candidates launches its
+            // table — not a column-major store (its consumer reads the one
+            // layout), a function on streams (its order is the events') or
+            // the rules' ordered launch under an L2 window. An epilogue
+            // group's kernel is ordered, so are its candidates.
+            if !col && !streams {
+                let order = match epi {
+                    Some(_) => Order::Sequential,
+                    None => self.order,
+                };
+                let arms = self.gpu_arms;
+                let cands = site_cands(site, self.profile, self.contract, arms, order, false);
+                let c0 = cands[0].launch;
+                let windowed = epi.is_none()
+                    && c0.combine == Combine::None
+                    && host_rungs(self.profile, self.contract, arms).l2_window
+                    && self.l2_window(m, site, &c0).is_some();
+                let table = match windowed {
+                    true => None,
+                    false => self.make_table(source, target, site, &cands, site, epi.as_ref()),
+                };
+                if let Some(t) = table {
+                    // ADR-0040 D3: every candidate of a fixed face has candidate
+                    // 0's `Combine` — the count the interpreter replays.
+                    if let (Order::Fixed, Combine::Workspace { s }) = (self.order, c0.combine) {
+                        let (func, fold) = site_fold(self.ir, m);
+                        self.orders.push(crate::FoldOrder { func, fold, s });
+                    }
+                    let geom = format!(
+                        "i32 {}, i32 {}, i32 {}, i32 {}",
+                        c0.gx, c0.gy, c0.block, c0.smem
+                    );
+                    self.site_table = Some(t);
+                    self.emit_site_resident(
+                        source,
+                        target,
+                        &[site.a.slot, site.b.slot],
+                        Some((id, geom)),
+                        |_, _| unreachable!("a table launches through mapal_gpu_site"),
+                    );
+                    debug_assert!(self.site_table.is_none(), "the table was launched");
+                    return;
+                }
+            }
             // S63 (ADR-0040 D4) `splitk-atomic` / `streamk`: the output zeroed
             // on stream 0, then one launch whose partials add into it — no
             // workspace, no second kernel. Same exclusions as the workspace
@@ -5542,6 +6038,23 @@ impl<'a> FnEmit<'a> {
         row: &str,
     ) {
         if let Some(plan) = &self.resident {
+            // per-site-choice B1/B2: a row with candidates launches its table
+            // (not on streams: their order is the events').
+            if plan.chain.is_empty() {
+                let (arms, order) = (self.gpu_arms, self.order);
+                let cands = site_cands(one, self.profile, self.contract, arms, order, true);
+                if let Some(t) = self.make_table(source, target, site, &cands, one, None) {
+                    self.site_table = Some(t);
+                    let done = self.emit_row_resident(source, target, site, row, |_, _, _| {
+                        unreachable!("a table launches through mapal_gpu_site")
+                    });
+                    self.site_table = None;
+                    if !done {
+                        self.emit_tiled_map_gpu(source, target, site);
+                    }
+                    return;
+                }
+            }
             // site-geometry `row-split` (D1): the row's fold through the
             // chooser — zero the row, one launch whose partials add into it
             // (the whole site's `splitk-atomic` / `streamk`, one stream).
@@ -5793,6 +6306,7 @@ mod tests {
             splitk: 0,
             cands: false,
             free: false,
+            ..crate::GpuArms::default()
         }
     }
 
@@ -6335,6 +6849,7 @@ mod tests {
                 splitk: 0,
                 cands: false,
                 free: false,
+                ..crate::GpuArms::default()
             }
         };
         for p in parts {
@@ -7220,6 +7735,7 @@ mod tests {
             splitk: 0,
             cands: false,
             free: false,
+            ..crate::GpuArms::default()
         }
     }
 

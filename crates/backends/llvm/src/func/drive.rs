@@ -157,8 +157,8 @@ impl<'a> FnEmit<'a> {
             .iter()
             .fold(param, |p, (s, t)| format!("{p}, {t} %cv{s}"));
         let text = format!(
-            "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n",
-            perf_begin, self.allocas, self.body
+            "define internal {sig_ret} @{fname}({param}){fn_attrs} {{\nentry:\n{}{}{}}}\n{}",
+            perf_begin, self.allocas, self.body, self.cand_tables
         );
         (text, self.orders)
     }

@@ -423,7 +423,7 @@ class MeasureTests(unittest.TestCase):
         (b / "tiles").mkdir()
         (b / "cutlass/include/cutlass").mkdir(parents=True)
         (b / "libmapal_rt.a").write_bytes(b"!<arch>\n" + b"\0" * 60 + b"\x7fELF" + b"\0" * 14 + b"\x3e\x00")
-        for f in ("mapal_gpu.c", "tile_bench.cu", "chain_bench.cu", "value_gate.py"):
+        for f in ("mapal_gpu.c", "mapal_choice.h", "tile_bench.cu", "chain_bench.cu", "value_gate.py"):
             (b / f).touch()
         (b / "box_run.sh").write_text("case $probe in epi|decode_*) ;; *) continue ;; esac\n")
         (b / "torch_bench.py").write_text(

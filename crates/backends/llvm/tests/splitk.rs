@@ -60,6 +60,9 @@ fn emit_face(ir: &CategoryIr, base: EmitOpts, off: &[&str]) -> mapal_backend_llv
         target: "rtx-5090",
         ..base
     };
+    // The rules' launches (`--cands=1`): every candidate of a table is
+    // `site_choice.rs`'s.
+    opts.gpu.site_cands = 1;
     if ir_k(ir) == 12 {
         // The interpretable site: one block, so the derived count would cut
         // `k` into single steps (no order to see); force S = 4 (the
@@ -328,6 +331,7 @@ fn forced_split_holds_under_plan_cost() {
     };
     opts.gpu.splitk = 4;
     opts.gpu.off.place = true;
+    opts.gpu.site_cands = 1;
     let host = emit_detailed(&ir, &opts).expect("emits").text;
     assert!(host.contains("; splitk=4"), "{host}");
 }
@@ -401,6 +405,7 @@ fn tiled_combines_emulated() {
             opts.gpu.off.fill_wave = true;
             opts.gpu.off.plan_cost = true;
             opts.gpu.off.fit_first = true;
+            opts.gpu.site_cands = 1;
             let em = emit_detailed(&ir, &opts).expect("emits");
             let dev = em.device.clone().expect("a device unit");
             (em, dev)

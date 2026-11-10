@@ -400,9 +400,15 @@ fn a_map_over_a_carry_view_before_a_site_is_a_cell() {
 
 #[test]
 fn the_contract_face_places_the_same_cells() {
+    // The rules' launches (`--cands=1`): the faces' candidate tables differ
+    // (the exact face keeps one `Combine`), their placement does not.
+    let rules = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
     for src in [ew(&corners("z")), mlp(&corners("d")), loop_relu()] {
-        let exact = calls(&emit_arms(&src, GpuArms::default(), false).text);
-        let contract = calls(&emit_arms(&src, GpuArms::default(), true).text);
+        let exact = calls(&emit_arms(&src, rules, false).text);
+        let contract = calls(&emit_arms(&src, rules, true).text);
         assert_eq!(exact, contract);
     }
 }

@@ -48,6 +48,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "mapal_choice.h"
+
 /* MAPAL_GPU_TRACE=1: one stderr line per operation with its wall time, and a
  * `mapal_gpu_trace_total` line at exit summing every phase, the bytes each way
  * and the operation counts, so two arms of one program compare by one line.
@@ -130,6 +132,8 @@ static unsigned slot_of(uint32_t s) {
 
 static CUmodule module;
 static CUcontext ctx;
+/* per-site-choice: the module text's hash (a wisdom key's half). */
+static uint64_t module_hash;
 
 /* `preload`: every `.entry` of the module, resolved at load. `smem` is the
  * dynamic shared-memory limit already set on it (the attribute is set once).
@@ -208,6 +212,7 @@ static void init_all(void) {
   }
   ptx[n] = 0;
   fclose(f);
+  module_hash = choice_fnv(ptx, (size_t)n, CHOICE_FNV0);
   CK(cuModuleLoadData(&module, ptx));
   if (flags & PRELOAD)
     preload(ptx);
@@ -379,9 +384,13 @@ void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
  * it. Not a kernel: the launch behind it is not a dependent (PDL) launch. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
   load_module();
+  double t0 = now_ms();
   CK(cuMemsetD8Async((CUdeviceptr)d, 0, bytes, streams[0]));
   legacy_ops++;
   last_kernel[0] = 0;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=zero ms=%.3f bytes=%llu\n", now_ms() - t0,
+            (unsigned long long)bytes);
 }
 
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
@@ -794,6 +803,88 @@ void mapal_gpu_sync(void) {
       joined[i] = legacy_ops;
     chains_busy = 0;
   }
+}
+
+/* per-site-choice B2/B3: a site with candidates. `cands` holds one launch
+ * recipe per candidate (candidate 0 the rules' plan); `ptrs[0..nptr)` are the
+ * kernel's pointer arguments, `ptrs[out]` the output. A recipe zeroes the
+ * output first (`zero`), or runs into the workspace at `*ws_slot` (made at the
+ * table's largest `ws` on first use) and reduces it into the output. The pick
+ * is `mapal_choice.h`'s; every launch goes through `launch_on`. */
+struct site_env {
+  const struct mapal_cand *c;
+  uint32_t stream, nptr, out;
+  const uint64_t *ptrs;
+  uint64_t *ws_slot, ws_max;
+};
+
+static void site_run(void *e, uint32_t i) {
+  struct site_env *x = e;
+  const struct mapal_cand *c = &x->c[i];
+  unsigned k = slot_of(x->stream);
+  CUdeviceptr d[16];
+  void *args[16];
+  for (uint32_t p = 0; p < x->nptr; p++) {
+    d[p] = x->ptrs[p];
+    args[p] = &d[p];
+  }
+  if (c->zero)
+    mapal_gpu_zero(x->ptrs[x->out], c->zero);
+  if (c->ws)
+    d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+  launch_on(k, c->id, args, c->gx, c->gy, c->block, c->smem);
+  if (c->ws) {
+    CUdeviceptr r[3] = {d[x->out], 0, x->ptrs[x->out]};
+    void *ra[3] = {&r[0], &r[1], &r[2]};
+    launch_on(k, c->rid, ra, c->rgx, 1, c->rblock, 0);
+  }
+}
+
+static uint64_t now_ns(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec;
+}
+
+/* A trial run: the recipe to completion (the device was idle before it). */
+static uint64_t site_timed(void *e, uint32_t i) {
+  CK(cuCtxSynchronize());
+  uint64_t t0 = now_ns();
+  site_run(e, i);
+  CK(cuCtxSynchronize());
+  return now_ns() - t0;
+}
+
+void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
+                    const struct mapal_cand *cands, uint32_t nptr,
+                    const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
+  load_module();
+  if (nptr > 16 || out >= nptr || !n) {
+    fprintf(stderr, "mapal_gpu: site with %u pointers, out %u, %u candidates\n",
+            nptr, out, n);
+    exit(102);
+  }
+  if (!choice.ready) {
+    CUdevice dev;
+    char name[64] = "gpu", tag[96];
+    int major = 0, minor = 0;
+    CK(cuCtxGetDevice(&dev));
+    CK(cuDeviceGetName(name, sizeof name, dev));
+    CK(cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev));
+    CK(cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev));
+    snprintf(tag, sizeof tag, "%s-sm%d%d", name, major, minor);
+    choice_init(tag, module_hash, 1, trace);
+  }
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0};
+  for (uint32_t i = 0; i < n; i++)
+    if (cands[i].ws > x.ws_max)
+      x.ws_max = cands[i].ws;
+  /* The output passed as an input too: a re-run would read what it wrote. */
+  int safe = 1;
+  for (uint32_t p = 0; p < nptr; p++)
+    safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
+  struct choice_dev d = {site_run, site_timed, &x};
+  choice_site(site, flags, n, cands, safe, &d);
 }
 
 /* One site, whole round trip (the S52 ABI): composed of the split entries. */

@@ -107,6 +107,11 @@ fn site(n: u64) -> String {
 /// launch of microseconds) stays on the host, so the build is the CPU build
 /// and starts no GPU runtime; a 512³ site still launches. Before S62 the 4³
 /// site launched on every GPU target.
+/// A tile launch, alone or through its site's candidate table.
+fn launches(host: &str) -> bool {
+    host.contains("call void @mapal_gpu_launch") || host.contains("call void @mapal_gpu_site(")
+}
+
 #[test]
 fn small_site_stays_on_the_host() {
     let (small, large) = (lower_src(&site(4)), lower_src(&site(512)));
@@ -121,12 +126,12 @@ fn small_site_stays_on_the_host() {
         assert!(!em.text.contains("@mapal_gpu_"), "{target}: no GPU runtime");
         let em = emit_detailed(&large, &opts).expect("emits");
         assert!(em.device.is_some(), "{target}");
-        assert!(em.text.contains("call void @mapal_gpu_launch"), "{target}");
+        assert!(launches(&em.text), "{target}");
         // `place` off: the small site launches again (the S52–S54 placement).
         let mut off = opts;
         off.gpu.off.place = true;
         let em = emit_detailed(&small, &off).expect("emits");
-        assert!(em.text.contains("call void @mapal_gpu_launch"), "{target}");
+        assert!(launches(&em.text), "{target}");
     }
 }
 

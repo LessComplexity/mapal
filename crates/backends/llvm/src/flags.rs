@@ -136,6 +136,18 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         }
         // plan-cost: the candidate plans' `; mapal.cand` lines.
         "--plan-cands" => opts.gpu.cands = true,
+        // per-site-choice: the most candidates a site's table holds (1 = the
+        // rules' launch alone, the emission before candidates).
+        _ if a.starts_with("--cands=") => {
+            let n = a["--cands=".len()..]
+                .parse::<u64>()
+                .ok()
+                .filter(|&n| n >= 1);
+            let Some(n) = n else {
+                return Err(format!("--cands expects a count >= 1, got `{a}`"));
+            };
+            opts.gpu.site_cands = n;
+        }
         // Machine facts by name (plan-s31-target-profiles); never probed
         // unless the name is `native`. A box run names its machine.
         _ if a.starts_with("--target=") => {

@@ -43,7 +43,12 @@ fn shipped() -> GpuArms {
 
 /// The measurement arm with each of `rungs` forced off (and R7 held off).
 fn offs(rungs: &[&str]) -> GpuArms {
-    let mut a = GpuArms::default();
+    // The rules' launches (`--cands=1`): residency is the subject here; a
+    // site's candidate table (`site_choice.rs`) moves the same pointers.
+    let mut a = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
     for r in rungs.iter().chain(&["streams", "pinned", "pdl"]) {
         *a.off.rung(r).expect("a rung") = true;
     }
