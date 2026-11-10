@@ -25,7 +25,12 @@ fn lower(src: &str) -> CategoryIr {
 /// run (`pdl`, `streams`, `pinned`; `cp.async` it queues, tile-efficiency
 /// T2); `place` off puts every capable site on the device.
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str], base: EmitOpts) -> Emission {
-    let mut gpu = GpuArms::default();
+    // The rules' and the cost model's plans (`--cands=1`); every candidate
+    // of a table is `site_choice.rs`'s.
+    let mut gpu = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
     for r in off.iter().chain(&["place", "pdl", "streams", "pinned"]) {
         *gpu.off.rung(r).expect("rung") = true;
     }

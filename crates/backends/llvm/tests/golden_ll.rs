@@ -2154,7 +2154,12 @@ fn gpu_time_bracket_is_time_tile_sync_time() {
         )
         .unwrap()
     };
-    let at = |src: &str, target: &'static str| at_arms(src, target, GpuArms::default());
+    // The rules' launch (`--cands=1`): a table's call brackets the same way.
+    let rules = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
+    let at = |src: &str, target: &'static str| at_arms(src, target, rules);
     // `resident` (shipped): the operands are built on the device and each read
     // waits for every launch before it, so the bracket is the site's launch.
     let ll = at(&e2e(64), "h100-pcie");
@@ -2279,9 +2284,14 @@ fn rtx_4090_streams_with_cp_async_only_under_filled() {
             .expect("a GPU site")
     };
     let streams = |d: String| d.contains("call void @llvm.nvvm.cp.async");
-    assert!(!streams(device(4096, Default::default())));
-    assert!(streams(device(1024, Default::default())));
-    let mut off = mapal_backend_llvm::GpuArms::default();
+    // The rules' kernel (`--cands=1`): a table also holds the `+async` one.
+    let rules = mapal_backend_llvm::GpuArms {
+        site_cands: 1,
+        ..Default::default()
+    };
+    assert!(!streams(device(4096, rules)));
+    assert!(streams(device(1024, rules)));
+    let mut off = rules;
     *off.off.rung("arch-rungs").expect("a rung") = true;
     assert!(streams(device(4096, off)));
 }

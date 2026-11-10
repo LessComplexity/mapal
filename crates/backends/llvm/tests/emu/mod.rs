@@ -158,6 +158,20 @@ pub fn run_emulated(clang: &str, host: &str, dev: &str) -> String {
 /// bytes_out]`.
 #[allow(dead_code)]
 pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64; 5]) {
+    let (out, err) = build_emulated(clang, host, dev).run(&[]);
+    (out, totals(&err))
+}
+
+/// A program built against the emulated device, run as often as a test
+/// needs (per-site-choice: once per candidate index).
+#[allow(dead_code)]
+pub struct Emulated {
+    dir: tempfile::TempDir,
+}
+
+/// Build `host` + `dev` against the emulated device.
+#[allow(dead_code)]
+pub fn build_emulated(clang: &str, host: &str, dev: &str) -> Emulated {
     let dir = tempfile::tempdir().unwrap();
     let p = |n: &str| dir.path().join(n);
     std::fs::write(p("h.ll"), host).unwrap();
@@ -189,31 +203,49 @@ pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64;
         link.args(["-rdynamic", "-ldl", "-lm"]);
     }
     assert!(link.status().unwrap().success(), "link failed");
-    // Time-boxed: an emulated program that never finishes fails the test
-    // instead of pinning a core until someone kills it.
-    let mut child = Command::new(p("x"))
-        .env("MAPAL_PAR", "2")
-        .env("MAPAL_SPIN", "0")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let start = Instant::now();
-    while child.try_wait().unwrap().is_none() {
-        if start.elapsed() > Duration::from_secs(EMU_TIMEOUT_SECS) {
-            let _ = child.kill();
-            panic!("emulated run timed out after {EMU_TIMEOUT_SECS} s");
+    Emulated { dir }
+}
+
+impl Emulated {
+    /// One run with `env` set: its stdout and stderr. Time-boxed: an
+    /// emulated program that never finishes fails the test instead of
+    /// pinning a core until someone kills it.
+    #[allow(dead_code)]
+    pub fn run(&self, env: &[(&str, &str)]) -> (String, String) {
+        let _slot = slot();
+        let mut child = Command::new(self.dir.path().join("x"))
+            .env("MAPAL_PAR", "2")
+            .env("MAPAL_SPIN", "0")
+            .envs(env.iter().copied())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            if start.elapsed() > Duration::from_secs(EMU_TIMEOUT_SECS) {
+                let _ = child.kill();
+                panic!("emulated run timed out after {EMU_TIMEOUT_SECS} s");
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
-        std::thread::sleep(Duration::from_millis(5));
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
     }
-    let out = child.wait_with_output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let err = String::from_utf8_lossy(&out.stderr);
+}
+
+/// A run's `emu_total` line as `[h2d, d2h, launches, bytes_in, bytes_out]`.
+#[allow(dead_code)]
+pub fn totals(err: &str) -> [u64; 5] {
     let mut totals = [0u64; 5];
     if let Some(l) = err.lines().find_map(|l| l.strip_prefix("emu_total ")) {
         for (t, kv) in totals.iter_mut().zip(l.split_whitespace()) {
@@ -223,7 +255,7 @@ pub fn run_emulated_totals(clang: &str, host: &str, dev: &str) -> (String, [u64;
                 .unwrap_or(0);
         }
     }
-    (String::from_utf8_lossy(&out.stdout).into_owned(), totals)
+    totals
 }
 
 pub fn clang() -> Option<String> {

@@ -36,8 +36,18 @@ fn host(src: &str, target: &'static str, gpu: GpuArms) -> String {
     emit(src, target, gpu).text
 }
 
+/// The rules' launches (`--cands=1`): a site's candidate table
+/// (`site_choice.rs`) is not on a chain stream, and these programs' order is
+/// the subject.
+fn rules() -> GpuArms {
+    GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    }
+}
+
 fn off(rungs: &[&str]) -> GpuArms {
-    let mut a = GpuArms::default();
+    let mut a = rules();
     for r in rungs {
         *a.off.rung(r).expect("a rung") = true;
     }
@@ -45,13 +55,13 @@ fn off(rungs: &[&str]) -> GpuArms {
 }
 
 fn on() -> GpuArms {
-    GpuArms::default()
+    rules()
 }
 
 /// The measurement arm with `rungs` forced on — the mechanism, whatever the
 /// part's measured table ships (`pinned` and `pdl` ship OFF on every part).
 fn forced(rungs: &[&str]) -> GpuArms {
-    let mut a = GpuArms::default();
+    let mut a = rules();
     for r in rungs {
         *a.on.rung(r).expect("a rung") = true;
     }

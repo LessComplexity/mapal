@@ -799,6 +799,16 @@ fn launched_kernels(host: &str) -> std::collections::BTreeSet<String> {
             .unwrap_or_else(|_| lit.parse::<i64>().expect("launch id") as u64);
         live.insert(format!("{prefix}_{id:016x}"));
     }
+    // per-site-choice: a site's table names each candidate's kernels
+    // (`%mapal_cand { i64 <id>, i64 <reduce id>, … }`).
+    for t in host.split("%mapal_cand { i64 ").skip(1) {
+        for lit in t.split(", ").take(2) {
+            let id: i64 = lit.trim_start_matches("i64 ").parse().expect("a kernel id");
+            if id != 0 {
+                live.insert(format!("mapal_tile_{:016x}", id as u64));
+            }
+        }
+    }
     live
 }
 

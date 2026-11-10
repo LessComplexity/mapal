@@ -128,6 +128,8 @@ fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
     for r in ["epilogue", "devmap"] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
+    // The rules' launches (`--cands=1`): the fold's placement is the subject.
+    gpu.site_cands = 1;
     let opts = EmitOpts {
         host: "generic",
         target: "rtx-4090",
