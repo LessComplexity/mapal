@@ -4,7 +4,7 @@
 # which bills until you run `vastai destroy instance <id>`).
 #
 # usage: benches/gpu/vast_run.sh <offer_id> <profile> <sm_NN> <bundle_dir> <results_dir> [reps]
-# DIFFERENTIAL_ONLY / PROBE_ARMS / PROBE_REPS / E2E_REPS pass through to box_run.sh.
+# DIFFERENTIAL_ONLY / PROBE_ARMS / PROBE_REPS / E2E_REPS / LADDER pass through to box_run.sh.
 set -euo pipefail
 # Every rental goes through the `itur` vast account (Sapir, 2026-11-10); the default profile is not used.
 vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; }
@@ -65,7 +65,7 @@ done
 log "bundle uploaded"
 # The e2e and probe sections' arms and repetitions, and box_profile's traced
 # probes, pass through (unset: their defaults).
-ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PROBE_TRACE_REPS='${PROBE_TRACE_REPS:-}' LANE_PROGS='${LANE_PROGS:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}' WARM='${WARM:-0}' E2E='${E2E:-1}' SUBMIT='${SUBMIT:-}' TIMING='${TIMING:-1}' TORCH='${TORCH:-1}' SWEEP_PROF='${SWEEP_PROF:-0}' TORCH_MIN='${TORCH_MIN:-15}' SASS_MIN='${SASS_MIN:-12}' RETUNE='${RETUNE:-0}' PICKS='${PICKS:-0}' LOAD_ALL='${LOAD_ALL:-0}' JIT_CACHE_OK='${JIT_CACHE_OK:-0}'"
+ENVS="DIFFERENTIAL_ONLY='${DIFFERENTIAL_ONLY:-0}' E2E_ARMS='${E2E_ARMS:-}' PROBE_ARMS='${PROBE_ARMS:-}' PROBE_REPS='${PROBE_REPS:-}' E2E_REPS='${E2E_REPS:-}' PROF_PROBES='${PROF_PROBES:-}' PROBE_TRACE_REPS='${PROBE_TRACE_REPS:-}' LANE_PROGS='${LANE_PROGS:-}' PASSES='${PASSES:-1}' FACES='${FACES:-_exact _c _tf}' WARM='${WARM:-0}' E2E='${E2E:-1}' SUBMIT='${SUBMIT:-}' TIMING='${TIMING:-1}' TORCH='${TORCH:-1}' SWEEP_PROF='${SWEEP_PROF:-0}' TORCH_MIN='${TORCH_MIN:-15}' SASS_MIN='${SASS_MIN:-12}' RETUNE='${RETUNE:-0}' PICKS='${PICKS:-0}' LOAD_ALL='${LOAD_ALL:-0}' JIT_CACHE_OK='${JIT_CACHE_OK:-0}' LADDER='${LADDER:-0}'"
 run_rc=0
 # RUN_MIN (S62): the box run's ceiling in minutes, so a rental stays inside its time budget
 # (start + upload + run + fetch); the results so far are still fetched.

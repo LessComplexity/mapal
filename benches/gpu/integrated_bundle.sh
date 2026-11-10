@@ -34,7 +34,11 @@ SUITE=${SUITE-""}
 SUITE_C=${SUITE_C-""}
 ARMS=${ARMS-""}
 mkdir -p "$OUT/tiles"
-python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" >/dev/null
+# per-site-choice ladders: LADDER=1 adds the scale-ladder programs (gen_tiles.py --ladder, ladder_bundle.sh).
+# XREF="<stem>..": suite programs too large for the exact CPU oracle — no `.expect` here; `<stem>.xref` (the exact
+# face on the device: the interpreter's order bit for bit; `.xabsref` its D2 magnitude program) writes it on the box.
+XREF=${XREF-""}
+python3 "$ROOT/benches/gpu/gen_tiles.py" "$OUT/tiles" ${LADDER:+--ladder} >/dev/null
 # S64: the CPU build of a looped program (pt_rt_mlp2_1024) needs more than an 8 MB stack (rc 139 at
 # the default); macOS's hard limit is 64 MB.
 ulimit -s 65520 2>/dev/null || true
@@ -42,6 +46,7 @@ ulimit -s 65520 2>/dev/null || true
 # on the contract face (per-step fmaf), `iter ms` dropped. The default face answers to the exact
 # one within ADR-0040 D2's bound (value_gate.py).
 for p in $PROGS $SUITE; do
+    [[ " $XREF " == *" $p "* ]] && continue
     # The suite runs the default face alone: its gate is the exact face's oracle.
     # (and the contract face where a re-judge arm runs on it).
     faces=(_x _c); [[ " $SUITE " == *" $p "* ]] && [[ " $ARMS " != *":$p:_c:"* ]] && [[ " $SUITE_C " != *" $p "* ]] && faces=(_x)
@@ -165,6 +170,10 @@ for spec in "$@"; do
         emit_one "$f" "$b" "$prof" "$sm"
         cp "$b.host.o" "$b.null.host.o"; [ -f "$b.ptx" ] && cp "$b.ptx" "$b.null.ptx"
         if [[ " $SUITE_C " == *" $p "* ]]; then emit_one "$f" "${b}_c" "$prof" "$sm" --order=sequential; fi
+        if [[ " $XREF " == *" $p "* ]]; then
+            emit_one "$f" "$b.xref" "$prof" "$sm" --exact
+            [ -f "$OUT/tiles/${p}_xabs.mapal" ] && emit_one "$OUT/tiles/${p}_xabs.mapal" "$b.xabsref" "$prof" "$sm" --exact
+        fi
         c1 "$f" "$b" "$prof" "$sm"
         # site-geometry: SUITE_ARMS=0 (search.py, changed_bundle.sh) keeps the shipped build and its null, plus the
         # `cpu` arm of SUITE_CPU (its CPU-only build changed); every other arm comes from ARMS.

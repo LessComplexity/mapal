@@ -839,8 +839,15 @@ def facts(d, sm):
             la = lau.get(kid(k), {})
             if 'site' in la:
                 la = dict(la, S=p.get('S', 1), combine=p.get('combine', 'none'))
+            # D2: an alternative's axes as its launch realized them (async: a cp.async panel; kmajor-a: a k-major
+            # panel; plan-cost: the plan line's `pick`; full-tile: a pick under full-tile; else the rung on its plan line).
+            ron = set(p.get('rungs_on', []))
+            real = lambda r: (p.get('stages', 1) >= 2 if r == 'async' else p.get('kmajor', 0) == 1 if r == 'kmajor-a'
+                              else 'pick' in p if r == 'plan-cost' else 'pick' in p and r in ron if r == 'full-tile'
+                              else r in ron)
+            axes = [[sg, r, real(r)] for sg, r in flips.get(k, [])]
             kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
-                      mod=dict(launched=launched(k, hll), cand=int(k in cands)),
+                      mod=dict(launched=launched(k, hll), cand=int(k in cands), alt=int(bool(axes)), axes=axes),
                       launch=la,
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
@@ -956,8 +963,9 @@ def check(d, results=None, out=sys.stdout):
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'])
             kon = set(kf.get('plan', {}).get('rungs_on', [])) | on
+            alt = kf.get('mod', {}).get('alt', 0)
             for rung, it in INTENT.items():
-                if it.get('host'):
+                if it.get('host') or (alt and it.get('rule')):
                     continue
                 state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]

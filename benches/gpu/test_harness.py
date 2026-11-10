@@ -628,6 +628,11 @@ class PlanCostFoldTests(unittest.TestCase):
             self.assertEqual(sorted(fit + hold), sorted(rows))
         self.assertEqual(fs[0], fs[1][::-1])
 
+    def test_scale_report_on_synthetic_results(self):
+        # per-site-choice ladders: AUTO / RULES / legs / null / crossover / a failed torch leg / a cell's site pick.
+        r = subprocess.run(["python3", str(HERE / "scale_report.py"), "demo"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ geometry, stages, combine). A check is `(label, expression)` over the facts of o
   remarks.opt.* / remarks.llc.*  opt / llc optimization remarks for the kernel (full_unroll, insns, …)
   launch.*   the stem's `.launch` line (S, combine, reduce)   exec.*  the box's JIT image (regs local smem)
   table.rungs_on  the part's GPU_RUNGS_OFF table at the kernel's fill and face, under the bundle arm
+`rule=True`: the rung is a decision of the rules' plan — checked on candidate 0 and untabled kernels, not on a
+site table's alternatives (per-site-choice D2: `choice-axes` checks what an alternative realized instead).
 Host rungs (`host=True`) run once per stem over `host.*` (`; mapal.host`, `mapal_gpu_*` call counts,
 `host.obj.*` mnemonics of the host object, `host.remarks.*`) and `dev.*` (kernel kinds).
 A missing fact is `n/a`, never a pass. A rung with no static signature says so (`note`) and has no
@@ -39,12 +41,20 @@ INTENT = {
     # measured candidate to its plan by kernel name). Measured (evidence.py `choice_rows`, rows `choice:on`): each
     # stored pick is the argmin of its trial's minima beyond max(3 %, 1 us); AUTO runs launch the stored pick
     # (`op=site … src=wisdom`); AUTO <= RULES x (1 + null) per program and face.
+    # per-site-choice D2: an alternative (candidate i >= 1) is a forced flip of the rules' plan, so the rungs that
+    # describe the rules' own geometry decision (`rule=True`: arch-rungs, full-tile, grid-share, async-depth,
+    # fill-wave, warp-fill, row-fit) are candidate 0's intent; the alternative's is that its launch realized each
+    # flip of its `axes=` label (`mod.axes`: sign, rung, realized — async a cp.async panel, kmajor-a a k-major
+    # panel, plan-cost a `pick`, else the rung on its plan line). Kernel-text intents (no spill, 128-bit LDS, unroll, …) hold for every
+    # candidate.
+    'choice-axes': dict(applies='mod.alt == 1', on=[
+        ('the alternative realized every flip of its axes', "all(x[2] == (x[0] == '+') for x in mod.axes)")]),
     'choice': dict(applies='mod.cand == 1', on=[
         ('a table candidate has its plan line', 'len(plan) > 0'),
         ('a table candidate is in the module (PTX)', 'len(ptx) > 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
-    'arch-rungs': dict(applies=ANY, on=[
+    'arch-rungs': dict(rule=True, applies=ANY, on=[
         ("the kernel's rungs are the part's measured table at its fill and face", 'set(plan.rungs_on) == set(table.rungs_on)')],
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
     # ---- FMA tile rungs ------------------------------------------------------------------------------
@@ -70,7 +80,7 @@ INTENT = {
     # tile-efficiency T3: tm*tn*bk >= 1024 FFMA per barrier and wait. A cp.async panel below that stays only where
     # register staging is no deeper (then the async-depth OFF arm emits the same kernel); such a row is a finding
     # explained by that arm, never a pass.
-    'async-depth': dict(applies_on=TILE + ' and plan.stages >= 2 and plan.held == 0', on=[
+    'async-depth': dict(rule=True, applies_on=TILE + ' and plan.stages >= 2 and plan.held == 0', on=[
         ('tm*tn*bk >= 1024 FFMA per barrier', 'plan.tm * plan.tn * plan.bk >= 1024')]),
     'asyncstage': dict(applies_on=TILE + ' and plan.stages > 2', on=[
         ('stages-2 groups left in flight at the wait', 'ptx.wait_n_max == plan.stages - 2'),
@@ -91,7 +101,7 @@ INTENT = {
         ('SASS FFMA/LSU = plan tm*tn*bk/lsu_issue (+-15 %)',
          'abs(sass.hot.ffma_per_lsu / (plan.tm * plan.tn * plan.bk / plan.lsu_issue) - 1) <= 0.15')]),
     # tile-efficiency T1: a free-order split kernel keeps the full register tile at >= 4 warps.
-    'full-tile': dict(applies_on=TILE + " and plan.combine in ('atomic', 'splitk') and 'pick' in plan", on=[
+    'full-tile': dict(rule=True, applies_on=TILE + " and plan.combine in ('atomic', 'splitk') and 'pick' in plan", on=[
         ('>= 64 accumulators live in the hot loop', 'plan.tm * plan.tn >= 64 and sass.hot.acc >= plan.tm * plan.tn'),
         ('>= 128 threads', 'plan.block >= 128'),
         ('FFMA per LDS >= 16', 'sass.hot.ffma_per_lds >= 16'),
@@ -105,7 +115,7 @@ INTENT = {
     'warp': dict(applies=TILE, note='lane-to-thread map only: no static SASS signature (diff the arm)'),
     # `fill` (profile.rs gpu_tile_with): shrink the tile until the grid gives every scheduler two warps,
     # down to the floor (tn = one vector, tm = one vector or, under fill-rows, one row).
-    'warp-fill': dict(applies_on=TILE, on=[
+    'warp-fill': dict(rule=True, applies_on=TILE, on=[
         ('every warp scheduler holds two warps, or the tile is at the fill floor',
          'occ.resident_warps_per_sm >= 8 or (plan.tn <= 4 and plan.tm <= 4)')]),
     'fill-rows': dict(applies=TILE, note='the fill floor one row lower; fires only where the vector floor fails (diff the arm)'),
@@ -123,9 +133,9 @@ INTENT = {
         ('no spill', 'ptxas.spill_st == 0')]),
     'raster': dict(applies=TILE, note='block-id remap: no static SASS signature (diff the arm)'),
     'l2-gate': dict(applies=TILE, note='decides raster: no static SASS signature'),
-    'row-fit': dict(applies_on=TILE, on=[('the block rows fit the site', 'plan.ty * plan.tm <= plan.rows')]),
+    'row-fit': dict(rule=True, applies_on=TILE, on=[('the block rows fit the site', 'plan.ty * plan.tm <= plan.rows')]),
     'wave-gate': dict(applies=TILE, note='chooses the kernel kind: no static SASS signature (diff the arm)'),
-    'grid-share': dict(applies_on=TILE, on=[
+    'grid-share': dict(rule=True, applies_on=TILE, on=[
         ('residency sized to the grid share', 'plan.blocks_per_sm <= max(1, ceil((plan.ctas if plan.combine == "streamk" '
          'else plan.gx * plan.gy) / occ.sms))')]),
     'panel-regs': dict(applies_on=TILE + ' and plan.stages == 1 and plan.held == 0', on=[
@@ -325,7 +335,7 @@ INTENT = {
     # (`Geom::resident` = 2 a scheduler) cuts its free fold into the fewest partitions that reach it, inside the blocks
     # the part holds at the tile's own registers and threads; the split kernel's panels are sized for the split grid.
     # `.off-fill-wave`: the largest split inside the unsplit grid's wave (grid-share's residency: GEMV, attn P·V).
-    'fill-wave': dict(applies="plan.kind == 'tile' and plan.combine in ('atomic', 'splitk')", on=[
+    'fill-wave': dict(rule=True, applies="plan.kind == 'tile' and plan.combine in ('atomic', 'splitk')", on=[
         ('the split grid reaches the fill target (plan fill_warps: `resident` a scheduler), or holds the whole wave',
          'plan.gx * plan.gy * plan.S * ((plan.block + 31) // 32) >= plan.fill_warps'
          ' or 2 * plan.gx * plan.gy * plan.S > occ.blocks_per_sm * occ.sms'),

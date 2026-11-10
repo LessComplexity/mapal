@@ -1028,7 +1028,8 @@ for n in (1024, 2048):  # one request's chain: the requests are independent (+ t
                 stated.add(stem)
                 (out / f"{stem}.kmax").write_text(f"{fold_chain(probe_program(n, probes(n)[name], True)) + 1}\n")
 for f in sorted(out.glob("pt_*.mapal")):
-    if f.stem not in stated:
+    # (a `--ladder` program left in `out` by an earlier run carries its own `.kmax`)
+    if f.stem not in stated and not (out / f"{f.stem}.kmax").exists():
         (out / f"{f.stem}.kmax").write_text(f"{fold_chain(f.read_text())}\n")
 
 
@@ -1068,3 +1069,79 @@ for f in sorted(out.glob("*.mapal")):
             (out / f"{f.stem}.kmax").write_text(f"{fold_chain(f.read_text())}\n")
         except (AssertionError, KeyError):
             pass
+
+
+# --- per-site-choice scale ladders (`--ladder`, opt-in: ladder_bundle.sh): every task family from small to the
+# largest size that fits a part, from the generators above (only the size parameters change). `ladder.tsv`: stem,
+# family, size label, work units, unit, gate (`oracle`: the exact CPU build; `xref`: the exact face on the device,
+# the interpreter's order bit for bit; `cell`: tile_bench's f64 reference + the cell's exact face).
+ORACLE_MAX = 2e10  # flops (elements for `elem`) the exact CPU oracle builds in well under a minute
+if "--ladder" in sys.argv:
+    lad = []
+
+    def step(stem, fam, size, units, unit, src=None, kmax=None, gate=None):
+        if src is not None:
+            (out / f"{stem}.mapal").write_text(src)
+        if kmax is not None:
+            (out / f"{stem}.kmax").write_text(f"{kmax}\n")
+        elif src is not None and not (out / f"{stem}.kmax").exists():
+            (out / f"{stem}.kmax").write_text(f"{fold_chain(src)}\n")
+        lad.append((stem, fam, size, int(units), unit, gate or ("oracle" if units <= ORACLE_MAX else "xref")))
+
+    for n in (256, 512, 1024, 2048, 4096, 8192, 16384):
+        c = f"mm_{n}x{n}x{n}"
+        step(c, "gemm-square-cell", n, 2 * n ** 3, "flop", None if (out / f"{c}.mapal").exists()
+             else program(n, n, n, "rm", "rm", "f32"), gate="cell")
+        step(f"pt_pj_m{n}_n{n}_k{n}", "gemm-square", n, 2 * n ** 3, "flop",
+             composed([("a", n * n, 'a'), ("b", n * n, 'b')], gsite("c", "a", "b", n, n, n), [("c", n * n)]))
+    for N, K in ((2048, 7168), (1024, 4096)):
+        for M in (1, 16, 128, 1024, 4096):
+            c = f"mm_{M}x{N}x{K}"
+            step(c, f"gemm-batch-n{N}k{K}-cell", M, 2 * M * N * K, "flop", None if (out / f"{c}.mapal").exists()
+                 else program(M, N, K, "rm", "rm", "f32"), gate="cell")
+            step(f"pt_pj_m{M}_n{N}_k{K}", f"gemm-batch-n{N}k{K}", M, 2 * M * N * K, "flop",
+                 composed([("a", M * K, 'a'), ("b", K * N, 'b')], gsite("c", "a", "b", M, N, K), [("c", M * N)]))
+    sites = dict(indep=2, twin=2, mlp=2, mlp2=4, fanout=2, diamond=3)
+    for n in (512, 1024, 2048, 4096, 8192):
+        for name, s in sites.items():
+            src = probe_program(n, twin(n) if name == "twin" else probes(n)[name], True)
+            step(f"pt_{name}_{n}", f"chain-{name}", n, s * 2 * n ** 3, "flop", src)
+    for d in (64, 128):
+        for T in (512, 1024, 2048, 4096, 8192):
+            step(f"pt_attn_{T}_{d}", f"attention-d{d}", T, 4 * T * T * d, "flop", attention(T, d), d + 2 * T)
+    for T, d in ((256, 256), (512, 256), (1024, 256), (2048, 256), (4096, 256), (1024, 1024), (1024, 2048), (1024, 4096)):
+        ax = "context" if d == 256 else "width"
+        size = T if d == 256 else d
+        units = T * (4 * d * d + 4 * T * d)  # per trip: K, V's written row + the attention over T rows
+        for fam, src in (("decode", timed_loop(decode(T, d))),
+                         ("prefill", timed_loop(decode(T, d, prefill=T // 2)).replace("t1 - t0", "t1 - pf0")),
+                         ("gen", timed_loop(decode(T, d, gen=T // 2)))):
+            stem = f"pt_decode_{T}_{d}" if fam == "decode" else f"pt_{fam}_{T}_{T // 2}_{d}"
+            # The exact CPU build runs the loop as written: its oracle only up to the suite's 1024 x 256.
+            g = "oracle" if T * d <= 1024 * 256 else "xref"
+            step(stem, f"{fam}-{ax}", size, units, "flop", src, T * d, g)
+            if d == 256 and T == 1024:  # the shared point is also the width ladder's first step
+                step(stem, f"{fam}-width", d, units, "flop", gate=g)
+    for C, n in ((64, 56), (128, 56), (256, 56), (512, 56), (64, 112), (64, 224)):
+        ax, size = ("channels", C) if n == 56 else ("res", n)
+        src = conv_mc(8, C, n, 3)
+        for face, s in (("", src), ("_tf32", tf32_folds(src))):
+            for a, sz in ((ax, size),) + ((("res", 56),) if (C, n) == (64, 56) else ()):
+                step(f"pt_convmc_8_{C}_{n}_3{face}", f"convmc{face or '_f32'}-{a}", sz,
+                     2 * 8 * C * n * n * C * 9, "flop", s, C * 9)
+    for n in (1024, 2048, 4096, 8192, 16384):
+        for name in ("ew", "epi", "bias", "residual", "rowsum", "softmax_rows"):
+            src = probe_program(n, probes(n)[name], True)
+            ew = name == "ew"
+            k = {"ew": 8 * n, "rowsum": 2 * n, "softmax_rows": 2 * n}.get(name)
+            step(f"pt_{name}_{n}", name, n, n * n if ew else 2 * n ** 3, "elem" if ew else "flop", src, k)
+            if name == "rowsum":
+                (out / f"pt_rowsum_{n}_xabs.mapal").write_text(xabs(src))
+    for e in (20, 22, 24, 26, 28):
+        step(f"pt_fir_{1 << e}_16", "fir", 1 << e, 2 * 16 << e, "flop", fir(1 << e, 16), 16)
+    for s in (32, 64, 128):
+        step(f"pt_pc_{s}", "cpugpu-pc", s, 6 * s ** 3, "flop", composed(*small_chain(s)))
+    for n, s in ((2048, 32), (4096, 64), (8192, 128)):
+        step(f"pt_pm_{n}_{s}", "cpugpu-pm", n, 6 * s ** 3 + 4 * n ** 3, "flop", composed(*mixed(n, s)))
+    (out / "ladder.tsv").write_text("stem\tfamily\tsize\tunits\tunit\tgate\n"
+                                    + "".join("\t".join(map(str, r)) + "\n" for r in lad))

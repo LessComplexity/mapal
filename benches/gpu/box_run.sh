@@ -312,6 +312,15 @@ for o in "$PROF"/pt_*.host.o; do
     # S64: `tiles/<stem>.kmax` (gen_tiles.py) first.
     kmax=$(cat "tiles/$b.kmax" 2>/dev/null || { sed -nE 's/.*_d([0-9]+)_h([0-9]+).*/\1 \2/p' <<< "$b" | awk '{ print ($1 > $2) ? $1 : $2 }'; })
     faces=("" _c); [ -f "$PROF/${b}_x.host.o" ] && faces=("" _x _c)
+    # per-site-choice ladders: a step too large for the CPU oracle carries its exact face built for the device
+    # (`.xref`, the interpreter's order bit for bit; `.xabsref` D2's magnitudes): its output is the oracle.
+    for x in xref:_x xabsref:_xabs; do
+        if [ -f "$PROF/$b.${x%%:*}.host.o" ] && [ ! -s "tiles/$b${x#*:}.expect" ]; then
+            link "$PROF/$b.${x%%:*}.host.o" "pt_$b.${x%%:*}"
+            MAPAL_PTX="$PROF/$b.${x%%:*}.ptx" "./pt_$b.${x%%:*}" 2>/dev/null | grep -v '^iter ms=' > "tiles/$b${x#*:}.expect"
+            say "oracle prog=$b src=device-exact file=$b${x#*:}.expect rc=${PIPESTATUS[0]} out=[$(tr '\n' ' ' < "tiles/$b${x#*:}.expect")]"
+        fi
+    done
     runs=(); gates=()
     for face in "${faces[@]}"; do
         for arm in $pa; do
@@ -395,7 +404,8 @@ for o in "$PROF"/pt_*.host.o; do
             fi
         done
     done
-    if [ -n "$tabled" ] && [ -z "$tuned" ] && [ -z "${PROBE_ARMS:-}" ] && ! compgen -G "pt_$b*.c1" > /dev/null; then
+    # LADDER=1: every step is timed (AUTO = RULES where nothing was tuned: the scale table needs the row).
+    if [ -n "$tabled" ] && [ -z "$tuned" ] && [ -z "${PROBE_ARMS:-}" ] && [ "${LADDER:-0}" != 1 ] && ! compgen -G "pt_$b*.c1" > /dev/null; then
         say "carried prog=$b (pick = rules everywhere)"; continue
     fi
     mkdir -p vals

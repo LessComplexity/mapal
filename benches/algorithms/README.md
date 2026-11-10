@@ -26,4 +26,8 @@ python3 benches/gpu/gen_tiles.py /tmp/algos && cp /tmp/algos/*.mapal benches/alg
 | ew → conv → ew | `pt_ewconvew_2048_5.mapal`, `px_ewconvew_32_5.mapal` |
 | MLP | `pt_smlp_4096_256_1024.mapal`, `px_smlp_64_32_64.mapal` |
 
+Scale ladders (`ladder/`, per-site-choice): the sizes `gen_tiles.py --ladder` adds (only the size parameters of the
+generators above change) and `ladder.tsv` (stem, family, size, work units, gate). Regenerate:
+`python3 benches/gpu/gen_tiles.py /tmp/lad --ladder`, then copy the `.mapal` files not in this directory and `ladder.tsv`.
+
 `pt_*` are the timed suite programs; `px_*` are their small value-checked twins; `mm_*` the matmul cells.

@@ -104,7 +104,8 @@ def check(bundle, prof):
         bad.append('torch_bench.py missing (TORCH=0 to run without the torch legs)')
     for b in sorted(probes):
         kmax = nonempty(tiles / f'{b}.kmax') or re.search(r'_d\d+_h\d+', b)
-        if not (nonempty(tiles / f'{b}_x.expect') and kmax) and not nonempty(tiles / f'{b}.expect'):
+        # (a ladder step's `.xref`, its exact face for the device, writes `_x.expect` on the box: box_run.sh)
+        if not ((nonempty(tiles / f'{b}_x.expect') or f'{b}.xref' in objs) and kmax) and not nonempty(tiles / f'{b}.expect'):
             bad.append(f'{b}: default face without its bound (tiles/{b}_x.expect + K, or tiles/{b}.expect)')
         for face in ('_c', '_x'):
             if any(o == b + face or o.startswith(f'{b}{face}.') for o in objs) and \
