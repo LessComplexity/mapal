@@ -11,6 +11,8 @@
 # usage: benches/gpu/vast_part.sh <profile> <sm_NN> <bundle_dir> <results_dir> <reps> <GPU_NAME>...
 #   e.g. benches/gpu/vast_part.sh a100 sm_80 $B $R 30 A100_SXM4 A100_PCIE
 PROF=$1 SM=$2 B=$3 RES=$4 REPS=$5; shift 5
+# Every rental goes through the `itur` vast account (Sapir, 2026-11-10); the default profile is not used.
+vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$RES"
 offers() { # <GPU_NAME>: id dph pcie_bw cpu_ghz host machine cpu_name geo, cheapest first

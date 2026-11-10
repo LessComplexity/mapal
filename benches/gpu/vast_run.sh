@@ -6,6 +6,8 @@
 # usage: benches/gpu/vast_run.sh <offer_id> <profile> <sm_NN> <bundle_dir> <results_dir> [reps]
 # DIFFERENTIAL_ONLY / PROBE_ARMS / PROBE_REPS / E2E_REPS pass through to box_run.sh.
 set -euo pipefail
+# Every rental goes through the `itur` vast account (Sapir, 2026-11-10); the default profile is not used.
+vastai() { command vastai --profile "${VAST_PROFILE:-itur}" "$@"; }
 OFFER=$1; PROF=$2; SM=$3; BUNDLE=$4; RES=$5; REPS=${6:-30}
 IMAGE=${IMAGE:-nvidia/cuda:12.8.1-devel-ubuntu22.04}
 mkdir -p "$RES"

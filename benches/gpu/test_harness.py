@@ -198,6 +198,7 @@ exit 0
 
     def test_wrapper_retrieves_then_cleans_up_on_success_and_failure(self):
         self.stub("vastai", '''
+[ "$1" = --profile ] && { echo "profile $2" >> "$STUB_LOG"; shift 2; }
 echo "vastai $*" >> "$STUB_LOG"
 case "$1 $2" in
     'create instance') echo '{"new_contract":123}' ;;
@@ -240,6 +241,8 @@ esac
                 self.assertLess(calls.index("cat /w/results-test.txt"),
                                 calls.index("vastai destroy instance 123 -y"))
                 self.assertNotIn("box_profile.sh", calls)
+                # Every rental call goes through the itur account, never the default profile.
+                self.assertEqual(calls.count("profile itur\n"), calls.count("vastai "))
 
 
 class RuntimeProgramTests(unittest.TestCase):
