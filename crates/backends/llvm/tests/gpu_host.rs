@@ -36,11 +36,15 @@ fn lower_src(src: &str) -> CategoryIr {
     mapal_rewrite::rewrite(ir).ir
 }
 
+/// The rules' plan (`--cands=1`): the host shapes are what these check.
 fn host(src: &str, target: &'static str, gpu: GpuArms) -> String {
     let opts = EmitOpts {
         host: "generic",
         target,
-        gpu,
+        gpu: GpuArms {
+            site_cands: 1,
+            ..gpu
+        },
         ..EmitOpts::exact()
     };
     emit_detailed(&lower_src(src), &opts).unwrap().text

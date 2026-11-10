@@ -78,7 +78,11 @@ def table_rungs(rows, prof, wps, face, arm):
         dead = {n for p, n, fl, fa, _ in rows if p == prof and covers(fa, face)
                 and (fl in ('Any', fill) or (fl == 'Partial' and 1 <= wps < 2))}
         r = (set(KERNEL_RUNGS) | {n for p, n, *_ in rows}) - dead
-    return sorted((r | on) - off)
+    r = (r | on) - off
+    # per-site-choice D1: the kmajor-a rows are bank-plan's OFF arm (func/gpu.rs `rungs_at`).
+    if 'bank-plan' in r and 'kmajor-a' not in off:
+        r.add('kmajor-a')
+    return sorted(r)
 
 
 def arm_of(stem):

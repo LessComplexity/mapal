@@ -529,6 +529,15 @@ pub struct GpuRungs {
     /// deeper ([`crate::func::gpu`] `launch_split`). Off: the deepest
     /// `cp.async` panel that fits, whatever its depth.
     pub async_depth: bool,
+    /// per-site-choice D1: the shared-memory panels from the one bank degree
+    /// function (`profile::bank_degree`): a k-major thread owns rows
+    /// `trow + i·ty`, its `a` panel takes the bank model's pad, `lsu` counts
+    /// each class's bank excess, and the register rule (A4) takes the k-major
+    /// panel only where its `bk` and blocks/SM are not worse than the
+    /// transposed panel's — under it the `kmajor-a` rows of
+    /// `GPU_RUNGS_OFF` do not apply. Off: the pre-sprint panels (row map, no
+    /// k-major pad, no rule) and those rows.
+    pub bank_plan: bool,
 }
 
 impl GpuRungs {
@@ -611,11 +620,12 @@ impl GpuRungs {
         kmajor_a: true,
         full_tile: true,
         async_depth: true,
+        bank_plan: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 77] = [
+    pub const NAMES: [&'static str; 78] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -693,6 +703,7 @@ impl GpuRungs {
         "kmajor-a",
         "full-tile",
         "async-depth",
+        "bank-plan",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -775,6 +786,7 @@ impl GpuRungs {
             "kmajor-a" => &mut self.kmajor_a,
             "full-tile" => &mut self.full_tile,
             "async-depth" => &mut self.async_depth,
+            "bank-plan" => &mut self.bank_plan,
             _ => return None,
         })
     }
@@ -1688,8 +1700,16 @@ mod place_tests {
         lower(&s)
     }
 
+    /// The rules' plan (`--cands=1`): placement is what this checks.
     fn emit_on(ir: &CategoryIr, place: bool) -> Emission {
-        emit_module(ir, &EmitOpts::exact(), synth(place)).expect("emits")
+        let opts = EmitOpts {
+            gpu: GpuArms {
+                site_cands: 1,
+                ..GpuArms::default()
+            },
+            ..EmitOpts::exact()
+        };
+        emit_module(ir, &opts, synth(place)).expect("emits")
     }
 
     fn count(text: &str, pat: &str) -> usize {
@@ -1728,7 +1748,14 @@ mod place_tests {
     #[test]
     fn without_costs_every_capable_site_is_placed() {
         let ir = mixed();
-        let today = emit_module(&ir, &EmitOpts::exact(), &RTX_4090).expect("emits");
+        let opts = EmitOpts {
+            gpu: GpuArms {
+                site_cands: 1,
+                ..GpuArms::default()
+            },
+            ..EmitOpts::exact()
+        };
+        let today = emit_module(&ir, &opts, &RTX_4090).expect("emits");
         assert_eq!(
             emit_on(&ir, false).device,
             today.device,

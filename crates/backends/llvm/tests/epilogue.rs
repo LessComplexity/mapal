@@ -20,6 +20,8 @@ fn emit_on(src: &str, target: &'static str, contract: bool, mut gpu: GpuArms) ->
     // R1 alone (S54 integration): R2 (`devmap`) would place the per-cell maps
     // R1 declines; its own tests pin that.
     *gpu.off.rung("devmap").expect("a rung") = true;
+    // The rules' launches (`--cands=1`): these check the host's launch shapes.
+    gpu.site_cands = 1;
     emit_detailed(
         &lower_src(src),
         &EmitOpts {

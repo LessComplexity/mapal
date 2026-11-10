@@ -107,7 +107,13 @@ pub(crate) fn rungs_at(
     } else {
         profile.gpu_rungs_on(wps, face)
     };
-    table.with(arms)
+    let r = table.with(arms);
+    // per-site-choice D1: the `kmajor-a` rows are `bank-plan`'s OFF arm; under
+    // it the register rule (A4, [`launch_split`]) decides the k-major panel.
+    crate::GpuRungs {
+        kmajor_a: r.kmajor_a || (r.bank_plan && !arms.off.kmajor_a),
+        ..r
+    }
 }
 
 /// The host rungs (`resident`, `devgen`, `retain-delta`, `eager-init`) are
@@ -560,7 +566,7 @@ pub(crate) fn launch_split(
     };
     // per-site-choice A2: the k-major panel's bank pad, where it fits — on
     // each pipeline's panel before they are weighed, and on the final stages.
-    let kpad = |g: GpuTile| match g.kmajor {
+    let kpad = |g: GpuTile| match g.kmajor && rungs.bank_plan {
         true => {
             profile.gpu_tile_kmajor_pad(g, site.k, &site.elem, |at| kmajor_pad(site, at, &rungs))
         }
@@ -607,7 +613,10 @@ pub(crate) fn launch_split(
             // panel is deeper (`k = 8·odd` offers neither a deeper one); a
             // forced ADR-0034 depth stands.
             let floor = 1024 / (g.tm * g.tn).max(1);
-            let shallow = |a: &GpuTile| rungs.async_depth && gpu.geom.bk == 0 && a.bk < floor;
+            // per-site-choice D2: a forced `async` arm takes the panel anyway.
+            let shallow = |a: &GpuTile| {
+                rungs.async_depth && gpu.geom.bk == 0 && a.bk < floor && !arms.on.cp_async
+            };
             if let Some(a) = streamed.filter(|a| !shallow(a)) {
                 return a;
             }
@@ -647,7 +656,8 @@ pub(crate) fn launch_split(
         // order are unchanged ([`Kernel::step`]).
         .map(|g| {
             let blocks = (site.rows / g.bm()) * (site.c / g.bn()) * split;
-            (rungs.async_stage && gpu.geom.stages == 0)
+            // per-site-choice D2: `async` forced off is register staging.
+            (rungs.async_stage && gpu.geom.stages == 0 && !arms.off.cp_async)
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
                 .flatten()
                 .unwrap_or(g)
@@ -662,7 +672,7 @@ pub(crate) fn launch_split(
     // that forces `kmajor-a` on takes the k-major tile wherever it applies:
     // the rule's alternative (per-site-choice Part B) and its ON arm. A tile
     // too narrow for the k-major read (`tx`) is the transposed one either way.
-    if let Some(k) = tiled.filter(|_| kmajor) {
+    if let Some(k) = tiled.filter(|_| kmajor && rungs.bank_plan) {
         let [a, _, st, _] = panel_excess(site, &k, &rungs, false);
         let mut flat = arms;
         *flat.on.rung("kmajor-a").expect("a rung") = false;
@@ -763,7 +773,7 @@ fn plan_line(
     if let Some(g) = l.tiled {
         f += &format!(
             " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={} \
-             kmajor={} adeg={}",
+             lsu_issue={} kmajor={} adeg={}",
             g.tm,
             g.tn,
             g.tx,
@@ -774,6 +784,17 @@ fn plan_line(
             g.held,
             g.blocks_per_sm,
             lsu_per_panel(site, &g, &l.rungs, col),
+            // per-site-choice D4: the instructions alone, what SASS shows
+            // (intent.py `lsu`).
+            lsu_per_panel(
+                site,
+                &g,
+                &crate::GpuRungs {
+                    bank_plan: false,
+                    ..l.rungs
+                },
+                col
+            ),
             u8::from(g.kmajor && !col),
             // per-site-choice A5: the `a` panel's worst bank excess, fragment
             // read and copy write (intent.py `kmajor-a`: 1).
@@ -840,7 +861,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 36] = [
+const KERNEL_RUNGS: [&str; 37] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -877,6 +898,7 @@ const KERNEL_RUNGS: [&str; 36] = [
     "kmajor-a",
     "full-tile",
     "async-depth",
+    "bank-plan",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -1286,18 +1308,16 @@ fn realized(
     }
 }
 
-/// `arms` with axis `ax` applied against candidate 0's rungs `c0`, and its
-/// label (`+async`: flipped on). `None` where a measurement arm pins the rung:
-/// an A/B arm stays what it forces, in every candidate. `kmajor-a` flips what
-/// the launch it builds on (`kmajor`: took the k-major panel) realized, not
-/// the rung: its register rule (per-site-choice A4, [`launch_split`]) may
-/// decline the panel with the rung on, and there the alternative is the
-/// forced k-major panel (`+kmajor-a`; forced, the rule is skipped).
+/// `arms` with axis `ax` applied against what launch `from` realized, and its
+/// label (`+async`: forced on). per-site-choice D2: the alternative is the
+/// opposite of `from`'s realized state ([`crate::profile::ChoiceAxis::realized`]),
+/// forced — a forced arm bypasses the rule that declined it (`kmajor-a`'s
+/// register rule, `async-depth`). `None` where a measurement arm pins the rung:
+/// an A/B arm stays what it forces, in every candidate.
 fn axis_arms(
     arms: crate::GpuArms,
     ax: &crate::profile::ChoiceAxis,
-    c0: crate::GpuRungs,
-    kmajor: bool,
+    from: &Launch,
 ) -> Option<(crate::GpuArms, String)> {
     let mut a = arms;
     if ax.full {
@@ -1312,10 +1332,7 @@ fn axis_arms(
     if arms.on.get(ax.rung) || arms.off.get(ax.rung) {
         return None;
     }
-    let on = !match ax.rung {
-        "kmajor-a" => kmajor,
-        r => c0.get(r),
-    };
+    let on = !(ax.realized)(from);
     *(if on {
         a.on.rung(ax.rung)
     } else {
@@ -1352,13 +1369,26 @@ pub(crate) fn site_cands(
     if cap <= 1 {
         return out;
     }
+    // `bank-plan` is the one axis rung the kernel text reads beyond the
+    // launch: a k-major panel's row map ([`frag_layout`]).
+    let map = |l: &Launch| l.rungs.bank_plan && l.tiled.is_some_and(|t| t.kmajor);
     let same = |a: &Launch, b: &Launch| {
         Launch {
             rungs: b.rungs,
             ..*a
         } == *b
+            && map(a) == map(b)
     };
-    let took = |l: &Launch| l.tiled.is_some_and(|t| t.kmajor);
+    // D2: no candidate where the axis's realized state did not change.
+    let flip = |ax: &crate::profile::ChoiceAxis, fa: crate::GpuArms, from: &Launch| {
+        let (a, axes) = axis_arms(fa, ax, from)?;
+        let launch = at(a);
+        (ax.full || (ax.realized)(&launch) != (ax.realized)(from)).then_some(SiteCand {
+            arms: a,
+            launch,
+            axes,
+        })
+    };
     let keep = |out: &mut Vec<SiteCand>, c: SiteCand| {
         let order_ok = order == Order::Free || c.launch.combine == base.combine;
         if out.len() < cap && order_ok && !out.iter().any(|o| same(&o.launch, &c.launch)) {
@@ -1367,17 +1397,7 @@ pub(crate) fn site_cands(
     };
     let singles: Vec<(&crate::profile::ChoiceAxis, SiteCand)> = crate::profile::CHOICE_AXES
         .iter()
-        .filter_map(|ax| {
-            let (a, axes) = axis_arms(arms, ax, base.rungs, took(&base))?;
-            Some((
-                ax,
-                SiteCand {
-                    arms: a,
-                    launch: at(a),
-                    axes,
-                },
-            ))
-        })
+        .filter_map(|ax| Some((ax, flip(ax, arms, &base)?)))
         .collect();
     for (_, c) in &singles {
         keep(&mut out, c.clone());
@@ -1391,20 +1411,21 @@ pub(crate) fn site_cands(
             if out.len() >= cap {
                 return out;
             }
-            if let Some((a, axes)) = axis_arms(x.arms, ay, base.rungs, took(&x.launch)) {
-                let axes = format!("{}{axes}", x.axes);
-                keep(
-                    &mut out,
-                    SiteCand {
-                        arms: a,
-                        launch: at(a),
-                        axes,
-                    },
-                );
+            if let Some(c) = flip(ay, x.arms, &x.launch) {
+                let axes = format!("{}{}", x.axes, c.axes);
+                keep(&mut out, SiteCand { axes, ..c });
             }
         }
     }
     out
+}
+
+/// per-site-choice B2: no buffer a launch writes is one it reads, under the
+/// residency plan's `alias` (the slot an object shares): `RERUN`.
+fn apart<T: Copy + PartialEq>(reads: &[T], writes: &[T], alias: impl Fn(T) -> T) -> bool {
+    reads
+        .iter()
+        .all(|&r| writes.iter().all(|&w| alias(r) != alias(w)))
 }
 
 /// FNV-1a of `key`: the kernel ids' hash.
@@ -3256,7 +3277,12 @@ pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs, 
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
     let kmaj = g.kmajor && !col;
     let [(_, a), (_, b)] = lane_maps(s, g, kmaj);
-    let [xa, xb, sa, sb] = panel_excess(s, g, rungs, col);
+    // per-site-choice D1: the excess weights are `bank-plan`'s; off (and the
+    // plan line's `lsu_issue`), every class counts its instructions once.
+    let [xa, xb, sa, sb] = match rungs.bank_plan {
+        true => panel_excess(s, g, rungs, col),
+        false => [1; 4],
+    };
     let lds_a = match kmaj {
         true => g.bk * g.tm / lanes,
         false => g.bk * g.tm / g.tm.min(lanes),
@@ -3407,7 +3433,7 @@ pub(crate) fn panel_excess(
     let threads = g.threads();
     let kmaj = g.kmajor && !col;
     let sa = panel_sa(g, kmaj);
-    let f = frag_layout(s, g, kmaj, rungs.interleave);
+    let f = frag_layout(s, g, kmaj && rungs.bank_plan, rungs.interleave);
     let at: Vec<(u64, u64)> = (0..threads)
         .map(|t| thread_coords(&mut Num, &t, g, rungs.warp, col, WARP))
         .collect();
@@ -5010,7 +5036,7 @@ impl Kernel<'_> {
             b_step,
             b_chunk,
             narrow,
-        } = frag_layout(s, &g, kmaj, rungs.interleave);
+        } = frag_layout(s, &g, kmaj && rungs.bank_plan, rungs.interleave);
         let a_frag0 = self.op("mul", &trow, a_step);
         let b_frag0 = self.op("mul", &tcol, b_step);
 
@@ -5638,9 +5664,7 @@ impl<'a> FnEmit<'a> {
             reads.extend(g.caps());
             writes.extend(g.chain.iter().filter(|mb| mb.store).map(|mb| mb.out));
         }
-        reads
-            .iter()
-            .all(|&r| writes.iter().all(|&w| alias(r) != alias(w)))
+        apart(&reads, &writes, alias)
     }
 
     /// per-site-choice B1/B2: site `site`'s table, `one` its retained row's
@@ -6701,6 +6725,10 @@ mod tests {
         // takes the site, as on the transposed arm.
         let mut kmajor = on("row-fit");
         *kmajor.on.rung("kmajor-a").expect("a rung") = true;
+        // per-site-choice D1: `bank-plan` OFF (the 5090's row) is the
+        // pre-sprint panel: unpadded, two `cp.async` stages of bk 64.
+        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 2)));
+        *kmajor.on.rung("bank-plan").expect("a rung") = true;
         assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 1)));
         let s = site(16, 18432, 7168, true, true, Ty::f32());
         let k = launch(&s, &RTX_5090, false, kmajor, None)
@@ -7625,6 +7653,16 @@ mod tests {
             ..GpuRungs::ALL
         };
         (g, r)
+    }
+
+    /// per-site-choice D4: a hand-built alias — the output shares a carry's
+    /// slot with an operand — is not `RERUN`; distinct slots are.
+    #[test]
+    fn an_aliased_output_is_not_rerun_safe() {
+        let key = |o: u32| if o == 7 { 3 } else { o };
+        assert!(apart(&[1, 2], &[5], key));
+        assert!(!apart(&[1, 3], &[7], key), "7 shares 3's slot");
+        assert!(!apart(&[4], &[4], |o| o));
     }
 
     /// per-site-choice A3: [`bank_degree`] / [`panel_excess`] reproduce the

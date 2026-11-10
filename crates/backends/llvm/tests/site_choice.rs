@@ -276,7 +276,9 @@ fn cases(count: usize) -> Vec<Case> {
 /// B4 values and re-run safety: for every program with a table, the emulated
 /// output of every candidate index below the program's largest table answers
 /// the interpreter; `MAPAL_GPU_PICK=all` equals the last index bit for bit
-/// where every table is flagged `RERUN`.
+/// where every table is flagged `RERUN`. per-site-choice D4: the part does not
+/// follow the strategy — every strategy meets every part — and each part
+/// reaches tables, exact-face runs and `f64` runs.
 #[test]
 fn every_candidate_answers_the_interpreter() {
     let Some(clang) = emu::clang() else {
@@ -287,9 +289,16 @@ fn every_candidate_answers_the_interpreter() {
     let (mut programs, mut tabled, mut runs, mut reruns, mut sites) = (0, 0, 0, 0, 0);
     let mut exact = 0;
     let mut by_n = [0usize; 9];
-    for (z, case) in cases(36).iter().enumerate() {
+    // Per part: [tabled programs, exact-face runs, f64 runs].
+    let mut per = [[0usize; 3]; 4];
+    for (z, case) in cases(48).iter().enumerate() {
         let ir = lower(&case.src);
-        let target = PARTS[z % PARTS.len()];
+        // Each block of 12 runs every strategy, rotated over the parts by
+        // block (a Latin square: every strategy meets every part); the
+        // rotation is the one under which the deterministic draws give every
+        // part tables, exact-face and f64 runs.
+        let part = (z % 12 + [3, 2, 0, 1][z / 12 % 4]) % PARTS.len();
+        let target = PARTS[part];
         let e = emission(&ir, target, case.base, 8, &[], &[]);
         programs += 1;
         let ts = tables(&e.text);
@@ -297,6 +306,7 @@ fn every_candidate_answers_the_interpreter() {
             continue;
         };
         tabled += 1;
+        per[part][0] += 1;
         sites += ts.len();
         for t in &ts {
             by_n[t.rows.len().min(8)] += 1;
@@ -331,6 +341,8 @@ fn every_candidate_answers_the_interpreter() {
             );
             runs += 1;
             exact += usize::from(case.base.order == Order::Sequential);
+            per[part][1] += usize::from(case.base.order == Order::Sequential);
+            per[part][2] += usize::from(case.src.contains("f64"));
         }
         if ts.iter().all(|t| t.flags & 1 == 1) {
             assert_eq!(
@@ -344,12 +356,76 @@ fn every_candidate_answers_the_interpreter() {
     }
     eprintln!(
         "site-choice values: {programs} programs, {tabled} with tables ({sites} sites, n histogram \
-         {by_n:?}), {runs} candidate runs ({exact} on the exact face), {reruns} re-run checks"
+         {by_n:?}), {runs} candidate runs ({exact} on the exact face), {reruns} re-run checks; \
+         per part [tabled, exact runs, f64 runs] {per:?}"
     );
     assert!(
-        tabled >= 16 && runs >= 48 && exact >= 8 && reruns >= 12,
+        tabled >= 20 && runs >= 64 && exact >= 10 && reruns >= 16,
         "the generator reaches site tables"
     );
+    for (p, [t, x, f]) in PARTS.iter().zip(per) {
+        assert!(
+            t >= 6 && x >= 2 && f >= 2,
+            "{p}: {t} tabled, {x} exact runs, {f} f64 runs"
+        );
+    }
+}
+
+/// per-site-choice D1: candidate 0 is the pre-sprint emission — `--cands=1`
+/// at HEAD hashes (host + device IR less the `; mapal.` evidence lines) as
+/// 089f1a6 emitted each program of a fixed bench list on the four parts and
+/// three faces (`tests/golden/c0-089f1a6.tsv`): `bank-plan` OFF with the
+/// `kmajor-a` rows is the pre-sprint layout, byte for byte.
+#[test]
+fn candidate_zero_is_the_pre_sprint_emission() {
+    let golden = include_str!("golden/c0-089f1a6.tsv");
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../benches/algorithms");
+    let norm = |t: &str| -> String {
+        t.split_inclusive('\n')
+            .filter(|l| !l.starts_with("; mapal."))
+            .collect()
+    };
+    let fnv = |b: &[u8]| {
+        b.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &x| {
+            (h ^ u64::from(x)).wrapping_mul(0x0000_0100_0000_01b3)
+        })
+    };
+    let mut rows = 0;
+    let mut bad = Vec::new();
+    for l in golden.lines().filter(|l| !l.starts_with('#')) {
+        let [prog, part, face, want]: [&str; 4] = l
+            .split('\t')
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("program part face hash");
+        let src = std::fs::read_to_string(format!("{root}/{prog}.mapal")).expect("a bench program");
+        let mut opts = EmitOpts::default();
+        let face_flags: &[&str] = match face {
+            "contract" => &["--order=sequential"],
+            "exact" => &["--exact"],
+            _ => &[],
+        };
+        let target = format!("--target={part}");
+        for f in [target.as_str(), "--host=x86-64-v3", "--cands=1"]
+            .iter()
+            .chain(face_flags)
+        {
+            assert!(mapal_backend_llvm::flags::apply(&mut opts, f).expect("a flag"));
+        }
+        let e = emit_detailed(&lower(&src), &opts).expect("emits");
+        let body = format!(
+            "{}\0{}",
+            norm(&e.text),
+            norm(e.device.as_deref().unwrap_or(""))
+        );
+        let got = format!("{:016x}", fnv(body.as_bytes()));
+        if got != want {
+            bad.push(format!("{prog} {part} {face}: {got} != {want}"));
+        }
+        rows += 1;
+    }
+    assert!(rows >= 200, "{rows} golden rows");
+    assert!(bad.is_empty(), "differs from 089f1a6:\n{}", bad.join("\n"));
 }
 
 /// B4 c0 identity: `--cands=1` emits no table and no site line; where the
@@ -450,7 +526,7 @@ fn candidate_zero_is_the_rules_plan() {
 #[test]
 fn candidate_sets_cap_dedupe_and_keep_the_order() {
     let (mut capped, mut ordered, mut lines) = (0, 0, 0);
-    let (mut flips, mut conflict_free) = ([0usize; 2], 0);
+    let (mut flips, mut conflict_free, mut ruled_bank) = ([0usize; 2], 0, 0);
     let fixed = EmitOpts {
         contract: false,
         order: Order::Fixed,
@@ -491,6 +567,13 @@ fn candidate_sets_cap_dedupe_and_keep_the_order() {
                 // a taken one.
                 let kmaj = |id: i64| plan(dev, id).is_some_and(|p| p.contains(" kmajor=1"));
                 for (r, ax) in t.rows.iter().zip(field(site, "axes=").split(',')) {
+                    // D1 / D5.3: a k-major panel the register rule takes under
+                    // `bank-plan` (not forced) is conflict-free.
+                    if ax == "+bank-plan" && kmaj(r[0]) {
+                        let p = plan(dev, r[0]).unwrap_or("");
+                        assert!(p.contains(" adeg=1 "), "#{z} {target}: {p}");
+                        ruled_bank += 1;
+                    }
                     let on = match ax {
                         "+kmajor-a" => true,
                         "-kmajor-a" => false,
@@ -518,7 +601,8 @@ fn candidate_sets_cap_dedupe_and_keep_the_order() {
     }
     eprintln!(
         "site-choice sets: {lines} tables, {capped} at their cap, {ordered} fixed/exact; \
-         kmajor-a flips -{} +{}, {conflict_free} k-major kernels adeg=1",
+         kmajor-a flips -{} +{}, {conflict_free} k-major kernels adeg=1; {ruled_bank} `+bank-plan` \
+         k-major kernels (all adeg=1)",
         flips[0], flips[1]
     );
     assert!(capped >= 8 && ordered >= 8 && lines >= 40);
@@ -707,7 +791,23 @@ fn the_measured_pick_is_stored_and_reused() {
     assert_eq!(d, vec![("trial".into(), 1)], "{err}\n{src}");
     assert_eq!(out, want, "the winner's output");
     let trials = err.lines().filter(|l| l.contains("op=trial ")).count();
-    assert_eq!(trials, 5 * n, "five rotated reps of every candidate\n{err}");
+    // per-site-choice D3: a non-zero winner is confirmed head to head (3
+    // alternating pairs with candidate 0).
+    assert_eq!(
+        trials,
+        5 * n + 6,
+        "five rotated reps of every candidate, three pairs\n{err}"
+    );
+    let site = err
+        .lines()
+        .find(|l| l.starts_with("mapal_gpu_trace op=site "))
+        .unwrap();
+    assert!(
+        field(site, "reps=") == "5"
+            && !field(site, "ns0=").is_empty()
+            && !field(site, "nsw=").is_empty(),
+        "{site}"
+    );
     let w = file();
     assert_eq!(w.lines().count(), 1, "{w}");
     let cols: Vec<&str> = w.trim_end().split('\t').collect();
@@ -747,6 +847,17 @@ fn the_measured_pick_is_stored_and_reused() {
     // Forced and off: no trial, nothing written.
     let (_, _, d, _) = run(ns, close.to_str().unwrap(), &[("MAPAL_GPU_PICK", "rules")]);
     assert_eq!(d, vec![("forced".into(), 0)]);
+    // D3: `auto` is the default path; `tune` ignores the stored entry, trials
+    // again and appends; anything else is an error, never candidate 0.
+    let (_, _, d, _) = run(ns, wis, &[("MAPAL_GPU_PICK", "auto")]);
+    assert_eq!(d, vec![("wisdom".into(), 1)]);
+    let (_, _, d, _) = run(ns, wis, &[("MAPAL_GPU_PICK", "tune")]);
+    assert_eq!(d, vec![("trial".into(), 1)]);
+    assert_eq!(file().lines().count(), 2, "the re-tune appended");
+    let typo = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        built.run(&[("MAPAL_EMU_NS", ns), ("MAPAL_GPU_PICK", "rule")])
+    }));
+    assert!(typo.is_err(), "MAPAL_GPU_PICK=rule is an error");
     let (_, _, d, _) = run(ns, "off", &[]);
     assert_eq!(d, vec![("rules".into(), 0)]);
     // A changed table (two candidates: other bytes) re-tunes against the
@@ -764,7 +875,97 @@ fn the_measured_pick_is_stored_and_reused() {
     assert_eq!(decisions(&err), vec![("trial".into(), 1)], "{err}");
     assert_eq!(
         file().lines().count(),
-        2,
+        3,
         "the new table's decision appended"
     );
+    // D4: a table without `RERUN` (the flag an aliased output clears,
+    // `apart`) is never trialled.
+    let host = e.text.replacen(
+        &format!(
+            "@mapal_gpu_site(i64 {}, i32 1,",
+            tables(&e.text)[0].site as i64
+        ),
+        &format!(
+            "@mapal_gpu_site(i64 {}, i32 0,",
+            tables(&e.text)[0].site as i64
+        ),
+        1,
+    );
+    assert_ne!(host, e.text);
+    let built0 = emu::build_emulated(&clang, &host, e.device.as_deref().unwrap());
+    let fresh = dir.path().join("norerun");
+    let err = built0
+        .run(&[
+            ("MAPAL_EMU_NS", ns),
+            ("MAPAL_WISDOM", fresh.to_str().unwrap()),
+            ("MAPAL_GPU_TRACE", "1"),
+        ])
+        .1;
+    assert_eq!(decisions(&err), vec![("rules".into(), 0)], "{err}");
+    assert!(!err.contains("op=trial "), "{err}");
+    assert!(!fresh.join("wisdom-emu-sm0.tsv").exists());
+}
+
+/// per-site-choice D4: on a program whose candidates differ in bits
+/// (non-integer operands), the output after a trial is the winner's and the
+/// site's last launch is the winner's kernel — whether the winner ran last in
+/// the trial or not.
+#[test]
+fn the_winner_runs_last() {
+    let Some(clang) = emu::clang() else {
+        eprintln!("SKIP site_choice winner: clang not found");
+        return;
+    };
+    let _ = emu::rt_lib();
+    let mut runner = TestRunner::deterministic();
+    let strat = testgen::order_prog_strategy();
+    for z in 0..60 {
+        let (src, _) = testgen::geom_src(&strat.new_tree(&mut runner).unwrap().current());
+        let target = PARTS[z % PARTS.len()];
+        let e = emission(&lower(&src), target, EmitOpts::default(), 2, &[], &[]);
+        let ts = tables(&e.text);
+        if ts.len() != 1 || ts[0].flags & 1 == 0 {
+            continue;
+        }
+        let built = emu::build_emulated(&clang, &e.text, e.device.as_deref().unwrap());
+        let outs: Vec<String> = ["0", "1"]
+            .iter()
+            .map(|p| untimed(&built.run(&[("MAPAL_GPU_PICK", p)]).0))
+            .collect();
+        if outs[0] == outs[1] {
+            continue;
+        }
+        let ids: Vec<String> = ts[0]
+            .rows
+            .iter()
+            .map(|r| format!("kernel=mapal_tile_{:016x}", r[0] as u64))
+            .collect();
+        let dir = tempfile::tempdir().unwrap();
+        for (ns, pick) in [("1000000,800000", 1), ("800000,1000000", 0)] {
+            let w = dir.path().join(format!("w{pick}"));
+            let (out, err) = built.run(&[
+                ("MAPAL_EMU_NS", ns),
+                ("MAPAL_WISDOM", w.to_str().unwrap()),
+                ("MAPAL_GPU_TRACE", "1"),
+            ]);
+            assert_eq!(decisions(&err), vec![("trial".into(), pick)], "{err}");
+            assert_eq!(
+                untimed(&out),
+                outs[pick as usize],
+                "#{z} {target}: the winner's bits\n{src}"
+            );
+            let last = err
+                .lines()
+                .filter(|l| l.starts_with("mapal_gpu_trace op=launch "))
+                .filter_map(|l| ids.iter().position(|k| l.split(' ').any(|f| f == k)))
+                .last();
+            assert_eq!(
+                last,
+                Some(pick as usize),
+                "#{z} {target}: the site's last launch\n{err}"
+            );
+        }
+        return;
+    }
+    panic!("no generated program whose two candidates differ in bits");
 }

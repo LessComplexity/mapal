@@ -652,7 +652,8 @@ fn tile_kernels(dev: Option<&str>) -> Vec<(String, String)> {
 /// non-integer operands (a moved `k` order changes bits), `f64`, `a` read
 /// along `i` and `k = 8·odd`, the values through the emulator (its
 /// `cp.async` queue) of all three arms equal the interpreter's byte for byte.
-/// per-site-choice A1/A2/A4: every k-major kernel's `a` panel is
+/// per-site-choice A1/A2/A4 (the `bank-plan` arm, D1: every arm here forces
+/// it on): every k-major kernel's `a` panel is
 /// bank-conflict-free (`adeg=1`, the emitter's bank model), and the register
 /// rule (the table's `kmajor-a`; a forced arm skips it) holds against the same
 /// arm with `kmajor-a` off: the k-major kernel's
@@ -679,19 +680,19 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
         let ir = lower(&src);
         let target = targets[z % targets.len()];
         let arms = [
-            emission_arms(&ir, target, &["async", "kmajor-a"], &[]),
-            emission_arms(&ir, target, &["kmajor-a"], &["async"]),
-            emission_arms(&ir, target, &[], &["async", "kmajor-a"]),
+            emission_arms(&ir, target, &["async", "kmajor-a", "bank-plan"], &[]),
+            emission_arms(&ir, target, &["kmajor-a", "bank-plan"], &["async"]),
+            emission_arms(&ir, target, &["bank-plan"], &["async", "kmajor-a"]),
         ];
         // The rule decides where `kmajor-a` comes from the table (every
         // profile here ships it); a forced arm takes k-major wherever it applies.
         let ruled_arms = [
-            emission_arms(&ir, target, &["async"], &[]),
-            emission_arms(&ir, target, &[], &["async"]),
+            emission_arms(&ir, target, &["async", "bank-plan"], &[]),
+            emission_arms(&ir, target, &["bank-plan"], &["async"]),
         ];
         let flat = [
-            emission_arms(&ir, target, &["async"], &["kmajor-a"]),
-            emission_arms(&ir, target, &[], &["async", "kmajor-a"]),
+            emission_arms(&ir, target, &["async", "bank-plan"], &["kmajor-a"]),
+            emission_arms(&ir, target, &["bank-plan"], &["async", "kmajor-a"]),
         ];
         for (on, off) in ruled_arms.iter().zip(&flat) {
             let (on, off) = (
@@ -749,9 +750,27 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
             launches_give_planned_smem(e, &format!("#{z} {target} arm {arm}\n{src}"));
         }
         let exact = [
-            emission_face(&ir, target, &["async", "kmajor-a"], &[], EmitOpts::exact()),
-            emission_face(&ir, target, &["kmajor-a"], &["async"], EmitOpts::exact()),
-            emission_face(&ir, target, &[], &["async", "kmajor-a"], EmitOpts::exact()),
+            emission_face(
+                &ir,
+                target,
+                &["async", "kmajor-a", "bank-plan"],
+                &[],
+                EmitOpts::exact(),
+            ),
+            emission_face(
+                &ir,
+                target,
+                &["kmajor-a", "bank-plan"],
+                &["async"],
+                EmitOpts::exact(),
+            ),
+            emission_face(
+                &ir,
+                target,
+                &["bank-plan"],
+                &["async", "kmajor-a"],
+                EmitOpts::exact(),
+            ),
         ];
         exact_kmajor += tile_kernels(exact[0].device.as_deref())
             .iter()

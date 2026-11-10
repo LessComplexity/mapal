@@ -37,8 +37,12 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
     .expect("emits")
 }
 
+/// The rules' plan (`--cands=1`): placement and launches are what these check.
 fn emit(src: &str, off: &[&str]) -> Emission {
-    let mut a = GpuArms::default();
+    let mut a = GpuArms {
+        site_cands: 1,
+        ..GpuArms::default()
+    };
     for r in off {
         *a.off.rung(r).expect("a rung") = true;
     }

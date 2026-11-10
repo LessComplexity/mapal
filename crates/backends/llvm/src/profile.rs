@@ -668,77 +668,102 @@ impl Face {
 /// rules' plan (candidate 0) and the plan with the rung flipped, and the device
 /// measures the pick once (`func/gpu.rs` `site_cands`, `mapal_choice.h`).
 /// A rung leaves the list when a fact decides it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ChoiceAxis {
-    /// The rung flipped against candidate 0's rungs.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ChoiceAxis {
+    /// The rung flipped against what candidate 0 realized.
     pub rung: &'static str,
+    /// per-site-choice D2: what a launch realized of the rung (`async`: a
+    /// `cp.async` panel; `kmajor-a`: a k-major panel; a rung no other rule
+    /// declines: the rung). The alternative forces the opposite — the forced
+    /// arm bypasses a rule that declined it — and is no candidate where the
+    /// realized state does not change.
+    pub realized: fn(&crate::func::gpu::Launch) -> bool,
     /// Not a flip: `plan-cost` on with every split kernel at the full
     /// register tile (`full-tile`), the cost model's argmin among those.
     pub full: bool,
-    /// The evidence that the rung is mixed.
+    /// The evidence that the rung is mixed (for the reader, as
+    /// [`RungOff::cite`]).
+    #[allow(dead_code)]
     pub cite: &'static str,
 }
 
 /// [`ChoiceAxis`]es in priority order: the candidates a table keeps under its
 /// cap (`--cands`) come first from the front of this list.
-pub const CHOICE_AXES: &[ChoiceAxis] = &[
+pub(crate) const CHOICE_AXES: &[ChoiceAxis] = &[
     ChoiceAxis {
         rung: "async",
+        realized: |l| l.tiled.is_some_and(|t| t.stages >= 2),
         full: false,
         cite: "GPU_RUNGS_OFF rtx-4090 async: OFF filled (_c 4096 on 3.027 vs off 2.823 ms) but kept under-filled \
                (_c 1024 on 0.070 vs off 0.101 ms); with kmajor-a, 22 W / 0 L on the async path vs 133 L on the staged \
                one (per-site-choice bank.md §3)",
     },
     ChoiceAxis {
+        rung: "bank-plan",
+        realized: |l| l.rungs.bank_plan,
+        full: false,
+        cite: "per-site-choice D1: unmeasured (GPU_RUNGS_OFF bank-plan rows); the bank model's k-major panel is \
+               conflict-free in 30 / 30 swept geometries (bank.md, build-a.md), its sign on time not yet measured",
+    },
+    ChoiceAxis {
         rung: "kmajor-a",
+        realized: |l| l.tiled.is_some_and(|t| t.kmajor),
         full: false,
         cite: "tile-efficiency sweep (GPU_RUNGS_OFF kmajor-a rows): 4090 async 21 W / 0 L, 4090 staged 8 W / 4 L, \
                3090 staged 0 W / 33 L, H100 3 W / 55 L (per-site-choice bank.md §3)",
     },
     ChoiceAxis {
         rung: "plan-cost",
+        realized: |l| l.rungs.plan_cost,
         full: false,
         cite: "plan-cost v2 (benches/results/evidence/plan-cost/v2/summary.tsv): 4090 17 W / 5 L, 5090 9 W / 13 L; \
                blind set 4090 2 W / 2 L, 5090 10 W / 6 L",
     },
     ChoiceAxis {
         rung: "plan-cost",
+        realized: |l| l.rungs.plan_cost && l.rungs.full_tile,
         full: true,
         cite: "tile-efficiency re-time (sweep/rungs-detail-*.tsv, on-plan-cost+linear): 4090 programs 8 W / 2 L, \
                5090 11 W / 10 L; the full tile is taken only where the model already prefers it",
     },
     ChoiceAxis {
         rung: "fill-wave",
+        realized: |l| l.rungs.fill_wave,
         full: false,
         cite: "docs/performance/evidence/site-geometry.md G3: probes 4090 9 W / 9 L, 5090 4 W / 15 L, H100 5 W / 3 L; \
                4090 losers k/S <= 512, winners k/S >= 1024",
     },
     ChoiceAxis {
         rung: "fit-first",
+        realized: |l| l.rungs.fit_first,
         full: false,
         cite: "site-geometry.md G4: 4090 convmc ON 0.0948 vs OFF 0.1107 ms but mm_16x18432x7168 1.053 vs 0.972 ms; \
                OFF rows on 5090 / H100 / 3090",
     },
     ChoiceAxis {
         rung: "row-fit",
+        realized: |l| l.rungs.row_fit,
         full: false,
         cite: "GPU_RUNGS_OFF row-fit: OFF filled on 4090 / H100 / 3090 (16x18432x7168), kept under-filled; H100 \
                under-filled contract OFF after cell-fill (mm_16x1024x4096 0.4332 vs 0.1018 ms)",
     },
     ChoiceAxis {
         rung: "wave-gate",
+        realized: |l| l.rungs.wave_gate,
         full: false,
         cite: "GPU_RUNGS_OFF wave-gate: 5090 filled contract OFF (16x18432x7168 on 2.0659 vs off 0.4628 ms), H100 \
                under-filled contract OFF, ON elsewhere",
     },
     ChoiceAxis {
         rung: "wide-fma",
+        realized: |l| l.rungs.wide_fma,
         full: false,
         cite: "GPU_RUNGS_OFF wide-fma: OFF on H100 / 5090 (register staging 4096 on 4.054 vs off 3.851 ms) but \
                kept on the 4090 filled (8192 on 33.640 vs off 41.168 ms)",
     },
     ChoiceAxis {
         rung: "row-split",
+        realized: |l| l.rungs.row_split,
         full: false,
         cite: "site-geometry.md G2: H100 row-split workspace S=128 wins 1.41-1.56; 4090 / 5090 / 3090 lose \
                (decode 36.08 vs 30.65 ms on the 4090)",
@@ -1955,10 +1980,87 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // 1.14, mm_1x1024x4096 1.10); 5090 cells 3 W / 1 L, programs 11 W / 10 L (M=1 / M=16 projections 1.07–1.52).
     // Every loss is a DRAM-streaming M ≤ 16 site: the missing fact is the loaded DRAM latency in `c_ns`.
     //
-    // kmajor-a: its four stopgap rows (tile-efficiency sweep, rungs-*.tsv) are gone (per-site-choice A4). The
-    // losses had two facts behind them (.claude/sprints/per-site-choice/bank.md): a 4-way bank conflict on the
-    // A fragment read (rows `aw` apart; now rows `trow + i·ty` and a pad from the bank model, `adeg=1`), and the
-    // register delta — read by rule: the k-major tile is taken only where its bk and blocks/SM are not worse.
+    // kmajor-a (tile-efficiency, stopgap, open missing fact): it wins where the panel streams by `cp.async`
+    // (4090 under-filled: 48 LDGSTS.32 → 0, FFMA/LSU 4.2 → 6.6, cells 0.56–0.72) and loses on register-staged
+    // panels: STS −2/3 with LDS / LDG / FFMA / BAR unchanged, but registers rise (4090 wide 220 → 255 halves bk
+    // 16 → 8; 4090 128x18432 spills 8 → 40 B; H100 128 → 167) and 5090 / 3090 lose 5–22 % at +1…+6 registers.
+    // Missing fact: the k-major panel's register and bank cost on a register-staged copy (sweep/sass.tsv, judge).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "kmajor-a",
+        fill: Fill::Filled,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-detail-rtx-4090.tsv (raw results-rtx-4090.txt, \
+               raw-raw.tar.gz) shipped vs OFF: mm_4096x4096x4096 2.9952 vs 2.4566 ms, mm_128x18432x7168 1.3088 vs \
+               1.1435 ms; ratios pt_loop_2048 1.19, pt_pj_m128_n18432_k7168 1.12 \
+               (filled = register-staged, the `async` row); sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 (bk 16 → 8)",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-5090.tsv (raw results-rtx-5090.txt) shipped/OFF \
+               programs 1.03 (4 W / 28 L, null 0.040), mm_128x2048x7168 0.2007 vs 0.1659 ms; sass: pt_mlp2_1024 STS 15 → 6, regs 77 → 83, \
+               LDS / LDG / FFMA / BAR equal: loss unexplained by counts (bank geometry open, ncu blocked)",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-3090.tsv (raw results-rtx-3090.txt) shipped/OFF \
+               programs 1.14 (2 W / 41 L, null 0.043), mm_4096x4096x4096 15.0374 vs 11.0418 ms; sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 \
+               (bk 16 → 8); loses the skinny wins (mm_16x1024x4096 0.68: LDS.32 128 → LDS.128 16 + LDS.32 64)",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "kmajor-a",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-h100-pcie.tsv (raw results-h100-pcie.txt) shipped/OFF \
+               programs 1.16 (3 W / 50 L, null 0.026), pt_mlp2_1024 iter 0.629 vs 0.497 ms; sass (local ptxas): pt_mlp2_1024 regs 128 → 167, \
+               mm_4096 111 → 151, STS −2/3, LDS / LDG / FFMA / BAR equal",
+    },
+    // per-site-choice D1: `bank-plan` ships OFF on every measured part until the per-site-choice box run
+    // measures it; it is a site candidate (`CHOICE_AXES`), so a device that measures it faster takes it. ON, the
+    // kmajor-a rows above do not apply: the register rule (A4) decides the k-major panel ([`crate::func::gpu`]
+    // `rungs_at`).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "bank-plan",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; a candidate until the per-site-choice box run",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "bank-plan",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; a candidate until the per-site-choice box run",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "bank-plan",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; a candidate until the per-site-choice box run",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "bank-plan",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; a candidate until the per-site-choice box run",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "bank-plan",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; a candidate until the per-site-choice box run",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -3742,7 +3844,8 @@ impl TargetProfile {
         // per-site-choice A4: a k-major thread holds `lanes − 1` more fragment
         // registers a row; where that outgrows the budgeted tile's estimate,
         // residency reads what it holds (a held tile has them in `held_at`).
-        let regs_res = match (r.kmajor_a, held) {
+        // Under `bank-plan` (D1); off, the pre-sprint estimate.
+        let regs_res = match (r.kmajor_a && r.bank_plan, held) {
             (true, 0) => regs_est.max(held_at(tm, tn)),
             _ => regs_est,
         };
@@ -5776,7 +5879,12 @@ mod tests {
                 "{d:?}: not a measured profile"
             );
             assert!(crate::GpuRungs::NAMES.contains(&d.rung), "{d:?}");
-            assert!(d.cite.contains(".txt") && d.cite.contains("ms"), "{d:?}");
+            // per-site-choice D1: a candidate's row says it is unmeasured.
+            assert!(
+                d.cite.starts_with("unmeasured;")
+                    || (d.cite.contains(".txt") && d.cite.contains("ms")),
+                "{d:?}"
+            );
         }
         for wps in [0, 1, 2, 4, 64] {
             // S54: a `Contract` row covers the TF32 face (a contract face);
