@@ -1872,48 +1872,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // 1.14, mm_1x1024x4096 1.10); 5090 cells 3 W / 1 L, programs 11 W / 10 L (M=1 / M=16 projections 1.07–1.52).
     // Every loss is a DRAM-streaming M ≤ 16 site: the missing fact is the loaded DRAM latency in `c_ns`.
     //
-    // kmajor-a (tile-efficiency, stopgap, open missing fact): it wins where the panel streams by `cp.async`
-    // (4090 under-filled: 48 LDGSTS.32 → 0, FFMA/LSU 4.2 → 6.6, cells 0.56–0.72) and loses on register-staged
-    // panels: STS −2/3 with LDS / LDG / FFMA / BAR unchanged, but registers rise (4090 wide 220 → 255 halves bk
-    // 16 → 8; 4090 128x18432 spills 8 → 40 B; H100 128 → 167) and 5090 / 3090 lose 5–22 % at +1…+6 registers.
-    // Missing fact: the k-major panel's register and bank cost on a register-staged copy (sweep/sass.tsv, judge).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "kmajor-a",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-detail-rtx-4090.tsv (raw results-rtx-4090.txt, \
-               raw-raw.tar.gz) shipped vs OFF: mm_4096x4096x4096 2.9952 vs 2.4566 ms, mm_128x18432x7168 1.3088 vs \
-               1.1435 ms; ratios pt_loop_2048 1.19, pt_pj_m128_n18432_k7168 1.12 \
-               (filled = register-staged, the `async` row); sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 (bk 16 → 8)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-5090.tsv (raw results-rtx-5090.txt) shipped/OFF \
-               programs 1.03 (4 W / 28 L, null 0.040), mm_128x2048x7168 0.2007 vs 0.1659 ms; sass: pt_mlp2_1024 STS 15 → 6, regs 77 → 83, \
-               LDS / LDG / FFMA / BAR equal: loss unexplained by counts (bank geometry open, ncu blocked)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-3090.tsv (raw results-rtx-3090.txt) shipped/OFF \
-               programs 1.14 (2 W / 41 L, null 0.043), mm_4096x4096x4096 15.0374 vs 11.0418 ms; sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 \
-               (bk 16 → 8); loses the skinny wins (mm_16x1024x4096 0.68: LDS.32 128 → LDS.128 16 + LDS.32 64)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-h100-pcie.tsv (raw results-h100-pcie.txt) shipped/OFF \
-               programs 1.16 (3 W / 50 L, null 0.026), pt_mlp2_1024 iter 0.629 vs 0.497 ms; sass (local ptxas): pt_mlp2_1024 regs 128 → 167, \
-               mm_4096 111 → 151, STS −2/3, LDS / LDG / FFMA / BAR equal",
-    },
+    // kmajor-a: its four stopgap rows (tile-efficiency sweep, rungs-*.tsv) are gone (per-site-choice A4). The
+    // losses had two facts behind them (.claude/sprints/per-site-choice/bank.md): a 4-way bank conflict on the
+    // A fragment read (rows `aw` apart; now rows `trow + i·ty` and a pad from the bank model, `adeg=1`), and the
+    // register delta — read by rule: the k-major tile is taken only where its bk and blocks/SM are not worse.
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -2086,6 +2048,23 @@ pub(crate) fn conflict_free_pad(ld: u64, pattern: impl Fn(u64) -> (u64, u64)) ->
             !std::mem::replace(&mut banks[bank], true)
         })
     })
+}
+
+/// **The bank degree of one warp's shared-memory instruction** (32 banks of
+/// 4 bytes): the most distinct words any bank serves, and the ideal
+/// `⌈distinct words / 32⌉`. `acc` is each lane's first word and its width
+/// in words. Degree = ideal is conflict-free. The one bank fact: the k-major
+/// pad search, `lsu_per_panel`'s weights and the plan line's `adeg` read it.
+pub(crate) fn bank_degree(acc: impl IntoIterator<Item = (u64, u64)>) -> (u64, u64) {
+    let mut words: Vec<u64> = acc.into_iter().flat_map(|(a, w)| a..a + w).collect();
+    words.sort_unstable();
+    words.dedup();
+    let mut banks = [0u64; 32];
+    for w in &words {
+        banks[(w % 32) as usize] += 1;
+    }
+    let deg = banks.iter().copied().max().unwrap_or(0).max(1);
+    (deg, (words.len() as u64).div_ceil(32).max(1))
 }
 
 impl GpuTile {
@@ -3037,6 +3016,57 @@ impl TargetProfile {
             .unwrap_or(g)
     }
 
+    /// **The k-major `a` panel padded (per-site-choice A2)** by `pad` — the
+    /// bank model's least conflict-free pad at a panel depth — at the deepest
+    /// `bk ≤ g.bk` where the padded panel fits the block's share: a
+    /// `cp.async` panel with as many stages as fit, up to the panels (at
+    /// least two; a forced count exactly), a register-staged one its one
+    /// buffer. A shallower panel still has every thread copy whole 16-byte
+    /// units and `bk | k` ([`Self::gpu_tile_async`]). Blocks/SM never change; `g` when nothing
+    /// fits. A shallower panel is the price of the pad: the register rule
+    /// (`launch`) then weighs it against the transposed panel.
+    pub fn gpu_tile_kmajor_pad(
+        &self,
+        g: GpuTile,
+        k: u64,
+        elem: &Ty,
+        pad: impl Fn(&GpuTile) -> u64,
+    ) -> GpuTile {
+        let Some(gpu) = self.gpu() else {
+            return g;
+        };
+        let e = elem_bytes(elem);
+        let lanes = (GPU_VEC_BYTES / e).max(1);
+        let share = (gpu.smem_per_sm / g.blocks_per_sm.max(1))
+            .saturating_sub(gpu.smem_reserved_per_block)
+            .min(gpu.smem_per_block);
+        let mut bk = g.bk;
+        // `g`'s own depth stands as derived; a shallower one must be a legal panel.
+        while bk > 0
+            && (bk == g.bk
+                || (bk >= lanes
+                    && k.is_multiple_of(bk)
+                    && (g.bm() * bk / lanes).is_multiple_of(g.threads())
+                    && (bk * g.bn() / lanes).is_multiple_of(g.threads())))
+        {
+            let at = GpuTile { bk, ..g };
+            let p = GpuTile {
+                pad_a: pad(&at),
+                ..at
+            };
+            let stages = match (g.stages, gpu.geom.stages) {
+                (s, 0) if s >= 2 => (share / (p.stage_elems() * e)).min(k / bk),
+                (s, _) => s,
+            };
+            let p = GpuTile { stages, ..p };
+            if p.smem_bytes(e) <= share && (stages >= 2 || g.stages < 2) {
+                return p;
+            }
+            bk /= 2;
+        }
+        g
+    }
+
     /// **The tensor-core geometry for a `rows × c × k` f32 site on the TF32
     /// face** — [`Self::gpu_tile`]'s rules with an `m16n8` tile as the unit.
     ///
@@ -3626,7 +3656,14 @@ impl TargetProfile {
         } else {
             u64::MAX
         };
-        let blocks_per_sm = residency(g, regs_est, threads).min(grid).max(1);
+        // per-site-choice A4: a k-major thread holds `lanes − 1` more fragment
+        // registers a row; where that outgrows the budgeted tile's estimate,
+        // residency reads what it holds (a held tile has them in `held_at`).
+        let regs_res = match (r.kmajor_a, held) {
+            (true, 0) => regs_est.max(held_at(tm, tn)),
+            _ => regs_est,
+        };
+        let blocks_per_sm = residency(g, regs_res, threads).min(grid).max(1);
         let share = (g.smem_per_sm / blocks_per_sm)
             .saturating_sub(g.smem_reserved_per_block)
             .min(g.smem_per_block);
