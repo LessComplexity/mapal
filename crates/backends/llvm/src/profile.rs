@@ -3021,8 +3021,8 @@ impl TargetProfile {
     /// `bk ≤ g.bk` where the padded panel fits the block's share: a
     /// `cp.async` panel with as many stages as fit, up to the panels (at
     /// least two; a forced count exactly), a register-staged one its one
-    /// buffer. Every thread still copies whole 16-byte units and `bk | k`
-    /// ([`Self::gpu_tile_async`]). Blocks/SM never change; `g` when nothing
+    /// buffer. A shallower panel still has every thread copy whole 16-byte
+    /// units and `bk | k` ([`Self::gpu_tile_async`]). Blocks/SM never change; `g` when nothing
     /// fits. A shallower panel is the price of the pad: the register rule
     /// (`launch`) then weighs it against the transposed panel.
     pub fn gpu_tile_kmajor_pad(
@@ -3041,10 +3041,13 @@ impl TargetProfile {
             .saturating_sub(gpu.smem_reserved_per_block)
             .min(gpu.smem_per_block);
         let mut bk = g.bk;
-        while bk >= lanes
-            && k.is_multiple_of(bk)
-            && (g.bm() * bk / lanes).is_multiple_of(g.threads())
-            && (bk * g.bn() / lanes).is_multiple_of(g.threads())
+        // `g`'s own depth stands as derived; a shallower one must be a legal panel.
+        while bk > 0
+            && (bk == g.bk
+                || (bk >= lanes
+                    && k.is_multiple_of(bk)
+                    && (g.bm() * bk / lanes).is_multiple_of(g.threads())
+                    && (bk * g.bn() / lanes).is_multiple_of(g.threads())))
         {
             let at = GpuTile { bk, ..g };
             let p = GpuTile {

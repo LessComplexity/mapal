@@ -658,16 +658,21 @@ pub(crate) fn launch_split(
     // which carry its `lanes − 1` extra fragment registers a row
     // ([`TargetProfile::gpu_tile_split`]) — and its `a` panel conflict-free
     // (`adeg` 1: no pad fit, [`TargetProfile::gpu_tile_kmajor_pad`]).
-    // Elsewhere the transposed tile, the kernel's rungs unchanged.
+    // Elsewhere the transposed tile, the kernel's rungs unchanged. An arm
+    // that forces `kmajor-a` on takes the k-major tile wherever it applies:
+    // the rule's alternative (per-site-choice Part B) and its ON arm. A tile
+    // too narrow for the k-major read (`tx`) is the transposed one either way.
     if let Some(k) = tiled.filter(|_| kmajor) {
         let [a, _, st, _] = panel_excess(site, &k, &rungs, false);
         let mut flat = arms;
         *flat.on.rung("kmajor-a").expect("a rung") = false;
         *flat.off.rung("kmajor-a").expect("a rung") = true;
         let t = launch_split(site, profile, contract, flat, split, full);
-        if t.tiled.is_some_and(|t| {
-            !(k.kmajor && a.max(st) == 1 && k.bk >= t.bk && k.blocks_per_sm >= t.blocks_per_sm)
-        }) {
+        let ruled = |t: &GpuTile| {
+            arms.on.kmajor_a
+                || (a.max(st) == 1 && k.bk >= t.bk && k.blocks_per_sm >= t.blocks_per_sm)
+        };
+        if t.tiled.is_some_and(|t| !(k.kmajor && ruled(&t))) {
             return Launch { rungs, ..t };
         }
     }
