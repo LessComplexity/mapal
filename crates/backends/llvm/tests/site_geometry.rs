@@ -647,8 +647,20 @@ fn tile_kernels(dev: Option<&str>) -> Vec<(String, String)> {
 /// non-integer operands (a moved `k` order changes bits), `f64`, `a` read
 /// along `i` and `k = 8·odd`, the values through the emulator (its
 /// `cp.async` queue) of all three arms equal the interpreter's byte for byte.
+/// per-site-choice A1/A2/A4: every k-major kernel's `a` panel is
+/// bank-conflict-free (`adeg=1`, the emitter's bank model), and the register
+/// rule holds against the same arm with `kmajor-a` off: the k-major kernel's
+/// `bk` and blocks/SM are no lower than its site's transposed kernel's at the
+/// same split.
 #[test]
 fn kmajor_a_counted_and_valued_on_unseen_programs() {
+    let field = |l: &str, k: &str| -> u64 {
+        l.split(' ')
+            .find_map(|f| f.strip_prefix(k))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    };
+    let mut ruled = 0;
     let mut runner = TestRunner::deterministic();
     let strat = testgen::order_prog_strategy();
     let clang = emu::clang();
@@ -665,12 +677,42 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
             emission_arms(&ir, target, &["kmajor-a"], &["async"]),
             emission_arms(&ir, target, &[], &["async", "kmajor-a"]),
         ];
+        let flat = [
+            emission_arms(&ir, target, &["async"], &["kmajor-a"]),
+            emission_arms(&ir, target, &[], &["async", "kmajor-a"]),
+        ];
+        for (on, off) in arms.iter().zip(&flat) {
+            let (on, off) = (
+                tile_kernels(on.device.as_deref()),
+                tile_kernels(off.device.as_deref()),
+            );
+            if on.len() != off.len() {
+                continue;
+            }
+            for ((k, _), (t, _)) in on.iter().zip(&off) {
+                // The same site at the same split (the rule compares at one `S`).
+                let site = |p: &str| ["rows=", "c=", "k=", "S="].map(|f| field(p, f));
+                if !k.contains(" kmajor=1") || site(k) != site(t) {
+                    continue;
+                }
+                ruled += 1;
+                assert!(
+                    field(k, "bk=") >= field(t, "bk=")
+                        && field(k, "blocks_per_sm=") >= field(t, "blocks_per_sm="),
+                    "#{z} {target}: register rule\n{k}\n{t}"
+                );
+            }
+        }
         for (arm, e) in arms.iter().enumerate() {
             for (plan, body) in tile_kernels(e.device.as_deref()) {
                 if !plan.contains(" kmajor=1") {
                     continue;
                 }
                 assert!(arm < 2, "#{z} {target}: kmajor-a off\n{plan}");
+                assert!(
+                    plan.contains(" adeg=1 "),
+                    "#{z} {target}: bank conflict\n{plan}"
+                );
                 if p.f64 {
                     assert!(body.contains("<2 x double>"), "#{z} {target}\n{plan}");
                     wide64 += 1;
@@ -716,10 +758,10 @@ fn kmajor_a_counted_and_valued_on_unseen_programs() {
     }
     eprintln!(
         "kmajor-a: {streamed} streamed, {staged} staged, {wide64} f64, {exact_kmajor} exact-face \
-         k-major kernels; {valued} valued ({ci} ci, {k8} k8)"
+         k-major kernels; {valued} valued ({ci} ci, {k8} k8); {ruled} against the transposed arm"
     );
     assert!(
-        streamed >= 2 && staged >= 4 && wide64 >= 1 && exact_kmajor >= 1,
+        streamed >= 2 && staged >= 4 && wide64 >= 1 && exact_kmajor >= 1 && ruled >= 4,
         "the generator reaches kmajor-a"
     );
 }

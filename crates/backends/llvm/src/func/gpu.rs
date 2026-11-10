@@ -27,7 +27,7 @@ use super::*;
 use crate::profile::{
     Face, GPU_RESIDENT_BLOCKS, GPU_VEC_BYTES, Gpu, GpuMmaTile, GpuTile, GpuWgmmaTile, MMA_K, MMA_M,
     MMA_N, NAIVE_UNROLL, PlanComb, PlanCost, PlanShape, WARPGROUP_WARPS, WGMMA_ATOM_ROWS, WGMMA_K,
-    WGMMA_M, WGMMA_SWIZZLE_BYTES, fma_held_regs,
+    WGMMA_M, WGMMA_SWIZZLE_BYTES, bank_degree, fma_held_regs,
 };
 use crate::{Order, Reduced};
 use mapal_ir::{RowFoldOp, RowFoldSite};
@@ -35,6 +35,9 @@ use mapal_ir::{RowFoldOp, RowFoldSite};
 /// Bytes one shared-memory wavefront serves: 32 banks × 4 B. An ISA rule on
 /// every NVIDIA part since Kepler.
 const GPU_WAVEFRONT_BYTES: u64 = 128;
+/// The lanes of one warp instruction the bank model ([`panel_excess`]) reads:
+/// 32 on every NVIDIA part, as are the 32 banks of [`bank_degree`].
+const WARP: u64 = 32;
 
 /// The device data layout and triple `clang --target=nvptx64-nvidia-cuda`
 /// emits (LLVM 22).
@@ -555,6 +558,14 @@ pub(crate) fn launch_split(
         full_tile: full,
         ..rungs
     };
+    // per-site-choice A2: the k-major panel's bank pad, where it fits — on
+    // each pipeline's panel before they are weighed, and on the final stages.
+    let kpad = |g: GpuTile| match g.kmajor {
+        true => {
+            profile.gpu_tile_kmajor_pad(g, site.k, &site.elem, |at| kmajor_pad(site, at, &rungs))
+        }
+        false => g,
+    };
     let tiled = shaped
         .then(|| {
             profile.gpu_tile_split(
@@ -588,7 +599,8 @@ pub(crate) fn launch_split(
             };
             let streamed = stream
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
-                .flatten();
+                .flatten()
+                .map(kpad);
             // tile-efficiency T3 (`async-depth`): a thread does `tm·tn·bk ≥
             // 1024` FFMA per barrier and wait. A `cp.async` panel shallower
             // than that yields to register staging only where staging's
@@ -621,7 +633,7 @@ pub(crate) fn launch_split(
             let staged = if rungs.pad && vector_a(site) && !g.kmajor {
                 profile.gpu_tile_sync_a(g, &site.elem)
             } else {
-                g
+                kpad(g)
             };
             match streamed {
                 Some(a) if a.bk >= staged.bk => a,
@@ -639,7 +651,26 @@ pub(crate) fn launch_split(
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
                 .flatten()
                 .unwrap_or(g)
-        });
+        })
+        .map(kpad);
+    // per-site-choice A4 (register rule): the k-major panel is taken where its
+    // geometry is no worse than the transposed panel's — `bk` and blocks/SM,
+    // which carry its `lanes − 1` extra fragment registers a row
+    // ([`TargetProfile::gpu_tile_split`]) — and its `a` panel conflict-free
+    // (`adeg` 1: no pad fit, [`TargetProfile::gpu_tile_kmajor_pad`]).
+    // Elsewhere the transposed tile, the kernel's rungs unchanged.
+    if let Some(k) = tiled.filter(|_| kmajor) {
+        let [a, _, st, _] = panel_excess(site, &k, &rungs, false);
+        let mut flat = arms;
+        *flat.on.rung("kmajor-a").expect("a rung") = false;
+        *flat.off.rung("kmajor-a").expect("a rung") = true;
+        let t = launch_split(site, profile, contract, flat, split, full);
+        if t.tiled.is_some_and(|t| {
+            !(k.kmajor && a.max(st) == 1 && k.bk >= t.bk && k.blocks_per_sm >= t.blocks_per_sm)
+        }) {
+            return Launch { rungs, ..t };
+        }
+    }
     match tiled {
         Some(g) => Launch {
             arithmetic,
@@ -727,7 +758,7 @@ fn plan_line(
     if let Some(g) = l.tiled {
         f += &format!(
             " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={} \
-             kmajor={}",
+             kmajor={} adeg={}",
             g.tm,
             g.tn,
             g.tx,
@@ -737,8 +768,14 @@ fn plan_line(
             g.pad_a,
             g.held,
             g.blocks_per_sm,
-            lsu_per_panel(site, &g),
-            u8::from(g.kmajor && !col)
+            lsu_per_panel(site, &g, &l.rungs, col),
+            u8::from(g.kmajor && !col),
+            // per-site-choice A5: the `a` panel's worst bank excess, fragment
+            // read and copy write (intent.py `kmajor-a`: 1).
+            {
+                let [a, _, st, _] = panel_excess(site, &g, &l.rungs, col);
+                a.max(st)
+            }
         );
     }
     if let Some(m) = l.mma {
@@ -989,7 +1026,7 @@ fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
             g.bk,
             g.bk,
             g.stages.saturating_sub(1).max(1),
-            lsu_per_panel(site, &g),
+            lsu_per_panel(site, &g, &l.rungs, false),
         ),
         None => (1, l.block, 1, l.wave(gpu) / gpu.sms, 1, NAIVE_UNROLL, 1, 0),
     };
@@ -2854,21 +2891,241 @@ fn lane_maps(s: &TileSite, g: &GpuTile, kmajor: bool) -> [(LaneMap, u64); 2] {
 /// per panel trip, as [`Kernel::tiled`] emits them: `bk` steps of `a` and `b`
 /// fragment loads, each copy's global load or `cp.async`, and the
 /// register-staged copies' shared stores (`a` scattered `lanes` ways when it
-/// is staged transposed).
-pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile) -> u64 {
+/// is staged transposed). per-site-choice A3: each shared-memory class counts
+/// its bank excess ([`panel_excess`]) times — a replayed wavefront is one more
+/// LSU slot; a conflict-free kernel's count is its instruction count.
+pub(crate) fn lsu_per_panel(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs, col: bool) -> u64 {
     let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
-    let [(_, a), (_, b)] = lane_maps(s, g, g.kmajor);
-    let lds_a = match g.kmajor {
+    let kmaj = g.kmajor && !col;
+    let [(_, a), (_, b)] = lane_maps(s, g, kmaj);
+    let [xa, xb, sa, sb] = panel_excess(s, g, rungs, col);
+    let lds_a = match kmaj {
         true => g.bk * g.tm / lanes,
         false => g.bk * g.tm / g.tm.min(lanes),
     };
     let lds_b = g.bk * g.tn / g.tn.min(lanes);
-    let sts = match g.stages >= 2 {
-        true => 0,
-        false if vector_a(s) && !g.kmajor => a * lanes + b,
-        false => a + b,
+    let copies = match g.stages >= 2 {
+        true => a * sa + b * sb,
+        false if vector_a(s) && !kmaj => a + b + a * lanes * sa + b * sb,
+        false => a + b + a * sa + b * sb,
     };
-    lds_a + lds_b + a + b + sts
+    lds_a * xa + lds_b * xb + copies
+}
+
+/// [`Kernel::tiled`]'s thread grid: `(trow, tcol)` of thread `tid`, in IR
+/// ([`Kernel`]) or as numbers ([`Num`], the bank model). Warp shape (S52
+/// rung `warp`): a warp's 32 lanes as `warp / wx` rows × `wx` columns of
+/// threads, `wx` = the lanes one shared-memory wavefront serves with vector
+/// loads (128 B / 16 B = 8) — 4 + 8 distinct fragments per `k` step instead
+/// of 2 + 16. Off arm / a block too narrow for it: row-major threads. S54
+/// `rowfold-layout` (`col`): the row-major rule mirrored, so one column-major
+/// store still writes whole 128-byte lines (`col_store`).
+fn thread_coords<A: Arith>(
+    ar: &mut A,
+    tid: &A::V,
+    g: &GpuTile,
+    warp_rung: bool,
+    col: bool,
+    warp: u64,
+) -> (A::V, A::V) {
+    let w = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
+    let (wx, wy) = if col { (warp / w, w) } else { (w, warp / w) };
+    if warp_rung && g.tx % wx == 0 && g.ty % wy == 0 && g.tx > wx {
+        let wp = ar.imm("udiv", tid, warp);
+        let lane = ar.imm("urem", tid, warp);
+        let warps_x = g.tx / wx;
+        let wr = ar.imm("udiv", &wp, warps_x);
+        let wc = ar.imm("urem", &wp, warps_x);
+        let (lr, lc) = if col {
+            (ar.imm("urem", &lane, wy), ar.imm("udiv", &lane, wy))
+        } else {
+            (ar.imm("udiv", &lane, wx), ar.imm("urem", &lane, wx))
+        };
+        let r0 = ar.imm("mul", &wr, wy);
+        let c0 = ar.imm("mul", &wc, wx);
+        return (ar.sum(&r0, &lr), ar.sum(&c0, &lc));
+    }
+    if col {
+        (ar.imm("urem", tid, g.ty), ar.imm("udiv", tid, g.ty))
+    } else {
+        (ar.imm("udiv", tid, g.tx), ar.imm("urem", tid, g.tx))
+    }
+}
+
+/// `sa`: elements between two rows of the `a` panel. Transposed (one row a
+/// `k`): `bm + pad_a`, padded on `cp.async` and under `pad`
+/// ([`TargetProfile::gpu_tile_sync_a`]). tile-efficiency T2: k-major
+/// (`As[m][k]`): `bk + pad_a` — unless the kernel stores column-major (its
+/// quarter-warps read eight panel rows), which keeps the transposed panel.
+fn panel_sa(g: &GpuTile, kmaj: bool) -> u64 {
+    match (g.kmajor, kmaj) {
+        (true, true) => g.bk + g.pad_a,
+        (true, false) => g.bm(),
+        _ => g.sa(),
+    }
+}
+
+/// Where a thread's register-tile fragments sit in the panels: its `i`-th
+/// `a` row is `trow·a_step + (i / aw)·a_chunk + i % aw`, its `b` vectors
+/// `tcol·b_step + v·b_chunk`.
+struct Frag {
+    aw: u64,
+    a_step: u64,
+    a_chunk: u64,
+    b_step: u64,
+    b_chunk: u64,
+    narrow: bool,
+}
+
+/// Bank geometry: a thread's register tile is `tm/lanes × tn/lanes` vector
+/// chunks spaced one thread-row of chunks apart (`ty·lanes` rows, `tx·lanes`
+/// columns), not one contiguous `tm × tn` block. Consecutive threads then read
+/// consecutive 16-byte chunks of a panel row, which is what a shared-memory
+/// wavefront serves without a conflict — and their output stores coalesce.
+/// (Off arm: one contiguous `tm × tn` block per thread, chunk = lanes.)
+/// S62 `fill-rows`: a register tile `tm` rows tall, `tm < lanes`, reads its
+/// `a` fragment as one `tm`-wide chunk (`aw`); `tn` keeps whole vectors (the
+/// output's vector store). A tile narrower than a vector in `tn`
+/// (`cell-fill`'s 1 × 1) has no chunks to space (`narrow`). A mixed-radix
+/// output stores a vector where its unit lane digit runs `lanes`-aligned and
+/// every other digit moves by whole vectors.
+///
+/// per-site-choice A1: a k-major thread owns rows `trow + i·ty`. One 16-byte
+/// fragment load of a warp then reads its `warp / wx` consecutive rows, which
+/// a row pad spreads over the banks ([`kmajor_pad`]); rows `aw` apart are
+/// ≡ 0 mod 4 rows of a 16-byte-aligned stride and no pad separates them.
+/// Each cell's `k` order is unchanged; the output rows follow the same map.
+fn frag_layout(s: &TileSite, g: &GpuTile, kmaj: bool, interleave: bool) -> Frag {
+    let lanes = GPU_VEC_BYTES / elem_bytes_of(&s.elem);
+    let (tm, tn) = (g.tm, g.tn);
+    let aw = tm.min(lanes);
+    let out_vec = s
+        .radix
+        .as_deref()
+        .and_then(|x| x.out.as_ref())
+        .is_none_or(|o| {
+            let v = |c: u64| c.is_multiple_of(lanes);
+            o.lane
+                .first()
+                .is_some_and(|d| d.stride == 1 && d.coef == 1 && v(d.radix))
+                && o.i.iter().chain(&o.lane[1..]).all(|d| v(d.coef))
+                && v(o.base)
+        });
+    let narrow = tn < lanes || !out_vec;
+    let (a_step, b_step, a_chunk, b_chunk) = if interleave && !narrow {
+        (aw, lanes, g.ty * aw, g.tx * lanes)
+    } else {
+        (tm, tn, aw, lanes)
+    };
+    let (aw, a_step, a_chunk) = match kmaj {
+        true => (1, 1, g.ty),
+        false => (aw, a_step, a_chunk),
+    };
+    Frag {
+        aw,
+        a_step,
+        a_chunk,
+        b_step,
+        b_chunk,
+        narrow,
+    }
+}
+
+/// **per-site-choice A3: the bank excess of tile `g`'s four shared-memory
+/// access classes** — `[a fragment read, b fragment read, a copy write,
+/// b copy write]` (copy writes: register-staged stores or `cp.async`) — as
+/// [`Kernel::tiled`] emits them ([`thread_coords`], [`frag_layout`],
+/// [`lane_maps`]): the worst [`bank_degree`] ÷ ideal (rounded up) over every
+/// warp and every instruction of one panel step; 1 = conflict-free. Steps
+/// and stages move every lane by one constant: the same degree.
+pub(crate) fn panel_excess(
+    s: &TileSite,
+    g: &GpuTile,
+    rungs: &crate::GpuRungs,
+    col: bool,
+) -> [u64; 4] {
+    let e = elem_bytes_of(&s.elem);
+    let (lanes, wpe) = (GPU_VEC_BYTES / e, e.div_ceil(4));
+    let threads = g.threads();
+    let kmaj = g.kmajor && !col;
+    let sa = panel_sa(g, kmaj);
+    let f = frag_layout(s, g, kmaj, rungs.interleave);
+    let at: Vec<(u64, u64)> = (0..threads)
+        .map(|t| thread_coords(&mut Num, &t, g, rungs.warp, col, WARP))
+        .collect();
+    // The worst excess of `n` instructions, `acc(t, p)` thread `t`'s
+    // (element, elements) in instruction `p`.
+    let worst = |n: u64, acc: &dyn Fn(u64, u64) -> (u64, u64)| {
+        let mut x = 1;
+        for p in 0..n {
+            for w0 in (0..threads).step_by(WARP as usize) {
+                let words = (w0..threads.min(w0 + WARP)).map(|t| {
+                    let (a, len) = acc(t, p);
+                    (a * wpe, len * wpe)
+                });
+                let (d, i) = bank_degree(words);
+                x = x.max(d.div_ceil(i));
+            }
+        }
+        x
+    };
+    let lds_a = match kmaj {
+        true => worst(g.tm, &|t, i| {
+            let r = at[t as usize].0 * f.a_step + (i / f.aw) * f.a_chunk + i % f.aw;
+            (r * sa, lanes)
+        }),
+        false => {
+            let w = g.tm.min(lanes);
+            worst(g.tm / w, &|t, v| {
+                (at[t as usize].0 * f.a_step + v * f.a_chunk, w)
+            })
+        }
+    };
+    let w = g.tn.min(lanes);
+    let lds_b = worst(g.tn / w, &|t, v| {
+        (at[t as usize].1 * f.b_step + v * f.b_chunk, w)
+    });
+    let [(am, an), (bm, bn)] = lane_maps(s, g, kmaj);
+    let rc = |m: LaneMap, t: u64, p: u64| m.coords(&mut Num, &(t + p * threads));
+    let st_a = match (kmaj, g.stages < 2 && vector_a(s)) {
+        (true, _) => worst(an, &|t, p| {
+            let (r, kc) = rc(am, t, p);
+            (r * sa + kc, lanes)
+        }),
+        // Transposed and register-staged: a vector along `k` scatters to
+        // `lanes` panel rows, one store each.
+        (false, true) => worst(an * lanes, &|t, p| {
+            let (r, kc) = rc(am, t, p / lanes);
+            ((kc + p % lanes) * sa + r, 1)
+        }),
+        (false, false) => worst(an, &|t, p| {
+            let (r, kc) = rc(am, t, p);
+            (kc * sa + r, 1)
+        }),
+    };
+    let bw = if vector_b(s) { lanes } else { 1 };
+    let st_b = worst(bn, &|t, p| {
+        let (kr, nc) = rc(bm, t, p);
+        (kr * g.bn() + nc, bw)
+    });
+    [lds_a, lds_b, st_a, st_b]
+}
+
+/// per-site-choice A2: the k-major `a` panel's row pad — the least, in
+/// 16-byte steps under 32 words, that minimises the worst excess of its
+/// fragment read and copy write ([`panel_excess`]); `b` does not move.
+/// For f32 at the warp shape: `bk ≥ 16` ⇒ 4, `bk = 8` ⇒ 0.
+fn kmajor_pad(s: &TileSite, g: &GpuTile, rungs: &crate::GpuRungs) -> u64 {
+    let wpe = elem_bytes_of(&s.elem).div_ceil(4);
+    let mut best = (u64::MAX, 0);
+    for pad in (0..32 / wpe).step_by((GPU_VEC_BYTES / 4 / wpe).max(1) as usize) {
+        let [a, _, st, _] = panel_excess(s, &GpuTile { pad_a: pad, ..*g }, rungs, false);
+        best = best.min((a.max(st), pad));
+        if best.0 == 1 {
+            break;
+        }
+    }
+    best.1
 }
 
 /// String builder for one kernel — the device twin of [`FnEmit`]'s
@@ -4287,54 +4544,14 @@ impl Kernel<'_> {
         // A warp then reads 4 + 8 distinct thread fragments per `k` step
         // instead of 2 + 16 — two-thirds of the bytes. Off arm / a block too
         // narrow for it: row-major threads.
-        let gpu = self.profile_gpu;
-        let w = GPU_WAVEFRONT_BYTES / GPU_VEC_BYTES;
-        // S54 `rowfold-layout`: a column-major store runs a warp's fastest
-        // lanes down the rows — the row-major rule mirrored, so one store
-        // instruction still writes whole 128-byte lines (`col_store`). The
-        // shared-memory side is symmetric: `w` fragments of one panel, the
-        // rest of the other.
-        let (wx, wy) = if self.col {
-            (gpu.warp / w, w)
-        } else {
-            (w, gpu.warp / w)
-        };
-        let (trow, tcol) = if self.rungs.warp && g.tx % wx == 0 && g.ty % wy == 0 && g.tx > wx {
-            let warp = self.op("udiv", &tid, gpu.warp);
-            let lane = self.op("urem", &tid, gpu.warp);
-            let warps_x = g.tx / wx;
-            let wr = self.op("udiv", &warp, warps_x);
-            let wc = self.op("urem", &warp, warps_x);
-            let (lr, lc) = if self.col {
-                (self.op("urem", &lane, wy), self.op("udiv", &lane, wy))
-            } else {
-                (self.op("udiv", &lane, wx), self.op("urem", &lane, wx))
-            };
-            let r0 = self.op("mul", &wr, wy);
-            let c0 = self.op("mul", &wc, wx);
-            (self.op("add", &r0, &lr), self.op("add", &c0, &lc))
-        } else if self.col {
-            (self.op("urem", &tid, g.ty), self.op("udiv", &tid, g.ty))
-        } else {
-            (self.op("udiv", &tid, g.tx), self.op("urem", &tid, g.tx))
-        };
+        let (rungs, col, warp) = (self.rungs, self.col, self.profile_gpu.warp);
+        let (trow, tcol) = thread_coords(self, &tid, &g, rungs.warp, col, warp);
         let row0 = self.op("mul", &by, bm);
         let col0 = self.op("mul", &bx, bn);
         let smem = "@mapal_smem";
-        // `sa`: words between two `k` rows of the transposed A panel; `bs_off`:
-        // where B starts inside a stage. Async staging pads A's rows and keeps
-        // `stages` buffers; register staging has one buffer, padded under the
-        // `pad` rung ([`TargetProfile::gpu_tile_sync_a`]).
         let streamed = g.stages >= 2;
-        // tile-efficiency T2: `a` k-major (`As[m][k]`, rows `bk + pad_a`
-        // apart) unless this kernel stores column-major — its quarter-warps
-        // read eight panel rows — which keeps the transposed panel.
         let kmaj = g.kmajor && !self.col;
-        let sa = match (g.kmajor, kmaj) {
-            (true, true) => bk + g.pad_a,
-            (true, false) => bm,
-            _ => g.sa(),
-        };
+        let sa = panel_sa(&g, kmaj);
         let bs_off = g.a_elems();
         let stage_elems = g.stage_elems();
 
@@ -4428,36 +4645,14 @@ impl Kernel<'_> {
             },
             |dk, dn| (dk * s.b.ck + dn * s.b.clane, dk * bn + dn),
         );
-        // Bank geometry: a thread's register tile is `tm/lanes × tn/lanes`
-        // vector chunks spaced one thread-row of chunks apart (`ty·lanes` rows,
-        // `tx·lanes` columns), not one contiguous `tm × tn` block. Consecutive
-        // threads then read consecutive 16-byte chunks of a panel row, which is
-        // what a shared-memory wavefront serves without a conflict — and their
-        // output stores coalesce. The CPU's move-panel rung answers the same
-        // question for cache sets; here the geometry is the 32 × 4 B banks.
-        // (Off arm: one contiguous `tm × tn` block per thread, chunk = lanes.)
-        // S62 `fill-rows`: a register tile `tm` rows tall, `tm < lanes`, reads
-        // its `a` fragment as one `tm`-wide chunk (`aw`); `tn` keeps whole
-        // vectors (the output's vector store). A tile narrower than a vector
-        // in `tn` (`cell-fill`'s 1 × 1) has no chunks to space: each thread's
-        // cells are contiguous and stored one word each (`narrow`).
-        let aw = tm.min(lanes);
-        // A mixed-radix output stores a vector where its unit lane digit runs
-        // `lanes`-aligned and every other digit moves by whole vectors.
-        let out_vec = ro.is_none_or(|o| {
-            let v = |c: u64| c.is_multiple_of(lanes);
-            o.lane
-                .first()
-                .is_some_and(|d| d.stride == 1 && d.coef == 1 && v(d.radix))
-                && o.i.iter().chain(&o.lane[1..]).all(|d| v(d.coef))
-                && v(o.base)
-        });
-        let narrow = tn < lanes || !out_vec;
-        let (a_step, b_step, a_chunk, b_chunk) = if self.rungs.interleave && !narrow {
-            (aw, lanes, g.ty * aw, g.tx * lanes)
-        } else {
-            (tm, tn, aw, lanes)
-        };
+        let Frag {
+            aw,
+            a_step,
+            a_chunk,
+            b_step,
+            b_chunk,
+            narrow,
+        } = frag_layout(s, &g, kmaj, rungs.interleave);
         let a_frag0 = self.op("mul", &trow, a_step);
         let b_frag0 = self.op("mul", &tcol, b_step);
 
@@ -4821,7 +5016,7 @@ impl Kernel<'_> {
                     let x = self.tmp();
                     self.line(format!("{x} = load {t}, ptr {p}, align {e}"));
                     let r = self.op("add", &row0, &a_frag0);
-                    let r = self.plus(r, i);
+                    let r = self.plus(r, (i / aw) * a_chunk + i % aw);
                     let cc = self.op("add", &col0, &b_frag0);
                     let cc = self.plus(cc, j);
                     let oi = if let Some(o) = ro {
@@ -5971,14 +6166,20 @@ mod tests {
             );
         }
         assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
-        // tile-efficiency T2: the k-major panel needs no pad, so the largest
-        // `bk` whose two stages fit doubles (the stages that fit drop to 2).
-        // The 5090 ships `kmajor-a` OFF (a `GPU_RUNGS_OFF` row), so the arm
-        // forces it; shipped, the padded 4x4 `cp.async` panel is too shallow
-        // (`async-depth`) and register staging's deeper panel takes the site.
+        // tile-efficiency T2 / per-site-choice A2: the k-major panel's bank
+        // pad (4 words a row at bk 64) leaves two `cp.async` stages of bk 64
+        // over the share, so the padded async panel halves to bk 32 and
+        // register staging's deeper panel — k-major, padded, conflict-free —
+        // takes the site, as on the transposed arm.
         let mut kmajor = on("row-fit");
         *kmajor.on.rung("kmajor-a").expect("a rung") = true;
-        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 2)));
+        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 1)));
+        let s = site(16, 18432, 7168, true, true, Ty::f32());
+        let k = launch(&s, &RTX_5090, false, kmajor, None)
+            .tiled
+            .expect("tiled");
+        assert_eq!((k.kmajor, k.pad_a), (true, 4));
+        assert_eq!(panel_excess(&s, &k, &GpuRungs::ALL, false), [1; 4]);
         assert_eq!(
             geo(18432, false, on("row-fit")),
             Some((4, 4, 16, 32, 32, 64, 1))
@@ -6869,6 +7070,137 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A tile of the bank reference (`.claude/sprints/per-site-choice/
+    /// scratch/bank/bank.py`): `(tm, tn, tx, ty, bk, stages)`, warp and
+    /// interleave rungs, k-major or transposed.
+    fn bank_tile(t: [u64; 6], warp: bool, interleave: bool, kmajor: bool) -> (GpuTile, GpuRungs) {
+        let [tm, tn, tx, ty, bk, stages] = t;
+        let g = GpuTile {
+            tm,
+            tn,
+            tx,
+            ty,
+            bk,
+            blocks_per_sm: 1,
+            stages,
+            pad_a: 0,
+            a_row_lanes: 0,
+            held: 0,
+            kmajor,
+        };
+        let r = GpuRungs {
+            warp,
+            interleave,
+            ..GpuRungs::ALL
+        };
+        (g, r)
+    }
+
+    /// per-site-choice A3: [`bank_degree`] / [`panel_excess`] reproduce the
+    /// reference calculator's self-test (bank.py `selftest`).
+    #[test]
+    fn bank_model_matches_the_reference() {
+        let s = site(4096, 4096, 4096, true, true, Ty::f32());
+        // S52: register-staged transposed RowMajor copy, bm = 128 unpadded: 4-way.
+        let (g, r) = bank_tile([8, 8, 16, 16, 16, 1], true, true, false);
+        assert_eq!(panel_excess(&s, &g, &r, false)[2], 4);
+        // S53 `pad`: 2 lanes a row, pad 4: conflict-free.
+        let p = GpuTile {
+            pad_a: 4,
+            a_row_lanes: 2,
+            ..g
+        };
+        assert_eq!(panel_excess(&s, &p, &r, false), [1; 4]);
+        // async transposed element copy at its `conflict_free_pad` (8).
+        assert_eq!(
+            crate::profile::conflict_free_pad(128, |l| (l % 4, l / 4)),
+            Some(8)
+        );
+        let a = GpuTile {
+            stages: 3,
+            pad_a: 8,
+            ..g
+        };
+        assert_eq!(panel_excess(&s, &a, &r, false)[2], 1);
+        // One 16-byte read of 4 rows 4 apart at a stride ≡ 0 mod 32 words:
+        // 16 words on 4 banks ⇒ degree 4, ideal 1; a 16-byte copy of 32
+        // consecutive chunks: 128 words, 4 a bank ⇒ degree 4 = ideal 4.
+        assert_eq!(bank_degree((0..32).map(|l| ((l / 8) * 4 * 32, 4))), (4, 1));
+        assert_eq!(bank_degree((0..32).map(|l| (4 * l, 4))), (4, 4));
+        assert_eq!(bank_degree((0..32).map(|l| (l, 1))), (1, 1));
+        assert_eq!(bank_degree((0..32).map(|_| (7, 1))), (1, 1), "a broadcast");
+    }
+
+    /// per-site-choice A1/A2: the 30 distinct k-major geometries the
+    /// tile-efficiency sweep emitted (bank.md §3): with the shipped row map
+    /// (`trow·aw + …`, unpadded) the fragment read is 2- or 4-way in 27;
+    /// with rows `trow + i·ty` and [`kmajor_pad`] every `a` class is
+    /// conflict-free. Before = [`bank_degree`] on the shipped map's
+    /// addresses; after = [`panel_excess`] on the emitter's maps.
+    #[test]
+    fn kmajor_panel_is_conflict_free_on_the_swept_geometries() {
+        #[rustfmt::skip]
+        let geoms: [([u64; 6], bool, bool); 30] = [
+            ([4, 4, 8, 8, 32, 3], true, true), ([8, 8, 16, 16, 16, 1], false, true),
+            ([4, 4, 8, 16, 64, 2], true, true), ([2, 4, 32, 8, 64, 1], false, true),
+            ([1, 4, 8, 8, 32, 1], false, true), ([8, 16, 8, 16, 8, 1], false, true),
+            ([8, 4, 16, 16, 32, 2], true, true), ([8, 16, 8, 16, 8, 1], true, true),
+            ([8, 4, 32, 8, 32, 2], true, true), ([8, 4, 16, 16, 64, 2], true, true),
+            ([4, 4, 8, 16, 128, 2], true, true), ([4, 4, 8, 8, 128, 3], true, true),
+            ([8, 4, 16, 16, 16, 1], true, true), ([4, 4, 8, 8, 8, 1], true, true),
+            ([8, 8, 16, 2, 16, 1], true, true), ([8, 8, 16, 16, 16, 1], true, true),
+            ([4, 4, 16, 16, 16, 1], true, true), ([8, 8, 16, 16, 16, 3], true, true),
+            ([8, 4, 8, 8, 8, 1], true, true), ([4, 4, 8, 8, 128, 1], true, true),
+            ([1, 1, 16, 16, 64, 1], false, false), ([2, 4, 8, 8, 16, 1], true, true),
+            ([1, 4, 8, 8, 32, 1], true, true), ([8, 4, 16, 16, 16, 1], false, false),
+            ([8, 8, 8, 8, 8, 1], true, true), ([8, 8, 8, 16, 8, 1], false, false),
+            ([4, 4, 8, 8, 128, 1], false, true), ([4, 4, 8, 16, 16, 1], false, true),
+            ([8, 8, 8, 8, 8, 1], false, true), ([8, 8, 8, 16, 8, 1], false, true),
+        ];
+        let s = site(4096, 4096, 4096, true, true, Ty::f32());
+        let mut table =
+            String::from("tm tn tx ty bk stages warp il | before lds st | pad after lds st\n");
+        let mut conflicted = 0;
+        for (t, warp, il) in geoms {
+            let (g, r) = bank_tile(t, warp, il, true);
+            // The shipped map: rows `trow·a_step + (i / aw)·a_chunk + i % aw`.
+            let f = frag_layout(&s, &g, false, il);
+            let threads = g.threads();
+            let before = (0..g.tm)
+                .flat_map(|i| (0..threads / WARP).map(move |w| (i, w)))
+                .map(|(i, w)| {
+                    let rows = (w * WARP..(w + 1) * WARP).map(|tid| {
+                        let trow = thread_coords(&mut Num, &tid, &g, warp, false, WARP).0;
+                        let row = trow * f.a_step + (i / f.aw) * f.a_chunk + i % f.aw;
+                        (row * g.bk, 4)
+                    });
+                    let (d, id) = bank_degree(rows);
+                    d.div_ceil(id)
+                })
+                .max()
+                .unwrap();
+            let [lds0, _, st0, _] = panel_excess(&s, &g, &r, false);
+            assert_eq!(st0, 1, "{t:?}: the 16-byte copy is conflict-free unpadded");
+            let pad = kmajor_pad(&s, &g, &r);
+            let [lds, _, st, _] = panel_excess(&s, &GpuTile { pad_a: pad, ..g }, &r, false);
+            assert!(pad.is_multiple_of(4) && pad < 32, "{t:?}: pad {pad}");
+            assert_eq!(
+                (lds, st),
+                (1, 1),
+                "{t:?} warp {warp} interleave {il}: pad {pad}"
+            );
+            conflicted += usize::from(before > 1);
+            table += &format!(
+                "{t:?} {warp} {il} | {before} {st0} | {pad} {lds} {st} (new map unpadded: {lds0})\n"
+            );
+        }
+        eprintln!("{table}");
+        assert!(
+            conflicted >= 25,
+            "the shipped map conflicts: {conflicted} of 30"
+        );
     }
 
     /// Arms with `names` forced off, the profile's table otherwise.
