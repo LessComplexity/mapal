@@ -1,0 +1,157 @@
+== linear-NN A/B ==
+machine: AMD Ryzen Threadripper 9970X 32-Cores · 64 threads
+numpy:   2.5.5 / scipy-openblas
+target:  native · MAPAL_PAR=64 · CYCLES=41 · sizes: 128 256 512 1024 2048
+
+gate nn2    d=128   rel=0.000e+00  env
+gate nn2    d=128   rel=0.000e+00  env
+gate nn2    d=128   rel=0.000e+00  env
+gate nn2    d=128   rel=0.000e+00  env
+gate nn2    d=128   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn4    d=128   rel=0.000e+00  env
+gate nn4    d=128   rel=0.000e+00  env
+gate nn4    d=128   rel=0.000e+00  env
+gate nn4    d=128   rel=0.000e+00  env
+gate nn4    d=128   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2x2  d=128   rel=0.000e+00  env
+gate nn2x2  d=128   rel=0.000e+00  env
+gate nn2x2  d=128   rel=0.000e+00  env
+gate nn2x2  d=128   rel=0.000e+00  env
+gate nn2x2  d=128   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2    d=256   rel=0.000e+00  env
+gate nn2    d=256   rel=0.000e+00  env
+gate nn2    d=256   rel=0.000e+00  env
+gate nn2    d=256   rel=0.000e+00  env
+gate nn2    d=256   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn4    d=256   rel=0.000e+00  env
+gate nn4    d=256   rel=0.000e+00  env
+gate nn4    d=256   rel=0.000e+00  env
+gate nn4    d=256   rel=0.000e+00  env
+gate nn4    d=256   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2x2  d=256   rel=0.000e+00  env
+gate nn2x2  d=256   rel=0.000e+00  env
+gate nn2x2  d=256   rel=0.000e+00  env
+gate nn2x2  d=256   rel=0.000e+00  env
+gate nn2x2  d=256   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2    d=512   rel=0.000e+00  env
+gate nn2    d=512   rel=0.000e+00  env
+gate nn2    d=512   rel=0.000e+00  env
+gate nn2    d=512   rel=0.000e+00  env
+gate nn2    d=512   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn4    d=512   rel=0.000e+00  env
+gate nn4    d=512   rel=0.000e+00  env
+gate nn4    d=512   rel=0.000e+00  env
+gate nn4    d=512   rel=0.000e+00  env
+gate nn4    d=512   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2x2  d=512   rel=0.000e+00  env
+gate nn2x2  d=512   rel=0.000e+00  env
+gate nn2x2  d=512   rel=0.000e+00  env
+gate nn2x2  d=512   rel=0.000e+00  env
+gate nn2x2  d=512   rel=0.000e+00  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2    d=1024  rel=0.000e+00  env
+gate nn2    d=1024  rel=0.000e+00  env
+gate nn2    d=1024  rel=0.000e+00  env
+gate nn2    d=1024  rel=3.204e-06  env
+gate nn2    d=1024  rel=3.204e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn4    d=1024  rel=0.000e+00  env
+gate nn4    d=1024  rel=0.000e+00  env
+gate nn4    d=1024  rel=0.000e+00  env
+gate nn4    d=1024  rel=5.105e-06  env
+gate nn4    d=1024  rel=5.105e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2x2  d=1024  rel=0.000e+00  env
+gate nn2x2  d=1024  rel=0.000e+00  env
+gate nn2x2  d=1024  rel=0.000e+00  env
+gate nn2x2  d=1024  rel=5.712e-06  env
+gate nn2x2  d=1024  rel=5.712e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2    d=2048  rel=0.000e+00  env
+gate nn2    d=2048  rel=0.000e+00  env
+gate nn2    d=2048  rel=0.000e+00  env
+gate nn2    d=2048  rel=6.819e-06  env
+gate nn2    d=2048  rel=6.819e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn4    d=2048  rel=0.000e+00  env
+gate nn4    d=2048  rel=0.000e+00  env
+gate nn4    d=2048  rel=0.000e+00  env
+gate nn4    d=2048  rel=8.636e-06  env
+gate nn4    d=2048  rel=8.636e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+gate nn2x2  d=2048  rel=0.000e+00  env
+gate nn2x2  d=2048  rel=0.000e+00  env
+gate nn2x2  d=2048  rel=0.000e+00  env
+gate nn2x2  d=2048  rel=6.819e-06  env
+gate nn2x2  d=2048  rel=6.819e-06  /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/cpu/venv/bin/python
+-- value gate passed for every cell
+
+-- timing: 41 interleaved cycles
+.........................................
+samples in /tmp/claude-1000/-mnt-data-Personal-mapal/8e535edb-996a-45a2-85a6-64c8c6d81eab/scratchpad/perf/fold-algebra/cpu-off/nn — one file per leg
+
+== ms per forward pass (n=41; min for 1t, median for par) ==
+shape       d     mapal-conf-1t  mapal-conf-par    mapal-fma-1t   mapal-fma-par        numpy-1t        numpy-mt
+---------------------------------------------------------------------------------------------------------------
+nn2       128            0.0537          0.0904          0.0496          0.0814          0.0368          0.0430
+nn4       128            0.1080          0.1654          0.0981          0.1690          0.0758          0.0897
+nn2x2     128            0.1047          0.1313          0.1002          0.1288          0.0763          0.0880
+nn2       256            0.2596          0.1456          0.2509          0.1345          0.2664          0.1447
+nn4       256            0.5162          0.2552          0.4998          0.2584          0.5274          0.2941
+nn2x2     256            0.5180          0.2044          0.5002          0.1931          0.5323          0.4094
+nn2       512            1.9751          0.4485          1.9271          0.4763          2.0453          0.5043
+nn4       512            3.9598          0.9115          3.8548          0.8023          4.0344          1.0138
+nn2x2     512            3.9738          0.6867          3.8680          0.6406          4.0427          0.9944
+nn2      1024           15.7019          1.6107         15.3793          1.5372         16.4747          3.3321
+nn4      1024           32.3232          3.2525         31.6632          3.0938         32.7698          5.6984
+nn2x2    1024           32.1787          2.6686         31.5774          2.5592         32.9090          7.7739
+nn2      2048          128.5139          8.1244        126.2592          7.5775        130.4212         11.9588
+nn4      2048          256.3682         16.3828        252.0220         14.9298        251.7508         24.3962
+nn2x2    2048          256.8487         16.5900        252.2017         14.4871        231.7575         23.9542
+
+== GF/s ==
+shape       d     mapal-conf-1t  mapal-conf-par    mapal-fma-1t   mapal-fma-par        numpy-1t        numpy-mt
+---------------------------------------------------------------------------------------------------------------
+nn2       128             156.3            92.8           169.0           103.0           228.0           195.3
+nn4       128             155.3           101.4           171.0            99.3           221.4           187.0
+nn2x2     128             160.2           127.7           167.4           130.2           219.9           190.7
+nn2       256             258.5           460.8           267.5           499.1           251.9           463.6
+nn4       256             260.0           525.9           268.5           519.5           254.5           456.4
+nn2x2     256             259.1           656.8           268.3           694.9           252.1           327.8
+nn2       512             271.8          1197.0           278.6          1127.1           262.5          1064.7
+nn4       512             271.2          1178.0           278.5          1338.3           266.1          1059.2
+nn2x2     512             270.2          1563.6           277.6          1676.1           265.6          1079.8
+nn2      1024             273.5          2666.5           279.3          2794.0           260.7          1289.0
+nn4      1024             265.8          2641.0           271.3          2776.5           262.1          1507.4
+nn2x2    1024             266.9          3218.9           272.0          3356.5           261.0          1105.0
+nn2      2048             267.4          4229.2           272.1          4534.5           263.5          2873.2
+nn4      2048             268.0          4194.6           272.7          4602.8           273.0          2816.8
+nn2x2    2048             267.5          4142.2           272.5          4743.5           296.5          2868.8
+
+== overlap factor  W = 2*T(nn2)/T(nn2x2)   [1 = serial, 2 = full overlap] ==
+   W_ctl = 2*T(nn2)/T(nn4) is the SAME flops with no available concurrency
+     d     mapal-conf-1t  mapal-conf-par    mapal-fma-1t   mapal-fma-par        numpy-1t        numpy-mt
+--------------------------------------------------------------------------------------------------------
+   128             1.025           1.376           0.991           1.264           0.965           0.977
+   ctl             0.994           1.093           1.012           0.963           0.971           0.958
+   256             1.002           1.425           1.003           1.392           1.001           0.707
+   ctl             1.006           1.141           1.004           1.041           1.010           0.984
+   512             0.994           1.306           0.996           1.487           1.012           1.014
+   ctl             0.998           0.984           1.000           1.187           1.014           0.995
+  1024             0.976           1.207           0.974           1.201           1.001           0.857
+   ctl             0.972           0.990           0.971           0.994           1.005           1.169
+  2048             1.001           0.979           1.001           1.046           1.125           0.998
+   ctl             1.003           0.992           1.002           1.015           1.036           0.980
+
+== mapal / numpy speedup (>1 = mapal faster), fma face ==
+shape       d          1t     par-vs-numpy-mt     par-vs-numpy-1t
+-----------------------------------------------------------------
+nn2       128       0.741               0.528               0.452
+nn4       128       0.772               0.531               0.448
+nn2x2     128       0.761               0.683               0.592
+nn2       256       1.062               1.076               1.981
+nn4       256       1.055               1.138               2.041
+nn2x2     256       1.064               2.120               2.756
+nn2       512       1.061               1.059               4.294
+nn4       512       1.047               1.264               5.029
+nn2x2     512       1.045               1.552               6.311
+nn2      1024       1.071               2.168              10.717
+nn4      1024       1.035               1.842              10.592
+nn2x2    1024       1.042               3.038              12.859
+nn2      2048       1.033               1.578              17.212
+nn4      2048       0.999               1.634              16.862
+nn2x2    2048       0.919               1.653              15.997
