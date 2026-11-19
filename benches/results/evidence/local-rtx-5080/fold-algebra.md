@@ -66,7 +66,7 @@ leg). Full table: `fold-algebra/gpu-on-off.md`. Every row whose verdict is not n
 | row | ON/OFF | timed code | cause |
 | --- | ---: | --- | --- |
 | indep_512 | 0.76 | device identical, host timed slice identical | **tuned pick**: ON's wisdom picked candidate 5, OFF's candidate 7; the OFF binary with ON's wisdom runs 0.0385 ms = ON (ABBA) — per-site-choice tune robustness, not this change |
-| attn_1024_64 | 0.91 | QKᵀ fused (FFMA) | same-box ABBA, 11 processes × 4 legs: ON 0.0434 / OFF 0.0431 ms — **null**: the fused hot loop does not move a 43 µs launch / latency-bound program |
+| attn_1024_64 | 0.91 | QKᵀ fused (FFMA) | same-box ABBA, 11 processes × 4 legs: ON 0.0434 / OFF 0.0431 ms — **null, unexplained (open)**: the program is not launch-bound (CUPTI, `gpu-analysis.md`: kernels 32.8 of 43 µs, QKᵀ 12.3 µs); QKᵀ kernel time ON vs OFF was not traced, so why 512 FFMA instead of 512 FMUL + 512 FADD leaves it unchanged is not shown |
 | rowsum_4096, pj_m16_n18432, 4096³ cell, conv_2048_5, diamond, twin (faster) and pj_m16_n2048, convmc_tf32, firew, loopmm (slower) | 0.91 – 1.10 | **byte-identical** timed code (device text equal, host diffs only in untimed / uncalled functions) | cross-run variation; these rows measure the real null between separate runs of this harness: ±10 % (the 2-run A/A underestimates it). pj_m16_n2048 ABBA: ON 0.0482 / OFF 0.0475 ms |
 
 So on the GPU the change is **neutral in time** on this suite (its arithmetic is realized; no row moves beyond the
