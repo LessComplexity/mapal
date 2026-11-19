@@ -452,6 +452,7 @@ dependencies = [
  "mapal-ir",
  "mapal-lower",
  "mapal-rewrite",
+ "mapal-rt",
  "mapal-syntax",
  "proptest",
  "slotmap",

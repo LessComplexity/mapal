@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 mapal-ir = { path = "../../mapal-ir" }
+mapal-rt = { path = "../../mapal-rt" }
 slotmap = "1.0"
 
 [dev-dependencies]

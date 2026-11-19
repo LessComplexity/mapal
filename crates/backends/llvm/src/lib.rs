@@ -1647,6 +1647,7 @@ mod place_tests {
             flops_per_ns: 50,
             bytes_per_ns: 10,
             dispatch_ns: 10_000,
+            lanes: 0,
         });
         if let Machine::Gpu(g) = &mut p.machine {
             g.cost = place.then_some(DeviceCost {

@@ -14,8 +14,18 @@ use mapal_backend_llvm::{EmitError, EmitOpts, GpuArms, emit_with_opts};
 
 /// The goldens are the exact face's text (ADR-0040: the default face adds
 /// `reassoc contract` to the tiled steps; `default_face_flags_the_tiled_steps`).
+/// The goldens' emission, pinned to `generic` (ADR-0038 D4): the ambient
+/// `native` carries this host's measured dispatch economics (local-rtx-5080),
+/// so a golden on it would encode the machine that blessed it.
 fn emit(ir: &mapal_ir::CategoryIr) -> Result<String, EmitError> {
-    emit_with_opts(ir, &EmitOpts::exact())
+    emit_with_opts(
+        ir,
+        &EmitOpts {
+            target: "generic",
+            host: "generic",
+            ..EmitOpts::exact()
+        },
+    )
 }
 use mapal_ir::{CategoryIr, Dest, FuncKind, IrBuilder, Operation, SourceLoc, Ty, Value};
 
@@ -1752,13 +1762,14 @@ fn perf_timing_golden() {
     );
 }
 
+/// The goldens' helper is the exact face plus the profile pin and nothing
+/// else (local-rtx-5080: the pin replaced the ambient `native`).
 #[test]
 fn default_opts_are_byte_identical() {
     let ir = build_example("vector_add");
-    assert_eq!(
-        emit(&ir).unwrap(),
-        emit_with_opts(&ir, &EmitOpts::exact()).unwrap()
-    );
+    let mut opts = EmitOpts::exact();
+    (opts.target, opts.host) = ("generic", "generic");
+    assert_eq!(emit(&ir).unwrap(), emit_with_opts(&ir, &opts).unwrap());
 }
 
 // --- Unsupported pin (L3) -------------------------------------------------

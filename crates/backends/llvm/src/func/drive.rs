@@ -4,6 +4,18 @@
 
 use super::*;
 
+/// `(kind, width)` a split of serial `ns` registers under the profile's
+/// per-lane wave ([`crate::profile::DispatchCost::width`]): one lane is
+/// `kind = 0` (inline), the whole pool `width = 0`; without the fact `(1, 0)`,
+/// the registration every build made before it.
+fn registration(profile: &TargetProfile, ns: u64) -> (u64, u64) {
+    match profile.dispatch.and_then(|c| c.width(ns)) {
+        Some(1) => (0, 0),
+        Some(w) => (1, w),
+        None => (1, 0),
+    }
+}
+
 impl<'a> FnEmit<'a> {
     /// Whether a split task's estimated SERIAL time is under what one dispatch
     /// costs — in which case the pool is a net loss and it should run inline
@@ -21,6 +33,11 @@ impl<'a> FnEmit<'a> {
         let Some(cost) = self.profile.dispatch else {
             return false;
         };
+        // local-rtx-5080: with the wave priced per lane, "inline" is the width
+        // rule's one-lane answer, for every site the facts can estimate.
+        if cost.lanes >= 2 {
+            return self.task_width(task) == Some(1);
+        }
         let TaskKind::Split { site, n } = &task.kind else {
             return false;
         };
@@ -48,6 +65,56 @@ impl<'a> FnEmit<'a> {
         let bytes = crate::profile::tile_bytes(record.rows, record.c, record.k, &record.elem);
         let ns = crate::profile::roofline_ns(flops, bytes, cost.flops_per_ns, cost.bytes_per_ns);
         ns < cost.dispatch_ns
+    }
+
+    /// A split task's serial nanoseconds at one lane's rates, from the facts
+    /// that carry its work: a tile site's record (as [`Self::under_dispatch_cost`])
+    /// or a cell site's (`cell_plan`: `work` element steps per cell, each a
+    /// multiply-add; every read and the write one element each). `None` for a
+    /// task neither recognizer describes.
+    ///
+    /// A LOWER bound: a strided read (a transpose) moves a line per element
+    /// and a window re-reads; neither is priced. That is the direction the
+    /// width rule tolerates ([`crate::profile::DispatchCost::lanes`]).
+    fn serial_ns(&self, task: &mapal_ir::Task) -> Option<u64> {
+        let cost = self.profile.dispatch?;
+        let TaskKind::Split { site, n } = &task.kind else {
+            return None;
+        };
+        let (flops, bytes) =
+            if let Some(record) = self.tile_plan.as_ref().and_then(|p| p.sites.get(*site)) {
+                (
+                    2u64.saturating_mul(*n).saturating_mul(record.k),
+                    crate::profile::tile_bytes(record.rows, record.c, record.k, &record.elem),
+                )
+            } else {
+                let cells = self.ir.cell_plan(self.f);
+                let cell = cells.get(*site)?;
+                let m = self.ir.morphism(*site)?;
+                let elem = match self.ir.object(m.target).map(|o| &o.ty) {
+                    Some(mapal_ir::Ty::Array { elem, .. }) => crate::profile::elem_bytes(elem),
+                    _ => 4,
+                };
+                (
+                    2u64.saturating_mul(*n).saturating_mul(cell.work.max(1)),
+                    n.saturating_mul(cell.reads.len() as u64 + 1)
+                        .saturating_mul(elem),
+                )
+            };
+        Some(crate::profile::roofline_ns(
+            flops,
+            bytes,
+            cost.flops_per_ns,
+            cost.bytes_per_ns,
+        ))
+    }
+
+    /// The `width` a split task registers (mapal-rt `TaskDef::width`): the
+    /// lanes [`crate::profile::DispatchCost::width`] gives its serial estimate,
+    /// `None` without a per-lane fact or an estimate (registered `0`, the whole
+    /// pool, as before).
+    pub(super) fn task_width(&self, task: &mapal_ir::Task) -> Option<u64> {
+        self.profile.dispatch?.width(self.serial_ns(task)?)
     }
 
     /// Emit the function body: prologue store, the topo walk, epilogue return.
@@ -458,22 +525,32 @@ impl<'a> FnEmit<'a> {
             } else {
                 format!("@task{task_id}")
             };
+            // local-rtx-5080: the lanes this task wakes (`0` = the whole pool).
+            let width = if kind == 1 {
+                host.task_width(task).filter(|&w| w > 1).unwrap_or(0)
+            } else {
+                0
+            };
             host.line(format!(
-                "call void @mapal_par_task(ptr %h, i32 {task_id}, i32 {kind}, ptr {body}, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 0)",
+                "call void @mapal_par_task(ptr %h, i32 {task_id}, i32 {kind}, ptr {body}, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 {width})",
                 task.rank
             ));
         }
         for (task_id, tiles, pack_bytes) in &packed_sites {
             let pack_id = pack_task_of[task_id];
-            let pack_kind = profile.dispatch.map_or(1, |cost| {
-                u64::from(pack_bytes / cost.bytes_per_ns.max(1) >= cost.dispatch_ns)
-            });
+            let pack_ns =
+                |cost: crate::profile::DispatchCost| pack_bytes / cost.bytes_per_ns.max(1);
+            let (pack_kind, pack_width) = match profile.dispatch {
+                Some(cost) if cost.lanes >= 2 => registration(profile, pack_ns(cost)),
+                Some(cost) => (u64::from(pack_ns(cost) >= cost.dispatch_ns), 0),
+                None => (1, 0),
+            };
             // `slice_elems = 0` would be the silent-nothing bug: `slice_ranges`
             // would fall back to `min(T, ceil(n/4096))`, which at 256 tiles is
             // ONE slice — the pack stays serial and nothing fails. The quantum
             // is one j-tile; `oversub = 4` reproduces the nested form exactly.
             host.line(format!(
-                "call void @mapal_par_task(ptr %h, i32 {pack_id}, i32 {pack_kind}, ptr @task{task_id}_pack, i64 {tiles}, i32 {}, i64 1, i32 4, i32 0)",
+                "call void @mapal_par_task(ptr %h, i32 {pack_id}, i32 {pack_kind}, ptr @task{task_id}_pack, i64 {tiles}, i32 {}, i64 1, i32 4, i32 {pack_width})",
                 plan.tasks[*task_id].rank
             ));
         }
@@ -716,8 +793,16 @@ impl<'a> FnEmit<'a> {
             // `slice_elems = 0` would be the silent-nothing bug: `slice_ranges`
             // falls to `min(T, ceil(n/4096))`, which at 256 tiles is ONE slice
             // and the pack stays serial with nothing failing.
+            // local-rtx-5080: both nested runs register their width.
+            let (pack_kind, pack_width) = profile.dispatch.map_or((1, 0), |cost| {
+                let bytes = 2u64
+                    .saturating_mul(site.k)
+                    .saturating_mul(site.c)
+                    .saturating_mul(crate::profile::elem_bytes(&site.elem));
+                registration(profile, bytes / cost.bytes_per_ns.max(1))
+            });
             emit.line(format!(
-                "call void @mapal_par_task(ptr {pack_handle}, i32 0, i32 1, ptr @task{task_id}_pack, i64 {tiles}, i32 {}, i64 1, i32 4, i32 0)",
+                "call void @mapal_par_task(ptr {pack_handle}, i32 0, i32 {pack_kind}, ptr @task{task_id}_pack, i64 {tiles}, i32 {}, i64 1, i32 4, i32 {pack_width})",
                 task.rank
             ));
             emit.line(format!(
@@ -730,8 +815,16 @@ impl<'a> FnEmit<'a> {
             // task is the pack wrapper and is never split — so this is the call
             // the region's sizing belongs on.
             let (min_slice, oversub) = emit.slice_sizing(&site);
+            let (slice_kind, slice_width) = profile.dispatch.map_or((1, 0), |cost| {
+                let flops = 2u64.saturating_mul(*n).saturating_mul(site.k);
+                let bytes = crate::profile::tile_bytes(site.rows, site.c, site.k, &site.elem);
+                registration(
+                    profile,
+                    crate::profile::roofline_ns(flops, bytes, cost.flops_per_ns, cost.bytes_per_ns),
+                )
+            });
             emit.line(format!(
-                "call void @mapal_par_task(ptr {handle}, i32 0, i32 1, ptr @task{task_id}_slice, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 0)",
+                "call void @mapal_par_task(ptr {handle}, i32 0, i32 {slice_kind}, ptr @task{task_id}_slice, i64 {n}, i32 {}, i64 {min_slice}, i32 {oversub}, i32 {slice_width})",
                 task.rank
             ));
             emit.line(format!(

@@ -2386,6 +2386,34 @@ pub struct DispatchCost {
     /// more run inline than dispatched: the dispatch buys one lane's share of
     /// the work and pays a whole wave for it.
     pub dispatch_ns: u64,
+    /// The pool width `dispatch_ns` was measured at, when the wave was measured
+    /// per host (`native`'s calibration, local-rtx-5080). `0` = not known per
+    /// lane: the plan-s50 P3 threshold (`ns < dispatch_ns` inlines, else the
+    /// whole pool) — every hand-measured profile, byte for byte.
+    ///
+    /// Known, a wave's cost is per lane woken: the host wakes each filled lane
+    /// in turn (`Pool::notify_lane`), so `L` lanes cost `L * dispatch_ns /
+    /// lanes` (9970X, `examples/dispatch_cost.rs`: 24 / 50 / 149 / 263 us at 8 /
+    /// 16 / 32 / 64 lanes). A task of serial time `T` on `L` lanes then takes
+    /// `T / L + L * w`, least at `L = sqrt(T / w)`: that width is what the
+    /// emitter registers (`width`, mapal-rt `TaskDef::width`), one lane being
+    /// inline. A `T` estimated `r` times low narrows the width by `sqrt(r)`,
+    /// which is why a peak-rate roofline is usable here and not as a threshold.
+    pub lanes: u64,
+}
+
+impl DispatchCost {
+    /// Lanes a task of serial `ns` should wake, by [`Self::lanes`]: `Some(1)` =
+    /// inline, `Some(0)` = the whole pool (registered `width = 0`, as before),
+    /// `None` = no per-lane fact (the threshold rule decides).
+    pub fn width(&self, ns: u64) -> Option<u64> {
+        if self.lanes < 2 {
+            return None;
+        }
+        let per_lane = (self.dispatch_ns / self.lanes).max(1);
+        let w = ((ns / per_lane) as f64).sqrt().round() as u64;
+        Some(if w >= self.lanes { 0 } else { w.max(1) })
+    }
 }
 
 /// Nanoseconds a roofline gives `flops` and `bytes` at these rates.
@@ -4287,6 +4315,7 @@ pub const X86_64_V3: TargetProfile = TargetProfile {
         flops_per_ns: 24,
         bytes_per_ns: 5,
         dispatch_ns: 16_700,
+        lanes: 0,
     }),
     ..GENERIC
 };
@@ -4313,6 +4342,7 @@ pub const RAPTORLAKE_INLINE: TargetProfile = TargetProfile {
         flops_per_ns: 144,
         bytes_per_ns: 100,
         dispatch_ns: 1_000_000_000,
+        lanes: 0,
     }),
     ..RAPTORLAKE
 };
@@ -4743,6 +4773,7 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
         flops_per_ns: 1000,
         bytes_per_ns: 127,
         dispatch_ns: 8_300,
+        lanes: 0,
     }),
     ..APPLE_M
 };
@@ -4997,8 +5028,310 @@ fn detect() -> Option<TargetProfile> {
         }),
         vec_bytes: vec_geometry().0,
         vec_regs: vec_geometry().1,
+        // local-rtx-5080: before this, Linux `native` carried no dispatch
+        // economics, so every split task woke the whole pool — 263 us a wave on
+        // a 64-thread 9970X, which made `saxpy_1M` 3.8x and `conv2d_1024` 2.7x
+        // SLOWER threaded than on one lane. They are this host's, so measured.
+        dispatch: host_dispatch::get(),
         ..GENERIC
     })
+}
+
+/// `native`'s dispatch economics on a host nobody hand-measured
+/// (local-rtx-5080): [`DispatchCost`] read from a per-host cache, measured on a
+/// miss.
+///
+/// - `dispatch_ns`, `lanes`: [`mapal_rt::calibrate::wave`] — a full-width wave
+///   through the emitted entry points, workers parked, minus the same task
+///   inline (the S51 difference method, on the runtime itself rather than a
+///   stand-in).
+/// - `flops_per_ns`: one lane's FMA peak (independent vector FMA chains at the
+///   detected width); `bytes_per_ns`: one lane streaming an L3-resident 8 MiB
+///   buffer. Both are UPPER bounds on what an emitted kernel reaches, so a
+///   serial-time estimate from them is a lower bound; with `lanes` known the
+///   emitter turns it into a width (`sqrt`), where an estimate `r` times low
+///   costs a `sqrt(r)` narrower wave, not an inlined large task.
+///
+/// `MAPAL_NATIVE_DISPATCH`: `off` = none (the OFF arm: every task the whole
+/// pool), `measure` = re-measure and rewrite the cache, `d,l,f,b` = forced
+/// (`dispatch_ns,lanes,flops_per_ns,bytes_per_ns`; tests). The cache key is the
+/// CPU model, logical CPUs, pool lanes (`MAPAL_PAR`) and the compiler version.
+#[cfg(target_os = "linux")]
+pub(crate) mod host_dispatch {
+    use super::DispatchCost;
+
+    pub(crate) fn get() -> Option<DispatchCost> {
+        let env = std::env::var("MAPAL_NATIVE_DISPATCH").ok();
+        match env.as_deref() {
+            Some("off") => return None,
+            Some(s) if s != "measure" => return parse(s),
+            _ => {}
+        }
+        let key = key();
+        let path = cache_path();
+        if env.is_none()
+            && let Some(hit) = path
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|text| lookup(&text, &key))
+        {
+            return Some(hit);
+        }
+        let d = measure()?;
+        if let Some(p) = path {
+            let old = std::fs::read_to_string(&p).unwrap_or_default();
+            let mut text: String = old
+                .lines()
+                .filter(|l| l.split('\t').next() != Some(key.as_str()))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            text.push_str(&line(&key, &d));
+            let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
+            let _ = std::fs::write(&p, text);
+        }
+        Some(d)
+    }
+
+    /// `d,l,f,b` -> the economics; `None` on anything else.
+    pub(crate) fn parse(s: &str) -> Option<DispatchCost> {
+        let v: Vec<u64> = s
+            .split(',')
+            .map(|x| x.trim().parse().ok())
+            .collect::<Option<_>>()?;
+        let [dispatch_ns, lanes, flops_per_ns, bytes_per_ns] = v[..] else {
+            return None;
+        };
+        (dispatch_ns > 0 && flops_per_ns > 0 && bytes_per_ns > 0).then_some(DispatchCost {
+            flops_per_ns,
+            bytes_per_ns,
+            dispatch_ns,
+            lanes,
+        })
+    }
+
+    pub(crate) fn line(key: &str, d: &DispatchCost) -> String {
+        format!(
+            "{key}\t{},{},{},{}\n",
+            d.dispatch_ns, d.lanes, d.flops_per_ns, d.bytes_per_ns
+        )
+    }
+
+    pub(crate) fn lookup(text: &str, key: &str) -> Option<DispatchCost> {
+        text.lines()
+            .filter_map(|l| l.split_once('\t'))
+            .find(|(k, _)| *k == key)
+            .and_then(|(_, v)| parse(v))
+    }
+
+    fn key() -> String {
+        let model = std::fs::read_to_string("/proc/cpuinfo")
+            .ok()
+            .and_then(|t| {
+                t.lines()
+                    .find(|l| l.starts_with("model name"))
+                    .and_then(|l| l.split_once(':'))
+                    .map(|(_, m)| m.trim().to_string())
+            })
+            .unwrap_or_default();
+        let logical = std::thread::available_parallelism().map_or(1, usize::from);
+        let par = std::env::var("MAPAL_PAR").unwrap_or_default();
+        format!(
+            "v1|{model}|{logical}|par={par}|{}",
+            env!("CARGO_PKG_VERSION")
+        )
+    }
+
+    fn cache_path() -> Option<std::path::PathBuf> {
+        let base = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".cache"))
+            })?;
+        Some(base.join("mapal").join("native-dispatch.tsv"))
+    }
+
+    fn measure() -> Option<DispatchCost> {
+        let wave = mapal_rt::calibrate::wave(64)?;
+        Some(DispatchCost {
+            flops_per_ns: lane_flops_per_ns(),
+            bytes_per_ns: lane_bytes_per_ns(),
+            dispatch_ns: wave.wave_ns,
+            lanes: wave.lanes,
+        })
+    }
+
+    /// Best of 5 timings of `f`, which reports the work it did.
+    fn best_rate(mut f: impl FnMut() -> u64) -> u64 {
+        (0..5)
+            .map(|_| {
+                let t = std::time::Instant::now();
+                let work = f();
+                work / (t.elapsed().as_nanos() as u64).max(1)
+            })
+            .max()
+            .unwrap_or(1)
+            .max(1)
+    }
+
+    fn lane_flops_per_ns() -> u64 {
+        const ITERS: u64 = 200_000;
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::arch::is_x86_feature_detected!("avx512f") {
+                // 12 chains x 16 lanes x 2 flops per step.
+                return best_rate(|| {
+                    std::hint::black_box(unsafe { fma512(ITERS) });
+                    ITERS * 12 * 16 * 2
+                });
+            }
+            if std::arch::is_x86_feature_detected!("avx2")
+                && std::arch::is_x86_feature_detected!("fma")
+            {
+                return best_rate(|| {
+                    std::hint::black_box(unsafe { fma256(ITERS) });
+                    ITERS * 12 * 8 * 2
+                });
+            }
+        }
+        best_rate(|| {
+            let mut a = [1.0f32; 12];
+            for _ in 0..ITERS {
+                for x in a.iter_mut() {
+                    *x = std::hint::black_box(*x) * 0.999_999 + 1e-7;
+                }
+            }
+            std::hint::black_box(a);
+            ITERS * 12 * 2
+        })
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn fma512(iters: u64) -> f32 {
+        use std::arch::x86_64::*;
+        let m = _mm512_set1_ps(0.999_999);
+        let c = _mm512_set1_ps(1e-7);
+        let mut a = [_mm512_set1_ps(1.0); 12];
+        // `black_box` every 64 steps: the chains escape, so the loop cannot be
+        // deleted or folded, and 64 register-resident steps sit between escapes.
+        for _ in 0..std::hint::black_box(iters / 64) {
+            for _ in 0..64 {
+                for x in a.iter_mut() {
+                    *x = _mm512_fmadd_ps(*x, m, c);
+                }
+            }
+            a = std::hint::black_box(a);
+        }
+        a.iter().map(|&x| _mm512_reduce_add_ps(x)).sum()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn fma256(iters: u64) -> f32 {
+        use std::arch::x86_64::*;
+        let m = _mm256_set1_ps(0.999_999);
+        let c = _mm256_set1_ps(1e-7);
+        let mut a = [_mm256_set1_ps(1.0); 12];
+        // `black_box` every 64 steps: the chains escape, so the loop cannot be
+        // deleted or folded, and 64 register-resident steps sit between escapes.
+        for _ in 0..std::hint::black_box(iters / 64) {
+            for _ in 0..64 {
+                for x in a.iter_mut() {
+                    *x = _mm256_fmadd_ps(*x, m, c);
+                }
+            }
+            a = std::hint::black_box(a);
+        }
+        let mut out = [0f32; 8];
+        let mut s = _mm256_setzero_ps();
+        for x in a {
+            s = _mm256_add_ps(s, x);
+        }
+        unsafe { _mm256_storeu_ps(out.as_mut_ptr(), s) };
+        out.iter().sum()
+    }
+
+    fn lane_bytes_per_ns() -> u64 {
+        let buf = vec![1.0f32; 2 << 20];
+        best_rate(|| {
+            let mut acc = [0f32; 16];
+            for _ in 0..4 {
+                for chunk in std::hint::black_box(&buf).chunks_exact(16) {
+                    for (a, x) in acc.iter_mut().zip(chunk) {
+                        *a += x;
+                    }
+                }
+            }
+            std::hint::black_box(acc);
+            4 * buf.len() as u64 * 4
+        })
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) mod host_dispatch {}
+
+#[cfg(test)]
+mod dispatch_width_tests {
+    use super::DispatchCost;
+
+    fn cost(dispatch_ns: u64, lanes: u64) -> DispatchCost {
+        DispatchCost {
+            flops_per_ns: 100,
+            bytes_per_ns: 10,
+            dispatch_ns,
+            lanes,
+        }
+    }
+
+    /// No per-lane fact (every hand-measured profile): no width, so the
+    /// threshold rule and `width = 0` stay byte for byte.
+    #[test]
+    fn unmeasured_lanes_give_no_width() {
+        for lanes in [0, 1] {
+            assert_eq!(cost(8_300, lanes).width(1_000_000), None);
+        }
+    }
+
+    /// `sqrt(T / w)`, one lane inline, the whole pool `0`, never above it.
+    #[test]
+    fn width_is_the_square_root_rule() {
+        let c = cost(64_000, 64); // 1 us a lane
+        assert_eq!(c.width(0), Some(1));
+        assert_eq!(c.width(1_500), Some(1));
+        assert_eq!(c.width(4_000), Some(2));
+        assert_eq!(c.width(100_000), Some(10));
+        assert_eq!(c.width(3_900_000), Some(62));
+        assert_eq!(c.width(5_000_000), Some(0));
+    }
+
+    /// Monotone in the estimate up to the pool, then the pool.
+    #[test]
+    fn width_is_monotone() {
+        let c = cost(97_000, 64);
+        let mut last = 1;
+        for ns in (0..60).map(|i| 1u64 << (i / 2)) {
+            let w = c.width(ns).unwrap();
+            let w = if w == 0 { 64 } else { w };
+            assert!(w >= last, "ns={ns}: {w} < {last}");
+            last = w;
+        }
+        assert_eq!(last, 64);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cache_line_round_trips_and_keys_exactly() {
+        use super::host_dispatch::{line, lookup, parse};
+        let d = cost(97_521, 64);
+        let text = format!("{}{}", line("k1", &cost(1, 2)), line("k2", &d));
+        assert_eq!(lookup(&text, "k2"), Some(d));
+        assert_eq!(lookup(&text, "k"), None, "a key prefix is not a hit");
+        assert_eq!(parse("97521,64,100,10"), Some(d));
+        for bad in ["", "1,2,3", "0,64,1,1", "1,64,0,1", "x,1,1,1", "1,2,3,4,5"] {
+            assert_eq!(parse(bad), None, "{bad:?}");
+        }
+    }
 }
 
 /// No detection on other hosts. `None` means `--target=native` errors with the
