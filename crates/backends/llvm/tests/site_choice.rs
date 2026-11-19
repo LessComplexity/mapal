@@ -46,8 +46,10 @@ fn emission(
     on: &[&str],
     off: &[&str],
 ) -> Emission {
+    // The sites' own tables: a row-block unit (`row_block.rs`) launches none.
     let mut gpu = GpuArms {
         site_cands: cands,
+        row_block: false,
         ..GpuArms::default()
     };
     for r in off.iter().chain(&["place", "pdl", "streams", "pinned"]) {
@@ -409,12 +411,16 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // fold-algebra changes the default / contract faces' arithmetic by
         // design (`step_algebra` pairs and regroups); with its two OFF arms the
         // emission is the pre-sprint one byte for byte, which is what this pins.
+        // compile-time-graph likewise: its row-block units and launch regions
+        // off, the emission is the one before them.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
             "--cands=1",
             "--no-fma-pairs",
             "--no-fold-regroup",
+            "--no-row-block",
+            "--no-launch-graph",
         ]
         .iter()
         .chain(face_flags)

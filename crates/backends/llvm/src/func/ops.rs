@@ -13,10 +13,15 @@ impl<'a> FnEmit<'a> {
         if self.resident.is_none() {
             return self.emit_op(m);
         }
+        // compile-time-graph B: a region's device op carries its tag.
+        let tag = self.region_tag(m);
         if !self.resident_instead(m) {
             self.emit_op(m);
         }
         self.resident_after(m);
+        if tag {
+            self.region_untag();
+        }
     }
 
     fn emit_op(&mut self, m: MorphismId) {

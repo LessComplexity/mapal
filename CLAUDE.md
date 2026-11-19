@@ -60,6 +60,7 @@ No keep/remove/gate decision stands on timing alone.
 | `guard_plan`, `gated` | per-Phi arm exclusive work; whether an arm must be gated |
 | `trip_split` | per counted loop: the trip intervals guards on the counter cut, each interval's recurrent state slots, the work outside them, batched row writes, whether the first interval's trips but the last can be skipped |
 | `step_algebra` (`FmaPair`, `Regroup`, `StepAlgebra::flags`) | per function: float product–accumulate pairs (product read once) that may be one rounding (FMA) where the face contracts; a fold body's step that may regroup (lane partials + tree: op, bits kept or not, trip count, per-read stride along the fold axis — layout, never admission); the one realization rule host and device share |
+| `unit_plan` (`UnitGroup`, `UnitMember::color`) | row-block groups: tile sites + the folds and cells reading their rows, every in-group edge row-closed (`Reach::within_rows`), a tile's `b` operand never a member; stored = escapes or read outside; on-chip row buffers colored by death in the group (in place along a same-cell chain); bytes per unit row and the operand bytes every unit re-reads |
 | `whole_fold`, `fold_tree_step` (`CellSite::tree`) | a fold of the function itself over one affine read (a one-row row fold); a fold step regroupable as lane partials + tree where the order is free |
 | backend: `ResidentPlan`, `arena`, frame slots (`prepare_storage`), `TargetProfile` | device residency, lifetime-colored buffers, host slots/aliases, hardware facts |
 

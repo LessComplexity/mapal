@@ -78,6 +78,7 @@ impl<'a> FnEmit<'a> {
             gpu_arms: crate::GpuArms::default(),
             algebra: None,
             fma_stash: SecondaryMap::new(),
+            region: None,
             block: 0,
             resident: None,
             dslots: SecondaryMap::new(),

@@ -24,6 +24,9 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
     for r in ["epilogue", "arena", "streams", "pinned", "pdl"] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
+    // R2's own cells: a row-block unit (`row_block.rs`) would take the
+    // chains' tiles and cells together.
+    gpu.row_block = false;
     emit_detailed(
         &lower_src(src),
         &EmitOpts {

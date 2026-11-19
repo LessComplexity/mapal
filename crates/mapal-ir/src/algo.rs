@@ -5886,7 +5886,7 @@ impl CategoryIr {
 
     /// The source object feeding slot `slot` of a product object (the
     /// `Pair{slot}` in-edge's source), if present.
-    fn pair_slot_source(&self, product: ObjectId, slot: u32) -> Option<ObjectId> {
+    pub(crate) fn pair_slot_source(&self, product: ObjectId, slot: u32) -> Option<ObjectId> {
         self.in_edges(product).iter().find_map(|&m| {
             let pm = &self.morphisms[m];
             if matches!(pm.op, Operation::Pair { slot: s, .. } if s == slot) {

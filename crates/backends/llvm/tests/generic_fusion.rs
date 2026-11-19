@@ -41,6 +41,9 @@ fn emission_on(
 ) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
     gpu.on.flow = true;
+    // The per-row units these tests pin; a tile site with the folds and
+    // cells reading its rows is `row_block.rs`'s.
+    gpu.row_block = false;
     for r in off
         .iter()
         .chain(&["place", "async", "pdl", "streams", "pinned"])

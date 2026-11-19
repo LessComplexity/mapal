@@ -45,8 +45,12 @@ fn shipped() -> GpuArms {
 fn offs(rungs: &[&str]) -> GpuArms {
     // The rules' launches (`--cands=1`): residency is the subject here; a
     // site's candidate table (`site_choice.rs`) moves the same pointers.
+    // compile-time-graph's arms off: these goldens are the emission before
+    // them, byte for byte (`row_block.rs`, `launch_graph.rs` test the arms).
     let mut a = GpuArms {
         site_cands: 1,
+        row_block: false,
+        graph: false,
         ..GpuArms::default()
     };
     for r in rungs.iter().chain(&["streams", "pinned", "pdl"]) {

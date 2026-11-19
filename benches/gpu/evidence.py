@@ -49,7 +49,7 @@ KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
                 'async-depth bank-plan').split()
 GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
-            'zero').split()
+            'zero region_begin region_end tag').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
@@ -329,6 +329,10 @@ def host_facts(ll, asm):
             fu['refused'] += len([r for r in str(k.get('refused', '')).split(';') if r])
         fu['unit_calls'] = len(re.findall(r'@mapal_gpu_launchv\([^\n]*; unit$', ll, re.M))
         f['flow'] = dict(fu)
+        # compile-time-graph B: each launch region's ops (`; mapal.region`), and the ops tagged.
+        rg = [kv(m.group(1)) for m in re.finditer(r'; mapal\.region (.*)$', ll, re.M)]
+        f['region'] = dict(n=len(rg), ops=sum(r.get('ops', 0) for r in rg),
+                           tagged=len(re.findall(r'@mapal_gpu_tag\(i32 \d+,', ll)))
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),
@@ -733,6 +737,8 @@ def flow_facts(f, dev):
                 n_law=n('law'), n_halo=str(f.get('members', '')).count('+halo'), rows=f.get('rows', 0),
                 smem=f.get('smem', 0), lanes=f.get('lanes', 1), tree=f.get('tree', 0), onchip=f.get('onchip', 0),
                 ll_params=d.group(1).count('ptr addrspace(1)') if d else -1,
+                # compile-time-graph A: a row-block unit's rows per block, tiles, colors (0 on a per-row unit).
+                rows_per_unit=f.get('rows_per_unit', 0), tiles=f.get('tiles', 0), colors=f.get('colors', 0),
                 members=str(f.get('members', '')),
                 keep=[x.split(':')[0] for x in str(f.get('keep', '')).split(';') if x],
                 store=[x for x in str(f.get('store', '')).split(';') if x])

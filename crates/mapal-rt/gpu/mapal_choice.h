@@ -190,6 +190,14 @@ static void choice_init(const char *dev, uint64_t module, int tune, int trace) {
 
 /* Run site `site`'s pick among its `n` candidates `c`, once. `safe` 0: the
  * runtime saw the output passed as an input too (no trial). Returns the pick. */
+/* compile-time-graph B: the site's pick is already decided this process (a
+ * memo hit): running it launches its recipe and nothing else. */
+static int choice_known(const struct mapal_cand *c, uint32_t n) {
+  const struct choice_memo *memo =
+      &choice_memo[(((uintptr_t)c * 0x9e3779b97f4a7c15ull) >> 32) % CHOICE_MEMO];
+  return memo->c == c && memo->n == n;
+}
+
 static uint32_t choice_site(uint64_t site, uint32_t flags, uint32_t n,
                             const struct mapal_cand *c, int safe,
                             const struct choice_dev *d) {

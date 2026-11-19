@@ -3,8 +3,12 @@
 //   bw      achieved read GB/s vs active SMs x warps/SM x 16 B loads in flight per thread, DRAM (1 GiB) and L2 (8 MiB, re-read)
 //   loaded  dependent-load latency of one warp while the other SMs stream DRAM (nstream SMs; achieved GB/s printed)
 //   lds     ld.shared.b32 / v2 / v4 conflict-free throughput, bytes per SM clock (clock64) and GB/s per SM
-// usage: calib [chase|bw|loaded|lds ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   graph   compile-time-graph B: one loop trip of `nk` one-block kernels and `nz` 4 KB memsets, 2048 trips —
+//           issued eagerly, as one CUDA graph replayed per trip (no change), and replayed after patching
+//           every node's parameters (cudaGraphExec*NodeSetParams); wall us per trip and per op
+// usage: calib [chase|bw|loaded|lds|graph ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 #include <cstdio>
+#include <ctime>
 #include <cstdlib>
 #include <cstring>
 #include <cuda_runtime.h>
@@ -158,15 +162,65 @@ template <int W> static void lds_one() {
         printf("lds width=%d bits thr=%d bytes_per_clk=%.1f gbs_per_sm=%.1f\n", W * 32, thr, bytes / cy, bytes / (cy / (clk_khz * 1e3)) / 1e9);
     }
 }
+__global__ void tiny(float* p, long long t) { if (threadIdx.x == 0 && t < 0) p[0] = (float)t; }
+static void graph_run() {
+    const int trips = 2048;
+    for (int nk : {6, 12}) for (int nz : {0, 4}) {
+        float* buf; CK(cudaMalloc(&buf, 1 << 20));
+        cudaStream_t st; CK(cudaStreamCreate(&st));
+        auto now = [] { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; };
+        // eager
+        for (int w = 0; w < 2; w++) {
+            double t0 = now();
+            for (int r = 0; r < trips; r++) {
+                for (int z = 0; z < nz; z++) CK(cudaMemsetAsync(buf + 1024 * (z + 1), 0, 4096, st));
+                for (int k = 0; k < nk; k++) tiny<<<1, 256, 0, st>>>(buf, r);
+            }
+            CK(cudaStreamSynchronize(st));
+            if (w) printf("graph mode=eager nk=%d nz=%d us_per_trip=%.3f us_per_op=%.3f\n", nk, nz, (now() - t0) / trips, (now() - t0) / trips / (nk + nz));
+        }
+        // one graph: memsets independent, kernels chained
+        cudaGraph_t g; CK(cudaGraphCreate(&g, 0));
+        std::vector<cudaGraphNode_t> kn(nk), zn(nz);
+        long long targ = 0; void* args[2] = {&buf, &targ};
+        cudaKernelNodeParams kp = {}; kp.func = (void*)tiny; kp.gridDim = dim3(1); kp.blockDim = dim3(256); kp.kernelParams = args;
+        cudaMemsetParams mp = {}; mp.value = 0; mp.elementSize = 4; mp.width = 1024; mp.height = 1;
+        for (int z = 0; z < nz; z++) { mp.dst = buf + 1024 * (z + 1); CK(cudaGraphAddMemsetNode(&zn[z], g, nullptr, 0, &mp)); }
+        for (int k = 0; k < nk; k++) {
+            std::vector<cudaGraphNode_t> d; if (k) d.push_back(kn[k - 1]); if (k == nk - 1) for (auto z : zn) d.push_back(z);
+            CK(cudaGraphAddKernelNode(&kn[k], g, d.data(), d.size(), &kp));
+        }
+        cudaGraphExec_t ex; double ti = now(); CK(cudaGraphInstantiate(&ex, g, 0)); ti = now() - ti;
+        for (int mode = 0; mode < 2; mode++) for (int w = 0; w < 2; w++) {
+            double t0 = now(), tp = 0;
+            for (int r = 0; r < trips; r++) {
+                if (mode) {
+                    double a = now(); targ = r;
+                    for (int k = 0; k < nk; k++) CK(cudaGraphExecKernelNodeSetParams(ex, kn[k], &kp));
+                    for (int z = 0; z < nz; z++) { mp.dst = buf + 1024 * (z + 1 + (r & 1)); CK(cudaGraphExecMemsetNodeSetParams(ex, zn[z], &mp)); }
+                    tp += now() - a;
+                }
+                CK(cudaGraphLaunch(ex, st));
+            }
+            CK(cudaStreamSynchronize(st));
+            double tot = (now() - t0) / trips;
+            if (w) printf("graph mode=%s nk=%d nz=%d us_per_trip=%.3f set_params_us_per_node=%.3f instantiate_us=%.1f\n", mode ? "patched" : "replay", nk, nz, tot, mode ? tp / trips / (nk + nz) : 0.0, ti);
+        }
+        CK(cudaGraphExecDestroy(ex)); CK(cudaGraphDestroy(g)); CK(cudaStreamDestroy(st)); CK(cudaFree(buf));
+    }
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
-    printf("calib device=%s sms=%d clock_khz=%d l2_mb=%d mem_clock_khz=%d bus_bits=%d\n", p.name, sms, clk_khz, p.l2CacheSize >> 20, p.memoryClockRate, p.memoryBusWidth);
+    int mclk = 0; // CUDA 13 dropped cudaDeviceProp::memoryClockRate; the attribute stays
+    CK(cudaDeviceGetAttribute(&mclk, cudaDevAttrMemoryClockRate, 0));
+    printf("calib device=%s sms=%d clock_khz=%d l2_mb=%d mem_clock_khz=%d bus_bits=%d\n", p.name, sms, clk_khz, p.l2CacheSize >> 20, mclk, p.memoryBusWidth);
     std::string want; for (int i = 1; i < argc; i++) want += std::string(argv[i]) + " ";
     auto on = [&](const char* k) { return want.empty() || want.find(k) != std::string::npos; };
     if (on("chase")) chase_run();
     if (on("bw")) bw_run();
     if (on("loaded")) loaded_run();
     if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); }
+    if (on("graph")) graph_run();
     return 0;
 }

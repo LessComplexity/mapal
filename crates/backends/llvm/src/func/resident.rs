@@ -3346,6 +3346,16 @@ impl<'a> FnEmit<'a> {
         if array_paths(&self.obj_ty(plan.merge)).is_empty() && self.resident.is_none() {
             return String::new();
         }
+        let (copy, h2d, d2h, retained) = self.trip_moves(plan);
+        format!(
+            "; mapal.move loop={header} carried={} h2d={h2d} d2h={d2h} host_copy={copy} alloc=0 retained={retained}\n",
+            self.carried_desc(plan.merge)
+        )
+    }
+
+    /// A trip's movement as the plan has it: `(host copies, h2d, d2h,
+    /// retained sites)` in bytes ([`Self::move_line`]'s numbers).
+    pub(crate) fn trip_moves(&self, plan: &mapal_ir::LoopPlan) -> (u64, u64, u64, usize) {
         let bytes = |o: ObjectId| lower_ty(&self.obj_ty(o)).map_or(0, |l| llt_bytes(&l));
         let (mut h2d, mut d2h, mut retained) = (0u64, 0u64, 0usize);
         // An `Update` whose source is still read after it (or is not this
@@ -3377,7 +3387,10 @@ impl<'a> FnEmit<'a> {
                 // The values a launch leaves in device memory, copied out
                 // whole unless kept (`emit_site_resident`).
                 let mut outs = Vec::new();
-                if self.device.contains_key(m) {
+                if let Some(u) = p.units.get(m) {
+                    // A unit (a row-block one launches at its tile site).
+                    outs.extend(u.members.iter().filter(|mb| mb.store).map(|mb| mb.out));
+                } else if self.device.contains_key(m) && !p.skip.contains_key(m) {
                     match self.groups.get(m) {
                         Some(g) => {
                             if g.store_out {
@@ -3389,8 +3402,6 @@ impl<'a> FnEmit<'a> {
                     }
                 } else if p.rowfold.contains_key(m) || p.cells.contains_key(m) {
                     outs.push(t);
-                } else if let Some(u) = p.units.get(m) {
-                    outs.extend(u.members.iter().filter(|mb| mb.store).map(|mb| mb.out));
                 }
                 for o in outs {
                     if !p.keep.contains_key(o) && !p.is_carry_next(o) {
@@ -3407,10 +3418,7 @@ impl<'a> FnEmit<'a> {
                 retained += self.retain.contains_key(t) as usize;
             }
         }
-        format!(
-            "; mapal.move loop={header} carried={} h2d={h2d} d2h={d2h} host_copy={copy} alloc=0 retained={retained}\n",
-            self.carried_desc(plan.merge)
-        )
+        (copy, h2d, d2h, retained)
     }
 
     /// Loop entry: the carry's buffer gets the init state, copied in once.

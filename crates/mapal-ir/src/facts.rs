@@ -50,6 +50,7 @@ pub(crate) struct FuncFacts {
     pub(crate) write_delta: OnceLock<SecondaryMap<ObjectId, Delta>>,
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
+    pub(crate) unit_plan: OnceLock<crate::unit::UnitPlan>,
 }
 
 /// The graph's fact store.

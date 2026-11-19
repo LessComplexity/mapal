@@ -31,6 +31,7 @@ mod graph;
 mod loc;
 mod mermaid;
 mod ty;
+mod unit;
 mod validate;
 
 pub use algo::{
@@ -48,5 +49,6 @@ pub use graph::{
 };
 pub use loc::SourceLoc;
 pub use mermaid::lint_mermaid;
+pub use unit::{UnitGroup, UnitKind, UnitMember, UnitPlan};
 pub use ty::{MAX_TY_DEPTH, Ty, Value, ty_contains_token, ty_label};
 pub use validate::{IrViolation, validate};

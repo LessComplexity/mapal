@@ -843,6 +843,19 @@ pub struct GpuArms {
     /// where the order is free (lane partials + a tree). `false`
     /// (`--no-fold-regroup`) is the OFF arm.
     pub regroup: bool,
+    /// compile-time-graph A: a row-block group `unit_plan` proves closed (tile
+    /// sites with the folds and cells reading their rows) runs as one unit
+    /// kernel of `b` rows per block when it fits the part. `false`
+    /// (`--no-row-block`) is the OFF arm: the emission before it, byte for byte.
+    pub row_block: bool,
+    /// Measurement override (`--row-block=<b>`, the `--splitk` precedent): a
+    /// row-block group that fits takes `b` rows a unit, the fill and cost
+    /// tests aside. 0 = derive.
+    pub row_block_b: u64,
+    /// compile-time-graph B: a counted device loop's trip is a launch region,
+    /// its ops tagged with their compile-time dependencies; the runtime replays
+    /// it as one graph. `false` (`--no-launch-graph`) is the OFF arm.
+    pub graph: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -860,6 +873,9 @@ impl Default for GpuArms {
             full: false,
             pairs: true,
             regroup: true,
+            row_block: true,
+            row_block_b: 0,
+            graph: true,
         }
     }
 }
@@ -1445,7 +1461,10 @@ fn emit_module(
             out.push_str(crate::func::gpu::GPU_L2_DECL);
         }
         // `streams`, `pinned` (S54): each entry declared only when called.
-        for (call, decl) in crate::func::gpu::S54_DECLS {
+        for (call, decl) in crate::func::gpu::S54_DECLS
+            .into_iter()
+            .chain(crate::func::gpu::REGION_DECLS)
+        {
             if funcs.contains(call) {
                 out.push_str(decl);
             }
@@ -1729,11 +1748,13 @@ mod place_tests {
         lower(&s)
     }
 
-    /// The rules' plan (`--cands=1`): placement is what this checks.
+    /// The rules' plan (`--cands=1`): placement is what this checks (the
+    /// row-block arm off: its chain of 8×8 sites is `row_block.rs`'s).
     fn emit_on(ir: &CategoryIr, place: bool) -> Emission {
         let opts = EmitOpts {
             gpu: GpuArms {
                 site_cands: 1,
+                row_block: false,
                 ..GpuArms::default()
             },
             ..EmitOpts::exact()
@@ -1780,6 +1801,7 @@ mod place_tests {
         let opts = EmitOpts {
             gpu: GpuArms {
                 site_cands: 1,
+                row_block: false,
                 ..GpuArms::default()
             },
             ..EmitOpts::exact()

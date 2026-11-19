@@ -128,8 +128,10 @@ fn emit(src: &str, mut gpu: GpuArms, contract: bool) -> (String, String) {
     for r in ["epilogue", "devmap"] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
-    // The rules' launches (`--cands=1`): the fold's placement is the subject.
+    // The rules' launches (`--cands=1`): the fold's placement is the subject
+    // (a tile with the folds over its rows as one unit is `row_block.rs`'s).
     gpu.site_cands = 1;
+    gpu.row_block = false;
     let opts = EmitOpts {
         host: "generic",
         target: "rtx-4090",

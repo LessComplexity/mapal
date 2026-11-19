@@ -21,6 +21,17 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // algebra (host pairs, device strided tiles); no `reassoc` on fold steps.
         "--no-fma-pairs" => opts.gpu.pairs = false,
         "--no-fold-regroup" => opts.gpu.regroup = false,
+        // compile-time-graph OFF arms: no row-block unit kernels (tile sites
+        // keep their own launches); no launch regions (every op issued eagerly).
+        "--no-row-block" => opts.gpu.row_block = false,
+        "--no-launch-graph" => opts.gpu.graph = false,
+        // Measurement only: a row-block unit's rows (0 = derive).
+        _ if a.starts_with("--row-block=") => {
+            let Ok(b) = a["--row-block=".len()..].parse::<u64>() else {
+                return Err(format!("--row-block expects a row count, got `{a}`"));
+            };
+            opts.gpu.row_block_b = b;
+        }
         "--exact" => {
             opts.contract = false;
             opts.order = Order::Sequential;

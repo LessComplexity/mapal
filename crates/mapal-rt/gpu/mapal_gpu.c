@@ -33,6 +33,11 @@
  *    `async-h2d` (`mapal_gpu_h2d_async`) enqueues an upload without waiting
  *    for the device, the source staged at the call (`stage`: a page-locked
  *    ring; else the driver's staging of a pageable source).
+ *  - compile-time-graph B: a launch region (`mapal_gpu_region_begin/end`, one
+ *    trip of a device loop) records its launches and zero passes as graph
+ *    nodes, each op's edges the emitter's compile-time dependencies
+ *    (`mapal_gpu_tag`), and replays them as one CUDA graph — instantiated once
+ *    per topology, its changed parameters patched per trip.
  *
  * Kernels are found by name: the emitter passes a 64-bit id and the device
  * unit names the kernel `mapal_tile_<id as 16 hex digits>` (a tile site) or
@@ -63,6 +68,7 @@
 static int trace = -1;
 static struct {
   double load, alloc, h2d, kernel, gen, d2h, free;
+  unsigned long long n_graph, n_graph_nodes, n_graph_inst, n_graph_patch, n_graph_flush;
   double lead, init, ctx, module;
   unsigned long long in, out, n_h2d, n_d2h, n_launch, n_gen, n_alloc;
   unsigned long long n_l2, l2_persist; /* S54 `l2-window` */
@@ -83,12 +89,14 @@ static void total_line(void) {
           "kernel_ms=%.3f gen_ms=%.3f d2h_ms=%.3f free_ms=%.3f bytes_in=%llu "
           "bytes_out=%llu h2d=%llu d2h=%llu launches=%llu gens=%llu allocs=%llu "
           "l2_windows=%llu l2_persist=%llu pin_ms=%.3f pins=%llu events=%llu pdl=%llu "
-          "preloaded=%llu h2d_async=%llu staged=%llu\n",
+          "preloaded=%llu h2d_async=%llu staged=%llu graphs=%llu graph_nodes=%llu "
+          "graph_inst=%llu graph_patch=%llu graph_flush=%llu\n",
           flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module, tot.alloc,
           tot.h2d, tot.kernel, tot.gen, tot.d2h, tot.free, tot.in, tot.out,
           tot.n_h2d, tot.n_d2h, tot.n_launch, tot.n_gen, tot.n_alloc, tot.n_l2,
           tot.l2_persist, tot.pin, tot.n_pin, tot.n_event, tot.n_pdl,
-          tot.n_preload, tot.n_async, tot.n_staged);
+          tot.n_preload, tot.n_async, tot.n_staged, tot.n_graph, tot.n_graph_nodes,
+          tot.n_graph_inst, tot.n_graph_patch, tot.n_graph_flush);
 }
 
 #define CK(x)                                                                  \
@@ -325,6 +333,122 @@ static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
   return fn;
 }
 
+/* compile-time-graph B: the recording of one launch region. A node is a
+ * kernel (its function, geometry and argument values) or a zero pass (a
+ * memset); its edges are the last nodes of the ops the emitter's tag names
+ * (RAW / WAR / WAW on the bytes the facts give each op), the op's own previous
+ * node (zero → kernel → reduce), and the last untagged node (an untagged op
+ * waits for everything before it). */
+#define REG_NODES 128
+#define REG_OPS 64
+enum { RN_KERNEL = 1, RN_MEMSET = 2 };
+struct rnode {
+  int kind, op;
+  CUfunction fn;
+  uint32_t gx, gy, block, smem, nargs;
+  uint64_t args[16];
+  CUdeviceptr dst;
+  uint64_t bytes;
+  int ndeps;
+  uint16_t deps[REG_NODES];
+};
+static struct {
+  int on;
+  uint64_t rid;
+  int n, op, cur, untagged;
+  uint64_t deps, deps_out;
+  int last[REG_OPS];
+  struct rnode nodes[REG_NODES];
+} rec;
+/* MAPAL_GPU_GRAPH=0: every region runs eagerly (the runtime OFF arm). */
+static int graph_mode = -1;
+
+static void rn_dep(struct rnode *x, int i) {
+  if (i < 0)
+    return;
+  for (int j = 0; j < x->ndeps; j++)
+    if (x->deps[j] == i)
+      return;
+  x->deps[x->ndeps++] = (uint16_t)i;
+}
+
+/* A new node of the running op: its edges, then it is the op's last. */
+static struct rnode *rec_node(int kind) {
+  struct rnode *x = &rec.nodes[rec.n];
+  memset(x, 0, sizeof *x);
+  x->kind = kind;
+  x->op = rec.op;
+  if (rec.op < 0) {
+    for (int i = 0; i < rec.n; i++)
+      x->deps[x->ndeps++] = (uint16_t)i;
+    rec.untagged = rec.n;
+  } else {
+    uint64_t mask = kind == RN_MEMSET && rec.cur < 0 ? rec.deps_out : rec.deps;
+    for (int o = 0; o < REG_OPS; o++)
+      if ((mask >> o) & 1)
+        rn_dep(x, rec.last[o]);
+    rn_dep(x, rec.cur);
+    rn_dep(x, rec.untagged);
+    rec.cur = rec.n;
+    rec.last[rec.op] = rec.n;
+  }
+  rec.n++;
+  return x;
+}
+
+static void launch_now(const struct rnode *x) {
+  if (x->kind == RN_MEMSET) {
+    CK(cuMemsetD8Async(x->dst, 0, x->bytes, streams[0]));
+    return;
+  }
+  void *a[16];
+  uint64_t v[16];
+  for (uint32_t i = 0; i < x->nargs; i++) {
+    v[i] = x->args[i];
+    a[i] = &v[i];
+  }
+  CK(cuLaunchKernel(x->fn, x->gx, x->gy, 1, x->block, 1, 1, x->smem, streams[0], a, 0));
+}
+
+/* Stop recording this trip: what was recorded runs now, in program order
+ * (a host step inside the region needs it: a copy, a free, a trial). */
+static void rec_flush(void) {
+  if (!rec.on)
+    return;
+  rec.on = 0;
+  for (int i = 0; i < rec.n; i++)
+    launch_now(&rec.nodes[i]);
+  if (rec.n) {
+    legacy_ops++;
+    last_kernel[0] = 0;
+    tot.n_graph_flush++;
+    if (trace)
+      fprintf(stderr, "mapal_gpu_trace op=graph flush region=%016llx nodes=%d\n",
+              (unsigned long long)rec.rid, rec.n);
+  }
+  rec.n = 0;
+}
+
+static int rec_kernel(CUfunction fn, void **args, uint32_t nargs, uint32_t gx,
+                      uint32_t gy, uint32_t block, uint32_t smem) {
+  if (!rec.on)
+    return 0;
+  if (rec.n == REG_NODES || nargs > 16) {
+    rec_flush();
+    return 0;
+  }
+  struct rnode *x = rec_node(RN_KERNEL);
+  x->fn = fn;
+  x->gx = gx;
+  x->gy = gy;
+  x->block = block;
+  x->smem = smem;
+  x->nargs = nargs;
+  for (uint32_t i = 0; i < nargs; i++)
+    memcpy(&x->args[i], args[i], 8);
+  return 1;
+}
+
 static uint64_t dev_alloc(uint64_t *slot, uint64_t bytes, const char *op) {
   load_module();
   if (*slot)
@@ -385,6 +509,7 @@ static int arena_member(uint64_t *slot) {
 }
 
 void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
+  rec_flush();
   double t0 = now_ms();
   CK(cuMemcpyHtoD((CUdeviceptr)d, h, bytes));
   legacy_ops++;
@@ -403,6 +528,13 @@ void mapal_gpu_h2d(uint64_t d, const void *h, uint64_t bytes) {
  * it. Not a kernel: the launch behind it is not a dependent (PDL) launch. */
 void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
   load_module();
+  if (rec.on && rec.n < REG_NODES) {
+    struct rnode *x = rec_node(RN_MEMSET);
+    x->dst = (CUdeviceptr)d;
+    x->bytes = bytes;
+    return;
+  }
+  rec_flush();
   double t0 = now_ms();
   CK(cuMemsetD8Async((CUdeviceptr)d, 0, bytes, streams[0]));
   legacy_ops++;
@@ -415,6 +547,7 @@ void mapal_gpu_zero(uint64_t d, uint64_t bytes) {
 /* `bytes` from byte `off` of the device buffer `d` into host `h`.
  * Synchronous: it waits for every launch before it on the stream. */
 void mapal_gpu_d2h(void *h, uint64_t d, uint64_t off, uint64_t bytes) {
+  rec_flush();
   double t0 = now_ms();
   CK(cuMemcpyDtoH(h, (CUdeviceptr)(d + off), bytes));
   last_kernel[0] = 0;
@@ -446,6 +579,7 @@ static void event(unsigned record, unsigned wait, int automatic) {
  * stream `record` has enqueued so far. */
 void mapal_gpu_event(uint32_t record, uint32_t wait) {
   load_module();
+  rec_flush();
   event(slot_of(record), slot_of(wait), 0);
 }
 
@@ -454,11 +588,13 @@ void mapal_gpu_event(uint32_t record, uint32_t wait) {
  * with `griddepcontrol.wait`), a kernel right behind another kernel on its
  * stream is a programmatic dependent launch: it may start while the first
  * drains, and waits for it at its entry. */
-static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
-                      uint32_t gy, uint32_t block, uint32_t smem) {
+static void launch_on(unsigned k, uint64_t id, void **args, uint32_t nargs,
+                      uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
   load_module();
   char name[40];
   CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  if (rec_kernel(fn, args, nargs, gx, gy, block, smem))
+    return;
   if (k && joined[k] != legacy_ops) {
     event(0, k, 1);
     joined[k] = legacy_ops;
@@ -504,7 +640,7 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
                       uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
   CUdeviceptr da = a, db = b, dout = out;
   void *args[] = {&da, &db, &dout};
-  launch_on(0, id, args, gx, gy, block, smem);
+  launch_on(0, id, args, 3, gx, gy, block, smem);
 }
 
 /* The S54 launch (plan-s54 §4): `nptr` device pointers, on chain `stream`. */
@@ -521,13 +657,14 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr,
     d[i] = ptrs[i];
     args[i] = &d[i];
   }
-  launch_on(slot_of(stream), id, args, gx, gy, block, smem);
+  launch_on(slot_of(stream), id, args, nptr, gx, gy, block, smem);
 }
 
 /* `d2h` on chain `stream` (its producer's): queued behind that chain's
  * kernels, and waited for, so the host sees the values on return. */
 void mapal_gpu_d2h_on(uint32_t stream, void *h, uint64_t d, uint64_t off,
                       uint64_t bytes) {
+  rec_flush();
   unsigned k = slot_of(stream);
   double t0 = now_ms();
   CK(cuMemcpyDtoHAsync(h, (CUdeviceptr)(d + off), bytes, streams[k]));
@@ -600,6 +737,7 @@ static int pinned_src(const void *h) {
  * the return: it takes the synchronous copy. */
 void mapal_gpu_h2d_async(uint64_t d, const void *h, uint64_t bytes) {
   load_module();
+  rec_flush();
   if (!(stage_buf && bytes <= STAGE_SLOT) && pinned_src(h)) {
     mapal_gpu_h2d(d, h, bytes);
     return;
@@ -638,6 +776,7 @@ void mapal_gpu_h2d_async(uint64_t d, const void *h, uint64_t bytes) {
 void mapal_gpu_h2d_on(uint32_t stream, uint64_t d, const void *h,
                       uint64_t bytes) {
   load_module();
+  rec_flush();
   unsigned k = slot_of(stream);
   int staged = stage_buf && bytes <= STAGE_SLOT;
   if (!staged && pinned_src(h)) {
@@ -686,6 +825,11 @@ void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
                          uint32_t gx, uint32_t gy, uint32_t block,
                          uint32_t smem, uint64_t win, uint64_t win_bytes) {
   load_module();
+  if (rec.on) {
+    /* In a region the window is dropped: a policy, never a value. */
+    mapal_gpu_launch(id, a, b, out, gx, gy, block, smem);
+    return;
+  }
   static int ready;
   if (!ready) {
     CUdevice dev;
@@ -768,6 +912,8 @@ void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
   uint64_t count = n;
   void *args[] = {&dout, &count};
   unsigned grid = (unsigned)((n + MAPAL_GEN_THREADS - 1) / MAPAL_GEN_THREADS);
+  if (rec_kernel(fn, args, 2, grid, 1, MAPAL_GEN_THREADS, 0))
+    return;
   double t0 = now_ms();
   CK(cuLaunchKernel(fn, grid, 1, 1, MAPAL_GEN_THREADS, 1, 1, 0, 0, args, 0));
   legacy_ops++;
@@ -787,6 +933,7 @@ void mapal_gpu_gen(uint64_t id, uint64_t out, uint64_t n) {
 void mapal_gpu_free(uint64_t *slot) {
   if (!*slot)
     return;
+  rec_flush();
   if (arena_member(slot)) {
     *slot = 0;
     return;
@@ -814,6 +961,7 @@ void mapal_gpu_free(uint64_t *slot) {
  * launch is after the read — every operand built in its kernel — would
  * otherwise time the context inside its clock): it is joined. */
 void mapal_gpu_sync(void) {
+  rec_flush();
   if (init_state == 1)
     load_module();
   if (init_state == 2) {
@@ -851,11 +999,11 @@ static void site_run(void *e, uint32_t i) {
     mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws)
     d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
-  launch_on(k, c->id, args, c->gx, c->gy, c->block, c->smem);
+  launch_on(k, c->id, args, x->nptr, c->gx, c->gy, c->block, c->smem);
   if (c->ws) {
     CUdeviceptr r[3] = {d[x->out], 0, x->ptrs[x->out]};
     void *ra[3] = {&r[0], &r[1], &r[2]};
-    launch_on(k, c->rid, ra, c->rgx, 1, c->rblock, 0);
+    launch_on(k, c->rid, ra, 3, c->rgx, 1, c->rblock, 0);
   }
 }
 
@@ -901,7 +1049,208 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
   for (uint32_t p = 0; p < nptr; p++)
     safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
   struct choice_dev d = {site_run, site_timed, site_warm, &x};
+  if (rec.on && !choice_known(cands, n))
+    rec_flush();
   choice_site(site, flags, n, cands, safe, &d);
+}
+
+/* compile-time-graph B: the region's executable graphs, one per topology
+ * (nodes, functions, geometry, edges): built at the first trip of that shape,
+ * replayed after, each launch patching the nodes whose arguments changed. */
+struct rexec {
+  uint64_t rid, sig;
+  CUgraph g;
+  CUgraphExec x;
+  int n;
+  CUgraphNode h[REG_NODES];
+  struct rnode at[REG_NODES];
+};
+static struct rexec *rx;
+static size_t n_rx, cap_rx;
+static uint64_t refused_rid[64];
+static unsigned n_refused;
+
+static uint64_t rec_sig(void) {
+  uint64_t h = CHOICE_FNV0;
+  for (int i = 0; i < rec.n; i++) {
+    const struct rnode *x = &rec.nodes[i];
+    uint64_t f[9] = {(uint64_t)x->kind, (uint64_t)(uintptr_t)x->fn, x->gx, x->gy,
+                     x->block, x->smem, x->nargs, x->kind == RN_MEMSET ? x->bytes : 0,
+                     (uint64_t)x->ndeps};
+    h = choice_fnv(f, sizeof f, h);
+    h = choice_fnv(x->deps, (size_t)x->ndeps * sizeof x->deps[0], h);
+  }
+  return h;
+}
+
+static void memset_params(const struct rnode *x, CUDA_MEMSET_NODE_PARAMS *m) {
+  memset(m, 0, sizeof *m);
+  m->dst = x->dst;
+  m->value = 0;
+  int w4 = x->bytes % 4 == 0 && x->dst % 4 == 0;
+  m->elementSize = w4 ? 4 : 1;
+  m->width = w4 ? x->bytes / 4 : x->bytes;
+  m->height = 1;
+}
+
+static void kernel_params(const struct rnode *x, CUDA_KERNEL_NODE_PARAMS *p, void **a,
+                          uint64_t *v) {
+  memset(p, 0, sizeof *p);
+  for (uint32_t i = 0; i < x->nargs; i++) {
+    v[i] = x->args[i];
+    a[i] = &v[i];
+  }
+  p->func = x->fn;
+  p->gridDimX = x->gx;
+  p->gridDimY = x->gy;
+  p->gridDimZ = 1;
+  p->blockDimX = x->block;
+  p->blockDimY = 1;
+  p->blockDimZ = 1;
+  p->sharedMemBytes = x->smem;
+  p->kernelParams = a;
+}
+
+static struct rexec *rec_build(uint64_t rid, uint64_t sig) {
+  struct rexec e;
+  memset(&e, 0, sizeof e);
+  e.rid = rid;
+  e.sig = sig;
+  e.n = rec.n;
+  if (cuGraphCreate(&e.g, 0) != CUDA_SUCCESS)
+    return 0;
+  for (int i = 0; i < rec.n; i++) {
+    const struct rnode *x = &rec.nodes[i];
+    CUgraphNode d[REG_NODES];
+    for (int j = 0; j < x->ndeps; j++)
+      d[j] = e.h[x->deps[j]];
+    CUresult r;
+    if (x->kind == RN_MEMSET) {
+      CUDA_MEMSET_NODE_PARAMS m;
+      memset_params(x, &m);
+      r = cuGraphAddMemsetNode(&e.h[i], e.g, d, (size_t)x->ndeps, &m, ctx);
+    } else {
+      CUDA_KERNEL_NODE_PARAMS p;
+      void *a[16];
+      uint64_t v[16];
+      kernel_params(x, &p, a, v);
+      r = cuGraphAddKernelNode(&e.h[i], e.g, d, (size_t)x->ndeps, &p);
+    }
+    if (r != CUDA_SUCCESS) {
+      cuGraphDestroy(e.g);
+      return 0;
+    }
+    e.at[i] = *x;
+  }
+  if (cuGraphInstantiate(&e.x, e.g, 0) != CUDA_SUCCESS) {
+    cuGraphDestroy(e.g);
+    return 0;
+  }
+  if (n_rx == cap_rx) {
+    cap_rx = cap_rx ? 2 * cap_rx : 8;
+    rx = realloc(rx, cap_rx * sizeof *rx);
+    if (!rx)
+      exit(102);
+  }
+  rx[n_rx] = e;
+  tot.n_graph_inst++;
+  return &rx[n_rx++];
+}
+
+static void rec_patch(struct rexec *e) {
+  for (int i = 0; i < e->n; i++) {
+    const struct rnode *x = &rec.nodes[i];
+    struct rnode *was = &e->at[i];
+    if (x->kind == RN_MEMSET) {
+      if (x->dst == was->dst)
+        continue;
+      CUDA_MEMSET_NODE_PARAMS m;
+      memset_params(x, &m);
+      CK(cuGraphExecMemsetNodeSetParams(e->x, e->h[i], &m, ctx));
+    } else {
+      if (!memcmp(x->args, was->args, x->nargs * sizeof x->args[0]))
+        continue;
+      CUDA_KERNEL_NODE_PARAMS p;
+      void *a[16];
+      uint64_t v[16];
+      kernel_params(x, &p, a, v);
+      CK(cuGraphExecKernelNodeSetParams(e->x, e->h[i], &p));
+    }
+    *was = *x;
+    tot.n_graph_patch++;
+  }
+}
+
+void mapal_gpu_region_begin(uint64_t rid) {
+  load_module();
+  if (graph_mode < 0) {
+    const char *g = getenv("MAPAL_GPU_GRAPH");
+    graph_mode = g ? atoi(g) : 1;
+  }
+  if (!graph_mode)
+    return;
+  for (unsigned i = 0; i < n_refused; i++)
+    if (refused_rid[i] == rid)
+      return;
+  rec_flush();
+  rec.on = 1;
+  rec.rid = rid;
+  rec.n = 0;
+  rec.op = -1;
+  rec.cur = -1;
+  rec.untagged = -1;
+  for (int i = 0; i < REG_OPS; i++)
+    rec.last[i] = -1;
+}
+
+/* The op the next nodes belong to (`op` < 0: untagged), the ops it waits for
+ * (`deps`) and the ops its zero pass waits for (`deps_out`), as bit masks. */
+void mapal_gpu_tag(int32_t op, uint64_t deps, uint64_t deps_out) {
+  rec.op = op >= 0 && op < REG_OPS ? op : -1;
+  rec.deps = deps;
+  rec.deps_out = deps_out;
+  rec.cur = -1;
+}
+
+void mapal_gpu_region_end(uint64_t rid) {
+  if (!rec.on)
+    return;
+  rec.on = 0;
+  rec.op = -1;
+  if (!rec.n)
+    return;
+  double t0 = now_ms();
+  uint64_t sig = rec_sig();
+  struct rexec *e = 0;
+  for (size_t i = 0; i < n_rx; i++)
+    if (rx[i].rid == rid && rx[i].sig == sig) {
+      e = &rx[i];
+      break;
+    }
+  if (e) {
+    rec_patch(e);
+  } else if (!(e = rec_build(rid, sig))) {
+    /* A graph is a schedule, never a value: the region runs eagerly. */
+    if (n_refused < 64)
+      refused_rid[n_refused++] = rid;
+    if (trace)
+      fprintf(stderr, "mapal_gpu_trace op=graph refused region=%016llx\n",
+              (unsigned long long)rid);
+    rec.on = 1;
+    rec_flush();
+    return;
+  }
+  CK(cuGraphLaunch(e->x, streams[0]));
+  legacy_ops++;
+  last_kernel[0] = 0;
+  tot.n_graph++;
+  tot.n_graph_nodes += (unsigned long long)rec.n;
+  if (trace == 1)
+    CK(cuCtxSynchronize());
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=graph region=%016llx nodes=%d ms=%.3f\n",
+            (unsigned long long)rid, rec.n, now_ms() - t0);
+  rec.n = 0;
 }
 
 /* One site, whole round trip (the S52 ABI): composed of the split entries. */

@@ -195,6 +195,23 @@ pub(crate) const S54_DECLS: [(&str, &str); 7] = [
     ),
 ];
 
+/// compile-time-graph B: the launch-region entries, each declared only where
+/// called (the OFF arm's text is the emission before them).
+pub(crate) const REGION_DECLS: [(&str, &str); 3] = [
+    (
+        "@mapal_gpu_region_begin(",
+        "declare void @mapal_gpu_region_begin(i64)\n",
+    ),
+    (
+        "@mapal_gpu_region_end(",
+        "declare void @mapal_gpu_region_end(i64)\n",
+    ),
+    (
+        "@mapal_gpu_tag(",
+        "declare void @mapal_gpu_tag(i32, i64, i64)\n",
+    ),
+];
+
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
 /// launches it with exactly this many, so the two must agree.
 /// ponytail: the naive kernel's literal, for the same reason (a one-element-
@@ -1043,7 +1060,7 @@ pub(crate) fn plan_cands(
 }
 
 /// The cost model's reading of launch `l` folding the site as `c`.
-fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
+pub(crate) fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> PlanShape {
     // A cp.async pipeline keeps `stages − 1` panels in flight; the
     // register-staged tile its one prefetch panel; the naive kernel one
     // unrolled trip.
