@@ -26,10 +26,12 @@ system NumPy links reference cblas, 250 ms at 1024² — not a valid opponent), 
 
 ## Known invalid / open
 
-- **CPU NN and matmul NumPy legs are cold single iterations per process** (`iters=1`). Warm, NumPy nn2 d=1024 is
-  1.52 ms vs 8.70 ms in the harness, so the NN "1.3–5.4× Mapal" ratios are a boundary artifact, and the matmul
-  ratios are biased toward Mapal too. Open until both legs are timed warm.
-- Mapal threaded < Mapal 1t on conv2d / saxpy / reduce: the Linux `native` profile has no dispatch-cost facts.
+- **The CPU NN NumPy leg was a cold single iteration per process** (`nn_numpy.py`, no warm-up). Warm, NumPy nn2
+  d=1024 is 1.52 ms vs 8.70 ms in the harness, so the NN "1.3–5.4× Mapal" ratios were a boundary artifact. The
+  matmul NumPy leg was warm (`numpy_bench.py` runs 3 untimed passes); its ratios stand at 64 threads. Corrected
+  tables (warm NumPy, each side at its best thread count — OpenBLAS is faster at 32 threads): `cpu-analysis.md`.
+- Mapal threaded < Mapal 1t on conv2d / saxpy / reduce: the Linux `native` profile had no dispatch-cost facts
+  (fixed in 1ffe0137, `cpu-analysis.md`).
 - GPU: no timing difference here is explained from SASS yet (CLAUDE.md Explain rule): every ratio is "open".
   `rtx-5080` is an UNMEASURED profile (no DeviceCost; sm_120 rung rows come from rtx-5090).
 
