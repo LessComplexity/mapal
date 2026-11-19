@@ -32,8 +32,10 @@ system NumPy links reference cblas, 250 ms at 1024² — not a valid opponent), 
   tables (warm NumPy, each side at its best thread count — OpenBLAS is faster at 32 threads): `cpu-analysis.md`.
 - Mapal threaded < Mapal 1t on conv2d / saxpy / reduce: the Linux `native` profile had no dispatch-cost facts
   (fixed in 1ffe0137, `cpu-analysis.md`).
-- GPU: no timing difference here is explained from SASS yet (CLAUDE.md Explain rule): every ratio is "open".
-  `rtx-5080` is an UNMEASURED profile (no DeviceCost; sm_120 rung rows come from rtx-5090).
+- GPU: explained in `gpu-analysis.md` (CUPTI traces + SASS of both sides). The largest share of the small-program
+  losses is the runtime's first site decision (wisdom read) inside the timed region, 50–90 us per program; the
+  kernel causes, the calibrated `rtx-5080` DeviceCost (`calib/`) and its neutral A/B are there. Rows whose working set
+  fits the 64 MB L2 compare an L2-warm Mapal with torch's flushed L2: open.
 
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

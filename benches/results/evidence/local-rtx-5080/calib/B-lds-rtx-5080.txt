@@ -1,0 +1,6 @@
+lds width=32 bits thr=256 bytes_per_clk=64.0 gbs_per_sm=168.9
+lds width=32 bits thr=1024 bytes_per_clk=59.0 gbs_per_sm=155.8
+lds width=64 bits thr=256 bytes_per_clk=126.4 gbs_per_sm=333.8
+lds width=64 bits thr=1024 bytes_per_clk=116.8 gbs_per_sm=308.5
+lds width=128 bits thr=256 bytes_per_clk=127.7 gbs_per_sm=337.2
+lds width=128 bits thr=1024 bytes_per_clk=113.4 gbs_per_sm=299.5

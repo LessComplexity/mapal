@@ -4551,16 +4551,56 @@ pub const RTX_5090: TargetProfile = TargetProfile {
 /// l2_bytes=67108864 max_blocks_per_sm=24 smem_per_sm=102400
 /// smem_per_block_optin=101376 regs_per_sm=65536 max_threads_per_sm=1536` —
 /// Ada's per-SM facts ([`ADA_SM`]) with this part's SM count and L2.
-/// **UNMEASURED** — not in [`GPU_MEASURED`]: no [`DeviceCost`] (no `place` or
-/// plan-cost rates), so every capable site is a device site and its plans stay
-/// the rules'; its rung defaults are the measured `sm_120` part's (`rtx-5090`)
-/// rows, by [`TargetProfile::gpu_rungs_on`]'s architecture rule.
+/// Device rates calibrated 2026-11-19 (local-rtx-5080 gpu-analysis), same
+/// methods as `rtx-5090`'s; tables in `benches/results/evidence/local-rtx-5080/calib/`.
+/// Not in [`GPU_MEASURED`]: no rung sweep was run on this part, so its rung
+/// defaults stay the measured `sm_120` part's (`rtx-5090`) rows, by
+/// [`TargetProfile::gpu_rungs_on`]'s architecture rule.
 pub const RTX_5080: TargetProfile = TargetProfile {
     name: "rtx-5080",
     machine: Machine::Gpu(Gpu {
         arch: "sm_120",
         sms: 84,
         l2_bytes: 64 * 1024 * 1024,
+        // `place`, measured: mm_4096 contract cell 4.269 ms = 32.2 Tflop/s
+        // (`gpu/gap-run2.md` run, `mm_4096x4096x4096_c`); pt_pj_m1_n2048_k7168
+        // site kernel 23 us under MAPAL_GPU_TRACE = 2553 B/ns (its 58.7 MB of
+        // weights are L2-resident on 64 MB: an L2 rate, not DRAM); pt_pc_64
+        // all-device iter 0.0334 ms (median of 21) / 3 sites.
+        cost: Some(DeviceCost {
+            flops_per_ns: 32200,
+            bytes_per_ns: 2553,
+            launch_ns: 11130,
+            // plan-cost, measured (`calib/E1-rtx-5080.txt`, plan-cost E1's
+            // calib.cu / calib2.cu, 3 runs): issue: empty-kernel launch back to
+            // back, 1.69 us [1.68–1.75]; gap: CUPTI device gap between dependent
+            // kernels of pt_loopmm_1024_8 / pt_rt_mlp2_1024, median 0.26 us;
+            // zero: CUPTI memset 1 MB device time 1024 ns (`memset-device-ns-*.tsv`)
+            // less 1 MB at the L2 rate (233 ns); atomic: f32 RED, M = 262144,
+            // S = 2…64, 388–403 Gatom/s; l2: `__ldcg` 16–48 MB plateau
+            // 4.45–4.62 TB/s; dram: `__ldcg` 536 MB 894 GB/s, calib B's DRAM
+            // peak 899 GB/s (the 2 GB point reads 751: open); lat: calib B,
+            // bytes in flight over the achieved DRAM rate below 90 % of peak,
+            // median 573 ns [IQR 557–604] over 125 points (`B-bw-rtx-5080.tsv`;
+            // the L2 one 328 ns). eff_max_pm / eff_half: `rtx-5090`'s fit (the
+            // same sm_120 SM; a per-SM fraction of FFMA peak) — not refit here.
+            issue_ns: 1690,
+            gap_ns: 260,
+            zero_ns: 790,
+            atomic_ops_per_ns: 400,
+            l2_bytes_per_ns: 4500,
+            dram_bytes_per_ns: 890,
+            eff_max_pm: 800,
+            eff_half: 6,
+            lat_ns: 573,
+            // lsu: calib B `lds`, LDS.32 at 256 threads 64.0 B/clk/SM = 0.5
+            // warp-instructions a clock (`B-lds-rtx-5080.txt`).
+            lsu_ipc_pm: 500,
+        }),
+        // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
+        // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
+        fp32_lanes: 128,
+        clock_khz: 2_450_000,
         ..ADA_SM
     }),
     ..GENERIC
