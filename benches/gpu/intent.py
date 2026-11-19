@@ -30,6 +30,11 @@ INTENT = {
     'face-separate': dict(applies=SCALAR + " and plan.face == 'SeparateMulAdd'", on=[
         ('PTX hot loop: mul.rn + add.rn pairs, no fma', 'ptx.hot.fma == 0 and ptx.hot.mul > 0 and ptx.hot.mul == ptx.hot.add'),
         ('SASS hot loop: FMUL + FADD, never fused by ptxas', 'sass.hot.ffma == 0 and sass.hot.fmul > 0')]),
+    # fold-algebra: a scalar tile kernel's step is a `step_algebra` FMA pair (`acc + a·b`, the product read
+    # once); where the face contracts it fuses whatever B's lane stride or radix form (`face-fma` then checks the
+    # PTX / SASS). The OFF arm (`--no-fma-pairs`) has no static signature here: its evidence is the arm's diff.
+    'fma-pairs': dict(applies=SCALAR + " and contract", on=[
+        ("a contracting face's scalar tile fuses its step (the step algebra's pair)", "plan.face == 'OrderedFma'")]),
     'face-registers': dict(applies=TILE, on=[
         ('every tm*tn accumulator live across the k loop (SROA kept them in registers)', 'sass.hot.acc >= plan.tm * plan.tn'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0'),

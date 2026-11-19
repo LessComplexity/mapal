@@ -832,6 +832,17 @@ pub struct GpuArms {
     /// it cuts `k / S` whole — `plan-cost`'s argmin among full-tile plans, one
     /// site candidate (`profile::CHOICE_AXES`). Never a flag.
     pub full: bool,
+    /// fold-algebra: the step algebra's product–accumulate pairs fuse where the
+    /// face contracts — `contract` on the host's (and device cells') pairs, and
+    /// every tile site's step fused on the device whatever its lane stride.
+    /// `false` (`--no-fma-pairs`) is the OFF arm: separate generic steps and the
+    /// unit-lane / radix rule. One switch for both: the host oracle and the
+    /// device realize the same arithmetic.
+    pub pairs: bool,
+    /// fold-algebra: a fold step the step algebra lets regroup takes `reassoc`
+    /// where the order is free (lane partials + a tree). `false`
+    /// (`--no-fold-regroup`) is the OFF arm.
+    pub regroup: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -847,6 +858,8 @@ impl Default for GpuArms {
             free: false,
             site_cands: SITE_CANDS,
             full: false,
+            pairs: true,
+            regroup: true,
         }
     }
 }
@@ -1382,6 +1395,21 @@ fn emit_module(
     // predicate: they are decided before any body exists.)
     if funcs.contains("@mapal_rt_alloc") {
         out.push_str(HEAP_DECLS);
+    }
+    // fold-algebra: an explicit-face pair is one `llvm.fma` (gated on the call).
+    for (call, decl) in [
+        (
+            "@llvm.fma.f32(",
+            "declare float @llvm.fma.f32(float, float, float)\n",
+        ),
+        (
+            "@llvm.fma.f64(",
+            "declare double @llvm.fma.f64(double, double, double)\n",
+        ),
+    ] {
+        if funcs.contains(call) {
+            out.push_str(decl);
+        }
     }
     // Same rule for the SME leg: the emitted call IS the requirement, so the
     // three intrinsic declarations and the one streaming panel kernel appear

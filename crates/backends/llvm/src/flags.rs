@@ -17,6 +17,10 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // order are the default; `--contract` survives as the steps flag.
         "--contract" => opts.contract = true,
         "--no-contract" => opts.contract = false,
+        // fold-algebra OFF arms: no product–accumulate fusion from the step
+        // algebra (host pairs, device strided tiles); no `reassoc` on fold steps.
+        "--no-fma-pairs" => opts.gpu.pairs = false,
+        "--no-fold-regroup" => opts.gpu.regroup = false,
         "--exact" => {
             opts.contract = false;
             opts.order = Order::Sequential;

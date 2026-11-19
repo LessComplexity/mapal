@@ -406,9 +406,18 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             _ => &[],
         };
         let target = format!("--target={part}");
-        for f in [target.as_str(), "--host=x86-64-v3", "--cands=1"]
-            .iter()
-            .chain(face_flags)
+        // fold-algebra changes the default / contract faces' arithmetic by
+        // design (`step_algebra` pairs and regroups); with its two OFF arms the
+        // emission is the pre-sprint one byte for byte, which is what this pins.
+        for f in [
+            target.as_str(),
+            "--host=x86-64-v3",
+            "--cands=1",
+            "--no-fma-pairs",
+            "--no-fold-regroup",
+        ]
+        .iter()
+        .chain(face_flags)
         {
             assert!(mapal_backend_llvm::flags::apply(&mut opts, f).expect("a flag"));
         }

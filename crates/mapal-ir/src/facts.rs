@@ -16,7 +16,7 @@ use slotmap::SecondaryMap;
 use crate::algo::{
     BoundsProof, CellSite, Delta, ElemPlan, EmissionPlan, FootprintPlan, GuardSite, LastUsePlan,
     LinearSite, LoopPlan, LoopScc, MovePlan, PathPlan, PrecisionPlan, RadixForm, RowFoldSite,
-    TilePlan, TileSite, TripSplit,
+    StepAlgebra, TilePlan, TileSite, TripSplit,
 };
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId};
 
@@ -30,6 +30,7 @@ pub(crate) struct FuncFacts {
     pub(crate) radix_plan: OnceLock<SecondaryMap<ObjectId, RadixForm>>,
     pub(crate) tile_plan_radix: OnceLock<SecondaryMap<MorphismId, TileSite>>,
     pub(crate) precision_plan: OnceLock<PrecisionPlan>,
+    pub(crate) step_algebra: OnceLock<StepAlgebra>,
     pub(crate) move_plan: OnceLock<MovePlan>,
     pub(crate) row_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
     pub(crate) whole_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,

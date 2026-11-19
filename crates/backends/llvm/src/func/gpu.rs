@@ -354,18 +354,21 @@ pub(crate) enum Arithmetic {
 }
 
 impl Arithmetic {
-    fn scalar(site: &TileSite, contract: bool, free: bool) -> Self {
-        // Strided-lane sites are host maps whose step stays separate even
-        // under Contract. Device placement must preserve that arithmetic.
-        // recurrence-precision `radix-tile`: a mixed-radix site is device-only
-        // too — the host realizes its fold as that map, separate steps, which
-        // a sequential or fixed face's oracle replays (rtx-4090 smoke: convmc
-        // `_c` differed in the last bits with the fused step); where the order
-        // is free the fused step, its bound ADR-0040 D2's.
-        let fused = match site.radix {
-            Some(_) => free,
-            None => site.b.clane == 1,
-        };
+    fn scalar(site: &TileSite, contract: bool, free: bool, pairs: bool) -> Self {
+        // fold-algebra: a tile site's step is `acc + a·b` with the product read
+        // once — a `step_algebra` FMA pair by construction — and the host fuses
+        // every such pair under `contract` (`FnEmit::emit_arith`, the same
+        // emitter the device cells use), so the device fuses whatever B's lane
+        // stride or radix form: admission is the algebra, not the geometry.
+        // OFF arm (`--no-fma-pairs`): the host's generic steps stay separate,
+        // so a strided-lane site does too; a radix site fuses where the order
+        // is free (recurrence-precision `radix-tile`: its `_c` oracle replays
+        // separate steps).
+        let fused = pairs
+            || match site.radix {
+                Some(_) => free,
+                None => site.b.clane == 1,
+            };
         if contract && fused {
             Self::OrderedFma
         } else {
@@ -553,7 +556,7 @@ pub(crate) fn launch_split(
             }
         }
     }
-    let arithmetic = Arithmetic::scalar(site, contract, arms.free);
+    let arithmetic = Arithmetic::scalar(site, contract, arms.free, arms.pairs);
     let rungs = rungs_at(profile, wps, arithmetic.face(), arms);
     // tile-efficiency T2: `a`'s panel rows run along `k` (`vector_a`), so it
     // can stay untransposed — where one quarter-warp's fragment read is one
@@ -6345,29 +6348,51 @@ mod tests {
 
     const PARTS: [&TargetProfile; 4] = [&RTX_4090, &H100_PCIE, &H100, &RTX_5090];
 
+    /// fold-algebra: a strided-lane site's step is an FMA pair of the step
+    /// algebra, and the host fuses it under `contract` — so the device does
+    /// too, on the Contract policy. The OFF arm (`--no-fma-pairs`) keeps the
+    /// unit-lane rule: separate `fmul` + `fadd`, the Exact policy.
     #[test]
-    fn actual_arithmetic_strided_contract_selects_exact_policy() {
+    fn strided_contract_fuses_from_the_step_algebra() {
         let s = site(1, 256, 128, true, false, Ty::f32());
-        let arms = crate::GpuArms::default();
-        let text = kernel_text(
-            "strided",
-            &s,
-            &H100_PCIE,
-            true,
-            arms,
-            None,
-            false,
-            None,
-            Combine::None,
-        );
-        assert!(text.contains(" = fmul float ") && text.contains(" = fadd float "));
-        assert!(!text.contains("call float @llvm.fma"));
-        let exact = launch(&s, &H100_PCIE, false, arms, None);
-        let requested = launch(&s, &H100_PCIE, true, arms, None);
-        assert_eq!(
-            requested.rungs, exact.rungs,
-            "separate arithmetic needs Exact policy"
-        );
+        for pairs in [true, false] {
+            let arms = crate::GpuArms {
+                pairs,
+                ..crate::GpuArms::default()
+            };
+            let text = kernel_text(
+                "strided",
+                &s,
+                &H100_PCIE,
+                true,
+                arms,
+                None,
+                false,
+                None,
+                Combine::None,
+            );
+            assert_eq!(text.contains("call float @llvm.fma"), pairs);
+            assert_eq!(
+                text.contains(" = fmul float ") && text.contains(" = fadd float "),
+                !pairs
+            );
+            let exact = launch(&s, &H100_PCIE, false, arms, None);
+            let requested = launch(&s, &H100_PCIE, true, arms, None);
+            assert_eq!(
+                requested.arithmetic,
+                if pairs {
+                    Arithmetic::OrderedFma
+                } else {
+                    Arithmetic::SeparateMulAdd
+                }
+            );
+            if !pairs {
+                assert_eq!(
+                    requested.rungs, exact.rungs,
+                    "separate arithmetic needs Exact policy"
+                );
+            }
+        }
     }
 
     #[test]
@@ -6643,10 +6668,13 @@ mod tests {
                     .parse()
                     .unwrap();
                 assert_eq!(flags & GPU_INIT_PDL != 0, wait);
-                for (s, expected) in sites
-                    .iter()
-                    .zip([Arithmetic::SeparateMulAdd, Arithmetic::OrderedFma])
-                {
+                // fold-algebra: the strided site fuses with the pairs arm on.
+                let strided = if arms.pairs {
+                    Arithmetic::OrderedFma
+                } else {
+                    Arithmetic::SeparateMulAdd
+                };
+                for (s, expected) in sites.iter().zip([strided, Arithmetic::OrderedFma]) {
                     assert_eq!(launch(s, p, true, arms, None).arithmetic, expected);
                     let text =
                         kernel_text("mixed", s, p, true, arms, None, false, None, Combine::None);

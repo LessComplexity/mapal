@@ -961,13 +961,15 @@ def check(d, results=None, out=sys.stdout):
                                                        'mod')})
             ns.update(host=D(e['host']), device=D(e['device']), remarks=D(kf.get('remarks', {})),
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
-                      exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'])
+                      exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'],
+                      # fold-algebra: the stem's face contracts (default, `_c`, `_rc`), not `_x` / `_r`.
+                      contract=not re.search(r'_(x|r)$', stem.split('.')[0]))
             kon = set(kf.get('plan', {}).get('rungs_on', [])) | on
             alt = kf.get('mod', {}).get('alt', 0)
             for rung, it in INTENT.items():
                 if it.get('host') or (alt and it.get('rule')):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

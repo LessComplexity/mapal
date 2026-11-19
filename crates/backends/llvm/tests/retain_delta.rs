@@ -540,11 +540,14 @@ fn lane_stride_places_q_kt_on_the_device() {
     assert_eq!(int(&[]), int(&["lane-stride"]));
 }
 
-/// The contract face fuses the step of the sites the CPU tiles; the strided
-/// site is a host map on the CPU, so its device step stays `fmul` + `fadd`
-/// (placement never changes a value).
+/// The contract face (here sequential: a bit-for-bit face) fuses every
+/// site's step — fold-algebra: the strided site's step is a `step_algebra`
+/// FMA pair, which the host map realizes as the same `llvm.fma` the device
+/// tile does, so placement never changes a value. The OFF arm
+/// (`--no-fma-pairs`) keeps the pre-fold-algebra rule: the strided site's
+/// device step stays `fmul` + `fadd`, as the host map's separate steps.
 #[test]
-fn strided_site_keeps_the_host_step_on_the_contract_face() {
+fn strided_site_fuses_the_host_and_device_step_alike() {
     let src = "fn main() {
     128 -> iota -> tk;
     tk -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> kk;
@@ -557,14 +560,39 @@ fn strided_site_keeps_the_host_step_on_the_contract_face() {
 }
 ";
     let ir = lower(src);
-    let (_, dev) = emit_s54(&ir, &[], true);
-    let kernels: Vec<&str> = dev
-        .split("define ptx_kernel void @mapal_tile_")
-        .skip(1)
-        .collect();
-    assert_eq!(kernels.len(), 1);
-    let k = kernels[0].split("\n}\n").next().unwrap();
+    let tile = |dev: &str| {
+        let kernels: Vec<&str> = dev
+            .split("define ptx_kernel void @mapal_tile_")
+            .skip(1)
+            .collect();
+        assert_eq!(kernels.len(), 1);
+        kernels[0].split("\n}\n").next().unwrap().to_string()
+    };
+    let (host, dev) = emit_s54(&ir, &[], true);
+    let k = tile(&dev);
+    assert!(k.contains("@llvm.fma") && !k.contains("fmul float"));
+    assert!(
+        host.contains("call float @llvm.fma.f32("),
+        "the host map's step"
+    );
+    let mut opts = EmitOpts {
+        host: "generic",
+        target: "rtx-4090",
+        contract: true,
+        ..EmitOpts::exact()
+    };
+    opts.gpu.pairs = false;
+    opts.gpu.on.retain_resident = true;
+    opts.gpu.on.delta_h2d = true;
+    opts.gpu.on.lane_stride = true;
+    recurrence_off(&mut opts.gpu);
+    let em = emit_detailed(&ir, &opts).expect("emits");
+    let k = tile(&em.device.expect("a device unit"));
     assert!(!k.contains("@llvm.fma") && k.contains("fmul float") && k.contains("fadd float"));
+    assert!(
+        !em.text.contains("@llvm.fma"),
+        "OFF: the host map's steps stay separate"
+    );
 }
 
 /// `write_delta`'s Same consumers: `xh = x·0.5` (a captures-0 map of the

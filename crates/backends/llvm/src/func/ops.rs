@@ -272,8 +272,46 @@ impl<'a> FnEmit<'a> {
                 Operation::Mod => "frem",
                 _ => unreachable!(),
             };
+            // fold-algebra: the step algebra's pairs. Explicit faces stash a
+            // pair's factors at the `Mul` and fuse them at its add.
+            if self.explicit_fma() {
+                if op == Operation::Mul && self.algebra().fused_mul.contains_key(m) {
+                    self.fma_stash.insert(m, (a.clone(), b.clone(), self.block));
+                }
+                let pair = self.algebra().fma.get(m).copied();
+                let stash = pair.and_then(|p| self.fma_stash.get(p.mul).cloned());
+                if let (Some(p), Some((x, y, blk))) = (pair, stash)
+                    && blk == self.block
+                {
+                    let (mut x, y) = (x, y);
+                    let mut c = if p.slot == 0 { b.clone() } else { a.clone() };
+                    if p.sub {
+                        // `x·y − c` = fma(x, y, −c); `c − x·y` = fma(−x, y, c):
+                        // negation is exact, one rounding either way.
+                        let n = self.tmp();
+                        let v = if p.slot == 0 { &c } else { &x };
+                        self.line(format!("{n} = fneg {llt} {v}"));
+                        if p.slot == 0 {
+                            c = n;
+                        } else {
+                            x = n;
+                        }
+                    }
+                    let bits = if llt == "double" { 64 } else { 32 };
+                    let r = self.tmp();
+                    self.line(format!(
+                        "{r} = call {llt} @llvm.fma.f{bits}({llt} {x}, {llt} {y}, {llt} {c})"
+                    ));
+                    self.store_obj(target, &llt, &r);
+                    return;
+                }
+            }
+            let fl = match op {
+                Operation::Add | Operation::Sub | Operation::Mul => self.step_flags(m),
+                _ => "",
+            };
             let r = self.tmp();
-            self.line(format!("{r} = {fop} {llt} {a}, {b}"));
+            self.line(format!("{r} = {fop}{fl} {llt} {a}, {b}"));
             self.store_obj(target, &llt, &r);
             return;
         }

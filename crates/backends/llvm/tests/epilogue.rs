@@ -417,8 +417,22 @@ fn the_exact_face_device_unit_has_no_contraction() {
         let dev = emit(&p, on()).device.expect("a device unit");
         assert!(!dev.contains(" contract "), "no contract flag");
         assert!(!dev.contains("call float @llvm.fma"), "no fused step");
-        // The contract face fuses the site's step only, never a body's op.
+        // The contract face fuses the site's step, and (fold-algebra) a
+        // body's product–accumulate pair — `epi`'s `v·0.5 + 1.0` — through
+        // the step algebra's `contract` flags, exactly as the host's body
+        // does; `bias` has no product. The OFF arm (`--no-fma-pairs`) fuses
+        // the site's step only, never a body's op.
+        let pair = p == epi();
         let dev = emit_on(&p, "rtx-4090", true, on())
+            .device
+            .expect("a device unit");
+        assert!(dev.contains("call float @llvm.fma"));
+        assert_eq!(dev.contains("fmul contract float"), pair);
+        let nopairs = GpuArms {
+            pairs: false,
+            ..on()
+        };
+        let dev = emit_on(&p, "rtx-4090", true, nopairs)
             .device
             .expect("a device unit");
         assert!(dev.contains("call float @llvm.fma"));

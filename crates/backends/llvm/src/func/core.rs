@@ -76,6 +76,9 @@ impl<'a> FnEmit<'a> {
             heap_ok: false,
             heap_used: false,
             gpu_arms: crate::GpuArms::default(),
+            algebra: None,
+            fma_stash: SecondaryMap::new(),
+            block: 0,
             resident: None,
             dslots: SecondaryMap::new(),
             dvalid: SecondaryMap::new(),
@@ -116,6 +119,39 @@ impl<'a> FnEmit<'a> {
             (true, true, crate::Order::Free) => " reassoc contract",
             (true, true, _) => " contract",
         }
+    }
+
+    /// fold-algebra: the fast-math flags [`mapal_ir::StepAlgebra::flags`]
+    /// gives morphism `m` of this function on this face — the one rule the
+    /// host and the device cells share (` contract`, ` reassoc`, both, none).
+    pub(super) fn step_flags(&mut self, m: MorphismId) -> &'static str {
+        let (contract, free) = (self.contract, self.order == crate::Order::Free);
+        if !contract && !free {
+            return "";
+        }
+        let (pairs, regroup) = (self.gpu_arms.pairs, self.gpu_arms.regroup);
+        let fl = self.algebra().flags(m, contract, free, pairs, regroup);
+        match (fl.reassoc, fl.contract) {
+            (true, true) => " reassoc contract",
+            (true, false) => " reassoc",
+            (false, true) => " contract",
+            (false, false) => "",
+        }
+    }
+
+    /// This function's stored step algebra, read once per emitter.
+    pub(super) fn algebra(&mut self) -> &mapal_ir::StepAlgebra {
+        self.algebra
+            .get_or_insert_with(|| self.ir.step_algebra(self.f))
+    }
+
+    /// fold-algebra: where the face contracts and the order is not free
+    /// (sequential, fixed: a bit-for-bit oracle compares the host with the
+    /// device), a pair is one explicit `llvm.fma` — the device tile's
+    /// `OrderedFma` — not a `contract` flag a target without FMA would not
+    /// fuse. On the free order the flags suffice (any fusion is in the bound).
+    pub(super) fn explicit_fma(&self) -> bool {
+        self.contract && self.gpu_arms.pairs && self.order != crate::Order::Free
     }
 
     /// The site writing `target` runs on the device (S62 `place`).
@@ -218,6 +254,7 @@ impl<'a> FnEmit<'a> {
 
     /// Append a bare block label line (`name:`), no indent.
     pub(crate) fn label_line(&mut self, name: &str) {
+        self.block += 1;
         self.body.push_str(name);
         self.body.push_str(":\n");
     }

@@ -17,7 +17,7 @@ PYTHON="${PYTHON:-python3}"
 SIZES="${SIZES:-1024 2048 4096}"
 ST_SIZES="${ST_SIZES:-1024}"
 CPP="${CPP:-0}"
-EMIT="$ROOT/target/release/examples/emit"
+EMIT="${EMIT:-$ROOT/target/release/examples/emit}"
 RT="$ROOT/target/release/libmapal_rt.a"
 mkdir -p "$OUTDIR/bin" "$OUTDIR/ll" "$OUTDIR/log"
 ulimit -s unlimited 2>/dev/null || ulimit -s hard 2>/dev/null || true

@@ -360,6 +360,15 @@ pub(crate) struct FnEmit<'a> {
     /// The GPU rung arms (S52/S53) — the host needs them because a rung can
     /// change the launch (the prefetch rung's panel depth).
     gpu_arms: crate::GpuArms,
+    /// fold-algebra: this function's stored [`mapal_ir::StepAlgebra`], read
+    /// once per emitter (the fact is computed once per graph).
+    algebra: Option<mapal_ir::StepAlgebra>,
+    /// fold-algebra: a pair's `Mul` operands as SSA values, with the block
+    /// they were loaded in ([`Self::block`]) — the add emits `llvm.fma` from
+    /// them while no block has started since (they dominate it).
+    fma_stash: SecondaryMap<MorphismId, (String, String, u64)>,
+    /// Basic blocks started so far ([`FnEmit::label_line`]).
+    block: u64,
     /// The `k` fold's order (ADR-0040 D1): the device chooser's input
     /// ([`gpu::combine`]) and, on the host, whether `reassoc` rides the
     /// tiled steps ([`FnEmit::fp_flags`]).
