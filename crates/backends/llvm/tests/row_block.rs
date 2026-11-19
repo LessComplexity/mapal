@@ -30,14 +30,30 @@ fn main_of(ir: &CategoryIr) -> FuncId {
 
 /// The emission on `target` and `base`'s face: the emulator's rungs off
 /// (`async`, `pdl`, `streams`, `pinned`; `place` so every capable site is on
-/// the device), `flow` on, the row-block arm `on`, its rows forced to `b`
-/// (0 = derive).
+/// the device), `flow` on, the row-block arm `on` (its rung forced on: the
+/// shipped table keeps it off), its rows forced to `b` (0 = derive).
 fn emission(ir: &CategoryIr, target: &'static str, base: EmitOpts, on: bool, b: u64) -> Emission {
+    emission_off(ir, target, base, on, b, &[])
+}
+
+/// [`emission`] with the rungs `off` off too.
+fn emission_off(
+    ir: &CategoryIr,
+    target: &'static str,
+    base: EmitOpts,
+    on: bool,
+    b: u64,
+    off: &[&str],
+) -> Emission {
     let mut gpu = GpuArms::default();
     gpu.on.flow = true;
     gpu.row_block = on;
+    gpu.on.row_block = on;
     gpu.row_block_b = b;
-    for r in ["place", "async", "pdl", "streams", "pinned"] {
+    for r in ["place", "async", "pdl", "streams", "pinned"]
+        .iter()
+        .chain(off)
+    {
         *gpu.off.rung(r).expect("rung") = true;
     }
     let opts = EmitOpts {
@@ -81,12 +97,13 @@ fn within(got: &str, want: &str) -> bool {
         want.split_whitespace().collect(),
     );
     g.len() == w.len()
-        && g.iter()
-            .zip(&w)
-            .all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
-                (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0),
-                _ => a == b,
-            })
+        && g.iter().zip(&w).all(|(a, b)| {
+            a == b
+                || match (a.parse::<f64>(), b.parse::<f64>()) {
+                    (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0),
+                    _ => false,
+                }
+        })
 }
 
 /// exp(x) for x <= 0 in its natural form (`gen_tiles.py`'s `expo`).
@@ -280,48 +297,64 @@ fn attention_row_block_values_and_launches() {
                 assert_eq!(field(&lines[0], "tiles"), "2");
                 assert_eq!(launches(&on.text), 1, "b={b} {face}: one launch");
                 assert!(l_off >= 3, "OFF: {l_off}");
-                let got = emu::run_emulated(&clang, &on.text, on.device.as_deref().unwrap());
-                match face {
-                    "exact" => assert_eq!(got, rr.output, "b={b} exact"),
-                    _ => assert!(
-                        within(&got, &rr.output),
-                        "b={b}: {got:?} vs {:?}",
-                        rr.output
-                    ),
+                // Free-running threads, then serialized between barriers in
+                // thread order and in reverse (`MAPAL_EMU_SERIAL`).
+                let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap());
+                for mode in ["0", "1", "2"] {
+                    let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+                    match face {
+                        "exact" => assert_eq!(got, rr.output, "b={b} exact serial={mode}"),
+                        _ => assert!(
+                            within(&got, &rr.output),
+                            "b={b} serial={mode}: {got:?} vs {:?}",
+                            rr.output
+                        ),
+                    }
                 }
             }
         }
     }
 }
 
+fn bench(name: &str) -> CategoryIr {
+    let src = std::fs::read_to_string(format!(
+        "{}/../../../benches/algorithms/{name}.mapal",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    lower(&src)
+}
+
+/// The shipped arms on `target` (the emulator's rung offs change the split's
+/// plans), the row-block rung forced on (`rung`), its rows forced to `b`.
+fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emission {
+    let mut gpu = GpuArms::default();
+    gpu.on.row_block = rung;
+    gpu.row_block_b = b;
+    let opts = EmitOpts {
+        target,
+        gpu,
+        ..EmitOpts::default()
+    };
+    emit_detailed(ir, &opts).expect("emits")
+}
+
 /// The rule on the real shape, `pt_attn_1024_64` on the rtx-5080: the group
 /// fits (b = 16, 84 KB) but the plan model keeps the boundary — the unit reads
 /// Kᵀ straight from L2 at half a sector a lane, which the split's tile site
-/// stages (measured: the fused kernel 33.3 us against 29.8 us for the three,
-/// `compile-time-graph.md`). Forced, it is one launch storing `o` alone.
+/// stages (measured: the fused kernel 33.3 us against 31.7 us for the split
+/// kernels, `compile-time-graph.md`). Forced, it is one launch storing `o`
+/// alone. Shipped, the rung is off (the rtx-5090 row of its architecture).
 #[test]
 fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../benches/algorithms/pt_attn_1024_64.mapal"
-    ))
-    .unwrap();
-    let ir = lower(&src);
-    // The shipped arms (the emulator's rung offs change the split's plans).
-    let shipped = |b: u64| {
-        let mut gpu = GpuArms::default();
-        gpu.row_block_b = b;
-        let opts = EmitOpts {
-            target: "rtx-5080",
-            gpu,
-            ..EmitOpts::default()
-        };
-        emit_detailed(&ir, &opts).expect("emits")
-    };
-    let on = shipped(0);
+    let ir = bench("pt_attn_1024_64");
+    let off = shipped(&ir, "rtx-5080", false, 0);
+    assert!(block_lines(&off).is_empty());
+    assert!(!off.text.contains(" row_block="), "{}", off.text);
+    let on = shipped(&ir, "rtx-5080", true, 0);
     assert!(block_lines(&on).is_empty());
     assert!(on.text.contains(" row_block=s:cost"), "{}", on.text);
-    let forced = shipped(16);
+    let forced = shipped(&ir, "rtx-5080", false, 16);
     let lines = block_lines(&forced);
     assert_eq!(lines.len(), 1, "{}", forced.text);
     assert_eq!(launches(&forced.text), 1);
@@ -329,10 +362,245 @@ fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     assert_eq!(field(&lines[0], "smem"), "83968");
 }
 
-/// Generated chains (`testgen::chain_strategy`, not designed on this rule):
-/// every row-block group `unit_plan` finds, forced to the largest `b` its rows
-/// allow, gives the interpreter's values on the exact face, and each formed
-/// group is one launch holding its tiles (the site calls drop by its tiles).
+/// Every GPU part's shipped default forms no row-block unit (the rung's
+/// `GPU_RUNGS_OFF` rows: no realized unit was measured to pay); with the rung
+/// on, a part without plan rates refuses each group `unpriced` (nothing
+/// weighs the unit against the launches it replaces) and a part with them
+/// decides by the model.
+#[test]
+fn row_block_ships_off_and_refuses_unpriced() {
+    let parts = [
+        ("rtx-5080", true),
+        ("rtx-5090", true),
+        ("rtx-4090", true),
+        ("h100-pcie", false),
+        ("h100", false),
+        ("a100", false),
+        ("rtx-3090", false),
+    ];
+    for name in ["pt_attn_1024_64", "px_attn_64_16"] {
+        let ir = bench(name);
+        for (part, priced) in parts {
+            let def = shipped(&ir, part, false, 0);
+            assert!(block_lines(&def).is_empty(), "{name} {part}: shipped");
+            assert!(!def.text.contains(" row_block="), "{name} {part}");
+            let on = shipped(&ir, part, true, 0);
+            let refused: Vec<&str> = on
+                .text
+                .lines()
+                .flat_map(|l| l.split_whitespace())
+                .filter_map(|f| f.strip_prefix("row_block="))
+                .collect();
+            if !priced {
+                assert!(block_lines(&on).is_empty(), "{name} {part}: unpriced");
+                assert!(
+                    !refused.is_empty() && refused.iter().all(|r| r.ends_with(":unpriced")),
+                    "{name} {part}: {refused:?}"
+                );
+            }
+            for l in block_lines(&on) {
+                let (fused, split): (u64, u64) = (
+                    field(&l, "ns_fused").parse().unwrap(),
+                    field(&l, "ns_split").parse().unwrap(),
+                );
+                assert!(fused > 0 && fused <= split, "{name} {part}: {l}");
+            }
+        }
+    }
+}
+
+/// One generated program's row-block checks ([`row_block_on_generated_chains`]).
+#[derive(Default)]
+struct ChainCheck {
+    groups: usize,
+    formed: usize,
+    why: std::collections::BTreeMap<String, usize>,
+    /// Formed units whose row group spans several warps, that fold as a tree,
+    /// split a tile's `k` over a row's spare lanes, take FMA steps, and write
+    /// a row buffer an earlier member of their segment died out of.
+    wide: usize,
+    tree: usize,
+    split: usize,
+    fma: usize,
+    reuse: usize,
+    findings: Vec<String>,
+}
+
+/// The device text of each row-block unit kernel of `em`.
+fn unit_texts(em: &Emission) -> Vec<String> {
+    let dev = em.device.as_deref().unwrap_or("");
+    let lines: Vec<&str> = dev.lines().collect();
+    let mut out = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        if l.starts_with("; mapal.flow kernel=") && l.contains(" rows_per_unit=") {
+            let end = lines[i..]
+                .iter()
+                .position(|x| *x == "}")
+                .map_or(lines.len(), |e| i + e);
+            out.push(lines[i..end].join("\n"));
+        }
+    }
+    out
+}
+
+/// A row group's lanes in a unit kernel's text (`%ll<s> = urem i64 %l, <l>`).
+fn row_group_lanes(text: &str) -> Vec<u64> {
+    text.lines()
+        .filter_map(|l| {
+            let l = l.trim_start();
+            if !l.starts_with("%ll") {
+                return None;
+            }
+            l.split_once(" = urem i64 %l, ")?.1.trim().parse().ok()
+        })
+        .collect()
+}
+
+fn check_chain(clang: &str, z: usize, src: &str) -> ChainCheck {
+    let mut ck = ChainCheck::default();
+    let ir = lower(src);
+    let plan = ir.unit_plan(main_of(&ir));
+    if plan.groups.is_empty() {
+        return ck;
+    }
+    ck.groups = plan.groups.len();
+    // A row member whose buffer's last row occupant before it is a member it
+    // does not read: `unit_plan` freed the buffer at that member's death.
+    let reused = plan.groups.iter().any(|g| {
+        g.members.iter().enumerate().any(|(c, mb)| {
+            let prev = (0..c)
+                .rev()
+                .find(|&p| g.members[p].w > 1 && g.members[p].color == mb.color);
+            mb.w > 1
+                && mb.color.is_some()
+                && prev.is_some_and(|p| !mb.reads.iter().any(|&(_, r)| r == p))
+        })
+    });
+    let bmax = plan
+        .groups
+        .iter()
+        .map(|g| 1u64 << g.rows.trailing_zeros().min(3))
+        .min()
+        .unwrap();
+    let mut bs = vec![1, bmax];
+    bs.dedup();
+    let faces = [
+        ("exact", EmitOpts::exact()),
+        ("default", EmitOpts::default()),
+    ];
+    // The epilogue rung off: a tile with per-cell readers is the group's.
+    let off_rungs = ["epilogue"];
+    let mut runs: Vec<(String, Emission, bool)> = Vec::new();
+    for (face, base) in &faces {
+        let off = emission_off(&ir, "rtx-5080", *base, false, 0, &off_rungs);
+        let l_off = launches(&off.text);
+        for (n, &b) in bs.iter().enumerate() {
+            let on = emission_off(&ir, "rtx-5080", *base, true, b, &off_rungs);
+            let lines = block_lines(&on);
+            if *face == "exact" && n == 0 {
+                for l in on.text.lines().filter(|l| l.contains("mapal.flow.host")) {
+                    for f in l
+                        .split_whitespace()
+                        .filter_map(|f| f.strip_prefix("row_block="))
+                    {
+                        *ck.why
+                            .entry(f.split(':').nth(1).unwrap_or("").to_string())
+                            .or_insert(0) += 1;
+                    }
+                }
+                ck.formed = lines.len();
+            }
+            if lines.is_empty() {
+                continue;
+            }
+            // Each formed group is one launch holding exactly the fact's
+            // members (its tiles included); ON launches no more than OFF.
+            let sizes: Vec<usize> = plan.groups.iter().map(|g| g.members.len()).collect();
+            for l in &lines {
+                let n = field(l, "members").split(';').count();
+                let tiles: usize = field(l, "tiles").parse().unwrap();
+                if !sizes.contains(&n) || tiles == 0 {
+                    ck.findings.push(format!(
+                        "chain#{z} {face} b={b}: unit of {n} members ({tiles} tiles) vs groups {sizes:?}\n{l}"
+                    ));
+                }
+                if *face == "default" && field(l, "tree") != "0" {
+                    ck.tree += 1;
+                }
+            }
+            let (l_on, l_off) = (launches(&on.text), l_off);
+            if l_on > l_off {
+                ck.findings.push(format!(
+                    "chain#{z} {face} b={b}: launches ON {l_on} > OFF {l_off}\n{src}"
+                ));
+            }
+            for t in unit_texts(&on) {
+                ck.wide += usize::from(row_group_lanes(&t).iter().any(|&l| l > 32));
+                ck.split += usize::from(t.lines().any(|l| l.starts_with('T') && l.ends_with("z:")));
+                ck.fma += usize::from(t.contains("@llvm.fma."));
+            }
+            ck.reuse = usize::from(reused);
+            runs.push((format!("{face} b={b}"), on, *face == "exact"));
+        }
+        if !runs.is_empty() {
+            runs.push((format!("{face} off"), off, *face == "exact"));
+        }
+    }
+    if runs.is_empty() {
+        return ck;
+    }
+    let rr = run(&ir, 400_000_000);
+    if !matches!(rr.outcome, Outcome::Done(_)) {
+        return ck;
+    }
+    // The default face's reference beside the interpreter: its OFF arm, the
+    // same realization of everything outside the units (a whole fold that
+    // cancels may leave the interpreter's 1e-4 on either arm).
+    let mut off_default: Option<String> = None;
+    runs.sort_by_key(|(arm, _, _)| !arm.ends_with(" off"));
+    for (arm, em, exact) in &runs {
+        let ex = emu::build_emulated(
+            clang,
+            &em.text,
+            em.device.as_deref().expect("a device unit"),
+        );
+        // Block threads serialized between barriers in thread order and in
+        // reverse: a write and a read no barrier orders meet in one order.
+        for mode in ["1", "2"] {
+            let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+            let ok = match (exact, arm.ends_with(" off")) {
+                (true, _) => got == rr.output,
+                (false, true) => {
+                    off_default.get_or_insert(got.clone());
+                    true
+                }
+                (false, false) => {
+                    within(&got, &rr.output)
+                        || off_default.as_deref().is_some_and(|o| within(&got, o))
+                }
+            };
+            if !ok {
+                ck.findings.push(format!(
+                    "chain#{z} {arm} serial={mode}: {got:?} vs {:?}\n{src}",
+                    rr.output
+                ));
+            }
+        }
+    }
+    ck
+}
+
+/// Generated chains (`testgen::chain_strategy`, and `wide_chain_strategy`'s
+/// rows of up to 128 cells; neither designed on this rule), the epilogue rung
+/// off so a tile with per-cell readers is the group's to take: every
+/// row-block unit formed at one row a block and at the largest `b` (≤ 8) its
+/// rows allow, on the exact face (= the interpreter) and the default face
+/// (within 1e-4: tree folds, k-slice partials, FMA steps), each emulated with
+/// its block's threads serialized between barriers in thread order and in
+/// reverse (`MAPAL_EMU_SERIAL`: a missing barrier is a wrong value on every
+/// run, not a race); each unit holds exactly the fact's members, and ON
+/// launches no more than OFF. The paths the units take are counted and
+/// required, not assumed.
 #[test]
 fn row_block_on_generated_chains() {
     let Some(clang) = emu::clang() else {
@@ -340,79 +608,68 @@ fn row_block_on_generated_chains() {
     };
     let _ = emu::rt_lib();
     let mut runner = TestRunner::deterministic();
-    let strat = testgen::chain_strategy();
-    let (mut groups, mut formed, mut findings) = (0, 0, Vec::new());
+    let (narrow, wide) = (testgen::chain_strategy(), testgen::wide_chain_strategy());
+    let mut srcs: Vec<String> = (0..400)
+        .map(|_| narrow.new_tree(&mut runner).unwrap().current().source())
+        .collect();
+    srcs.extend((0..600).map(|_| wide.new_tree(&mut runner).unwrap().current().source()));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let checks: std::sync::Mutex<Vec<ChainCheck>> = Default::default();
+    std::thread::scope(|s| {
+        for _ in 0..emu::job_slots().max(1) {
+            s.spawn(|| {
+                loop {
+                    let z = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(src) = srcs.get(z) else {
+                        break;
+                    };
+                    let ck = check_chain(&clang, z, src);
+                    checks.lock().unwrap().push(ck);
+                }
+            });
+        }
+    });
+    let checks = checks.into_inner().unwrap();
+    let sum = |f: fn(&ChainCheck) -> usize| checks.iter().map(f).sum::<usize>();
+    let (groups, formed) = (sum(|c| c.groups), sum(|c| c.formed));
+    let (wide, tree, split, fma, reuse) = (
+        sum(|c| c.wide),
+        sum(|c| c.tree),
+        sum(|c| c.split),
+        sum(|c| c.fma),
+        sum(|c| c.reuse),
+    );
     let mut why: std::collections::BTreeMap<String, usize> = Default::default();
-    for z in 0..400 {
-        let src = strat.new_tree(&mut runner).unwrap().current().source();
-        let ir = lower(&src);
-        let plan = ir.unit_plan(main_of(&ir));
-        if plan.groups.is_empty() {
-            continue;
-        }
-        groups += plan.groups.len();
-        let b = plan
-            .groups
-            .iter()
-            .map(|g| 1u64 << g.rows.trailing_zeros().min(3))
-            .min()
-            .unwrap();
-        let on = emission(&ir, "rtx-5080", EmitOpts::exact(), true, b);
-        let off = emission(&ir, "rtx-5080", EmitOpts::exact(), false, 0);
-        let lines = block_lines(&on);
-        for l in on.text.lines().filter(|l| l.contains("mapal.flow.host")) {
-            for f in l
-                .split_whitespace()
-                .filter_map(|f| f.strip_prefix("row_block="))
-            {
-                *why.entry(f.split(':').nth(1).unwrap_or("").to_string())
-                    .or_insert(0) += 1;
-            }
-        }
-        if lines.is_empty() {
-            continue;
-        }
-        formed += lines.len();
-        // Each formed group is one launch holding exactly the fact's members
-        // (its tiles included), and ON launches no more than OFF (whose flow
-        // units may hold a group member beside other cells).
-        let sizes: Vec<usize> = plan.groups.iter().map(|g| g.members.len()).collect();
-        for l in &lines {
-            let n = field(l, "members").split(';').count();
-            let tiles: usize = field(l, "tiles").parse().unwrap();
-            if !sizes.contains(&n) || tiles == 0 {
-                findings.push(format!(
-                    "chain#{z}: unit of {n} members ({tiles} tiles) vs groups {sizes:?}\n{l}"
-                ));
-            }
-        }
-        let (l_on, l_off) = (launches(&on.text), launches(&off.text));
-        if l_on > l_off {
-            findings.push(format!(
-                "chain#{z}: launches ON {l_on} > OFF {l_off}\n{src}"
-            ));
-        }
-        let rr = run(&ir, 400_000_000);
-        if !matches!(rr.outcome, Outcome::Done(_)) {
-            continue;
-        }
-        for (arm, em) in [("on", &on), ("off", &off)] {
-            let got = emu::run_emulated(
-                &clang,
-                &em.text,
-                em.device.as_deref().expect("a device unit"),
-            );
-            if got != rr.output {
-                findings.push(format!(
-                    "chain#{z} {arm}: {got:?} vs {:?}\n{src}",
-                    rr.output
-                ));
-            }
+    for c in &checks {
+        for (k, v) in &c.why {
+            *why.entry(k.clone()).or_insert(0) += v;
         }
     }
-    assert!(findings.is_empty(), "{}", findings.join("\n"));
-    eprintln!("row_block_on_generated_chains: {groups} groups, {formed} formed, refused {why:?}");
-    assert!(formed > 0, "no generated chain formed a row-block unit");
+    let findings: Vec<&String> = checks.iter().flat_map(|c| &c.findings).collect();
+    eprintln!(
+        "row_block_on_generated_chains: {} programs, {groups} groups, {formed} formed, refused {why:?}; \
+         units over several warps {wide}, tree folds {tree}, split tiles {split}, FMA {fma}; programs reusing a freed row buffer {reuse}",
+        srcs.len()
+    );
+    assert!(
+        findings.is_empty(),
+        "{}",
+        findings
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    for (n, what) in [
+        (formed, "formed"),
+        (wide, "a row group over several warps"),
+        (tree, "a tree fold"),
+        (split, "a split tile"),
+        (fma, "an FMA step"),
+        (reuse, "a freed row buffer reused"),
+    ] {
+        assert!(n > 0, "no generated unit took {what}");
+    }
 }
 
 /// `ROWBLOCK_SRC=<file.mapal>` (`ROWBLOCK_B`): the program's values ON

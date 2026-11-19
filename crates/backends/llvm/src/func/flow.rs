@@ -443,7 +443,9 @@ impl<'a> FnEmit<'a> {
             // closed — tile sites and the folds and cells reading their rows —
             // each one unit kernel where the part holds its rows on chip.
             let mut blocks: Vec<Unit> = Vec::new();
-            if self.gpu_arms.row_block {
+            // The part's rung table decides where the rule runs (a forced
+            // `b` measures it anywhere).
+            if self.gpu_arms.row_block && (rungs.row_block || self.gpu_arms.row_block_b > 0) {
                 for grp in self.ir.unit_plan(self.f).groups {
                     let ms: Vec<MorphismId> = grp.members.iter().map(|mb| mb.m).collect();
                     let mut bc = cand.clone();
@@ -932,11 +934,13 @@ impl<'a> FnEmit<'a> {
 
     /// **compile-time-graph A: how many rows a row-block unit holds.** The
     /// powers of two `b` dividing `rows` whose layout ([`block_geo`]) fits the
-    /// part's opt-in shared memory, whose units fill its SMs (`rows / b ≥
-    /// sms`) and whose tile accumulators fit a thread's registers; where the
-    /// part has plan rates, the cheapest of them by [`Self::block_cost`], kept
-    /// only when it beats the split launches. `Err` names the first test
-    /// every `b` failed: `budget`, `fill`, `cost`.
+    /// part's opt-in shared memory and whose tile accumulators fit a thread's
+    /// registers; the cheapest of them by the plan model
+    /// ([`Self::block_cost`]), kept only when it beats the split launches. A
+    /// part without plan rates, or a shape the model cannot price, keeps the
+    /// boundary: nothing else weighs the unit against the launches it
+    /// replaces. `Err` names the last test every `b` failed: `budget`,
+    /// `unpriced`, `cost`.
     fn block_choice(
         &self,
         members: &[UMember],
@@ -1000,12 +1004,7 @@ impl<'a> FnEmit<'a> {
                 best = Some((b, 0, 0));
                 break;
             }
-            // Without plan rates the units must fill the SMs; with them the
-            // model's waves charge an unfilled grid its busiest SM.
-            if self.profile.plan_rates().is_none() && rows / b < gpu.sms {
-                why = "fill";
-                continue;
-            }
+            // The model's waves charge an unfilled grid its busiest SM.
             match self.block_cost(&probe, &geo) {
                 Some((fused, split)) => {
                     why = "cost";
@@ -1013,9 +1012,8 @@ impl<'a> FnEmit<'a> {
                         best = Some((b, fused, split));
                     }
                 }
-                None => {
-                    best.get_or_insert((b, 0, 0));
-                }
+                None if why == "budget" => why = "unpriced",
+                None => {}
             }
         }
         let (b, fused, split) = best.ok_or(why)?;
@@ -2495,6 +2493,20 @@ impl UnitGen<'_> {
         });
     }
 
+    /// Does a member of this segment (`from..=k`) read the on-chip row
+    /// buffer member `k` writes — another member's row in it, earlier in the
+    /// segment, or `k`'s own producer's in place?
+    fn reread(&self, k: usize, from: usize) -> bool {
+        let Some(off) = self.kept[k] else {
+            return false;
+        };
+        self.u.members[from..=k].iter().any(|mb| {
+            mb.srcs
+                .iter()
+                .any(|x| matches!(x, USrc::Member { k: p, .. } if self.kept[*p] == Some(off)))
+        })
+    }
+
     /// compile-time-graph A: the members `ks` (segment `s`, no tile) over
     /// the block's `b` rows, [`row_groups`] rows at once: the block's lanes
     /// split into one group of `lanes ÷ P` per row (row `%i + %r<s> + g`,
@@ -2526,13 +2538,12 @@ impl UnitGen<'_> {
         self.lanes = l;
         self.cur_seg = s;
         for k in ks.clone() {
-            // A cell writing its producer's row in place waits for every
-            // earlier reader of that row (a fold's walk reads all of it).
-            let in_place = self.kept[k].is_some()
-                && self.u.members[k].srcs.iter().any(
-                    |x| matches!(x, USrc::Member { k: p, .. } if self.kept[*p] == self.kept[k]),
-                );
-            if in_place {
+            // A member writing an on-chip row buffer waits for every reader
+            // of the buffer's earlier occupant in this segment: its own
+            // producer's row in place, or a row `unit_plan` freed at an
+            // earlier death (a fold's walk, a per-row cell or a stored-only
+            // cell reads it with no barrier after).
+            if self.reread(k, ks.start) {
                 self.barrier();
             }
             self.phase(k);

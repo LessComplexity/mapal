@@ -25,7 +25,9 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // keep their own launches); no launch regions (every op issued eagerly).
         "--no-row-block" => opts.gpu.row_block = false,
         "--no-launch-graph" => opts.gpu.graph = false,
-        // Measurement only: a row-block unit's rows (0 = derive).
+        // Measurement only: a row-block unit's rows (0 = derive), the rung
+        // table and the cost test aside. `--gpu-on=row-block` runs the rule
+        // (cost-gated) where the part's table keeps it off.
         _ if a.starts_with("--row-block=") => {
             let Ok(b) = a["--row-block=".len()..].parse::<u64>() else {
                 return Err(format!("--row-block expects a row count, got `{a}`"));

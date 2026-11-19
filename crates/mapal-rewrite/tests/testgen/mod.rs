@@ -1794,6 +1794,12 @@ pub struct Chain {
     pub k: u8,
     pub taps: u8,
     pub nodes: Vec<[u8; 4]>,
+    /// Also a row value broadcast along its row beside the column index
+    /// (`v[t ÷ c] + j / 8`: a cell that reads no row of its grid).
+    pub broadcast: bool,
+    /// Every closed-form operand (and iota) made first, before the nodes —
+    /// a program that loads its weights before it computes.
+    pub hoist: bool,
 }
 
 pub fn chain_strategy() -> impl Strategy<Value = Chain> {
@@ -1810,6 +1816,39 @@ pub fn chain_strategy() -> impl Strategy<Value = Chain> {
             k,
             taps,
             nodes,
+            broadcast: false,
+            hoist: false,
+        })
+}
+
+/// [`chain_strategy`]'s grammar on rows up to 128 cells wide and `k` up to
+/// 64 (compile-time-graph A): most rows a power of two of 4..128 cells (a
+/// narrow row's tile splits `k` across the row's spare lanes; a wide row
+/// spans several warps, and so do a row-block unit's row groups and tree
+/// folds), the rest any width in 4..128; with the row
+/// broadcast node ([`Chain::broadcast`]), half of them with their operands
+/// made first ([`Chain::hoist`]).
+pub fn wide_chain_strategy() -> impl Strategy<Value = Chain> {
+    (
+        4u8..17,
+        prop_oneof![
+            3 => prop::sample::select(vec![4u8, 8, 16, 32, 64, 128]),
+            1 => 4u8..17,
+            1 => 17u8..129,
+        ],
+        2u8..65,
+        2u8..6,
+        prop::collection::vec(prop::array::uniform4(any::<u8>()), 2..10),
+        any::<bool>(),
+    )
+        .prop_map(|(r, c, k, taps, nodes, hoist)| Chain {
+            r,
+            c,
+            k,
+            taps,
+            nodes,
+            broadcast: true,
+            hoist,
         })
 }
 
@@ -1844,6 +1883,8 @@ struct ChainCtx {
     pool: Vec<(String, Shape)>,
     iotas: Vec<u64>,
     laws: u32,
+    /// [`Chain::hoist`]: the iotas and laws, emitted before the nodes.
+    pre: Option<String>,
 }
 
 impl ChainCtx {
@@ -1867,7 +1908,11 @@ impl ChainCtx {
     fn iota(&mut self, n: u64) -> String {
         if !self.iotas.contains(&n) {
             self.iotas.push(n);
-            self.s += &format!("    {n} -> iota -> ix{n};\n");
+            let line = format!("    {n} -> iota -> ix{n};\n");
+            match &mut self.pre {
+                Some(pre) => *pre += &line,
+                None => self.s += &line,
+            }
         }
         format!("ix{n}")
     }
@@ -1880,10 +1925,14 @@ impl ChainCtx {
         let name = format!("l{}", self.laws);
         let (mul, add, m) = [(7, 13, 101), (11, 57, 103), (5, 3, 97), (3, 1, 89)][key as usize % 4];
         let div = [7.0, 9.0, 11.0, 13.0][(key as usize / 4) % 4];
-        self.s += &format!(
+        let line = format!(
             "    {it} -> map {{ t -> (t * {mul} + {add}) % {m} - {h} -> widen_f32 -> v; v / {div:.1} }} -> {name};\n",
             h = m / 2
         );
+        match &mut self.pre {
+            Some(pre) => *pre += &line,
+            None => self.s += &line,
+        }
         self.pool.push((name.clone(), sh));
         name
     }
@@ -1926,10 +1975,11 @@ impl Chain {
             c,
             k,
             t,
-            s: String::from("fn main() {\n    0.0 -> zero: f32;\n"),
+            s: String::new(),
             pool: Vec::new(),
             iotas: Vec::new(),
             laws: 0,
+            pre: self.hoist.then(String::new),
         };
         let rc = r * c;
         let mut printed: Vec<String> = Vec::new();
@@ -1938,7 +1988,8 @@ impl Chain {
             let o = format!("n{z}");
             let tm = x.iota(rc);
             // Most nodes read an `r × c` array: start from a tile site.
-            let op = if z == 0 && op % 3 != 0 { 6 } else { op % 16 };
+            let ops = if self.broadcast { 17 } else { 16 };
+            let op = if z == 0 && op % 3 != 0 { 6 } else { op % ops };
             let shape = match op {
                 0 => {
                     let it = x.iota(rc);
@@ -2128,6 +2179,13 @@ impl Chain {
                     printed.push(o);
                     continue;
                 }
+                16 => {
+                    let v = x.pick(Shape::V, p);
+                    x.s += &format!(
+                        "    {tm} -> map {{ t -> t % {c} -> j; j -> widen_f32 -> f; {v}[t / {c}] + f / 8.0 }} -> {o};\n"
+                    );
+                    Shape::M
+                }
                 _ if q % 2 == 0 => {
                     // A cell of one array's row-first cells, read by the next
                     // at the row index: outside the reader's own cell.
@@ -2165,7 +2223,11 @@ impl Chain {
                 x.print(&o, sh);
             }
         }
-        x.s + "}\n"
+        format!(
+            "fn main() {{\n    0.0 -> zero: f32;\n{}{}}}\n",
+            x.pre.unwrap_or_default(),
+            x.s
+        )
     }
 }
 
@@ -2189,6 +2251,10 @@ pub struct TwinProg {
     pub next: u8,
     pub exit: bool,
     pub whole: bool,
+    /// Also a whole fold of the chain read as a number by the next map
+    /// (attention's running max or denominator): device bytes one op of the
+    /// trip makes and a later one reads.
+    pub numbers: bool,
 }
 
 pub fn twin_prog_strategy() -> impl Strategy<Value = TwinProg> {
@@ -2209,7 +2275,13 @@ pub fn twin_prog_strategy() -> impl Strategy<Value = TwinProg> {
             next,
             exit,
             whole,
+            numbers: false,
         })
+}
+
+/// [`twin_prog_strategy`] with whole-fold numbers ([`TwinProg::numbers`]).
+pub fn twin_number_strategy() -> impl Strategy<Value = TwinProg> {
+    twin_prog_strategy().prop_map(|p| TwinProg { numbers: true, ..p })
 }
 
 /// [`TwinProg`]'s source text, `natural` or unrolled. `check = (a, b, len)`
@@ -2271,7 +2343,8 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
     let mut cur = "x".to_string();
     for (z, &[op, a, b]) in p.ops.iter().enumerate() {
         // (Most chains start at a site: a device unit to place.)
-        let op = if z == 0 && op % 4 != 3 { 0 } else { op % 10 };
+        let ops = if p.numbers { 11 } else { 10 };
+        let op = if z == 0 && op % 4 != 3 { 0 } else { op % ops };
         let (x, y) = (cur.clone(), pick(&arrs, b));
         let z = format!("z{z}");
         // A row fold of the chain so far: one value per row (the vector a row
@@ -2308,6 +2381,18 @@ pub fn twin_src(p: &TwinProg, natural: bool, check: Option<(i64, i64, u64)>) -> 
                 Some(format!(
                     "{ind}{x} -> map {{ v -> v * 0.125 + 0.5 -> u; (u > 0.0) -> {{ -true-> u; -false-> 0.0; }} -> c; \
                      (c < 1.0) -> {{ -true-> c; -false-> 1.0; }} -> v0; {pow} }} -> {z};\n"
+                ))
+            }
+            10 => {
+                // A whole fold of the chain (a sum or a max), read as a
+                // number by every cell of the next map.
+                let (seed, step) = match a % 2 {
+                    0 => ("0.0", "acc + e"),
+                    _ => ("-1000000000.0", "(e > acc) -> { -true-> e; -false-> acc; }"),
+                };
+                Some(format!(
+                    "{ind}({seed}, ta) -> fold {{ acc, t -> {x}[t] -> e; {step} }} -> {z}s;\n\
+                     {ind}ta -> map {{ t -> {x}[t] - {z}s / {nn}.0 }} -> {z};\n"
                 ))
             }
             _ => None,

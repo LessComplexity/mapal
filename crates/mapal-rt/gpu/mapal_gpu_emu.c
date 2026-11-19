@@ -7,6 +7,12 @@
  * threads as pthreads meeting at `emu_barrier` over one shared `emu_smem`; the
  * one-thread-per-cell and devgen kernels run thread by thread.
  *
+ * With MAPAL_EMU_SERIAL=1 (2) a threaded block runs its threads one at a
+ * time, each from one barrier or warp meet to the next, in thread order
+ * (reverse thread order): a write and a read of shared memory by two lanes
+ * that no barrier orders then meet in the one order every run, so a missing
+ * barrier is a wrong value, not a race that shows by chance.
+ *
  * compile-time-graph B: a launch region records its ops as `mapal_gpu.c`
  * does (the emitter's tags give each op's edges) and replays them at its end
  * in a topological order — program order, or with MAPAL_EMU_SHUFFLE=<seed> a
@@ -22,7 +28,6 @@
 
 #include "mapal_choice.h"
 
-static _Thread_local int32_t tid_x;
 static int32_t ctaid_x, ctaid_y;
 /* One block's shared memory (blocks run one at a time). */
 unsigned char emu_smem[1 << 20];
@@ -31,7 +36,85 @@ unsigned char emu_smem[1 << 20];
 static pthread_mutex_t b_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t b_cv = PTHREAD_COND_INITIALIZER;
 static unsigned b_n, b_count, b_gen;
+static _Thread_local int32_t tid_x;
+/* MAPAL_EMU_SERIAL (see the header): the thread holding the turn runs; one
+ * reaching a meet (or its end) hands the turn to the next runnable thread in
+ * the order; a meet every thread (every lane of the warp) reached makes them
+ * runnable again and gives the turn to the first in the order. */
+enum { S_RUN, S_BAR, S_WARP, S_DONE };
+static int s_mode = -1, s_turn;
+static unsigned char s_st[1024];
+static unsigned s_bar, s_warp[32];
+static int serial(void) {
+  if (s_mode < 0) {
+    const char *e = getenv("MAPAL_EMU_SERIAL");
+    s_mode = e ? atoi(e) : 0;
+  }
+  return s_mode;
+}
+static int s_first(void) {
+  for (unsigned i = 0; i < b_n; i++) {
+    unsigned t = s_mode == 2 ? b_n - 1 - i : i;
+    if (s_st[t] == S_RUN) return (int)t;
+  }
+  return -1;
+}
+/* The turn after `t` (lock held). */
+static void s_pass(int t) {
+  int next = -1, any = 0;
+  for (unsigned i = 1; i <= b_n; i++) {
+    unsigned u = s_mode == 2 ? (t + b_n - i) % b_n : (t + i) % b_n;
+    if (s_st[u] == S_RUN) {
+      next = (int)u;
+      break;
+    }
+    any |= s_st[u] != S_DONE;
+  }
+  if (next < 0 && any) {
+    fprintf(stderr, "emu: serial block deadlocked (a barrier not every thread reaches)\n");
+    exit(104);
+  }
+  s_turn = next;
+  pthread_cond_broadcast(&b_cv);
+}
+static void s_wait(void) {
+  while (s_turn != tid_x) pthread_cond_wait(&b_cv, &b_mu);
+}
+static void s_start(unsigned n) {
+  b_n = n;
+  s_bar = 0;
+  memset(s_warp, 0, sizeof s_warp);
+  memset(s_st, S_RUN, n);
+  s_turn = s_first();
+}
+static void s_end(void) {
+  pthread_mutex_lock(&b_mu);
+  s_st[tid_x] = S_DONE;
+  s_pass(tid_x);
+  pthread_mutex_unlock(&b_mu);
+}
+static void s_meet(int warp) {
+  pthread_mutex_lock(&b_mu);
+  int t = tid_x;
+  unsigned lo = warp < 0 ? 0 : (unsigned)warp * 32, hi = warp < 0 || lo + 32 > b_n ? b_n : lo + 32;
+  unsigned *c = warp < 0 ? &s_bar : &s_warp[warp];
+  s_st[t] = warp < 0 ? S_BAR : S_WARP;
+  if (++*c == hi - lo) {
+    *c = 0;
+    for (unsigned u = lo; u < hi; u++) s_st[u] = S_RUN;
+    s_turn = s_first();
+    pthread_cond_broadcast(&b_cv);
+  } else {
+    s_pass(t);
+  }
+  s_wait();
+  pthread_mutex_unlock(&b_mu);
+}
 void emu_barrier(void) {
+  if (serial()) {
+    s_meet(-1);
+    return;
+  }
   pthread_mutex_lock(&b_mu);
   unsigned g = b_gen;
   if (++b_count == b_n) {
@@ -81,7 +164,13 @@ static void *emu_run(void *p) {
   struct emu_thread *x = p;
   tid_x = x->t;
   aq_len = aq_group = 0;
+  if (serial()) {
+    pthread_mutex_lock(&b_mu);
+    s_wait();
+    pthread_mutex_unlock(&b_mu);
+  }
   x->k(x->a, x->b, x->o);
+  if (serial()) s_end();
   return 0;
 }
 int32_t emu_tid_x(void) { return tid_x; }
@@ -91,6 +180,10 @@ int32_t emu_laneid(void) { return tid_x & 31; }
 static float w_x[1024];
 static unsigned w_count[32], w_gen[32];
 static void warp_meet(int w) {
+  if (serial()) {
+    s_meet(w);
+    return;
+  }
   pthread_mutex_lock(&b_mu);
   unsigned g = w_gen[w];
   if (++w_count[w] == 32) {
@@ -349,6 +442,7 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
     b_n = block;
     for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
       for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++) {
+        if (serial()) s_start(block);
         for (uint32_t t = 0; t < block; t++) {
           xs[t] = (struct emu_thread){k, (void *)a, (void *)b, (void *)o, (int32_t)t};
           if (pthread_create(&th[t], 0, emu_run, &xs[t])) {
@@ -424,7 +518,13 @@ struct emu_vthread {
 static void *emu_vrun(void *q) {
   struct emu_vthread *x = q;
   tid_x = x->t;
+  if (serial()) {
+    pthread_mutex_lock(&b_mu);
+    s_wait();
+    pthread_mutex_unlock(&b_mu);
+  }
   call_v(x->k, x->n, x->p);
+  if (serial()) s_end();
   return 0;
 }
 void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64_t *ptrs, uint32_t gx, uint32_t gy,
@@ -452,6 +552,7 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
     b_n = block;
     for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
       for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++) {
+        if (serial()) s_start(block);
         for (uint32_t t = 0; t < block; t++) {
           xs[t] = (struct emu_vthread){k, nptr, p, (int32_t)t};
           if (pthread_create(&th[t], 0, emu_vrun, &xs[t])) exit(102);

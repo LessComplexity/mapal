@@ -2075,6 +2075,47 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "unmeasured; a candidate until the per-site-choice box run",
     },
+    // compile-time-graph A (`row-block`, open item): the one realized unit, rtx-5080 (sm_120, this table's
+    // rtx-5090 rows) pt_attn_1024_64 forced b = 16, lost to the split launches (CUPTI 33.3 vs 31.7 us, ABBA 1.011;
+    // benches/results/evidence/local-rtx-5080/compile-time-graph.md). The plan model admits that program on the
+    // 4090 / 5090 only through the split softmax's byte rate (`bytes_per_ns` 490 / 494, a DRAM placement rate,
+    // prices 12.6 MB of L2-resident rows at 25.5 us; the 5080's 2553 at 4.9; measured there 7.5) — the missing
+    // fact is where a split segment's bytes live. Parts without plan rates refuse every group (`unpriced`).
+    RungOff {
+        profile: "rtx-4090",
+        rung: "row-block",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
+    },
+    RungOff {
+        profile: "rtx-5090",
+        rung: "row-block",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
+    },
+    RungOff {
+        profile: "rtx-3090",
+        rung: "row-block",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
+    },
+    RungOff {
+        profile: "h100-pcie",
+        rung: "row-block",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
+    },
+    RungOff {
+        profile: "a100",
+        rung: "row-block",
+        fill: Fill::Any,
+        face: Face::Any,
+        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
+    },
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes

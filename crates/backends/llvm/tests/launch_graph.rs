@@ -317,10 +317,12 @@ fn decode_region_values_under_every_order() {
     assert!(caught, "no shuffled order exposed the dropped edges");
 }
 
-/// Generated loops (`testgen::twin_prog_strategy`, not designed on this
-/// arm): with a region, the emulated values under shuffled replay equal the
-/// interpreter and the OFF arm, each trip runs at most one graph per region,
-/// and a region's tags name only earlier ops.
+/// Generated loops (`testgen::twin_prog_strategy`, and
+/// `twin_number_strategy`'s whole folds read as numbers by a later op of the
+/// trip; neither designed on this arm): with a region, the emulated values
+/// under shuffled replay equal the interpreter and the OFF arm, each trip runs
+/// at most one graph per region, and a region's tags name only earlier ops.
+/// Regions holding a number edge are counted and required.
 #[test]
 fn launch_graph_on_generated_loops() {
     let Some(clang) = emu::clang() else {
@@ -328,10 +330,16 @@ fn launch_graph_on_generated_loops() {
     };
     let _ = emu::rt_lib();
     let mut runner = TestRunner::deterministic();
-    let strat = testgen::twin_prog_strategy();
-    let (mut fired, mut findings) = (0, Vec::new());
-    for z in 0..160 {
-        let p = strat.new_tree(&mut runner).unwrap().current();
+    let (strat, numbers) = (
+        testgen::twin_prog_strategy(),
+        testgen::twin_number_strategy(),
+    );
+    let (mut fired, mut numbered, mut findings) = (0, 0, Vec::new());
+    for z in 0..280 {
+        let p = match z < 160 {
+            true => strat.new_tree(&mut runner).unwrap().current(),
+            false => numbers.new_tree(&mut runner).unwrap().current(),
+        };
         let src = testgen::twin_src(&p, true, None);
         let ir = lower(&src);
         let on = emission(&ir, "rtx-4090", true);
@@ -340,6 +348,7 @@ fn launch_graph_on_generated_loops() {
             continue;
         }
         fired += 1;
+        numbered += usize::from(src.contains("s / 256.0") || src.contains("s / 1024.0"));
         for &(op, deps, out) in &tags {
             if deps >> op != 0 || out & !deps != 0 {
                 findings.push(format!("twin#{z}: tag ({op}, {deps:b}, {out:b})"));
@@ -370,6 +379,12 @@ fn launch_graph_on_generated_loops() {
         }
     }
     assert!(findings.is_empty(), "{}", findings.join("\n"));
+    eprintln!(
+        "launch_graph_on_generated_loops: {fired}/280 with a region, {numbered} reading a whole fold's number"
+    );
     assert!(fired > 0, "no generated loop had a launch region");
-    eprintln!("launch_graph_on_generated_loops: {fired}/160 with a region");
+    assert!(
+        numbered > 0,
+        "no generated region read a whole fold's number"
+    );
 }

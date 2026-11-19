@@ -538,6 +538,12 @@ pub struct GpuRungs {
     /// `GPU_RUNGS_OFF` do not apply. Off: the pre-sprint panels (row map, no
     /// k-major pad, no rule) and those rows.
     pub bank_plan: bool,
+    /// compile-time-graph A, the shipped default per part: a row-block group
+    /// may form where [`GpuArms::row_block`] allows it. Its `GPU_RUNGS_OFF`
+    /// rows keep it off on every measured part until a realized unit is
+    /// measured to pay there; `--gpu-on=row-block` forms it (the plan model
+    /// still decides), `--row-block=<b>` forces it.
+    pub row_block: bool,
 }
 
 impl GpuRungs {
@@ -621,11 +627,12 @@ impl GpuRungs {
         full_tile: true,
         async_depth: true,
         bank_plan: true,
+        row_block: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 78] = [
+    pub const NAMES: [&'static str; 79] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -704,6 +711,7 @@ impl GpuRungs {
         "full-tile",
         "async-depth",
         "bank-plan",
+        "row-block",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -787,6 +795,7 @@ impl GpuRungs {
             "full-tile" => &mut self.full_tile,
             "async-depth" => &mut self.async_depth,
             "bank-plan" => &mut self.bank_plan,
+            "row-block" => &mut self.row_block,
             _ => return None,
         })
     }
@@ -845,12 +854,14 @@ pub struct GpuArms {
     pub regroup: bool,
     /// compile-time-graph A: a row-block group `unit_plan` proves closed (tile
     /// sites with the folds and cells reading their rows) runs as one unit
-    /// kernel of `b` rows per block when it fits the part. `false`
-    /// (`--no-row-block`) is the OFF arm: the emission before it, byte for byte.
+    /// kernel of `b` rows per block when it fits the part, its rung
+    /// ([`GpuRungs::row_block`]) is on and the plan model prices it below the
+    /// split launches. `false` (`--no-row-block`) is the OFF arm: the emission
+    /// before it, byte for byte.
     pub row_block: bool,
     /// Measurement override (`--row-block=<b>`, the `--splitk` precedent): a
-    /// row-block group that fits takes `b` rows a unit, the fill and cost
-    /// tests aside. 0 = derive.
+    /// row-block group that fits takes `b` rows a unit, the rung table and
+    /// the cost test aside. 0 = derive.
     pub row_block_b: u64,
     /// compile-time-graph B: a counted device loop's trip is a launch region,
     /// its ops tagged with their compile-time dependencies; the runtime replays
