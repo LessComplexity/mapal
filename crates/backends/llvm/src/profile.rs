@@ -4515,6 +4515,27 @@ pub const RTX_5090: TargetProfile = TargetProfile {
     ..GENERIC
 };
 
+/// RTX 5080 — consumer Blackwell GB203 (`sm_120`), 84 SMs: a local part (the
+/// Threadripper 9970X workstation), not a rental. Device query
+/// (`cudaGetDeviceProperties`, 2026-11-19, driver 620.70.06): `sms=84
+/// l2_bytes=67108864 max_blocks_per_sm=24 smem_per_sm=102400
+/// smem_per_block_optin=101376 regs_per_sm=65536 max_threads_per_sm=1536` —
+/// Ada's per-SM facts ([`ADA_SM`]) with this part's SM count and L2.
+/// **UNMEASURED** — not in [`GPU_MEASURED`]: no [`DeviceCost`] (no `place` or
+/// plan-cost rates), so every capable site is a device site and its plans stay
+/// the rules'; its rung defaults are the measured `sm_120` part's (`rtx-5090`)
+/// rows, by [`TargetProfile::gpu_rungs_on`]'s architecture rule.
+pub const RTX_5080: TargetProfile = TargetProfile {
+    name: "rtx-5080",
+    machine: Machine::Gpu(Gpu {
+        arch: "sm_120",
+        sms: 84,
+        l2_bytes: 64 * 1024 * 1024,
+        ..ADA_SM
+    }),
+    ..GENERIC
+};
+
 /// RTX 3090 — Ampere GA102 (`sm_86`), 82 SMs (S54). Compute capability 8.6
 /// differs from Ada's per-SM facts in one field: 16 resident blocks per SM, not
 /// 24 (CUDA C Programming Guide, compute-capability table); 100 KB shared memory
@@ -4726,7 +4747,7 @@ pub const APPLE_M4_SME: TargetProfile = TargetProfile {
     ..APPLE_M
 };
 
-const PROFILES: [&TargetProfile; 14] = [
+const PROFILES: [&TargetProfile; 15] = [
     &GENERIC,
     &APPLE_M,
     &ZEN3,
@@ -4735,6 +4756,7 @@ const PROFILES: [&TargetProfile; 14] = [
     &H100,
     &H100_PCIE,
     &RTX_5090,
+    &RTX_5080,
     &RTX_3090,
     &A100,
     &APPLE_M4_SME,

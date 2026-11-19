@@ -148,7 +148,11 @@ if [ "${DIFFERENTIAL_ONLY:-0}" = 1 ]; then
 fi
 
 # S64: the PyTorch legs (torch_bench.py) run last; their install overlaps the Mapal sections.
-if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
+if [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ] && [ -n "${TORCH_PY:-}" ]; then
+    # A local box: TORCH_PY=<python with torch> is used as it is (no apt-get / pip).
+    "$TORCH_PY" -c 'import torch; print("torch", torch.__version__, "cuda", torch.version.cuda)' > torch-install.log 2>&1 &
+    TORCH_PID=$!
+elif [ "${TORCH:-1}" = 1 ] && [ -f torch_bench.py ]; then
     # The pin: the newest cu128 wheel for the image's Python 3.10 (2026-10-23: 2.11.0). torch.compile's
     # Triton builds a C launcher against Python.h: python3-dev.
     ( { apt-get update -qq && apt-get install -y -qq python3-pip python3-dev; } || true
@@ -505,7 +509,7 @@ if [ -n "${TORCH_PID:-}" ]; then
     wait "$TORCH_PID"; say "torch install: $(tail -2 torch-install.log | tr '\n' ' ')"
     tp=$(ls vals 2>/dev/null | sed 's/\.txt$//' | tr '\n' ' ')
     # shellcheck disable=SC2086  # the stems are separate arguments
-    [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" python3 torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"
+    [ -n "$tp" ] && timeout "${TORCH_MIN:-15}m" "${TORCH_PY:-python3}" torch_bench.py "$REPS" vals $tp 2>torch.err | tee -a "$LOG"
     say "torch exit=${PIPESTATUS[0]} $(tail -c 300 torch.err | tr '\n' ' ')"
 fi
 # TIMING=0 (S63): skip the single-arm square-cell section (a cell session runs tile_bench --splitk).

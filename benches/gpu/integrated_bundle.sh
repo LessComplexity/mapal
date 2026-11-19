@@ -26,6 +26,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=$1; shift
 LLVM="${LLVM:-/opt/homebrew/opt/llvm/bin}"
+# The exact-face CPU oracle's profile: the bundling host (apple-m on the Mac; CPU_TARGET=x86-64-v3 on an x86-64 host).
+CPU_TARGET="${CPU_TARGET:-apple-m}"
 EMIT="${EMIT:-$ROOT/target/release/examples/emit}"
 MAIN_EMIT=$EMIT
 CELLS=${CELLS-"16x2048x7168 16x1024x4096 16x18432x7168 128x2048x7168 4096x4096x4096"}
@@ -53,13 +55,13 @@ for p in $PROGS $SUITE; do
     for face in "${faces[@]}"; do
         [ -s "$OUT/tiles/$p$face.expect" ] && continue
         fl=(--exact); [ "$face" = _c ] && fl=(--order=sequential)
-        "$EMIT" "$OUT/tiles/$p.mapal" - --rewrite "${fl[@]}" --target=apple-m > "$OUT/tiles/$p$face.cpu.ll"
+        "$EMIT" "$OUT/tiles/$p.mapal" - --rewrite "${fl[@]}" "--target=$CPU_TARGET" > "$OUT/tiles/$p$face.cpu.ll"
         clang -O2 -Wno-override-module "$OUT/tiles/$p$face.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$OUT/tiles/$p$face.cpu"
         "$OUT/tiles/$p$face.cpu" | grep -v '^iter ms=' > "$OUT/tiles/$p$face.expect"
     done
     # S65: ADR-0040 D2's M per printed value (gen_tiles.py `xabs`), where the program has one.
     if [ -f "$OUT/tiles/${p}_xabs.mapal" ] && [ ! -s "$OUT/tiles/${p}_xabs.expect" ]; then
-        "$EMIT" "$OUT/tiles/${p}_xabs.mapal" - --rewrite --exact --target=apple-m > "$OUT/tiles/${p}_xabs.cpu.ll"
+        "$EMIT" "$OUT/tiles/${p}_xabs.mapal" - --rewrite --exact "--target=$CPU_TARGET" > "$OUT/tiles/${p}_xabs.cpu.ll"
         clang -O2 -Wno-override-module "$OUT/tiles/${p}_xabs.cpu.ll" "$ROOT/target/release/libmapal_rt.a" -o "$OUT/tiles/${p}_xabs.cpu"
         "$OUT/tiles/${p}_xabs.cpu" | grep -v '^iter ms=' > "$OUT/tiles/${p}_xabs.expect"
     fi

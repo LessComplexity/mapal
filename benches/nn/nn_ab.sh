@@ -20,7 +20,8 @@ SIZES=("$@"); [ ${#SIZES[@]} -gt 0 ] || SIZES=(128 256 512 1024 2048)
 EMIT="$ROOT/target/release/examples/emit"
 RT="$ROOT/target/release/libmapal_rt.a"
 TARGET="${TARGET:-apple-m4-sme}"
-CFLAGS="-O2 -march=armv8-a+sme2"
+CFLAGS="${NN_CFLAGS:--O2 -march=armv8-a+sme2}"   # x86-64 Linux: NN_CFLAGS="-O2 -march=native"
+PYTHON="${PYTHON:-python3}"
 PAR="${PAR:-14}"
 
 mkdir -p "$TMP" "$OUT"
@@ -34,8 +35,8 @@ done
 [ -f "$RT" ] || { echo "no runtime $RT — cargo build -p mapal-rt --release" >&2; exit 2; }
 
 echo "== linear-NN A/B =="
-echo "machine: $(sysctl -n machdep.cpu.brand_string) · $(sysctl -n hw.ncpu) threads"
-echo "numpy:   $(python3 -c 'import numpy;print(numpy.__version__)') / $(python3 -c "import numpy;print(numpy.__config__.show(mode='dicts')['Build Dependencies']['blas']['name'])")"
+echo "machine: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || lscpu | sed -n 's/^Model name: *//p') · $(sysctl -n hw.ncpu 2>/dev/null || nproc) threads"
+echo "numpy:   $("$PYTHON" -c 'import numpy;print(numpy.__version__)') / $("$PYTHON" -c "import numpy;print(numpy.__config__.show(mode='dicts')['Build Dependencies']['blas']['name'])")"
 echo "target:  $TARGET · MAPAL_PAR=$PAR · CYCLES=$CYCLES · sizes: ${SIZES[*]}"
 echo
 
@@ -45,6 +46,8 @@ build() { # <shape> <d>
     for face in conf fma; do
         local flags=(--rewrite "--target=$TARGET")
         [ "$face" = fma ] && flags+=(--contract)
+        # Since ADR-0040 the flagless face contracts too: NN_CONF_FLAGS=--no-contract makes conf FMA-off.
+        [ "$face" = conf ] && flags+=(${NN_CONF_FLAGS:-})
         "$EMIT" "$src" - "${flags[@]}" > "$TMP/${shape}_${d}_${face}.ll" || { echo "emit failed $shape $d $face" >&2; exit 1; }
         [ -s "$TMP/${shape}_${d}_${face}.ll" ] || { echo "EMPTY EMISSION $shape $d $face" >&2; exit 1; }
         # A program whose plan went cyclic emits NO parallel driver and would be
@@ -78,8 +81,8 @@ for d in "${SIZES[@]}"; do
         for leg in "env MAPAL_PAR=$PAR $TMP/${shape}_${d}_conf" \
                    "env MAPAL_PAR=1 $TMP/${shape}_${d}_fma" \
                    "env MAPAL_PAR=$PAR $TMP/${shape}_${d}_fma" \
-                   "env OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 python3 $ROOT/benches/nn/nn_numpy.py $shape $d 1" \
-                   "python3 $ROOT/benches/nn/nn_numpy.py $shape $d 1"; do
+                   "env OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 $PYTHON $ROOT/benches/nn/nn_numpy.py $shape $d 1" \
+                   "$PYTHON $ROOT/benches/nn/nn_numpy.py $shape $d 1"; do
             $leg | vals > "$TMP/.g" || { echo "LEG FAILED: $leg" >&2; exit 1; }
             e=$(relerr "$TMP/${shape}_${d}.ref" "$TMP/.g") ||
                 { echo "VALUE GATE FAILED $shape d=$d rel=$e :: $leg" >&2; exit 1; }
@@ -108,8 +111,8 @@ for ((c = 0; c < CYCLES; ++c)); do
             sample "S_${shape}_${d}_mapal-fma-1t"   env MAPAL_PAR=1    "$TMP/${shape}_${d}_fma"
             sample "S_${shape}_${d}_mapal-fma-par"  env MAPAL_PAR=$PAR "$TMP/${shape}_${d}_fma"
             sample "S_${shape}_${d}_numpy-1t"       env OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 \
-                                                    python3 "$ROOT/benches/nn/nn_numpy.py" "$shape" "$d" 1
-            sample "S_${shape}_${d}_numpy-mt"       python3 "$ROOT/benches/nn/nn_numpy.py" "$shape" "$d" 1
+                                                    "$PYTHON" "$ROOT/benches/nn/nn_numpy.py" "$shape" "$d" 1
+            sample "S_${shape}_${d}_numpy-mt"       "$PYTHON" "$ROOT/benches/nn/nn_numpy.py" "$shape" "$d" 1
         done
     done
     printf '.' >&2
