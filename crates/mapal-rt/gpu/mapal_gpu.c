@@ -259,6 +259,7 @@ void mapal_gpu_init(uint32_t f) {
 
 /* Every entry that needs the device calls it first: joins the eager init, or
  * runs the lazy one. */
+static void choice_ready_dev(void);
 static void load_module(void) {
   if (init_state == 2)
     return;
@@ -276,6 +277,10 @@ static void load_module(void) {
     init_all();
   }
   init_state = 2;
+  /* The site choice (device tag + wisdom read) is part of loading: a program's first
+   * `mapal_gpu_site` would otherwise pay it inside its own timed region (50–90 us on
+   * rtx-5080, local-rtx-5080/gpu-analysis.md). */
+  choice_ready_dev();
   tot.load = now_ms() - t0;
   tot.lead = t_init ? t0 - t_init : 0;
   if (trace)
@@ -283,6 +288,20 @@ static void load_module(void) {
             "mapal_gpu_trace op=load flags=%u wait_ms=%.3f lead_ms=%.3f "
             "init_ms=%.3f ctx_ms=%.3f module_ms=%.3f\n",
             flags, tot.load, tot.lead, tot.init, tot.ctx, tot.module);
+}
+
+static void choice_ready_dev(void) {
+  if (choice.ready)
+    return;
+  CUdevice dev;
+  char name[64] = "gpu", tag[96];
+  int major = 0, minor = 0;
+  CK(cuCtxGetDevice(&dev));
+  CK(cuDeviceGetName(name, sizeof name, dev));
+  CK(cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev));
+  CK(cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev));
+  snprintf(tag, sizeof tag, "%s-sm%d%d", name, major, minor);
+  choice_init(tag, module_hash, 1, trace);
 }
 
 static CUfunction kernel(const char *prefix, uint64_t id, uint32_t smem,
@@ -872,17 +891,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
             nptr, out, n);
     exit(102);
   }
-  if (!choice.ready) {
-    CUdevice dev;
-    char name[64] = "gpu", tag[96];
-    int major = 0, minor = 0;
-    CK(cuCtxGetDevice(&dev));
-    CK(cuDeviceGetName(name, sizeof name, dev));
-    CK(cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev));
-    CK(cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev));
-    snprintf(tag, sizeof tag, "%s-sm%d%d", name, major, minor);
-    choice_init(tag, module_hash, 1, trace);
-  }
+  choice_ready_dev();
   struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max)
