@@ -360,7 +360,8 @@ static struct {
   int last[REG_OPS];
   struct rnode nodes[REG_NODES];
 } rec;
-/* MAPAL_GPU_GRAPH=0: every region runs eagerly (the runtime OFF arm). */
+/* MAPAL_GPU_GRAPH=0: every region runs eagerly (the runtime OFF arm); 2: the
+ * graph's edges are program order (a measurement arm). */
 static int graph_mode = -1;
 
 static void rn_dep(struct rnode *x, int i) {
@@ -1056,14 +1057,18 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
 
 /* compile-time-graph B: the region's executable graphs, one per topology
  * (nodes, functions, geometry, edges): built at the first trip of that shape,
- * replayed after, each launch patching the nodes whose arguments changed. */
+ * replayed after, each launch patching the nodes whose arguments changed.
+ * Two executables of the graph alternate: patching one that is still running
+ * makes the next launch wait for it (CUPTI, rtx-5080 decode: 15.8 us a
+ * cuGraphLaunch with one), so trip t patches the one trip t − 2 ran. */
+#define REG_EXECS 2
 struct rexec {
   uint64_t rid, sig;
   CUgraph g;
-  CUgraphExec x;
-  int n;
+  CUgraphExec x[REG_EXECS];
+  int n, next;
   CUgraphNode h[REG_NODES];
-  struct rnode at[REG_NODES];
+  struct rnode at[REG_EXECS][REG_NODES];
 };
 static struct rexec *rx;
 static size_t n_rx, cap_rx;
@@ -1140,12 +1145,16 @@ static struct rexec *rec_build(uint64_t rid, uint64_t sig) {
       cuGraphDestroy(e.g);
       return 0;
     }
-    e.at[i] = *x;
+    for (int k = 0; k < REG_EXECS; k++)
+      e.at[k][i] = *x;
   }
-  if (cuGraphInstantiate(&e.x, e.g, 0) != CUDA_SUCCESS) {
-    cuGraphDestroy(e.g);
-    return 0;
-  }
+  for (int k = 0; k < REG_EXECS; k++)
+    if (cuGraphInstantiate(&e.x[k], e.g, 0) != CUDA_SUCCESS) {
+      while (k--)
+        cuGraphExecDestroy(e.x[k]);
+      cuGraphDestroy(e.g);
+      return 0;
+    }
   if (n_rx == cap_rx) {
     cap_rx = cap_rx ? 2 * cap_rx : 8;
     rx = realloc(rx, cap_rx * sizeof *rx);
@@ -1157,16 +1166,16 @@ static struct rexec *rec_build(uint64_t rid, uint64_t sig) {
   return &rx[n_rx++];
 }
 
-static void rec_patch(struct rexec *e) {
+static void rec_patch(struct rexec *e, int k) {
   for (int i = 0; i < e->n; i++) {
     const struct rnode *x = &rec.nodes[i];
-    struct rnode *was = &e->at[i];
+    struct rnode *was = &e->at[k][i];
     if (x->kind == RN_MEMSET) {
       if (x->dst == was->dst)
         continue;
       CUDA_MEMSET_NODE_PARAMS m;
       memset_params(x, &m);
-      CK(cuGraphExecMemsetNodeSetParams(e->x, e->h[i], &m, ctx));
+      CK(cuGraphExecMemsetNodeSetParams(e->x[k], e->h[i], &m, ctx));
     } else {
       if (!memcmp(x->args, was->args, x->nargs * sizeof x->args[0]))
         continue;
@@ -1174,7 +1183,7 @@ static void rec_patch(struct rexec *e) {
       void *a[16];
       uint64_t v[16];
       kernel_params(x, &p, a, v);
-      CK(cuGraphExecKernelNodeSetParams(e->x, e->h[i], &p));
+      CK(cuGraphExecKernelNodeSetParams(e->x[k], e->h[i], &p));
     }
     *was = *x;
     tot.n_graph_patch++;
@@ -1206,7 +1215,9 @@ void mapal_gpu_region_begin(uint64_t rid) {
 /* The op the next nodes belong to (`op` < 0: untagged), the ops it waits for
  * (`deps`) and the ops its zero pass waits for (`deps_out`), as bit masks. */
 void mapal_gpu_tag(int32_t op, uint64_t deps, uint64_t deps_out) {
-  rec.op = op >= 0 && op < REG_OPS ? op : -1;
+  /* MAPAL_GPU_GRAPH=2 (measurement): every node after every earlier one —
+   * the program-order chain, the tags' edges aside. */
+  rec.op = op >= 0 && op < REG_OPS && graph_mode != 2 ? op : -1;
   rec.deps = deps;
   rec.deps_out = deps_out;
   rec.cur = -1;
@@ -1228,7 +1239,7 @@ void mapal_gpu_region_end(uint64_t rid) {
       break;
     }
   if (e) {
-    rec_patch(e);
+    rec_patch(e, e->next);
   } else if (!(e = rec_build(rid, sig))) {
     /* A graph is a schedule, never a value: the region runs eagerly. */
     if (n_refused < 64)
@@ -1240,7 +1251,8 @@ void mapal_gpu_region_end(uint64_t rid) {
     rec_flush();
     return;
   }
-  CK(cuGraphLaunch(e->x, streams[0]));
+  CK(cuGraphLaunch(e->x[e->next], streams[0]));
+  e->next = (e->next + 1) % REG_EXECS;
   legacy_ops++;
   last_kernel[0] = 0;
   tot.n_graph++;

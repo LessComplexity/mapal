@@ -1,0 +1,13 @@
+calib device=NVIDIA GeForce RTX 5080 sms=84 clock_khz=2640000 l2_mb=64 mem_clock_khz=15001000 bus_bits=256
+graph mode=eager nk=6 nz=0 us_per_trip=9.449 us_per_op=1.575
+graph mode=replay nk=6 nz=0 us_per_trip=4.099 set_params_us_per_node=0.000 instantiate_us=141.5
+graph mode=patched nk=6 nz=0 us_per_trip=4.100 set_params_us_per_node=0.166 instantiate_us=141.5
+graph mode=eager nk=6 nz=4 us_per_trip=13.236 us_per_op=1.324
+graph mode=replay nk=6 nz=4 us_per_trip=7.413 set_params_us_per_node=0.000 instantiate_us=39.3
+graph mode=patched nk=6 nz=4 us_per_trip=8.127 set_params_us_per_node=0.190 instantiate_us=39.3
+graph mode=eager nk=12 nz=0 us_per_trip=18.793 us_per_op=1.566
+graph mode=replay nk=12 nz=0 us_per_trip=6.146 set_params_us_per_node=0.000 instantiate_us=38.1
+graph mode=patched nk=12 nz=0 us_per_trip=6.150 set_params_us_per_node=0.160 instantiate_us=38.1
+graph mode=eager nk=12 nz=4 us_per_trip=23.475 us_per_op=1.467
+graph mode=replay nk=12 nz=4 us_per_trip=10.812 set_params_us_per_node=0.000 instantiate_us=40.4
+graph mode=patched nk=12 nz=4 us_per_trip=9.184 set_params_us_per_node=0.180 instantiate_us=40.4

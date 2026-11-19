@@ -269,6 +269,24 @@ pub(crate) fn tile_split(site: &TileSite, lanes: u64, free: bool) -> (u64, u64) 
     }
 }
 
+/// Rows a row-block segment runs at once: the block's lanes split into one
+/// group a row, each of at least [`ROW_GROUP_LANES`] lanes — the rows are
+/// independent (`cell_plan`), so a batch of them hides each row's chain of
+/// barriered tree steps behind the others'.
+pub(crate) fn row_groups(b: u64, lanes: u64) -> u64 {
+    let mut p = b;
+    while p > 1 && (lanes / p < ROW_GROUP_LANES || b % p != 0) {
+        p /= 2;
+    }
+    p.max(1)
+}
+
+/// The L2 → SM transfer granule: a load moves every 32-byte sector it touches.
+const SECTOR_BYTES: u64 = 32;
+
+/// The fewest lanes a row of a row-block segment takes.
+const ROW_GROUP_LANES: u64 = 8;
+
 /// The row-block members' segments: a tile is its own; the members between
 /// two tiles run row by row in one.
 pub(crate) fn segments(members: &[UMember]) -> Vec<usize> {
@@ -1085,6 +1103,20 @@ impl<'a> FnEmit<'a> {
                         lsu: b * step / vec(site.a.ck) + nj * step / vec(site.b.ck),
                     };
                     fused += self.profile.site_ns(&shape)?.kernel_ns;
+                    // The column operand is read straight from `Gmem` (no
+                    // shared panel): a warp's lanes are `clane` elements apart,
+                    // so unless they are adjacent each lane's run along `k` (a
+                    // 4-wide load, else one element) fills part of each 32-byte
+                    // sector it touches. The unused bytes still cross from L2
+                    // (rtx-5080 attn_1024_64: the q·Kᵀ phase alone 20.2 us in the
+                    // unit against 9.4 us as its tile site, CUPTI).
+                    let run = vec(site.b.ck) * e;
+                    let eff = match site.b.clane {
+                        1 => 1.0,
+                        _ => (run as f64 / SECTOR_BYTES as f64).min(1.0),
+                    };
+                    let col = (blocks * site.k * site.c * e) as f64;
+                    fused += (1.0 / eff - 1.0) * col / d.l2_bytes_per_ns.max(1) as f64;
                     let l = gpu::launch(site, self.profile, self.contract, self.gpu_arms);
                     let order = if free {
                         crate::Order::Free
@@ -1371,6 +1403,8 @@ impl<'a> FnEmit<'a> {
             kept: geo.kept.clone(),
             u,
             row: "%i".into(),
+            lane: "%l".into(),
+            lane_base: "0".into(),
             rloc: None,
             seg: segments(&u.members),
             cur_seg: 0,
@@ -1653,6 +1687,10 @@ struct UnitGen<'u> {
     u: &'u Unit,
     /// The row the phases address (`%i`; a row-block segment's own).
     row: String,
+    /// The thread's lane in its row (`%l`; a row-block segment's lane in
+    /// its row group) and the row group's first lane (`0`).
+    lane: String,
+    lane_base: String,
     /// A row-block unit: the row's index in the block.
     rloc: Option<String>,
     /// Per member its segment ([`segments`]), and the one emitting.
@@ -1909,7 +1947,7 @@ impl UnitGen<'_> {
             return body(self);
         }
         let c = self.tmp();
-        self.line(format!("{c} = icmp eq i64 %l, 0"));
+        self.line(format!("{c} = icmp eq i64 {}, 0", self.lane));
         let (yes, end) = (format!("{tag}z"), format!("{tag}ze"));
         self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
         self.label(&yes);
@@ -1977,8 +2015,9 @@ impl UnitGen<'_> {
                     ) => "1.0".to_string(),
                     _ => "-0.0".to_string(),
                 };
+                let lane = self.lane.clone();
                 let walk = if tree.is_some() {
-                    ("%l", lanes, site.k)
+                    (lane.as_str(), lanes, site.k)
                 } else {
                     ("0", 1, site.k)
                 };
@@ -2043,7 +2082,7 @@ impl UnitGen<'_> {
                         let mut s = lanes / 2;
                         while s >= 1 {
                             let c = self.tmp();
-                            self.line(format!("{c} = icmp ult i64 %l, {s}"));
+                            self.line(format!("{c} = icmp ult i64 {}, {s}", self.lane));
                             let (yes, end) = (format!("r{k}_{s}"), format!("r{k}_{s}e"));
                             self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
                             self.label(&yes);
@@ -2059,7 +2098,8 @@ impl UnitGen<'_> {
                             self.barrier();
                             s /= 2;
                         }
-                        let p0 = self.smem(off, &t, "0");
+                        let base = self.lane_base.clone();
+                        let p0 = self.smem(off, &t, &base);
                         let (tot, r) = (self.tmp(), self.tmp());
                         self.line(format!("{tot} = load {t}, ptr addrspace(3) {p0}"));
                         self.step(&op, &t, &seed, &tot, &r);
@@ -2079,8 +2119,8 @@ impl UnitGen<'_> {
             }
             UKind::Cell { .. } if mb.store || self.kept[k].is_some() => {
                 let (w, kept) = (mb.w, self.kept[k]);
-                let (row, rloc) = (self.row.clone(), self.rloc.clone());
-                self.counted(&format!("s{k}"), ("%l", lanes, w), None, &mut |g, j, _| {
+                let (row, rloc, lane) = (self.row.clone(), self.rloc.clone(), self.lane.clone());
+                self.counted(&format!("s{k}"), (&lane, lanes, w), None, &mut |g, j, _| {
                     let r = g.op("mul", &row, w);
                     let t = g.op("add", &r, j);
                     let v = g.cell(k, &t);
@@ -2455,21 +2495,35 @@ impl UnitGen<'_> {
         });
     }
 
-    /// compile-time-graph A: the members `ks` (segment `s`, no tile) row by
-    /// row over the block's `b` rows: row `%i + r` in `%i<s>`, its index in
-    /// the block `%r<s>`; a barrier closes each row (the tree partials and
-    /// the per-row slots are reused by the next).
+    /// compile-time-graph A: the members `ks` (segment `s`, no tile) over
+    /// the block's `b` rows, [`row_groups`] rows at once: the block's lanes
+    /// split into one group of `lanes ÷ P` per row (row `%i + %r<s> + g`,
+    /// lane `%l mod (lanes ÷ P)`), the groups of a batch in lockstep; a
+    /// barrier closes each batch (the tree partials and per-row slots are
+    /// reused by the next).
     fn rows_loop(&mut self, s: usize, b: u64, ks: std::ops::Range<usize>) {
+        let lanes0 = self.lanes;
+        let p = row_groups(b, lanes0);
+        let l = lanes0 / p;
+        let (g, lane, base) = (format!("%g{s}"), format!("%ll{s}"), format!("%lb{s}"));
+        self.line(format!("{g} = udiv i64 %l, {l}"));
+        self.line(format!("{lane} = urem i64 %l, {l}"));
+        self.line(format!("{base} = mul i64 {g}, {l}"));
         let pre = self.cur.clone();
         let (lp, latch, end) = (format!("S{s}"), format!("S{s}l"), format!("S{s}e"));
         self.line(format!("br label %{lp}"));
         self.label(&lp);
-        let (r, i) = (format!("%r{s}"), format!("%i{s}"));
+        let (r, rl, i) = (format!("%r{s}"), format!("%rl{s}"), format!("%i{s}"));
         self.line(format!("{r} = phi i64 [0, %{pre}], [{r}n, %{latch}]"));
-        self.line(format!("{i} = add i64 %i, {r}"));
+        self.line(format!("{rl} = add i64 {r}, {g}"));
+        self.line(format!("{i} = add i64 %i, {rl}"));
         let (row0, rloc0) = (self.row.clone(), self.rloc.clone());
+        let (lane0, base0) = (self.lane.clone(), self.lane_base.clone());
         self.row = i;
-        self.rloc = Some(r.clone());
+        self.rloc = Some(rl);
+        self.lane = lane;
+        self.lane_base = base;
+        self.lanes = l;
         self.cur_seg = s;
         for k in ks.clone() {
             // A cell writing its producer's row in place waits for every
@@ -2486,7 +2540,7 @@ impl UnitGen<'_> {
         self.line(format!("br label %{latch}"));
         self.label(&latch);
         self.barrier();
-        self.line(format!("{r}n = add i64 {r}, 1"));
+        self.line(format!("{r}n = add i64 {r}, {p}"));
         let c = self.tmp();
         self.line(format!("{c} = icmp ult i64 {r}n, {b}"));
         self.line(format!("br i1 {c}, label %{lp}, label %{end}"));
@@ -2497,5 +2551,8 @@ impl UnitGen<'_> {
         }
         self.row = row0;
         self.rloc = rloc0;
+        self.lane = lane0;
+        self.lane_base = base0;
+        self.lanes = lanes0;
     }
 }

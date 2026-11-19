@@ -135,6 +135,86 @@ fn decode(trips: u64, rows: u64, d: u64) -> String {
     )
 }
 
+/// `pt_causal`'s step, small: the decode step with a masked score row, its
+/// max and sum as whole folds (numbers in one-element device buffers) and the
+/// output divided by the sum.
+fn causal(trips: u64, rows: u64, d: u64) -> String {
+    decode(trips, rows, d)
+        .replace(
+            &format!(
+                "rrange -> map {{ r -> (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -> s;"
+            ),
+            &format!(
+                "rrange -> map {{ r -> (r <= t) -> {{ -true-> {{ (0.0, krange) -> fold {{ acc, k -> acc + q[k] * kk[r * {d} + k] }} }} -false-> -1000000000.0; }} }} -> s;
+                (-1000000000.0, rrange) -> fold {{ acc, r -> s[r] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} -> mx;
+                rrange -> map {{ r -> (r <= t) -> {{ -true-> {{ (s[r] - mx) / 16.0 -> ez; ez / 256.0 + 1.0 }} -false-> 0.0; }} }} -> p;
+                (0.0, rrange) -> fold {{ acc, r -> acc + p[r] }} -> den;"
+            ),
+        )
+        .replace(
+            &format!(
+                "krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + s[r] * vv[r * {d} + j] }} }} -> o;"
+            ),
+            &format!(
+                "krange -> map {{ j -> (0.0, rrange) -> fold {{ acc, r -> acc + p[r] * vv[r * {d} + j] }} -> a; a / den }} -> o;"
+            ),
+        )
+}
+
+/// A whole fold's number is device bytes too: on the causal step the cell
+/// reading `mx` waits for the fold making it, and `o` for `den` (the edges a
+/// number-blind tag dropped: rtx-5080 causal values off under a site pick).
+/// Values under every shuffled order and every site candidate equal the OFF
+/// arm's.
+#[test]
+fn causal_region_waits_for_whole_folds() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let src = causal(6, 8, 8);
+    assert!(src.contains("-> den;"), "{src}");
+    let ir = lower(&src);
+    let rr = run(&ir, 2_000_000_000);
+    assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+    let on = emission(&ir, "rtx-5080", true);
+    let (lines, tags) = regions(&on.text);
+    assert_eq!(lines.len(), 1, "{}", on.text);
+    // Every op after the first reads something an earlier op makes.
+    assert!(
+        tags.iter()
+            .skip(1)
+            .all(|&(op, deps, _)| op == 3 || deps != 0),
+        "{tags:?}"
+    );
+    let dev = on.device.as_deref().expect("a device unit");
+    let built = emu::build_emulated(&clang, &on.text, dev);
+    for pick in ["0", "1", "2", "3", "all"] {
+        for seed in ["1", "4", "9"] {
+            let (got, _) = built.run(&[("MAPAL_EMU_SHUFFLE", seed), ("MAPAL_GPU_PICK", pick)]);
+            assert!(
+                close(&got, &rr.output),
+                "pick {pick} seed {seed}: {got:?} vs {:?}",
+                rr.output
+            );
+        }
+    }
+}
+
+/// Equal up to the last bits a site candidate's own fold order moves.
+fn close(got: &str, want: &str) -> bool {
+    let (g, w): (Vec<&str>, Vec<&str>) = (
+        got.split_whitespace().collect(),
+        want.split_whitespace().collect(),
+    );
+    g.len() == w.len()
+        && g.iter()
+            .zip(&w)
+            .all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
+                (Ok(x), Ok(y)) => (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1e-6),
+                _ => a == b,
+            })
+}
+
 /// The tags on `pt_decode_1024_256` (rtx-5080): one region of six ops — the
 /// state row, the two retained GEMV rows, the query, the scores, the output
 /// — whose edges are the dataflow's: `kk`, `vv` after the row; the scores

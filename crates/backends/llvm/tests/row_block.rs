@@ -294,43 +294,39 @@ fn attention_row_block_values_and_launches() {
     }
 }
 
-/// The rule on the real shape: `pt_attn_1024_64` is one row-block kernel on
-/// the rtx-5080 (the plan model's fused time under the split launches'), and
-/// the OFF arm emits what it did before the arm.
-/// `ROWBLOCK_DUMP=<dir>`: the small attention's ON (b=1, exact) host and
-/// device text, for reading.
+/// The rule on the real shape, `pt_attn_1024_64` on the rtx-5080: the group
+/// fits (b = 16, 84 KB) but the plan model keeps the boundary — the unit reads
+/// Kᵀ straight from L2 at half a sector a lane, which the split's tile site
+/// stages (measured: the fused kernel 33.3 us against 29.8 us for the three,
+/// `compile-time-graph.md`). Forced, it is one launch storing `o` alone.
 #[test]
-#[ignore]
-fn dump_small_attention() {
-    let dir = std::env::var("ROWBLOCK_DUMP").expect("ROWBLOCK_DUMP");
-    let ir = lower(&attention(32, 8, "", "o", 256));
-    let b = std::env::var("ROWBLOCK_B")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
-    let on = emission(&ir, "rtx-5080", EmitOpts::exact(), true, b);
-    std::fs::write(format!("{dir}/h.ll"), &on.text).unwrap();
-    std::fs::write(format!("{dir}/d.ll"), on.device.as_deref().unwrap()).unwrap();
-}
-
-#[test]
-fn attn_1024_is_one_kernel_on_rtx_5080() {
+fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../benches/algorithms/pt_attn_1024_64.mapal"
     ))
     .unwrap();
     let ir = lower(&src);
-    let on = emission(&ir, "rtx-5080", EmitOpts::default(), true, 0);
-    let lines = block_lines(&on);
-    assert_eq!(lines.len(), 1, "{}", on.text);
-    let (fused, split): (u64, u64) = (
-        field(&lines[0], "ns_fused").parse().unwrap(),
-        field(&lines[0], "ns_split").parse().unwrap(),
-    );
-    assert!(fused <= split, "{}", lines[0]);
-    assert_eq!(launches(&on.text), 1);
+    // The shipped arms (the emulator's rung offs change the split's plans).
+    let shipped = |b: u64| {
+        let mut gpu = GpuArms::default();
+        gpu.row_block_b = b;
+        let opts = EmitOpts {
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        };
+        emit_detailed(&ir, &opts).expect("emits")
+    };
+    let on = shipped(0);
+    assert!(block_lines(&on).is_empty());
+    assert!(on.text.contains(" row_block=s:cost"), "{}", on.text);
+    let forced = shipped(16);
+    let lines = block_lines(&forced);
+    assert_eq!(lines.len(), 1, "{}", forced.text);
+    assert_eq!(launches(&forced.text), 1);
     assert_eq!(field(&lines[0], "store"), "o");
+    assert_eq!(field(&lines[0], "smem"), "83968");
 }
 
 /// Generated chains (`testgen::chain_strategy`, not designed on this rule):

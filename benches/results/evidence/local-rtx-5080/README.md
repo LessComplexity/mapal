@@ -37,5 +37,10 @@ system NumPy links reference cblas, 250 ms at 1024² — not a valid opponent), 
   kernel causes, the calibrated `rtx-5080` DeviceCost (`calib/`) and its neutral A/B are there. Rows whose working set
   fits the 64 MB L2 compare an L2-warm Mapal with torch's flushed L2: open.
 
+**compile-time-graph** (`compile-time-graph.md`): `unit_plan` row-block units (attention one kernel when forced; the
+plan model keeps the boundary — the in-unit q·Kᵀ reads Kᵀ at half a sector a lane) and compile-time launch regions
+replayed as CUDA graphs (rt_mlp2_1024 0.92× by overlapping independent chains; decode family neutral: a 10-node
+graph launch costs as much as its eager ops on this driver). Intended vs realized, CUPTI, ABBA, open items there.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

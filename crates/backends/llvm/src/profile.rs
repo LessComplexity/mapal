@@ -4614,8 +4614,13 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // lsu: calib B `lds`, LDS.32 at 256 threads 64.0 B/clk/SM = 0.5
             // warp-instructions a clock (`B-lds-rtx-5080.txt`).
             lsu_ipc_pm: 500,
-            graph_launch_ns: 0,
-            set_params_ns: 0,
+            // compile-time-graph (calib `graph`, `graph-rtx-5080.txt`): a trip of
+            // 6 chained one-block kernels replays in 4.10 us, 12 in 6.15 — 0.34
+            // us a node on the device, so the launch's own host time is at most
+            // 4.10 − 6 · 0.34 = 2.05 us; patching a node 0.160–0.190 us (median
+            // 0.173). Eager issue of the same ops: 1.32–1.58 us an op.
+            graph_launch_ns: 2050,
+            set_params_ns: 173,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.

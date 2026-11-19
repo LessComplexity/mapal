@@ -32,8 +32,9 @@ impl<'a> FnEmit<'a> {
             || self.device.contains_key(m)
     }
 
-    /// The arrays a morphism reads: its source, or each slot of the product
-    /// it reads.
+    /// The objects a morphism reads: its source, or each slot of the product
+    /// it reads — arrays and numbers alike (a device whole fold's number lives
+    /// in a one-element device buffer its readers load: `scalar-fold`).
     fn op_inputs(&self, m: MorphismId) -> Vec<ObjectId> {
         let mo = self.ir.morphism(m).expect("morphism resolves");
         let slots = match mo.op {
@@ -46,7 +47,6 @@ impl<'a> FnEmit<'a> {
         if out.is_empty() {
             out.push(mo.source);
         }
-        out.retain(|&o| matches!(self.obj_ty(o), Ty::Array { .. }));
         out
     }
 
