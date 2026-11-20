@@ -1145,3 +1145,25 @@ if "--ladder" in sys.argv:
         step(f"pt_pm_{n}_{s}", "cpugpu-pm", n, 6 * s ** 3 + 4 * n ** 3, "flop", composed(*mixed(n, s)))
     (out / "ladder.tsv").write_text("stem\tfamily\tsize\tunits\tunit\tgate\n"
                                     + "".join("\t".join(map(str, r)) + "\n" for r in lad))
+
+
+# --- the formatter owns the layout of generated source too (CLAUDE.md "Source formatting"): every program this
+# run wrote goes through `mapal fmt`, so benches/algorithms and the bundles hold formatted text. The CLI is $MAPAL,
+# else `mapal` on PATH, else `cargo run -p mapal-cli`. Formatting never changes the parsed program (emission is
+# byte-identical), and a program the formatter rejects is a generator bug, so a failure stops the run.
+def format_written(paths):
+    import os
+    import shutil
+    import subprocess
+
+    if not paths:
+        return
+    cli = os.environ.get("MAPAL") or shutil.which("mapal")
+    root = Path(__file__).resolve().parents[2]
+    cmd = [cli] if cli else ["cargo", "run", "-q", "--release", "-p", "mapal-cli", "--"]
+    for i in range(0, len(paths), 200):
+        subprocess.run(cmd + ["fmt"] + [str(p) for p in paths[i:i + 200]], cwd=root, check=True,
+                       stdout=subprocess.DEVNULL)
+
+
+format_written(sorted(out.glob("*.mapal")))
