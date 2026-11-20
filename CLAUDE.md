@@ -83,8 +83,13 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
 - **A mixed result is a missing fact** (Sapir, 2026-10-26). An optimization that wins on some programs and loses on
   others beyond null means its condition lumps different situations together (over-abstraction). Find what separates
   winners from losers in the SASS/usage evidence (layout, extent vs SMs, reuse, occupancy, …), add it as an IR or
-  `TargetProfile` fact, and make the rule read it, so each case gets its own decision. A `GPU_RUNGS_OFF` row is only a
-  stopgap and is always recorded as an open "missing fact" item.
+  `TargetProfile` fact, and make the rule read it, so each case gets its own decision.
+- **Hardware is physical properties, never a name or version** (Sapir, 2026-11-20). Compilation matches the shape's
+  geometry to the hardware's physical properties (SMs, threads/registers/smem per SM, L2 bytes, bandwidths, latencies,
+  issue/launch/barrier costs, instruction rates) — measured or queried, stored as `TargetProfile` facts. No decision is
+  switched on or off per architecture, part or version ("4090 on, 5080 off" is wrong): a rule that loses on some
+  hardware is missing the property that separates the cases. `GPU_RUNGS_OFF` (per-arch rung rows) is legacy being
+  removed — never add a row. OFF arms are measurement flags (A/B, debugging), never per-hardware defaults.
 - **Generic, proven on unseen cases.** Never target a benchmark. Every rule is validated by a property test over
   programs from the random generator (`crates/mapal-rewrite/tests/testgen/`, extended as needed) that the change was
   not designed on: values vs the interpreter / bound, plus movement and kernel intents. Benchmarks are acceptance
@@ -96,7 +101,7 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
   threads, folds as tree reductions) and compute a value once when it has several readers.
 - **Benchmarks are written in idiomatic Mapal** (map / fold / loop / guards / captures), never unrolled or shaped to
   what the compiler already recognizes. If the natural form compiles worse, the facts are generalized — the program
-  is never rewritten to suit them. `benches/algorithms/*.mapal` is the committed, readable snapshot. Every rung has an OFF arm; per-arch defaults only via cited `GPU_RUNGS_OFF` rows.
+  is never rewritten to suit them. `benches/algorithms/*.mapal` is the committed, readable snapshot. Every rung has an OFF arm for measurement; its default comes from the rule over facts, never per hardware.
 - Default float face: full precision, a-priori error bound, order unspecified, fastest for the native CPU+GPU
   (ADR-0040). Exact/contract/fixed-order are opt-in; value gates on the default face check the bound.
 - GPU archs: RTX 4090 sm_89, RTX 5090 sm_120, H100 sm_90a, RTX 3090 sm_86, rented on vast.ai on demand
