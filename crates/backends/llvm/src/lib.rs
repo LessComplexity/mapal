@@ -538,11 +538,12 @@ pub struct GpuRungs {
     /// `GPU_RUNGS_OFF` do not apply. Off: the pre-sprint panels (row map, no
     /// k-major pad, no rule) and those rows.
     pub bank_plan: bool,
-    /// compile-time-graph A, the shipped default per part: a row-block group
-    /// may form where [`GpuArms::row_block`] allows it. Its `GPU_RUNGS_OFF`
-    /// rows keep it off on every measured part until a realized unit is
-    /// measured to pay there; `--gpu-on=row-block` forms it (the plan model
-    /// still decides), `--row-block=<b>` forces it.
+    /// compile-time-graph A: a row-block group may form where
+    /// [`GpuArms::row_block`] allows it and the plan model, over the part's
+    /// measured properties, prices the unit below the split launches (a part
+    /// without plan rates forms none). No per-part rows (kernel-merging
+    /// Calls); `--gpu-off=row-block` is the measurement arm, `--row-block=<b>`
+    /// forces it.
     pub row_block: bool,
     /// kernel-merging `zero-fold`: an atomic site's zero pass runs inside an
     /// earlier kernel of the same sequence that the dependency fact
@@ -569,6 +570,15 @@ pub struct GpuRungs {
     /// waves fit one (`func/horizontal.rs`). Off (`--gpu-off=horizontal`):
     /// every launch its own, the emission before it.
     pub horizontal: bool,
+    /// kernel-merging `calls`: a chain of dependent launches of one sequence
+    /// (single launches and `horizontal` groups, in walk order) runs as one
+    /// persistent kernel — each launch's body a device function called over
+    /// its blocks by a co-resident grid, a grid barrier between the levels
+    /// the dependency fact (`access_plan`) orders — where the part's measured
+    /// barrier and dependent-launch costs price the barriers at most the
+    /// launches they replace (`func/calls.rs`). Off (`--gpu-off=calls`):
+    /// every chain its launches, the emission before it.
+    pub calls: bool,
 }
 
 impl GpuRungs {
@@ -656,11 +666,12 @@ impl GpuRungs {
         zero_fold: true,
         row_stage: true,
         horizontal: true,
+        calls: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 82] = [
+    pub const NAMES: [&'static str; 83] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -743,6 +754,7 @@ impl GpuRungs {
         "zero-fold",
         "row-stage",
         "horizontal",
+        "calls",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -830,6 +842,7 @@ impl GpuRungs {
             "zero-fold" => &mut self.zero_fold,
             "row-stage" => &mut self.row_stage,
             "horizontal" => &mut self.horizontal,
+            "calls" => &mut self.calls,
             _ => return None,
         })
     }
@@ -1526,6 +1539,10 @@ fn emit_module(
     if funcs.contains("@mapal_gpu_launchv(") {
         out.push_str(crate::func::gpu::LAUNCHV_DECL);
     }
+    // kernel-merging `calls`: a persistent kernel's cooperative launch.
+    if funcs.contains("@mapal_gpu_launch_coop(") {
+        out.push_str(crate::func::gpu::COOP_DECL);
+    }
     // per-site-choice: a site with candidates launches its table.
     if funcs.contains("@mapal_gpu_site(") {
         out.push_str(crate::func::gpu::SITE_DECL);
@@ -1809,6 +1826,7 @@ mod place_tests {
             ..GpuArms::default()
         };
         *gpu.off.rung("horizontal").expect("a rung") = true;
+        *gpu.off.rung("calls").expect("a rung") = true;
         let opts = EmitOpts {
             gpu,
             ..EmitOpts::exact()
@@ -1858,6 +1876,7 @@ mod place_tests {
             ..GpuArms::default()
         };
         *gpu.off.rung("horizontal").expect("a rung") = true;
+        *gpu.off.rung("calls").expect("a rung") = true;
         let opts = EmitOpts {
             gpu,
             ..EmitOpts::exact()

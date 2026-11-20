@@ -41,6 +41,8 @@ fn bench(name: &str) -> CategoryIr {
 fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
     *gpu.off.rung("horizontal").unwrap() = !on;
+    // `calls` (its tests) would take the groups into persistent chains.
+    *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
         ir,
         &EmitOpts {
@@ -60,6 +62,8 @@ fn emulated(ir: &CategoryIr, on: bool) -> Emission {
         *gpu.off.rung(r).unwrap() = true;
     }
     *gpu.off.rung("horizontal").unwrap() = !on;
+    // `calls` (its tests) would take the groups into persistent chains.
+    *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
         ir,
         &EmitOpts {

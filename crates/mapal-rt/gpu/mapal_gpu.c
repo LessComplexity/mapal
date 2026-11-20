@@ -500,6 +500,86 @@ static void launch_on(unsigned k, uint64_t id, void **args, uint32_t gx,
             name, ms, k, pdl);
 }
 
+/* kernel-merging `calls`: a persistent kernel (each body strides over its
+ * blocks, a grid barrier between levels) needs every block resident. It
+ * launches cooperatively — the driver refuses a grid it cannot co-schedule
+ * rather than let the barrier deadlock — at most `gx` blocks and at most the
+ * loaded kernel's own occupancy (its ptxas registers, its shared memory and
+ * block) times the SMs. */
+struct coop_occ_e {
+  CUfunction fn;
+  uint32_t block, smem;
+  int per;
+};
+static struct coop_occ_e coop_occ[64];
+static size_t n_coop_occ;
+static int coop_sms;
+
+static void launch_coop_on(unsigned k, uint64_t id, void **args, uint32_t gx,
+                           uint32_t block, uint32_t smem) {
+  load_module();
+  char name[40];
+  CUfunction fn = kernel("mapal_tile", id, smem, name, sizeof name);
+  if (k && joined[k] != legacy_ops) {
+    event(0, k, 1);
+    joined[k] = legacy_ops;
+  }
+  if (!coop_sms) {
+    CUdevice dev;
+    CK(cuCtxGetDevice(&dev));
+    CK(cuDeviceGetAttribute(&coop_sms, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, dev));
+  }
+  int per = -1;
+  for (size_t i = 0; i < n_coop_occ; i++)
+    if (coop_occ[i].fn == fn && coop_occ[i].block == block && coop_occ[i].smem == smem)
+      per = coop_occ[i].per;
+  if (per < 0) {
+    CK(cuOccupancyMaxActiveBlocksPerMultiprocessor(&per, fn, (int)block, smem));
+    if (n_coop_occ < sizeof coop_occ / sizeof *coop_occ)
+      coop_occ[n_coop_occ++] = (struct coop_occ_e){fn, block, smem, per};
+  }
+  if (per < 1) {
+    fprintf(stderr, "mapal_gpu: %s: no block of %u threads, %u B fits an SM\n", name, block, smem);
+    exit(102);
+  }
+  uint32_t g = gx < (uint32_t)(per * coop_sms) ? gx : (uint32_t)(per * coop_sms);
+  if (!g)
+    g = 1;
+  double t0 = now_ms();
+  CK(cuLaunchCooperativeKernel(fn, g, 1, 1, block, 1, 1, smem, streams[k], args));
+  last_kernel[k] = 1;
+  if (!k)
+    legacy_ops++;
+  else
+    chains_busy = 1;
+  if (trace == 1)
+    CK(cuCtxSynchronize());
+  double ms = now_ms() - t0;
+  tot.kernel += ms;
+  tot.n_launch++;
+  if (trace)
+    fprintf(stderr, "mapal_gpu_trace op=launch kernel=%s ms=%.3f stream=%u pdl=0 coop=%u\n",
+            name, ms, k, g);
+}
+
+/* The cooperative launch over `nptr` device pointers (`launchv`'s ABI). */
+void mapal_gpu_launch_coop(uint64_t id, uint32_t stream, uint32_t nptr,
+                           const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                           uint32_t block, uint32_t smem) {
+  CUdeviceptr d[32];
+  void *args[32];
+  (void)gy;
+  if (nptr > 32) {
+    fprintf(stderr, "mapal_gpu: launch_coop with %u pointers\n", nptr);
+    exit(102);
+  }
+  for (uint32_t i = 0; i < nptr; i++) {
+    d[i] = ptrs[i];
+    args[i] = &d[i];
+  }
+  launch_coop_on(slot_of(stream), id, args, gx, block, smem);
+}
+
 void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t out,
                       uint32_t gx, uint32_t gy, uint32_t block, uint32_t smem) {
   CUdeviceptr da = a, db = b, dout = out;
@@ -837,14 +917,15 @@ struct site_env {
   uint64_t *ws_slot, ws_max;
   int zeroed;  /* MAPAL_SITE_ZEROED: an earlier kernel zeroed the output */
   int trialed; /* a trial ran in this call: the output holds its sums */
+  int coop;    /* MAPAL_SITE_COOP: persistent kernels, launched cooperatively */
 };
 
 static void site_run(void *e, uint32_t i) {
   struct site_env *x = e;
   const struct mapal_cand *c = &x->c[i];
   unsigned k = slot_of(x->stream);
-  CUdeviceptr d[16];
-  void *args[16];
+  CUdeviceptr d[32];
+  void *args[32];
   for (uint32_t p = 0; p < x->nptr; p++) {
     d[p] = x->ptrs[p];
     args[p] = &d[p];
@@ -853,6 +934,10 @@ static void site_run(void *e, uint32_t i) {
     mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws)
     d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+  if (x->coop) {
+    launch_coop_on(k, c->id, args, c->gx, c->block, c->smem);
+    return;
+  }
   launch_on(k, c->id, args, c->gx, c->gy, c->block, c->smem);
   if (c->ws) {
     CUdeviceptr r[3] = {d[x->out], 0, x->ptrs[x->out]};
@@ -889,13 +974,14 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
                     const struct mapal_cand *cands, uint32_t nptr,
                     const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
   load_module();
-  if (nptr > 16 || out >= nptr || !n) {
+  if (nptr > 32 || out >= nptr || !n) {
     fprintf(stderr, "mapal_gpu: site with %u pointers, out %u, %u candidates\n",
             nptr, out, n);
     exit(102);
   }
   choice_ready_dev();
-  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0};
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0,
+                       (flags & MAPAL_SITE_COOP) != 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max)
       x.ws_max = cands[i].ws;

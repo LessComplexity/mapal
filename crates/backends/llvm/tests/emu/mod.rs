@@ -62,7 +62,18 @@ impl Drop for Slot {
 /// `emu_cp_wait`), so a missing wait reads stale shared memory.
 pub fn host_device(dev: &str) -> String {
     let mut out = String::new();
+    // kernel-merging `calls`: the grid barrier is the emulator's
+    // (`mapal_gsync` in `mapal_gpu_emu.c`), its PTX body dropped.
+    let mut in_gsync = false;
     for line in dev.lines() {
+        if line.starts_with("define internal void @mapal_gsync(") {
+            in_gsync = true;
+            continue;
+        }
+        if in_gsync {
+            in_gsync = line != "}";
+            continue;
+        }
         let nvvm_decl = line.starts_with("declare")
             && (line.contains("@llvm.nvvm.") || line.contains("cp.async"));
         if line.starts_with("target ")
@@ -85,6 +96,11 @@ pub fn host_device(dev: &str) -> String {
             .replace(
                 "call void @llvm.nvvm.barrier.sync.cnt(i32 0, ",
                 "call void @emu_barrier_n(",
+            )
+            // kernel-merging `calls`: the tile boundary's own barrier.
+            .replace(
+                "call void @llvm.nvvm.barrier.sync.cnt(i32 1, ",
+                "call void @emu_barrier_k(i32 1, ",
             )
             .replace(" syncscope(\"device\")", "");
         for (ty, bits, c) in [("i32", 32, "r"), ("i64", 64, "l")] {
@@ -123,6 +139,7 @@ pub fn host_device(dev: &str) -> String {
         }
         for (r, e) in [
             ("laneid", "laneid"),
+            ("nctaid.x", "nctaid_x"),
             ("tid.x", "tid_x"),
             ("ctaid.x", "ctaid_x"),
             ("ctaid.y", "ctaid_y"),
@@ -143,6 +160,7 @@ pub fn host_device(dev: &str) -> String {
     };
     out + lanes
         + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
+           declare i32 @emu_nctaid_x()\ndeclare void @emu_barrier_k(i32, i32)\ndeclare void @mapal_gsync(ptr)\n\
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
            declare void @emu_barrier()\ndeclare void @emu_barrier_n(i32)\n@emu_smem = external global [0 x i8], align 16\n\
            declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\

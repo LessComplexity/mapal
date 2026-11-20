@@ -61,6 +61,7 @@ fn emission(
         "pinned",
         "zero-fold",
         "horizontal",
+        "calls",
     ]) {
         *gpu.off.rung(r).expect("rung") = true;
     }

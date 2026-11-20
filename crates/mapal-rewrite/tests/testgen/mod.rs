@@ -3418,6 +3418,33 @@ pub fn hz_prog_strategy() -> impl Strategy<Value = HzProg> {
         })
 }
 
+/// kernel-merging `calls`: [`HzProg`]'s programs over a wider size range —
+/// one output row or column up to eight, folds up to 1024 long — so the
+/// chains of dependent launches (a cell reading a site, a site over that
+/// cell, a row sum over a site) hold both unsplit sites and sites whose rule
+/// candidate adds into a zeroed output (few cells, a long fold: split-K
+/// atomic), beside the retained pattern's row passes.
+pub fn calls_prog_strategy() -> impl Strategy<Value = HzProg> {
+    (
+        any::<bool>(),
+        2u8..4,
+        prop::sample::select(vec![1u64, 4, 8]),
+        prop::sample::select(vec![1u64, 8, 32, 64]),
+        prop::sample::select(vec![32u64, 64, 256, 1024]),
+        any::<bool>(),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 2..8),
+    )
+        .prop_map(|(looped, trips, rows, c, k, kv, steps)| HzProg {
+            looped,
+            trips,
+            rows,
+            c,
+            k,
+            kv: kv && looped,
+            steps,
+        })
+}
+
 /// [`HzProg`]'s source text.
 pub fn hz_src(p: &HzProg) -> String {
     let (r, c, k) = (p.rows, p.c, p.k);

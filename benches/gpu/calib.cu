@@ -3,7 +3,14 @@
 //   bw      achieved read GB/s vs active SMs x warps/SM x 16 B loads in flight per thread, DRAM (1 GiB) and L2 (8 MiB, re-read)
 //   loaded  dependent-load latency of one warp while the other SMs stream DRAM (nstream SMs; achieved GB/s printed)
 //   lds     ld.shared.b32 / v2 / v4 conflict-free throughput, bytes per SM clock (clock64) and GB/s per SM
-// usage: calib [chase|bw|loaded|lds ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   gsync   kernel-merging `calls`: one grid barrier of a co-resident grid (the emitted barrier: block barrier, one
+//           arrival per block on a flip-bit counter, acquire spin; `fenced` = the fence + relaxed form) vs one dependent
+//           launch of the same grid (an empty kernel back to back on one stream, device-bound behind a long kernel; `pdl`:
+//           launched as a programmatic dependent launch, each kernel opening with `griddepcontrol.wait`, as the runtime
+//           launches tile kernels on sm_90+) vs one device-side tail launch (CDP2 `cudaStreamTailLaunch`, a comparison
+//           only), ns each, by grid and block
+// usage: calib [chase|bw|loaded|lds|gsync ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+// build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -158,6 +165,107 @@ template <int W> static void lds_one() {
         printf("lds width=%d bits thr=%d bytes_per_clk=%.1f gbs_per_sm=%.1f\n", W * 32, thr, bytes / cy, bytes / (cy / (clk_khz * 1e3)) / 1e9);
     }
 }
+
+// kernel-merging `calls`: the grid barrier `func/calls.rs` emits (`@mapal_gsync`), in CUDA. Block 0 adds
+// 0x80000000 - (nb - 1), every other block 1: the counter's top bit flips once all nb arrived. The low 31 bits start
+// at zero (a zeroed counter) and every complete barrier restores them, so a later barrier (or launch) of any grid
+// starts from a flip bit and zeros; a block reading the flip bit before the last arrival is impossible because the
+// partial sums borrow from it.
+template <int V> __device__ __forceinline__ void gsync(unsigned* ctr, unsigned nb) {
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        unsigned inc = blockIdx.x == 0 ? 0x80000000u - (nb - 1) : 1u, old, cur;
+        if (V == 0) {
+            __threadfence();
+            asm volatile("atom.add.relaxed.gpu.global.u32 %0, [%1], %2;" : "=r"(old) : "l"(ctr), "r"(inc) : "memory");
+            do { asm volatile("ld.relaxed.gpu.global.u32 %0, [%1];" : "=r"(cur) : "l"(ctr) : "memory"); } while (((old ^ cur) & 0x80000000u) == 0);
+            __threadfence();
+        } else {
+            asm volatile("atom.add.release.gpu.global.u32 %0, [%1], %2;" : "=r"(old) : "l"(ctr), "r"(inc) : "memory");
+            do { asm volatile("ld.acquire.gpu.global.u32 %0, [%1];" : "=r"(cur) : "l"(ctr) : "memory"); } while (((old ^ cur) & 0x80000000u) == 0);
+        }
+    }
+    __syncthreads();
+}
+template <int V> __global__ void gsync_k(unsigned* ctr, int n, unsigned long long* t) {
+    unsigned long long t0, t1;
+    if (blockIdx.x == 0 && threadIdx.x == 0) asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t0));
+    for (int i = 0; i < n; i++) gsync<V>(ctr, gridDim.x);
+    if (blockIdx.x == 0 && threadIdx.x == 0) { asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t1)); t[0] = t1 - t0; }
+}
+__global__ void empty_k(unsigned long long* t, int i) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) { unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); t[i] = g; }
+}
+// the same, as a programmatic dependent launch: it may start while the one before drains, and waits for it here
+__global__ void pdl_k(unsigned long long* t, int i) {
+    asm volatile("griddepcontrol.wait;" ::: "memory");
+    if (blockIdx.x == 0 && threadIdx.x == 0) { unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); t[i] = g; }
+    asm volatile("griddepcontrol.launch_dependents;");
+}
+__global__ void spin_k(long long cycles) { long long s = clock64(); while (clock64() - s < cycles) {} }
+// device-side launch, a comparison only: each kernel stamps its start and tail-launches the next of the same grid
+__global__ void tail_k(unsigned long long* t, int i, int n) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); t[i] = g;
+        if (i < n) tail_k<<<gridDim, blockDim, 0, cudaStreamTailLaunch>>>(t, i + 1, n);
+    }
+}
+static void gsync_run() {
+    unsigned* ctr; unsigned long long* t; CK(cudaMalloc(&ctr, 4)); CK(cudaMemset(ctr, 0, 4));
+    const int nk = 512; CK(cudaMalloc(&t, (nk + 1) * 8));
+    for (int block : {128, 256, 512}) {
+        int per = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per, gsync_k<1>, block, 0));
+        for (int grid : {1, 2, 4, 8, 16, 32, 42, 84, 168, 252, 336, 504, 1008}) {
+            if (grid > per * sms) continue;
+            const int n = 4000; std::vector<double> v, f;
+            for (int rep = 0; rep < 5; rep++) {
+                int nn = n; void* a[] = {&ctr, &nn, &t};
+                CK(cudaLaunchCooperativeKernel((void*)gsync_k<1>, grid, block, a, 0, 0)); CK(cudaDeviceSynchronize());
+                unsigned long long h; CK(cudaMemcpy(&h, t, 8, cudaMemcpyDeviceToHost)); v.push_back((double)h / n);
+                CK(cudaLaunchCooperativeKernel((void*)gsync_k<0>, grid, block, a, 0, 0)); CK(cudaDeviceSynchronize());
+                CK(cudaMemcpy(&h, t, 8, cudaMemcpyDeviceToHost)); f.push_back((double)h / n);
+            }
+            std::sort(v.begin(), v.end()); std::sort(f.begin(), f.end());
+            // the same grid as dependent launches: device-bound behind a 2 ms spin, start to start
+            std::vector<double> w;
+            for (int rep = 0; rep < 5; rep++) {
+                spin_k<<<1, 32>>>((long long)clk_khz * 2);
+                for (int i = 0; i <= nk; i++) empty_k<<<grid, block>>>(t, i);
+                CK(cudaDeviceSynchronize());
+                std::vector<unsigned long long> h(nk + 1); CK(cudaMemcpy(h.data(), t, (nk + 1) * 8, cudaMemcpyDeviceToHost));
+                w.push_back((double)(h[nk] - h[0]) / nk);
+            }
+            std::sort(w.begin(), w.end());
+            std::vector<double> q;
+            for (int rep = 0; rep < 5; rep++) {
+                spin_k<<<1, 32>>>((long long)clk_khz * 2);
+                for (int i = 0; i <= nk; i++) {
+                    cudaLaunchAttribute at[1];
+                    at[0].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+                    at[0].val.programmaticStreamSerializationAllowed = 1;
+                    cudaLaunchConfig_t cfg = {};
+                    cfg.gridDim = grid; cfg.blockDim = block; cfg.attrs = at; cfg.numAttrs = 1;
+                    CK(cudaLaunchKernelEx(&cfg, pdl_k, t, i));
+                }
+                CK(cudaDeviceSynchronize());
+                std::vector<unsigned long long> h(nk + 1); CK(cudaMemcpy(h.data(), t, (nk + 1) * 8, cudaMemcpyDeviceToHost));
+                q.push_back((double)(h[nk] - h[0]) / nk);
+            }
+            std::sort(q.begin(), q.end());
+            std::vector<double> d;
+            for (int rep = 0; rep < 5; rep++) {
+                tail_k<<<grid, block>>>(t, 0, nk);
+                CK(cudaDeviceSynchronize());
+                std::vector<unsigned long long> h(nk + 1); CK(cudaMemcpy(h.data(), t, (nk + 1) * 8, cudaMemcpyDeviceToHost));
+                d.push_back((double)(h[nk] - h[0]) / nk);
+            }
+            std::sort(d.begin(), d.end());
+            printf("gsync block=%d grid=%d per_sm=%d barrier_ns=%.1f [%.1f-%.1f] fenced_ns=%.1f launch_ns=%.1f [%.1f-%.1f] "
+                   "pdl_ns=%.1f [%.1f-%.1f] tail_ns=%.1f [%.1f-%.1f]\n", block, grid, per, v[2], v[0], v[4], f[2], w[2], w[0],
+                   w[4], q[2], q[0], q[4], d[2], d[0], d[4]);
+        }
+    }
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
@@ -170,5 +278,6 @@ int main(int argc, char** argv) {
     if (on("bw")) bw_run();
     if (on("loaded")) loaded_run();
     if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); }
+    if (on("gsync")) gsync_run();
     return 0;
 }

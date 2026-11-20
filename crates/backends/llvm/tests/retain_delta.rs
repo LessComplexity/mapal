@@ -194,7 +194,13 @@ fn recurrence_off(gpu: &mut GpuArms) {
     gpu.row_block = false;
     // kernel-merging `horizontal` off: the retained rows and the query cell
     // launch as one (`horizontal.rs`); these count the sites' own.
-    for r in ["range-cell", "scalar-fold", "trip-batch", "horizontal"] {
+    for r in [
+        "range-cell",
+        "scalar-fold",
+        "trip-batch",
+        "horizontal",
+        "calls",
+    ] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
 }

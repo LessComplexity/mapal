@@ -280,6 +280,18 @@ INTENT = {
         ('a merged launch a group (its table or its one kernel)', 'host.hz.calls >= host.hz.groups'),
         ('every merged kernel the host names is in the device module', 'dev.hz == host.hz.specs')],
         applies_off='host.calls.launchv > 0', off=[('no merged kernel', 'dev.hz == 0')]),
+    # kernel-merging `calls` (func/calls.rs): a chain of dependent launches runs as one persistent kernel launched
+    # cooperatively; its levels are separated by grid barriers (one release arrival each), its bodies inlined, and
+    # no load takes the non-coherent path (a later level reads what an earlier one wrote).
+    'calls': dict(host=True, applies='host.chain.formed > 0', on=[
+        ('a cooperative launch a chain (its COOP table or its one kernel)', 'host.chain.coop >= host.chain.formed'),
+        ('every persistent kernel the host names is in the device module', 'dev.calls == host.chain.specs')],
+        applies_off='host.calls.launchv > 0', off=[('no persistent kernel', 'dev.calls == 0')]),
+    'calls-kernel': dict(applies="plan.kind == 'calls'", on=[
+        ('one grid-barrier arrival per level boundary', 'ptx.gsync_arrive == plan.levels - 1'),
+        ('no non-coherent load (ld.global.nc)', 'ptx.ld_nc == 0'),
+        ('every body inlined: no call left in PTX', 'ptx.call == 0'),
+        ('shared memory is the launch\'s (the largest member\'s), none static', 'ptxas.static_smem == 0')]),
     'horizontal-kernel': dict(applies="plan.kind == 'hz'", on=[
         ("every member body inlined: no call left in PTX", 'ptx.call == 0'),
         ('shared memory is the launch\'s (the largest member\'s), none static', 'ptxas.static_smem == 0')]),

@@ -54,6 +54,10 @@ _Static_assert(sizeof(struct mapal_cand) == 56, "the host's %mapal_cand");
  * stream zeroed the output, so a candidate's zero pass is skipped — unless a
  * trial ran in this call (each timed run and the pick after it zero). */
 #define MAPAL_SITE_ZEROED 2u
+/* `flags` bit 2 (kernel-merging `calls`): every candidate is a persistent
+ * kernel (its bodies stride over their blocks, grid barriers between its
+ * levels), launched cooperatively at most its `gx` blocks. */
+#define MAPAL_SITE_COOP 4u
 
 /* How the decision runs a candidate: `run` enqueues its recipe, `timed` runs
  * it to completion and returns its nanoseconds, `warm` makes what any

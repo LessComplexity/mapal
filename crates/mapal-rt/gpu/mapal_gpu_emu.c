@@ -13,6 +13,16 @@
  * that no barrier orders then meet in the one order every run, so a missing
  * barrier is a wrong value, not a race that shows by chance.
  *
+ * kernel-merging `calls`: a cooperative launch (`mapal_gpu_launch_coop`, a
+ * persistent kernel whose levels meet at `mapal_gsync`) runs every block's
+ * threads at once but one block at a time: the running block holds a baton
+ * until all its threads reach a grid barrier (or end), then the next block in
+ * the run order that may proceed takes it — a block not started yet, or one
+ * parked at a barrier every block has reached. A barrier some block never
+ * reaches is a deadlock on the device and an exit (105) here. Blocks run at
+ * most MAPAL_EMU_GRID (default 3) at once, so each body strides over several
+ * of its blocks.
+ *
  * Used by crates/backends/llvm/tests/retain_delta.rs; never shipped. */
 #include <dlfcn.h>
 #include <pthread.h>
@@ -23,7 +33,7 @@
 
 #include "mapal_choice.h"
 
-static int32_t ctaid_x, ctaid_y;
+static int32_t ctaid_x, ctaid_y, nctaid_x = 1;
 /* MAPAL_EMU_REVERSE=1: a grid's blocks run last to first. A GPU runs a grid's
  * blocks in any order, so two blocks of one launch that race (a merged
  * launch's members sharing bytes: `horizontal`) show as a wrong value. */
@@ -53,10 +63,10 @@ static _Thread_local int32_t tid_x;
  * reaching a meet (or its end) hands the turn to the next runnable thread in
  * the order; a meet every thread (every lane of the warp) reached makes them
  * runnable again and gives the turn to the first in the order. */
-enum { S_RUN, S_BAR, S_WARP, S_DONE };
+enum { S_RUN, S_BAR, S_WARP, S_DONE, S_BARK, S_PARK };
 static int s_mode = -1, s_turn;
-static unsigned char s_st[1024];
-static unsigned s_bar, s_warp[32];
+static unsigned char s_st[1024], s_bid[1024];
+static unsigned s_bar, s_warp[32], s_bark[16];
 static int serial(void) {
   if (s_mode < 0) {
     const char *e = getenv("MAPAL_EMU_SERIAL");
@@ -96,6 +106,7 @@ static void s_start(unsigned n) {
   b_n = n;
   s_bar = 0;
   memset(s_warp, 0, sizeof s_warp);
+  memset(s_bark, 0, sizeof s_bark);
   memset(s_st, S_RUN, n);
   s_turn = s_first();
 }
@@ -126,6 +137,46 @@ static void s_meet_n(int warp, unsigned n) {
   pthread_mutex_unlock(&b_mu);
 }
 static void s_meet(int warp) { s_meet_n(warp, b_n); }
+/* `barrier.sync <id>, n` (id > 0, `calls`' tile boundary): `n` threads meet
+ * at barrier `id`, apart from barrier 0's (a padded member's own). */
+static void s_meet_k(int id, unsigned n) {
+  pthread_mutex_lock(&b_mu);
+  int t = tid_x;
+  s_st[t] = S_BARK;
+  s_bid[t] = (unsigned char)id;
+  if (++s_bark[id] == n) {
+    s_bark[id] = 0;
+    for (unsigned u = 0; u < b_n; u++)
+      if (s_st[u] == S_BARK && s_bid[u] == id) s_st[u] = S_RUN;
+    s_turn = s_first();
+    pthread_cond_broadcast(&b_cv);
+  } else {
+    s_pass(t);
+  }
+  s_wait();
+  pthread_mutex_unlock(&b_mu);
+}
+static unsigned k_count[16], k_gen[16];
+void emu_barrier_k(int32_t id, int32_t n) {
+  if (id <= 0 || id >= 16) {
+    fprintf(stderr, "emu: barrier id %d\n", id);
+    exit(103);
+  }
+  if (serial()) {
+    s_meet_k(id, (unsigned)n);
+    return;
+  }
+  pthread_mutex_lock(&b_mu);
+  unsigned g = k_gen[id];
+  if (++k_count[id] == (unsigned)n) {
+    k_count[id] = 0;
+    k_gen[id]++;
+    pthread_cond_broadcast(&b_cv);
+  } else {
+    while (g == k_gen[id]) pthread_cond_wait(&b_cv, &b_mu);
+  }
+  pthread_mutex_unlock(&b_mu);
+}
 /* `barrier.sync 0, n`: the block's first `n` threads meet. */
 void emu_barrier_n(int32_t n) {
   if (serial()) {
@@ -236,6 +287,7 @@ float emu_shfl_bfly(float v, int32_t off) {
   return r;
 }
 int32_t emu_ctaid_x(void) { return ctaid_x; }
+int32_t emu_nctaid_x(void) { return nctaid_x; }
 int32_t emu_ctaid_y(void) { return ctaid_y; }
 static unsigned long long n_h2d, n_d2h, n_launch, b_in, b_out, n_zero;
 static void total(void) {
@@ -405,7 +457,18 @@ static void call_v(kv_t k, uint32_t n, void **p) {
                                                                    p[8], p[9], p[10], p[11], p[12], p[13], p[14],
                                                                    p[15]);
     break;
-  default: fprintf(stderr, "emu: launchv with %u pointers\n", n); exit(102);
+  default:
+    if (n <= 32) {
+      /* `calls`: up to 32 pointers; a callee takes its own leading ones. */
+      void *q[32] = {0};
+      memcpy(q, p, n * sizeof *q);
+      ((void (*)(P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P))k)(
+          q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], q[8], q[9], q[10], q[11], q[12], q[13], q[14], q[15], q[16],
+          q[17], q[18], q[19], q[20], q[21], q[22], q[23], q[24], q[25], q[26], q[27], q[28], q[29], q[30], q[31]);
+      break;
+    }
+    fprintf(stderr, "emu: launchv with %u pointers\n", n);
+    exit(102);
   }
 }
 struct emu_vthread {
@@ -457,6 +520,135 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
   }
   n_launch++;
 }
+/* kernel-merging `calls` (see the header): the cooperative launch. */
+#define EMU_COOP_MAX 64
+enum { C_NEW, C_RUN, C_PARK, C_DONE };
+static uint32_t coop_nb, coop_gx, coop_block, coop_left;
+static unsigned coop_arr[EMU_COOP_MAX], coop_go[EMU_COOP_MAX];
+static unsigned char coop_st[EMU_COOP_MAX];
+static _Thread_local uint32_t my_blk;
+/* The blocks not holding the baton wait here, apart from the running
+ * block's barriers (`b_cv`): a barrier wakes only the running block. */
+static pthread_cond_t c_cv = PTHREAD_COND_INITIALIZER;
+/* The baton to the next block that may run (lock held). */
+static void coop_next(void) {
+  unsigned lo = ~0u;
+  for (uint32_t b = 0; b < coop_nb; b++)
+    if (coop_arr[b] < lo) lo = coop_arr[b];
+  for (uint32_t i = 0; i < coop_nb; i++) {
+    uint32_t b = reverse_blocks() ? coop_nb - 1 - i : i;
+    if (coop_st[b] == C_NEW || (coop_st[b] == C_PARK && coop_arr[b] <= lo)) {
+      coop_st[b] = C_RUN;
+      ctaid_x = (int32_t)(b % coop_gx);
+      ctaid_y = (int32_t)(b / coop_gx);
+      b_n = coop_block;
+      b_count = 0;
+      memset(k_count, 0, sizeof k_count);
+      coop_left = coop_block;
+      if (serial()) s_start(coop_block);
+      coop_go[b]++;
+      pthread_cond_broadcast(&c_cv);
+      return;
+    }
+  }
+  for (uint32_t b = 0; b < coop_nb; b++)
+    if (coop_st[b] != C_DONE) {
+      fprintf(stderr, "emu: a grid barrier not every block reaches\n");
+      exit(105);
+    }
+}
+/* A thread of the running block reached a grid barrier (`done` = 0) or its
+ * end; the last one passes the baton (lock held). */
+static void coop_arrive(int done) {
+  int t = tid_x;
+  if (serial()) s_st[t] = done ? S_DONE : S_PARK;
+  if (--coop_left == 0) {
+    coop_st[my_blk] = done ? C_DONE : C_PARK;
+    coop_arr[my_blk] += !done;
+    coop_next();
+  } else if (serial()) {
+    s_pass(t);
+  }
+}
+/* `@mapal_gsync` (`func/calls.rs`): the block meets, parks, and resumes when
+ * every block reached this barrier. */
+void mapal_gsync(void *ctr) {
+  (void)ctr;
+  emu_barrier();
+  pthread_mutex_lock(&b_mu);
+  unsigned g = coop_go[my_blk];
+  coop_arrive(0);
+  while (coop_go[my_blk] == g) pthread_cond_wait(&c_cv, &b_mu);
+  if (serial()) s_wait();
+  pthread_mutex_unlock(&b_mu);
+}
+struct emu_cthread {
+  kv_t k;
+  uint32_t n, blk;
+  void **p;
+  int32_t t;
+};
+static void *emu_crun(void *q) {
+  struct emu_cthread *x = q;
+  tid_x = x->t;
+  my_blk = x->blk;
+  aq_len = aq_group = 0;
+  pthread_mutex_lock(&b_mu);
+  while (!coop_go[my_blk]) pthread_cond_wait(&c_cv, &b_mu);
+  if (serial()) s_wait();
+  pthread_mutex_unlock(&b_mu);
+  call_v(x->k, x->n, x->p);
+  pthread_mutex_lock(&b_mu);
+  coop_arrive(1);
+  pthread_mutex_unlock(&b_mu);
+  return 0;
+}
+void mapal_gpu_launch_coop(uint64_t id, uint32_t stream, uint32_t nptr, const uint64_t *ptrs, uint32_t gx, uint32_t gy,
+                           uint32_t block, uint32_t smem) {
+  (void)stream, (void)gy;
+  emu_trace_launch(id);
+  kv_t k = (kv_t)sym("mapal_tile", id);
+  if (smem > sizeof emu_smem || nptr > 32 || block > 1024) {
+    fprintf(stderr, "emu: coop launch smem %u, %u pointers, block %u\n", smem, nptr, block);
+    exit(102);
+  }
+  void *p[32];
+  for (uint32_t i = 0; i < nptr; i++) p[i] = (void *)ptrs[i];
+  const char *e = getenv("MAPAL_EMU_GRID");
+  uint32_t cap = e ? (uint32_t)atoi(e) : 3, g = gx;
+  if (cap && g > cap) g = cap;
+  if (g > EMU_COOP_MAX) g = EMU_COOP_MAX;
+  if (!g) g = 1;
+  coop_nb = g;
+  coop_gx = g;
+  coop_block = block;
+  nctaid_x = (int32_t)g;
+  memset(coop_arr, 0, sizeof coop_arr);
+  memset(coop_go, 0, sizeof coop_go);
+  memset(coop_st, C_NEW, sizeof coop_st);
+  uint32_t nt = g * block;
+  pthread_t *th = malloc(nt * sizeof *th);
+  struct emu_cthread *xs = malloc(nt * sizeof *xs);
+  pthread_attr_t at;
+  pthread_attr_init(&at);
+  pthread_attr_setstacksize(&at, 1 << 20);
+  for (uint32_t i = 0; i < nt; i++) {
+    xs[i] = (struct emu_cthread){k, nptr, i / block, p, (int32_t)(i % block)};
+    if (pthread_create(&th[i], &at, emu_crun, &xs[i])) {
+      fprintf(stderr, "emu: pthread_create\n");
+      exit(102);
+    }
+  }
+  pthread_attr_destroy(&at);
+  pthread_mutex_lock(&b_mu);
+  coop_next();
+  pthread_mutex_unlock(&b_mu);
+  for (uint32_t i = 0; i < nt; i++) pthread_join(th[i], 0);
+  free(th);
+  free(xs);
+  nctaid_x = 1;
+  n_launch++;
+}
 /* S54 `l2-window`: the window is a cache policy, never a value. */
 void mapal_gpu_launch_l2(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t gx, uint32_t gy, uint32_t block,
                          uint32_t smem, uint64_t win, uint64_t win_bytes) {
@@ -476,14 +668,19 @@ struct site_env {
   uint64_t *ws_slot, ws_max;
   int zeroed;  /* MAPAL_SITE_ZEROED: an earlier kernel zeroed the output */
   int trialed; /* a trial ran in this call: the output holds its sums */
+  int coop;    /* MAPAL_SITE_COOP: persistent kernels, launched cooperatively */
 };
 static void site_run(void *e, uint32_t i) {
   struct site_env *x = e;
   const struct mapal_cand *c = &x->c[i];
-  uint64_t p[16];
+  uint64_t p[32];
   memcpy(p, x->ptrs, x->nptr * sizeof *p);
   if (c->zero && (!x->zeroed || x->trialed)) mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws) p[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
+  if (x->coop) {
+    mapal_gpu_launch_coop(c->id, x->stream, x->nptr, p, c->gx, c->gy, c->block, c->smem);
+    return;
+  }
   if (x->nptr == 3)
     mapal_gpu_launch(c->id, p[0], p[1], p[2], c->gx, c->gy, c->block, c->smem);
   else
@@ -509,11 +706,11 @@ static void site_warm(void *e) {
 }
 void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, const struct mapal_cand *cands,
                     uint32_t nptr, const uint64_t *ptrs, uint32_t out, uint64_t *ws_slot) {
-  if (nptr > 16 || out >= nptr || !n) {
+  if (nptr > 32 || out >= nptr || !n) {
     fprintf(stderr, "emu: site with %u pointers, out %u, %u candidates\n", nptr, out, n);
     exit(102);
   }
-  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0};
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0, (flags & MAPAL_SITE_COOP) != 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max) x.ws_max = cands[i].ws;
   const char *pick = getenv("MAPAL_GPU_PICK");

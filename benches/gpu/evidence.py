@@ -109,7 +109,9 @@ def arm_of(stem):
 I64 = re.compile(r'^(add|sub|mul\.lo|mul\.wide|mad\.lo|mad\.wide|shl|shr)\.[usb]?(64|32)\b|^cvt\.[us]64\.[us]32')
 EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.)*?add\.f'), ('mma', r'^mma\.sync'),  # (newer llc: .relaxed.gpu.global)
          ('ldmatrix', r'^ldmatrix'), ('wgmma', r'^wgmma\.mma_async'), ('wait_n', r'^cp\.async\.wait_group'),
-         ('div_rem', r'^(div|rem)\.'), ('call', r'^call')]
+         ('div_rem', r'^(div|rem)\.'), ('call', r'^call'),
+         # kernel-merging `calls`: a grid barrier's release arrival; a non-coherent (read-only path) load.
+         ('gsync_arrive', r'^atom\.add\.release\.gpu'), ('ld_nc', r'^ld\.global\.nc')]
 
 
 PTX_KEYS = [k.replace('.', '_') for k, _ in CLS] + [k for k, _ in EXTRA] + ['i64_arith']
@@ -356,6 +358,20 @@ def host_facts(ll, asm):
         hz['calls'] = sum(1 for m in re.finditer(r'call void @mapal_gpu_(?:site|launchv)\(i64 (-?\d+)', ll)
                           if f'{int(m.group(1)) & (2**64 - 1):016x}' in merged)
         f['hz'] = dict(hz)
+        # kernel-merging `calls`: every function's `; mapal.calls.host` line summed, the persistent kernels the host
+        # names (`; mapal.hz kernel=… grid=`), and the cooperative launches of one (a table flagged COOP, bit 2, or
+        # one `launch_coop`).
+        ch = Counter()
+        for m in re.finditer(r'; mapal\.calls\.host (.*)$', ll, re.M):
+            k = kv(m.group(1))
+            for x in ('chains', 'formed', 'units', 'barriers', 'zeros'):
+                ch[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
+        pers = set(re.findall(r'; mapal\.hz kernel=mapal_tile_([0-9a-f]{16}) [^\n]*grid=', ll))
+        ch['specs'] = len(pers)
+        ch['coop'] = sum(1 for m in re.finditer(r'call void @mapal_gpu_(site|launch_coop)\(i64 (-?\d+), i32 (\d+)', ll)
+                         if f'{int(m.group(2)) & (2**64 - 1):016x}' in pers
+                         and (m.group(1) == 'launch_coop' or int(m.group(3)) & 4))
+        f['chain'] = dict(ch)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),
@@ -976,7 +992,7 @@ def run_intent(it, state, ns):
     return out
 
 
-KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow', 'hz')
+KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow', 'hz', 'calls')
 
 
 def check(d, results=None, out=sys.stdout):
@@ -1002,7 +1018,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host') or (alt and it.get('rule')):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

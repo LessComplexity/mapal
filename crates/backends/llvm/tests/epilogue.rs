@@ -23,6 +23,7 @@ fn emit_on(src: &str, target: &'static str, contract: bool, mut gpu: GpuArms) ->
     // Each site its own launch: `horizontal` (its tests) would merge
     // independent ones.
     *gpu.off.rung("horizontal").expect("a rung") = true;
+    *gpu.off.rung("calls").expect("a rung") = true;
     // The rules' launches (`--cands=1`): these check the host's launch shapes.
     gpu.site_cands = 1;
     emit_detailed(

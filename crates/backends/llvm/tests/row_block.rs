@@ -70,10 +70,18 @@ fn emission_keep(
     gpu.row_block_b = b;
     // A unit's launches against its members' own: `horizontal` (its tests)
     // would merge independent ones in either arm.
-    for r in ["place", "async", "pdl", "streams", "pinned", "horizontal"]
-        .iter()
-        .filter(|r| !keep.contains(r))
-        .chain(off)
+    for r in [
+        "place",
+        "async",
+        "pdl",
+        "streams",
+        "pinned",
+        "horizontal",
+        "calls",
+    ]
+    .iter()
+    .filter(|r| !keep.contains(r))
+    .chain(off)
     {
         *gpu.off.rung(r).expect("rung") = true;
     }
@@ -378,6 +386,8 @@ fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emissio
     let mut gpu = GpuArms::default();
     gpu.on.row_block = rung;
     gpu.row_block_b = b;
+    // A unit's own launch (`calls` would take it into a persistent chain).
+    *gpu.off.rung("calls").expect("rung") = true;
     let opts = EmitOpts {
         target,
         gpu,
@@ -462,14 +472,14 @@ fn staged_column_passes_values() {
 /// Rows: the staged unit measures 26–28 us against 30.8 us of split kernels,
 /// the model ranks it the other way — open). Forced, it is one launch storing
 /// `o` alone, its panels staged; with `row-stage` off, the unit of
-/// `compile-time-graph.md` (84 KB, operands read from L2). Shipped, the rung
-/// is off (the rtx-5090 row of its architecture).
+/// `compile-time-graph.md` (84 KB, operands read from L2). Shipped, the rule
+/// decides (no per-part rows): the same refusal by cost.
 #[test]
 fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     let ir = bench("pt_attn_1024_64");
-    let off = shipped(&ir, "rtx-5080", false, 0);
-    assert!(block_lines(&off).is_empty());
-    assert!(!off.text.contains(" row_block="), "{}", off.text);
+    let def = shipped(&ir, "rtx-5080", false, 0);
+    assert!(block_lines(&def).is_empty());
+    assert!(def.text.contains(" row_block=s:cost"), "{}", def.text);
     let on = shipped(&ir, "rtx-5080", true, 0);
     assert!(block_lines(&on).is_empty());
     assert!(on.text.contains(" row_block=s:cost"), "{}", on.text);
@@ -521,13 +531,13 @@ fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     );
 }
 
-/// Every GPU part's shipped default forms no row-block unit (the rung's
-/// `GPU_RUNGS_OFF` rows: no realized unit was measured to pay); with the rung
-/// on, a part without plan rates refuses each group `unpriced` (nothing
-/// weighs the unit against the launches it replaces) and a part with them
-/// decides by the model.
+/// The shipped default is the rule on every part (no per-part rows,
+/// kernel-merging Calls): the emission equals the rung forced on; a part
+/// without plan rates refuses each group `unpriced` (nothing weighs the unit
+/// against the launches it replaces) and a part with them forms a unit only
+/// where the model prices it at most the split.
 #[test]
-fn row_block_ships_off_and_refuses_unpriced() {
+fn row_block_ships_its_rule_and_refuses_unpriced() {
     let parts = [
         ("rtx-5080", true),
         ("rtx-5090", true),
@@ -541,9 +551,9 @@ fn row_block_ships_off_and_refuses_unpriced() {
         let ir = bench(name);
         for (part, priced) in parts {
             let def = shipped(&ir, part, false, 0);
-            assert!(block_lines(&def).is_empty(), "{name} {part}: shipped");
-            assert!(!def.text.contains(" row_block="), "{name} {part}");
             let on = shipped(&ir, part, true, 0);
+            assert_eq!(def.text, on.text, "{name} {part}: shipped = the rule");
+            assert_eq!(def.device, on.device, "{name} {part}");
             let refused: Vec<&str> = on
                 .text
                 .lines()
@@ -583,8 +593,8 @@ fn attention_pricing_is_one_rule_across_parts() {
         for name in ["pt_attn_1024_64", "pt_attn_1024_128", "pt_attn_2048_64"] {
             let on = shipped(&bench(name), part, true, 0);
             // kernel-merging `row-stage`: staged panels bring the 4090's
-            // (128 SMs) 1024 × 64 unit under its split in the model — an
-            // unmeasured part, shipped off.
+            // (128 SMs) 1024 × 64 unit under its split in the model (its
+            // rule ships: no per-part rows).
             if (part, name) == ("rtx-4090", "pt_attn_1024_64") {
                 let lines = block_lines(&on);
                 assert_eq!(lines.len(), 1, "{name} {part}");

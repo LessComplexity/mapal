@@ -28,6 +28,7 @@ fn emit_arms(src: &str, mut gpu: GpuArms, contract: bool) -> Emission {
         "pinned",
         "pdl",
         "horizontal",
+        "calls",
     ] {
         *gpu.off.rung(r).expect("a rung") = true;
     }

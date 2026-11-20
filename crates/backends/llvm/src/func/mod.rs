@@ -708,6 +708,7 @@ struct ConvTileCtx {
 // child of this module, so it reaches `FnEmit`'s private fields directly and
 // picks up the imports above through `use super::*`.
 mod bulk;
+pub(crate) mod calls;
 mod conv;
 mod core;
 mod drive;

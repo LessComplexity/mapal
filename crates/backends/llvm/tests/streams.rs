@@ -18,7 +18,7 @@ fn emit(src: &str, target: &'static str, mut gpu: GpuArms) -> Emission {
     // programs' per-cell joins on the device (and launch them with `launchv` on
     // the legacy stream), `arena` lays out their buffers; their own tests pin those.
     // `horizontal` (its tests) merges independent sites where no stream opens.
-    for r in ["epilogue", "devmap", "arena", "horizontal"] {
+    for r in ["epilogue", "devmap", "arena", "horizontal", "calls"] {
         *gpu.off.rung(r).expect("a rung") = true;
     }
     emit_detailed(
@@ -439,6 +439,7 @@ fn grouped(src: &str, contract: bool) -> Emission {
     let mut gpu = forced(&["streams"]);
     *gpu.off.rung("stream-gate").expect("rung") = true;
     *gpu.off.rung("horizontal").expect("rung") = true;
+    *gpu.off.rung("calls").expect("rung") = true;
     emit_detailed(
         &lower_src(src),
         &EmitOpts {
@@ -646,7 +647,7 @@ fn grouped_member_row_fold_keeps_its_ordered_whole_copy() {
     // an ordered whole copy (S65 `by-ref` off).
     let s64 = |src: &str, contract| {
         let mut gpu = forced(&["streams"]);
-        for r in ["stream-gate", "by-ref", "horizontal"] {
+        for r in ["stream-gate", "by-ref", "horizontal", "calls"] {
             *gpu.off.rung(r).expect("rung") = true;
         }
         emit_detailed(

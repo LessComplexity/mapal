@@ -132,7 +132,10 @@ impl<'a> FnEmit<'a> {
                         None => 0,
                         Some(&(g, k)) => {
                             let ms = &plan.hz[g].members;
-                            if k + 1 != ms.len()
+                            // A `calls` group zeroes its own atomic outputs;
+                            // its members take no tail.
+                            if plan.hz[g].persistent()
+                                || k + 1 != ms.len()
                                 || ms.iter().any(|&x| touches(&self.hz_access(plan, &acc, x)))
                             {
                                 continue;
@@ -140,7 +143,8 @@ impl<'a> FnEmit<'a> {
                             ms[..k]
                                 .iter()
                                 .map(|&x| {
-                                    self.hz_shape(plan, x).map_or(gpu::LAUNCHV_MAX, |s| s.args)
+                                    self.hz_shape(plan, x, false)
+                                        .map_or(gpu::LAUNCHV_MAX, |s| s.args)
                                 })
                                 .sum()
                         }

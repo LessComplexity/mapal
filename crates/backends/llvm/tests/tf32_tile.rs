@@ -32,6 +32,7 @@ fn device(ir: &CategoryIr, target: &'static str, on: bool) -> String {
     *gpu.off.rung("place").expect("rung") = true;
     // Each site its own kernel (`horizontal` is `horizontal.rs`'s).
     *gpu.off.rung("horizontal").expect("rung") = true;
+    *gpu.off.rung("calls").expect("rung") = true;
     *(if on {
         gpu.on.rung("tf32-tile")
     } else {

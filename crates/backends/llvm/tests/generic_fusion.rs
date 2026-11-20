@@ -46,10 +46,15 @@ fn emission_on(
     gpu.row_block = false;
     // Units' launches against the members' own: `horizontal` (its tests)
     // would merge independent ones in either arm.
-    for r in off
-        .iter()
-        .chain(&["place", "async", "pdl", "streams", "pinned", "horizontal"])
-    {
+    for r in off.iter().chain(&[
+        "place",
+        "async",
+        "pdl",
+        "streams",
+        "pinned",
+        "horizontal",
+        "calls",
+    ]) {
         *gpu.off.rung(r).expect("rung") = true;
     }
     let opts = EmitOpts {

@@ -164,6 +164,11 @@ pub(crate) const LAUNCHV_DECL: &str =
 /// The most pointers one launch passes (`mapal_gpu.c`'s argument array).
 pub(crate) const LAUNCHV_MAX: usize = 16;
 
+/// kernel-merging `calls`: `mapal_gpu_launch_coop` — `launchv`'s arguments,
+/// launched cooperatively (every block co-resident). Declared only when called.
+pub(crate) const COOP_DECL: &str =
+    "declare void @mapal_gpu_launch_coop(i64, i32, i32, ptr, i32, i32, i32, i32)\n";
+
 /// S54 entries (`streams`, `pinned`), each declared only where it is called,
 /// so a module that never opens a stream or pins keeps its S53 text.
 /// (`launchv` is [`LAUNCHV_DECL`], shared with `epilogue` and `devmap`.)
@@ -1445,14 +1450,15 @@ fn launch_key(l: &Launch) -> String {
     for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
         *r.rung(n).expect("a kernel rung") = true;
     }
-    // The ids predate the host-only `row-block`, `zero-fold`, `row-stage` and `horizontal` rungs (off
-    // here: no kernel rung): their fields are not part of a kernel's key, so
+    // The ids predate the host-only `row-block`, `zero-fold`, `row-stage`, `horizontal` and `calls`
+    // rungs (off here: no kernel rung): their fields are not part of a kernel's key, so
     // tuned picks and wisdom keep their ids.
     format!("{:?}", Launch { rungs: r, ..*l })
         .replace(", row_block: false", "")
         .replace(", zero_fold: false", "")
         .replace(", row_stage: false", "")
         .replace(", horizontal: false", "")
+        .replace(", calls: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -2592,7 +2598,7 @@ pub(crate) fn launched_kernels(host: &str) -> std::collections::BTreeSet<String>
             continue;
         };
         let prefix = match entry {
-            "tile" | "launch" | "launch_l2" | "launchv" => "mapal_tile",
+            "tile" | "launch" | "launch_l2" | "launchv" | "launch_coop" => "mapal_tile",
             "gen" => "mapal_gen",
             _ => continue,
         };

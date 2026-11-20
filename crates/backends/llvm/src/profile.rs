@@ -223,6 +223,22 @@ pub struct DeviceCost {
     /// (the time it adds to the kernel), bytes per ns. 0 = not given: the
     /// tail is unpriced and no zero pass folds.
     pub tail_bytes_per_ns: u64,
+    /// kernel-merging `calls`: one grid barrier of a co-resident grid of at
+    /// most `sms` blocks (block barrier, one release arrival a block on one
+    /// counter, acquire spin), in ns — `benches/gpu/calib.cu gsync`. 0 = not
+    /// given: no chain of launches is priced, none runs as one kernel.
+    pub gsync_ns: u64,
+    /// kernel-merging `calls`: what each block beyond `sms` adds to one grid
+    /// barrier (the arrivals serialize on the counter), in ps.
+    pub gsync_block_ps: u64,
+    /// kernel-merging `calls`: the device time one dependent launch costs
+    /// beyond its work — start to start of empty kernels of at most `sms`
+    /// blocks, back to back on one stream with the host issue hidden, in ns
+    /// (`calib.cu gsync`). It holds `gap_ns` and the launch's own ramp.
+    pub dep_launch_ns: u64,
+    /// kernel-merging `calls`: what each block beyond `sms` adds to one
+    /// dependent launch (block dispatch), in ps.
+    pub dep_launch_block_ps: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -243,12 +259,16 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     lsu_ipc_pm: 0,
     fill_bytes_per_ns: 0,
     tail_bytes_per_ns: 0,
+    gsync_ns: 0,
+    gsync_block_ps: 0,
+    dep_launch_ns: 0,
+    dep_launch_block_ps: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 17] = [
+    pub const NAMES: [&'static str; 21] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -264,9 +284,32 @@ impl DeviceCost {
         "lsu_ipc_pm",
         "fill_bytes_per_ns",
         "tail_bytes_per_ns",
+        "gsync_ns",
+        "gsync_block_ps",
+        "dep_launch_ns",
+        "dep_launch_block_ps",
         "fp32_lanes",
         "clock_khz",
     ];
+
+    /// kernel-merging `calls`: one grid barrier of `blocks` co-resident
+    /// blocks, in ns ([`Self::gsync_ns`] up to `sms` blocks, then
+    /// [`Self::gsync_block_ps`] a block). `None` when not measured.
+    pub fn gsync_at(&self, blocks: u64, sms: u64) -> Option<f64> {
+        (self.gsync_ns > 0).then(|| {
+            self.gsync_ns as f64
+                + blocks.saturating_sub(sms) as f64 * self.gsync_block_ps as f64 / 1e3
+        })
+    }
+
+    /// kernel-merging `calls`: the device time one dependent launch of
+    /// `blocks` blocks adds beyond its work, in ns. `None` when not measured.
+    pub fn dep_launch_at(&self, blocks: u64, sms: u64) -> Option<f64> {
+        (self.dep_launch_ns > 0).then(|| {
+            self.dep_launch_ns as f64
+                + blocks.saturating_sub(sms) as f64 * self.dep_launch_block_ps as f64 / 1e3
+        })
+    }
 }
 
 /// A `--cost=` override per rate, in [`DeviceCost::NAMES`] order (`None` =
@@ -300,6 +343,10 @@ impl Gpu {
                 "lsu_ipc_pm" => &mut d.lsu_ipc_pm,
                 "fill_bytes_per_ns" => &mut d.fill_bytes_per_ns,
                 "tail_bytes_per_ns" => &mut d.tail_bytes_per_ns,
+                "gsync_ns" => &mut d.gsync_ns,
+                "gsync_block_ps" => &mut d.gsync_block_ps,
+                "dep_launch_ns" => &mut d.dep_launch_ns,
+                "dep_launch_block_ps" => &mut d.dep_launch_block_ps,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 _ => &mut self.clock_khz,
             } = v;
@@ -330,6 +377,10 @@ impl Gpu {
             "lsu_ipc_pm" => d.lsu_ipc_pm,
             "fill_bytes_per_ns" => d.fill_bytes_per_ns,
             "tail_bytes_per_ns" => d.tail_bytes_per_ns,
+            "gsync_ns" => d.gsync_ns,
+            "gsync_block_ps" => d.gsync_block_ps,
+            "dep_launch_ns" => d.dep_launch_ns,
+            "dep_launch_block_ps" => d.dep_launch_block_ps,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             _ => 0,
@@ -2076,51 +2127,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
         face: Face::Any,
         cite: "unmeasured; a candidate until the per-site-choice box run",
     },
-    // compile-time-graph A (`row-block`, open item): the one realized unit, rtx-5080 (sm_120, this table's
-    // rtx-5090 rows) pt_attn_1024_64 forced b = 16, lost to the split launches (CUPTI 33.3 vs 31.7 us, ABBA 1.011;
-    // benches/results/evidence/local-rtx-5080/compile-time-graph.md). The plan model admits that program on the
-    // 4090 / 5090 only through the split softmax's byte rate (`bytes_per_ns` 490 / 494, a DRAM placement rate,
-    // prices 12.6 MB of L2-resident rows at 25.5 us; the 5080's 2553 at 4.9; measured there 7.5) — the missing
-    // fact is where a split segment's bytes live. Parts without plan rates refuse every group (`unpriced`).
-    // kernel-merging Rows (`row-stage`, `local-rtx-5080/kernel-merging.md`): staged panels make the forced
-    // rtx-5080 unit pay (CUPTI 25.7–28.4 vs 30.8 us split, iteration ABBA 0.857–0.932), but the plan model ranks
-    // it above the split (18.6 vs 15.9 us: split sites 1.9× optimistic on the 5090 fit, the unit's row segments
-    // priced at peak) — with the rung on, no timed rtx-5080 program forms a unit, so the rows stay (open).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "row-block",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "row-block",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "row-block",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "row-block",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "row-block",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; no realized row-block unit was measured to pay on this architecture",
-    },
+    // kernel-merging Calls: the `row-block` rows ("unmeasured" on every part) are gone — per-hardware on/off
+    // is not a decision. Its default is its rule: the plan model (`block_cost`) over the part's measured
+    // properties forms a unit where it prices below the split launches; a part without plan rates is unpriced
+    // (no unit). `local-rtx-5080/kernel-merging.md` Calls.
 ];
 
 /// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
@@ -4494,6 +4504,10 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // zero-fold: not measured on this part (no fold: unpriced).
             fill_bytes_per_ns: 0,
             tail_bytes_per_ns: 0,
+            gsync_ns: 0,
+            gsync_block_ps: 0,
+            dep_launch_ns: 0,
+            dep_launch_block_ps: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4602,6 +4616,10 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // zero-fold: not measured on this part (no fold: unpriced).
             fill_bytes_per_ns: 0,
             tail_bytes_per_ns: 0,
+            gsync_ns: 0,
+            gsync_block_ps: 0,
+            dep_launch_ns: 0,
+            dep_launch_block_ps: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -4669,6 +4687,15 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // 9.64 us to it (23.30 vs 13.66 us median of 8) = 1740 B/ns.
             fill_bytes_per_ns: 2320,
             tail_bytes_per_ns: 1740,
+            // kernel-merging `calls` (`calib.cu gsync`, block 256, median of three
+            // runs, `kernel-merging.md` Calls): a grid barrier 553 ns at 84 blocks
+            // (398-401 at 1-2, 541-546 at 16-42), + 1.89 ns a block to 504; a
+            // dependent empty launch 650 ns start to start at <= 84 blocks (runs
+            // 644 / 651-933 / 842-857: the low mode), flat to 504.
+            gsync_ns: 553,
+            gsync_block_ps: 1890,
+            dep_launch_ns: 650,
+            dep_launch_block_ps: 0,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.

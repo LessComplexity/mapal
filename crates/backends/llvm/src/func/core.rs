@@ -202,6 +202,9 @@ impl<'a> FnEmit<'a> {
         if let Some(p) = self.resident.as_ref().filter(|p| !p.hz_line.is_empty()) {
             self.allocas.push_str(&format!("  {}", p.hz_line));
         }
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.calls_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.calls_line));
+        }
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.
         if let Some(p) = &self.resident {

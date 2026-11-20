@@ -334,6 +334,8 @@ pub(crate) struct ResidentPlan {
     pub hz_of: SecondaryMap<MorphismId, (usize, usize)>,
     /// The host intent line (`; mapal.hz.host …`).
     pub hz_line: String,
+    /// kernel-merging `calls`: the host intent line (`; mapal.calls.host …`).
+    pub calls_line: String,
 }
 
 /// recurrence-precision `trip-batch`: a loop whose first trip interval

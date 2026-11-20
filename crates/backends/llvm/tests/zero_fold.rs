@@ -42,6 +42,8 @@ fn bench(name: &str) -> CategoryIr {
 fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
     *gpu.off.rung("zero-fold").unwrap() = !on;
+    // `calls` zeroes its atomic members itself (its tests).
+    *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
         ir,
         &EmitOpts {
@@ -61,6 +63,8 @@ fn emulated(ir: &CategoryIr, on: bool) -> Emission {
         *gpu.off.rung(r).unwrap() = true;
     }
     *gpu.off.rung("zero-fold").unwrap() = !on;
+    // `calls` zeroes its atomic members itself (its tests).
+    *gpu.off.rung("calls").unwrap() = true;
     emit_detailed(
         ir,
         &EmitOpts {

@@ -52,6 +52,19 @@ pub(crate) struct HzGroup {
     pub members: Vec<MorphismId>,
     pub branchy: Vec<bool>,
     pub rerun: bool,
+    /// kernel-merging `calls`: each member's level in a persistent group
+    /// (all 0: a `horizontal` group, one grid side by side).
+    pub level: Vec<u32>,
+    /// `calls`: a member whose atomic candidates the persistent kernel may
+    /// take (its zero pass runs one level before it).
+    pub zero_ok: Vec<bool>,
+}
+
+impl HzGroup {
+    /// A `calls` group: one persistent kernel, grid barriers between levels.
+    pub(crate) fn persistent(&self) -> bool {
+        self.level.iter().any(|&l| l > 0)
+    }
 }
 
 /// A launch the rule may place in a merged grid: its rules' geometry.
@@ -86,7 +99,7 @@ impl Refuse {
         Refuse::Waves,
     ];
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Refuse::Args => "args",
             Refuse::Block => "block",
@@ -155,9 +168,8 @@ impl FnEmit<'_> {
     /// **`horizontal`** (module doc): fills `plan.hz` / `plan.hz_of`, moves
     /// the frees inside each group's window after its launch.
     pub(super) fn horizontal(&self, plan: &mut ResidentPlan) {
-        if !gpu::host_rungs(self.profile, self.contract, self.gpu_arms).horizontal
-            || !plan.chain.is_empty()
-        {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        if !(rungs.horizontal || rungs.calls) || !plan.chain.is_empty() {
             return;
         }
         let Some(gpu) = self.profile.gpu() else {
@@ -171,6 +183,8 @@ impl FnEmit<'_> {
             .collect();
         let mut refused = [0usize; Refuse::ALL.len()];
         let mut launches = 0;
+        let mut dead: Vec<bool> = Vec::new();
+        let mut calls = super::calls::CallsStats::default();
         for seq in self.zero_sequences() {
             let access: Vec<(Vec<ObjectId>, Vec<ObjectId>)> = seq
                 .iter()
@@ -183,7 +197,7 @@ impl FnEmit<'_> {
                 .iter()
                 .enumerate()
                 .map(|(j, s)| match *s {
-                    Step::Op(m) => self.hz_shape(plan, m).filter(|_| {
+                    Step::Op(m) => self.hz_shape(plan, m, false).filter(|_| {
                         !gated
                             .iter()
                             .any(|g| self.hz_conflict(plan, &acc, g, &access[j]))
@@ -205,6 +219,9 @@ impl FnEmit<'_> {
             };
             let mut open: Vec<usize> = Vec::new();
             for j in 0..seq.len() {
+                if !rungs.horizontal {
+                    break;
+                }
                 // A step touching a member's bytes: the group launches before it.
                 if !structural(j)
                     && open
@@ -238,9 +255,59 @@ impl FnEmit<'_> {
                 open.push(j);
             }
             self.hz_close(plan, &seq, &acc, &access, &mut open);
+            // kernel-merging `calls`: chains of the sequence's units, where the
+            // part's barrier and dependent-launch costs were measured.
+            let priced = gpu
+                .cost
+                .as_ref()
+                .is_some_and(|d| d.gsync_ns > 0 && d.dep_launch_ns > 0);
+            if rungs.calls && priced {
+                dead.resize(plan.hz.len(), false);
+                self.calls_walk(plan, &seq, &acc, &access, &gated, &mut dead, &mut calls);
+            }
+        }
+        // The groups `calls` absorbed are gone; the rest keep their order.
+        if dead.iter().any(|&d| d) {
+            let old = std::mem::take(&mut plan.hz);
+            let mut at = vec![usize::MAX; old.len()];
+            for (g, grp) in old.into_iter().enumerate() {
+                if !dead.get(g).copied().unwrap_or(false) {
+                    at[g] = plan.hz.len();
+                    plan.hz.push(grp);
+                }
+            }
+            for (g, grp) in plan.hz.iter().enumerate() {
+                for (k, &m) in grp.members.iter().enumerate() {
+                    plan.hz_of.insert(m, (g, k));
+                }
+            }
+            debug_assert!(at.iter().filter(|&&a| a != usize::MAX).count() == plan.hz.len());
+        }
+        if calls.chains > 0 || !calls.refused.is_empty() {
+            let why: Vec<String> = calls
+                .refused
+                .iter()
+                .map(|(r, n)| format!("{r}:{n}"))
+                .collect();
+            plan.calls_line = format!(
+                "; mapal.calls.host chains={} formed={} units={} barriers={} zeros={} per_ns={:.0} sep_ns={:.0} refused={}\n",
+                calls.chains,
+                calls.formed,
+                calls.units,
+                calls.barriers,
+                calls.zeros,
+                calls.per_ns,
+                calls.sep_ns,
+                if why.is_empty() {
+                    "0".to_string()
+                } else {
+                    why.join(",")
+                }
+            );
         }
         let refusals: usize = refused.iter().sum();
-        if plan.hz.is_empty() && refusals == 0 {
+        let flat: Vec<&HzGroup> = plan.hz.iter().filter(|g| !g.persistent()).collect();
+        if flat.is_empty() && refusals == 0 {
             return;
         }
         let why: Vec<String> = Refuse::ALL
@@ -249,17 +316,16 @@ impl FnEmit<'_> {
             .filter(|&(_, n)| n > 0)
             .map(|(r, n)| format!("{}:{n}", r.name()))
             .collect();
-        let all: Vec<MorphismId> = plan.hz.iter().flat_map(|g| g.members.clone()).collect();
+        let all: Vec<MorphismId> = flat.iter().flat_map(|g| g.members.clone()).collect();
         let cells = all.iter().filter(|&&m| plan.cells.contains_key(m)).count();
         let units = all.iter().filter(|&&m| plan.units.contains_key(m)).count();
-        let branchy: usize = plan
-            .hz
+        let branchy: usize = flat
             .iter()
             .map(|g| g.branchy.iter().filter(|&&b| b).count())
             .sum();
         plan.hz_line = format!(
             "; mapal.hz.host launches={launches} groups={} members={} cells={cells} units={units} tiles={} branchy={branchy} refused={}\n",
-            plan.hz.len(),
+            flat.len(),
             all.len(),
             all.len() - cells - units,
             if why.is_empty() {
@@ -317,10 +383,13 @@ impl FnEmit<'_> {
                 }
             }
         }
+        let n = members.len();
         plan.hz.push(HzGroup {
             members,
             branchy,
             rerun,
+            level: vec![0; n],
+            zero_ok: vec![false; n],
         });
     }
 
@@ -340,7 +409,7 @@ impl FnEmit<'_> {
 
     /// Does a later access conflict with an earlier one (either order: a
     /// deferred launch moves past the step)?
-    fn hz_conflict(
+    pub(super) fn hz_conflict(
         &self,
         plan: &ResidentPlan,
         acc: &AccessPlan,
@@ -355,7 +424,7 @@ impl FnEmit<'_> {
 
     /// A retained site's row pass, when `m` launches one under this plan
     /// (the emission's own test, `emit_retained`).
-    fn hz_row(&self, plan: &ResidentPlan, m: MorphismId) -> Option<&TileSite> {
+    pub(super) fn hz_row(&self, plan: &ResidentPlan, m: MorphismId) -> Option<&TileSite> {
         let target = self.ir.morphism(m)?.target;
         let r = self.retain.get(target)?;
         let kept = !plan.is_carry_next(target) && plan.alias(target) == target;
@@ -366,8 +435,15 @@ impl FnEmit<'_> {
     /// The launch emitted at `m`, when the rule may merge it: its rules'
     /// geometry. Cells (not a range cell or a batched write), units, and
     /// unsplit tile sites (not a linear sum's table, a column-major store, an
-    /// L2-windowed launch or a row whose split launches without a table).
-    pub(super) fn hz_shape(&self, plan: &ResidentPlan, m: MorphismId) -> Option<Shape> {
+    /// L2-windowed launch or a row whose split launches without a table);
+    /// with `atomic` (`calls`, whose kernel zeroes the output one level
+    /// before) a site whose rule candidate adds into a zeroed output too.
+    pub(super) fn hz_shape(
+        &self,
+        plan: &ResidentPlan,
+        m: MorphismId,
+        atomic: bool,
+    ) -> Option<Shape> {
         let gpu = self.profile.gpu()?;
         let zjobs = plan.zero_by.get(m).map_or(0, Vec::len);
         let zargs = if zjobs > 0 { 1 + 2 * zjobs } else { 0 };
@@ -439,7 +515,13 @@ impl FnEmit<'_> {
             row.is_some(),
         );
         let c0 = cands[0].launch;
-        if c0.combine != gpu::Combine::None {
+        // A one-candidate atomic site launches directly behind its own zero
+        // op (no table to take): never a member.
+        let atomic_ok = atomic
+            && row.is_none()
+            && cands.len() > 1
+            && matches!(c0.combine, gpu::Combine::Atomic { .. });
+        if c0.combine != gpu::Combine::None && !atomic_ok {
             return None;
         }
         if row.is_none()
@@ -459,8 +541,13 @@ impl FnEmit<'_> {
         let args = 3 + epi.map_or(0, |g| {
             g.caps().len() + g.chain.iter().filter(|mb| mb.store).count()
         });
+        // An atomic split's partitions are blocks along `y` (the recipe's `gy · s`).
+        let split = match c0.combine {
+            gpu::Combine::Atomic { s } => s,
+            _ => 1,
+        };
         Some(Shape {
-            blocks: c0.gx * c0.gy,
+            blocks: c0.gx * c0.gy * split,
             block: c0.block,
             smem: c0.smem,
             per_sm: c0.wave(gpu) / gpu.sms,
@@ -686,12 +773,7 @@ impl FnEmit<'_> {
             .filter(|_| self.hz.groups[g].caps[i].is_none() && !self.hz.groups[g].aborted);
         let Some(p) = parsed else {
             // Not a launch the merge takes: this member's launch runs here.
-            self.hz.cur = None;
-            self.hz.groups[g].aborted = true;
-            if let Some(c) = self.hz.groups[g].caps[i].take() {
-                let flag = self.hz.groups[g].flags[i].clone();
-                self.hz_issue(&c, flag.as_deref());
-            }
+            self.hz_abort(g, i);
             return false;
         };
         let cap = match p {
@@ -703,8 +785,7 @@ impl FnEmit<'_> {
                 out,
             } => {
                 let Some(rows) = table_rows(&self.cand_tables, &global) else {
-                    self.hz.cur = None;
-                    self.hz.groups[g].aborted = true;
+                    self.hz_abort(g, i);
                     return false;
                 };
                 Cap {
@@ -766,6 +847,34 @@ impl FnEmit<'_> {
         true
     }
 
+    /// Member `i` of group `g` launches in place: its captured launch is
+    /// issued here, and in a `calls` group every earlier member's before it
+    /// (they produce what it reads); the rest launch alone.
+    fn hz_abort(&mut self, g: usize, i: usize) {
+        self.hz.cur = None;
+        let group = &self.resident.as_ref().expect("plan").hz[g];
+        let persistent = group.persistent();
+        // kernel-merging `calls`: the last member's own launch was taken and
+        // what follows it (its output's copy-out) reads what the group
+        // writes: the group launches here, before it.
+        if persistent
+            && i + 1 == group.members.len()
+            && !self.hz.groups[g].aborted
+            && self.hz.groups[g].caps[i].is_some()
+        {
+            self.hz_launch(g);
+            return;
+        }
+        self.hz.groups[g].aborted = true;
+        let from = if persistent { 0 } else { i };
+        for k in from..=i {
+            if let Some(c) = self.hz.groups[g].caps[k].take() {
+                let flag = self.hz.groups[g].flags[k].clone();
+                self.hz_issue(&c, flag.as_deref());
+            }
+        }
+    }
+
     /// Issue a captured launch on its own (under its flag when it ran in a
     /// branch arm).
     fn hz_issue(&mut self, c: &Cap, flag: Option<&str>) {
@@ -786,16 +895,21 @@ impl FnEmit<'_> {
     /// The merged tuples of the captured launches: each member's unsplit
     /// candidates (a fixed launch its own), every tuple whose block and shared
     /// memory a launch takes, in order of their ranks' sum, at most `--cands`.
-    fn hz_tuples(&self, caps: &[&Cap]) -> Vec<Vec<Row>> {
+    fn hz_tuples(&self, group: &HzGroup, caps: &[&Cap]) -> Vec<Vec<Row>> {
         let gpu = self.profile.gpu().expect("a GPU profile");
+        // kernel-merging `calls`: a member whose zero pass the persistent
+        // kernel runs one level before it takes its atomic candidates too.
         let opts: Vec<Vec<(usize, Row)>> = caps
             .iter()
-            .map(|c| match &c.kind {
+            .enumerate()
+            .map(|(i, c)| match &c.kind {
                 CapKind::Table { rows, .. } => rows
                     .iter()
                     .copied()
                     .enumerate()
-                    .filter(|(_, r)| r.zero == 0 && r.ws == 0)
+                    .filter(|(_, r)| {
+                        r.ws == 0 && (r.zero == 0 || group.zero_ok.get(i).copied().unwrap_or(false))
+                    })
                     .collect(),
                 CapKind::Fixed(r) => vec![(0, *r)],
             })
@@ -849,7 +963,7 @@ impl FnEmit<'_> {
             .flatten();
         let tuples = complete
             .as_ref()
-            .map(|c| self.hz_tuples(c))
+            .map(|c| self.hz_tuples(&group, c))
             .unwrap_or_default();
         let fallback = |e: &mut Self| {
             for (c, f) in caps.iter().zip(&flags) {
@@ -939,11 +1053,48 @@ impl FnEmit<'_> {
             }
             off += c.nptr;
         }
+        let persistent = group.persistent();
         let mut rows = Vec::new();
         for t in tuples {
-            let id = hz_id(t);
             let block = t.iter().map(|r| r.block).max().expect("members");
             let smem = t.iter().map(|r| r.smem).max().expect("members");
+            if persistent {
+                // kernel-merging `calls`: one persistent kernel, at most the
+                // largest level's blocks (the runtime caps it at the loaded
+                // kernel's co-resident grid).
+                let members: Vec<String> = t
+                    .iter()
+                    .zip(caps)
+                    .zip(&group.level)
+                    .map(|((r, c), l)| {
+                        let z = match (&c.kind, r.zero) {
+                            (CapKind::Table { out, .. }, z) if z > 0 => format!(":z{z}@{out}"),
+                            _ => String::new(),
+                        };
+                        format!(
+                            "{}:{}:{}:{}:l{l}{z}",
+                            gpu::kernel_name(r.id),
+                            r.gx,
+                            r.gy,
+                            r.block
+                        )
+                    })
+                    .collect();
+                let id = gpu::fnv(&format!("calls|{}", members.join("|")));
+                let mut per_level: std::collections::BTreeMap<u32, u64> = Default::default();
+                for (r, &l) in t.iter().zip(&group.level) {
+                    *per_level.entry(l).or_default() += r.gx * r.gy;
+                }
+                let gx = per_level.values().copied().max().unwrap_or(1);
+                self.line(format!(
+                    "; mapal.hz kernel={} block={block} smem={smem} grid={gx} members={}",
+                    gpu::kernel_name(id),
+                    members.join(",")
+                ));
+                rows.push((id, gx, block, smem));
+                continue;
+            }
+            let id = hz_id(t);
             let gx: u64 = t.iter().map(|r| r.gx * r.gy).sum();
             let members: Vec<String> = t
                 .iter()
@@ -958,8 +1109,9 @@ impl FnEmit<'_> {
         }
         if rows.len() == 1 {
             let (id, gx, block, smem) = rows[0];
+            let entry = if persistent { "launch_coop" } else { "launchv" };
             self.line(format!(
-                "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {arr}, i32 {gx}, i32 1, i32 {block}, i32 {smem})",
+                "call void @mapal_gpu_{entry}(i64 {}, i32 0, i32 {np}, ptr {arr}, i32 {gx}, i32 1, i32 {block}, i32 {smem})",
                 id as i64
             ));
             return;
@@ -979,10 +1131,15 @@ impl FnEmit<'_> {
             consts.len(),
             consts.join(", ")
         ));
+        let coop = if persistent {
+            super::calls::SITE_COOP
+        } else {
+            0
+        };
         self.line(format!(
             "call void @mapal_gpu_site(i64 {}, i32 {}, i32 0, i32 {}, ptr {global}, i32 {np}, ptr {arr}, i32 {}, ptr null)",
             rows[0].0 as i64,
-            u32::from(rerun),
+            u32::from(rerun) | coop,
             rows.len(),
             out.unwrap_or(0)
         ));
@@ -998,6 +1155,16 @@ pub(crate) struct HzSpec {
     pub name: String,
     pub block: u64,
     pub members: Vec<(String, u64, u64, u64)>,
+    /// kernel-merging `calls`: each member's level (all 0: side by side).
+    pub level: Vec<u32>,
+    /// `calls`: a member's zero pass — its output's bytes and parameter.
+    pub zero: Vec<Option<(u64, usize)>>,
+}
+
+impl HzSpec {
+    pub(crate) fn persistent(&self) -> bool {
+        self.level.iter().any(|&l| l > 0)
+    }
 }
 
 /// Every merged kernel the host text names (once each).
@@ -1011,19 +1178,32 @@ pub(crate) fn hz_specs(host: &str) -> Vec<HzSpec> {
         let name = f.next().unwrap_or_default().to_string();
         let mut block = 0;
         let mut members = Vec::new();
+        let (mut level, mut zero) = (Vec::new(), Vec::new());
         for kv in f {
             if let Some(b) = kv.strip_prefix("block=") {
                 block = b.parse().unwrap_or(0);
             } else if let Some(ms) = kv.strip_prefix("members=") {
                 for m in ms.split(',') {
                     let p: Vec<&str> = m.split(':').collect();
-                    if let [n, gx, gy, b] = p[..] {
+                    if let [n, gx, gy, b, ref rest @ ..] = p[..] {
                         members.push((
                             n.to_string(),
                             gx.parse().unwrap_or(0),
                             gy.parse().unwrap_or(0),
                             b.parse().unwrap_or(0),
                         ));
+                        // `calls`: `l<level>`, then `z<bytes>@<param>`.
+                        let l = rest
+                            .iter()
+                            .find_map(|x| x.strip_prefix('l'))
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0);
+                        let z = rest.iter().find_map(|x| {
+                            let (b, p) = x.strip_prefix('z')?.split_once('@')?;
+                            Some((b.parse().ok()?, p.parse().ok()?))
+                        });
+                        level.push(l);
+                        zero.push(z);
                     }
                 }
             }
@@ -1033,6 +1213,8 @@ pub(crate) fn hz_specs(host: &str) -> Vec<HzSpec> {
                 name,
                 block,
                 members,
+                level,
+                zero,
             });
         }
     }
@@ -1049,12 +1231,12 @@ pub(crate) fn hz_members(specs: &[HzSpec]) -> std::collections::BTreeSet<String>
 }
 
 /// A kernel's parameters `(type, full text, name)` and its `nvvm` bounds.
-struct Head {
-    params: Vec<(String, String, String)>,
-    minctasm: Option<u64>,
+pub(super) struct Head {
+    pub params: Vec<(String, String, String)>,
+    pub minctasm: Option<u64>,
 }
 
-fn parse_head(define: &str) -> Head {
+pub(super) fn parse_head(define: &str) -> Head {
     let open = define.find('(').expect("a define's parameters");
     let close = define.rfind(") ").expect("a define's attributes");
     let ps = &define[open + 1..close];
@@ -1088,7 +1270,7 @@ fn parse_head(define: &str) -> Head {
 /// no launch loads it), inlined into each merged
 /// kernel; its `ctaid` reads are the arguments, and (`pad`: a merged block
 /// larger than its own `block`) its barriers count its own threads.
-fn device_fn(text: &str, name: &str, pad: Option<u64>) -> String {
+pub(super) fn device_fn(text: &str, name: &str, pad: Option<u64>) -> String {
     let (define, body) = text.split_once('\n').expect("a define line");
     let open = define.find('(').expect("parameters");
     let close = define.rfind(") ").expect("attributes");
@@ -1252,10 +1434,20 @@ pub(crate) fn compose(
         out.push_str("\ndeclare void @llvm.nvvm.barrier.sync.cnt(i32, i32)\n");
     }
     out.push_str(&fns);
+    if specs.iter().any(HzSpec::persistent) {
+        let decls = super::calls::missing_decls(&out);
+        out.push('\n');
+        out.push_str(&decls);
+        out.push_str(super::calls::GSYNC);
+    }
     for spec in specs {
         let hs: Vec<&Head> = spec.members.iter().map(|m| &heads[&m.0]).collect();
         out.push('\n');
-        out.push_str(&merged_kernel(spec, &hs));
+        if spec.persistent() {
+            out.push_str(&super::calls::persistent_kernel(spec, &hs));
+        } else {
+            out.push_str(&merged_kernel(spec, &hs));
+        }
     }
     out
 }
@@ -1333,6 +1525,8 @@ mod tests {
                 ("mapal_tile_00000000000000aa".into(), 2, 1, 32),
                 ("mapal_tile_00000000000000aa".into(), 1, 3, 32),
             ],
+            level: vec![0, 0],
+            zero: vec![None, None],
         };
         let m = merged_kernel(&spec, &[&h, &h]);
         assert!(m.contains("@mapal_tile_00000000000000bb(ptr addrspace(1) noalias readonly align 16 %h0.a, i64 %h0.c0, ptr addrspace(1) noalias readonly align 16 %h1.a, i64 %h1.c0)"));
@@ -1355,6 +1549,8 @@ mod tests {
             name: "mapal_tile_000000000000000c".into(),
             block: 256,
             members: vec![(a.into(), 4, 1, 256), (b.into(), 2, 1, 256)],
+            level: vec![0, 0],
+            zero: vec![None, None],
         };
         let live: std::collections::BTreeSet<String> = [b.to_string()].into();
         let out = compose(module, &[spec], &live);
