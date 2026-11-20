@@ -245,6 +245,11 @@ pub struct DeviceCost {
     /// where the part has it), start to start, ≤ `sms` blocks, in ns. 0 = not
     /// measured: priced as [`Self::dep_launch_ns`].
     pub pdl_launch_ns: u64,
+    /// kernel-merging `calls`: the same dependent launch as a cooperative
+    /// launch (`cuLaunchCooperativeKernel`: every block co-resident — how a
+    /// persistent kernel launches), start to start, in ns. 0 = not measured:
+    /// priced as [`Self::dep_launch_ns`].
+    pub coop_launch_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -270,12 +275,13 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     dep_launch_ns: 0,
     dep_launch_block_ps: 0,
     pdl_launch_ns: 0,
+    coop_launch_ns: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 22] = [
+    pub const NAMES: [&'static str; 23] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -296,6 +302,7 @@ impl DeviceCost {
         "dep_launch_ns",
         "dep_launch_block_ps",
         "pdl_launch_ns",
+        "coop_launch_ns",
         "fp32_lanes",
         "clock_khz",
     ];
@@ -317,6 +324,13 @@ impl DeviceCost {
             self.dep_launch_ns as f64
                 + blocks.saturating_sub(sms) as f64 * self.dep_launch_block_ps as f64 / 1e3
         })
+    }
+
+    /// A cooperative dependent launch of `blocks` blocks (a persistent
+    /// kernel's), in ns: [`Self::coop_launch_ns`] where measured.
+    pub fn coop_launch_at(&self, blocks: u64, sms: u64) -> Option<f64> {
+        let base = self.dep_launch_at(blocks, sms)?;
+        Some(base + self.coop_launch_ns.saturating_sub(self.dep_launch_ns) as f64)
     }
 
     /// [`Self::dep_launch_at`] as the runtime issues it: a programmatic
@@ -366,6 +380,7 @@ impl Gpu {
                 "dep_launch_ns" => &mut d.dep_launch_ns,
                 "dep_launch_block_ps" => &mut d.dep_launch_block_ps,
                 "pdl_launch_ns" => &mut d.pdl_launch_ns,
+                "coop_launch_ns" => &mut d.coop_launch_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 _ => &mut self.clock_khz,
             } = v;
@@ -401,6 +416,7 @@ impl Gpu {
             "dep_launch_ns" => d.dep_launch_ns,
             "dep_launch_block_ps" => d.dep_launch_block_ps,
             "pdl_launch_ns" => d.pdl_launch_ns,
+            "coop_launch_ns" => d.coop_launch_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             _ => 0,
@@ -4529,6 +4545,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             dep_launch_ns: 0,
             dep_launch_block_ps: 0,
             pdl_launch_ns: 0,
+            coop_launch_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4642,6 +4659,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             dep_launch_ns: 0,
             dep_launch_block_ps: 0,
             pdl_launch_ns: 0,
+            coop_launch_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -4713,14 +4731,18 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // runs, `kernel-merging.md` Calls): a grid barrier 553 ns at 84 blocks
             // (398-401 at 1-2, 541-546 at 16-42), + 1.89 ns a block to 504; a
             // dependent empty launch 650 ns start to start at <= 84 blocks (runs
-            // 644 / 651-933 / 842-857: the low mode), flat to 504; the same as a
-            // programmatic dependent launch (how the runtime launches here) 400 ns
-            // (398-426 at 2-84 blocks): cheaper than a barrier of 8 blocks or more.
+            // 644 / 651-933 / 842-857 / 650-936: the low mode), flat to 504; the
+            // same as a programmatic dependent launch 486 ns (484.7-599 at <= 84
+            // blocks in the low mode, quiet box; 396-426 in two other runs):
+            // cheaper than a barrier of 4 blocks or more; as a cooperative launch
+            // (a persistent kernel's) 2044 ns, flat to 504 blocks (CUPTI agrees:
+            // decode's x -> persistent-kernel gap 1559 ns against 272).
             gsync_ns: 553,
             gsync_block_ps: 1890,
             dep_launch_ns: 650,
             dep_launch_block_ps: 0,
-            pdl_launch_ns: 400,
+            pdl_launch_ns: 486,
+            coop_launch_ns: 2044,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.

@@ -40,25 +40,13 @@ fn bench(name: &str) -> CategoryIr {
     )
 }
 
-/// The shipped emission on `target` (default face), the rung `on`.
-fn shipped(ir: &CategoryIr, target: &'static str, on: bool) -> Emission {
-    let mut gpu = GpuArms::default();
-    *gpu.off.rung("calls").unwrap() = !on;
-    emit_detailed(
-        ir,
-        &EmitOpts {
-            target,
-            gpu,
-            ..EmitOpts::default()
-        },
-    )
-    .expect("emits")
-}
-
 /// The emulator's emission: its rungs off (`place`, so every capable site is
-/// on the device), the default face.
+/// on the device), the default face, chains formed whatever their prices
+/// (`--calls=force`: the realized path under test; the rtx-5080's prices
+/// refuse them).
 fn emulated(ir: &CategoryIr, on: bool) -> Emission {
     let mut gpu = GpuArms::default();
+    gpu.calls_force = true;
     for r in ["place", "async", "pdl", "streams", "pinned"] {
         *gpu.off.rung(r).unwrap() = true;
     }
@@ -126,53 +114,49 @@ fn specs(em: &Emission) -> Vec<String> {
 
 /// `pt_decode_1024_256` on the rtx-5080: the trip's rows and query (one
 /// `horizontal` group, level 0), `s` (reads `kk` and `q`: level 1, its zero
-/// pass at level 0) and `o` (reads `s` and `vv`: level 2, zero at level 1) are
-/// one persistent kernel of 128 blocks — two grid barriers (553 + 44 · 1.89 ns
-/// each at 128 blocks) and one launch against three dependent launches (650 ns
-/// each: the runtime launches plainly here, `pdl` off). With programmatic
-/// dependent launches (`pdl` forced on: 400 ns each) the rule refuses the
-/// same chain by cost. `x` (a range cell) launches alone. The tables keep the
-/// rows' unsplit candidates and `s` / `o`'s atomic ones; every tuple a
-/// persistent kernel with two grid barriers, launched cooperatively. OFF: no
-/// chain, the text before the rung.
+/// pass at level 0) and `o` (reads `s` and `vv`: level 2, zero at level 1)
+/// make one chain of 128 blocks. Shipped, the rule refuses it by cost: a
+/// cooperative launch (2044 ns) and two grid barriers (553 + 44 · 1.89 ns
+/// each at 128 blocks) against three dependent launches (650 ns each; 486 as
+/// programmatic launches, `pdl` forced on — refused too). Forced
+/// (`--calls=force`, the measurement arm), it is one persistent kernel: the
+/// tables keep the rows' unsplit candidates and `s` / `o`'s atomic ones;
+/// every tuple a persistent kernel with two grid barriers, launched
+/// cooperatively. `x` (a range cell) launches alone. OFF: no chain, the text
+/// before the rung.
 #[test]
 fn decode_runs_its_trip_as_one_persistent_kernel() {
     let ir = bench("pt_decode_1024_256");
-    let mut gpu = GpuArms::default();
-    gpu.on.pdl = true;
-    let pdl = emit_detailed(
-        &ir,
-        &EmitOpts {
-            target: "rtx-5080",
-            gpu,
-            ..EmitOpts::default()
-        },
-    )
-    .expect("emits");
-    let h = host_line(&pdl);
-    assert_eq!(
-        (
-            field(&h, "chains"),
-            field(&h, "formed"),
-            field(&h, "refused")
-        ),
-        ("1", "0", "cost:1"),
-        "{h}"
-    );
-    assert!(specs(&pdl).is_empty());
-    // Forced (`--calls=force`), the cost test aside: the chain forms.
-    gpu.calls_force = true;
-    let forced = emit_detailed(
-        &ir,
-        &EmitOpts {
-            target: "rtx-5080",
-            gpu,
-            ..EmitOpts::default()
-        },
-    )
-    .expect("emits");
-    assert_eq!(field(&host_line(&forced), "formed"), "1");
-    let on = shipped(&ir, "rtx-5080", true);
+    let emit = |pdl: bool, force: bool, on: bool| {
+        let mut gpu = GpuArms::default();
+        gpu.on.pdl = pdl;
+        gpu.calls_force = force;
+        *gpu.off.rung("calls").unwrap() = !on;
+        emit_detailed(
+            &ir,
+            &EmitOpts {
+                target: "rtx-5080",
+                gpu,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits")
+    };
+    for pdl in [false, true] {
+        let def = emit(pdl, false, true);
+        let h = host_line(&def);
+        assert_eq!(
+            (
+                field(&h, "chains"),
+                field(&h, "formed"),
+                field(&h, "refused")
+            ),
+            ("1", "0", "cost:1"),
+            "pdl {pdl}: {h}"
+        );
+        assert!(specs(&def).is_empty());
+    }
+    let on = emit(false, true, true);
     let h = host_line(&on);
     assert_eq!(
         (
@@ -214,11 +198,21 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     assert!(dev.contains("atom.add.release.gpu.global.u32"));
     // The atomic sites' zero passes are the kernel's: `zero-fold` takes none.
     assert!(!on.text.contains("; mapal.zero sites="), "zero tails left");
-    let off = shipped(&ir, "rtx-5080", false);
+    let off = emit(false, true, false);
     assert!(host_line(&off).is_empty() && specs(&off).is_empty());
     assert!(!off.device.as_deref().unwrap().contains("@mapal_gsync"));
     // A part without the measured barrier and launch costs forms no chain.
-    let p4090 = shipped(&ir, "rtx-4090", true);
+    let mut gpu = GpuArms::default();
+    gpu.calls_force = true;
+    let p4090 = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "rtx-4090",
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
     assert!(host_line(&p4090).is_empty() && specs(&p4090).is_empty());
 }
 

@@ -33,10 +33,10 @@
 //! the bodies stride over their blocks, so any grid is correct.
 //!
 //! **The rule, from measured properties** (`DeviceCost::gsync_ns`,
-//! `gsync_block_ps`, `dep_launch_ns`, `dep_launch_block_ps`, `pdl_launch_ns`;
-//! `benches/gpu/calib.cu gsync`): a chain of `k` units over `L` levels forms
-//! when one dependent launch of the persistent grid plus `L − 1` grid
-//! barriers costs the device no more than the `k` dependent launches it
+//! `gsync_block_ps`, `dep_launch_ns`, `dep_launch_block_ps`, `pdl_launch_ns`,
+//! `coop_launch_ns`; `benches/gpu/calib.cu gsync`): a chain of `k` units over
+//! `L` levels forms when one cooperative launch of the persistent grid plus
+//! `L − 1` grid barriers costs the device no more than the `k` dependent launches it
 //! replaces (each its own grid, programmatic where the runtime launches them
 //! so), and no launch takes more rounds of the persistent grid than it
 //! took waves alone (`occupancy`), and the members of a level fit one round
@@ -100,8 +100,8 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 }
 
 /// **The rule's prices** (module doc), ns of device time: `(persistent,
-/// separate)` — one dependent launch of `grid` blocks (a cooperative launch:
-/// never programmatic) plus `barriers` grid barriers, against one dependent
+/// separate)` — one cooperative dependent launch of `grid` blocks
+/// (`coop_launch_ns`) plus `barriers` grid barriers, against one dependent
 /// launch per unit of `units` blocks each, as the runtime issues them
 /// (`pdl`: programmatic dependent launches, where the part has them).
 /// `None` on a part without the measured barrier and launch costs.
@@ -117,7 +117,7 @@ pub(crate) fn chain_ns(
         .iter()
         .map(|&b| d.launch_at(b, gpu.sms, pdl))
         .sum::<Option<f64>>()?;
-    let per = d.dep_launch_at(grid, gpu.sms)? + barriers as f64 * d.gsync_at(grid, gpu.sms)?;
+    let per = d.coop_launch_at(grid, gpu.sms)? + barriers as f64 * d.gsync_at(grid, gpu.sms)?;
     Some((per, sep))
 }
 
@@ -662,48 +662,71 @@ pub(super) fn persistent_kernel(
                 .iter()
                 .map(|&i| spec.members[i].1 * spec.members[i].2)
                 .sum();
+            // The member selection for block index `idx` (labels and values
+            // tagged `tag`), every path on to `next`.
+            let dispatch = |tag: &str, idx: &str, next: &str| -> String {
+                let mut d = String::new();
+                let mut start = 0u64;
+                for (k, &i) in lm.iter().enumerate() {
+                    let (mname, gx, gy, bi) = &spec.members[i];
+                    let end = start + gx * gy;
+                    d += &format!("cl.m{tag}_{k}:\n");
+                    if k + 1 < lm.len() {
+                        d += &format!(
+                            "  %cl.s{tag}_{k} = icmp ult i32 {idx}, {end}\n  br i1 %cl.s{tag}_{k}, label %cl.r{tag}_{k}, label %cl.m{tag}_{}\n",
+                            k + 1
+                        );
+                    } else {
+                        d += &format!("  br label %cl.r{tag}_{k}\n");
+                    }
+                    d += &format!("cl.r{tag}_{k}:\n");
+                    if *bi < b {
+                        d += &format!(
+                            "  %cl.p{tag}_{k} = icmp ult i32 %cl.t, {bi}\n  br i1 %cl.p{tag}_{k}, label %cl.q{tag}_{k}, label %{next}\ncl.q{tag}_{k}:\n"
+                        );
+                    }
+                    let args: Vec<String> = heads[i]
+                        .params
+                        .iter()
+                        .map(|(ty, _, pn)| format!("{ty} %h{i}.{}", pn.trim_start_matches('%')))
+                        .chain([
+                            format!("i32 %cl.ux{tag}_{k}"),
+                            format!("i32 %cl.uy{tag}_{k}"),
+                        ])
+                        .collect();
+                    d += &format!(
+                        "  %cl.o{tag}_{k} = sub i32 {idx}, {start}\n\
+                         \x20 %cl.ux{tag}_{k} = urem i32 %cl.o{tag}_{k}, {gx}\n\
+                         \x20 %cl.uy{tag}_{k} = udiv i32 %cl.o{tag}_{k}, {gx}\n\
+                         \x20 call void @hz.{mname}({})\n\
+                         \x20 br label %{next}\n",
+                        args.join(", ")
+                    );
+                    start = end;
+                }
+                d
+            };
+            // The first block of the level straight-line (the common case:
+            // a level of at most `G` blocks runs one each) — a body inside a
+            // loop of unknown trips compiles to fewer loads in flight
+            // (decode's rows: 10.8 us against 4.2 alone, `kernel-merging.md`
+            // Calls) — then the loop over the rest, when the grid is smaller.
             s += &format!(
-                "  br label %cl.h{l}\n\
-                 cl.h{l}:\n\
-                 \x20 %cl.i{l} = phi i32 [ %cl.b, %{cur} ], [ %cl.n{l}, %cl.x{l} ]\n\
-                 \x20 %cl.c{l} = icmp ult i32 %cl.i{l}, {total}\n\
-                 \x20 br i1 %cl.c{l}, label %cl.m{l}_0, label %cl.e{l}\n"
+                "  %cl.c{l} = icmp ult i32 %cl.b, {total}\n\
+                 \x20 br i1 %cl.c{l}, label %cl.mf{l}_0, label %cl.e{l}\n"
             );
-            let mut start = 0u64;
-            for (k, &i) in lm.iter().enumerate() {
-                let (mname, gx, gy, bi) = &spec.members[i];
-                let end = start + gx * gy;
-                s += &format!("cl.m{l}_{k}:\n");
-                if k + 1 < lm.len() {
-                    s += &format!(
-                        "  %cl.s{l}_{k} = icmp ult i32 %cl.i{l}, {end}\n  br i1 %cl.s{l}_{k}, label %cl.r{l}_{k}, label %cl.m{l}_{}\n",
-                        k + 1
-                    );
-                } else {
-                    s += &format!("  br label %cl.r{l}_{k}\n");
-                }
-                s += &format!("cl.r{l}_{k}:\n");
-                if *bi < b {
-                    s += &format!(
-                        "  %cl.p{l}_{k} = icmp ult i32 %cl.t, {bi}\n  br i1 %cl.p{l}_{k}, label %cl.q{l}_{k}, label %cl.x{l}\ncl.q{l}_{k}:\n"
-                    );
-                }
-                let args: Vec<String> = heads[i]
-                    .params
-                    .iter()
-                    .map(|(ty, _, pn)| format!("{ty} %h{i}.{}", pn.trim_start_matches('%')))
-                    .chain([format!("i32 %cl.ux{l}_{k}"), format!("i32 %cl.uy{l}_{k}")])
-                    .collect();
-                s += &format!(
-                    "  %cl.o{l}_{k} = sub i32 %cl.i{l}, {start}\n\
-                     \x20 %cl.ux{l}_{k} = urem i32 %cl.o{l}_{k}, {gx}\n\
-                     \x20 %cl.uy{l}_{k} = udiv i32 %cl.o{l}_{k}, {gx}\n\
-                     \x20 call void @hz.{mname}({})\n\
-                     \x20 br label %cl.x{l}\n",
-                    args.join(", ")
-                );
-                start = end;
-            }
+            s += &dispatch(&format!("f{l}"), "%cl.b", &format!("cl.fx{l}"));
+            s += &format!(
+                "cl.fx{l}:\n\
+                 \x20 call void @llvm.nvvm.barrier.sync.cnt(i32 1, i32 {b})\n\
+                 \x20 %cl.r{l} = add i32 %cl.b, %cl.g\n\
+                 \x20 br label %cl.h{l}\n\
+                 cl.h{l}:\n\
+                 \x20 %cl.i{l} = phi i32 [ %cl.r{l}, %cl.fx{l} ], [ %cl.n{l}, %cl.x{l} ]\n\
+                 \x20 %cl.k{l} = icmp ult i32 %cl.i{l}, {total}\n\
+                 \x20 br i1 %cl.k{l}, label %cl.m{l}_0, label %cl.e{l}\n"
+            );
+            s += &dispatch(&l.to_string(), &format!("%cl.i{l}"), &format!("cl.x{l}"));
             s += &format!(
                 "cl.x{l}:\n\
                  \x20 call void @llvm.nvvm.barrier.sync.cnt(i32 1, i32 {b})\n\
@@ -787,22 +810,33 @@ mod tests {
     fn the_rule_prices_barriers_against_launches() {
         let g = gpu();
         let d = g.cost.as_ref().expect("measured");
-        // Plain dependent launches: at most `sms` blocks, one barrier (553
-        // ns) is cheaper than one launch (650 ns).
+        // Decode's chain: a cooperative launch (2044 ns) and two barriers
+        // (553 + 44 · 1.89 ns at 128 blocks) against three plain dependent
+        // launches (650 ns): the persistent kernel costs more.
         let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false).expect("priced");
         let at128 = 553.0 + 44.0 * 1.89;
         assert!(
-            (per - (650.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
+            (per - (2044.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
         );
-        assert!(per <= sep);
-        // As the runtime launches them here (programmatic, 400 ns each): the
-        // barriers cost more than the launches they would replace.
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true).expect("priced");
-        assert!((sep - 1200.0).abs() < 0.5 && per > sep, "{per} {sep}");
-        // A wide persistent grid: each barrier serializes 504 arrivals.
-        let (per, sep) = chain_ns(&[504, 504], 504, 1, g, false).expect("priced");
+        assert!(per > sep);
+        // Programmatic dependent launches (486 ns each): further apart.
+        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true).expect("priced");
+        assert!((sep - 1458.0).abs() < 0.5, "{sep}");
+        // A long chain of one-block launches: twelve barriers of one block
+        // (553 ns priced) against twelve more plain launches — still not
+        // enough to pay the cooperative launch back here.
+        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false).expect("priced");
         assert!(per > sep, "{per} {sep}");
+        // Without the cooperative launch's own price, the barriers alone win.
+        let mut cheap = *d;
+        cheap.coop_launch_ns = 0;
+        let g2 = Gpu {
+            cost: Some(cheap),
+            ..*g
+        };
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g2, false).expect("priced");
+        assert!(per <= sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
         // A part without the measured costs is unpriced.
         let p4090 = crate::profile::TargetProfile::named("rtx-4090")
@@ -849,13 +883,18 @@ mod tests {
                 && l0.contains("getelementptr i8, ptr addrspace(1) %h1.o")
         );
         assert!(l0.contains("store <4 x i32> zeroinitializer") && !l1.contains("zeroinitializer"));
-        // Each level strides over its blocks (2 and 128) by the grid.
-        assert!(l0.contains("icmp ult i32 %cl.i0, 2") && l1.contains("icmp ult i32 %cl.i1, 128"));
-        assert!(t.contains("%cl.n0 = add i32 %cl.i0, %cl.g"));
+        // Each level's first block straight-line, then a loop striding over
+        // the rest (2 and 128 blocks) by the grid.
+        assert!(l0.contains("icmp ult i32 %cl.b, 2") && l0.contains("icmp ult i32 %cl.i0, 2"));
+        assert!(l1.contains("icmp ult i32 %cl.b, 128") && l1.contains("icmp ult i32 %cl.i1, 128"));
+        assert!(
+            t.contains("%cl.r0 = add i32 %cl.b, %cl.g")
+                && t.contains("%cl.n0 = add i32 %cl.i0, %cl.g")
+        );
         // A 32-thread member runs on its own warps; the tile boundary is
         // barrier 1, apart from the members' barrier 0.
-        assert!(l0.contains("icmp ult i32 %cl.t, 32"));
-        assert!(t.matches("barrier.sync.cnt(i32 1, i32 256)").count() == 2);
+        assert_eq!(l0.matches("icmp ult i32 %cl.t, 32").count(), 2);
+        assert!(t.matches("barrier.sync.cnt(i32 1, i32 256)").count() == 4);
         assert!(t.contains("urem i32 %cl.o1_0, 4") && t.contains("udiv i32 %cl.o1_0, 4"));
     }
 

@@ -54,6 +54,13 @@ Horizontal step: independent launches of a trip (no `access_plan` edge) run as o
 each member's kernel as a device function, where no member loses a wave and their last waves share one — decode
 0.658×, causal 0.774×, gen 0.776×, prefill 0.782× (ABBA; the KV rows and the query side by side); decode now 0.62×
 hand CUDA.
+Calls step: a chain of dependent launches as one persistent kernel (device-function bodies over a co-resident grid,
+grid barriers only where `access_plan` orders, an atomic site's zero pass in the kernel), priced by measured
+properties (`calib.cu gsync`: barrier 553 ns, plain / programmatic / cooperative dependent launch 650 / 486 / 2044
+ns). The cooperative launch's own cost makes the rule refuse every suite chain on this part; forced, they measure
+1.03–1.32× slower (ABBA), so the shipped code is the OFF arm's. row-block's per-part rows are gone (its plan model
+decides; on this part it still refuses the attention unit that measured faster — the missing facts, single-wave phase
+serialization and row-segment latency, are in the section).
 
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

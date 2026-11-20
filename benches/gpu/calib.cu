@@ -7,7 +7,8 @@
 //           arrival per block on a flip-bit counter, acquire spin; `fenced` = the fence + relaxed form) vs one dependent
 //           launch of the same grid (an empty kernel back to back on one stream, device-bound behind a long kernel; `pdl`:
 //           launched as a programmatic dependent launch, each kernel opening with `griddepcontrol.wait`, as the runtime
-//           launches tile kernels on sm_90+) vs one device-side tail launch (CDP2 `cudaStreamTailLaunch`, a comparison
+//           launches tile kernels on sm_90+; `coop`: a cooperative launch, as a persistent kernel is launched) vs one
+//           device-side tail launch (CDP2 `cudaStreamTailLaunch`, a comparison
 //           only), ns each, by grid and block
 // usage: calib [chase|bw|loaded|lds|gsync ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
@@ -252,6 +253,18 @@ static void gsync_run() {
                 q.push_back((double)(h[nk] - h[0]) / nk);
             }
             std::sort(q.begin(), q.end());
+            std::vector<double> c;
+            for (int rep = 0; rep < 5; rep++) {
+                spin_k<<<1, 32>>>((long long)clk_khz * 2);
+                for (int i = 0; i <= nk; i++) {
+                    void* a[] = {&t, &i};
+                    CK(cudaLaunchCooperativeKernel((void*)empty_k, grid, block, a, 0, 0));
+                }
+                CK(cudaDeviceSynchronize());
+                std::vector<unsigned long long> h(nk + 1); CK(cudaMemcpy(h.data(), t, (nk + 1) * 8, cudaMemcpyDeviceToHost));
+                c.push_back((double)(h[nk] - h[0]) / nk);
+            }
+            std::sort(c.begin(), c.end());
             std::vector<double> d;
             for (int rep = 0; rep < 5; rep++) {
                 tail_k<<<grid, block>>>(t, 0, nk);
@@ -261,8 +274,8 @@ static void gsync_run() {
             }
             std::sort(d.begin(), d.end());
             printf("gsync block=%d grid=%d per_sm=%d barrier_ns=%.1f [%.1f-%.1f] fenced_ns=%.1f launch_ns=%.1f [%.1f-%.1f] "
-                   "pdl_ns=%.1f [%.1f-%.1f] tail_ns=%.1f [%.1f-%.1f]\n", block, grid, per, v[2], v[0], v[4], f[2], w[2], w[0],
-                   w[4], q[2], q[0], q[4], d[2], d[0], d[4]);
+                   "pdl_ns=%.1f [%.1f-%.1f] coop_ns=%.1f [%.1f-%.1f] tail_ns=%.1f [%.1f-%.1f]\n", block, grid, per, v[2], v[0],
+                   v[4], f[2], w[2], w[0], w[4], q[2], q[0], q[4], c[2], c[0], c[4], d[2], d[0], d[4]);
         }
     }
 }

@@ -324,3 +324,164 @@ Refusals, measured forced (`--hz=force`, rules picks):
 5. Members are cells, units and tile sites; row folds, `devgen` generators and split launches are not (their launch
    lines are not captured). Measured on the rtx-5080 only; the rule reads only `TargetProfile` occupancy facts, so it
    ships on every part (no `GPU_RUNGS_OFF` row; the 4090 / 5090 / H100 are unmeasured).
+
+## Calls — dependent launches as one persistent kernel
+
+A chain of dependent launches of one sequence (a loop trip's advance cone, the straight-line walk) runs as one
+persistent kernel: each launch's body is a device function called over its own blocks by a co-resident grid
+(launch block `i` on persistent block `i mod G`), and a grid barrier stands only between the levels the dependency
+fact (`access_plan`) orders. The host issues one cooperative launch instead of `k`. No runtime graph: the chain, its
+levels, its barriers and the kernel text are compile-time.
+
+**Result on the rtx-5080: the rule refuses every chain of the suite, and the forced persistent kernels measure slower
+(ABBA 1.03–1.32×), so the shipped emission equals the OFF arm's code.** The barrier is cheap (385–553 ns), but a
+cooperative launch costs 2044 ns of device time against 650 for a plain dependent launch; the first version also lost
+load batching in member bodies inside the grid-stride loop (fixed: each level's first block straight-line).
+
+Code: `47ad30aa`, `fb37a9fb` and the commit beside this section. Raw: `.claude/raw-evidence/local-rtx-5080/
+kernel-merging/calls/` (calib runs, suite results, CUPTI traces, ABBA, phase variants, SASS).
+
+### What changed
+
+| | fact / property / rule | OFF arm |
+| --- | --- | --- |
+| 1 | **Measured properties** (`DeviceCost`, `benches/gpu/calib.cu gsync`, rtx-5080, block 256, five runs): `gsync_ns` 553 (one grid barrier of ≤ 84 blocks: 385–401 at 1–2 blocks, 519–546 at 16–42, 530–557 at 84), `gsync_block_ps` 1890 (each block beyond `sms`, to 504); `dep_launch_ns` 650 (a dependent empty launch, start to start, ≤ 84 blocks: the low mode of a bimodal 644–652 / 842–936), `dep_launch_block_ps` 0; `pdl_launch_ns` 486 (the same as a programmatic dependent launch: 396–599); **`coop_launch_ns` 2044** (the same as a cooperative launch, flat to 504 blocks — CUPTI agrees: decode's gap before the persistent kernel 1559 ns against 272 before a plain one). Device-side tail launch (CDP2, comparison only): 7.6–8.0 us. Other parts: not measured → `unpriced` (no chain). The stopped attempt's calib edit was kept (its barrier is the emitted one) with its comment corrected (the counter's low 31 bits must start at zero; every barrier restores them); PDL, cooperative and tail-launch columns added. | — |
+| 2 | **`calls`** (`func/calls.rs`, host rung, after `horizontal`): units = `horizontal`'s output in walk order (a launch or a merged group). A unit's level is one above the highest chain member it conflicts with (`access_plan` RAW / WAR / WAW with residency aliases and carries), else 0. A non-member step touching a member's bytes closes the chain (the chain launches at its last member, earlier members deferred there); a launch whose output the host copies out ends it. A retained row pass (branch arm) only at level 0; an atomic site (rule candidate splits into a zeroed output) at level ≥ 1, its zero pass grid-stride in the kernel one level before, where no member of that level touches the bytes. **Rule:** forms when `coop_launch(G) + (L−1)·gsync(G) ≤ Σ launch(unit grid)` (each separate launch as the runtime issues it: programmatic where `pdl` is on; the device never slower, the host issuing 1 launch for `k`) and no member takes more rounds of the persistent grid than waves alone (`occupancy`), a level's members fit one round (`waves`), ≤ 32 pointers (`args`). `G` = the persistent footprint's wave (`merged_per_sm`: largest block and shared memory, each member's own register residency) capped at the largest level. | `--gpu-off=calls` |
+| 3 | **Emission**: the persistent group reuses `horizontal`'s capture (each member's launch deferred; a table member's unsplit candidates — and its atomic ones when its zero is in the kernel — make the tuples); `; mapal.hz kernel= … grid=G members=<k>:gx:gy:b:l<level>[:z<bytes>@<param>]`; one `mapal_gpu_launch_coop` or a table flagged `MAPAL_SITE_COOP` (4). A member that cannot be captured issues every earlier member first (they produce what it reads). The device unit: `@mapal_gsync` (block barrier, `atom.add.release.gpu` of `0x80000000 − (n − 1)` / 1 on the kernel's counter, `ld.acquire.gpu` spin on the flip bit, block barrier); per level the zero passes (16-B stores), then the level's first block straight-line and a grid-stride loop over the rest, a member of fewer threads on its own warps, `barrier.sync 1, B` between two bodies (shared memory reuse; apart from the members' barrier 0); parameters without `noalias` / `readonly` (no `ld.global.nc` of bytes an earlier level wrote). | — |
+| 4 | `--calls=force`: the measurement arm (a chain forms whatever its prices; the fit tests stay). | — |
+| 5 | **Runtime**: `mapal_gpu_launch_coop` — `cuOccupancyMaxActiveBlocksPerMultiprocessor` of the loaded kernel (its ptxas registers) × SMs caps the grid, `cuLaunchCooperativeKernel` (the driver refuses a grid it cannot co-schedule). Emulator: a cooperative launch runs every block's threads, one block holding a baton between grid barriers (`MAPAL_EMU_GRID`, default 3 blocks; `MAPAL_EMU_REVERSE` runs blocks last to first; a barrier some block never reaches exits 105); barrier ids. | — |
+| 6 | **row-block**: the five "unmeasured" `GPU_RUNGS_OFF` rows (4090 / 5090 / 3090 / H100 PCIe / A100) are deleted; the default is the plan model's decision on every part (a part without plan rates is `unpriced`). On the rtx-5080 suite nothing changes (the model refuses every timed group); the 4090 / 5090 now form `pt_attn_1024_64` and `px_attn_64_16` (unmeasured parts: the rule's decision, no row). `horizontal`, `zero-fold`, `row-stage` had no rows; `zero-fold`'s and `calls`' gate is a measured property (a part without it is unpriced), not a part name. | `--gpu-off=row-block` |
+
+No new IR fact (the order is `access_plan`'s; co-residency and the prices are `TargetProfile` properties), so no
+CLAUDE.md row.
+
+Byte identity: `--gpu-off=calls,row-block` equals HEAD (`f3a9e792`) on all 1146 host / device module pairs (191
+`benches/algorithms` × rtx-5080 / rtx-4090 / h100-pcie × default / exact face). Code lines (intent comments aside)
+that `calls` changes: 74 modules, all rtx-5080 (the parts without the measured costs: none). Code that the
+`row-block` rule (no rows) changes: 15 modules — 13 rtx-4090 (attention default and exact, pc / pm / chain / decode /
+rowsum / softmax exact) and the rtx-5080's exact-face decode ×2 (b = 1, staged: not a timed row).
+
+### Intended vs realized (rtx-5080; bundle `ptxas -v`, `cuobjdump -sass`, host text)
+
+| program | intended (fact + rule) | realized |
+| --- | --- | --- |
+| decode_1024_256 (forced) | trip: `x` (range cell: launches alone) · **[kk-row ∥ vv-row ∥ q] (level 0) → `s` (level 1, its 4096-B zero at level 0) → `o` (level 2, 1024-B zero at level 1)**: 3 units, 2 barriers, grid 128; 3 launches a trip → 1. Shipped: refused, 3316 vs 1950 ns | `; mapal.calls.host chains=1 formed=1 units=3 barriers=2 zeros=2`; a COOP table of 8 tuples (`i32 5` flags); tuple 0 `mapal_tile_0ae8bbe6…` **40 regs, 0 spill, 2 barriers**; SASS: 2 `ATOMG.E.ADD.STRONG.GPU` (after `MEMBAR.ALL.GPU`: the release), 2 `LDG.E.STRONG.GPU` spins each followed by `CCTL.IVALL` (the acquire), 7 `BAR.SYNC`, 144 FFMA, 288 `LDG.E` (no `LDG.E.CONSTANT`), 2 `REDG.E.ADD.F32` (`s`, `o` atomic), 4 `STG.E.128` (the zeros); PTX: 2 `atom.add.release.gpu`, 0 `ld.global.nc`, 0 `call`. Tuples with the 32-thread row candidates: 255 regs, 3644 B spill (the members' own, as in `horizontal`'s merged tuple) — the runtime's occupancy caps them at 84 blocks |
+| causal / gen / prefill (forced) | trip: rows ∥ q → 5 more dependent sites / cells: 6 units, 5 barriers, grid 128 (shipped: refused, 5224 vs 3900 ns) | causal / gen: `mapal_tile_89f20ce4…` 40 regs, 0 spill; SASS 5 `ATOMG` + 5 acquire spins + 5 `CCTL.IVALL`, 34 `BAR.SYNC`, 161 FFMA; prefill: its second chain refused (`cost`: grid 504, 4690 vs 2600 ns; `occupancy`, `waves`) |
+| rt_mlp2_1024 (forced) | trip: two dependent GEMM pairs (128 blocks each): 2 units, 1 barrier each (shipped: refused, 2680 vs 1300 ns) | `mapal_tile_566adc79…` 121–128 regs (members 95), 0 spill, 1 `ATOMG` + 1 spin, 8 `BAR.SYNC`, 1024 FFMA |
+| indep_512, mlp_512 | — | refused `occupancy` (a member would take more rounds of the merged footprint than waves alone): emission = OFF |
+| smlp_4096_256_1024, mlp_2048_tf32, rt_mlp2_2048, firew_rowsum | — | refused `cost` (grid 168–504) |
+
+Evidence checker (`calls` / `calls-kernel` intents, ON bundle): 19 host and 164 kernel checks ok; the one mismatch
+(`pt_decode.c1`, `--cands=1`: a planned chain with no cooperative launch) was the direct-atomic bug above, fixed
+before the timed bundle.
+
+### Time (ms; suite `LADDER=1 gpu_run.sh`; ABBA: 8 rounds = 16 processes an arm, rules picks, same box)
+
+The shipped build's code equals the OFF arm's on all 35 suite programs (intent lines aside: `fin.out`), so the
+shipped column is the OFF run. The forced columns measure what the rule refused: the first persistent kernel (a
+grid-stride loop around every body, suite runs ON1 / ON2 against OFF) and the final one (each level's first block
+straight-line, ABBA against OFF).
+
+| workload | OFF = shipped | forced, first kernel (ON1 / ON2) | forced, final kernel (ABBA B/A, null A / B) | best competitor | explanation |
+| --- | ---: | ---: | ---: | --- | --- |
+| decode_1024_256 | 9.619 | 13.01 / 13.00 (ABBA 2.412) | **1.319** (1.5 / 0.4 %) | 15.46 hand CUDA (cache) | CUPTI a trip: persistent kernel 9.60 us (first version 20.73) against 4.22 + 2.27 + 1.70 = 8.19 us of the three kernels; the cooperative launch's gap 1559 ns against 272; phases (variants, `var/`): launch + zeros + 2 barriers alone 2.00 us, `s` + `o` 2.66 us (3.97 alone), rows + q 5.0 us (4.22 alone; 10.8 inside the loop) |
+| causal_1024_256 | 16.91 | 20.37 / 20.40 (1.192) | **1.070** (0.9 / 0.6 %) | 50.31 torch-compile | persistent 15.10 us (first 17.15) against 15.17 us of six kernels; + the cooperative launch's 1.3 us and 5 barriers against 5 plain boundaries |
+| gen_1024_512_256 | 8.547 | 10.52 / 10.33 (1.235) | **1.112** (1.6 / 0.9 %) | 25.26 torch-compile | as causal (persistent 15.20 us) |
+| prefill_1024_512_256 | 8.933 | 11.63 / 10.89 (1.223) | **1.101** (0.8 / 0.8 %) | 25.63 torch-compile | as causal (15.23 us) |
+| rt_mlp2_1024 | 2.570 | 3.079 / 2.824 (1.054) | **1.031** (0.4 / 1.4 %) | 2.532 torch-compile | persistent GEMM pair 165.7 us against 81.95 + 79.36 us (128 regs against 95) |
+| indep_512 / mlp_512 | 0.04834 / 0.03938 | identical code | — | 0.0365 streams / 0.043 lt | refused `occupancy` (a member would take more rounds of the merged footprint than waves alone); ON/OFF spread is tuning state on identical modules |
+| smlp_4096_256_1024 | 0.1672 | identical code | — | 0.1495 torch-compile | refused `cost` (grid 168) |
+| other 27 rows | — | identical code | — | — | ON1/OFF 0.84–1.10 on identical modules: cross-run variation (ends: indep_512 0.84, softmax_rows_4096 1.10) |
+
+Probe value gate: 0 programs failed in each of the three suite runs. Evidence checker on the forced bundle: 18 host and
+164 kernel `calls` checks ok, its mismatch set the OFF bundle's but for rt_mlp2_1024's `horizontal` spec count (the
+persistent kernels were counted as merged ones — fixed in `evidence.py`) and the tables `calls` absorbed.
+
+How the rule got there: as first priced (a plain launch for the persistent kernel's own) it formed decode, causal,
+gen, prefill and rt_mlp2_1024 at 1922 / 1950 ns etc.; every one measured slower (above): **a uniform loss is a
+missing property** — the cooperative launch's device cost (`coop_launch_ns`, measured at 2044 ns; the CUPTI gap
+agrees). With it priced, no chain of the suite forms. Where the runtime launches programmatically (`pdl`; the
+rtx-5080 ships it off by a legacy `sm_120` row, open below) a separate boundary is 486 ns and the barrier loses
+further.
+
+### Tests
+
+- `calls.rs` (3):
+  - `decode_runs_its_trip_as_one_persistent_kernel`: pt_decode_1024_256 on the rtx-5080: shipped, the chain is
+    refused by cost (plain and programmatic launches); forced, one chain (3 units, 2 barriers, 2 zero passes, grid
+    128; `s` at level 1 with `z4096@2`, `o` at level 2 with `z1024@2`), every tuple a persistent kernel with 2
+    `@mapal_gsync` calls, `barrier.sync 1, 256` between bodies and no `noalias` parameter; the table flagged COOP; no
+    `zero-fold` tail left; OFF: none of it; the rtx-4090 (unpriced), forced: none of it.
+  - `decode_values_through_the_persistent_kernel`: an emulated decode (16 × 256, 3 trips) = interpreter = OFF under
+    picks 0 / 1 / 3 / 7 × persistent grids 1 / 2 / 3 × free / `MAPAL_EMU_SERIAL=1` / `2` / `MAPAL_EMU_REVERSE=1`; one
+    cooperative launch for three every trip after the first (pick 0: exactly 2 launches fewer a trip).
+  - `calls_on_generated_programs` (chains forced: the realized path under test): 48 programs of the new `calls_prog_strategy` (the `horizontal` programs over one to
+    eight rows / columns and folds up to 1024 long: unsplit and atomic sites, cells reading sites, row sums, the
+    retained KV pattern; loop or straight-line), run in parallel, × picks 0 / 3 × grids 1 / 3 (free), and at grid 3
+    serial 1 / 2 and reverse = interpreter and OFF. Coverage, each required > 0 (final build): 48 chains formed in
+    43 programs (21 loop / 22 straight-line), 149 units, 93 grid barriers, 39 zero passes in the kernel, 28 programs
+    with 3+ levels, 18 merged tables, 20 padded members, 13 retained-row chains, 2 programs with fit refusals, 140 runs
+    with fewer launches, 430 emulated runs.
+- Unit tests (`func/calls.rs`, 4): the fit (decode's levels → 128; capped at one wave; args, occupancy, waves
+  refusals), the prices (decode 3316 vs 1950 ns, 1458 with programmatic launches; 13 one-block launches still refused;
+  without the cooperative launch's price the barriers would win; rtx-4090 unpriced), the kernel text (levels, the zero
+  loop before the barrier, the straight-line first block and the stride loop, padded member, barrier ids, no
+  `noalias`), the flip bit (no early flip for 1–504 blocks over 3 barriers, low bits restored).
+- Workspace, release: 103 binaries, 1384 passed, 0 failed (before the pricing follow-ups; `calls.rs` and the backend's
+  unit tests re-run after them).
+- Bugs put back: the grid barrier removed — 7 of 12 generated programs give wrong values at a 3-block grid (a later
+  level reads a block's earlier level not yet run); a chain's last member's copy-out aborting the group (found by the
+  generated test: ON issued more launches than OFF) — fixed by launching the group before the copy-out and ending a
+  chain at a copied-out output; a one-candidate atomic site (`--cands=1`, direct launch behind its zero op) taken as a
+  member — found by the evidence checker (`calls:on` MISMATCH on `pt_decode.c1`), fixed in the shape rule.
+- Tests of other rungs that count launches or pin a pre-step text (devmap, epilogue, generic-fusion, horizontal,
+  retain-delta, row-block, site-choice goldens, streams, tf32-tile, zero-fold) pin `calls` off.
+
+### row-block on the rtx-5080: the missing fact
+
+The split arm of pt_attn_1024_64 (CUPTI, `rows/traces/off.tsv`) against the site model's terms (`--plan-cands`):
+
+| split site (rules pick) | model f (FFMA) | memory term | model `max` | measured | f + memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| q·Kᵀ, unsplit, 128 blocks × 256, one wave, 4 warps / scheduler | 4.38 | d 5.30 (4 MB stored) | 5.30 + 0.26 | **10.56** | 9.68 + 0.26 |
+| P·V, atomic ×8, 1024 blocks × 32, one wave | 4.24 | l 5.59 | 5.59 + 1.31 + 1.95 | **12.64** | 9.84 + 1.31 |
+| softmax (rows), 1024 blocks × 256 | — | 3.06 (L2 bytes) | 3.06 | **7.58** | — |
+
+In a kernel of one wave every block runs the same phases at once (panel loads, FFMA, the epilogue's stores): no later
+wave's FFMA hides them, so the memory and FFMA terms add (0.94 and 0.88 of measured) instead of overlapping (`max`:
+0.53 and 0.55). That is the missing fact: **phase serialization in a single wave** — overlap needs a second wave (or
+k-depth), a geometry × hardware fact (waves from `sms` × residency), not a per-part constant. Applied to both sides of
+`block_cost` (an experimental build, not committed: `kernel = f + max(l, d, chain)` when `waves = 1`), the model prices
+the unit at 27.4 us (measured 25.7–28.4) and the split at 25.8 (measured 30.8): the tile sites now match; the rest of
+the split's error is the softmax kernel (3.06 vs 7.58 us — the second missing fact, the row segments' latency: tree
+steps and barriers at few warps per scheduler; the unit's row segments are 0.1 vs 5.8 us). With the first fact alone
+the 5080 still refuses (27.4 / 25.8), so the decision is not yet right on this part (open). The term changes every
+single-wave site's price on every part with plan rates (the 4090 would form 1024 × 64 and 2048 × 64), so it ships with
+its own evidence pass (plan-cost holdout refit, suite), not inside this step.
+
+### Open
+
+1. **The whole loop in one kernel is not built.** A trip's chain is one persistent kernel; the host still runs the
+   trip (the exit test, a range cell's offsets from the counter, the retained rows' first-trip branch and row
+   pointers, the carried buffers' swap, the argument arrays). Moving them needs the trip's host scalar code compiled
+   for the device. Priced by the same properties a trip boundary removed saves `dep_launch − gsync(128)` ≈ 0.01 us of
+   device time (one cooperative launch for all trips instead of one a trip would repay its 2.04 us once): measurable
+   only on loops whose trips are host-bound. Device-side tail launch (CDP2) is no substitute: 7.6–8.0 us a launch.
+2. **row-block's missing facts** (above): single-wave phase serialization in `site_ns`, then the row segments'
+   latency; until both, the 5080 refuses the attention unit that measured faster.
+3. The rule compares device boundaries only. A host-bound chain (host issue 1.69 us a launch) could pay back the
+   cooperative launch from the host side; deciding that needs the members' device times (the plan model) to know
+   which side bounds the chain. None of the suite's chains is host-bound (CUPTI: the device is busy 88–89 % of a trip).
+4. Co-residency is planned at the plan's residency and decided at launch by the loaded kernel's: decode's tuples with
+   the 32-thread row candidates use 255 registers (ptxas), so the runtime launches 84 blocks, not 128 (`s` and `o`
+   take two rounds), against the plan's price. A ptxas-usage fact at plan time would price it.
+5. A retained-row chain's first trip launches each member alone (the `horizontal` groups the chain absorbed are gone
+   that trip): +3 launches once against −2 a trip after.
+6. Workspace (split-K + reduce) candidates are not taken into a chain (the reduce would be a level of its own); a
+   one-candidate atomic site (direct launch) is not a member.
+7. The barrier price is the plateau to `sms` blocks (553 ns); 1–2 blocks measure 398–401 ns (priced high: conservative).
+8. **`pdl` ships off on the rtx-5080 by the legacy `sm_120` `GPU_RUNGS_OFF` row** (the 5090's "no stable sign").
+   The measured properties say a programmatic dependent launch is 164 ns cheaper than a plain one (486 vs 650): its
+   default should be that rule, not the row — the same removal as `row-block`'s, next.
+9. The persistent kernel's bodies still differ from their own kernels: rows + q 5.0 us against 4.22 (the dispatch
+   and barriers around them), `s` + `o` 2.66 against 3.97 (no launch ramp). Unpriced (the rule refuses before).
