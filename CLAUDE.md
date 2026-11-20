@@ -90,6 +90,13 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
   switched on or off per architecture, part or version ("4090 on, 5080 off" is wrong): a rule that loses on some
   hardware is missing the property that separates the cases. `GPU_RUNGS_OFF` (per-arch rung rows) is legacy being
   removed — never add a row. OFF arms are measurement flags (A/B, debugging), never per-hardware defaults.
+  Capabilities are properties too, described by the geometry they execute, never by a version compare: matrix
+  instructions as shapes (M×N×K per issuing group, operand types, where operands come from — registers, smem
+  descriptors — and where the accumulator lives: registers or tensor memory, e.g. datacenter Blackwell `tcgen05` +
+  TMEM), memory levels and their capacities (registers, smem, TMEM, distributed smem across a cluster, L2), copy
+  engines (`cp.async`, TMA tensor boxes / swizzles / multicast), cluster shapes, barriers (`mbarrier`, grid sync).
+  Rules map the dataflow's tile geometry onto whichever capabilities the target has; a new chip is a new property
+  set, not new code paths keyed on its name.
 - **Generic, proven on unseen cases.** Never target a benchmark. Every rule is validated by a property test over
   programs from the random generator (`crates/mapal-rewrite/tests/testgen/`, extended as needed) that the change was
   not designed on: values vs the interpreter / bound, plus movement and kernel intents. Benchmarks are acceptance
