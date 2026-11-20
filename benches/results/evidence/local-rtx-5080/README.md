@@ -62,5 +62,13 @@ ns). The cooperative launch's own cost makes the rule refuse every suite chain o
 decides; on this part it still refuses the attention unit that measured faster — the missing facts, single-wave phase
 serialization and row-segment latency, are in the section).
 
+**hardware-properties** (`hardware-properties.md`): the per-architecture rung table (`GPU_RUNGS_OFF`, 131 rows) is
+gone; every rung is decided by the rung rules over physical properties (`rules.rs`: FFMA per DRAM byte, registers per
+resident thread, L2 and DRAM per SM, measured launch and copy costs, capabilities as properties; no name or version
+compare), replayed against every cited measurement (`rung_replay.tsv`: 95 picked, 67 null, 13 open with the
+missing fact named; 4 mixed). `native-gpu` is the device query + the calibration file (`calib/rtx-5080.calib`). On this part:
+`pdl` ships (decode / causal / gen / prefill 0.91–0.92×, ABBA; short programs 1.5–2.5 % slower: mixed, open);
+every kernel now waits under PDL (it raced before).
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

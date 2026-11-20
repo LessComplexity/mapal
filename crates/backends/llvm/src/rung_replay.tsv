@@ -185,3 +185,4 @@ warp-fill	rtx-5080	U1	C	on	-	hardware-properties suite (two ON runs): without th
 warp-fill	rtx-5080	F	C	off	-	hardware-properties first ON session: pj_m16_n18432_k7168 shrunk to 4 x 4 (576 blocks) 0.672 vs 0.611 ms unshrunk (that session's other programs raced: pdl without waits)
 wave-gate	rtx-5080	F	C	off	blocks=16	hardware-properties suite (two ON runs): pj_m16_n2048_k7168 gated (cell tile + stream-K) 0.0809 / 0.0755 vs kept (16 fitted blocks x splitk 4) 0.0486 ms; tile_bench 16x2048x7168 default 0.1495 vs 0.1126 ms
 linear	rtx-5080	A	EC	off	-	hardware-properties first ON session: indep_512 as one linear launch 0.0475 vs the two site tables 0.0401 ms (that session's other programs raced: pdl without waits)
+pdl	rtx-5080	A	EC	mixed	-	hardware-properties ABBA no-pdl / rules on short programs: fir_4194304_16 1.022, convmc_8_64_56_3 1.015, mlp_512 1.026 (spreads 7-31 %); suite mlp_512 1.06 / 1.09 — the loops above gain 8-9 %

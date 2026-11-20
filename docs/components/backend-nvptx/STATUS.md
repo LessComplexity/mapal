@@ -59,8 +59,8 @@ This replaces the obsolete S41 “planned — no code” status.
   delta uploads and independent streams in one resident plan. Grid raster and L2 windows
   select existing realizations; they add no numerical semantics.
 - The rung rules over physical properties (`rules.rs`) and forced measurement arms are
-  present; the per-part table is gone. 94 of the cited measurements are picked by the rules,
-  9 are open (missing properties named in `local-rtx-5080/hardware-properties.md`).
+  present; the per-part table is gone. 95 of the cited measurements are picked by the rules,
+  13 are open (missing properties named in `local-rtx-5080/hardware-properties.md`).
 - Current smoke execution checks values and expected traps before timing. Remote failures
   preserve results and propagate failure through the rental wrapper, which destroys its instance.
 
