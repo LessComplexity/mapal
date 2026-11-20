@@ -8,7 +8,9 @@
 //   lt       cublasLtMatmul: up to 8 heuristic algorithms (32 MB workspace), each timed over 5 runs, the fastest
 //            kept — the best cuBLASLt offers for the shape.
 // Timing (chain_bench.cu's convention): 3 warm-ups per leg, then `reps` repetitions round-robin, each after a
-// 256 MB L2 flush, bracketed by CUDA events; min / median / max ms.
+// 256 MB L2 flush, bracketed by CUDA events; min / median / max ms. `<leg>-fresh`: the operands regenerated on the
+// device right before each repetition instead of the flush — a Mapal program's own boundary (its operands are
+// generated just before its clock, so the last-written part of them is still in the 64 MB L2).
 // Values: c[0] and c[M·N − 1] against Mapal's printed values when given:
 // |leg − mapal| ≤ tol · max(|mapal|, rms(leg output)), tol 1e-3 (f32) / 1e-2 (TF32).
 //
@@ -101,8 +103,12 @@ int main(int argc, char **argv) {
   cudaEvent_t e0, e1;
   CK(cudaEventCreate(&e0));
   CK(cudaEventCreate(&e1));
-  auto time_once = [&](auto &&f) {
+  auto time_once = [&](auto &&f, bool cold = true) {
     CK(cudaMemsetAsync(flush, 0, 256 << 20));
+    if (!cold) {  // fresh: the operands written last, B then A, as the program's laws are
+      law<<<1024, 256>>>(B, (long long)K * N, 11, 57, 103, 51, 9.0f);
+      law<<<1024, 256>>>(A, (long long)M * K, 7, 13, 101, 50, 7.0f);
+    }
     CK(cudaEventRecord(e0));
     f();
     CK(cudaEventRecord(e1));
@@ -156,8 +162,14 @@ int main(int argc, char **argv) {
     for (int w = 0; w < 3; ++w) run_leg(l);
   }
   CK(cudaDeviceSynchronize());
+  const size_t nl = legs.size();
+  for (size_t l = 0; l < nl; ++l) {
+    Leg w = legs[l];
+    w.name = l == 0 ? (tf32 ? "cublas-tf32-fresh" : "cublas-fresh") : (tf32 ? "lt-tf32-fresh" : "lt-fresh");
+    legs.push_back(w);
+  }
   for (int r = 0; r < reps; ++r)
-    for (size_t l = 0; l < legs.size(); ++l) legs[l].ms.push_back(time_once([&] { run_leg(l); }));
+    for (size_t l = 0; l < legs.size(); ++l) legs[l].ms.push_back(time_once([&] { run_leg(l % nl); }, l < nl));
   for (auto &L : legs) {
     std::sort(L.ms.begin(), L.ms.end());
     const char *within = want.size() < 2 ? "no-mapal" : L.dev <= tol ? "yes" : "no";

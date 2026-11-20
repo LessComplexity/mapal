@@ -1406,6 +1406,10 @@ for stem in [s for s in llm_progs if s.startswith(("pt_llm_pre_t2048", "pt_llm_b
 for stem, (src, k) in llm_progs.items():
     (out / f"{stem}.mapal").write_text(src)
     (out / f"{stem}.kmax").write_text(f"{k}\n")
+    # The projections' D2 / D3 magnitude oracle (`mabs`): a corner whose |exact| << M under cancellation fails the
+    # relative fallback inside the absolute bound (run 1: three TF32 corners at 1e-2 relative, |d| = 0.1 of M ~ 4e4).
+    if stem.startswith("pt_pj_"):
+        (out / f"{stem}_xabs.mapal").write_text(mabs(src))
 
 
 # --- the formatter owns the layout of generated source too (CLAUDE.md "Source formatting"): every program this

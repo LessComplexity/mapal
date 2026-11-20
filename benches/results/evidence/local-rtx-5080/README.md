@@ -70,5 +70,15 @@ missing fact named; 4 mixed). `native-gpu` is the device query + the calibration
 `pdl` ships (decode / causal / gen / prefill 0.91–0.92×, ABBA; short programs 1.5–2.5 % slower: mixed, open);
 every kernel now waits under PDL (it raced before).
 
+**model-scale** (`model-scale.md`): one Llama-3-8B-like layer (d 4096, 32 × 128 heads, 8 KV heads, SwiGLU 14336,
+RMSNorm, RoPE) in idiomatic Mapal — decode steps (B 1/8/32 × KV 2048/8192), prefill 2048/8192, the whole block, the
+projections at m 1–2048, TF32 twins — against cuBLAS / cuBLASLt, torch eager / compile / SDPA and a bf16 reference,
+value-gated at both scales. Projections: m 2048 at parity, TF32 1.12–1.22×, m 128 1.07–1.41×. The natural layer
+programs run their attention on the host (the bounds proof uses neither guard conditions nor loop-carried ranges:
+RoPE's indices stay trap-guarded) — 669–2053× torch per decode step, minutes per prefill; with those indices
+written provable (`_pv` diagnostics) the device path is 1.32–3.96× (decode) and 7.8–14× (prefill) torch-compile f32,
+from per-cell kernels for GEMM + residual and for attention, a whole-cache update map per step and one-thread
+RMSNorm. Ten open findings with minimal repros there.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

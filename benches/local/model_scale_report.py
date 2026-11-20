@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """model-scale summary from box_run.sh results files (benches/local/model_scale_run.sh): per program, Mapal's
 median `iter ms` per arm (shipped `on`, GPU-only `off-place`, `null`), the best like-for-like competitor — f32 legs
-for an f32 program (torch eager / compile / sdpa, gemm_lib cuBLAS / cuBLASLt), TF32 legs for a `_tf32` one — with
+for an f32 program (torch eager / compile / sdpa, gemm_lib cuBLAS / cuBLASLt flushed and `-fresh`: the operands
+regenerated before each repetition, Mapal's own boundary), TF32 legs for a `_tf32` one — with
 `within=yes` only, and the torch bf16 reference (best of `bf16`, `bf16-compile`; never a like-for-like row).
 A `_pv` program and its natural twin share the torch legs (the same layer). Decode rows (`dec`, `blkdec`) are per
 step: the program's 16 steps / 16. `once` lines (model_scale_once.sh): one run, gated against the `_pv` twin's
@@ -60,17 +61,17 @@ for stem in sorted(mapal):
     tf32 = stem.endswith('_tf32')
     lg = legs.get(stem.replace('_pv', ''), {})
     like = {k: v[0] / per(stem) for k, v in lg.items() if v[1] == 'yes' and not k.startswith('torch-bf16')
-            and (k.endswith('-tf32') == tf32)}
+            and (('-tf32' in k) == tf32)}
     best = min(like, key=like.get) if like else None
-    bf = {k: v[0] / per(stem) for k, v in legs.get(stem.replace('_pv', '').removesuffix('_tf32'), {}).items()
-          if k.startswith('torch-bf16')}
+    blg = legs.get(stem.replace('_pv', '').removesuffix('_tf32'), {})
+    bf = {k: v[0] / per(stem) for k, v in blg.items() if k.startswith('torch-bf16')}
     bfk = min(bf, key=bf.get) if bf else None
     mine = min(x for x in (on, gpu) if x is not None)
     print(f'| {stem[3:]} | {"ms/step" if per(stem) > 1 else "ms"} | {fmt(on)} | {fmt(gpu)} | '
           f'{f"{abs(nl / on - 1):.1%}" if nl and on else "-"} | '
           f'{f"{like[best]:.4g} ({best})" if best else "no leg"} | {f"{on / like[best]:.2f}" if best and on else "-"}'
           f'{f" / {gpu / like[best]:.2f}" if best and gpu else ""} | '
-          f'{f"{bf[bfk]:.4g} ({bfk[6:]}, {lg.get(bfk, (0, 0, "-"))[2]} dev)" if bfk else "-"} | '
+          f'{f"{bf[bfk]:.4g} ({bfk[6:]}, {blg[bfk][2]} dev)" if bfk else "-"} | '
           f'{gate_cell(gates.get(stem, set()))} |')
 print('\nratio: Mapal shipped / best competitor (/ GPU-only arm); `null`: |null arm / shipped − 1|.')
 print('\n| program | leg | ms | within | maxdev |')
