@@ -33,11 +33,12 @@
 //! the bodies stride over their blocks, so any grid is correct.
 //!
 //! **The rule, from measured properties** (`DeviceCost::gsync_ns`,
-//! `gsync_block_ps`, `dep_launch_ns`, `dep_launch_block_ps`; `benches/gpu/
-//! calib.cu gsync`): a chain of `k` units over `L` levels forms when one
-//! dependent launch of the persistent grid plus `L − 1` grid barriers costs
-//! the device no more than the `k` dependent launches it replaces (each its
-//! own grid), and no launch takes more rounds of the persistent grid than it
+//! `gsync_block_ps`, `dep_launch_ns`, `dep_launch_block_ps`, `pdl_launch_ns`;
+//! `benches/gpu/calib.cu gsync`): a chain of `k` units over `L` levels forms
+//! when one dependent launch of the persistent grid plus `L − 1` grid
+//! barriers costs the device no more than the `k` dependent launches it
+//! replaces (each its own grid, programmatic where the runtime launches them
+//! so), and no launch takes more rounds of the persistent grid than it
 //! took waves alone (`occupancy`), and the members of a level fit one round
 //! together (`waves`). The host then issues one launch instead of `k`. A part
 //! without the measured barrier and launch costs forms no chain (`unpriced`).
@@ -99,14 +100,22 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 }
 
 /// **The rule's prices** (module doc), ns of device time: `(persistent,
-/// separate)` — one dependent launch of `grid` blocks plus `barriers` grid
-/// barriers, against one dependent launch per unit of `units` blocks each.
+/// separate)` — one dependent launch of `grid` blocks (a cooperative launch:
+/// never programmatic) plus `barriers` grid barriers, against one dependent
+/// launch per unit of `units` blocks each, as the runtime issues them
+/// (`pdl`: programmatic dependent launches, where the part has them).
 /// `None` on a part without the measured barrier and launch costs.
-pub(crate) fn chain_ns(units: &[u64], grid: u64, barriers: u64, gpu: &Gpu) -> Option<(f64, f64)> {
+pub(crate) fn chain_ns(
+    units: &[u64],
+    grid: u64,
+    barriers: u64,
+    gpu: &Gpu,
+    pdl: bool,
+) -> Option<(f64, f64)> {
     let d = gpu.cost.as_ref()?;
     let sep = units
         .iter()
-        .map(|&b| d.dep_launch_at(b, gpu.sms))
+        .map(|&b| d.launch_at(b, gpu.sms, pdl))
         .sum::<Option<f64>>()?;
     let per = d.dep_launch_at(grid, gpu.sms)? + barriers as f64 * d.gsync_at(grid, gpu.sms)?;
     Some((per, sep))
@@ -420,10 +429,12 @@ impl FnEmit<'_> {
             .map(|u| u.iter().map(|&i| shapes[i].expect("shape").blocks).sum())
             .collect();
         let barriers = u64::from(levels - 1);
-        let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu) else {
+        let pdl = gpu::pdl(self.profile, self.contract, self.gpu_arms);
+        let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu, pdl) else {
             return;
         };
-        if per > sep {
+        // `--calls=force` (measurement): the cost test aside.
+        if per > sep && !self.gpu_arms.calls_force {
             *stats.refused.entry("cost").or_default() += 1;
             return;
         }
@@ -776,24 +787,28 @@ mod tests {
     fn the_rule_prices_barriers_against_launches() {
         let g = gpu();
         let d = g.cost.as_ref().expect("measured");
-        // At most `sms` blocks: one barrier (553 ns) is cheaper than one
-        // dependent launch (650 ns).
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g).expect("priced");
+        // Plain dependent launches: at most `sms` blocks, one barrier (553
+        // ns) is cheaper than one launch (650 ns).
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false).expect("priced");
         let at128 = 553.0 + 44.0 * 1.89;
         assert!(
             (per - (650.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
         );
         assert!(per <= sep);
+        // As the runtime launches them here (programmatic, 400 ns each): the
+        // barriers cost more than the launches they would replace.
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true).expect("priced");
+        assert!((sep - 1200.0).abs() < 0.5 && per > sep, "{per} {sep}");
         // A wide persistent grid: each barrier serializes 504 arrivals.
-        let (per, sep) = chain_ns(&[504, 504], 504, 1, g).expect("priced");
+        let (per, sep) = chain_ns(&[504, 504], 504, 1, g, false).expect("priced");
         assert!(per > sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
         // A part without the measured costs is unpriced.
         let p4090 = crate::profile::TargetProfile::named("rtx-4090")
             .and_then(|p| p.gpu())
             .unwrap();
-        assert!(chain_ns(&[1, 1], 1, 1, p4090).is_none());
+        assert!(chain_ns(&[1, 1], 1, 1, p4090, true).is_none());
     }
 
     #[test]

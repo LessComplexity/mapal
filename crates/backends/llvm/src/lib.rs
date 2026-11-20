@@ -920,6 +920,9 @@ pub struct GpuArms {
     /// arguments, block and shared memory one launch holds, the occupancy and
     /// wave tests aside.
     pub hz_force: bool,
+    /// Measurement override (`--calls=force`, the `--hz=force` precedent): a
+    /// `calls` chain forms whatever its prices (the fit tests stay).
+    pub calls_force: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -941,6 +944,7 @@ impl Default for GpuArms {
             row_block_b: 0,
             row_stage_force: None,
             hz_force: false,
+            calls_force: false,
         }
     }
 }

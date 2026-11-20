@@ -353,7 +353,8 @@ def host_facts(ll, asm):
             k = kv(m.group(1))
             for x in ('launches', 'groups', 'members', 'cells', 'units', 'tiles', 'branchy'):
                 hz[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
-        merged = set(re.findall(r'; mapal\.hz kernel=mapal_tile_([0-9a-f]{16})', ll))
+        # (`calls`' persistent kernels, `grid=`, are counted under `chain`.)
+        merged = set(re.findall(r'; mapal\.hz kernel=mapal_tile_([0-9a-f]{16}) (?![^\n]*grid=)', ll))
         hz['specs'] = len(merged)
         hz['calls'] = sum(1 for m in re.finditer(r'call void @mapal_gpu_(?:site|launchv)\(i64 (-?\d+)', ll)
                           if f'{int(m.group(1)) & (2**64 - 1):016x}' in merged)

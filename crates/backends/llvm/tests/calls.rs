@@ -128,14 +128,50 @@ fn specs(em: &Emission) -> Vec<String> {
 /// `horizontal` group, level 0), `s` (reads `kk` and `q`: level 1, its zero
 /// pass at level 0) and `o` (reads `s` and `vv`: level 2, zero at level 1) are
 /// one persistent kernel of 128 blocks — two grid barriers (553 + 44 · 1.89 ns
-/// each at 128 blocks) against three dependent launches (650 ns each). `x`
-/// (a range cell) launches alone. The tables keep the rows' unsplit
-/// candidates and `s` / `o`'s atomic ones; every tuple a persistent kernel
-/// with a grid barrier, launched cooperatively. OFF: no chain, the text
-/// before the rung.
+/// each at 128 blocks) and one launch against three dependent launches (650 ns
+/// each: the runtime launches plainly here, `pdl` off). With programmatic
+/// dependent launches (`pdl` forced on: 400 ns each) the rule refuses the
+/// same chain by cost. `x` (a range cell) launches alone. The tables keep the
+/// rows' unsplit candidates and `s` / `o`'s atomic ones; every tuple a
+/// persistent kernel with two grid barriers, launched cooperatively. OFF: no
+/// chain, the text before the rung.
 #[test]
 fn decode_runs_its_trip_as_one_persistent_kernel() {
     let ir = bench("pt_decode_1024_256");
+    let mut gpu = GpuArms::default();
+    gpu.on.pdl = true;
+    let pdl = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
+    let h = host_line(&pdl);
+    assert_eq!(
+        (
+            field(&h, "chains"),
+            field(&h, "formed"),
+            field(&h, "refused")
+        ),
+        ("1", "0", "cost:1"),
+        "{h}"
+    );
+    assert!(specs(&pdl).is_empty());
+    // Forced (`--calls=force`), the cost test aside: the chain forms.
+    gpu.calls_force = true;
+    let forced = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
+    assert_eq!(field(&host_line(&forced), "formed"), "1");
     let on = shipped(&ir, "rtx-5080", true);
     let h = host_line(&on);
     assert_eq!(
