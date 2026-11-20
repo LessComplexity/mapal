@@ -270,13 +270,32 @@ fn decode_values_with_the_zero_in_the_query_kernel() {
         }
     }
     assert!(fewer > 0, "an atomic pick runs on the tail's zero");
+    // Trials (the fake clock: the last candidates fastest) time every
+    // candidate on the real output: each timed run and the pick after it
+    // zero again, flag or not.
+    let dir = tempfile::tempdir().unwrap();
+    let wis = dir.path().join("w");
+    let (t, err) = eon.run(&[
+        (
+            "MAPAL_EMU_NS",
+            "1000000,900000,800000,700000,600000,500000,400000,300000",
+        ),
+        ("MAPAL_WISDOM", wis.to_str().unwrap()),
+        ("MAPAL_GPU_TRACE", "1"),
+    ]);
+    assert!(err.contains("op=trial "), "trials ran\n{err}");
+    assert!(
+        within(&t, &rr.output),
+        "after trials: {t:?} vs {:?}",
+        rr.output
+    );
     // The tails' stores gone, the flags kept: some pick reads garbage.
     let dev = on
         .device
         .as_deref()
         .unwrap()
         .lines()
-        .filter(|l| !l.contains("store i32 0, ptr addrspace(1) %zf"))
+        .filter(|l| !(l.trim_start().starts_with("store ") && l.contains("ptr addrspace(1) %zf")))
         .collect::<Vec<_>>()
         .join("\n");
     let bad = emu::build_emulated(&clang, &on.text, &dev);

@@ -15,14 +15,16 @@
 //! output bytes ends the walk; the nearest step before it that is a cell or
 //! unit kernel `E` of this plan takes `L`'s zero as a grid-stride tail, when
 //! the plan rates price the tail (`bytes` at the rate `E`'s blocks store,
-//! capped at the L2 rate) below the zero op (`zero_ns` + `bytes` at the L2
-//! rate + the issue it leaves). `L` then launches with [`SITE_ZEROED`]: the
+//! capped at the part's measured tail rate) below the zero op (`zero_ns` +
+//! `bytes` at the measured fill rate + the idle it leaves): a small zero
+//! always (its op is fixed cost), a large one never where the tail stores
+//! slower than the fill (rtx-5080: 1740 vs 2320 B/ns, crossover ≈ 7 MiB). `L` then launches with [`SITE_ZEROED`]: the
 //! runtime skips a candidate's zero once the site's pick is settled (a trial
 //! still zeroes before each candidate it times), and the direct atomic launch
 //! drops its zero. Not folded: a guarded (gated) step touching the bytes, a
 //! retained row (its range is the trip's), an epilogue group, a function on
-//! streams (its order is the events'), a part without plan rates
-//! (`unpriced`). OFF: `--gpu-off=zero-fold`.
+//! streams (its order is the events'), a part without plan rates or the
+//! measured fill and tail rates (`unpriced`). OFF: `--gpu-off=zero-fold`.
 
 use super::resident::ResidentPlan;
 use super::*;
@@ -31,11 +33,13 @@ use mapal_ir::AccessPlan;
 /// `mapal_gpu_site` flags bit 1: an earlier kernel zeroed the output.
 pub(crate) const SITE_ZEROED: u32 = 2;
 
-/// Bytes one block of a zero tail stores a clock: 256 threads storing a 4-B
-/// word an iteration of about eight instructions, four schedulers issuing —
-/// a model bound, checked against the kernel's SASS and CUPTI time in the
-/// evidence (`kernel-merging.md`).
-const ZERO_BYTES_PER_BLOCK_CLOCK: f64 = 64.0;
+/// Bytes one block of a zero tail stores a clock: 256 threads storing a 16-B
+/// vector an iteration of about eight instructions, four schedulers issuing
+/// (64 warp-instructions in 16 clocks for 4 KB) — a model bound on a grid of
+/// few blocks, checked against the kernel's SASS and CUPTI time in the
+/// evidence (`kernel-merging.md`). A wide grid stores at the part's measured
+/// tail rate (`DeviceCost::tail_bytes_per_ns`).
+const ZERO_BYTES_PER_BLOCK_CLOCK: f64 = 256.0;
 
 /// One step of a sequence the rule walks.
 enum Step {
@@ -54,7 +58,12 @@ impl<'a> FnEmit<'a> {
         {
             return;
         }
-        let Some((g, d)) = self.profile.plan_rates() else {
+        // Priced only where the tail's and the fill's rates were measured.
+        let Some((g, d)) = self
+            .profile
+            .plan_rates()
+            .filter(|(_, d)| d.tail_bytes_per_ns > 0 && d.fill_bytes_per_ns > 0)
+        else {
             return;
         };
         let acc = self.ir.access_plan(self.f);
@@ -116,11 +125,12 @@ impl<'a> FnEmit<'a> {
                         continue;
                     }
                     // The plan rates: the tail at the rate `E`'s blocks
-                    // store against the zero op it replaces.
-                    let l2 = d.l2_bytes_per_ns.max(1) as f64;
-                    let own = d.zero_ns as f64 + bytes as f64 / l2;
+                    // store (the part's tail rate, few blocks their own
+                    // issue) against the zero op it replaces (its fixed
+                    // cost, its fill, the idle it leaves on the stream).
+                    let own = d.zero_ns as f64 + bytes as f64 / d.fill_bytes_per_ns as f64;
                     let own = own + (d.gap_ns as f64).max(d.issue_ns as f64 - own);
-                    let rate = l2.min(
+                    let rate = (d.tail_bytes_per_ns as f64).min(
                         blocks.min(g.sms) as f64 * ZERO_BYTES_PER_BLOCK_CLOCK * g.clock_khz as f64
                             / 1e6,
                     );
@@ -415,8 +425,10 @@ pub(crate) fn zero_params(jobs: usize) -> Vec<String> {
 
 /// The zero tail (`zero-fold`), placed at a kernel's exit block before its
 /// `ret`: thread `g` of the grid's `%zt` (blocks of `threads`) stores a zero
-/// word at `g`, `g + %zt`, … of each job's `%zn ÷ 4` words, then the bytes
-/// past the last word. Every thread of the kernel reaches it.
+/// 16-byte vector at `g`, `g + %zt`, … of each job's `%zn ÷ 16` vectors (every
+/// device buffer starts 16-byte aligned: `cuMemAlloc`, the arena's
+/// `ARENA_ALIGN`), then thread `g < %zn mod 16` the byte past them. Every
+/// thread of the kernel reaches it.
 pub(crate) fn zero_tail(jobs: usize, threads: u64) -> String {
     if jobs == 0 {
         return String::new();
@@ -433,23 +445,23 @@ pub(crate) fn zero_tail(jobs: usize, threads: u64) -> String {
     for j in 0..jobs {
         s += &format!(
             "zf{j}:\n\
-             \x20 %zf{j}.w = lshr i64 %zn{j}, 2\n\
+             \x20 %zf{j}.w = lshr i64 %zn{j}, 4\n\
              \x20 br label %zf{j}.h\n\
              zf{j}.h:\n\
              \x20 %zf{j}.i = phi i64 [ %zf.g, %zf{j} ], [ %zf{j}.nx, %zf{j}.s ]\n\
              \x20 %zf{j}.c = icmp ult i64 %zf{j}.i, %zf{j}.w\n\
              \x20 br i1 %zf{j}.c, label %zf{j}.s, label %zf{j}.r\n\
              zf{j}.s:\n\
-             \x20 %zf{j}.p = getelementptr inbounds i32, ptr addrspace(1) %zp{j}, i64 %zf{j}.i\n\
-             \x20 store i32 0, ptr addrspace(1) %zf{j}.p, align 4\n\
+             \x20 %zf{j}.p = getelementptr inbounds <4 x i32>, ptr addrspace(1) %zp{j}, i64 %zf{j}.i\n\
+             \x20 store <4 x i32> zeroinitializer, ptr addrspace(1) %zf{j}.p, align 16\n\
              \x20 %zf{j}.nx = add i64 %zf{j}.i, %zt\n\
              \x20 br label %zf{j}.h\n\
              zf{j}.r:\n\
-             \x20 %zf{j}.rem = and i64 %zn{j}, 3\n\
+             \x20 %zf{j}.rem = and i64 %zn{j}, 15\n\
              \x20 %zf{j}.rc = icmp ult i64 %zf.g, %zf{j}.rem\n\
              \x20 br i1 %zf{j}.rc, label %zf{j}.rb, label %zf{n}\n\
              zf{j}.rb:\n\
-             \x20 %zf{j}.ro = shl i64 %zf{j}.w, 2\n\
+             \x20 %zf{j}.ro = shl i64 %zf{j}.w, 4\n\
              \x20 %zf{j}.ri = add i64 %zf{j}.ro, %zf.g\n\
              \x20 %zf{j}.rp = getelementptr inbounds i8, ptr addrspace(1) %zp{j}, i64 %zf{j}.ri\n\
              \x20 store i8 0, ptr addrspace(1) %zf{j}.rp, align 1\n\

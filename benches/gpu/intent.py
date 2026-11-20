@@ -241,8 +241,10 @@ INTENT = {
     # `flow` (func/flow.rs): a unit kernel holds placed folds and cells whose footprints stay in
     # one row of its unit; `; mapal.flow` says what it keeps (no store, no pointer), stores and reads.
     'flow': dict(applies="plan.kind == 'flow'", on=[
-        ('kept members are not kernel parameters: the pointers are the stored members and the operands',
-         'ptx.params == flow.n_store + flow.n_gmem and flow.ll_params == ptx.params'),
+        ('kept members are not kernel parameters: the pointers are the stored members and the operands '
+         '(and a zero tail\'s: its threads, a pointer and bytes a job)',
+         'ptx.params == flow.n_store + flow.n_gmem + flow.zero_params '
+         'and flow.ll_params == flow.n_store + flow.n_gmem + flow.zero'),
         ('a stored member is stored, a kept one is not: st.global iff something is stored',
          '(ptx.st_global > 0) == (flow.n_store > 0)'),
         ('shared memory is the launch\'s (tree partials, on-chip rows): none static', 'ptxas.static_smem == 0'),
@@ -267,7 +269,8 @@ INTENT = {
     # kernel-merging `zero-fold` (func/zero.rs): an atomic site's zero pass is the grid-stride tail of an earlier kernel
     # the dependency fact orders after the output's last earlier access; the site launches flagged ZEROED.
     'zero-fold': dict(host=True, applies='host.zero.folded > 0', on=[
-        ('every folded site flagged', 'host.zero.flagged == host.zero.folded'),
+        ('every folded site flagged (a table) or launched without its zero (direct)',
+         'host.zero.flagged + host.zero.direct == host.zero.folded'),
         ('one tail call a folding kernel', 'host.zero.tails == host.zero.kernels'),
         ('folded + kept = the atomic sites', 'host.zero.folded + host.zero.gated + host.zero.stopped + host.zero.none <= host.zero.sites')],
         applies_off='host.calls.launchv > 0', off=[('no tail', 'host.zero.tails == 0')]),

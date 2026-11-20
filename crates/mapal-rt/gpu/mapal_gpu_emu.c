@@ -434,14 +434,15 @@ struct site_env {
   uint32_t stream, nptr, out;
   const uint64_t *ptrs;
   uint64_t *ws_slot, ws_max;
-  int zeroed; /* MAPAL_SITE_ZEROED and the pick runs alone: no zero pass */
+  int zeroed;  /* MAPAL_SITE_ZEROED: an earlier kernel zeroed the output */
+  int trialed; /* a trial ran in this call: the output holds its sums */
 };
 static void site_run(void *e, uint32_t i) {
   struct site_env *x = e;
   const struct mapal_cand *c = &x->c[i];
   uint64_t p[16];
   memcpy(p, x->ptrs, x->nptr * sizeof *p);
-  if (c->zero && !x->zeroed) mapal_gpu_zero(x->ptrs[x->out], c->zero);
+  if (c->zero && (!x->zeroed || x->trialed)) mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws) p[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
   if (x->nptr == 3)
     mapal_gpu_launch(c->id, p[0], p[1], p[2], c->gx, c->gy, c->block, c->smem);
@@ -450,6 +451,7 @@ static void site_run(void *e, uint32_t i) {
   if (c->ws) mapal_gpu_launch(c->rid, p[x->out], 0, x->ptrs[x->out], c->rgx, 1, c->rblock, 0);
 }
 static uint64_t site_timed(void *e, uint32_t i) {
+  ((struct site_env *)e)->trialed = 1;
   site_run(e, i);
   const char *ns = getenv("MAPAL_EMU_NS");
   uint64_t t = 0;
@@ -471,7 +473,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, 
     fprintf(stderr, "emu: site with %u pointers, out %u, %u candidates\n", nptr, out, n);
     exit(102);
   }
-  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0};
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max) x.ws_max = cands[i].ws;
   const char *pick = getenv("MAPAL_GPU_PICK");
@@ -485,7 +487,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n, 
     site_run(&x, i < 0 ? 0 : (uint32_t)i < n ? (uint32_t)i : n - 1);
     return;
   }
-  x.zeroed = (flags & MAPAL_SITE_ZEROED) && choice_known(cands, n);
+  x.zeroed = (flags & MAPAL_SITE_ZEROED) != 0;
   const char *t = getenv("MAPAL_GPU_TRACE");
   choice_init("emu-sm0", 0, 1, t && atoi(t));
   int safe = 1;

@@ -42,5 +42,10 @@ plan model keeps the boundary — the in-unit q·Kᵀ reads Kᵀ at half a secto
 replayed as CUDA graphs (rt_mlp2_1024 0.92× by overlapping independent chains; decode family neutral: a 10-node
 graph launch costs as much as its eager ops on this driver). Intended vs realized, CUPTI, ABBA, open items there.
 
+**kernel-merging** (`kernel-merging.md`): runtime graph replay removed; `access_plan` (the compile-time dependency fact)
+and `residence_plan` (where a value's bytes live) in mapal-ir; the row-block model prices attention by one rule on the
+4090 / 5090 / 5080; `zero-fold` puts an atomic site's zero pass into an earlier kernel the dependency fact allows —
+decode_1024_256 0.878× (ABBA), now 0.95× hand CUDA. Intended vs realized, CUPTI, ABBA, open items there.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

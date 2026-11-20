@@ -338,6 +338,11 @@ def host_facts(ll, asm):
                 zf[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
         zf['tails'] = len(re.findall(r'; mapal\.zero sites=', ll))
         zf['flagged'] = len(re.findall(r'@mapal_gpu_site\(i64 -?\d+, i32 [23],', ll))
+        # A direct atomic / stream-K launch (no table: `--cands=1`) folded: no zero call right before it.
+        lines = ll.splitlines()
+        zf['direct'] = sum(1 for i, x in enumerate(lines)
+                           if re.search(r'@mapal_gpu_launch\(.*; (splitk=\d+ atomic|streamk=)', x)
+                           and not (i and '@mapal_gpu_zero(' in lines[i - 1]))
         f['zero'] = dict(zf)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
@@ -743,6 +748,10 @@ def flow_facts(f, dev):
                 n_law=n('law'), n_halo=str(f.get('members', '')).count('+halo'), rows=f.get('rows', 0),
                 smem=f.get('smem', 0), lanes=f.get('lanes', 1), tree=f.get('tree', 0), onchip=f.get('onchip', 0),
                 ll_params=d.group(1).count('ptr addrspace(1)') if d else -1,
+                # kernel-merging `zero-fold`: the zero tail's jobs (`%zp<j>`) and its parameters (`%zt`, then a
+                # pointer and a byte count a job).
+                zero=d.group(1).count('%zp') if d else 0,
+                zero_params=(1 + 2 * d.group(1).count('%zp')) if d and '%zp' in d.group(1) else 0,
                 # compile-time-graph A: a row-block unit's rows per block, tiles, colors (0 on a per-row unit).
                 rows_per_unit=f.get('rows_per_unit', 0), tiles=f.get('tiles', 0), colors=f.get('colors', 0),
                 members=str(f.get('members', '')),

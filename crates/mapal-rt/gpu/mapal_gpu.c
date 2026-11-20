@@ -835,7 +835,8 @@ struct site_env {
   uint32_t stream, nptr, out;
   const uint64_t *ptrs;
   uint64_t *ws_slot, ws_max;
-  int zeroed; /* MAPAL_SITE_ZEROED and the settled pick runs alone */
+  int zeroed;  /* MAPAL_SITE_ZEROED: an earlier kernel zeroed the output */
+  int trialed; /* a trial ran in this call: the output holds its sums */
 };
 
 static void site_run(void *e, uint32_t i) {
@@ -848,7 +849,7 @@ static void site_run(void *e, uint32_t i) {
     d[p] = x->ptrs[p];
     args[p] = &d[p];
   }
-  if (c->zero && !x->zeroed)
+  if (c->zero && (!x->zeroed || x->trialed))
     mapal_gpu_zero(x->ptrs[x->out], c->zero);
   if (c->ws)
     d[x->out] = mapal_gpu_alloc(x->ws_slot, x->ws_max);
@@ -868,6 +869,7 @@ static uint64_t now_ns(void) {
 
 /* A trial run: the recipe to completion (the device was idle before it). */
 static uint64_t site_timed(void *e, uint32_t i) {
+  ((struct site_env *)e)->trialed = 1;
   CK(cuCtxSynchronize());
   uint64_t t0 = now_ns();
   site_run(e, i);
@@ -893,7 +895,7 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
     exit(102);
   }
   choice_ready_dev();
-  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0};
+  struct site_env x = {cands, stream, nptr, out, ptrs, ws_slot, 0, 0, 0};
   for (uint32_t i = 0; i < n; i++)
     if (cands[i].ws > x.ws_max)
       x.ws_max = cands[i].ws;
@@ -902,9 +904,9 @@ void mapal_gpu_site(uint64_t site, uint32_t flags, uint32_t stream, uint32_t n,
   for (uint32_t p = 0; p < nptr; p++)
     safe &= p == out || !ptrs[out] || ptrs[p] != ptrs[out];
   struct choice_dev d = {site_run, site_timed, site_warm, &x};
-  /* kernel-merging `zero-fold`: an earlier kernel zeroed the output; a
-   * settled pick (no trial in this call) runs without its zero pass. */
-  x.zeroed = (flags & MAPAL_SITE_ZEROED) && choice_known(cands, n);
+  /* kernel-merging `zero-fold`: an earlier kernel zeroed the output; the
+   * pick runs without its zero pass unless a trial ran before it. */
+  x.zeroed = (flags & MAPAL_SITE_ZEROED) != 0;
   choice_site(site, flags, n, cands, safe, &d);
 }
 

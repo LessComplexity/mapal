@@ -51,8 +51,8 @@ _Static_assert(sizeof(struct mapal_cand) == 56, "the host's %mapal_cand");
 /* `flags` bit 0: running the site again is value-safe. */
 #define MAPAL_SITE_RERUN 1u
 /* `flags` bit 1 (kernel-merging `zero-fold`): an earlier kernel of the same
- * stream zeroed the output, so a candidate's zero pass is skipped where the
- * site runs its settled pick alone (a trial still zeroes before each run). */
+ * stream zeroed the output, so a candidate's zero pass is skipped — unless a
+ * trial ran in this call (each timed run and the pick after it zero). */
 #define MAPAL_SITE_ZEROED 2u
 
 /* How the decision runs a candidate: `run` enqueues its recipe, `timed` runs
@@ -190,14 +190,6 @@ static void choice_init(const char *dev, uint64_t module, int tune, int trace) {
   tag[i] = 0;
   snprintf(choice.path, sizeof choice.path, "%s/wisdom-%s.tsv", dir, tag);
   choice_load();
-}
-
-/* The site's pick is already decided this process (a memo hit): running it
- * launches its recipe once and nothing else (kernel-merging `zero-fold`). */
-static int choice_known(const struct mapal_cand *c, uint32_t n) {
-  const struct choice_memo *memo =
-      &choice_memo[(((uintptr_t)c * 0x9e3779b97f4a7c15ull) >> 32) % CHOICE_MEMO];
-  return memo->c == c && memo->n == n;
 }
 
 /* Run site `site`'s pick among its `n` candidates `c`, once. `safe` 0: the

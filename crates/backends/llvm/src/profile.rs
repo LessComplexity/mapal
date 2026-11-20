@@ -216,6 +216,13 @@ pub struct DeviceCost {
     /// clock, per mille — the floor `warps · trips · lsu / lsu_ipc` under a
     /// wave's FFMA time ([`PlanShape::lsu`]). 0 = not given: no LSU term.
     pub lsu_ipc_pm: u64,
+    /// kernel-merging `zero-fold`: a zero pass's fill rate beyond `zero_ns`
+    /// (`cuMemsetD8Async` device time), bytes per ns. 0 = not given.
+    pub fill_bytes_per_ns: u64,
+    /// kernel-merging `zero-fold`: the rate a kernel's zero tail stores at
+    /// (the time it adds to the kernel), bytes per ns. 0 = not given: the
+    /// tail is unpriced and no zero pass folds.
+    pub tail_bytes_per_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -234,12 +241,14 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     eff_half: 0,
     lat_ns: 0,
     lsu_ipc_pm: 0,
+    fill_bytes_per_ns: 0,
+    tail_bytes_per_ns: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
     /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 15] = [
+    pub const NAMES: [&'static str; 17] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -253,6 +262,8 @@ impl DeviceCost {
         "eff_half",
         "lat_ns",
         "lsu_ipc_pm",
+        "fill_bytes_per_ns",
+        "tail_bytes_per_ns",
         "fp32_lanes",
         "clock_khz",
     ];
@@ -287,6 +298,8 @@ impl Gpu {
                 "eff_half" => &mut d.eff_half,
                 "lat_ns" => &mut d.lat_ns,
                 "lsu_ipc_pm" => &mut d.lsu_ipc_pm,
+                "fill_bytes_per_ns" => &mut d.fill_bytes_per_ns,
+                "tail_bytes_per_ns" => &mut d.tail_bytes_per_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 _ => &mut self.clock_khz,
             } = v;
@@ -315,6 +328,8 @@ impl Gpu {
             "eff_half" => d.eff_half,
             "lat_ns" => d.lat_ns,
             "lsu_ipc_pm" => d.lsu_ipc_pm,
+            "fill_bytes_per_ns" => d.fill_bytes_per_ns,
+            "tail_bytes_per_ns" => d.tail_bytes_per_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             _ => 0,
@@ -4472,6 +4487,9 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
             // `B-lds-rtx-4090.tsv`); the LDS.128 broadcast rate is open (no ncu).
             lsu_ipc_pm: 500,
+            // zero-fold: not measured on this part (no fold: unpriced).
+            fill_bytes_per_ns: 0,
+            tail_bytes_per_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -4577,6 +4595,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             // (`benches/results/evidence/plan-cost/v2/B-rates.tsv`,
             // `B-lds-rtx-5090.tsv`); the LDS.128 broadcast rate is open (no ncu).
             lsu_ipc_pm: 500,
+            // zero-fold: not measured on this part (no fold: unpriced).
+            fill_bytes_per_ns: 0,
+            tail_bytes_per_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -4637,6 +4658,13 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // lsu: calib B `lds`, LDS.32 at 256 threads 64.0 B/clk/SM = 0.5
             // warp-instructions a clock (`B-lds-rtx-5080.txt`).
             lsu_ipc_pm: 500,
+            // kernel-merging zero-fold (CUPTI, pt_rt_mlp2_2048, one traced
+            // run an arm, `kernel-merging.md`): a 16 MiB zero pass 8.02 us
+            // device time (mean of 9) less `zero_ns` = 2320 B/ns; the same
+            // 16 MiB as the 16-B-store tail of a 16384 x 256 cell kernel adds
+            // 9.64 us to it (23.30 vs 13.66 us median of 8) = 1740 B/ns.
+            fill_bytes_per_ns: 2320,
+            tail_bytes_per_ns: 1740,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
