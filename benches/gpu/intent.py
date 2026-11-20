@@ -264,11 +264,13 @@ INTENT = {
         ('every intermediate on chip: the launch smem is the plan\'s, none static', 'ptxas.static_smem == 0 and flow.smem > 0'),
         ('rows and tiles synchronize the block', 'sass.bar > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
-    # compile-time-graph B (func/region.rs): a device loop's trip is one launch region; every op in it carries its
-    # compile-time dependencies (`mapal_gpu_tag`), the runtime replays it as one graph (CUPTI: one graph launch a trip).
-    'launch-graph': dict(host=True, applies='host.region.n > 0', on=[
-        ('one begin and one end per region', 'host.calls.region_begin == host.calls.region_end == host.region.n'),
-        ('every op of a region tagged', 'host.region.tagged == host.region.ops')]),
+    # kernel-merging `zero-fold` (func/zero.rs): an atomic site's zero pass is the grid-stride tail of an earlier kernel
+    # the dependency fact orders after the output's last earlier access; the site launches flagged ZEROED.
+    'zero-fold': dict(host=True, applies='host.zero.folded > 0', on=[
+        ('every folded site flagged', 'host.zero.flagged == host.zero.folded'),
+        ('one tail call a folding kernel', 'host.zero.tails == host.zero.kernels'),
+        ('folded + kept = the atomic sites', 'host.zero.folded + host.zero.gated + host.zero.stopped + host.zero.none <= host.zero.sites')],
+        applies_off='host.calls.launchv > 0', off=[('no tail', 'host.zero.tails == 0')]),
     # generic-fusion `window` (design §4/§7): a site whose reads are affine in the fold's derived axes (k÷div, k%div:
     # a 2-D convolution's taps) is a device site; the naive kernel walks k in order with constant divisors. Only a
     # window site's plan line carries `taps=` (the kernel exists only with the rung on: `.off-window` keeps it host).

@@ -1073,7 +1073,7 @@ fn holds_array(ty: &Ty) -> bool {
 
 impl CategoryIr {
     /// The objects owned by function `f`, in deterministic order.
-    fn func_objects(&self, f: FuncId) -> Vec<ObjectId> {
+    pub(crate) fn func_objects(&self, f: FuncId) -> Vec<ObjectId> {
         self.fact(f, |s| &s.func_objects, || self.func_objects_compute(f))
     }
 

@@ -21,10 +21,9 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // algebra (host pairs, device strided tiles); no `reassoc` on fold steps.
         "--no-fma-pairs" => opts.gpu.pairs = false,
         "--no-fold-regroup" => opts.gpu.regroup = false,
-        // compile-time-graph OFF arms: no row-block unit kernels (tile sites
-        // keep their own launches); no launch regions (every op issued eagerly).
+        // compile-time-graph OFF arm: no row-block unit kernels (tile sites
+        // keep their own launches).
         "--no-row-block" => opts.gpu.row_block = false,
-        "--no-launch-graph" => opts.gpu.graph = false,
         // Measurement only: a row-block unit's rows (0 = derive), the rung
         // table and the cost test aside. `--gpu-on=row-block` runs the rule
         // (cost-gated) where the part's table keeps it off.

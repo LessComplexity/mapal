@@ -15,6 +15,6 @@ mkdir -p "$OUT"
 [ -d "$OUT/cutlass" ] || cp -R "${CUTLASS_SRC:-$ROOT/.claude/sprints/per-site-choice/scratch/harness/bundle/cutlass}" "$OUT/"
 cd "$ROOT"
 export PATH=/opt/cuda/bin:$PATH CUDA=/opt/cuda LLVM=/usr/bin CPU_TARGET=x86-64-v3
-CELLS=${CELLS-"4096x4096x4096 16x2048x7168"} PROGS="" SUITE="$SUITE" SUITE_ARMS=0 ARMS="" \
+CELLS=${CELLS-"4096x4096x4096 16x2048x7168"} PROGS="" SUITE="$SUITE" SUITE_ARMS=0 ARMS="${ARMS-}" \
     benches/gpu/integrated_bundle.sh "$OUT" rtx-5080:sm_120 > "$OUT/bundle.log" 2>&1 || { tail -20 "$OUT/bundle.log"; exit 1; }
 python3 benches/gpu/preflight.py "$OUT" rtx-5080 2>&1 | tee "$OUT/preflight.log" | tail -5

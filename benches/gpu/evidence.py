@@ -49,7 +49,7 @@ KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
                 'async-depth bank-plan').split()
 GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
-            'zero region_begin region_end tag').split()
+            'zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
@@ -329,10 +329,16 @@ def host_facts(ll, asm):
             fu['refused'] += len([r for r in str(k.get('refused', '')).split(';') if r])
         fu['unit_calls'] = len(re.findall(r'@mapal_gpu_launchv\([^\n]*; unit$', ll, re.M))
         f['flow'] = dict(fu)
-        # compile-time-graph B: each launch region's ops (`; mapal.region`), and the ops tagged.
-        rg = [kv(m.group(1)) for m in re.finditer(r'; mapal\.region (.*)$', ll, re.M)]
-        f['region'] = dict(n=len(rg), ops=sum(r.get('ops', 0) for r in rg),
-                           tagged=len(re.findall(r'@mapal_gpu_tag\(i32 \d+,', ll)))
+        # kernel-merging `zero-fold`: every function's `; mapal.zero.host` line summed, the kernels taking a zero
+        # tail (`; mapal.zero sites=`), and the site calls flagged ZEROED (flags bit 1).
+        zf = Counter()
+        for m in re.finditer(r'; mapal\.zero\.host (.*)$', ll, re.M):
+            k = kv(m.group(1))
+            for x in ('sites', 'folded', 'kernels', 'gated', 'stopped', 'none'):
+                zf[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
+        zf['tails'] = len(re.findall(r'; mapal\.zero sites=', ll))
+        zf['flagged'] = len(re.findall(r'@mapal_gpu_site\(i64 -?\d+, i32 [23],', ll))
+        f['zero'] = dict(zf)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),

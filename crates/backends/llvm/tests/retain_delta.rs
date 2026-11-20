@@ -190,8 +190,7 @@ fn emit(ir: &CategoryIr, target: &'static str, on: bool) -> (String, Option<Stri
 fn recurrence_off(gpu: &mut GpuArms) {
     // compile-time-graph A off: the small decode's `s` and `o` (one row of
     // each) would be one row-block unit (`row_block.rs`); the launches these
-    // tests pin are the sites'. The launch-graph arm stays on: these emulated
-    // decodes run their trips as regions.
+    // tests pin are the sites'.
     gpu.row_block = false;
     for r in ["range-cell", "scalar-fold", "trip-batch"] {
         *gpu.off.rung(r).expect("a rung") = true;

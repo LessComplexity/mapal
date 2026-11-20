@@ -409,6 +409,37 @@ fn row_block_ships_off_and_refuses_unpriced() {
     }
 }
 
+/// kernel-merging `residence_plan`: the plan model prices each split
+/// segment's bytes where they live (the working set from producer to last
+/// reader against the part's L2), so attention is one rule on the three
+/// parts with plan rates. The split softmax's rows (12.6 MB at 1024 × 64)
+/// stay in L2 on the 64 / 72 / 96 MB caches: every large attention keeps
+/// its boundary by cost (the rtx-5080's measured order: fused 33.3 us > split
+/// 31.7); before, the 4090 / 5090 priced those rows at the DRAM placement
+/// rate `bytes_per_ns` and formed the unit. The launch-bound
+/// `px_attn_64_16` forms on all three.
+#[test]
+fn attention_pricing_is_one_rule_across_parts() {
+    for part in ["rtx-4090", "rtx-5090", "rtx-5080"] {
+        for name in ["pt_attn_1024_64", "pt_attn_1024_128", "pt_attn_2048_64"] {
+            let on = shipped(&bench(name), part, true, 0);
+            assert!(block_lines(&on).is_empty(), "{name} {part}");
+            let why: Vec<&str> = on
+                .text
+                .lines()
+                .flat_map(|l| l.split_whitespace())
+                .filter_map(|f| f.strip_prefix("row_block=s:cost:"))
+                .collect();
+            assert_eq!(why.len(), 1, "{name} {part}: {}", on.text);
+            let (f, s) = why[0].split_once(':').unwrap().1.split_once('/').unwrap();
+            let (f, s): (u64, u64) = (f.parse().unwrap(), s.parse().unwrap());
+            assert!(f > s && s > 0, "{name} {part}: fused {f} split {s}");
+        }
+        let small = shipped(&bench("px_attn_64_16"), part, true, 0);
+        assert_eq!(block_lines(&small).len(), 1, "px_attn_64_16 {part}");
+    }
+}
+
 /// One generated program's row-block checks ([`row_block_on_generated_chains`]).
 #[derive(Default)]
 struct ChainCheck {

@@ -260,6 +260,11 @@ impl Cell {
     /// parameter order: the mapped array, then each capture slot not
     /// evaluated in the cell — `(object, slot, uniform)`, a uniform passed by
     /// value, the rest by reference.
+    /// The kernel's arguments after its output ([`Self::args`]).
+    pub(crate) fn arg_count(&self) -> usize {
+        self.args().count()
+    }
+
     fn args(&self) -> impl Iterator<Item = (ObjectId, Option<u32>, bool)> + '_ {
         let k = self.caps.len() as u32;
         let mapped = self.mapped.map(|o| (o, (k > 0).then_some(k)));
@@ -312,6 +317,14 @@ pub(crate) struct ResidentPlan {
     pub units: SecondaryMap<MorphismId, super::flow::Unit>,
     /// generic-fusion: the host intent line (`; mapal.flow.host …`).
     pub flow_line: String,
+    /// kernel-merging `zero-fold`: a kernel (a cell or a unit launch) that
+    /// zeroes the outputs of later atomic sites, each `(site, bytes)`.
+    pub zero_by: SecondaryMap<MorphismId, Vec<(MorphismId, u64)>>,
+    /// The sites whose zero pass a `zero_by` kernel runs.
+    pub zeroed: SecondaryMap<MorphismId, ()>,
+    /// The host intent line (`; mapal.zero.host …`): the atomic sites, the
+    /// folded ones, and why each other kept its zero op.
+    pub zero_line: String,
     /// `trip-batch`: the loops entered at the last trip of a skippable first
     /// interval, each batched write made first by one cell launch.
     pub batch: Vec<Batch>,
@@ -2111,6 +2124,8 @@ impl<'a> FnEmit<'a> {
         if arena && plan.chain.is_empty() {
             plan.arena = Some(self.arena(&plan));
         }
+        // kernel-merging `zero-fold`: zero passes into earlier kernels.
+        self.zero_fold(&mut plan);
         let free = self.carry_host_free(&plan);
         if !free.is_empty() {
             let a = plan.arena.get_or_insert_with(Arena::default);
@@ -2682,6 +2697,15 @@ impl<'a> FnEmit<'a> {
             self.line(format!("{gx} = trunc i64 {one} to i32"));
             gx
         });
+        let (gx, block) = gpu::CellGeo {
+            range: None,
+            lanes: c.lanes,
+            zero: 0,
+        }
+        .grid(c.n);
+        let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
+        // kernel-merging `zero-fold`: later sites' zero passes as its tail.
+        self.zero_args(m, &gx, block, &mut ptrs);
         let args = format!("%dv{}", self.fresh());
         let np = ptrs.len();
         self.allocas
@@ -2693,12 +2717,6 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let (gx, block) = gpu::CellGeo {
-            range: None,
-            lanes: c.lanes,
-        }
-        .grid(c.n);
-        let gx = gx_dyn.unwrap_or_else(|| gx.to_string());
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 0)",
             c.id as i64
@@ -2801,6 +2819,7 @@ impl<'a> FnEmit<'a> {
                 let geo = gpu::CellGeo {
                     range: c.range.map(|ou| ou.step),
                     lanes: c.lanes,
+                    zero: plan.zero_by.get(m).map_or(0, Vec::len),
                 };
                 let mut facts = format!("nested={} work={work}", c.nested.len());
                 if let Some(ou) = c.range {
@@ -2849,6 +2868,7 @@ impl<'a> FnEmit<'a> {
                             gpu::CellGeo {
                                 range: Some(1),
                                 lanes: 1,
+                                zero: 0,
                             },
                         );
                         (
@@ -3188,7 +3208,11 @@ impl<'a> FnEmit<'a> {
             // per-site-choice: a site with candidates launches its table over
             // the same pointers.
             (ptrs, _) if self.site_table.is_some() => {
-                let t = self.site_table.take().expect("a table");
+                let mut t = self.site_table.take().expect("a table");
+                // kernel-merging `zero-fold`: an earlier kernel zeroed it.
+                if plan.zeroed.contains_key(m) {
+                    t.flags |= super::zero::SITE_ZEROED;
+                }
                 let ptrs =
                     ptrs.unwrap_or_else(|| vec![ops[0].clone(), ops[1].clone(), dout.clone()]);
                 self.site_call(t, &ptrs);

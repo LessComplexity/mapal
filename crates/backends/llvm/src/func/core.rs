@@ -78,7 +78,7 @@ impl<'a> FnEmit<'a> {
             gpu_arms: crate::GpuArms::default(),
             algebra: None,
             fma_stash: SecondaryMap::new(),
-            region: None,
+            block_priced: std::cell::Cell::new(None),
             block: 0,
             resident: None,
             dslots: SecondaryMap::new(),
@@ -194,6 +194,9 @@ impl<'a> FnEmit<'a> {
         // generic-fusion: the host intent line, in the entry block.
         if let Some(p) = self.resident.as_ref().filter(|p| !p.flow_line.is_empty()) {
             self.allocas.push_str(&format!("  {}", p.flow_line));
+        }
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.zero_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.zero_line));
         }
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.

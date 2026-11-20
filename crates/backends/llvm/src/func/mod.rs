@@ -367,9 +367,9 @@ pub(crate) struct FnEmit<'a> {
     /// they were loaded in ([`Self::block`]) — the add emits `llvm.fma` from
     /// them while no block has started since (they dominate it).
     fma_stash: SecondaryMap<MorphismId, (String, String, u64)>,
-    /// compile-time-graph B: the launch region being emitted (a loop trip's
-    /// advance cone): its id and each device op's `(op, deps, deps_out)`.
-    region: Option<(u64, SecondaryMap<MorphismId, (u32, u64, u64)>)>,
+    /// compile-time-graph A: the cheapest `(b, fused, split)` the plan model
+    /// priced for the last row-block group, for its refusal's intent text.
+    block_priced: std::cell::Cell<Option<(u64, u64, u64)>>,
     /// Basic blocks started so far ([`FnEmit::label_line`]).
     block: u64,
     /// The `k` fold's order (ADR-0040 D1): the device chooser's input
@@ -714,7 +714,6 @@ mod frame;
 pub(crate) mod gpu;
 mod ops;
 mod packed;
-mod region;
 pub(crate) mod resident;
 mod retain;
 mod rowfold;
@@ -723,6 +722,7 @@ mod tile;
 mod trio;
 mod vec;
 mod window;
+mod zero;
 
 // --- free helpers ---------------------------------------------------------
 

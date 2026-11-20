@@ -416,7 +416,7 @@ impl<'a> FnEmit<'a> {
         let mut refused: Vec<(MorphismId, MorphismId, &'static str)> = Vec::new();
         let mut absorbed = 0;
         // compile-time-graph A: each row-block group's refusal (its launch).
-        let mut block_refused: Vec<(MorphismId, &'static str)> = Vec::new();
+        let mut block_refused: Vec<(MorphismId, String)> = Vec::new();
         if rungs.flow && plan.chain.is_empty() {
             let mut cand: SecondaryMap<MorphismId, Cand> = SecondaryMap::new();
             for (m, r) in plan.rowfold.iter() {
@@ -470,7 +470,7 @@ impl<'a> FnEmit<'a> {
                         _ => cand.contains_key(mb.m) && !taken.contains_key(mb.m),
                     });
                     if !placed {
-                        block_refused.push((ms[0], "placed"));
+                        block_refused.push((ms[0], "placed".into()));
                         continue;
                     }
                     match self.unit_of(&ms, &bc, &fp, &region, plan, Some(&grp)) {
@@ -480,7 +480,15 @@ impl<'a> FnEmit<'a> {
                             }
                             blocks.push(u);
                         }
-                        Err(why) => block_refused.push((ms[0], why)),
+                        // A cost refusal names the model's cheapest `b`:
+                        // `cost:b<b>:<fused>/<split>` ns.
+                        Err(why) => block_refused.push((
+                            ms[0],
+                            match (why, self.block_priced.take()) {
+                                ("cost", Some((b, f, s))) => format!("cost:b{b}:{f}/{s}"),
+                                _ => why.into(),
+                            },
+                        )),
                     }
                 }
             }
@@ -601,7 +609,7 @@ impl<'a> FnEmit<'a> {
         // keeps its text.
         let block: String = block_refused
             .iter()
-            .map(|&(m, why)| format!(" row_block={}:{why}", name(m)))
+            .map(|(m, why)| format!(" row_block={}:{why}", name(*m)))
             .collect();
         if !plan.units.is_empty() || !refused.is_empty() || !block.is_empty() {
             plan.flow_line = format!(
@@ -970,6 +978,7 @@ impl<'a> FnEmit<'a> {
         let mut why = "budget";
         let mut best: Option<(u64, u64, u64)> = None;
         let forced = self.gpu_arms.row_block_b;
+        self.block_priced.set(None);
         for sh in (0..=6).rev() {
             let b = 1u64 << sh;
             if rows % b != 0 || (forced > 0 && b != forced) {
@@ -1008,6 +1017,9 @@ impl<'a> FnEmit<'a> {
             match self.block_cost(&probe, &geo) {
                 Some((fused, split)) => {
                     why = "cost";
+                    if self.block_priced.get().is_none_or(|x| fused < x.1) {
+                        self.block_priced.set(Some((b, fused, split)));
+                    }
                     if fused <= split && best.is_none_or(|x| fused < x.1) {
                         best = Some((b, fused, split));
                     }
@@ -1031,7 +1043,10 @@ impl<'a> FnEmit<'a> {
     /// re-reads from L2, the latency chain), the members between tiles on
     /// chip, the stored outputs, one launch. Split: each tile site's best
     /// candidate plan, the members between tiles as one launch per segment
-    /// reading and writing the intermediates in memory.
+    /// reading and writing the intermediates in memory. Every byte stream
+    /// moves at the rate of where its value lives (`residence_plan` against
+    /// the part's L2: `l2_bytes_per_ns` or `dram_bytes_per_ns`), the same
+    /// rule on every part.
     fn block_cost(&self, u: &Unit, geo: &Geo) -> Option<(u64, u64)> {
         let (gpu, d) = self.profile.plan_rates()?;
         if d.flops_per_ns == 0 {
@@ -1052,23 +1067,28 @@ impl<'a> FnEmit<'a> {
         .min()
         .unwrap_or(1)
         .max(1);
-        let ns =
-            |f: u64, by: u64| crate::profile::roofline_ns(f, by, d.flops_per_ns, d.bytes_per_ns);
-        let launch = |prev: u64| {
+        // kernel-merging: where each value's bytes live decides their rate.
+        let res = self.ir.residence_plan(self.f);
+        let at = |o: ObjectId| match res.at(o, gpu.l2_bytes) {
+            mapal_ir::Residence::Dram => d.dram_bytes_per_ns.max(1) as f64,
+            _ => d.l2_bytes_per_ns.max(1) as f64,
+        };
+        let roof = |f: u64, by_ns: f64| (f as f64 / d.flops_per_ns as f64).max(by_ns);
+        let launch = |prev: f64| {
             self.profile
-                .op_ns(prev as f64, 0)
-                .map_or(d.launch_ns, |x| x.round() as u64)
+                .op_ns(prev, 0)
+                .map_or(d.launch_ns as f64, |x| x.round())
         };
         let seg = segments(&u.members);
         let elem = |mb: &UMember| {
             crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(mb.out)))
         };
-        let (mut fused, mut split) = (launch(u64::MAX) as f64, 0f64);
-        let mut seg_cost: Vec<(u64, u64)> = vec![(0, 0); seg.last().map_or(0, |s| s + 1)];
+        let (mut fused, mut split) = (launch(f64::MAX), 0f64);
+        let mut seg_cost: Vec<(u64, f64)> = vec![(0, 0.0); seg.last().map_or(0, |s| s + 1)];
         for (k, mb) in u.members.iter().enumerate() {
             let e = elem(mb);
             let stored = if mb.store { rows * mb.w * e } else { 0 };
-            fused += stored as f64 / d.dram_bytes_per_ns.max(1) as f64;
+            fused += stored as f64 / at(mb.out);
             match &mb.kind {
                 UKind::Tile { site } => {
                     let (nj, slices) = tile_split(site, lanes, free);
@@ -1142,19 +1162,23 @@ impl<'a> FnEmit<'a> {
                         UKind::Fold { site, .. } => rows * site.k,
                         _ => rows * mb.w,
                     };
-                    let gm = mb
+                    let gm: f64 = mb
                         .srcs
                         .iter()
-                        .filter(|s| matches!(s, USrc::Gmem(_)))
-                        .count() as u64;
+                        .filter_map(|s| match s {
+                            USrc::Gmem(g) => Some((work * e) as f64 / at(u.gmem[*g])),
+                            _ => None,
+                        })
+                        .sum();
                     // Split: every member row it reads crosses memory, and a
                     // row a later segment reads is written there.
-                    let crossed: u64 = mb
+                    let crossed: f64 = mb
                         .srcs
                         .iter()
                         .filter_map(|s| match s {
                             USrc::Member { k: p, .. } if seg[*p] != seg[k] => {
-                                Some(rows * u.members[*p].w * e)
+                                let pm = &u.members[*p];
+                                Some((rows * pm.w * e) as f64 / at(pm.out))
                             }
                             _ => None,
                         })
@@ -1165,18 +1189,22 @@ impl<'a> FnEmit<'a> {
                                 .iter()
                                 .any(|s| matches!(s, USrc::Member { k: p, .. } if *p == k))
                     });
-                    let written = if read_later { rows * mb.w * e } else { 0 };
+                    let written = if read_later {
+                        (rows * mb.w * e) as f64 / at(mb.out)
+                    } else {
+                        0.0
+                    };
                     let x = &mut seg_cost[seg[k]];
                     x.0 += work;
-                    x.1 += gm * work * e + crossed + written;
-                    fused += ns(work, gm * work * e) as f64;
+                    x.1 += gm + crossed + written;
+                    fused += roof(work, gm);
                 }
             }
         }
-        let mut prev = u64::MAX;
+        let mut prev = f64::MAX;
         for &(f, by) in seg_cost.iter().filter(|x| x.0 > 0) {
-            split += (launch(prev) + ns(f, by)) as f64;
-            prev = ns(f, by);
+            split += launch(prev) + roof(f, by);
+            prev = roof(f, by);
         }
         Some((fused.round() as u64, split.round() as u64))
     }
@@ -1261,6 +1289,9 @@ impl<'a> FnEmit<'a> {
             stored.push((mb.out, d));
         }
         let mut temps = Vec::new();
+        let Geo {
+            gx, block, smem, ..
+        } = self.geo(u);
         for &o in &u.gmem {
             let at = self.resident.as_ref().map_or(o, |p| p.alias(o));
             if self.dvalid.contains_key(at) {
@@ -1282,6 +1313,8 @@ impl<'a> FnEmit<'a> {
             temps.push(s);
             ptrs.push(d);
         }
+        // kernel-merging `zero-fold`: later sites' zero passes as its tail.
+        self.zero_args(u.members[0].m, &gx.to_string(), block, &mut ptrs);
         let args = format!("%dv{}", self.fresh());
         let np = ptrs.len();
         self.allocas
@@ -1293,9 +1326,6 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
-        let Geo {
-            gx, block, smem, ..
-        } = self.geo(u);
         self.line(format!(
             "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
             u.id as i64
@@ -1492,6 +1522,17 @@ impl<'a> FnEmit<'a> {
                 "  %xg{i} = addrspacecast ptr addrspace(1) %x{i} to ptr\n"
             ));
         }
+        // kernel-merging `zero-fold`: later sites' outputs this unit zeroes.
+        let zero = self
+            .resident
+            .as_ref()
+            .and_then(|p| p.zero_by.get(u.members[0].m))
+            .map_or(0, Vec::len);
+        params.extend(
+            super::zero::zero_params(zero)
+                .into_iter()
+                .skip(usize::from(zero == 0)),
+        );
         for (k, c) in g.calls.iter().enumerate() {
             if let Some(c) = c {
                 for &s in &c.slots {
@@ -1629,7 +1670,7 @@ impl<'a> FnEmit<'a> {
              \x20 br i1 %in, label %body, label %done\n\
              body:\n{}\
              \x20 br label %done\n\
-             done:\n\
+             done:\n{}\
              \x20 ret void\n\
              }}\n",
             params.join(", "),
@@ -1647,6 +1688,7 @@ impl<'a> FnEmit<'a> {
             },
             u.rows,
             g.out,
+            super::zero::zero_tail(zero, threads),
         );
         (fns, text)
     }

@@ -195,23 +195,6 @@ pub(crate) const S54_DECLS: [(&str, &str); 7] = [
     ),
 ];
 
-/// compile-time-graph B: the launch-region entries, each declared only where
-/// called (the OFF arm's text is the emission before them).
-pub(crate) const REGION_DECLS: [(&str, &str); 3] = [
-    (
-        "@mapal_gpu_region_begin(",
-        "declare void @mapal_gpu_region_begin(i64)\n",
-    ),
-    (
-        "@mapal_gpu_region_end(",
-        "declare void @mapal_gpu_region_end(i64)\n",
-    ),
-    (
-        "@mapal_gpu_tag(",
-        "declare void @mapal_gpu_tag(i32, i64, i64)\n",
-    ),
-];
-
 /// Threads per block of a `devgen` kernel — the runtime's `MAPAL_GEN_THREADS`
 /// launches it with exactly this many, so the two must agree.
 /// ponytail: the naive kernel's literal, for the same reason (a one-element-
@@ -221,7 +204,7 @@ const GEN_THREADS: u64 = NAIVE_THREADS;
 /// Threads per block of the one-thread-per-cell kernel.
 /// ponytail: a literal, not derived — the fallback is a correctness path; derive
 /// it when an untiled site turns out to matter for speed.
-const NAIVE_THREADS: u64 = 256;
+pub(crate) const NAIVE_THREADS: u64 = 256;
 
 /// Can this site run on the GPU at all? Any float site whose reads are affine
 /// in `(i, lane, k)`, or (generic-fusion `window`) in the fold's derived axes
@@ -1462,10 +1445,12 @@ fn launch_key(l: &Launch) -> String {
     for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
         *r.rung(n).expect("a kernel rung") = true;
     }
-    // The ids predate the host-only `row-block` rung (off here: no kernel
-    // rung): its field is not part of a kernel's key, so tuned picks and
-    // wisdom keep their ids.
-    format!("{:?}", Launch { rungs: r, ..*l }).replace(", row_block: false", "")
+    // The ids predate the host-only `row-block` and `zero-fold` rungs (off
+    // here: no kernel rung): their fields are not part of a kernel's key, so
+    // tuned picks and wisdom keep their ids.
+    format!("{:?}", Launch { rungs: r, ..*l })
+        .replace(", row_block: false", "")
+        .replace(", zero_fold: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -2398,6 +2383,9 @@ pub(crate) fn cell_kernel_text(
         params.push("i64 %rs".into());
         params.push("i64 %rn".into());
     }
+    if g.zero > 0 {
+        params.extend(super::zero::zero_params(g.zero));
+    }
     let mut body = String::new();
     let e_ty = match elem {
         Some(t) => {
@@ -2507,10 +2495,12 @@ pub(crate) fn cell_kernel_text(
          \x20 store {out} %v, ptr addrspace(1) %p\n\
          \x20 br label %done\n\
          done:\n\
+         {tail}\
          \x20 ret void\n\
          }}\n",
         name = kernel_name(id),
         params = params.join(", "),
+        tail = super::zero::zero_tail(g.zero, NAIVE_THREADS),
     )
 }
 
@@ -2539,6 +2529,9 @@ pub(crate) struct CellGeo {
     pub range: Option<u64>,
     /// `cell-lanes`: threads a cell (1: one thread a cell).
     pub lanes: u64,
+    /// kernel-merging `zero-fold`: the later sites' outputs this kernel
+    /// zeroes ([`super::zero::zero_tail`]).
+    pub zero: usize,
 }
 
 impl CellGeo {
@@ -2546,6 +2539,7 @@ impl CellGeo {
     pub(crate) const ONE: CellGeo = CellGeo {
         range: None,
         lanes: 1,
+        zero: 0,
     };
 
     /// `(blocks, threads)` for `cells` cells.
@@ -5854,11 +5848,17 @@ impl<'a> FnEmit<'a> {
             };
             if let Some((part, geom, tag)) = atomic {
                 let aid = kernel_id_split(site, self.profile, self.contract, part) as i64;
+                // kernel-merging `zero-fold`: an earlier kernel zeroed it.
+                let zero = match plan.zeroed.contains_key(m) {
+                    true => String::new(),
+                    false => format!("call void @mapal_gpu_zero(i64 {{o}}, i64 {bytes_o})\n  "),
+                };
                 self.emit_site_resident(source, target, &[site.a.slot, site.b.slot], None, |ops, o| {
                     format!(
-                        "call void @mapal_gpu_zero(i64 {o}, i64 {bytes_o})\n  \
-                         call void @mapal_gpu_launch(i64 {aid}, i64 {}, i64 {}, i64 {o}, {geom}){tag}",
-                        ops[0], ops[1]
+                        "{}call void @mapal_gpu_launch(i64 {aid}, i64 {}, i64 {}, i64 {o}, {geom}){tag}",
+                        zero.replace("{o}", o),
+                        ops[0],
+                        ops[1]
                     )
                 });
                 return;

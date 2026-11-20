@@ -24,16 +24,19 @@
 //! - **Renderer-free values** (C3): no `Display` impls; Mermaid text comes from
 //!   the plain function [`ty_label`] and [`CategoryIr::to_mermaid`].
 
+mod access;
 mod algo;
 mod builder;
 mod facts;
 mod graph;
 mod loc;
 mod mermaid;
+mod residence;
 mod ty;
 mod unit;
 mod validate;
 
+pub use access::{AccessPlan, Hazard};
 pub use algo::{
     Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Digit, Edge, ElemPlan,
     ElemSrc, EmissionClass, EmissionPlan, FmaPair, Footprint, FootprintPlan, GuardArm, GuardSite,
@@ -49,6 +52,7 @@ pub use graph::{
 };
 pub use loc::SourceLoc;
 pub use mermaid::lint_mermaid;
-pub use unit::{UnitGroup, UnitKind, UnitMember, UnitPlan};
+pub use residence::{Residence, ResidencePlan};
 pub use ty::{MAX_TY_DEPTH, Ty, Value, ty_contains_token, ty_label};
+pub use unit::{UnitGroup, UnitKind, UnitMember, UnitPlan};
 pub use validate::{IrViolation, validate};

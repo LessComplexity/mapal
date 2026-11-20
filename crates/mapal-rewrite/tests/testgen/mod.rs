@@ -3254,3 +3254,122 @@ fn tile_law(laws: &mut String, key: u8, name: &str, it: String) {
         add = name.len() * 2 + 1
     );
 }
+
+/// kernel-merging `zero-fold`: a program whose tile sites add into a zeroed
+/// output (few output cells, a long `k`: the atomic split-K candidates),
+/// after device cells, in a loop trip or straight-line. `steps` is the
+/// sequence: a cell (`[0, reads_o, from]`: an elementwise map of the trip
+/// counter, reading the carried output `o` when `reads_o` is odd, and an
+/// earlier site's output when `from` names one) or a site (`[1, q, _]`: the
+/// GEMV-like fold of cell `q` against the weights). The last site's output is
+/// the next carried `o`; a cell reading `o` after an earlier cell is an access
+/// to the next site's bytes between them (the rule must not fold before it).
+#[derive(Clone, Debug)]
+pub struct ZeroProg {
+    pub looped: bool,
+    pub trips: u8,
+    /// Output rows and columns (`rows · c` cells), the fold's length.
+    pub rows: u64,
+    pub c: u64,
+    pub k: u64,
+    pub steps: Vec<[u8; 3]>,
+}
+
+pub fn zero_prog_strategy() -> impl Strategy<Value = ZeroProg> {
+    (
+        any::<bool>(),
+        2u8..4,
+        prop::sample::select(vec![1u64, 2, 4, 8]),
+        prop::sample::select(vec![1u64, 8, 32, 64]),
+        prop::sample::select(vec![256u64, 512, 1024]),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 2..7),
+    )
+        .prop_map(|(looped, trips, rows, c, k, steps)| ZeroProg {
+            looped,
+            trips,
+            rows,
+            c,
+            k,
+            steps,
+        })
+}
+
+/// [`ZeroProg`]'s source text.
+pub fn zero_src(p: &ZeroProg) -> String {
+    let (r, c, k) = (p.rows, p.c, p.k);
+    let rc = r * c;
+    let mut s = format!(
+        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 }} -> w;\n    {k} -> iota -> kr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
+        kc = k * c,
+        rk = r * k
+    );
+    let ind = if p.looped { "                " } else { "    " };
+    let mut body = String::new();
+    let (mut cells, mut sites) = (0usize, 0usize);
+    // Straight-line, the counter is a number the program computes (a cell
+    // reading it is a kernel of its own, not a closed-form generator).
+    let t = "t";
+    let cell = |body: &mut String, cells: &mut usize, sites: usize, step: [u8; 3]| {
+        let mut e = format!(
+            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0",
+            5 + step[1] % 3
+        );
+        if step[1] % 2 == 1 {
+            e += &format!(" + o[e % {rc}]");
+        }
+        if sites > 0 && step[2] % 3 == 0 {
+            e += &format!(" + y{}[e % {rc}] / 64.0", step[2] as usize % sites);
+        }
+        body.push_str(&format!("{ind}qc -> map {{ e -> {e} }} -> q{};\n", *cells));
+        *cells += 1;
+    };
+    for &step in &p.steps {
+        if step[0] % 2 == 0 {
+            cell(&mut body, &mut cells, sites, step);
+        } else {
+            if cells == 0 {
+                cell(&mut body, &mut cells, sites, [0, 0, 1]);
+            }
+            let q = step[1] as usize % cells;
+            body.push_str(&format!(
+                "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q{q}[i * {k} + kk] * w[kk * {c} + j] }} }} -> y{sites};\n"
+            ));
+            sites += 1;
+        }
+    }
+    if sites == 0 {
+        body.push_str(&format!(
+            "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q0[i * {k} + kk] * w[kk * {c} + j] }} }} -> y0;\n"
+        ));
+        sites = 1;
+    }
+    // Every site's output reaches the result: the last is the next `o`, the
+    // others add into it through one cell.
+    // Read at shifted cells: no epilogue group takes a site's store (each
+    // stays a site of its own, its output an arena member that may reuse a
+    // dead operand's bytes).
+    let last = sites - 1;
+    let mut sum = format!("y{last}[e]");
+    for y in 0..last {
+        sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+    }
+    // One site: its output is the next state itself.
+    let next = match sites {
+        1 => format!("{ind}y0 -> o;\n"),
+        _ => format!("{ind}oc -> map {{ e -> {sum} }} -> o;\n"),
+    };
+    if p.looped {
+        s += &format!(
+            "    (0.0, {rc}) -> fill -> o0;\n    mut o: [f32; {rc}] <- o0;\n    mut t: i32 <- 0;\n    loop {{\n        (t < {}) -> {{\n            -true-> {{\n{body}{next}{ind}t + 1 -> t;\n{ind}-> loop;\n            }}\n            -false-> o -> out;\n        }}\n    }}\n",
+            p.trips
+        );
+    } else {
+        s += &format!(
+            "    (0.0, {rc}) -> fill -> o: [f32; {rc}];\n    (0, kr) -> fold {{ acc, v -> acc + v % 2 }} -> t;\n{body}    oc -> map {{ e -> {sum} }} -> out;\n"
+        );
+    }
+    s + &format!(
+        "    out[0] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+        rc - 1
+    )
+}

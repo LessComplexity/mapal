@@ -51,6 +51,8 @@ pub(crate) struct FuncFacts {
     pub(crate) guard_plan: OnceLock<Vec<GuardSite>>,
     pub(crate) trip_split: OnceLock<Vec<TripSplit>>,
     pub(crate) unit_plan: OnceLock<crate::unit::UnitPlan>,
+    pub(crate) access_plan: OnceLock<crate::access::AccessPlan>,
+    pub(crate) residence_plan: OnceLock<crate::residence::ResidencePlan>,
 }
 
 /// The graph's fact store.

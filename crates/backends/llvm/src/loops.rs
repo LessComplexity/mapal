@@ -58,9 +58,7 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     fe.line(format!("br i1 {cond}, label %{advance}, label %{exitb}"));
 
     // Advance cone: the next-state (unreachable on the exit step — guard-first).
-    // compile-time-graph B: its device ops are one launch region.
     fe.label_line(&advance);
-    fe.region_open(&plan);
     for &mo in &plan.advance_order {
         if fe.gated.contains_key(mo) {
             continue;
@@ -69,7 +67,6 @@ pub(crate) fn emit_loop(fe: &mut FnEmit, merge: ObjectId) {
     }
     fe.copy_component(plan.back_route, 0, plan.merge);
     fe.resident_loop_back(plan.merge);
-    fe.region_close();
     fe.line(format!("br label %{header}"));
 
     // Exit: copy each exit route's payload (slot 0) to its exit object.

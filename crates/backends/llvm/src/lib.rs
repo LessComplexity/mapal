@@ -544,6 +544,13 @@ pub struct GpuRungs {
     /// measured to pay there; `--gpu-on=row-block` forms it (the plan model
     /// still decides), `--row-block=<b>` forces it.
     pub row_block: bool,
+    /// kernel-merging `zero-fold`: an atomic site's zero pass runs inside an
+    /// earlier kernel of the same sequence that the dependency fact
+    /// (`access_plan`) orders after every earlier reader and writer of the
+    /// output's bytes, where the plan rates price it below its own op
+    /// (`zero_ns`). Off (`--gpu-off=zero-fold`): every zero pass is its own
+    /// op, the emission before it.
+    pub zero_fold: bool,
 }
 
 impl GpuRungs {
@@ -628,11 +635,12 @@ impl GpuRungs {
         async_depth: true,
         bank_plan: true,
         row_block: true,
+        zero_fold: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 79] = [
+    pub const NAMES: [&'static str; 80] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -712,6 +720,7 @@ impl GpuRungs {
         "async-depth",
         "bank-plan",
         "row-block",
+        "zero-fold",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -796,6 +805,7 @@ impl GpuRungs {
             "async-depth" => &mut self.async_depth,
             "bank-plan" => &mut self.bank_plan,
             "row-block" => &mut self.row_block,
+            "zero-fold" => &mut self.zero_fold,
             _ => return None,
         })
     }
@@ -863,10 +873,6 @@ pub struct GpuArms {
     /// row-block group that fits takes `b` rows a unit, the rung table and
     /// the cost test aside. 0 = derive.
     pub row_block_b: u64,
-    /// compile-time-graph B: a counted device loop's trip is a launch region,
-    /// its ops tagged with their compile-time dependencies; the runtime replays
-    /// it as one graph. `false` (`--no-launch-graph`) is the OFF arm.
-    pub graph: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -886,7 +892,6 @@ impl Default for GpuArms {
             regroup: true,
             row_block: true,
             row_block_b: 0,
-            graph: true,
         }
     }
 }
@@ -1472,10 +1477,7 @@ fn emit_module(
             out.push_str(crate::func::gpu::GPU_L2_DECL);
         }
         // `streams`, `pinned` (S54): each entry declared only when called.
-        for (call, decl) in crate::func::gpu::S54_DECLS
-            .into_iter()
-            .chain(crate::func::gpu::REGION_DECLS)
-        {
+        for (call, decl) in crate::func::gpu::S54_DECLS {
             if funcs.contains(call) {
                 out.push_str(decl);
             }
