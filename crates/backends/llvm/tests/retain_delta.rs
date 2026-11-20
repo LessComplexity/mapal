@@ -406,7 +406,7 @@ fn resident_yields_to_a_retained_site_only_without_retain_resident() {
     let r5 = at(r5);
     assert!(tile_calls(&r5).is_empty() && r5.contains("@mapal_gpu_launch("));
     assert_eq!(r5.matches("store i1 true, ptr").count(), 3, "K, V, x");
-    // The 4090's table retains since S65 (its row left GPU_RUNGS_OFF): shipped = r5.
+    // The rung rules retain on every part (S65): shipped = r5.
     assert_eq!(at(GpuArms::default()), r5);
 }
 

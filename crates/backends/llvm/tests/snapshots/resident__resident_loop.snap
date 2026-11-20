@@ -1,6 +1,5 @@
 ---
 source: crates/backends/llvm/tests/resident.rs
-assertion_line: 344
 expression: "emit(&loop_src(), no_devgen())"
 ---
 ; mapal-backend-llvm emitted module
@@ -153,7 +152,7 @@ bb38:
   %t65 = load i64, ptr %d35
   %t66 = load i64, ptr %d29
   %t68 = call i64 @mapal_gpu_alloc(ptr %d67, i64 16384)
-  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t65, i64 %t66, i64 %t68, i32 4, i32 2, i32 32, i32 1664)
+  call void @mapal_gpu_launch(i64 -1193242850857495291, i64 %t65, i64 %t66, i64 %t68, i32 4, i32 2, i32 32, i32 13312)
   %t69 = getelementptr { ptr, i32 }, ptr %o16, i32 0, i32 0
   store ptr null, ptr %t69
   %t70 = getelementptr { i32, i32 }, ptr %o14, i32 0, i32 0

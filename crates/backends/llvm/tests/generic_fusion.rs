@@ -25,9 +25,8 @@ fn lower(src: &str) -> CategoryIr {
 
 /// The exact-face emission on `target` with `off` rungs off (and the ones the
 /// emulator cannot run: `async`, `pdl`, `streams`; `place` so every capable
-/// site is on the device). `flow` is forced on: it ships OFF on every measured
-/// part (`GPU_RUNGS_OFF`, the fusion-natural-forms sweep), and these tests are
-/// its proof of values, launches and stores.
+/// site is on the device). `flow` is forced on, whatever the part's rung rules
+/// ship: these tests are its proof of values, launches and stores.
 fn emission(ir: &CategoryIr, target: &'static str, off: &[&str]) -> mapal_backend_llvm::Emission {
     emission_on(ir, target, off, EmitOpts::exact())
 }
@@ -39,8 +38,22 @@ fn emission_on(
     off: &[&str],
     base: EmitOpts,
 ) -> mapal_backend_llvm::Emission {
+    emission_arms(ir, target, &[], off, base)
+}
+
+/// [`emission_on`] with the `on` rungs forced on too.
+fn emission_arms(
+    ir: &CategoryIr,
+    target: &'static str,
+    on: &[&str],
+    off: &[&str],
+    base: EmitOpts,
+) -> mapal_backend_llvm::Emission {
     let mut gpu = GpuArms::default();
     gpu.on.flow = true;
+    for r in on {
+        *gpu.on.rung(r).expect("rung") = true;
+    }
     // The per-row units these tests pin; a tile site with the folds and
     // cells reading its rows is `row_block.rs`'s.
     gpu.row_block = false;
@@ -220,17 +233,19 @@ fn default_face_rows_are_lanes_with_tree_folds() {
 
 /// cpu-gpu-boundary item 5 `tree-gate`: a lone row fold over a tile site's
 /// output is a tree unit on the default face, unless `rowfold-layout` stored
-/// that output column-major for it (the rtx-4090 contract face): there a
-/// row's cells are `rows` apart and the fold keeps its one-thread-a-row
-/// kernel. Off: the unit whatever the layout. Values within the bound.
+/// that output column-major for it (forced on here: the rung rules ship it
+/// off on every part): there a row's cells are `rows` apart and the fold
+/// keeps its one-thread-a-row kernel. Off: the unit whatever the layout.
+/// Values within the bound.
 #[test]
 fn a_lone_fold_over_a_column_major_store_is_no_tree_unit() {
     let src = head(N) + &row_fold("r", "c", N, "0.0", "acc + e") + &tail("r", N);
     let ir = lower(&src);
     let rr = run(&ir, 2_000_000_000);
     let units = |em: &mapal_backend_llvm::Emission| launches(&em.text).1;
-    let on = emission_on(&ir, "rtx-4090", &[], EmitOpts::default());
-    let off = emission_on(&ir, "rtx-4090", &["tree-gate"], EmitOpts::default());
+    let col = ["rowfold-layout"];
+    let on = emission_arms(&ir, "rtx-4090", &col, &[], EmitOpts::default());
+    let off = emission_arms(&ir, "rtx-4090", &col, &["tree-gate"], EmitOpts::default());
     let row_major = emission_on(&ir, "rtx-4090", &["rowfold-layout"], EmitOpts::default());
     assert_eq!((units(&on), units(&off), units(&row_major)), (0, 1, 1));
     let Some(clang) = emu::clang() else {
@@ -243,7 +258,7 @@ fn a_lone_fold_over_a_column_major_store_is_no_tree_unit() {
 }
 
 /// `tree-gate` on unseen programs: over generated chains (rtx-4090, default
-/// face), wherever the gate fires (fewer units than its OFF arm) both arms
+/// face, `rowfold-layout` forced on), wherever the gate fires (fewer units than its OFF arm) both arms
 /// answer to the interpreter within the bound, and the gate fires somewhere.
 #[test]
 fn tree_gate_on_generated_chains() {
@@ -258,8 +273,9 @@ fn tree_gate_on_generated_chains() {
     for z in 0..256 {
         let src = strat.new_tree(&mut runner).unwrap().current().source();
         let ir = lower(&src);
-        let on = emission_on(&ir, "rtx-4090", &[], EmitOpts::default());
-        let off = emission_on(&ir, "rtx-4090", &["tree-gate"], EmitOpts::default());
+        let col = ["rowfold-layout"];
+        let on = emission_arms(&ir, "rtx-4090", &col, &[], EmitOpts::default());
+        let off = emission_arms(&ir, "rtx-4090", &col, &["tree-gate"], EmitOpts::default());
         if units(&on) >= units(&off) {
             continue;
         }

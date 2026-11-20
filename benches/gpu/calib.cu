@@ -10,7 +10,10 @@
 //           launches tile kernels on sm_90+; `coop`: a cooperative launch, as a persistent kernel is launched) vs one
 //           device-side tail launch (CDP2 `cudaStreamTailLaunch`, a comparison
 //           only), ns each, by grid and block
-// usage: calib [chase|bw|loaded|lds|gsync ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
+//   copy    hardware-properties `pinned`: host->device copy rate from pageable vs page-locked host memory, by size
+//           (`cudaMemcpy`, the runtime's synchronous copy, median of 9 after 2 warm), and their ratio per mille — the
+//           profile's `pageable_pm` is the median ratio at >= 4 MiB (the sizes a loop's arrays cross)
+// usage: calib [chase|bw|loaded|lds|gsync|copy ...]   (all when none).  Output: `<kind> k=v ...` lines, one per point.
 // build: nvcc -O3 -arch=sm_<cc> -std=c++17 -rdc=true calib.cu -o calib -lcudadevrt   (rdc for the tail launch)
 #include <cstdio>
 #include <cstdlib>
@@ -279,6 +282,37 @@ static void gsync_run() {
         }
     }
 }
+// hardware-properties `pinned`: one H2D copy of `bytes` from `src`, median of 9 after 2 warm, in seconds.
+static double h2d_s(void* dst, const void* src, size_t bytes) {
+    cudaEvent_t a, b; CK(cudaEventCreate(&a)); CK(cudaEventCreate(&b));
+    std::vector<float> t;
+    for (int r = 0; r < 11; r++) {
+        CK(cudaEventRecord(a)); CK(cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice)); CK(cudaEventRecord(b));
+        CK(cudaEventSynchronize(b)); float ms; CK(cudaEventElapsedTime(&ms, a, b));
+        if (r >= 2) t.push_back(ms);
+    }
+    std::sort(t.begin(), t.end());
+    CK(cudaEventDestroy(a)); CK(cudaEventDestroy(b));
+    return t[t.size() / 2] / 1e3;
+}
+static void copy_run() {
+    std::vector<double> ratios;
+    for (size_t mb : {1, 4, 16, 64, 256}) {
+        size_t bytes = mb << 20;
+        void* d; CK(cudaMalloc(&d, bytes));
+        // Pageable: ordinary heap memory, touched first (no first-touch fault inside the copy).
+        char* h = (char*)malloc(bytes); memset(h, 1, bytes);
+        double pg = h2d_s(d, h, bytes);
+        CK(cudaHostRegister(h, bytes, cudaHostRegisterDefault));
+        double pn = h2d_s(d, h, bytes);
+        CK(cudaHostUnregister(h)); free(h); CK(cudaFree(d));
+        double r = pn / pg;  // pageable rate / pinned rate
+        if (mb >= 4) ratios.push_back(r);
+        printf("copy mb=%zu pageable_gbs=%.2f pinned_gbs=%.2f ratio_pm=%.0f\n", mb, bytes / pg / 1e9, bytes / pn / 1e9, r * 1e3);
+    }
+    std::sort(ratios.begin(), ratios.end());
+    printf("copy pageable_pm=%.0f (median ratio at >= 4 MiB)\n", ratios[ratios.size() / 2] * 1e3);
+}
 int main(int argc, char** argv) {
     cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0)); sms = p.multiProcessorCount;
     CK(cudaDeviceGetAttribute(&clk_khz, cudaDevAttrClockRate, 0));
@@ -292,5 +326,6 @@ int main(int argc, char** argv) {
     if (on("loaded")) loaded_run();
     if (on("lds")) { lds_one<1>(); lds_one<2>(); lds_one<4>(); }
     if (on("gsync")) gsync_run();
+    if (on("copy")) copy_run();
     return 0;
 }

@@ -83,7 +83,7 @@ mixing members keeps FFMA for the f32-only products. No grouping pass is added.
 
 **D6 — Realization is backend config, chosen by measurement.** The existing `Reduced::Tf32` kernels (`mma.sync` sm_80+,
 `wgmma` sm_90a) are re-keyed from the flag to `set(m)`. Per `(part, face)` the choice between FFMA tile and tensor-core
-tile follows `TargetProfile` and a cited `GPU_RUNGS_OFF` row (ADR-0040 D5); every realization has an OFF arm. On the
+tile follows `TargetProfile`'s physical properties and the rung rules (`rules.rs`; ADR-0040 D5 superseded); every realization has an OFF arm. On the
 CPU, `P ∋ tf32` realizes as f32 (no TF32 unit; f32 meets the bound). The chosen member per site and part is
 recorded in `facts.json` and the evidence intents.
 

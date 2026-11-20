@@ -138,6 +138,7 @@ impl<'a> FnEmit<'a> {
         let (source, target) = (morph.source, morph.target);
         let lanes = gpu::rowfold_lanes(
             &r.site,
+            r.colmajor.is_some(),
             self.profile,
             self.contract,
             self.gpu_arms,

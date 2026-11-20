@@ -7,6 +7,23 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
+    // hardware-properties: `emit --rungs --target=<name>` prints the rungs the
+    // rules ship on that GPU profile (`mapal_backend_llvm::rung_table`).
+    if std::env::args().nth(1).as_deref() == Some("--rungs") {
+        let target = std::env::args()
+            .find_map(|a| a.strip_prefix("--target=").map(str::to_owned))
+            .unwrap_or_else(|| "native-gpu".into());
+        return match mapal_backend_llvm::rung_table(&target) {
+            Some(t) => {
+                print!("{t}");
+                ExitCode::SUCCESS
+            }
+            None => {
+                eprintln!("--rungs: `{target}` is not a GPU profile");
+                ExitCode::from(2)
+            }
+        };
+    }
     let Some(path) = args.next() else {
         eprintln!(
             "usage: emit <file.mapal> [-] [--perf] [--no-tile] [--no-pack] [--kc] [--exact] [--no-contract] [--contract] [--order=sequential|fixed|free] [--rewrite] [--target=<name>] [--host=<name>] [--device-out=<file.ll>] [--splitk=<S>]"

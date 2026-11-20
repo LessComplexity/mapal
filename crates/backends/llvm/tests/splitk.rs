@@ -405,6 +405,9 @@ fn tiled_combines_emulated() {
             opts.gpu.off.fill_wave = true;
             opts.gpu.off.plan_cost = true;
             opts.gpu.off.fit_first = true;
+            // Stream-K forced on: the rung rules ship it filled only, and
+            // the H100 cell is under-filled; the mechanism is the subject.
+            opts.gpu.on.streamk = true;
             opts.gpu.site_cands = 1;
             let em = emit_detailed(&ir, &opts).expect("emits");
             let dev = em.device.clone().expect("a device unit");

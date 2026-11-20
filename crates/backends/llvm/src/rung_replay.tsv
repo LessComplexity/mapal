@@ -1,0 +1,187 @@
+# hardware-properties: every cited rung measurement, replayed against the rung rules (`rules.rs`, test
+# `rung_rules_replay`). One line per measurement class: the part it ran on (its hand profile's physical properties),
+# the fill (n<N>: the square N-cell's base grid on that part; U0 / U1: 0 / 1 warps per scheduler; U: both; F: >= 2;
+# A: every fill), the face (E exact, C contract, T TF32; letters combine), the winner (on / off: beyond its null and
+# stable; null: inside the null or a sign that changed between sessions; mixed: the part's own cells disagree), a
+# condition the part's profile does not carry (pageable_pm=<host ratio>, colmajor: the fold's operand stored
+# column-major, blocks=<the row-fitted grid's blocks>, l2-flushed, free-order, conv-site), and the source (results files under benches/results/gpu/ and
+# benches/results/evidence/; the former GPU_RUNGS_OFF rows' cites, f3a9e792).
+# rung	part	fill	face	winner	cond	source
+affine	a100	A	E	null	-	base-a100 / -confirm _exact OFF/ON 1.004/1.006/0.991 vs 1.019/1.012/0.986, n=1024 0.997 vs 0.993
+affine	h100-pcie	F	E	off	-	integrated-h100-pcie-confirm _exact 2048/4096/8192 off 1.08x/1.20x/1.23x faster (S64 judge row 9: explained)
+affine	h100-pcie	n1024	C	off	-	fma-regs-h100-pcie _c 1024 on 0.131 vs off 0.127 ms; integrated-h100-pcie on 0.921x of off
+affine	h100-pcie	F	C	on	-	integrated-h100-pcie-confirm _c 2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms
+affine	rtx-3090	U	EC	null	-	base-rtx-3090 / -confirm _c 1024 0.996 vs 1.019, _exact 1.041 vs 1.006
+affine	rtx-4090	n1024	C	null	-	fma-regs-rtx-4090 _c 1024 on 0.068 vs off 0.068 ms
+affine	rtx-5090	F	E	off	-	fma-regs-rtx-5090 _exact 2048/4096/8192 on 0.588/4.920/40.005 vs off 0.580/4.876/39.878 ms
+affine	rtx-5090	n1024	E	on	-	fma-regs-rtx-5090 _exact 1024 on 0.076 vs off 0.084 ms
+affine	rtx-5090	n1024	C	null	-	fma-regs-rtx-5090 _c 1024 on 0.074 vs off 0.078 ms, ranges overlap
+async	a100	A	EC	off	-	base-a100 / -confirm OFF/ON _c 0.940/0.908/0.874 vs 0.951/0.917/0.883, _exact 0.790/0.894/0.901 vs 0.810/0.910/0.909
+async	h100-pcie	A	EC	off	-	arch-rungs-h100-pcie _c 1024..8192 on 0.146/0.717/4.188/37.655 vs off 0.139/0.675/3.889/33.640 ms; _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641
+async	rtx-3090	A	EC	off	-	base-rtx-3090 / -confirm OFF/ON _exact 1024 1.000 vs 0.951, _c 1024 0.897 vs 0.878, filled 0.88-0.99
+async	rtx-4090	F	EC	off	-	arch-rungs-rtx-4090 _c 2048/4096/8192 on 0.368/3.027/28.393 vs off 0.359/2.823/25.554; fma-regs _exact cp.async 0.508/4.437/39.162 vs staging 0.492/4.245/37.149 ms
+async	rtx-4090	n1024	C	on	-	arch-rungs-rtx-4090 _c 1024 on 0.070 vs off 0.101 ms; tile-efficiency async path 22 W / 0 L (per-site-choice bank.md §3)
+async	rtx-5090	F	C	off	-	arch-rungs-rtx-5090 _c 2048/4096/8192 on 0.320/2.346/20.277 vs off 0.315/2.328/19.542, -confirm 0.358/3.043/27.908 vs 0.352/2.991/27.069 ms
+async	rtx-5090	F	E	null	-	arch-rungs-rtx-5090 _exact 2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192
+async	rtx-5090	n1024	EC	off	-	integrated-rtx-5090 (warp-fill's 4x4 tile) 1024 _c on 0.0635 vs off 0.0573, _exact 0.0737 vs 0.0676 ms, disjoint
+async-h2d	h100-pcie	A	ECT	null	-	cpu-gpu-boundary results-h100-pcie ON/OFF median 1.001, 0/0 beyond null
+async-h2d	rtx-3090	A	ECT	null	-	cpu-gpu-boundary results-rtx-3090 ON/OFF median 0.999, 0/0 beyond null
+async-h2d	rtx-4090	A	ECT	null	-	cpu-gpu-boundary results-rtx-4090 ON/OFF median 1.001, 0/0 beyond null
+async-h2d	rtx-5090	A	ECT	null	-	cpu-gpu-boundary results-rtx-5090 ON/OFF median 1.003, 0/0 beyond null
+asyncstage	a100	A	EC	null	-	not measured on an A100
+asyncstage	h100-pcie	A	EC	off	-	r1 pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585, _exact 0.2812 vs 0.1876 ms; r2 flushed _c 1024 on 0.1724 vs 0.1292 ms
+asyncstage	h100-pcie	A	EC	on	l2-flushed	r1 (SXM box) flushed L2 wins 1.216-1.838 on every cell
+asyncstage	rtx-3090	A	EC	off	-	r1 flushed _c 16x2048x7168 on 0.3328 vs off 0.3113, _c 1024 0.2028 vs 0.1567; pt_rmlp256x512_128 _exact 0.1421 vs 0.0913 ms
+asyncstage	rtx-4090	A	EC	off	-	r1/r2 pt_rmlp256x512_128 _exact iter on 0.1179 vs off 0.0759, 0.1174 vs 0.0703 ms; warm _c 16x2048x7168 0.1208 vs 0.1116
+asyncstage	rtx-5090	A	EC	off	-	r1/r2 pt_rmlp256x512_128 _exact on 0.1220 vs off 0.0868, 0.2536 vs 0.1531; warm _exact 128x1024x1024 0.0348 vs 0.0287 ms
+asyncstage	rtx-5090	A	EC	on	l2-flushed	r1 flushed _c 16x2048x7168 on 0.1065 vs off 0.1167 ms
+bank-plan	a100	A	ECT	null	-	unmeasured (a per-site candidate)
+bank-plan	h100-pcie	A	ECT	null	-	unmeasured (a per-site candidate)
+bank-plan	rtx-3090	A	ECT	null	-	unmeasured (a per-site candidate)
+bank-plan	rtx-4090	A	ECT	null	-	unmeasured (a per-site candidate)
+bank-plan	rtx-5090	A	ECT	null	-	unmeasured (a per-site candidate)
+fill-rows	h100-pcie	U	E	off	-	s62 integrated mm_16x1024x4096 ON 0.1146/0.1134 vs off 0.0907/0.0904 ms (null 0.010)
+fit-first	h100-pcie	A	EC	off	-	site-geometry sweep pj_m16_n18432_k7168 0.6217 vs 0.5794, mm_16x18432x7168 1.485 vs 1.392 ms
+fit-first	rtx-3090	A	EC	off	-	site-geometry sweep convmc 0.1653 vs 0.1461, _c 0.3296 vs 0.2579, mm_16x18432x7168 1.038 vs 0.9816 ms
+fit-first	rtx-5090	A	EC	off	-	site-geometry sweep convmc 0.08566 vs 0.06729, _c 0.1099 vs 0.08686 ms
+fit-first	rtx-4090	A	EC	on	conv-site	site-geometry G4 convmc ON 0.0948 vs OFF 0.1107 ms
+fit-first	rtx-4090	A	EC	off	-	site-geometry G4 mm_16x18432x7168 ON 1.053 vs OFF 0.972 ms
+fold-lanes	rtx-4090	A	ECT	off	colmajor	recurrence-precision sweep rowsum_2048 kernel 0.024 vs 0.020, rowsum_4096 0.088 vs 0.075 ms (its operand column-major)
+grid-share	h100-pcie	F	C	null	-	s62 v2 _c 16x2048x7168 OFF/ON 1.013/1.014, null 2.6%
+grid-share	h100-pcie	U	E	null	-	s62 integrated mm_16x1024x4096 ON 0.1146 vs off 0.0947; S64 re-measured ON faster at a cited cell (judge row 95)
+grid-share	rtx-3090	F	EC	off	-	s62 v2 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935
+grid-share	rtx-3090	U	C	null	-	s62 integrated pt_rm_m128 iter ON 0.4129 vs off 0.3701; S64 re-measured ON faster at a cited cell (judge row 99)
+grid-share	rtx-4090	U	E	null	-	s62 v2 no stable gain (null 2.9%); S64 re-measured ON faster at a cited cell (judge row 80)
+idx32	a100	F	E	null	-	base-a100 / -confirm _exact OFF/ON 0.979/0.996/0.997 vs 1.008/1.003/1.004
+idx32	a100	n1024	E	off	-	arch-select-a100 / base-a100-verify3 _exact 1024 OFF/ON 0.900 / 0.899
+idx32	a100	n1024	C	null	-	arch-select-a100 / base-a100-verify3 _c 1024 OFF/ON 0.987 / 0.989
+idx32	a100	F	C	on	-	arch-select-a100 _c 4096 8.153 / 7.904 off vs 8.034 / 7.800 ON, 8192 62.890 / 59.666 vs 61.810 / 58.606 ms
+idx32	h100-pcie	A	E	null	-	fma-regs-h100-pcie idx32+affine+pad 1.118/6.480/55.381 vs 1.124/6.482/55.339 ms
+idx32	rtx-3090	A	E	null	-	base-rtx-3090 / -confirm _exact OFF/ON 0.993/1.004/0.997 vs 1.000/1.005/0.995
+idx32	rtx-3090	n1024	C	off	-	arch-select-rtx-3090-table _c 1024 0.944 (0.1659 ON vs 0.1556 OFF ms)
+idx32	rtx-4090	n1024	C	null	-	fma-regs-rtx-4090 _c 1024 0.068 vs 0.067 ms
+idx32	rtx-5090	A	E	null	-	fma-regs-rtx-5090 _exact 1024..8192 on 0.076/0.588/4.920/40.005 vs off 0.076/0.586/4.907/40.004 ms
+idx32	rtx-5090	n1024	C	null	-	fma-regs-rtx-5090 _c 1024 0.074 vs 0.074 ms
+interleave	a100	n1024	EC	null	-	base-a100 / -confirm _c 0.990 vs 0.993, _exact 1.009 vs 0.989
+interleave	rtx-3090	n1024	EC	null	-	base-rtx-3090 / -confirm _c 0.990 vs 1.000, _exact 1.003 vs 0.991
+kmajor-a	h100-pcie	A	EC	off	-	tile-efficiency rungs-h100-pcie shipped/OFF programs 1.16 (3 W / 50 L), pt_mlp2_1024 0.629 vs 0.497 ms
+kmajor-a	rtx-3090	A	EC	off	-	tile-efficiency rungs-rtx-3090 programs 1.14 (2 W / 41 L), mm_4096 15.04 vs 11.04 ms
+kmajor-a	rtx-4090	F	EC	off	-	tile-efficiency rungs-detail-rtx-4090 mm_4096 2.9952 vs 2.4566, mm_128x18432x7168 1.3088 vs 1.1435 ms (register-staged)
+kmajor-a	rtx-4090	n1024	C	on	-	tile-efficiency: the async path 21 W / 0 L (per-site-choice bank.md §3)
+kmajor-a	rtx-5090	A	EC	off	-	tile-efficiency rungs-rtx-5090 programs 1.03 (4 W / 28 L), mm_128x2048x7168 0.2007 vs 0.1659 ms
+l2-window	a100	A	EC	null	-	l2-raster-a100 x5: 25 of 30 cells <= 1.000, none > 1.01
+l2-window	h100-pcie	A	EC	null	-	s56-selection-h100-pcie overlapping ranges; traced kernels 0.998/1.007/1.007
+l2-window	rtx-3090	A	EC	null	-	unmeasured: no probe operand fits the 6 MB L2
+l2-window	rtx-4090	A	C	off	-	l2-raster-rtx-4090 x3 diamond_2048_c off/on 0.933/0.939/0.959, mlp2_2048_c 0.938/0.949/0.954
+l2-window	rtx-4090	A	E	null	-	l2-raster-rtx-4090 exact 0.977-1.003
+l2-window	rtx-5090	A	EC	null	-	l2-raster-rtx-5090 x5: 60 cells 0.976-1.005
+ldmatrix	a100	n1024	T	null	-	arch-select-a100 / verify3 _tf 1024 ON 0.0840 / 0.0840 vs OFF 0.0881 / 0.0799 ms: the sign changes
+ldmatrix	a100	F	T	on	-	arch-select-a100 / verify3 _tf 2048/4096/8192 OFF/ON 1.049/1.020/1.024 vs 1.017/1.024/1.022
+ldmatrix	rtx-3090	A	T	null	-	base-rtx-3090 / -confirm _tf OFF/ON 0.998/1.006/1.019 vs 1.000/1.000/0.997
+ldmatrix	rtx-4090	A	T	null	-	arch-rungs-rtx-4090 _tf on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms
+linear	rtx-5090	A	EC	null	-	plan-cost programs-rtx-5090 pt_indep_4096 4.1837 vs 4.2098, pt_diamond_4096 6.2586 vs 6.2664 ms (tol 2 %)
+min-blocks	a100	F	EC	null	-	base-a100 / -confirm, verify / verify2: no stable sign
+min-blocks	a100	n1024	C	on	-	base-a100-verify / verify2 _c 1024 OFF/ON 1.119 then 1.110
+min-blocks	a100	n1024	E	on	-	base-a100-verify / verify2 _exact 1024 OFF/ON 1.084 then 1.080
+min-blocks	h100-pcie	F	EC	off	-	integrated-h100-pcie (the cap spills 8-16 B) _c on 0.656/3.950/36.832 vs off 0.618/3.729/37.530; _exact on 1.118/6.521/57.781 vs off 1.089/6.366/58.483 ms
+min-blocks	h100-pcie	n1024	E	on	-	integrated-h100-pcie _exact 1024 on 0.193 vs off 0.213 ms
+min-blocks	h100-pcie	n1024	C	off	-	arch-rungs-h100-pcie _c 1024 on 0.139 vs off 0.122 ms (v2/v4/v5/v6 the same sign)
+min-blocks	rtx-3090	n1024	T	off	-	arch-select-rtx-3090 / verify2 / verify _tf 1024 OFF/ON 0.890 x3 (0.0993 vs 0.1116 ms)
+min-blocks	rtx-3090	F	T	null	-	_tf 2048/4096/8192 0.994-1.006
+min-blocks	rtx-3090	n1024	C	on	-	_c 1024 OFF/ON 1.034/1.014/1.041
+min-blocks	rtx-3090	F	C	on	-	_c 2048 1.057/1.052/1.086, 8192 1.086/1.070/1.046 (8192 51.971 vs 48.936 ms)
+pad	h100-pcie	F	E	off	-	base-h100-pcie / -confirm (S54) _exact OFF/ON 0.889/0.855/0.860, 0.884/0.842/0.825
+pad	h100-pcie	n1024	E	on	-	base-h100-pcie / -confirm _exact 1024 OFF/ON 1.037 vs 1.031, disjoint in both
+pad	rtx-5090	A	E	null	-	fma-regs-rtx-5090 register staging on 0.545/4.446/39.511 vs off 0.541/4.613/38.788 ms
+panel-regs	h100-pcie	U	E	null	-	s62 confirm pt_rm iter ON 0.1865 vs 0.1783, 0.1022 vs 0.0684; S64 re-measured ON faster at a cited cell
+panel-regs	rtx-3090	F	EC	off	-	s62 v2 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 (S64: ON slower re-measured)
+panel-regs	rtx-3090	U	C	null	-	s62 integrated pt_rm iter; S64 no-op at the cited cells
+pdl	h100-pcie	A	EC	null	-	streams-h100-pcie / -confirm: no probe with a stable sign
+pdl	rtx-5090	A	EC	null	-	streams-rtx-5090 / -confirm: no probe with a stable sign
+pinned	a100	A	EC	on	pageable_pm=700	streams-a100 pt_loop_2048 on 97.927/93.810 vs off 103.262/95.645, -confirm 100.516/90.376 vs 105.920/94.261 ms (pageable 0.56-0.84 of pinned)
+pinned	a100	A	EC	null	pageable_pm=980	streams-a100-final on 128.398/119.525 vs off 129.161/118.392 ms (pageable 0.98 of pinned)
+pinned	h100-pcie	A	EC	null	-	streams-h100-pcie / -confirm: no stable sign
+pinned	rtx-3090	A	EC	null	-	streams-rtx-3090 x3: no stable sign
+pinned	rtx-4090	A	EC	null	pageable_pm=990	streams-rtx-4090: no stable sign (pageable 13.3 vs pinned 13.4 GB/s)
+pinned	rtx-5090	A	EC	on	pageable_pm=360	streams-rtx-5090 on 77.545 vs off 92.102, -confirm 50.086 vs 58.865 ms (pageable 9-19 vs pinned 26-52 GB/s)
+pinned	rtx-5090	A	EC	off	pageable_pm=1000	streams-rtx-5090-final on 57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s)
+plan-cost	rtx-4090	A	EC	mixed	-	plan-cost programs-rtx-4090 ON vs BASE: mm_1x1024x4096 0.0840 vs 0.0307, decode 46.54 vs 24.05; wins pt_twin_512 0.0368 vs 0.0477 ms (17 W / 5 L)
+plan-cost	rtx-5090	A	EC	mixed	-	plan-cost programs-rtx-5090 ON vs BASE: mm_1x1024x4096 0.0553 vs 0.0164, decode 48.48 vs 36.70; wins pt_twin_512 0.0366 vs 0.0525 ms (9 W / 13 L)
+raster	rtx-3090	A	ECT	null	-	l2-raster-rtx-3090-run2 / -run3 mm_8192 OFF/ON exact 0.986 / 1.029, contract 0.992 / 1.017, TF32 0.991 / 0.956
+retain-delta	a100	A	EC	off	-	base-a100 decode_1024_256 wall on 2.229/2.233 s vs off 1.311/1.338 s
+retain-delta	h100-pcie	A	EC	off	-	integrated-h100-pcie decode_1024_256 on 1756/1906 vs off 1109/1144 ms
+retain-delta	rtx-3090	A	EC	off	-	base-rtx-3090 decode_1024_256 on 2.715/2.697 s vs off 1.473/1.473 s
+retain-delta	rtx-4090	A	EC	off	-	integrated-rtx-4090 decode_1024_256 on 1589/1568 vs off 905/886 ms, disjoint
+retain-delta	rtx-5090	A	EC	off	-	integrated-rtx-5090 decode_1024_256 on 825/847 vs off 630/616 ms, disjoint
+row-fit	h100-pcie	F	EC	off	blocks=144	s62 v2 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 (disjoint)
+row-fit	h100-pcie	U	C	off	blocks=8	s62 integrated mm_16x1024x4096_c ON 0.4332/0.4327 vs off 0.1018/0.1011 ms (with cell-fill the fitted 8-block grid loses to the cell tile)
+row-fit	rtx-3090	F	EC	null	blocks=144	s62 v2 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998 (null 4.3%)
+row-fit	rtx-4090	F	EC	off	blocks=144	s62 v2 16x18432x7168 on 0.6431/0.6451 vs off 0.6175/0.6175 ms (disjoint)
+row-fit	rtx-4090	U	EC	on	-	s62 v2 rungs: kept under-filled (CHOICE_AXES row-fit)
+row-fit	rtx-5090	F	E	null	-	s62 v2 _exact 16x18432x7168 on 0.3420 vs off 0.3420 ms
+row-split	h100-pcie	A	EC	on	-	site-geometry G2: row-split workspace S=128 wins 1.41-1.56
+row-split	rtx-3090	A	EC	off	-	site-geometry sweep decode 38.74 vs 32.85, prefill 27.71 vs 23.37, gen 25.93 vs 22.30 ms
+row-split	rtx-4090	A	EC	off	-	site-geometry sweep decode 36.08 vs 30.65, prefill 22.69 vs 19.53, gen 21.95 vs 18.60 ms
+row-split	rtx-5090	A	EC	off	-	site-geometry sweep decode 47.00 vs 34.95, prefill 24.95 vs 22.41 ms
+rowfold-layout	a100	A	C	off	-	rowfold-a100 / -confirm _c 4096 8.326 vs 8.162, 10.694 vs 10.488 ms (column- vs row-major)
+rowfold-layout	a100	A	E	on	-	rowfold-a100 / -confirm _exact 2048 2.392 vs 2.428, 4096 15.479 vs 15.568 ms
+rowfold-layout	h100-pcie	A	EC	off	-	rowfold-h100-pcie / -confirm _exact 4096 7.851 vs 6.451, _c 4096 4.033 vs 3.760 ms
+rowfold-layout	rtx-3090	A	EC	null	-	rowfold-rtx-3090 / -confirm within 0.4-1%
+rowfold-layout	rtx-4090	A	E	off	-	rowfold-rtx-4090 / -confirm _exact 4096 4.189 vs 4.018, 4.267 vs 4.160 ms
+rowfold-layout	rtx-4090	A	C	on	-	rowfold-rtx-4090 / -confirm _c 4096 2.507 vs 2.564, 2048 0.315 vs 0.435, 0.327 vs 0.361 ms
+rowfold-layout	rtx-5090	A	EC	off	-	rowfold-rtx-5090 / -confirm _exact 4096 3.478 vs 3.432, _c 4096 2.216 vs 2.153 ms
+splitk	rtx-3090	F	E	off	-	s62 splitk-reassoc mm_16x2048x7168_r ON 0.5458/0.5396 vs off 0.4813/0.4792 ms
+splitk	rtx-3090	U	E	off	-	s62 integrated mm_16x1024x4096_r ON 0.0758/0.0676 vs off 0.0655/0.0594 ms
+splitk	rtx-3090	F	C	on	-	s62 splitk-reassoc _rc ON/OFF 0.784/0.789
+splitk-atomic	h100-pcie	A	C	null	-	s63 default-float mm_16x1024x4096 0.992/1.000, mm_16x2048x7168 0.996/0.998
+splitk-atomic	rtx-3090	F	C	null	-	s63 default-float mm_16x2048x7168 1.000/0.992 (null 0.007)
+streamk	h100-pcie	F	C	null	-	s63 mm_4096 ON 5.0664 vs off 4.4731 ms; S64 re-measured ON faster at a cited cell (judge row 103)
+streamk	h100-pcie	F	C	on	-	s63 forgone 16x18432x7168 ON/OFF 0.748/0.748
+streamk	rtx-3090	F	C	off	-	s63 mm_16x2048x7168 ON 0.1495/0.1485 vs 0.1198/0.1178 ms (S64: ON slower re-measured)
+streamk	rtx-3090	F	C	on	-	s63 forgone 16x18432x7168 ON/OFF 0.924/0.928
+streamk	rtx-3090	U	C	null	-	s63 mm_128x2048x7168 1.041/1.045; S64 re-measured ON faster at a cited cell (judge row 105)
+streamk	rtx-3090	U	C	on	-	s63 forgone 16x1024x4096 ON/OFF 0.880/0.863
+streamk	rtx-4090	F	C	off	-	s63 mm_16x18432x7168 ON 0.6537/0.6543 vs 0.6185/0.6176 ms (S64: ON slower re-measured)
+streamk	rtx-5090	U	C	null	-	s63 mm_16x2048x7168 1.050; S64 re-measured ON faster at a cited cell (judge row 101)
+streamk	rtx-5090	U	C	on	-	s63 forgone 128x2048x7168 ON/OFF 0.851/0.863
+streams	h100-pcie	A	EC	null	-	streams-h100 pt_twin_512 inside the noise floor
+streams	rtx-3090	A	EC	off	-	streams-rtx-3090: device-only no effect; host-joined probes slower (diamond_512 0.82-0.88x, mlp2_512 0.62-0.84x)
+streams	rtx-4090	A	EC	off	-	streams-rtx-4090-final pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms; diamond_512 0.85-0.95x
+streams	rtx-5090	A	EC	off	-	s56-selection-rtx-5090: all 16 changed cells favor OFF, disjoint (twin_4096 contract 4.395 vs 5.110 ms)
+tf32-radix	a100	A	T	null	-	values unchecked, no time
+tf32-radix	h100-pcie	A	T	null	-	values unchecked, no time
+tf32-radix	rtx-5090	A	T	off	-	site-geometry sweep ON 0.07003 vs the fitted FFMA tile 0.06797 ms
+unroll	a100	A	E	off	-	base-a100 / -confirm _exact OFF/ON 0.856/0.936/0.940 vs 0.871/0.941/0.944
+warp	a100	A	EC	null	-	base-a100 / -confirm, verify / verify2: no stable sign
+warp	h100-pcie	n1024	C	null	-	integrated-h100-pcie _c 1024 on 0.139 vs off 0.136 ms
+warp	h100-pcie	F	C	on	-	integrated-h100-pcie _c 2048/4096/8192 on 0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms
+warp	rtx-3090	n1024	E	null	-	base-rtx-3090 / -confirm _exact 1.022 vs 0.991
+warp	rtx-3090	n1024	C	on	-	arch-select-rtx-3090 / verify2 / verify on warp-fill's tile OFF/ON 1.055/1.036/1.056
+warp	rtx-4090	F	C	null	-	arch-rungs-rtx-4090 / -confirm: no stable sign
+warp-fill	h100-pcie	U1	C	off	-	arch-select-h100-pcie / verify _c 1024 on 0.1512/0.1524 vs off 0.1445/0.1464 ms, disjoint
+warp-fill	h100-pcie	U0	C	on	-	s64 warp-fill mlp_bench contract kernels ON 0.1501 vs OFF 0.3726 (d1024), 0.0332 vs 0.1027 ms (d256)
+warp-fill	h100-pcie	U1	E	on	-	arch-select-h100-pcie / verify _exact 1024 on 0.2144/0.2163 vs off 0.2192/0.2214 ms, disjoint
+warp-fill	rtx-3090	U1	C	off	-	arch-select-rtx-3090 / verify2 / verify _c 1024 OFF/ON 0.935/0.959/0.940
+warp-fill	rtx-3090	U1	T	off	-	arch-select-rtx-3090 / verify2 / verify _tf 1024 OFF/ON 0.887/0.887/0.876
+warp-fill	rtx-3090	U0	C	on	-	s64 warp-fill contract kernels ON 0.1630 vs OFF 0.3092 (d1024), 128x2048x7168 _c ON/OFF 0.523
+warp-fill	rtx-3090	U0	C	off	free-order	s64 endcheck 128x2048x7168 default / _rc faces ON/OFF 1.179 / 1.058: the filled tile lowers the split count
+warp-fill	rtx-3090	U1	E	null	-	_exact 1024 1.057 / 0.961 / 0.960
+warp-fill	rtx-5090	F	T	off	-	warp-fill-rtx-5090 _tf 2048 on 0.2314 vs off 0.2252 ms, disjoint
+warp-fill	rtx-5090	F	EC	null	-	_c and _exact PTX byte-identical at every filled size
+wave-gate	h100-pcie	U	C	off	blocks=8	s62 v2 _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint), against one thread a cell before cell-fill; since, the cell tile takes the site at 0.10 vs the fitted 0.43 ms (row-fit line)
+wave-gate	rtx-5090	F	C	off	blocks=144	s62 v2 _c 16x18432x7168 on 2.0659 (one thread a cell) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs)
+wide	a100	n1024	T	off	-	base-a100 / -confirm _tf 1024 OFF/ON 0.986 vs 0.962
+wide	rtx-3090	n1024	T	off	-	base-rtx-3090 / -confirm _tf 1024 OFF/ON 0.812 vs 1.009
+wide	rtx-3090	F	T	on	-	base-rtx-3090-verify with it off _tf 2048/4096 0.781/5.358 vs on 0.741/5.129 ms
+wide	rtx-5090	F	T	null	-	base-rtx-5090 / -confirm _tf OFF/ON 0.981/0.993/1.006 vs 0.982/0.999/1.031
+wide	rtx-5090	n1024	T	off	-	integrated-rtx-5090 _tf 1024 on 0.0492 vs off 0.0389 ms, disjoint
+wide-fma	a100	F	EC	off	-	base-a100 / -confirm OFF faster both sessions; with idx32 on-fma-regs 8.195 / 7.942 vs idx32 alone 8.034 / 7.800 ms
+wide-fma	h100-pcie	A	EC	off	-	fma-regs-h100-pcie staging _c on 0.795/4.054/33.097 vs off 0.654/3.851/33.608, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms
+wide-fma	rtx-3090	F	E	off	-	base-rtx-3090 / -confirm _exact OFF/ON 0.959/0.936/0.991 vs 0.956/0.904/0.961
+wide-fma	rtx-4090	F	C	on	-	fma-regs-effects rtx-4090 _c sync wide-fma 2048/4096/8192 ON 0.304/2.509/22.072 vs OFF 0.324/2.698/23.258 ms
+wide-fma	rtx-5090	F	C	mixed	-	fma-regs-rtx-5090 staging 2048/4096/8192 on 0.344/3.194/26.885 vs off 0.348/2.947/28.434 ms (4096 disjoint loss, 8192 gain)
+pdl	rtx-5080	A	EC	on	-	hardware-properties ABBA (16 processes an arm) no-pdl / rules: decode_1024_256 0.921, causal_1024_256 0.906, gen_1024_512_256 0.919, prefill_1024_512_256 0.910 (iteration ms 9.64 / 8.88, 16.80 / 15.22, 8.51 / 7.82, 8.96 / 8.15)
+warp-fill	rtx-5080	U1	C	on	-	hardware-properties suite (two ON runs): without the shrink at one warp a scheduler loopmm_1024_8 0.810 / 0.809 vs 0.651 ms, smlp_4096_256_1024 0.193 / 0.192 vs 0.167 ms; with it (the rule) ABBA 1.003 / 1.003 of the f3a9e792 emission
+warp-fill	rtx-5080	F	C	off	-	hardware-properties first ON session: pj_m16_n18432_k7168 shrunk to 4 x 4 (576 blocks) 0.672 vs 0.611 ms unshrunk (that session's other programs raced: pdl without waits)
+wave-gate	rtx-5080	F	C	off	blocks=16	hardware-properties suite (two ON runs): pj_m16_n2048_k7168 gated (cell tile + stream-K) 0.0809 / 0.0755 vs kept (16 fitted blocks x splitk 4) 0.0486 ms; tile_bench 16x2048x7168 default 0.1495 vs 0.1126 ms
+linear	rtx-5080	A	EC	off	-	hardware-properties first ON session: indep_512 as one linear launch 0.0475 vs the two site tables 0.0401 ms (that session's other programs raced: pdl without waits)

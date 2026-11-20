@@ -162,12 +162,129 @@ pub struct Gpu {
     /// The part's launch-geometry constants (ADR-0034 D1): the row the
     /// offline search writes, overridable per knob (`--geom=`).
     pub geom: Geom,
-    /// plan-cost: FP32 FMA lanes one SM issues per cycle (128 on sm_86+
-    /// consumer and sm_89/sm_90 parts); 0 = not given, no plan cost.
+    /// FP32 FMA lanes one SM issues per clock (64 on the A100's SM, 128 on
+    /// every other profiled one) — the datasheet's figure, or the calibration
+    /// file's measured FFMA peak over `sms · 2 · clock`. Plan cost and the
+    /// FFMA-per-byte balance ([`Self::ffma_per_dram_byte`]) read it.
     pub fp32_lanes: u64,
-    /// plan-cost: the SM clock under load, kHz (device query `clockRate`,
-    /// box `facts sm_clock_khz=`); 0 = not given.
+    /// The SM clock, kHz: under load where measured (calibration), else the
+    /// device query's `CU_DEVICE_ATTRIBUTE_CLOCK_RATE`.
     pub clock_khz: u64,
+    /// hardware-properties: the DRAM interface clock, kHz
+    /// (`CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE`); with [`Self::mem_bus_bits`]
+    /// the peak DRAM rate ([`Self::dram_peak_bytes_per_ns`]).
+    pub mem_clock_khz: u64,
+    /// hardware-properties: the DRAM bus width, bits
+    /// (`CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH`).
+    pub mem_bus_bits: u64,
+    /// Warp schedulers per SM, each issuing one warp per clock (four on every
+    /// profiled SM): the fill rule's unit ([`Self::fill_warps`]).
+    pub schedulers: u64,
+    /// What the SM executes, as properties ([`Caps`]): no rule compares a
+    /// version.
+    pub caps: Caps,
+}
+
+/// **The instructions an SM executes, described by what they move and the
+/// geometry they compute** (hardware-properties). Read by the realizations
+/// that emit them; a part without one never takes that realization. The
+/// device query reports a compute capability, and the native profile turns it
+/// into these once ([`caps_of_cc`], the PTX ISA's availability table) — no
+/// decision reads a version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Caps {
+    /// `cp.async` global→shared copies (4/8/16 B a thread, no register
+    /// round trip).
+    pub cp_async: bool,
+    /// The warp-level tensor-core product (`mma.sync`, TF32 operands in
+    /// registers, f32 accumulator in registers), and its shape per issuing
+    /// warp; `None` = none.
+    pub mma: Option<MmaShape>,
+    /// `ldmatrix`: a warp loads 8×8 b16 tiles from shared memory into the
+    /// `mma` fragment layout.
+    pub ldmatrix: bool,
+    /// The warpgroup-level tensor-core product (`wgmma.mma_async`: operands
+    /// from shared-memory descriptors, accumulator in registers), and its
+    /// shape per issuing warpgroup (`n` the largest; any multiple of 8 up to
+    /// it); `None` = none.
+    pub wgmma: Option<MmaShape>,
+    /// `griddepcontrol`: a kernel may start while the one before it drains
+    /// and wait at its entry (programmatic dependent launch).
+    pub griddepcontrol: bool,
+    /// `red`/`atom.add.f64` on global memory.
+    pub red_f64: bool,
+}
+
+/// One matrix instruction's geometry: `m × n × k` per issuing group of
+/// `threads` threads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MmaShape {
+    pub m: u64,
+    pub n: u64,
+    pub k: u64,
+    pub threads: u64,
+}
+
+/// The `mma.sync.m16n8k8` TF32 product a warp issues.
+pub const MMA_SYNC_TF32: MmaShape = MmaShape {
+    m: 16,
+    n: 8,
+    k: 8,
+    threads: 32,
+};
+
+/// The `wgmma.m64nNk8` TF32 product a warpgroup issues (`N` ≤ 256).
+pub const WGMMA_TF32: MmaShape = MmaShape {
+    m: 64,
+    n: 256,
+    k: 8,
+    threads: 128,
+};
+
+/// `cp.async`, warp `mma` with `ldmatrix`, `f64` reductions: the capability
+/// set the RTX 3090, A100, RTX 4090 profiles spell (compute capability 8.x).
+pub const CAPS_WARP_MMA: Caps = Caps {
+    cp_async: true,
+    mma: Some(MMA_SYNC_TF32),
+    ldmatrix: true,
+    wgmma: None,
+    griddepcontrol: false,
+    red_f64: true,
+};
+
+/// [`CAPS_WARP_MMA`] with `griddepcontrol`: the consumer Blackwell SM (the
+/// RTX 5090 and 5080 profiles).
+pub const CAPS_WARP_MMA_PDL: Caps = Caps {
+    griddepcontrol: true,
+    ..CAPS_WARP_MMA
+};
+
+/// [`CAPS_WARP_MMA_PDL`] with the warpgroup `wgmma` product: the
+/// arch-specific Hopper target (the H100 profiles).
+pub const CAPS_WARPGROUP_MMA: Caps = Caps {
+    wgmma: Some(WGMMA_TF32),
+    ..CAPS_WARP_MMA_PDL
+};
+
+/// **The PTX ISA's availability table, applied once to a device query's
+/// compute capability** (`major·10 + minor`, and whether the arch-specific
+/// `a` target is taken): the only place a capability is read off a version —
+/// the native profile's builder. `cp.async`, `mma.sync` TF32 and `ldmatrix`
+/// with it: sm_80; `griddepcontrol`: sm_90; `wgmma`: `sm_90a` alone;
+/// `atom.add.f64`: sm_60.
+pub const fn caps_of_cc(cc: u64, arch_specific: bool) -> Caps {
+    Caps {
+        cp_async: cc >= 80,
+        mma: if cc >= 80 { Some(MMA_SYNC_TF32) } else { None },
+        ldmatrix: cc >= 80,
+        wgmma: if cc == 90 && arch_specific {
+            Some(WGMMA_TF32)
+        } else {
+            None
+        },
+        griddepcontrol: cc >= 90,
+        red_f64: cc >= 60,
+    }
 }
 
 /// **Mapal's own achieved device rates on one part (S62 `place`)** — not the
@@ -250,6 +367,12 @@ pub struct DeviceCost {
     /// persistent kernel launches), start to start, in ns. 0 = not measured:
     /// priced as [`Self::dep_launch_ns`].
     pub coop_launch_ns: u64,
+    /// hardware-properties `pinned`: the host's pageable host→device copy
+    /// rate as a fraction of its page-locked rate, per mille, at the sizes a
+    /// loop's arrays cross (≥ 4 MiB; `calib.cu copy`). A property of the host
+    /// and its link, not the GPU: the rental boxes measured 350–1000. 0 = not
+    /// measured: nothing is page-locked.
+    pub pageable_pm: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -276,12 +399,16 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     dep_launch_block_ps: 0,
     pdl_launch_ns: 0,
     coop_launch_ns: 0,
+    pageable_pm: 0,
 };
 
 impl DeviceCost {
     /// `--cost=` names, in [`CostOver`] order: the [`DeviceCost`] fields,
-    /// then [`Gpu::fp32_lanes`] and [`Gpu::clock_khz`].
-    pub const NAMES: [&'static str; 23] = [
+    /// then the [`Gpu`] properties a measurement or a cross-compilation
+    /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
+    /// hardware-properties the rung rules read: SMs, L2, shared memory,
+    /// threads, registers and blocks per SM, the DRAM interface).
+    pub const NAMES: [&'static str; 32] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -303,8 +430,17 @@ impl DeviceCost {
         "dep_launch_block_ps",
         "pdl_launch_ns",
         "coop_launch_ns",
+        "pageable_pm",
         "fp32_lanes",
         "clock_khz",
+        "sms",
+        "l2_bytes",
+        "smem_per_sm",
+        "max_threads_per_sm",
+        "regs_per_sm",
+        "max_blocks_per_sm",
+        "mem_clock_khz",
+        "mem_bus_bits",
     ];
 
     /// kernel-merging `calls`: one grid barrier of `blocks` co-resident
@@ -350,8 +486,9 @@ impl DeviceCost {
 pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 
 impl Gpu {
-    /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field.
-    const NAMES_COST: usize = DeviceCost::NAMES.len() - 2;
+    /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
+    /// `fp32_lanes`).
+    const NAMES_COST: usize = 22;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -381,8 +518,17 @@ impl Gpu {
                 "dep_launch_block_ps" => &mut d.dep_launch_block_ps,
                 "pdl_launch_ns" => &mut d.pdl_launch_ns,
                 "coop_launch_ns" => &mut d.coop_launch_ns,
+                "pageable_pm" => &mut d.pageable_pm,
                 "fp32_lanes" => &mut self.fp32_lanes,
-                _ => &mut self.clock_khz,
+                "clock_khz" => &mut self.clock_khz,
+                "sms" => &mut self.sms,
+                "l2_bytes" => &mut self.l2_bytes,
+                "smem_per_sm" => &mut self.smem_per_sm,
+                "max_threads_per_sm" => &mut self.max_threads_per_sm,
+                "regs_per_sm" => &mut self.regs_per_sm,
+                "max_blocks_per_sm" => &mut self.max_blocks_per_sm,
+                "mem_clock_khz" => &mut self.mem_clock_khz,
+                _ => &mut self.mem_bus_bits,
             } = v;
         }
         // The `DeviceCost` fields: every name but the last two (`Gpu`'s).
@@ -417,8 +563,17 @@ impl Gpu {
             "dep_launch_block_ps" => d.dep_launch_block_ps,
             "pdl_launch_ns" => d.pdl_launch_ns,
             "coop_launch_ns" => d.coop_launch_ns,
+            "pageable_pm" => d.pageable_pm,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
+            "sms" => self.sms,
+            "l2_bytes" => self.l2_bytes,
+            "smem_per_sm" => self.smem_per_sm,
+            "max_threads_per_sm" => self.max_threads_per_sm,
+            "regs_per_sm" => self.regs_per_sm,
+            "max_blocks_per_sm" => self.max_blocks_per_sm,
+            "mem_clock_khz" => self.mem_clock_khz,
+            "mem_bus_bits" => self.mem_bus_bits,
             _ => 0,
         }
     }
@@ -607,27 +762,61 @@ fn residency(g: &Gpu, regs: u64, threads: u64) -> u64 {
 }
 
 impl Gpu {
-    /// The compute capability as a number: `sm_89` → 89. The capability
-    /// table below is read off it — ISA rules, not part facts.
-    pub fn sm(&self) -> u64 {
-        self.arch
-            .trim_start_matches("sm_")
-            .trim_end_matches('a')
-            .parse()
-            .unwrap_or(0)
-    }
-
-    /// `mma.sync` with TF32 operands and `cp.async` both arrived at sm_80.
+    /// The warp `mma` product and `cp.async` ([`Caps`]): the staged FMA
+    /// tile's `cp.async` panels and the TF32 `mma.sync` kernel.
     pub fn has_mma_sync(&self) -> bool {
-        self.sm() >= 80
+        self.caps.mma.is_some() && self.caps.cp_async
     }
 
-    /// Warp schedulers per SM: four since sm_70 (Volta through Blackwell),
-    /// each issuing one warp per cycle. An ISA table fact, like
-    /// [`Self::has_mma_sync`]. Older parts are not profiled; 1 leaves the fill
-    /// rule no stronger than "a block per SM".
+    /// Warp schedulers per SM ([`Self::schedulers`] field; 1 when not given,
+    /// which leaves the fill rule no stronger than "a block per SM").
     pub fn schedulers(&self) -> u64 {
-        if self.sm() >= 70 { 4 } else { 1 }
+        self.schedulers.max(1)
+    }
+
+    /// `griddepcontrol` ([`Caps::griddepcontrol`]).
+    pub fn has_griddepcontrol(&self) -> bool {
+        self.caps.griddepcontrol
+    }
+
+    /// hardware-properties: the FFMA peak, flops per ns (`sms · fp32_lanes ·
+    /// 2 · clock`); 0 when a factor is not given.
+    pub fn ffma_flops_per_ns(&self) -> u64 {
+        self.sms * self.fp32_lanes * 2 * self.clock_khz / 1_000_000
+    }
+
+    /// hardware-properties: the DRAM peak, bytes per ns (double data rate over
+    /// the bus: `2 · mem_clock · bus_bits / 8`); 0 when not given.
+    pub fn dram_peak_bytes_per_ns(&self) -> u64 {
+        2 * self.mem_clock_khz * self.mem_bus_bits / 8 / 1_000_000
+    }
+
+    /// hardware-properties: **the machine balance** — FFMA flops the part
+    /// issues per byte its DRAM delivers, per mille (`None` without both
+    /// rates). How much arithmetic a loaded byte must carry before the
+    /// operand stream, not the FMA pipe, bounds a tile.
+    pub fn ffma_per_dram_byte_pm(&self) -> Option<u64> {
+        let d = self.dram_peak_bytes_per_ns();
+        (d > 0 && self.ffma_flops_per_ns() > 0).then(|| self.ffma_flops_per_ns() * 1000 / d)
+    }
+
+    /// hardware-properties: 32-bit registers each thread holds when the SM is
+    /// full of threads (`regs_per_sm / max_threads_per_sm`): the register cap
+    /// a residency bound by threads leaves a thread.
+    pub fn regs_per_resident_thread(&self) -> u64 {
+        self.regs_per_sm / self.max_threads_per_sm.max(1)
+    }
+
+    /// hardware-properties: the L2 bytes per SM — the share of the shared
+    /// cache one SM's resident blocks keep their panels in.
+    pub fn l2_bytes_per_sm(&self) -> u64 {
+        self.l2_bytes / self.sms.max(1)
+    }
+
+    /// hardware-properties: the DRAM peak per SM, bytes per µs (what filling
+    /// one more SM can add to a stream the grid leaves under-filled).
+    pub fn dram_bytes_per_us_per_sm(&self) -> u64 {
+        self.dram_peak_bytes_per_ns() * 1000 / self.sms.max(1)
     }
 
     /// The warps a grid needs before every scheduler holds
@@ -643,10 +832,9 @@ impl Gpu {
         blocks * threads.div_ceil(self.warp) / (self.sms * self.schedulers())
     }
 
-    /// `wgmma.mma_async` exists only on the arch-specific Hopper target
-    /// `sm_90a` (PTX ISA: "Requires sm_90a"); Blackwell replaced it.
+    /// The warpgroup `wgmma` product ([`Caps::wgmma`]).
     pub fn has_wgmma(&self) -> bool {
-        self.sm() == 90 && self.arch.ends_with('a')
+        self.caps.wgmma.is_some()
     }
 
     /// **The block-row group height a tile grid is walked in (S54 `raster`)**,
@@ -697,47 +885,13 @@ impl Gpu {
     }
 }
 
-/// Which grids a measured rung decision covers. The key is
-/// [`Gpu::warps_per_scheduler`] at the site: below [`GPU_RESIDENT_BLOCKS`] a
-/// scheduler has no second warp to issue while one waits — the reason the
-/// thread budget is split in two, applied per scheduler — so the site is
-/// latency-bound and a rung that hides latency pays differently.
-///
-/// Keyed at [`GPU_RESIDENT_BLOCKS`], not [`Geom::resident`]: the rows were
-/// measured there, and the grid they key ([`TargetProfile::gpu_tile`]) reads
-/// the seed row — a `resident` arm moves the launch, never which rows apply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Fill {
-    Any,
-    /// Fewer than [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
-    Under,
-    /// At least [`GPU_RESIDENT_BLOCKS`] warps per scheduler.
-    Filled,
-    /// S64: `Under` with at least one warp per scheduler — the class a row
-    /// keeps when its rung pays on a grid that leaves schedulers empty
-    /// (fewer than one warp each) and costs on one that does not.
-    Partial,
-}
-
-impl Fill {
-    /// Whether a row keyed `self` covers a site at `wps` warps per scheduler.
-    pub fn covers(self, wps: u64) -> bool {
-        match self {
-            Fill::Any => true,
-            Fill::Under => wps < GPU_RESIDENT_BLOCKS,
-            Fill::Filled => wps >= GPU_RESIDENT_BLOCKS,
-            Fill::Partial => (1..GPU_RESIDENT_BLOCKS).contains(&wps),
-        }
-    }
-}
-
-/// Which face a measured rung decision covers: the conformance face (`mul.rn`
-/// + `add.rn`, two instructions per step) and the contract face (one `fma`)
-/// hold different registers live, so a staging rung can pay on one and cost
-/// on the other. The TF32 face is a contract face: a `Contract` row covers it.
+/// The face a site is emitted on, as the rung rules read it
+/// ([`crate::rules::rungs`]): the conformance face (`mul.rn` + `add.rn`, two
+/// instructions per step) and the contract face (one `fma`) hold different
+/// registers live, so a staging rung can pay on one and cost on the other.
+/// The TF32 face is a contract face whose kernel is `mma`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Face {
-    Any,
     Exact,
     Contract,
     /// The TF32 face alone (S54): its kernel is `mma`, not the FMA tile, so a
@@ -751,16 +905,11 @@ impl Face {
     pub fn of(contract: bool, reduced: Option<crate::Reduced>) -> Self {
         match (reduced, contract) {
             (Some(crate::Reduced::Tf32), _) => Face::Tf32,
-            // ADR-0040: the order axis runs the scalar kernels, so the
-            // Exact/Contract rows cover it; its realizations are own rungs.
+            // ADR-0040: the order axis runs the scalar kernels, so it reads
+            // the Exact/Contract rules; its realizations are own rungs.
             (None, true) => Face::Contract,
             (None, false) => Face::Exact,
         }
-    }
-
-    /// Whether a row keyed `self` covers a site on face `site`.
-    pub fn covers(self, site: Face) -> bool {
-        self == Face::Any || self == site || (self == Face::Contract && site == Face::Tf32)
     }
 }
 
@@ -783,8 +932,8 @@ pub(crate) struct ChoiceAxis {
     /// Not a flip: `plan-cost` on with every split kernel at the full
     /// register tile (`full-tile`), the cost model's argmin among those.
     pub full: bool,
-    /// The evidence that the rung is mixed (for the reader, as
-    /// [`RungOff::cite`]).
+    /// The evidence that the rung is mixed (for the reader; the measurements
+    /// themselves are in `rung_replay.tsv`).
     #[allow(dead_code)]
     pub cite: &'static str,
 }
@@ -796,7 +945,7 @@ pub(crate) const CHOICE_AXES: &[ChoiceAxis] = &[
         rung: "async",
         realized: |l| l.tiled.is_some_and(|t| t.stages >= 2),
         full: false,
-        cite: "GPU_RUNGS_OFF rtx-4090 async: OFF filled (_c 4096 on 3.027 vs off 2.823 ms) but kept under-filled \
+        cite: "rung_replay.tsv async, rtx-4090: OFF filled (_c 4096 on 3.027 vs off 2.823 ms) but kept under-filled \
                (_c 1024 on 0.070 vs off 0.101 ms); with kmajor-a, 22 W / 0 L on the async path vs 133 L on the staged \
                one (per-site-choice bank.md §3)",
     },
@@ -804,14 +953,14 @@ pub(crate) const CHOICE_AXES: &[ChoiceAxis] = &[
         rung: "bank-plan",
         realized: |l| l.rungs.bank_plan,
         full: false,
-        cite: "per-site-choice D1: unmeasured (GPU_RUNGS_OFF bank-plan rows); the bank model's k-major panel is \
+        cite: "per-site-choice D1: unmeasured on every part (rung_replay.tsv bank-plan); the bank model's k-major panel is \
                conflict-free in 30 / 30 swept geometries (bank.md, build-a.md), its sign on time not yet measured",
     },
     ChoiceAxis {
         rung: "kmajor-a",
         realized: |l| l.tiled.is_some_and(|t| t.kmajor),
         full: false,
-        cite: "tile-efficiency sweep (GPU_RUNGS_OFF kmajor-a rows): 4090 async 21 W / 0 L, 4090 staged 8 W / 4 L, \
+        cite: "tile-efficiency sweep (rung_replay.tsv kmajor-a): 4090 async 21 W / 0 L, 4090 staged 8 W / 4 L, \
                3090 staged 0 W / 33 L, H100 3 W / 55 L (per-site-choice bank.md §3)",
     },
     ChoiceAxis {
@@ -846,21 +995,21 @@ pub(crate) const CHOICE_AXES: &[ChoiceAxis] = &[
         rung: "row-fit",
         realized: |l| l.rungs.row_fit,
         full: false,
-        cite: "GPU_RUNGS_OFF row-fit: OFF filled on 4090 / H100 / 3090 (16x18432x7168), kept under-filled; H100 \
+        cite: "rung_replay.tsv row-fit: OFF filled on 4090 / H100 / 3090 (16x18432x7168), kept under-filled; H100 \
                under-filled contract OFF after cell-fill (mm_16x1024x4096 0.4332 vs 0.1018 ms)",
     },
     ChoiceAxis {
         rung: "wave-gate",
         realized: |l| l.rungs.wave_gate,
         full: false,
-        cite: "GPU_RUNGS_OFF wave-gate: 5090 filled contract OFF (16x18432x7168 on 2.0659 vs off 0.4628 ms), H100 \
+        cite: "rung_replay.tsv wave-gate: 5090 filled contract OFF (16x18432x7168 on 2.0659 vs off 0.4628 ms), H100 \
                under-filled contract OFF, ON elsewhere",
     },
     ChoiceAxis {
         rung: "wide-fma",
         realized: |l| l.rungs.wide_fma,
         full: false,
-        cite: "GPU_RUNGS_OFF wide-fma: OFF on H100 / 5090 (register staging 4096 on 4.054 vs off 3.851 ms) but \
+        cite: "rung_replay.tsv wide-fma: OFF on H100 / 5090 (register staging 4096 on 4.054 vs off 3.851 ms) but \
                kept on the 4090 filled (8192 on 33.640 vs off 41.168 ms)",
     },
     ChoiceAxis {
@@ -872,1310 +1021,26 @@ pub(crate) const CHOICE_AXES: &[ChoiceAxis] = &[
     },
 ];
 
-/// One measured decision: `rung` ships OFF on `profile` for grids `fill` on
-/// face `face`, because the results row `cite` measured its arm not positive
-/// there.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RungOff {
-    pub profile: &'static str,
-    pub rung: &'static str,
-    pub fill: Fill,
-    pub face: Face,
-    pub cite: &'static str,
+/// **hardware-properties: whether a grid of `blocks` keeps the part's `sms`
+/// busy** — its blocks over the SM slots its waves span, `blocks /
+/// (⌈blocks / sms⌉ · sms)`, at least 3/4 (`wave-gate`'s fact, one block an SM
+/// a wave). The row-fitted 144-block grid of a 16 × 18432 × 7168 site: 0.85
+/// on 170 SMs (kept, 0.46 ms against 2.07 one thread a cell), 0.88 on 82
+/// (null), 0.63 on 114 and 0.56 on 128 (both lost to the unfitted kernel);
+/// the 8-block grid of 16 × 1024 × 4096 on 114 SMs, 0.07, lost to the cell
+/// tile 0.43 vs 0.10 ms (`rung_replay.tsv` row-fit, wave-gate).
+pub fn wave_full(blocks: u64, sms: u64) -> bool {
+    let sms = sms.max(1);
+    blocks * 4 >= blocks.div_ceil(sms) * sms * 3
 }
 
-/// **The GPU rung table: every rung a measured part ships OFF, with the row
-/// that says so** (S53; the [`DispatchCost`] precedent — a measured number
-/// lives only on the profile it was measured on). A profile is *measured* when
-/// it is in [`GPU_MEASURED`]; every rung not listed for it is ON. Rows cite
-/// `benches/results/gpu/kernels/optimization-ladder/<file>` or (`base-*`, S54) `benches/results/gpu/validation/baseline/<file>`
-/// (`-confirm` / `-run1` = another session, on a different box): the ON vs OFF
-/// arm medians, ms, or (S54) OFF/ON divided by each bench's own cuBLAS leg, which
-/// cancels the clock drift of a power-capped box. Box-to-box noise is ±5% at
-/// 4096–8192. The rule a row follows: a rung ships OFF in a (fill, face) class
-/// when no size in the class measured it positive with a stable sign (a sign
-/// that changes between sessions is no effect; S54: within ±1% is no effect, the
-/// median spread of one ratio between two boxes).
-pub const GPU_RUNGS_OFF: &[RungOff] = &[
-    RungOff {
-        profile: "rtx-4090",
-        rung: "async",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "arch-rungs-rtx-4090.txt _c n=2048/4096/8192 on 0.368/3.027/28.393 vs off 0.359/2.823/25.554 ms, \
-               -confirm.txt on 0.374/3.087/28.648 vs off 0.362/2.843/26.796 ms; _exact with fma-regs on \
-               (fma-regs-rtx-4090.txt) cp.async 0.508/4.437/39.162 vs register staging 0.492/4.245/37.149 ms, \
-               -run1.txt 0.520/4.520/39.002 vs 0.502/4.249/36.698 ms; kept under-filled (_c n=1024 on 0.070 vs \
-               off 0.101 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 0)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "warp",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "arch-rungs-rtx-4090-confirm.txt _c n=2048/4096/8192 on 0.362/2.843/26.796 vs off 0.355/2.813/25.311 ms; \
-               arch-rungs-rtx-4090.txt (unroll on) on 0.359/2.823/25.554 vs off 0.364/2.863/25.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 1)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "ldmatrix",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "arch-rungs-rtx-4090.txt _tf n=1024..8192 on 0.084/0.255/1.733/14.402 vs off 0.084/0.254/1.731/14.387 ms; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 2)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "idx32",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.067 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 3)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "affine",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-rtx-4090.txt _c n=1024 (cp.async) on 0.068 vs off 0.068 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 4)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "async",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "arch-rungs-h100-pcie.txt _c n=1024..8192 on 0.146/0.717/4.188/37.655 vs off 0.139/0.675/3.889/33.640 ms; \
-               _exact on 0.240/1.210/8.292/67.130 vs off 0.193/1.127/6.428/54.641 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 5)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "min-blocks",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "arch-rungs-h100-pcie.txt _c n=1024 on 0.139 vs off 0.122 ms (v2/v4/v5/v6-h100*.txt the same sign); \
-               kept filled (n=2048/4096/8192 on 0.675/3.889/33.640 vs off 0.793/4.753/41.168 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 6)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "wide-fma",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "fma-regs-h100-pcie.txt register staging n=2048/4096/8192 _c on 0.795/4.054/33.097 vs off \
-               0.654/3.851/33.608 ms, _exact on 1.491/7.223/57.044 vs off 1.118/6.480/55.381 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 7)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "idx32",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 8)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "affine",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; integrated-h100-pcie-confirm.txt _exact \
-               n=2048/4096/8192 off 1.08x/1.20x/1.23x faster than on; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 9)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "affine",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-h100-pcie.txt _c n=1024 register staging on 0.131 vs off 0.127 ms; integrated-h100-pcie.txt \
-               _c n=1024 on 0.921x of off; kept filled with min-blocks off (integrated-h100-pcie-confirm.txt _c \
-               n=2048/4096/8192 on 0.622/3.734/36.665 vs off 0.644/3.834/37.387 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 10)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "pad",
-        fill: Fill::Filled,
-        face: Face::Exact,
-        cite: "fma-regs-h100-pcie.txt _exact register staging, wide-fma off: idx32+affine+pad n=2048/4096/8192 \
-               1.118/6.480/55.381 vs none 1.124/6.482/55.339 ms: no effect; base-h100-pcie.txt / -confirm.txt \
-               (S54) _exact n=2048/4096/8192 OFF/ON cuBLAS-normalized 0.889/0.855/0.860 vs 0.884/0.842/0.825 (ms in \
-               the files); ON under-filled since (n=1024 1.037 vs 1.031, disjoint in both); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 11)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "min-blocks",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "integrated-h100-pcie.txt (with idx32+pad, the cap spills 8-16 B) _c n=2048/4096/8192 on \
-               0.656/3.950/36.832 vs off 0.618/3.729/37.530 ms, _exact on 1.118/6.521/57.781 vs off \
-               1.089/6.366/58.483 ms; kept under-filled on the exact face (n=1024 on 0.193 vs off 0.213 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 12)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "warp",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "integrated-h100-pcie.txt _c n=1024 on 0.139 vs off 0.136 ms; kept filled (n=2048/4096/8192 on \
-               0.656/3.950/36.832 vs off 0.700/4.112/41.546 ms); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 13)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "warp-fill",
-        fill: Fill::Partial,
-        face: Face::Contract,
-        cite: "arch-select-h100-pcie.txt / base-h100-pcie-verify.txt (S54) _c n=1024 on 0.1512 / 0.1524 vs off 0.1445 / \
-               0.1464 ms (cuBLAS-normalized OFF/ON 0.952 / 0.957, disjoint in both); kept on the exact face (on 0.2144 / \
-               0.2163 vs off 0.2192 / 0.2214 ms, 1.025 / 1.028, disjoint in both). S64 class split Under -> Partial \
-               (s64/warp-fill/h100-pcie/results-h100-pcie.txt, mlp_bench two processes ABBA, bit-exact): at 0 warps \
-               per scheduler the residual MLP's contract kernels ON 0.1501/0.1500 vs OFF 0.3726/0.3724 ms (d1024) and \
-               0.0332/0.0332 vs 0.1027/0.1028 ms (d256), null 0.000/0.001; SASS: OFF 8x8 tile, 32-thread blocks, 254 \
-               regs, 0.56/1.12 resident warps per SM; ON 4x4, 2.25/4.49",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "async",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "arch-rungs-rtx-5090.txt _c n=2048/4096/8192 on 0.320/2.346/20.277 vs off 0.315/2.328/19.542 ms, \
-               -confirm.txt on 0.358/3.043/27.908 vs off 0.352/2.991/27.069 ms; kept under-filled (n=1024 on 0.074 \
-               vs off 0.092) and on the exact face (n=2048 on 0.473/0.526 vs off 0.491/0.537 ms, sign unstable at 4096/8192); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 15)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "wide-fma",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "fma-regs-rtx-5090.txt _c register staging n=2048/4096/8192 on 0.344/3.194/26.885 vs off \
-               0.348/2.947/28.434 ms, -run1.txt on 0.313/2.592/19.681 vs off 0.311/2.360/19.382 ms (4096 disjoint); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 16)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "idx32",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "fma-regs-rtx-5090.txt _exact cp.async n=1024..8192 on 0.076/0.588/4.920/40.005 vs off \
-               0.076/0.586/4.907/40.004 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 17)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "affine",
-        fill: Fill::Filled,
-        face: Face::Exact,
-        cite: "fma-regs-rtx-5090.txt _exact cp.async n=2048/4096/8192 on 0.588/4.920/40.005 vs off \
-               0.580/4.876/39.878 ms; kept under-filled (n=1024 on 0.076 vs off 0.084 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 18)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "pad",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "fma-regs-rtx-5090.txt _exact register staging n=2048/4096/8192 on 0.545/4.446/39.511 vs off \
-               0.541/4.613/38.788 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 19)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "idx32",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.074 ms: no effect; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 20)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "affine",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "fma-regs-rtx-5090.txt _c n=1024 (cp.async) on 0.074 vs off 0.078 ms, ranges overlap, one session: \
-               not established; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 21)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "warp-fill",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "warp-fill-rtx-5090.txt _tf n=2048 on 0.2314 vs off 0.2252 ms, disjoint; _c and _exact PTX \
-               byte-identical at every filled size; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 22)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "retain-delta",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "integrated-rtx-4090.txt decode_1024_256 wall, rung on (resident yields) 1589/1568 ms vs off \
-               (resident takes the loop) 905/886 ms exact/contract, 3 procs, disjoint; against S52 round trips the rung \
-               measured 1.57/1.65x (retain-delta-rtx-4090.txt) — resident is the better arm; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 23)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "retain-delta",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "integrated-h100-pcie.txt decode_1024_256 wall, rung on (resident yields) 1756/1906 ms vs off \
-               (resident takes the loop) 1109/1144 ms exact/contract, 3 procs; against S52 round trips 1.53/1.50x \
-               (retain-delta-h100-pcie.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 24)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "async",
-        fill: Fill::Under,
-        face: Face::Any,
-        cite: "integrated-rtx-5090.txt (with warp-fill's 4x4 tile) n=1024 _c on 0.0635 vs off 0.0573 ms, _exact on \
-               0.0737 vs off 0.0676 ms, disjoint; before warp-fill it paid (arch-rungs-rtx-5090.txt n=1024 on 0.074 vs \
-               off 0.092 ms); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 25)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "wide",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "integrated-rtx-5090.txt _tf n=1024 on 0.0492 vs off 0.0389 ms, disjoint; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 26)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "retain-delta",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "integrated-rtx-5090.txt decode_1024_256 wall, rung on (resident yields) 825/847 ms vs off \
-               (resident takes the loop) 630/616 ms exact/contract, 3 procs, disjoint; against S52 round trips \
-               1.63/1.63x (retain-delta-rtx-5090.txt); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 27)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "wide",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "base-rtx-5090.txt / base-rtx-5090-confirm.txt (S54) _tf n=2048/4096/8192 OFF/ON cuBLAS-normalized \
-               0.981/0.993/1.006 vs 0.982/0.999/1.031 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 28)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "affine",
-        fill: Fill::Under,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.996 vs 1.019; _exact n=1024 1.041 vs 1.006 (ms in the files): no size ON-faster in both sessions; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 29)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "async",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.906/0.896/0.928 vs 0.907/0.897/0.879; _exact n=2048/4096/8192 0.936/0.958/0.994 vs 0.925/0.930/0.958; _c n=1024 0.897 vs 0.878; _exact n=1024 1.000 vs 0.951 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 30)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "idx32",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.993/1.004/0.997 vs 1.000/1.005/0.995; _exact n=1024 1.003 vs 0.996 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 31)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "idx32",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.994 vs 1.020 (ms in the files): no size ON-faster in both sessions; with warp-fill off under-filled (S54 arch-select) ON costs: arch-select-rtx-3090-table.txt _c n=1024 0.944 (ms 0.1659 ON vs 0.1556 OFF); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 32)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "interleave",
-        fill: Fill::Under,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 1.000; _exact n=1024 1.003 vs 0.991 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 33)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "ldmatrix",
-        fill: Fill::Any,
-        face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=2048/4096/8192 0.998/1.006/1.019 vs 1.000/1.000/0.997; _tf n=1024 1.000 vs 1.020 (ms in the files): no size ON-faster in both sessions; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 34)",
-    },
-    // S54 arch-select: the FMA tile takes `.minnctapersm` under register
-    // staging on both faces (exact n=1024 1.032 / 1.094 / 1.090, the first
-    // against the shipped bench's null repeat; arch-select-rtx-3090-table.txt exact
-    // n=1024 1.108, contract n=2048/8192 0.9933 / 68.68 ms vs old 1.0445 /
-    // 70.80), the TF32 `mma` kernel does not — the third face key.
-    RungOff {
-        profile: "rtx-3090",
-        rung: "min-blocks",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized: _tf n=1024 \
-               0.890/0.890/0.890 (ms 0.0993 shipped vs 0.1116 ON, cuBLAS 0.0881, both sessions), n=2048/4096/8192 \
-               0.997/1.002/1.000, 1.000/0.993/1.000, 0.994/0.994/1.006: never ON-faster; FMA face ON (_c n=1024 \
-               1.034/1.014/1.041, n=2048 1.057/1.052/1.086, n=8192 1.086/1.070/1.046; arch-select ms n=2048 0.8745 \
-               vs 0.8325, n=8192 51.971 vs 48.936); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 35)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "warp",
-        fill: Fill::Under,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.988 vs 1.006; _exact n=1024 1.022 vs 0.991 (ms in the files): no size ON-faster in both sessions; on warp-fill's tile it paid under-filled contract (arch-select-rtx-3090.txt / -verify2 / -verify 1.055/1.036/1.056); with warp-fill off there (S54 arch-select) it changes no text; S64 evidence: open (benches/results/evidence/s64/judge.tsv row 36)",
-    },
-    // S54 arch-select, one coordinate step for the under-filled FMA class: four
-    // single flips each paid on the warp-fill tile (idx32 ON 1.070/1.050/1.071,
-    // warp ON 1.055/1.036/1.056, unroll OFF 0.948/0.959/0.940, min-blocks ON
-    // 1.033/1.014/1.041) but all of them with warp-fill OFF ran 6% slower than
-    // the S54 table (arch-select-rtx-3090-table.txt _c n=1024 0.1659 vs old 0.1546 ms;
-    // on that table idx32 ON 0.944, unroll OFF 0.931): warp-fill alone ships.
-    RungOff {
-        profile: "rtx-3090",
-        rung: "warp-fill",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "arch-select-rtx-3090.txt / base-rtx-3090-verify2.txt / -verify.txt OFF/ON cuBLAS-normalized, disjoint in \
-               every session: _c n=1024 0.935/0.959/0.940 (ms 0.1546 vs OFF 0.1444; -verify2 0.1608 vs 0.1454), _tf \
-               n=1024 0.887/0.887/0.876 (ms 0.0993 vs OFF 0.0881 = cuBLAS's 0.0881; arch-select-rtx-3090-table.txt 0.0881 vs \
-               old 0.0993); kept on the exact face (_exact n=1024 1.057 / 0.961 / 0.960: no stable sign). S64: open, \
-               the Partial split measured and not taken (s64/warp-fill/rtx-3090/results-rtx-3090.txt, \
-               s64/endcheck/rtx-3090/results-rtx-3090.txt, two processes ABBA): at 0 warps per scheduler the residual \
-               MLP's contract kernels ON 0.1630/0.1629 vs OFF 0.3092/0.3092 ms (d1024), 0.0338/0.0338 vs \
-               0.0707/0.0715 ms (d256), 128x2048x7168 _c ON/OFF 0.523, but the default and _rc faces 1.179 / 1.058 \
-               (null 0.003): the filled tile lowers the split count (atomic S 8 -> 2, workspace S 4 -> 2)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "wide",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.812 vs 1.009 (ms in \
-               the files): no size ON-faster in both sessions; kept filled: _tf n=2048/4096/8192 1.011/1.017/1.023 vs \
-               1.008/1.010/1.004, and with it off base-rtx-3090-verify.txt _tf 2048/4096 0.781/5.358 vs 0.741/5.129 ms \
-               (cuBLAS 0.681/5.141 vs 0.677/5.090); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 38)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "wide-fma",
-        fill: Fill::Filled,
-        face: Face::Exact,
-        cite: "base-rtx-3090.txt / base-rtx-3090-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.959/0.936/0.991 vs 0.956/0.904/0.961 (ms in the files): no size ON-faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 39)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "retain-delta",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-rtx-3090.txt decode_1024_256 wall, rung on (resident yields) 2.715/2.697 s vs off (resident takes \
-               the loop) 1.473/1.473 s exact/contract, 3 procs; base-rtx-3090-confirm.txt 1.386/1.396 vs 0.935/0.942 s (ms: \
-               the files' trace totals); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 40)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "affine",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 1.004/1.006/0.991 vs 1.019/1.012/0.986; _exact n=1024 0.997 vs 0.993 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "async",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.940/0.908/0.874 vs 0.951/0.917/0.883; _exact n=2048/4096/8192 0.790/0.894/0.901 vs 0.810/0.910/0.909; _c n=1024 0.862 vs 0.867; _exact n=1024 0.950 vs 0.940 (ms in the files): no size ON-faster in both sessions",
-    },
-    // S54 arch-select closes the open filled-contract row: two sessions on the
-    // shipped table (async and wide-fma off) put idx32 ON there.
-    RungOff {
-        profile: "a100",
-        rung: "idx32",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.979/0.996/0.997 vs \
-               1.008/1.003/1.004; _exact n=1024 0.993 vs 0.977 (ms in the files); arch-select-a100.txt / \
-               base-a100-verify3.txt _exact n=1024 0.900 / 0.899, n=2048/4096/8192 0.987/0.992/0.992 vs \
-               1.000/0.992/0.991: never ON-faster",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "idx32",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _c n=1024 0.987 / 0.989: never \
-               ON-faster; ON filled since (_c n=4096 1.015 / 1.013, n=8192 1.015 / 1.018; ms n=4096 8.153 / 7.904 \
-               shipped vs 8.034 / 7.800 ON, n=8192 62.890 / 59.666 vs 61.810 / 58.606)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "interleave",
-        fill: Fill::Under,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.990 vs 0.993; _exact n=1024 1.009 vs 0.989 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "min-blocks",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized (cp.async): no size ON-faster in both sessions (_c n=2048/4096/8192 1.001/1.010/1.008 vs 1.013/1.001/1.002, ms in the files); with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 1.018/1.033/1.041 then 1.000/1.000/1.000, _exact 1.001/0.999/0.998 then 1.006/1.000/1.000: no stable sign; ON under-filled (_c n=1024 1.119 then 1.110, _exact 1.084 then 1.080)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "unroll",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _exact n=2048/4096/8192 0.856/0.936/0.940 vs 0.871/0.941/0.944; _exact n=1024 1.018 vs 1.007 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "warp",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=1024 0.991 vs 0.987; _exact n=1024 1.001 vs 0.991 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt filled _c 0.986/0.970/0.966 (verify2: the on-warp contract kernel is byte-identical), _exact 0.988/0.995/0.995 then 1.016/1.006/1.005: no stable sign",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "wide",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _tf n=1024 0.986 vs 0.962 (ms in the files): no size ON-faster in both sessions",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "wide-fma",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "base-a100.txt / base-a100-confirm.txt OFF/ON cuBLAS-normalized: _c n=2048/4096/8192 0.949/0.937/0.904 vs 0.960/0.947/0.919; _exact n=2048/4096/8192 0.807/0.906/0.909 vs 0.820/0.908/0.909 (ms in the files): no size ON-faster in both sessions; with async off (register staging): base-a100-verify.txt then base-a100-verify2.txt _c 1.019/1.041/1.053 then 0.984/0.991/0.994: the sign changes between sessions; S54 arch-select (arch-select-a100.txt / base-a100-verify3.txt): alone +1.0-1.7% (_c n=4096/8192 1.010/1.013 vs 1.010/1.017), but with idx32 ON (which ships) it costs: on-fma-regs (= idx32 + wide-fma on this face) n=4096 8.195 / 7.942 ms vs idx32 alone 8.034 / 7.800 ms",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "ldmatrix",
-        fill: Fill::Under,
-        face: Face::Tf32,
-        cite: "arch-select-a100.txt / base-a100-verify3.txt OFF/ON cuBLAS-normalized _tf n=1024 0.967 / 0.951 (ms 0.0840 / \
-               0.0840 ON vs 0.0881 / 0.0799 OFF, cuBLAS 0.0471 / 0.0481 vs 0.0512 / 0.0481); kept filled (n=2048/4096/8192 \
-               1.049/1.020/1.024 vs 1.017/1.024/1.022)",
-    },
-    // S54 `rowfold-layout` (the reader-chosen store order): the strided fold the
-    // row-major store leaves costs 0.01–0.1 ms at 4096 (L1 serves each sector to
-    // the next 7 steps), and the column-major store costs the FMA tile more. Read
-    // on the device clock (traced kernel sums, site + fold, column-major vs
-    // row-major): the rung changes only kernels, and the probes' own clock is
-    // host-noise-bound at that size (probe_rungs.py).
-    RungOff {
-        profile: "rtx-3090",
-        rung: "rowfold-layout",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "rowfold-rtx-3090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
-               4096 9.081 vs 8.994, 9.856 vs 9.790; _c 4096 5.637 vs 5.624, 5.936 vs 5.929; 2048 within 0.4%: no \
-               size faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 52)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "rowfold-layout",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "rowfold-rtx-5090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
-               4096 3.478 vs 3.432, 3.378 vs 3.330; _c 4096 2.216 vs 2.153, 2.161 vs 2.088 (2048 2.5-2.8% faster, \
-               0.506 vs 0.519, 0.490 vs 0.504 ms: the 4096 loss in both sessions decides the class); S64 evidence: open, re-measured ON slower, no static cost (benches/results/evidence/s64/judge.tsv row 53)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "rowfold-layout",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "rowfold-h100-pcie.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
-               4096 7.851 vs 6.451, 9.101 vs 7.615; _c 4096 4.033 vs 3.760, 4.735 vs 4.441; 2048 the same sign; \
-               -v2.txt / -v2-confirm.txt too (_exact 4096 8.97 vs 7.52 ms): the HBM part pays 7-22% for the \
-               column-major tile store; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 54)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "rowfold-layout",
-        fill: Fill::Any,
-        face: Face::Exact,
-        cite: "rowfold-rtx-4090.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _exact \
-               4096 4.189 vs 4.018, 4.267 vs 4.160 (the exact tile pays 4-6% for the store); kept on the contract \
-               face: _c 4096 2.507 vs 2.564, 2.605 vs 2.640 and 2048 0.315 vs 0.435, 0.327 vs 0.361 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 55)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "rowfold-layout",
-        fill: Fill::Any,
-        face: Face::Contract,
-        cite: "rowfold-a100.txt / -confirm.txt pt_rowsum traced kernel ms, column-major vs row-major: _c 4096 \
-               8.326 vs 8.162, 10.694 vs 10.488; kept on the exact face: _exact 2048 2.392 vs 2.428, 3.080 vs \
-               3.120 and 4096 15.479 vs 15.568, 19.911 vs 20.027 ms",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "retain-delta",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "base-a100.txt decode_1024_256 wall, rung on (resident yields) 2.229/2.233 s vs off (resident takes the \
-               loop) 1.311/1.338 s exact/contract, 3 procs; base-a100-confirm.txt 2.219/2.081 vs 1.467/1.494 s (ms: the \
-               files' trace totals)",
-    },
-    // S54 `l2-raster` (benches/results/gpu/memory/l2-raster/l2-raster-tables.md). `raster`'s derivation groups
-    // only where one block's panels leave the L2 (the 3090 at 8192); there it measured no stable
-    // sign. S56 removes the disputed 5090 `l2-gate` OFF override: integrated a2/b Contract FMA
-    // lacks a repeatable >1% kernel gain. TF32/8192 retains ~1.5% null-corrected median gains,
-    // but all raster/gate distributions overlap, below the declared conservative acceptance bar.
-    // The derived gate and forced measurement arms remain; no whole-program gain is claimed.
-    // s56-selection-rtx-5090-{a2,b}.txt and docs/performance/gpu/validation/architecture-selection.md preserve
-    // that counterevidence. L2-window is OFF on all measured profiles after the S56 iteration check.
-    RungOff {
-        profile: "rtx-3090",
-        rung: "raster",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-rtx-3090-run2.txt / -run3.txt mm_8192 OFF/ON cuBLAS-normalized exact 0.986 / 1.029, \
-               contract 0.992 / 1.017, TF32 0.991 / 0.956 (ON ms 92.743/55.147/34.632 vs OFF 91.632/54.659/34.341; \
-               116.792/93.411/52.706 vs 123.827/90.284/53.472): no face faster in both sessions; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 58)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "l2-window",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-rtx-3090*.txt: no probe has an operand within the 6 MB L2 (pt_* at 2048 are 16 MB), so no \
-               probe row has a window arm (0 ms measured): unmeasured, not shipped; S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 59)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "l2-window",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-a100{,-confirm,-run2,-run3,-run5}.txt pt_{mlp,mlp2,diamond}_2048 traced kernel ms off/on: \
-               25 of 30 cells <= 1.000, none > 1.01 in every session (mlp2_2048_c 0.994/0.998/0.995/0.965/0.994)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "l2-window",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-rtx-4090-run2.txt / -run4.txt / l2-raster-rtx-4090.txt traced kernel ms off/on: \
-               diamond_2048_c 0.933 / 0.939 / 0.959, mlp2_2048_c 0.938 / 0.949 / 0.954 (the window costs on \
-               contract); exact 0.977-1.003; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 61)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "l2-window",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "l2-raster-rtx-5090{,-run2,-run3,-run4,-run5}.txt traced kernel ms off/on: 60 cells 0.976-1.005, \
-               none > 1.01 in any session (diamond_2048_c 0.988/0.989/0.976/0.991/0.986); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 62)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "l2-window",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "s56-selection-h100-pcie.txt integrated 15-rep OFF/ON iteration, contract 2048: diamond \
-               1.934879/1.969309, mlp2 2.589975/2.643185, mlp 1.291543/1.357854 ms (overlapping ranges). \
-               Traced kernels 0.998/1.007/1.007x do not establish an iteration win; 4096 arms are identical. \
-               Prior l2-raster-h100-pcie{-run2,-run3}.txt likewise lacks a stable iteration win. \
-               Disputed S54 selection fails initial acceptance; OFF is not claimed faster on every host; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 63)",
-    },
-    // Historical S54 R5 (`retain-resident`, `delta-h2d`, `lane-stride`) decisions used
-    // decode_1024_256 with both faces pooled, by the loop time — the traced process wall minus its
-    // own `load_ms` (context + module: 170–790 ms and, on the H100s, ±200 ms between processes,
-    // which no arm changes). ON where OFF/ON > 1.01 in both sessions (two boxes); the process wall
-    // is in the files beside it. `delta-h2d` and `lane-stride` measured ON on all five parts.
-    // S56 rechecks the disputed H100 choice per face on untraced process wall. Traced kernel
-    // savings are diagnostic, not proof of a process speedup; the initial S54 acceptance bar applies.
-    // cpu-gpu-boundary: retention ships ON on the H100 too — its S54/S56/S65 row is removed. Shipped vs
-    // `.on-retain-resident`, ABBA x5, program iter ms (benches/results/evidence/cpu-gpu-boundary/report.md,
-    // h100-pcie): causal 0.922 (null 0.020), prefill 0.949 (null 0.040), decode 0.940 (null 0.077, inside it,
-    // not slower); the flow sweep measured causal 0.678 / prefill 0.787 (null 0.027 / 0.025): the same sign in
-    // two sessions. Explained by the OFF trace (h100-pcie/prof-h100-pcie.tgz) and the ON emission: OFF rebuilds
-    // K/V in full every trip (stream-K tile 8065b046, 228 CTAs, 2048 x 11.6 us = 23.7 ms in causal, 23.8 in
-    // decode) plus 2048-3072 1 MB memsets (2.9 / 4.5 ms); ON emits the one-row site 3881eb4b (1 CTA, 8 LDG +
-    // 4 FFMA per hot-loop trip). Each saving (causal 15.1, prefill 5.0, decode 4.2 ms) is below the work it
-    // removes. The win shrank from the flow sweep because nest-cell keeps causal's K/V readers on the device:
-    // OFF no longer copies 2148 MB D2H per run (9.2 MB now).
-    // S65: with the loop residue gone (by-ref), retention ships ON on the 4090 and the 5090 — the S54
-    // rows for both are removed. decode_1024_256 shipped / retain-resident ON, 30 interleaved reps:
-    // 4090 40.58 vs 33.05 ms, ON/OFF 0.824 (per rep 1.192..1.252 faster, null 0.050); 5090 42.71 vs
-    // 36.69 ms, 0.857 (1.122..1.191, null 0.037). Explained by the traced kernels: the 1024-row K/V
-    // tile site (2048 launches, 22.34 / 23.69 ms) becomes its one-row site (2046 launches, 14.94 /
-    // 17.49 ms); benches/results/evidence/s65/{rtx-4090,rtx-5090}.
-    // S54 R7 (`streams`, `pinned`, `pdl`): host rungs, read per module, so every row is Fill::Any.
-    // Medians of the program's own `iter ms` over 9-15 interleaved reps, `exact / contract`.
-    // `streams` ships ON (no row) on the A100, measured on the device-only shape
-    // (pt_twin, two independent sites): A100 n=512 one stream 1.040/0.972, 1.054/0.960, 0.518/0.486
-    // vs streams 1.000/0.937, 0.969/0.898, 0.483/0.437 ms and n=2048 (last waves merge) 7.936/5.030,
-    // 7.866/5.083, 6.039/3.807 vs 6.229/3.818, 6.204/3.716, 4.562/2.653 ms (streams-a100-confirm.txt,
-    // -final.txt, -shipped.txt). The disputed 5090 choice is superseded by the integrated S56
-    // comparison below; traced kernels serialize streams and cannot establish overlap.
-    RungOff {
-        profile: "rtx-3090",
-        rung: "streams",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "streams-rtx-3090-confirm.txt / -final.txt pt_twin_512 (device-only) on 0.971/0.941 vs off \
-               0.967/0.945 ms, on 0.706/0.700 vs off 0.711/0.696 ms: no effect in two sessions; every probe with a \
-               host join slower on streams (streams-rtx-3090.txt, -confirm.txt: diamond_512 0.82-0.88x, mlp2_512 \
-               0.62-0.84x); S62 after the dead-output DCE (s62/runtime-measurements/rtx-3090/summary-rtx-3090.md, \
-               two sessions): shipped/on-streams iter 0.02-0.40, 12 of 12 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 67)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "streams",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "streams-rtx-4090-final.txt pt_twin_512 on 0.448/0.387 vs off 0.442/0.364 ms, pt_twin_1024 on \
-               0.961/0.926 vs off 0.911/0.873 ms: streams slower; host-joined probes slower too (streams-rtx-4090.txt \
-               diamond_512 0.85-0.95x, mlp2_512 0.85-0.86x); \
-               S62 after the dead-output DCE (s62/runtime-measurements/rtx-4090/summary-rtx-4090.md, \
-               two sessions): shipped/on-streams iter 0.18-0.31, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 68)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "streams",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "s56-selection-rtx-5090-a2.txt / -b.txt, independent machines 55053/55265, 15 interleaved reps: \
-               all 16 changed probe/face cells per host favor OFF with disjoint iteration ranges. \
-               mlp2_4096 OFF/ON exact 0.836/0.791, contract 0.765/0.702; twin_4096 a2 exact \
-               7.012/7.521 ms, contract 4.395/5.110 ms. 1024/2048 arms identical; no ON gain established; \
-               S62 after the dead-output DCE \
-               (s62/runtime-measurements/rtx-5090/summary-rtx-5090.md, two sessions): shipped/on-streams iter \
-               0.11-0.19, 8 of 8 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 69)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "streams",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_twin_512: streams-h100-final.txt (H100 SXM, no PCIe box left) on 0.752/0.739 vs off \
-               0.763/0.762 ms, one session inside the H100 noise floor; streams-h100-pcie-confirm.txt on \
-               4.089/3.570 vs off 3.802/0.855 ms (that box's reps spread 0.45-4.1 ms): not established; \
-               S62 after the dead-output DCE \
-               (s62/runtime-measurements/h100-pcie/summary-h100.md, H100 PCIe + H100 SXM sessions): shipped/on-streams \
-               iter 0.07-0.89, 16 of 16 cells stable- (chains drop the arena); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 70)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "pinned",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_loop_2048 (copies in the loop pinned): streams-rtx-3090.txt on 130.755/126.012 vs off \
-               131.314/125.685 ms, -confirm.txt on 107.350/103.422 vs off 103.603/98.630 ms, -final.txt on \
-               110.819/106.843 vs off 114.186/108.992 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 71)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "pinned",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_loop_2048: streams-rtx-4090.txt on 108.529/105.036 vs off 105.843/105.855 ms, -final.txt on \
-               69.409/68.007 vs off 70.917/69.474 ms: no stable sign (the session-1 box copies pageable at the pinned \
-               rate, 13.3 vs 13.4 GB/s); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 72)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "pinned",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_loop_2048: streams-h100-pcie.txt on 75.623/69.702 vs off 72.974/73.441 ms, -confirm.txt on \
-               70.811/69.016 vs off 72.437/69.029 ms: no stable sign; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 73)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "pinned",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_loop_2048: streams-a100.txt on 97.927/93.810 vs off 103.262/95.645 ms, -confirm.txt on \
-               100.516/90.376 vs off 105.920/94.261 ms, -final.txt on 128.398/119.525 vs off 129.161/118.392 ms: \
-               positive on the two boxes whose pageable copy runs at 0.56-0.84 of pinned, negative on the one at \
-               0.98 — a host fact, not the part's",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "pinned",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "pt_loop_2048: streams-rtx-5090.txt on 77.545/75.830 vs off 92.102/88.746 ms, -confirm.txt on \
-               50.086/48.318 vs off 58.865/57.286 ms (pageable 9-19 GB/s vs pinned 26-52), -final.txt on \
-               57.786/56.476 vs off 55.170/53.483 ms (pageable = pinned, 14 GB/s): the sign follows the host; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 75)",
-    },
-    // cpu-gpu-boundary `async-h2d` (and `stage`, inert without it): no win on any part — the S63 rule
-    // (no win is a row). benches/results/evidence/cpu-gpu-boundary/report.md, shipped vs `.off-async-h2d`
-    // over 25 programs, ABBA x5, program iter ms: 0 faster / 0 slower beyond each arm's null; smoke
-    // (smoke-rtx-4090/ratios.txt, 32 arms) 0 faster, ew_4096 contract 1.108 slower. Explained by the
-    // movement: the only in-clock uploads are causal/prefill/decode's 1 KB row per trip (1024 x 0.3-1.0 us,
-    // nsys) and each trip ends in a copy-out the host reads, so no upload wait is left to hide; `stage`
-    // measured 1.00 the same way (4090 0.970-1.038, 5090 0.995-1.102, H100 0.913-1.105, 3090 0.970-1.161).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "async-h2d",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "cpu-gpu-boundary/rtx-4090/results-rtx-4090.txt.gz: ON/OFF median 1.001 (0.963 loopmm .. 1.031 \
-               ew_4096), 0/0 beyond null, iter summed ON 281.5 vs OFF 281.7 ms; smoke-rtx-4090/ratios.txt ew_4096 \
-               contract 1.108 slower",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "async-h2d",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "cpu-gpu-boundary/rtx-5090/results-rtx-5090.txt.gz: ON/OFF median 1.003 (0.997 softmax_rows .. \
-               1.157 ew_4096, null 0.147), 0/0 beyond null, iter summed ON 228.0 vs OFF 228.0 ms",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "async-h2d",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "cpu-gpu-boundary/h100-pcie/results-h100-pcie.txt.gz: ON/OFF median 1.001 (0.958 firew_rowsum .. \
-               1.077 attn, null 0.124), 0/0 beyond null, iter summed ON 436.1 vs OFF 433.7 ms",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "async-h2d",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "cpu-gpu-boundary/rtx-3090/results-rtx-3090.txt.gz: ON/OFF median 0.999 (0.983 attn .. 1.075 \
-               causal, null 0.134), 0/0 beyond null, iter summed ON 387.4 vs OFF 372.9 ms",
-    },
-    // recurrence-precision `fold-lanes`: its emission differs only on the 4090 (the one part whose
-    // rowsum keeps a standalone rowfold, cpu-gpu-boundary `tree-gate`), and there the rowfold reads a
-    // column-major operand, so one thread a row is already coalesced and the warp-a-row form strides
-    // its lanes across columns. Explained by the fold kernel alone (probe_kernels, 2 reps each).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "fold-lanes",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "recurrence-precision/sweep-rtx-4090/results-rtx-4090.txt.gz: ON/OFF rowfold kernel pt_rowsum_2048 \
-               0.024/0.023 vs off 0.020/0.020 ms, pt_rowsum_4096 0.088/0.088 vs off 0.075/0.075 ms; program \
-               OFF/ON 0.98 (null 1.3%) / 0.99 (null 0.6%), smoke-rtx-4090/ratios.txt 1.004 / 0.994: no \
-               positive sign",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "pdl",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "streams-h100-pcie.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.211/1.174 vs off \
-               1.243/1.269 ms, then 1.936/1.808 vs 1.716/1.931 ms; pt_diamond_2048 10.037/9.153 vs 10.416/8.907, \
-               then 20.825/24.517 vs 26.320/24.602 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 76)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "pdl",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "streams-rtx-5090.txt / -confirm.txt: no probe with a stable sign (pt_mlp_512 on 1.031/1.069 vs off \
-               1.123/1.063 ms, then 0.432/0.422 vs 0.415/0.410 ms; pt_diamond_2048 8.540/8.259 vs 8.662/8.566, then \
-               6.119/5.545 vs 6.122/5.549 ms); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 77)",
-    },
-    // S62 ordered tile geometry: benches/results/gpu/s62/geometry/v2/<part>/results-<part>.txt and
-    // -pass2.txt (ABBA), OFF/ON per pass, each bench normalized by its own cuBLAS leg; no effect
-    // within max(1%, that session's largest null-arm deviation).
-    RungOff {
-        profile: "rtx-5090",
-        rung: "wave-gate",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _c 16x18432x7168 OFF/ON 0.223/0.225: on 2.0659 ms (the \
-               one-thread-per-cell kernel) vs off 0.4628 ms (row-fit, 144 blocks on 170 SMs); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 78)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "row-fit",
-        fill: Fill::Filled,
-        face: Face::Exact,
-        cite: "s62 v2 results-rtx-5090.txt / -pass2.txt _exact 16x18432x7168 OFF/ON 0.988/0.994, no effect within \
-               the session null 7.9%: on 0.3420 vs off 0.3420 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 79)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "grid-share",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt _exact OFF/ON 1024 0.986/0.998, 128x1024x4096 0.998/1.012, \
-               128x2048x7168 1.025/1.120, 16x1024x4096 0.970/0.984 (no stable gain; null 2.9%); probes \
-               pt_rmlp_128x1024x2048 / pt_rmlp_128x256x512 traced kernel ms on 0.112 / 0.050 vs off 0.095 / 0.038; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 80)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "row-fit",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "s62 v2 results-rtx-4090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.965/0.963, _exact 0.963/0.965 \
-               (disjoint): on 0.6431 / 0.6451 vs off 0.6175 / 0.6175 ms; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 81)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "grid-share",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x2048x7168 OFF/ON 1.013/1.014, no effect within the \
-               session null 2.6% (ms in the files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 82)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "row-fit",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.900/0.901, _exact 0.856/0.856 \
-               (disjoint; ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 83)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "wave-gate",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s62 v2 results-h100-pcie.txt / -pass2.txt _c 16x1024x4096 OFF/ON 0.832/0.834 (disjoint; ms in the \
-               files); S64 evidence: unverified (no in-class cell) (benches/results/evidence/s64/judge.tsv row 84)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "grid-share",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.838/0.831, _exact 0.983/0.935; \
-               16x18432x7168 _c 0.998/1.000, _exact 1.001/1.000 (ms in the files); S64 evidence: open (benches/results/evidence/s64/judge.tsv row 85)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "panel-regs",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x2048x7168 OFF/ON _c 0.873/0.859, _exact 0.939/0.884 \
-               (ms in the files); S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 86)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "row-fit",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "s62 v2 results-rtx-3090.txt / -pass2.txt 16x18432x7168 OFF/ON _c 0.962/0.968, _exact 0.994/0.998, \
-               no stable gain (null 4.3%; ms in the files); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 87)",
-    },
-    // S62 `asyncstage` (`benches/results/gpu/s62/asyncstage/`, r1 = round1/, r2 = round2/ on another
-    // box): its kernel gains are DRAM-latency hiding — with L2 flushed before every launch it wins on
-    // every part but the 3090, with operands left in L2 (`tile_bench --warm`) the signs split, and
-    // the composed residual MLP (operands device-produced, one iteration) is slower on all four. The
-    // fact that separates the cells (where an operand is read from: DRAM or L2) is not one the
-    // launch consumes yet, so the rung ships OFF in every class.
-    RungOff {
-        profile: "rtx-5090",
-        rung: "asyncstage",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "r1/r2 results-rtx-5090.txt: flushed L2 wins (r1 _c 16x2048x7168 on 0.1065 vs off 0.1167 ms), \
-               warm L2 loses (r2 l2=warm _exact 128x1024x1024 on 0.0348 vs off 0.0287 ms); pt_rmlp256x512_128 \
-               _exact iter on 0.1220 vs off 0.0868 ms (r1), 0.2536 vs 0.1531 ms (r2); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 88)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "asyncstage",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "r1/r2 results-rtx-4090.txt: flushed _c n=1024 on 0.0707 vs off 0.0666 ms (r1), warm L2 _c \
-               16x2048x7168 on 0.1208 vs off 0.1116 ms (r2); pt_rmlp256x512_128 _exact iter on 0.1179 vs off \
-               0.0759 ms (r1), 0.1174 vs 0.0703 ms (r2); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 89)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "asyncstage",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "r1 results-h100-pcie.txt (an H100 SXM box): flushed L2 wins 1.216-1.838 on every cell, but \
-               pt_rmlp256x512_128 _c iter on 0.4034 vs off 0.2585 ms, _exact 0.2812 vs 0.1876 ms; \
-               pt_rmlp1024x2048_128 _exact 0.3402 vs 0.2914 ms; r2 results-h100-pcie.partial-50562987.txt (an \
-               H100 PCIe box): flushed _c n=1024 on 0.1724 vs off 0.1292 ms; r2 partial-41555537 (SXM) warm L2 \
-               _c 128x256x256 on 0.0223/0.0221 vs off 0.0210/0.0209 ms; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 90)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "asyncstage",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "r1 results-rtx-3090.txt: flushed L2 _c 16x2048x7168 on 0.3328 vs off 0.3113 ms, _c n=1024 \
-               0.2028 vs 0.1567 ms, _exact 128x2048x7168 0.5396 vs 0.4055 ms; pt_rmlp256x512_128 _exact iter \
-               on 0.1421 vs off 0.0913 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 91)",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "asyncstage",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "not measured on an A100: held OFF with the four measured parts, whose composed residual MLP is \
-               slower with it on every one (r1 results-rtx-4090.txt pt_rmlp256x512_128 _exact iter on 0.1179 vs \
-               off 0.0759 ms)",
-    },
-    // S62 `splitk` (ADR-0040): ON beats its ordered OFF arm beyond the box's null
-    // in every other split cell on all four parts, both step faces
-    // (`benches/results/gpu/s62/splitk-reassoc/<part>/results-<part>.txt`).
-    RungOff {
-        profile: "rtx-3090",
-        rung: "splitk",
-        fill: Fill::Filled,
-        face: Face::Exact,
-        cite: "s62/splitk-reassoc/rtx-3090/results-rtx-3090.txt mm_16x2048x7168_r (S=4, the class's only split \
-               cell): ON 0.5458/0.5396 vs off-splitk 0.4813/0.4792 ms, ON/OFF 1.134/1.126 against a null of \
-               0.013/0.010, two processes ABBA; the fma face keeps it (_rc ON/OFF 0.784/0.789); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 93)",
-    },
-    // S62 integration (`benches/results/gpu/s62/integrated/<part>/results-<part>.txt`: every S62
-    // item merged, each gate/partial rung left out one at a time, two tile_bench processes ABBA
-    // and 30 whole-program processes). A rung ships OFF in a (fill, face) class only where every
-    // cell it changes there ran faster without it, beyond that run's null; the reassociation
-    // arms (`_r`, `_rc`) count in their step face's class (`Face::of`).
-    RungOff {
-        profile: "h100-pcie",
-        rung: "row-fit",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096_c (with cell-fill merged the \
-               fitted 8-block grid now loses to the cell tile): ON 0.4332/0.4327 vs off-row-fit 0.1018/0.1011 ms \
-               (null 0.001); the class's other cells unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 94)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "grid-share",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off \
-               0.0947/0.0944 ms, _r ON 0.0712/0.0703 vs off 0.0429/0.0420 ms (kernel null 0.010); \
-               pt_rm_m128_d1024_h2048 iter ON 0.4060 vs off 0.2940 ms, pt_rm_m128_d256_h512 0.2390 vs 0.1937 ms; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 95)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "fill-rows",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "s62/integrated/h100-pcie/results-h100-pcie.txt mm_16x1024x4096 ON 0.1146/0.1134 vs off-fill-rows \
-               0.0907/0.0904 ms (null 0.010; the cell tile takes the site); the class's whole programs unchanged; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 96)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "panel-regs",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "s62/integrated/confirm/h100-pcie/results-h100-pcie.txt (with the three rows above, the class's \
-               kernel cells take the cell tile, which panel-regs leaves unchanged): pt_rm_m128_d1024_h2048 iter ON \
-               0.1865 vs off 0.1783 ms, pt_rm_m128_d256_h512 0.1022 vs 0.0684 ms (30 processes each, null \
-               0.001/0.003); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 97)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "splitk",
-        fill: Fill::Under,
-        face: Face::Exact,
-        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt mm_16x1024x4096_r (the class's only split cell): ON \
-               0.0758/0.0676 vs off-splitk 0.0655/0.0594 ms, ON/OFF 1.157/1.138 (kernel null 0.016); S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 98)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "grid-share",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3701 \
-               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1591 ms (30 processes each, null 0.019/0.034); the class's \
-               kernel cells unchanged; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 99)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "panel-regs",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s62/integrated/rtx-3090/results-rtx-3090.txt pt_rm_m128_d1024_h2048_c iter ON 0.4129 vs off 0.3668 \
-               ms, pt_rm_m128_d256_h512_c 0.2931 vs 0.1574 ms (30 processes each, null 0.019/0.034); the class's \
-               kernel cells unchanged; S64 evidence: no-op at cited cells (benches/results/evidence/s64/judge.tsv row 100)",
-    },
-    // S63 (ADR-0040 D5) the default face's realizations, `benches/results/gpu/s63/default-float/<part>/
-    // results-<part>.txt`: per cell the ON arm against the next realization down (`.off-<rung>`), two
-    // tile_bench processes ABBA, L2 flushed, every arm inside ADR-0040 D2's bound first. A rung stays
-    // ON in a (fill, Contract) class only where no cell it changes there is slower than its OFF arm
-    // beyond that run's null and one is faster beyond it (the pre-registered rule): one loss, or no
-    // win, is a row — the class's wins it forgoes are cited with it.
-    RungOff {
-        profile: "rtx-5090",
-        rung: "streamk",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s63/default-float/rtx-5090/results-rtx-5090.txt mm_16x2048x7168: ON 0.0860/0.0860 vs off-streamk \
-               0.0819/0.0819 ms, ON/OFF 1.050/1.050, null 0.012; forgone 128x2048x7168 0.851/0.863; \
-               16x1024x4096 inside null (0.958/1.000); S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 101)",
-    },
-    RungOff {
-        profile: "rtx-4090",
-        rung: "streamk",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s63/default-float/rtx-4090/results-rtx-4090.txt mm_16x18432x7168 (the only cell it changes): ON \
-               0.6537/0.6543 vs off-streamk 0.6185/0.6176 ms, ON/OFF 1.057/1.059, null 0.002; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 102)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "streamk",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt mm_4096x4096x4096: ON 5.0664/5.0721 vs \
-               off-streamk 4.4731/4.4743 ms, ON/OFF 1.133/1.134, null 0.000; forgone 16x18432x7168 0.748/0.748; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 103)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "splitk-atomic",
-        fill: Fill::Any,
-        face: Face::Contract,
-        cite: "s63/default-float/h100-pcie/results-h100-pcie.txt against the workspace split, no win in either \
-               class: mm_16x1024x4096 (under) 0.0506/0.0508 vs 0.0510/0.0508 ms (0.992/1.000, null 0.004), \
-               mm_16x2048x7168 (filled) 0.0977/0.0978 vs 0.0981/0.0980 ms (0.996/0.998, null 0.002); S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 104)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "streamk",
-        fill: Fill::Under,
-        face: Face::Contract,
-        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_128x2048x7168 against the atomic split: ON \
-               0.3338/0.3328 vs 0.3205/0.3185 ms, ON/OFF 1.041/1.045, null 0.003; forgone 16x1024x4096 \
-               0.880/0.863; S64 evidence: open, re-measured ON faster at a cited cell (benches/results/evidence/s64/judge.tsv row 105)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "streamk",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 against the atomic split: ON \
-               0.1495/0.1485 vs 0.1198/0.1178 ms (1.248/1.261, null 0.007); mm_4096x4096x4096 7.1977/7.3185 vs \
-               7.0277/7.1127 ms (1.024/1.029, null 0.014); forgone 16x18432x7168 0.924/0.928; S64 evidence: explained, ON slower re-measured (benches/results/evidence/s64/judge.tsv row 106)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "splitk-atomic",
-        fill: Fill::Filled,
-        face: Face::Contract,
-        cite: "s63/default-float/rtx-3090/results-rtx-3090.txt mm_16x2048x7168 (the only cell it changes) \
-               against the workspace split: 0.1198/0.1178 vs 0.1198/0.1188 ms (1.000/0.992, null 0.007) — no \
-               win; S64 evidence: explained (benches/results/evidence/s64/judge.tsv row 107)",
-    },
-    // site-geometry `tf32-radix` (integrate review, high): its `mma.sync` tile's 4-byte `cp.async` digit copies and
-    // cell-by-cell digit store never ran locally (the emulator runs no `mma.sync`): OFF on every part no box has
-    // value-gated it on yet. Lifted on rtx-3090 by the site-geometry sweep: the forced-ON arm of
-    // convmc_8_64_56_3_tf32 is within its a-priori bound (K=576) and ON 0.1327 vs OFF 0.1671 ms (null 1.1 %), also
-    // ahead of the FFMA tile with `fit-first` off (0.1477 ms): 32 `mma.sync` + 54 `cp.async` replace the 1024-FFMA
-    // hot loop (sweep/rtx-3090/evidence-rtx-3090.tsv).
-    RungOff {
-        profile: "h100-pcie",
-        rung: "tf32-radix",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
-               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
-               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "tf32-radix",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt: values within the bound \
-               (K=576), ON 0.07003 vs OFF 0.08518 ms (null 1.0 %), but the FFMA tile with `fit-first` off (its row \
-               below) runs 0.06797 ms: the mma.sync tile loses to the tile it replaces once that tile is fitted",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "tf32-radix",
-        fill: Fill::Any,
-        face: Face::Tf32,
-        cite: "values unchecked here: site_geometry.rs tf32-radix assembles 14 of 14 programs, \
-               runs 0 (no mma.sync in the emulator, so no ms either); gated on the 4090 alone by \
-               benches/results/evidence/site-geometry/smoke/results-rtx-4090.txt — a box value gate lifts this row",
-    },
-    // site-geometry judge — stopgaps, each citing its open item in docs/performance/evidence/site-geometry.md
-    // (a rung whose sign turns on a fact the launch does not read yet ships OFF only where it lost every measured
-    // program; the fact that separates its winners is the item).
-    // `row-split` (open G2): on these parts the one-row pass takes the atomic combine — a naive kernel with
-    // `atom.add`, 1-2 FMA in its hot loop vs 8 unrolled OFF, and 2 more zero launches per decode trip
-    // (host.calls.zero 8 vs 6); on h100-pcie (no `splitk-atomic`) it takes the workspace split S=128 and wins
-    // 1.41-1.56. The missing fact: an atomic combine's per-trip zero pass and S-way contention on a short row.
-    RungOff {
-        profile: "rtx-4090",
-        rung: "row-split",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-4090/results-rtx-4090.txt iter ON vs OFF: decode 36.08 vs 30.65, prefill 22.69 vs 19.53, gen \
-               21.95 vs 18.60, causal 43.97 vs 37.12 ms (null 0.4-2.8 %); site-geometry.md G2",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "row-split",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: decode 47.00 vs 34.95, prefill 24.95 vs 22.41 ms \
-               (beyond null); gen 24.77 vs 24.64, causal 48.15 vs 50.93 ms inside a 11-16 % null; site-geometry.md G2",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "row-split",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt iter ON vs OFF: decode 38.74 vs 32.85, prefill 27.71 vs 23.37, gen \
-               25.93 vs 22.30, causal 46.92 vs 40.21 ms (causal null 25 %, others <= 2.6 %); site-geometry.md G2",
-    },
-    // `fit-first` (open G4): the 4090 keeps it (convmc ON 0.0948 vs OFF 0.1107 ms, mm_16x18432x7168 1.053 vs
-    // 0.972 ms: mixed). The reshape pays where its grid stays balanced over the SMs (4090 convmc 196 blocks on 128
-    // SMs) and loses where it leaves most SMs one block (5090 convmc 196 on 170, 4090 16x18432 144 on 128) or keeps
-    // the grid and only cuts residency (2 vs 5-8 blocks per SM: 3090, H100).
-    RungOff {
-        profile: "rtx-5090",
-        rung: "fit-first",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-5090/results-rtx-5090.txt iter ON vs OFF: convmc_8_64_56_3 0.08566 vs 0.06729 ms (null 0.3 %), \
-               _c 0.1099 vs 0.08686 ms; site-geometry.md G4",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "fit-first",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/h100-pcie/results-h100-pcie.txt ON vs OFF: pj_m16_n18432_k7168 0.6217 vs 0.5794 ms (null 0.4 %), \
-               mm_16x18432x7168 1.485 vs 1.392 ms; convmc _c 0.2069 vs 0.2107 ms (no null); site-geometry.md G4",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "fit-first",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/site-geometry/sweep/rtx-3090/results-rtx-3090.txt ON vs OFF: convmc_8_64_56_3 0.1653 vs 0.1461 ms (null 0.0 %), _c \
-               0.3296 vs 0.2579 ms, mm_16x18432x7168 1.038 vs 0.9816 ms (_c 0.8926 vs 0.9223); site-geometry.md G4",
-    },
-    // flow (rebuilt: lanes per row, tree folds, multi-reader rows once in smem) ships ON on all four parts:
-    // benches/results/evidence/flow/table.md ON/OFF iter — attn_1024_64 0.79/0.69/0.81/0.71, firew_rowsum
-    // 0.71/0.60/0.52/0.77, softmax_rows_4096 0.88/0.92/0.88/0.93 (4090/5090/H100/3090). Open: rowsum_4096 on
-    // rtx-4090 1.06 (5090/H100/3090 inside null) — the lone tree-fold class needs its own gate, not a part row.
-    // Closed by cpu-gpu-boundary `tree-gate` (ships ON, no row): rtx-4090 rowsum_4096 ON/OFF 0.944 (null 0.004)
-    // ~ 1/1.056; it changes no other part's emission (cpu-gpu-boundary/report.md).
-    // plan-cost (stopgap, open missing facts): the cost model wins the `_512` chains (zero passes and ops cut) and
-    // loses where its picks leave SMs idle — a few-block GEMV whose DRAM feed it models as the whole chip's, and
-    // (5090) 256 tiles on 170 SMs it averages instead of loading the busiest SM. Hold-out picks 22/33 (4090),
-    // 27/43 (5090): docs/performance/evidence/plan-cost.md. Main ships the rules (the sweep's OFF arm, ≈ BASE).
-    // plan-cost v2 (2026-11-09, `benches/results/evidence/plan-cost/v2/summary.tsv`): still mixed — box list ON /
-    // shipped 4090 17 W / 5 L (M=1 GEMV 1.16–1.50, decode 1.32), 5090 9 W / 13 L (M=1, M=16 1.17–1.74); blind set
-    // 4090 2 W / 2 L, 5090 10 W / 6 L. Open facts: L2-resident vs DRAM operand latency, smem bytes per FMA.
-    RungOff {
-        profile: "rtx-4090",
-        rung: "plan-cost",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-4090.tsv (raw results-rtx-4090.txt, \
-               raw-plan-cost-sweep.tar.gz) ON vs BASE: mm_1x1024x4096 0.0840 vs 0.0307 ms, pt_pj_m1_n1024_k4096 \
-               0.0381 vs 0.0170 ms, pt_decode_1024_256 46.54 vs 24.05 ms, pt_pj_m16_n2048_k7168 0.0707 vs 0.0567 ms; \
-               wins pt_twin_512 0.0368 vs 0.0477 ms, pt_diamond_512 0.0487 vs 0.0588 ms: mixed (45 changed: 24 W / \
-               8 L / 13 null)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "plan-cost",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-5090.tsv (raw results-rtx-5090.txt, \
-               raw-plan-cost-sweep.tar.gz) ON vs BASE: mm_1x1024x4096 0.0553 vs 0.0164 ms, mm_128x1024x2048 \
-               0.0737 vs 0.0450 ms, pt_mlp_2048 0.6170 vs 0.5619 ms, pt_decode_1024_256 48.48 vs 36.70 ms; wins \
-               pt_twin_512 0.0366 vs 0.0525 ms, pt_indep_512 0.0371 vs 0.0503 ms: mixed (77 changed: 23 W / 34 L / \
-               20 null)",
-    },
-    // linear changes two 5090 programs' emission (plan-cost on or off; none on the 4090): null.
-    RungOff {
-        profile: "rtx-5090",
-        rung: "linear",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/plan-cost/sweep/programs-rtx-5090.tsv (raw results-rtx-5090.txt) ON vs BASE: \
-               pt_indep_4096 4.1837 vs 4.2098 ms, pt_diamond_4096 6.2586 vs 6.2664 ms (tol 2 %): null, the only \
-               programs whose emission `linear` changes",
-    },
-    // plan-cost re-time on tile-efficiency (sweep/rungs-detail-*.tsv, `on-plan-cost+linear` / shipped): still
-    // mixed, rows kept — 4090 cells 3 W / 1 L, programs 8 W / 2 L (pt_pj_m16_n1024_k4096 1.37, decode_1024_256
-    // 1.14, mm_1x1024x4096 1.10); 5090 cells 3 W / 1 L, programs 11 W / 10 L (M=1 / M=16 projections 1.07–1.52).
-    // Every loss is a DRAM-streaming M ≤ 16 site: the missing fact is the loaded DRAM latency in `c_ns`.
-    //
-    // kmajor-a (tile-efficiency, stopgap, open missing fact): it wins where the panel streams by `cp.async`
-    // (4090 under-filled: 48 LDGSTS.32 → 0, FFMA/LSU 4.2 → 6.6, cells 0.56–0.72) and loses on register-staged
-    // panels: STS −2/3 with LDS / LDG / FFMA / BAR unchanged, but registers rise (4090 wide 220 → 255 halves bk
-    // 16 → 8; 4090 128x18432 spills 8 → 40 B; H100 128 → 167) and 5090 / 3090 lose 5–22 % at +1…+6 registers.
-    // Missing fact: the k-major panel's register and bank cost on a register-staged copy (sweep/sass.tsv, judge).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "kmajor-a",
-        fill: Fill::Filled,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-detail-rtx-4090.tsv (raw results-rtx-4090.txt, \
-               raw-raw.tar.gz) shipped vs OFF: mm_4096x4096x4096 2.9952 vs 2.4566 ms, mm_128x18432x7168 1.3088 vs \
-               1.1435 ms; ratios pt_loop_2048 1.19, pt_pj_m128_n18432_k7168 1.12 \
-               (filled = register-staged, the `async` row); sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 (bk 16 → 8)",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-5090.tsv (raw results-rtx-5090.txt) shipped/OFF \
-               programs 1.03 (4 W / 28 L, null 0.040), mm_128x2048x7168 0.2007 vs 0.1659 ms; sass: pt_mlp2_1024 STS 15 → 6, regs 77 → 83, \
-               LDS / LDG / FFMA / BAR equal: loss unexplained by counts (bank geometry open, ncu blocked)",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-rtx-3090.tsv (raw results-rtx-3090.txt) shipped/OFF \
-               programs 1.14 (2 W / 41 L, null 0.043), mm_4096x4096x4096 15.0374 vs 11.0418 ms; sass: mm_4096 regs 220 → 255, FFMA 2080 → 1056 \
-               (bk 16 → 8); loses the skinny wins (mm_16x1024x4096 0.68: LDS.32 128 → LDS.128 16 + LDS.32 64)",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "kmajor-a",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "benches/results/evidence/tile-efficiency/sweep/rungs-h100-pcie.tsv (raw results-h100-pcie.txt) shipped/OFF \
-               programs 1.16 (3 W / 50 L, null 0.026), pt_mlp2_1024 iter 0.629 vs 0.497 ms; sass (local ptxas): pt_mlp2_1024 regs 128 → 167, \
-               mm_4096 111 → 151, STS −2/3, LDS / LDG / FFMA / BAR equal",
-    },
-    // per-site-choice D1: `bank-plan` ships OFF on every measured part until the per-site-choice box run
-    // measures it; it is a site candidate (`CHOICE_AXES`), so a device that measures it faster takes it. ON, the
-    // kmajor-a rows above do not apply: the register rule (A4) decides the k-major panel ([`crate::func::gpu`]
-    // `rungs_at`).
-    RungOff {
-        profile: "rtx-4090",
-        rung: "bank-plan",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; a candidate until the per-site-choice box run",
-    },
-    RungOff {
-        profile: "rtx-5090",
-        rung: "bank-plan",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; a candidate until the per-site-choice box run",
-    },
-    RungOff {
-        profile: "rtx-3090",
-        rung: "bank-plan",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; a candidate until the per-site-choice box run",
-    },
-    RungOff {
-        profile: "h100-pcie",
-        rung: "bank-plan",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; a candidate until the per-site-choice box run",
-    },
-    RungOff {
-        profile: "a100",
-        rung: "bank-plan",
-        fill: Fill::Any,
-        face: Face::Any,
-        cite: "unmeasured; a candidate until the per-site-choice box run",
-    },
-    // kernel-merging Calls: the `row-block` rows ("unmeasured" on every part) are gone — per-hardware on/off
-    // is not a decision. Its default is its rule: the plan model (`block_cost`) over the part's measured
-    // properties forms a unit where it prices below the split launches; a part without plan rates is unpriced
-    // (no unit). `local-rtx-5080/kernel-merging.md` Calls.
+/// The parts the cited rung measurements ran on (`rung_replay.tsv`): the
+/// hand-written spellings of rented parts, each carrying its physical
+/// properties. A list for tests that sweep parts — no decision reads it.
+#[cfg(test)]
+pub const GPU_PARTS: [&TargetProfile; 6] = [
+    &RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100, &RTX_5080,
 ];
-
-/// The parts [`GPU_RUNGS_OFF`] was measured on. An unmeasured profile takes
-/// the rows of the measured part with its architecture (`cuda-ada` ← the
-/// 4090's, `h100` ← the H100 PCIe's); with none, every rung is ON — the S52
-/// baseline the arms are measured against — until its own session adds rows.
-/// Ampere since S54: the RTX 3090 and the A100 (`a100` is the SXM4 part; its
-/// two sessions ran on an A100 PCIe and an A100 SXM4).
-pub const GPU_MEASURED: [&TargetProfile; 5] = [&RTX_4090, &H100_PCIE, &RTX_5090, &RTX_3090, &A100];
 
 /// The tensor-core tile geometry for one tile site on the TF32 face (S52):
 /// `mma.sync.m16n8k8`, operands staged by `cp.async` through `stages`
@@ -3094,32 +1959,19 @@ impl TargetProfile {
     }
 
     /// **The GPU rungs this part ships at a site this full, on this face**
-    /// (S53): every rung on, minus this profile's rows of [`GPU_RUNGS_OFF`]
-    /// that cover the fill and the face. An unmeasured profile takes the
-    /// measured part of its architecture ([`GPU_MEASURED`]); with none, every
-    /// rung: another architecture's losses are not this one's.
+    /// (hardware-properties): the rung rules over the part's physical
+    /// properties ([`crate::rules::rungs`]) — never a per-part row. A CPU
+    /// profile has every rung (no GPU site reads them).
     pub fn gpu_rungs(&self, warps_per_scheduler: u64, contract: bool) -> crate::GpuRungs {
         self.gpu_rungs_on(warps_per_scheduler, Face::of(contract, None))
     }
 
     /// [`Self::gpu_rungs`] on a site's face, TF32 included.
     pub fn gpu_rungs_on(&self, warps_per_scheduler: u64, face: Face) -> crate::GpuRungs {
-        let arch = self.gpu().map(|g| g.arch);
-        let same: Vec<&str> = GPU_MEASURED
-            .iter()
-            .filter(|p| p.name == self.name || p.gpu().map(|g| g.arch) == arch)
-            .map(|p| p.name)
-            .collect();
-        let mut r = crate::GpuRungs::ALL;
-        for d in GPU_RUNGS_OFF {
-            if same.contains(&d.profile)
-                && d.fill.covers(warps_per_scheduler)
-                && d.face.covers(face)
-            {
-                *r.rung(d.rung).expect("a GpuRungs name") = false;
-            }
+        match self.gpu() {
+            Some(g) => crate::rules::rungs(g, warps_per_scheduler, face),
+            None => crate::GpuRungs::ALL,
         }
-        r
     }
 
     /// **The `cp.async` panel pipeline for an FMA tile (sm_80+).** Panels stream
@@ -3949,7 +2801,9 @@ impl TargetProfile {
             tx *= 2;
         }
         let blocks = (rows / (ty * tm)) * (c / (tx * tn));
-        if fit && r.wave_gate && blocks * parts < g.sms {
+        // hardware-properties `wave-gate`: a row-fitted grid whose waves leave
+        // SMs idle ([`wave_full`]) yields to the cell tile / one thread a cell.
+        if fit && r.wave_gate && !wave_full(blocks * parts, g.sms) {
             return None;
         }
 
@@ -4490,8 +3344,14 @@ const ADA_SM: Gpu = Gpu {
     l2_bytes: 48 * 1024 * 1024,
     cost: None,
     geom: GEOM,
-    fp32_lanes: 0,
-    clock_khz: 0,
+    // The 4070 Ti's datasheet: 128 FP32 lanes per SM, 2.61 GHz boost, GDDR6X
+    // at 21 Gb/s on 192 bits (504 GB/s).
+    fp32_lanes: 128,
+    clock_khz: 2_610_000,
+    mem_clock_khz: 10_501_000,
+    mem_bus_bits: 192,
+    schedulers: 4,
+    caps: CAPS_WARP_MMA,
 };
 
 /// RTX 4090 — Ada (`sm_89`), 128 SMs. A rented part (S52): the profile is the
@@ -4546,10 +3406,15 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             dep_launch_block_ps: 0,
             pdl_launch_ns: 0,
             coop_launch_ns: 0,
+            pageable_pm: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
         clock_khz: 2_520_000,
+        // GDDR6X at 21 Gb/s on 384 bits: 1008 GB/s (device query
+        // `mem_clock_khz=10501000 bus_bits=384`).
+        mem_clock_khz: 10_501_000,
+        mem_bus_bits: 384,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4569,6 +3434,11 @@ pub const H100: TargetProfile = TargetProfile {
         max_blocks_per_sm: 32,
         // 50 MB (H100 whitepaper; unmeasured on the SXM part).
         l2_bytes: 50 * 1024 * 1024,
+        // Datasheet: HBM3 3.35 TB/s on 5120 bits, 1.98 GHz boost.
+        clock_khz: 1_980_000,
+        mem_clock_khz: 2_619_000,
+        mem_bus_bits: 5120,
+        caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4601,6 +3471,12 @@ pub const H100_PCIE: TargetProfile = TargetProfile {
             launch_ns: 11315,
             ..NO_PLAN
         }),
+        // Datasheet (H100 PCIe 80 GB): HBM2e 2.04 TB/s on 5120 bits (device
+        // query `mem_clock_khz=1593000`), 1.755 GHz boost.
+        clock_khz: 1_755_000,
+        mem_clock_khz: 1_593_000,
+        mem_bus_bits: 5120,
+        caps: CAPS_WARPGROUP_MMA,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4660,10 +3536,15 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             dep_launch_block_ps: 0,
             pdl_launch_ns: 0,
             coop_launch_ns: 0,
+            pageable_pm: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
         clock_khz: 2_410_000,
+        // GDDR7 at 28 Gb/s on 512 bits: 1792 GB/s.
+        mem_clock_khz: 14_001_000,
+        mem_bus_bits: 512,
+        caps: CAPS_WARP_MMA_PDL,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4677,9 +3558,9 @@ pub const RTX_5090: TargetProfile = TargetProfile {
 /// Ada's per-SM facts ([`ADA_SM`]) with this part's SM count and L2.
 /// Device rates calibrated 2026-11-19 (local-rtx-5080 gpu-analysis), same
 /// methods as `rtx-5090`'s; tables in `benches/results/evidence/local-rtx-5080/calib/`.
-/// Not in [`GPU_MEASURED`]: no rung sweep was run on this part, so its rung
-/// defaults stay the measured `sm_120` part's (`rtx-5090`) rows, by
-/// [`TargetProfile::gpu_rungs_on`]'s architecture rule.
+/// Its rungs are the rules over these properties ([`crate::rules::rungs`]),
+/// like every part's; `native-gpu` on this box queries the same facts
+/// (`local-rtx-5080/hardware-properties.md`).
 pub const RTX_5080: TargetProfile = TargetProfile {
     name: "rtx-5080",
     machine: Machine::Gpu(Gpu {
@@ -4743,11 +3624,20 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             dep_launch_block_ps: 0,
             pdl_launch_ns: 486,
             coop_launch_ns: 2044,
+            // hardware-properties `pinned` (`calib.cu copy`, three runs,
+            // `local-rtx-5080/hardware-properties.md`): pageable H2D 27–37
+            // GB/s against page-locked 40–48 at 4–256 MiB, median ratio 695.
+            pageable_pm: 695,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
         fp32_lanes: 128,
         clock_khz: 2_450_000,
+        // Device query: `mem_clock_khz=15001000 bus_bits=256` (GDDR7 at 30
+        // Gb/s: 960 GB/s).
+        mem_clock_khz: 15_001_000,
+        mem_bus_bits: 256,
+        caps: CAPS_WARP_MMA_PDL,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4757,8 +3647,6 @@ pub const RTX_5080: TargetProfile = TargetProfile {
 /// differs from Ada's per-SM facts in one field: 16 resident blocks per SM, not
 /// 24 (CUDA C Programming Guide, compute-capability table); 100 KB shared memory
 /// per SM, 99 KB per block, 1536 threads per SM, as on Ada.
-/// **UNMEASURED** — not in [`GPU_MEASURED`], so every rung is ON until its own
-/// session measures the arms.
 pub const RTX_3090: TargetProfile = TargetProfile {
     name: "rtx-3090",
     machine: Machine::Gpu(Gpu {
@@ -4774,6 +3662,11 @@ pub const RTX_3090: TargetProfile = TargetProfile {
             launch_ns: 18217,
             ..NO_PLAN
         }),
+        // Datasheet: GDDR6X at 19.5 Gb/s on 384 bits (936 GB/s), 1.695 GHz
+        // boost.
+        clock_khz: 1_695_000,
+        mem_clock_khz: 9_751_000,
+        mem_bus_bits: 384,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4786,7 +3679,6 @@ pub const RTX_3090: TargetProfile = TargetProfile {
 /// listed four rentable single-GPU SXM4 offers to one PCIe on 2026-10-21; the
 /// PCIe part (same SM facts, lower clocks) is a separate name, `a100-pcie`,
 /// when it is measured — the `h100` / `h100-pcie` split.
-/// **UNMEASURED** — every rung ON (see [`RTX_3090`]).
 pub const A100: TargetProfile = TargetProfile {
     name: "a100",
     machine: Machine::Gpu(Gpu {
@@ -4798,6 +3690,12 @@ pub const A100: TargetProfile = TargetProfile {
         max_blocks_per_sm: 32,
         // `facts l2_bytes=41943040` (base-a100*.txt, PCIe 40GB and SXM4).
         l2_bytes: 40 * 1024 * 1024,
+        // Datasheet (A100 40 GB): 64 FP32 lanes per SM, 1.41 GHz boost, HBM2
+        // 1.555 TB/s on 5120 bits.
+        fp32_lanes: 64,
+        clock_khz: 1_410_000,
+        mem_clock_khz: 1_215_000,
+        mem_bus_bits: 5120,
         ..ADA_SM
     }),
     ..GENERIC
@@ -4997,6 +3895,9 @@ pub fn resolve(name: &str) -> Option<&'static TargetProfile> {
         .into_iter()
         .find(|p| p.name == name)
         .or_else(|| (name == "native").then(native).flatten())
+        // hardware-properties: this machine's GPU, from its device query and
+        // its calibration file; `None` (an unknown name) without a device.
+        .or_else(|| (name == NATIVE_GPU).then(native_gpu).flatten())
         // S46: `native` is the DEFAULT target, so it must always resolve. When a
         // fact cannot be read — an unknown OS, a locked-down container, a CPU
         // whose caches sysfs does not describe — fall back to `generic` rather
@@ -5019,7 +3920,7 @@ pub fn names() -> String {
     PROFILES
         .iter()
         .map(|p| p.name)
-        .chain(std::iter::once("native"))
+        .chain(["native", NATIVE_GPU])
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -5102,6 +4003,228 @@ fn vec_geometry() -> (u64, u64) {
 pub fn native() -> Option<&'static TargetProfile> {
     static NATIVE: std::sync::OnceLock<Option<TargetProfile>> = std::sync::OnceLock::new();
     NATIVE.get_or_init(detect).as_ref()
+}
+
+/// The profile name of this machine's GPU ([`native_gpu`]).
+pub const NATIVE_GPU: &str = "native-gpu";
+
+/// **hardware-properties: this machine's GPU as physical properties** —
+/// device 0's `cuDeviceGetAttribute` facts ([`DeviceQuery`]) and the
+/// calibration file's measured rates ([`gpu_calib_path`]); never a name
+/// lookup. `None` without a CUDA driver or device.
+pub fn native_gpu() -> Option<&'static TargetProfile> {
+    static NATIVE_GPU_PROFILE: std::sync::OnceLock<Option<TargetProfile>> =
+        std::sync::OnceLock::new();
+    NATIVE_GPU_PROFILE
+        .get_or_init(|| {
+            let q = DeviceQuery::device(0)?;
+            let calib = gpu_calib_path().and_then(|p| std::fs::read_to_string(p).ok());
+            Some(q.profile(calib.as_deref()))
+        })
+        .as_ref()
+}
+
+/// The `cuDeviceGetAttribute` facts a GPU profile is built from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceQuery {
+    /// `major·10 + minor`.
+    pub cc: u64,
+    pub sms: u64,
+    pub warp: u64,
+    pub max_threads_per_block: u64,
+    pub max_threads_per_sm: u64,
+    pub max_blocks_per_sm: u64,
+    pub regs_per_sm: u64,
+    pub smem_per_sm: u64,
+    pub smem_per_block: u64,
+    pub smem_reserved_per_block: u64,
+    pub l2_bytes: u64,
+    pub clock_khz: u64,
+    pub mem_clock_khz: u64,
+    pub mem_bus_bits: u64,
+}
+
+/// FP32 FMA lanes per SM, the SM designs' table by compute capability (64 on
+/// the `sm_60`/`sm_80` datacenter SMs, 128 on the others since `sm_86`): the
+/// fallback when the calibration file does not give `fp32_lanes` (its
+/// measured FFMA peak over `sms · 2 · clock`).
+pub const fn fp32_lanes_of_cc(cc: u64) -> u64 {
+    match cc {
+        60 | 80 => 64,
+        _ => 128,
+    }
+}
+
+impl DeviceQuery {
+    /// Device `ordinal`'s facts through the driver API (`libcuda.so.1`,
+    /// opened at run time); `None` without a driver or that device.
+    pub fn device(ordinal: i32) -> Option<Self> {
+        cuda_query::attrs(ordinal).map(|a| Self::from_attrs(&a))
+    }
+
+    /// The facts from `(attribute, value)` pairs ([`cuda_query::ATTRS`]).
+    pub fn from_attrs(a: &[(i32, u64)]) -> Self {
+        let get = |k: i32| a.iter().find(|&&(n, _)| n == k).map_or(0, |&(_, v)| v);
+        Self {
+            cc: get(75) * 10 + get(76),
+            sms: get(16),
+            warp: get(10),
+            max_threads_per_block: get(1),
+            max_threads_per_sm: get(39),
+            max_blocks_per_sm: get(106),
+            regs_per_sm: get(82),
+            smem_per_sm: get(81),
+            smem_per_block: get(97),
+            smem_reserved_per_block: get(111),
+            l2_bytes: get(38),
+            clock_khz: get(13),
+            mem_clock_khz: get(36),
+            mem_bus_bits: get(37),
+        }
+    }
+
+    /// The calibration file's key for this device: its physical facts, so a
+    /// line measured on one part never prices another.
+    pub fn calib_key(&self) -> String {
+        format!(
+            "cc={} sms={} l2={} mem={}x{}",
+            self.cc, self.sms, self.l2_bytes, self.mem_clock_khz, self.mem_bus_bits
+        )
+    }
+
+    /// **The profile**: these facts, the capabilities the device's compute
+    /// capability admits ([`caps_of_cc`]), and the rates the calibration
+    /// text's line for [`Self::calib_key`] measured (`name=value` over
+    /// [`DeviceCost::NAMES`], the `--cost=` names; none: no measured costs).
+    pub fn profile(&self, calib: Option<&str>) -> TargetProfile {
+        let arch_specific = self.cc == 90;
+        let arch: &'static str = Box::leak(
+            format!("sm_{}{}", self.cc, if arch_specific { "a" } else { "" }).into_boxed_str(),
+        );
+        let gpu = Gpu {
+            warp: self.warp,
+            max_threads_per_block: self.max_threads_per_block,
+            arch,
+            sms: self.sms,
+            regs_per_thread: 255,
+            regs_per_sm: self.regs_per_sm,
+            smem_per_sm: self.smem_per_sm,
+            smem_per_block: self.smem_per_block,
+            smem_reserved_per_block: self.smem_reserved_per_block,
+            max_threads_per_sm: self.max_threads_per_sm,
+            max_blocks_per_sm: self.max_blocks_per_sm,
+            l2_bytes: self.l2_bytes,
+            cost: None,
+            geom: GEOM,
+            fp32_lanes: fp32_lanes_of_cc(self.cc),
+            clock_khz: self.clock_khz,
+            mem_clock_khz: self.mem_clock_khz,
+            mem_bus_bits: self.mem_bus_bits,
+            schedulers: 4,
+            caps: caps_of_cc(self.cc, arch_specific),
+        };
+        let over = calib.and_then(|t| calib_line(t, &self.calib_key()));
+        TargetProfile {
+            name: NATIVE_GPU,
+            machine: Machine::Gpu(match over {
+                Some(o) => gpu.with_cost(&o),
+                None => gpu,
+            }),
+            ..GENERIC
+        }
+    }
+}
+
+/// The calibration file: `MAPAL_GPU_CALIB`, else
+/// `$XDG_CACHE_HOME/mapal/gpu-calib` (`~/.cache` without it). One line per
+/// device, `<calib key>\t<name>=<value> …`; `#` starts a comment.
+pub fn gpu_calib_path() -> Option<std::path::PathBuf> {
+    if let Some(p) = std::env::var_os("MAPAL_GPU_CALIB") {
+        return Some(p.into());
+    }
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".cache")))?;
+    Some(base.join("mapal").join("gpu-calib"))
+}
+
+/// The rates `text` gives the device keyed `key` (`None` without a line).
+pub fn calib_line(text: &str, key: &str) -> Option<CostOver> {
+    let line = text
+        .lines()
+        .map(|l| l.split('#').next().unwrap_or("").trim())
+        .find(|l| l.split('\t').next() == Some(key))?;
+    let mut over: CostOver = [None; DeviceCost::NAMES.len()];
+    for kv in line.split('\t').skip(1).flat_map(str::split_whitespace) {
+        let (k, v) = kv.split_once('=')?;
+        let i = DeviceCost::NAMES.iter().position(|n| *n == k)?;
+        over[i] = Some(v.parse().ok()?);
+    }
+    Some(over)
+}
+
+/// The driver API, opened at run time: the compiler links no CUDA library
+/// and builds on a machine without one.
+#[cfg(target_os = "linux")]
+pub mod cuda_query {
+    use std::ffi::{c_char, c_int, c_void};
+
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+
+    /// The `CUdevice_attribute`s [`super::DeviceQuery::from_attrs`] reads.
+    pub const ATTRS: [i32; 15] = [1, 10, 13, 16, 36, 37, 38, 39, 75, 76, 81, 82, 97, 106, 111];
+
+    type CuInit = unsafe extern "C" fn(u32) -> c_int;
+    type CuDeviceGet = unsafe extern "C" fn(*mut c_int, c_int) -> c_int;
+    type CuDeviceGetAttribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> c_int;
+
+    /// Device `ordinal`'s [`ATTRS`]; `None` without the driver or the device.
+    pub fn attrs(ordinal: i32) -> Option<Vec<(i32, u64)>> {
+        // SAFETY: `dlopen`/`dlsym` with NUL-terminated names; the symbols are
+        // the driver API's, called with their documented signatures.
+        unsafe {
+            let h = dlopen(c"libcuda.so.1".as_ptr(), 2);
+            if h.is_null() {
+                return None;
+            }
+            let sym = |n: &std::ffi::CStr| {
+                let p = dlsym(h, n.as_ptr());
+                (!p.is_null()).then_some(p)
+            };
+            let init: CuInit = std::mem::transmute(sym(c"cuInit")?);
+            let get: CuDeviceGet = std::mem::transmute(sym(c"cuDeviceGet")?);
+            let attr: CuDeviceGetAttribute = std::mem::transmute(sym(c"cuDeviceGetAttribute")?);
+            if init(0) != 0 {
+                return None;
+            }
+            let mut dev: c_int = 0;
+            if get(&mut dev, ordinal) != 0 {
+                return None;
+            }
+            ATTRS
+                .iter()
+                .map(|&a| {
+                    let mut v: c_int = 0;
+                    match attr(&mut v, a, dev) {
+                        0 => Some((a, u64::try_from(v).ok()?)),
+                        _ => None,
+                    }
+                })
+                .collect()
+        }
+    }
+}
+
+/// No driver API off Linux: no native GPU.
+#[cfg(not(target_os = "linux"))]
+pub mod cuda_query {
+    pub const ATTRS: [i32; 15] = [1, 10, 13, 16, 36, 37, 38, 39, 75, 76, 81, 82, 97, 106, 111];
+    pub fn attrs(_ordinal: i32) -> Option<Vec<(i32, u64)>> {
+        None
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -6383,7 +5506,7 @@ mod tests {
         assert_eq!(wps(&H100_PCIE, 1024), 1);
         // S54 arch-select: `benches/gpu/rungs.py` classes a measured size by
         // this fill — Under at n ≤ 1024, Filled above — on every measured part.
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             for n in [512, 1024, 2048, 4096, 8192] {
                 let under = wps(p, n) < GPU_RESIDENT_BLOCKS;
                 assert_eq!(under, n <= 1024, "{} {n}: {}", p.name, wps(p, n));
@@ -6391,73 +5514,34 @@ mod tests {
         }
     }
 
-    /// The rung table (S53): `cp.async` pays only under-filled on Ada, never on
-    /// Hopper or Blackwell's contract face; every OFF names its results row; an unmeasured part takes the
-    /// measured part of its architecture.
+    /// The rung rules over the parts' properties (hardware-properties): the
+    /// `cp.async` panel pays only under-filled on a compute-rich part (the
+    /// 4090's FFMA per DRAM byte), register staging everywhere filled.
     #[test]
-    fn gpu_rungs_are_the_measured_table() {
+    fn gpu_rungs_are_the_property_rules() {
         assert!(RTX_4090.gpu_rungs(1, true).cp_async);
         assert!(!RTX_4090.gpu_rungs(4, true).cp_async);
-        // With fma-regs' register-staged tile, the exact face streams by
-        // registers when filled too (S53 integration).
         assert!(!RTX_4090.gpu_rungs(4, false).cp_async);
         assert!(RTX_4090.gpu_rungs(1, false).cp_async);
         assert!(!H100_PCIE.gpu_rungs(1, true).cp_async);
-        // 5090 under-filled: async paid on the S52 tile, not on warp-fill's.
         assert!(!RTX_5090.gpu_rungs(0, true).cp_async);
         // S54: `devmap` and `cell-law` measured positive on all five parts
         // (`devmap-<part>.txt`; the evidence is on the `GpuRungs` fields).
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             for contract in [false, true] {
                 let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
-                assert!(r.devmap && r.cell_law, "{}", p.name);
+                assert!(r.devmap && r.cell_law && r.arch, "{}", p.name);
             }
         }
-
-        let measured = GPU_MEASURED;
-        for d in GPU_RUNGS_OFF {
-            assert!(
-                measured.iter().any(|p| p.name == d.profile),
-                "{d:?}: not a measured profile"
-            );
-            assert!(crate::GpuRungs::NAMES.contains(&d.rung), "{d:?}");
-            // per-site-choice D1: a candidate's row says it is unmeasured.
-            assert!(
-                d.cite.starts_with("unmeasured;")
-                    || (d.cite.contains(".txt") && d.cite.contains("ms")),
-                "{d:?}"
-            );
-        }
+        // Two parts with the same properties take the same rungs, whatever
+        // their names: the 4070 Ti spelling is the rules over its own.
         for wps in [0, 1, 2, 4, 64] {
-            // S54: a `Contract` row covers the TF32 face (a contract face);
-            // a `Tf32` row covers it alone.
             for face in [Face::Exact, Face::Contract, Face::Tf32] {
-                for p in measured {
-                    let r = p.gpu_rungs_on(wps, face);
-                    assert!(r.arch);
-                    for n in crate::GpuRungs::NAMES {
-                        let cited = GPU_RUNGS_OFF.iter().any(|d| {
-                            d.profile == p.name
-                                && d.rung == n
-                                && d.fill.covers(wps)
-                                && (d.face == Face::Any
-                                    || d.face == face
-                                    || (d.face == Face::Contract && face == Face::Tf32))
-                        });
-                        assert_eq!(!r.get(n), cited, "{} {n} {wps} {face:?}", p.name);
-                    }
-                }
-                // An unmeasured part takes its architecture's measured part;
-                // with none, every rung (another architecture's losses are not its own).
-                for (p, m) in [(&CUDA_ADA, &RTX_4090), (&H100, &H100_PCIE)] {
-                    assert_eq!(p.gpu_rungs_on(wps, face), m.gpu_rungs_on(wps, face));
-                }
-                let mut other = A100;
-                other.name = "unmeasured";
-                if let Machine::Gpu(g) = &mut other.machine {
-                    g.arch = "sm_87";
-                }
-                assert_eq!(other.gpu_rungs_on(wps, face), crate::GpuRungs::ALL);
+                let g = CUDA_ADA.gpu().expect("gpu");
+                assert_eq!(
+                    CUDA_ADA.gpu_rungs_on(wps, face),
+                    crate::rules::rungs(g, wps, face)
+                );
             }
             for contract in [false, true] {
                 assert_eq!(
@@ -6517,7 +5601,7 @@ mod tests {
     /// A100, 4090 and 5090 (S65) and the H100 (cpu-gpu-boundary).
     #[test]
     fn r5_rungs_are_the_measured_table() {
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             for wps in [0, 64] {
                 for contract in [false, true] {
                     let r = p.gpu_rungs(wps, contract);
@@ -6528,17 +5612,16 @@ mod tests {
         }
     }
 
-    /// S54: `rowfold` ships on every measured part; the reader-chosen store
-    /// order only where its device time measured faster in two sessions — the
-    /// 4090's contract face and the A100's exact face.
+    /// S54: `rowfold` ships on every part; the reader-chosen store order on
+    /// none (no property separates its two 1-2 % wins from its losses: open
+    /// in `rung_replay.tsv`).
     #[test]
-    fn rowfold_rungs_are_the_measured_table() {
-        for p in GPU_MEASURED {
+    fn rowfold_rungs_are_the_property_rules() {
+        for p in GPU_PARTS {
             for contract in [false, true] {
                 let r = p.gpu_rungs(GPU_RESIDENT_BLOCKS, contract);
                 assert!(r.rowfold, "{} {contract}", p.name);
-                let layout = matches!((p.name, contract), ("rtx-4090", true) | ("a100", false));
-                assert_eq!(r.rowfold_layout, layout, "{} {contract}", p.name);
+                assert!(!r.rowfold_layout, "{} {contract}", p.name);
             }
         }
     }
@@ -6679,28 +5762,28 @@ mod tests {
             RTX_5090.gpu_tile_with(16, 2048, 7168, &f32, false, old)
         );
         // M1: one row of 32 threads, 1 × 128 blocks. 2048 columns are 16
-        // blocks < 170 SMs: gated. 18432 columns are 144 blocks: gated on the
-        // 5090; on 128- and 82-SM parts no whole-copy panel fits a 100 KB SM
-        // (bk ≥ 128 for whole A vectors, 129 · 128 · 4 B > its share); the
-        // A100's and H100's 164/228 KB hold it.
+        // blocks, 0.09 of 170 SMs: gated ([`wave_full`]). 18432 columns are
+        // 144 blocks, 0.85 of the 5090's SMs: kept; on 128- and 82-SM parts
+        // no whole-copy panel fits a 100 KB SM (bk ≥ 128 for whole A
+        // vectors, 129 · 128 · 4 B > its share).
         assert_eq!(geo(&RTX_5090, 1, 2048, 7168, on), None);
-        assert_eq!(geo(&RTX_5090, 1, 18432, 7168, on), None);
+        assert_eq!(
+            geo(&RTX_5090, 1, 18432, 7168, on),
+            Some((1, 4, 1, 128, 32, 128, 1))
+        );
         for p in [&RTX_4090, &RTX_3090] {
             assert_eq!(geo(p, 1, 18432, 7168, on), None, "{}", p.name);
         }
+        // The A100's and H100's 164/228 KB hold a panel, but 144 blocks
+        // fill 0.67 / 0.63 of the SM slots their two waves span: gated.
         for p in [&A100, &H100_PCIE] {
-            assert_eq!(
-                geo(p, 1, 18432, 7168, on),
-                Some((1, 4, 1, 128, 32, 128, 2)),
-                "{}",
-                p.name
-            );
+            assert_eq!(geo(p, 1, 18432, 7168, on), None, "{}", p.name);
         }
         // The squares: every subset of the new rungs, `fill` and `wide` both
         // ways, is the old geometry at 2048² and 4096² on every part; at 1024²
         // only `grid-share` moves anything (the 4090's 128 blocks: one per SM).
         let new = ["row-fit", "wave-gate", "grid-share", "fill-rows"];
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             for n in [1024, 2048, 4096] {
                 for mask in 0..16u32 {
                     let names: Vec<&str> = (0..4)
@@ -6917,7 +6000,7 @@ mod tests {
     fn fit_first_divides_and_forced_tiles_fall_back() {
         let f32 = Ty::f32();
         let mut seen = 0;
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             let on = crate::GpuRungs::ALL;
             let off = crate::GpuRungs {
                 fit_first: false,
@@ -6961,7 +6044,7 @@ mod tests {
     #[test]
     fn knobs_json_lists_every_knob_table_value_first() {
         let json = include_str!("../../../../benches/gpu/knobs.json");
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS.into_iter().filter(|p| p.name != "rtx-5080") {
             let mut g = p.gpu().expect("a GPU part").geom;
             let row = json
                 .split(&format!("\"{}\":", p.name))

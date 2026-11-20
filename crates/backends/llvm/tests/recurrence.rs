@@ -23,8 +23,8 @@ fn arm(ir: &CategoryIr, off: &[&str], free: bool) -> Emission {
     for r in ["async", "pdl", "streams"].iter().chain(off) {
         *gpu.off.rung(r).expect("rung") = true;
     }
-    // The 4090 ships `fold-lanes` OFF (a `GPU_RUNGS_OFF` row); these tests
-    // check the rule against its OFF arm, not the part's table.
+    // These tests check the `fold-lanes` rule against its OFF arm, whatever
+    // the part's rung rules ship.
     gpu.on.fold_lanes = true;
     let base = if free {
         EmitOpts::default()

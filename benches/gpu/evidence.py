@@ -53,17 +53,16 @@ GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init lau
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
-# ---- the measured rung table (profile.rs GPU_RUNGS_OFF) --------------------------------------------
-def rows_off(path=PROFILE_RS):
-    """[(profile, rung, fill, face, cite)] in table order."""
-    t = open(path).read()
-    t = t[t.index('pub const GPU_RUNGS_OFF'):]
-    t = t[:t.index('\n];\n')]
-    out = []
-    for b in t.split('RungOff {')[1:]:
-        g = lambda k: re.search(k + r':\s*(?:Fill::|Face::)?"?([\w-]+)"?', b).group(1)
-        c = re.sub(r'\\\n\s*', '', re.search(r'cite:\s*"(.*)"\s*,\s*\}', b, re.S).group(1))
-        out.append((g('profile'), g('rung'), g('fill'), g('face'), c))
+# ---- the rung rules' table (hardware-properties: `emit --rungs --target=<part>`, written by the bundle) -------
+def rows_off(d):
+    """{(wps class 0/1/2, face): set of rungs on} from `<part dir>/rungs.tsv`; {} without it."""
+    path = os.path.join(d, 'rungs.tsv')
+    if not os.path.exists(path):
+        return {}
+    out = {}
+    for line in open(path):
+        wps, face, on = (line.rstrip('\n').split('\t') + [''])[:3]
+        out[(int(wps), face)] = set(r for r in on.split(',') if r)
     return out
 
 
@@ -71,20 +70,12 @@ def face_of(arith):
     return {'SeparateMulAdd': 'Exact', 'OrderedFma': 'Contract'}.get(arith, 'Tf32')
 
 
-def covers(row_face, face):
-    return row_face in ('Any', face) or (row_face == 'Contract' and face == 'Tf32')
-
-
 def table_rungs(rows, prof, wps, face, arm):
-    """The rungs `rungs_at` gives: every rung minus the part's rows at (fill, face), then the arm."""
+    """The rungs `rungs_at` gives: the rules' rungs at (fill, face) — every rung under `arch-rungs` off —
+    then the arm."""
     on, off = arm
-    if 'arch-rungs' in off:
-        r = set(KERNEL_RUNGS) | {n for p, n, *_ in rows}
-    else:
-        fill = 'Under' if wps < 2 else 'Filled'
-        dead = {n for p, n, fl, fa, _ in rows if p == prof and covers(fa, face)
-                and (fl in ('Any', fill) or (fl == 'Partial' and 1 <= wps < 2))}
-        r = (set(KERNEL_RUNGS) | {n for p, n, *_ in rows}) - dead
+    every = set().union(*rows.values()) | set(KERNEL_RUNGS)
+    r = every if 'arch-rungs' in off else set(rows.get((min(wps, 2), face), set()))
     r = (r | on) - off
     # per-site-choice D1: the kmajor-a rows are bank-plan's OFF arm (func/gpu.rs `rungs_at`).
     if 'bank-plan' in r and 'kmajor-a' not in off:
@@ -838,7 +829,7 @@ def facts(d, sm):
     lim = dict(threads=part.get('threads', 1536), blocks=part.get('blocks', 16), regs=65536, reg_unit=256,
                max_warps=part.get('threads', 1536) // 32, smem=part.get('smem', 102400), smem_reserved=1024)
     ev = os.path.join(d, 'evidence')
-    rows = rows_off() if os.path.exists(PROFILE_RS) else []
+    rows = rows_off(d)
     # (a `.pick<i>` PTX is the shipped module linked under a tile_bench leg's name: its stem's facts)
     stems = sorted({os.path.basename(p).split('.host.o')[0] for p in glob.glob(os.path.join(d, '*.host.o'))}
                    | {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(d, '*.ptx'))
@@ -876,8 +867,9 @@ def facts(d, sm):
         host['cpu'] = int(not devm and 'profile' not in host)
         host['loop'] = source_loops(d, stem)
         host['move'] = move_facts(read(base + '.host.ll') or '', source_trips(d, stem))
-        if rows:  # the host rungs the table ships at their fill (GPU_RESIDENT_BLOCKS: Filled) and face
-            hr = {n for _, n, *_ in rows} - set(KERNEL_RUNGS)
+        if rows:  # the host rungs the rules ship at their fill (GPU_RESIDENT_BLOCKS: Filled) and face
+            from intent import INTENT
+            hr = set(INTENT) - set(KERNEL_RUNGS)
             face = 'Contract' if e['device'].get('fma', host.get('fma', 1)) == 1 else 'Exact'
             e['host_rungs'] = sorted(hr)
             e['host_table'] = [r for r in table_rungs(rows, prof, 2, face, arm) if r not in KERNEL_RUNGS]

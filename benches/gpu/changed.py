@@ -8,8 +8,8 @@ diff   — emit every bench program (gen_tiles.py) per arch x face on a base ref
            changed.py diff <out> [--base REF] [--base-emit PATH] [--archs ..] [--faces ..] [--rungs ..] [--jobs N]
                            [--head-flags FLAG..]   (HEAD emitted with these flags, e.g. a gated rung ON)
            A runtime / harness change (RT_PATHS at the base vs the working tree) makes every row `changed`;
-           OFF arms are probed only where the emission moved. Parts with GPU_RUNGS_OFF rows also probe
-           `--gpu-on=<r>` for those rungs (arms `on-<r>`).
+           OFF arms are probed only where the emission moved. Rungs the rules ship off somewhere on a part
+           (`emit --rungs`) also probe `--gpu-on=<r>` (arms `on-<r>`).
            -> <out>/emission.tsv  program arch face status base_hash head_hash  (same|changed|new|gone|cached)
               <out>/stamp         HEAD's runtime stamp (the cache's `ver` prefix)
               <out>/arms.tsv      program arch face arm hash tag                (changed rows' arms != shipped;
@@ -139,9 +139,17 @@ def cached_keys(arch, rt):
 
 
 def rungs_off_at(arch):
-    """The rungs a GPU_RUNGS_OFF row ships OFF on `arch` (their ON arm is the one to re-judge)."""
-    from evidence import rows_off
-    return sorted({r for prof, r, *_ in rows_off() if prof == arch})
+    """The rungs the rung rules ship OFF on `arch` at some fill and face (`emit --rungs`, hardware-properties):
+    their ON arm is the one to re-judge."""
+    out = subprocess.run([str(EMIT), '--rungs', f'--target={arch}'], capture_output=True, text=True)
+    if out.returncode != 0:
+        return []
+    every, on = set(), {}
+    for line in out.stdout.splitlines():
+        wps, face, rs = (line.split('\t') + [''])[:3]
+        on[(wps, face)] = set(r for r in rs.split(',') if r)
+        every |= on[(wps, face)]
+    return sorted({r for v in on.values() for r in every - v})
 
 
 def build_emit():

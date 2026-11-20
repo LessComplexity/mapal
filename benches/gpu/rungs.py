@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The GPU_RUNGS_OFF rule over one part's sessions (box_run results files, different boxes).
+"""The stable-sign rule over one part's sessions (box_run results files, different boxes), as replay lines.
 
 Evidence, per arm (`off-<rung>` = shipped ON, `on-<rung>` = shipped OFF), as an OFF/ON speedup
 (>1 = ON faster), medians within one run:
@@ -25,8 +25,8 @@ size, stable- at another: no (fill, face) key separates them) keep what ships. C
 (arch-rungs = the whole table, fma-regs = idx32+affine+pad+wide-fma, `a+b` arms) are shown, never
 decided. Every session's `null` arm (the shipped kernel benched again) prints the noise floor.
 
-Then the RungOff rows that ship, merged across classes where they agree (a `Contract` row covers
-the TF32 face too: profile.rs `Face::covers`), to paste into GPU_RUNGS_OFF.
+Then the classes measured without a stable gain as `rung_replay.tsv` lines (hardware-properties: the rung rules
+over physical properties must pick each measured winner; a measurement is never a per-part row).
 
 S62: a kernel bench may be a cell `# n=<M>x<N>x<K>`; its fill is the site's own, read from
 `--fill <tsv>` (`<profile> <M>x<N>x<K> <Under|Filled>` lines, gpu.rs `launch`'s fill key).
@@ -299,11 +299,13 @@ if __name__ == '__main__':
             print(f"\nnull A/B (shipped vs itself), {os.path.basename(f)}: max |s-1| = "
                   f"{max(abs(s - 1) for s in nl.values()):.3f}; "
                   + '; '.join(f"{k}: {s:.3f}" for k, s in sorted(nl.items())))
-    print(f"\n// GPU_RUNGS_OFF rows that ship on {profile_of(files[0])} (new = a class that ships ON today)")
+    # hardware-properties: a measurement is a line of crates/backends/llvm/src/rung_replay.tsv (the rules are
+    # replayed against it), never a per-part row.
+    print(f"\n# rung_replay.tsv lines for {profile_of(files[0])} (winner off: the class measured no stable gain)")
+    fills = {'Any': 'A', 'Under': 'U', 'Filled': 'F', 'Partial': 'U1'}
+    faces = {'Any': 'EC', 'Exact': 'E', 'Contract': 'C', 'Tf32': 'T'}
     for rung, (fill, face), new, cite in rows(out, files):
         if new is None:
-            print(f"    // {rung} {fill} {face}: {cite}")
+            print(f"# {rung} {fill} {face}: {cite}")
             continue
-        print(f"    // {'new' if new else 'held'}\n    RungOff {{\n        profile: \"{profile_of(files[0])}\",\n"
-              f"        rung: \"{rung}\",\n        fill: Fill::{fill},\n        face: Face::{face},\n"
-              f"        cite: \"{cite}\",\n    }},")
+        print(f"{rung}\t{profile_of(files[0])}\t{fills[fill]}\t{faces[face]}\toff\t-\t{cite}")

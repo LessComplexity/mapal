@@ -246,8 +246,11 @@ and the trace (`MAPAL_GPU_TRACE`) are what say whether a boundary exists.
 ## 7. What a rung is here
 
 Every placement clause has a measurement arm (`GpuRungs` field, `emit --gpu-off=<name>`,
-an arm in `bundle.sh`). Rungs default ON; a matching `GPU_RUNGS_OFF` row disables one for its
-profile, fill and face, with a citation to the supporting measurement: `epilogue` (R1), `devmap` and `cell-law` (R2), `rowfold`
+an arm in `bundle.sh`). What ships is the rung rules (`rules.rs`): each rung's value from the
+site's fill against the part's SMs, its face and the part's physical properties (FFMA per DRAM
+byte, registers per resident thread, L2 per SM, DRAM per SM, measured launch and copy costs),
+never a part's name or version; every cited measurement is replayed against them
+(`rung_replay.tsv`). Arms are measurement flags. The rungs: `epilogue` (R1), `devmap` and `cell-law` (R2), `rowfold`
 and `rowfold-layout` (R0 for folds, the store order), `lane-stride` (R0 for strided one-row
 sites), `retain-resident` and `delta-h2d` (R5),
 `arena` (R6), `streams`, `pinned`, `pdl` (R7), `raster` and `l2-window` (the grid order and L2
@@ -416,7 +419,8 @@ blanket small-M geometry policy is not promoted.
 
 Every row reads existing IR facts (`TileSite`/`TileRead` extents and coefficients, `TilePlan`
 output independence, `bounds_proof`, `elem_plan` face) and `TargetProfile` device facts. No new
-`Dat`, `Loc` or `Trm` enters the IR. Per-part ON/OFF rows: `profile.rs:GPU_RUNGS_OFF`;
+`Dat`, `Loc` or `Trm` enters the IR. Rung rules over physical properties: `rules.rs`
+([hardware-properties](../../../benches/results/evidence/local-rtx-5080/hardware-properties.md));
 measurements: [current results](../../performance/gpu/current-results.md),
 [gap map](../../performance/gpu/disassembly/s62-gap-map.md).
 

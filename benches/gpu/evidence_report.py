@@ -5,7 +5,7 @@ usage: evidence_report.py <raw dir>
   <raw>/<arch>/evidence-<arch>.tsv     the intent check over the box run (static facts + `exec`)
   <raw>/static/<arch>/evidence.tsv     the same check from the bundle alone (used where the box one is absent)
   <raw>/<arch>/results-<arch>.txt      box_run.sh: splitk cells, mlp, probes (suite), torch legs, jit
-  <raw>/judge.tsv                      rejudge.py judge (re-judged GPU_RUNGS_OFF rows, re-measured ON/OFF)
+  <raw>/judge.tsv                      S64 re-judge of the former per-part rows (rejudge.py, removed with them)
 Prints markdown: (1) intended vs realized per rung x arch, (2) mismatches on shipped programs, (3) the
 suite per workload x arch, (4) GEMM / MLP kernels vs the libraries, (5) re-judged rows. Medians only;
 `null` = max over passes / reps of |null arm / shipped - 1|.

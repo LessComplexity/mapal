@@ -227,6 +227,8 @@ for spec in "$@"; do
         case $stem in pt_rm_*) [ "$face" = _c ] || [ "$face" = _x ] && python3 "$ROOT/benches/gpu/mlp_k.py" "$s.host.ll" >/dev/null ;; esac
     done
     EMIT=$MAIN_EMIT
+    # hardware-properties: the rungs the rules ship on this part (the intent check's `table.rungs_on`).
+    "$MAIN_EMIT" --rungs "--target=$prof" > "$d/rungs.tsv"
     # S64: the evidence — ptxas -v / SASS of every distinct PTX (cudatool.sh), the facts, the intent check.
     python3 "$ROOT/benches/gpu/evidence.py" static "$d" "$sm"
     python3 "$ROOT/benches/gpu/evidence.py" facts "$d" "$sm"

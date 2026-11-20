@@ -55,8 +55,10 @@ fn off(rungs: &[&str]) -> GpuArms {
     a
 }
 
+/// `streams` forced on: the rung rules ship it off on every part (no
+/// measured gain); these tests are its mechanism.
 fn on() -> GpuArms {
-    rules()
+    forced(&["streams"])
 }
 
 /// The measurement arm with `rungs` forced on — the mechanism, whatever the
@@ -208,7 +210,7 @@ fn fanout(n: u64) -> String {
 }
 
 const H100: &str = "h100-pcie";
-/// A part whose measured table ships `streams` ON (the A100).
+/// The part the stream tests emit for (`streams` forced on, [`on`]).
 const ON_PART: &str = "a100";
 
 #[test]
@@ -287,15 +289,20 @@ fn a_filled_part_keeps_one_stream_unless_the_gate_is_off() {
     // 1024² on the ON_PART PCIe: the two grids do not fit one wave together.
     let gated = host(&twin(1024), ON_PART, on());
     assert!(!gated.contains("@mapal_gpu_launchv("));
-    let forced = host(&twin(1024), ON_PART, off(&["stream-gate"]));
+    let mut ungated = on();
+    ungated.off.stream_gate = true;
+    let forced = host(&twin(1024), ON_PART, ungated);
     assert!(forced.contains("@mapal_gpu_launchv("));
 }
 
 #[test]
 fn a_part_whose_table_turns_streams_off_keeps_one_stream() {
-    for part in ["rtx-3090", "rtx-4090", "rtx-5090", H100, "h100"] {
+    // The rung rules ship `streams` off on every part (no measured gain).
+    for part in [
+        "rtx-3090", "rtx-4090", "rtx-5090", H100, "h100", "a100", "rtx-5080",
+    ] {
         assert!(
-            !host(&twin(64), part, on()).contains("@mapal_gpu_launchv("),
+            !host(&twin(64), part, rules()).contains("@mapal_gpu_launchv("),
             "{part}"
         );
     }
@@ -407,7 +414,11 @@ fn a_one_element_read_is_not_pinned() {
 #[test]
 fn pdl_is_hopper_and_later_only() {
     let src = diamond(64);
-    // Shipped: OFF on both sm_90+ parts measured (no stable sign).
+    // Shipped: `pdl` where the part has `griddepcontrol` and a measured
+    // programmatic launch cheaper than a plain one — the rtx-5080 (486 vs
+    // 650 ns); the H100 / 5090 measured none (their arms had no stable sign).
+    let e = emit(&src, "rtx-5080", on());
+    assert_eq!(init_flags(&e.text) & 4, 4);
     for part in [H100, "rtx-5090"] {
         let e = emit(&src, part, on());
         assert!(
@@ -418,7 +429,9 @@ fn pdl_is_hopper_and_later_only() {
     }
     let h = emit(&src, H100, forced(&["pdl"]));
     let dev = h.device.expect("device unit");
-    let kernels = dev.matches("define ptx_kernel void @mapal_tile_").count();
+    // Every kernel waits for its producer: the runtime launches any kernel
+    // behind a kernel as a dependent launch.
+    let kernels = dev.matches("define ptx_kernel void @").count();
     assert!(kernels > 0);
     assert_eq!(dev.matches("griddepcontrol.wait;").count(), kernels);
     assert_eq!(init_flags(&h.text) & 4, 4);

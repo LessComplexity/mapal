@@ -86,15 +86,17 @@ pub(crate) fn init_call(rungs: crate::GpuRungs, streams: bool, pdl: bool) -> Str
     format!("  call void @mapal_gpu_init(i32 {flags})\n")
 }
 
-/// S54 `pdl`: programmatic dependent launch exists from sm_90 (PTX ISA:
-/// `griddepcontrol` requires sm_90). One answer for the kernel text and the
-/// runtime flag — a kernel launched dependent without the wait would race.
+/// S54 `pdl`: a programmatic dependent launch needs `griddepcontrol`
+/// ([`crate::profile::Caps::griddepcontrol`]). One answer for the kernel text
+/// and the runtime flag — a kernel launched dependent without the wait would
+/// race.
 pub(crate) fn pdl(profile: &TargetProfile, contract: bool, arms: crate::GpuArms) -> bool {
-    profile.gpu().is_some_and(|g| g.sm() >= 90) && host_rungs(profile, contract, arms).pdl
+    profile.gpu().is_some_and(|g| g.has_griddepcontrol()) && host_rungs(profile, contract, arms).pdl
 }
 
-/// The rungs a GPU profile ships for one decision (S53): its measured table at
-/// `wps` warps per scheduler on this face — every rung under the arm
+/// The rungs a GPU profile ships for one decision: the rung rules over its
+/// physical properties at `wps` warps per scheduler on this face
+/// ([`crate::rules::rungs`]) — every rung under the arm
 /// `--gpu-off=arch-rungs` — then the measurement arms.
 pub(crate) fn rungs_at(
     profile: &TargetProfile,
@@ -108,8 +110,8 @@ pub(crate) fn rungs_at(
         profile.gpu_rungs_on(wps, face)
     };
     let r = table.with(arms);
-    // per-site-choice D1: the `kmajor-a` rows are `bank-plan`'s OFF arm; under
-    // it the register rule (A4, [`launch_split`]) decides the k-major panel.
+    // per-site-choice D1: `bank-plan` on, the register rule (A4,
+    // [`launch_split`]) decides the k-major panel instead of `kmajor-a`'s rule.
     crate::GpuRungs {
         kmajor_a: r.kmajor_a || (r.bank_plan && !arms.off.kmajor_a),
         ..r
@@ -987,7 +989,7 @@ pub(crate) fn plan_cands(
     let panels = site.k / l.tiled.map_or(1, |g| g.bk);
     let blocks = l.gx * l.gy;
     let wave = l.wave(gpu);
-    let atomic = e == 4 || gpu.sm() >= 60;
+    let atomic = e == 4 || gpu.caps.red_f64;
     let forced = if arms.splitk > 0 {
         arms.splitk
     } else {
@@ -1588,7 +1590,7 @@ pub(crate) fn concat_plan(
     let l = launch(site, profile, contract, arms);
     let gpu = profile.gpu()?;
     let window = site.a.ksplit.is_some() || site.b.ksplit.is_some() || site.radix.is_some();
-    let atomic = elem_bytes_of(&site.elem) == 4 || gpu.sm() >= 60;
+    let atomic = elem_bytes_of(&site.elem) == 4 || gpu.caps.red_f64;
     if l.mma.is_some() || l.wgmma.is_some() || window || !atomic || l.raster != 1 {
         return None;
     }
@@ -1711,7 +1713,7 @@ fn combine(
         };
     }
     // `red.global.add.f32` exists from sm_20, `.f64` from sm_60.
-    let atomic = e == 4 || gpu.sm() >= 60;
+    let atomic = e == 4 || gpu.caps.red_f64;
     let s_at = count(false);
     // `fill-wave` counts the split, not the ladder: stream-K is weighed
     // against the S63 count, as before.
@@ -2059,9 +2061,14 @@ pub(crate) fn rowfold_grid(site: &RowFoldSite, profile: &TargetProfile, lanes: u
 /// fold folds over — a warp where the order is free (the default face,
 /// ADR-0040), the step regroups (`+`, `×`, running max/min) over `f32`, the
 /// fold is at least a warp long, plain (no window, no tap split) and its
-/// rows leave the part's resident threads idle. 1 otherwise.
+/// rows leave the part's resident threads idle. 1 otherwise — and 1 over a
+/// column-major operand (`colmajor`: its producing tile stores in the fold's
+/// order, `rowfold-layout`): one thread a row already reads consecutive
+/// addresses across a warp, where lanes along `k` would read `rows` apart
+/// (the rtx-4090 measurement that once kept `fold-lanes` off there).
 pub(crate) fn rowfold_lanes(
     site: &RowFoldSite,
+    colmajor: bool,
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
@@ -2075,6 +2082,7 @@ pub(crate) fn rowfold_lanes(
         } | RowFoldOp::Select { .. }
     );
     match host_rungs(profile, contract, arms).fold_lanes
+        && !colmajor
         && regroups
         && site.w == 1
         && site.a.ksplit.is_none()
@@ -2105,12 +2113,13 @@ pub(crate) fn warp_lanes(
 /// A device row fold's kernel: its name, and its `; mapal.plan` line + text.
 fn rowfold_entry(
     s: &RowFoldSite,
+    colmajor: bool,
     profile: &TargetProfile,
     contract: bool,
     arms: crate::GpuArms,
     order: Order,
 ) -> (String, String) {
-    let lanes = rowfold_lanes(s, profile, contract, arms, order);
+    let lanes = rowfold_lanes(s, colmajor, profile, contract, arms, order);
     let name = kernel_name(rowfold_id(s, profile, lanes));
     let (gx, block) = rowfold_grid(s, profile, lanes);
     let l = if lanes > 1 {
@@ -2764,14 +2773,21 @@ pub(crate) fn device_module(
         // generic-fusion: a fold a unit holds launches inside the unit.
         let fused = |m: MorphismId| units.iter().any(|u| u.f == f && u.members.contains(&m));
         for (_, r) in folds.iter().filter(|&(m, _)| !fused(m)) {
-            let (name, text) = rowfold_entry(&r.site, profile, contract, arms, order);
+            let (name, text) = rowfold_entry(
+                &r.site,
+                r.colmajor.is_some(),
+                profile,
+                contract,
+                arms,
+                order,
+            );
             kernels.entry(name).or_insert(text);
         }
     }
     // S65: the folds a function placed over a device output no tile site
     // wrote (the host's plan names them).
     for f in folds {
-        let (name, text) = rowfold_entry(f, profile, contract, arms, order);
+        let (name, text) = rowfold_entry(f, false, profile, contract, arms, order);
         kernels.entry(name).or_insert(text);
     }
     for e in epis {
@@ -2936,11 +2952,59 @@ pub(crate) fn device_module(
     out.push('\n');
     out.push_str(&md);
     let mut out = super::horizontal::compose(out, hz, launched);
+    // `pdl`: the runtime launches every kernel behind a kernel as a dependent
+    // launch, so every kernel waits for its producer's grid before it reads.
+    if pdl(profile, contract, arms) {
+        out = pdl_wait_every_kernel(&out);
+    }
     // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
     if out.contains("wgmma.mma_async") {
         out = out.replacen("[0 x i8], align 16", "[0 x i8], align 1024", 1);
     }
     Some(out)
+}
+
+/// hardware-properties `pdl`: `griddepcontrol.wait` at the entry of every
+/// kernel of the module that does not already open with it (the tile kernel
+/// does, after its index setup). The runtime launches any kernel that follows
+/// a kernel on its stream as a programmatic dependent launch
+/// (`mapal_gpu.c`), so a kernel without the wait (a cell, a row fold, a unit,
+/// a merged grid, a reduce) would read its producer's output before that
+/// grid completes. The wait is a no-op on a plain or cooperative launch.
+pub(crate) fn pdl_wait_every_kernel(module: &str) -> String {
+    const WAIT: &str = "  call void asm sideeffect \"griddepcontrol.wait;\", \"~{memory}\"()";
+    let mut out = String::with_capacity(module.len() + 4096);
+    let mut lines = module.lines().peekable();
+    while let Some(l) = lines.next() {
+        out.push_str(l);
+        out.push('\n');
+        if !l.starts_with("define ptx_kernel ") {
+            continue;
+        }
+        // The kernel's text up to its closing brace: does it wait already?
+        let body: Vec<&str> = std::iter::from_fn(|| {
+            let n = lines.next()?;
+            Some(n)
+        })
+        .take_while(|n| *n != "}")
+        .collect();
+        let waits = body.iter().any(|b| b.contains("griddepcontrol.wait"));
+        let mut inserted = waits;
+        for b in &body {
+            out.push_str(b);
+            out.push('\n');
+            if !inserted && b.ends_with(':') && !b.starts_with(' ') {
+                out.push_str(WAIT);
+                out.push('\n');
+                inserted = true;
+            }
+        }
+        out.push_str("}\n");
+    }
+    if !module.ends_with('\n') {
+        out.pop();
+    }
+    out
 }
 
 fn kernel_text(
@@ -6548,6 +6612,7 @@ mod tests {
         let old = TargetProfile {
             machine: Machine::Gpu(Gpu {
                 arch: "sm_70",
+                caps: crate::profile::caps_of_cc(70, false),
                 ..*RTX_4090.gpu().unwrap()
             }),
             ..RTX_4090
@@ -6621,7 +6686,7 @@ mod tests {
             }
             // Valid operands with MMA forced off, and an unsupported device
             // with every optimization forced on, must still use scalar policy.
-            for arms in if p.gpu().unwrap().sm() < 80 {
+            for arms in if !p.gpu().unwrap().has_mma_sync() {
                 vec![off, force(GpuRungs::ALL)]
             } else {
                 vec![off]
@@ -6695,7 +6760,7 @@ mod tests {
                     ..GpuRungs::ALL
                 });
                 let wait = pdl(p, true, arms);
-                assert_eq!(wait, enabled && p.gpu().unwrap().sm() >= 90);
+                assert_eq!(wait, enabled && p.gpu().unwrap().has_griddepcontrol());
                 let host = init_call(host_rungs(p, true, arms), false, wait);
                 let flags: u32 = host
                     .split("i32 ")
@@ -6747,6 +6812,10 @@ mod tests {
         let geo = |p: &TargetProfile, (m, n, k), off: bool| {
             let mut a = crate::GpuArms::default();
             a.off.async_depth = off;
+            // The panel depth the launch's own SM share admits (`grid-share`,
+            // on wherever the L2 share per SM holds deeper panels) is not
+            // the yield this tests.
+            a.off.grid_share = true;
             let s = site(m, n, k, true, true, Ty::f32());
             launch(&s, p, false, a, None)
                 .tiled
@@ -6784,7 +6853,9 @@ mod tests {
                 Some((1, 4, 8, 16, 32, 256, 1))
             );
         }
-        assert_eq!(geo(18432, false, shipped), Some((1, 4, 16, 64, 256, 64, 2)));
+        // hardware-properties: `row-fit` ships filled on the exact face too
+        // (its S62 exact cell here was null), so the 4 × 4 tile row-fits.
+        assert_eq!(geo(18432, false, shipped), Some((4, 4, 16, 32, 32, 64, 1)));
         // tile-efficiency T2 / per-site-choice A2: the k-major panel's bank
         // pad (4 words a row at bk 64) leaves two `cp.async` stages of bk 64
         // over the share, so the padded async panel halves to bk 32 and
@@ -6792,9 +6863,10 @@ mod tests {
         // takes the site, as on the transposed arm.
         let mut kmajor = on("row-fit");
         *kmajor.on.rung("kmajor-a").expect("a rung") = true;
-        // per-site-choice D1: `bank-plan` OFF (the 5090's row) is the
-        // pre-sprint panel: unpadded, two `cp.async` stages of bk 64.
-        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 2)));
+        // hardware-properties: the rules ship no `cp.async` panel filled (it
+        // lost filled on every measured part), so both bank-plan arms take
+        // register staging's panel.
+        assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 1)));
         *kmajor.on.rung("bank-plan").expect("a rung") = true;
         assert_eq!(geo(18432, false, kmajor), Some((4, 4, 16, 32, 32, 64, 1)));
         let s = site(16, 18432, 7168, true, true, Ty::f32());
@@ -6808,15 +6880,13 @@ mod tests {
             Some((4, 4, 16, 32, 32, 64, 1))
         );
         assert_eq!(geo(18432, true, shipped), Some((8, 8, 16, 128, 32, 16, 1)));
-        // Gated, the site has no register tile: `cell-fill` (S62 asyncstage
-        // item) takes it, else the one-thread-per-cell kernel.
+        // hardware-properties: the gate forced on keeps the 144-block grid —
+        // it fills 0.85 of the 5090's SM slots ([`crate::profile::wave_full`];
+        // the S62 v2 cell: kept 0.46 ms, gated one thread a cell 2.07 ms).
         assert_eq!(
             geo(18432, true, on("wave-gate")),
-            Some((1, 1, 16, 16, 256, 64, 1))
+            Some((8, 8, 16, 128, 32, 16, 1))
         );
-        let mut gated = on("wave-gate");
-        gated.off.cell_fill = true;
-        assert_eq!(geo(18432, true, gated), None);
         assert_eq!(
             geo(2048, false, off("panel-regs")),
             Some((1, 4, 8, 16, 32, 16, 1))
@@ -6933,10 +7003,10 @@ mod tests {
     /// actually takes. The derivation (every rung on, `arch-rungs` off): the
     /// 3090 groups at 8192 only (one block's panels, 8 MB, past its 6 MB L2),
     /// every other part keeps row-major; without the gate every part groups
-    /// where the grid is more than a wave. What ships is the measured table:
-    /// raster OFF on the 3090; every other part keeps the derived L2 gate,
-    /// including the 5090 after S56 selection. All shipped cases stay row-major;
-    /// the forced-ungated arm still exercises grouping.
+    /// where the grid is more than a wave. What ships is the rules' tile with
+    /// raster on every part (the 3090's arms measured null): only the part
+    /// whose L2 the panels leave groups; the forced-ungated arm still
+    /// exercises grouping.
     #[test]
     fn raster_fires_where_one_blocks_panels_leave_the_l2() {
         use crate::profile::{A100, RTX_3090};
@@ -6974,7 +7044,10 @@ mod tests {
                     }
                     assert!(ungated.gy % ungated.raster == 0, "{why}");
                     let shipped = at(crate::GpuArms::default());
-                    assert_eq!(shipped.raster, 1, "{why}");
+                    if shipped.raster > 1 {
+                        assert!(p.name == "rtx-3090" && n == 8192, "{why}");
+                    }
+                    assert!(shipped.gy % shipped.raster == 0, "{why}");
                 }
             }
         }
@@ -7063,7 +7136,7 @@ mod tests {
                     let l = at(arms, Order::Free);
                     let unit = l.tiled.map_or(1, |t| t.bk);
                     let (blocks, wave) = (l.gx * l.gy, l.wave(g));
-                    // The fill class a `GPU_RUNGS_OFF` row keys (`launch`'s `wps`).
+                    // The fill class the rung rules read (`launch`'s `wps`).
                     let base = p.gpu_tile(m, n, k, &s.elem, false, false);
                     let (fb, ft) = base
                         .map_or(((m * n).div_ceil(NAIVE_THREADS), NAIVE_THREADS), |t| {
@@ -7144,20 +7217,24 @@ mod tests {
                 Combine::StreamK { .. } => "streamk",
             }
         };
+        // hardware-properties: the rules' picks (stream-K filled, `splitk`
+        // off on the exact face below 128 KiB of L2 a SM, `splitk-atomic` on
+        // every part) — the measured cells' winners are replayed in
+        // `rung_replay.tsv`.
         let h100 = &H100_PCIE;
         for (p, cell, want) in [
             (&RTX_5090, (16, 2048, 7168), "none"),
             (&RTX_5090, (16, 18432, 7168), "streamk"),
             (&RTX_5090, (4096, 4096, 4096), "streamk"),
-            (&RTX_4090, (16, 18432, 7168), "none"),
-            (h100, (16, 1024, 4096), "streamk"),
-            (h100, (16, 2048, 7168), "workspace"),
-            (h100, (128, 2048, 7168), "streamk"),
-            (h100, (4096, 4096, 4096), "none"),
+            (&RTX_4090, (16, 18432, 7168), "streamk"),
+            (h100, (16, 1024, 4096), "atomic"),
+            (h100, (16, 2048, 7168), "atomic"),
+            (h100, (128, 2048, 7168), "none"),
+            (h100, (4096, 4096, 4096), "streamk"),
             (r3090, (16, 1024, 4096), "atomic"),
-            (r3090, (16, 2048, 7168), "workspace"),
+            (r3090, (16, 2048, 7168), "streamk"),
             (r3090, (128, 2048, 7168), "atomic"),
-            (r3090, (4096, 4096, 4096), "none"),
+            (r3090, (4096, 4096, 4096), "streamk"),
         ] {
             assert_eq!(shipped(p, cell), want, "{} {cell:?}", p.name);
         }
@@ -7211,7 +7288,7 @@ mod tests {
                 ..a
             } == b
         };
-        for p in crate::profile::GPU_MEASURED {
+        for p in crate::profile::GPU_PARTS {
             for (m, n, k) in cells {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
@@ -7288,7 +7365,9 @@ mod tests {
     /// takes no `S = 2`), over skinny and short-`k` sites.
     #[test]
     fn site_table_split_stays_within_the_source_bound() {
-        let on = crate::GpuArms::default();
+        // `linear` forced on: the rules ship it off (no measured gain).
+        let mut on = crate::GpuArms::default();
+        on.on.linear = true;
         let (mut tables, mut split) = (0, 0);
         for p in [&RTX_4090, &RTX_5090] {
             for (m, n, k) in [1u64, 2, 16]
@@ -7337,7 +7416,13 @@ mod tests {
                 let (Some(pick), Some(alt)) = (cands.first(), cands.get(1)) else {
                     continue;
                 };
-                for (i, name) in crate::profile::DeviceCost::NAMES.iter().enumerate() {
+                // The rates (the physical-property names after `clock_khz`
+                // reshape the part, not its rates).
+                for (i, name) in crate::profile::DeviceCost::NAMES
+                    .iter()
+                    .enumerate()
+                    .take(24)
+                {
                     let v = g.rate(name);
                     for f in [0.9, 1.1] {
                         let mut over = crate::profile::CostOver::default();
@@ -7951,8 +8036,11 @@ mod tests {
             (l.tiled, l.gx, l.gy, l.block, l.smem),
             (None, 128, 1, 256, 0)
         );
+        // hardware-properties: `pad` ships under-filled on both faces (the
+        // H100 exact face measured it winning, the 5090's was null), so the
+        // exact face's transposed `a` store is padded as the contract one.
         let s = site(128, 2048, 7168, true, true, Ty::f32());
-        for (contract, smem) in [(false, 2048), (true, 2176)] {
+        for (contract, smem) in [(false, 2176), (true, 2176)] {
             let l = launch(&s, &RTX_5090, contract, arms, None);
             let g = l.tiled.expect("tiled");
             assert_eq!(
@@ -7966,8 +8054,8 @@ mod tests {
     /// keeps the text it had: `asyncstage` derives nothing there.
     #[test]
     fn filled_grids_are_untouched() {
-        use crate::profile::GPU_MEASURED;
-        for p in GPU_MEASURED {
+        use crate::profile::GPU_PARTS;
+        for p in GPU_PARTS {
             for (m, n, k) in [(4096, 4096, 4096), (16, 18432, 7168)] {
                 let s = site(m, n, k, true, true, Ty::f32());
                 for contract in [false, true] {
@@ -7989,9 +8077,9 @@ mod tests {
     /// copies whole vectors only at `bk ≥ 1024`, which no share holds.
     #[test]
     fn m1_keeps_the_naive_kernel() {
-        use crate::profile::GPU_MEASURED;
+        use crate::profile::GPU_PARTS;
         let s = site(1, 2048, 7168, true, true, Ty::f32());
-        for p in GPU_MEASURED {
+        for p in GPU_PARTS {
             for contract in [false, true] {
                 let l = launch(&s, p, contract, crate::GpuArms::default(), None);
                 assert_eq!(l.tiled, None, "{}", p.name);

@@ -23,6 +23,7 @@ mod loops;
 mod module;
 mod profile;
 mod reuse;
+mod rules;
 mod ty;
 
 pub use crate::profile::TargetProfile;
@@ -33,6 +34,32 @@ pub use crate::profile::{CostOver, DeviceCost};
 /// unknown name — what [`EmitOpts::target`] and [`EmitOpts::host`] accept.
 pub fn target_profile(name: &str) -> Option<&'static TargetProfile> {
     profile::resolve(name)
+}
+
+/// hardware-properties: the rungs the rules ship on GPU profile `target`, one
+/// line per fill class and face — `wps\tface\trungs on` (wps 0, 1 and 2 for
+/// "2 or more"; faces `Exact`, `Contract`, `Tf32`) — for the evidence pass
+/// (`benches/gpu/evidence.py`). `None` for an unknown or CPU profile.
+pub fn rung_table(target: &str) -> Option<String> {
+    let p = profile::resolve(target)?;
+    p.gpu()?;
+    let mut out = String::new();
+    for wps in [0, 1, 2] {
+        for face in [
+            profile::Face::Exact,
+            profile::Face::Contract,
+            profile::Face::Tf32,
+        ] {
+            let r = p.gpu_rungs_on(wps, face);
+            let on: Vec<&str> = GpuRungs::NAMES
+                .iter()
+                .copied()
+                .filter(|n| r.get(n))
+                .collect();
+            out += &format!("{wps}\t{face:?}\t{}\n", on.join(","));
+        }
+    }
+    Some(out)
 }
 
 use mapal_ir::{CategoryIr, FuncId, MorphismId, Operation, PathPlan, SourceLoc, TaskKind};
@@ -72,16 +99,19 @@ pub enum MovePanel {
 
 /// The GPU tile kernel's rungs (S52), as a set: `true` = the rung is in it.
 ///
-/// **What ships is the profile's measured table** (S53,
-/// [`TargetProfile::gpu_rungs`]): a rung is ON on a part only where its arm
-/// measured positive there. [`GpuArms`] forces a rung on or off so its effect
-/// can be measured — an A/B needs both arms of the same compiler, the
-/// `MovePanel::Off` precedent — and a rung that shows no effect on any part is
-/// deleted, not kept as a knob. Values are identical either way: every rung
+/// **What ships is the rung rules over the part's physical properties**
+/// (hardware-properties, [`TargetProfile::gpu_rungs`], `rules.rs`): a site's
+/// fill against the part's SMs, its face, and properties such as FFMA per
+/// DRAM byte, registers per resident thread, L2 per SM and measured launch
+/// costs — never a part's name or version. [`GpuArms`] forces a rung on or off
+/// so its effect can be measured — an A/B needs both arms of the same
+/// compiler, the `MovePanel::Off` precedent; an arm is a measurement flag,
+/// never a per-part default. Values are identical either way: every rung
 /// moves operands, never the order a cell folds them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GpuRungs {
-    /// Take the profile's measured rung table; off = every rung on (S52).
+    /// Take the rung rules over the part's properties (`rules.rs`); off
+    /// (`--gpu-off=arch-rungs`, the measurement arm) = every rung on (S52).
     pub arch: bool,
     /// Space a thread's register-tile chunks by the bank geometry.
     pub interleave: bool,
@@ -135,8 +165,8 @@ pub struct GpuRungs {
     /// S53 retention at part-of-object scope: a row-local site over a carried
     /// array whose iteration writes one row ([`mapal_ir::Delta::Rows`])
     /// recomputes only that row into its retained output (`func/retain.rs`).
-    /// Ships OFF on every measured part: a function it fires in keeps S52 round
-    /// trips, and `resident` alone ran decode 1.3–1.8× faster
+    /// Off on every part (no measured part found a gain, `rules.rs`): a
+    /// function it fires in keeps S52 round trips, and `resident` alone ran decode 1.3–1.8× faster
     /// (`integrated-*.txt`). Since S54 it is the S52-round-trip arm only:
     /// `retain-resident` plans the two together.
     pub retain_delta: bool,
@@ -149,7 +179,7 @@ pub struct GpuRungs {
     /// laid out by interval coloring over `LastUsePlan` positions, and a
     /// device-only object gets no host slot. Off: one `cuMemAlloc` /
     /// `cuMemFree` per object and a host slot for every array (S53).
-    /// Ships ON on all five measured parts (no `GPU_RUNGS_OFF` row):
+    /// On on every part (measured positive on all five rented parts):
     /// `benches/results/gpu/memory/arenas/arena-<part>.txt` + `-confirm.txt`, iter ms
     /// stable+ on 38–44 of 50 rows per part and stable- on none; e2e_chain_4096
     /// wall OFF/ON 1.17/1.09 (3090), 1.03/1.06 (A100), 1.16/1.23 (4090),
@@ -207,9 +237,10 @@ pub struct GpuRungs {
     /// so a warp's reads coalesce. Off: row-major store, strided fold reads.
     /// Measured mostly no gain: the strided fold costs 0.01–0.1 ms at 4096
     /// (L1 serves each sector to the next steps) and the column-major store
-    /// costs the FMA tile 0–6% (GDDR parts) to 7–22% (H100). Ships ON only on
-    /// the 4090's contract face and the A100's exact face (1–2% of device
-    /// time); OFF rows in [`crate::profile::GPU_RUNGS_OFF`] elsewhere.
+    /// costs the FMA tile 0–6% (GDDR parts) to 7–22% (H100). Off on every
+    /// part: its two 1–2 % wins (the 4090's contract face, the A100's exact
+    /// face) are not separated from its losses by any property the rules read
+    /// (open, `rung_replay.tsv`).
     pub rowfold_layout: bool,
     /// S54 R1, under `resident`: a per-cell morphism whose cell `t` reads a
     /// site's output at `t` (and other arrays complete on the device at a
@@ -218,7 +249,7 @@ pub struct GpuRungs {
     /// (`func/resident.rs:epilogues`). Off: the morphism runs on the host
     /// behind the site's copy-out (S53).
     ///
-    /// Ships ON on every measured part, so it has no `GPU_RUNGS_OFF` row. On
+    /// On on every part (measured positive on every rented part). On
     /// the nine probes it touches (epi, bias, residual, mlp, mlp2, indep,
     /// diamond, fanout, loop) at n = 2048 and 4096, both faces, the OFF arm's
     /// median clock was 1.55–3.24× ON's on the RTX 3090, 1.20–4.72× on the
@@ -234,7 +265,7 @@ pub struct GpuRungs {
     /// instead of a host loop behind a whole copy-out. Off: every per-cell map
     /// on the host (the S53 placement).
     ///
-    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): arm
+    /// **On on every part** (measured positive on every rented part): arm
     /// `off-devmap` iter / ON iter, medians of 5, every multi-computation probe
     /// (bias, diamond, epi, fanout, indep, loop, mlp, residual) at 2048 and 4096
     /// on both faces, `benches/results/gpu/fusion/device-maps/devmap-<part>.txt`: RTX 3090
@@ -246,7 +277,7 @@ pub struct GpuRungs {
     /// its own index is evaluated in the cell, never stored or loaded. Off: the
     /// cell loads it from its `devgen` buffer.
     ///
-    /// **Ships ON on every measured part** (no `GPU_RUNGS_OFF` row): `ew`, arm
+    /// **On on every part** (measured positive on every rented part): `ew`, arm
     /// `off-cell-law` iter / ON iter at 4096 exact / contract, `devmap-<part>.txt`:
     /// RTX 3090 6.15 / 7.00, A100 1.27 / 1.19 (`-confirm.txt`, another box,
     /// 2.12 / 2.20), RTX 4090 8.70 / 9.32, H100 PCIe 1.11 / 3.16 (`-confirm.txt`
@@ -263,11 +294,14 @@ pub struct GpuRungs {
     /// two chains exist. A measurement arm for the rule itself.
     pub stream_gate: bool,
     /// Page-lock (`cuMemHostRegister`) a host array that crosses the bus
-    /// repeatedly (a copy inside a loop), once, before its first copy. Off:
-    /// pageable copies.
+    /// repeatedly (a copy inside a loop), once, before its first copy, where
+    /// the host's measured pageable copy rate is below 0.9 of its page-locked
+    /// one (`DeviceCost::pageable_pm`, `rules.rs`). Off: pageable copies.
     pub pinned: bool,
-    /// sm_90+: a site launched right behind another kernel on its stream is a
-    /// programmatic dependent launch (`griddepcontrol.wait` at kernel entry).
+    /// Where the part has `griddepcontrol` and its measured programmatic
+    /// launch is cheaper than a plain dependent one (`rules.rs`): a site
+    /// launched right behind another kernel on its stream is a programmatic
+    /// dependent launch (`griddepcontrol.wait` at kernel entry).
     pub pdl: bool,
     /// S62 `row-fit`: a thread grid taller than the site's rows (`ty·tm >
     /// rows`, `TileSite::rows`) trades rows of threads for columns until the
@@ -293,8 +327,8 @@ pub struct GpuRungs {
     /// S62: a shaped site no register tile divides runs one output per thread
     /// as a staged tile (square-most `bm × bn` block of cells,
     /// [`profile::TargetProfile::gpu_cell_tile`]). Off: one thread per cell,
-    /// unstaged (`naive`). Ships ON on every measured part (no
-    /// `GPU_RUNGS_OFF` row): `benches/results/gpu/s62/asyncstage/`, OFF/ON
+    /// unstaged (`naive`). On on every part (measured positive on every
+    /// rented part): `benches/results/gpu/s62/asyncstage/`, OFF/ON
     /// cuBLAS-normalized, two passes and two boxes per part, every M16 cell
     /// stable+ on both faces with L2 flushed: RTX 5090 1.90–3.25, RTX 4090
     /// 1.70–3.58, H100 1.61–5.69, RTX 3090 1.32–3.93; 1.01–6.09 with L2 warm
@@ -303,9 +337,10 @@ pub struct GpuRungs {
     /// S62: when the grid leaves an SM fewer blocks than the tile's smem was
     /// budgeted for, stream its panels with `cp.async` through as many stages
     /// as the share left holds ([`profile::TargetProfile::gpu_tile_stages`]).
-    /// Ships OFF everywhere (rows in `GPU_RUNGS_OFF`): it hides DRAM latency —
-    /// up to 4.0× with L2 flushed — but loses with operands in L2 and in the
-    /// composed residual MLP, and no fact the launch reads separates the two.
+    /// Off on every part (`rules.rs`): it hides DRAM latency — up to 4.0× with
+    /// L2 flushed — but loses with operands in L2 and in the composed residual
+    /// MLP, and the launch does not yet read whether its operands are in L2
+    /// (open: `residence_plan` at the launch).
     pub async_stage: bool,
     /// S62 (ADR-0040 D3/D4), on the `fixed` and `free` orders: a resident site
     /// whose output domain cannot fill the part folds its `k` axis as
@@ -351,9 +386,9 @@ pub struct GpuRungs {
     /// recomputable cell) run as one unit kernel; a member no outside reader
     /// needs is never stored. Off: the tile root only (`epilogue`, S54 R1).
     /// Values, launches and movement are proven by `tests/generic_fusion.rs`.
-    /// **Ships OFF on all four measured parts** (`GPU_RUNGS_OFF` rows,
-    /// fusion-natural-forms sweep): the one unit that forms (the row softmax)
-    /// runs one thread per row, and its kernel is 1.8–4.8× the four it replaces.
+    /// The fusion-natural-forms sweep measured its first unit (the row softmax,
+    /// one thread per row) 1.8–4.8× the four kernels it replaced; units since
+    /// fold as trees (`tree-gate`).
     pub flow: bool,
     /// generic-fusion `window` (design §4): a tile site whose reads are affine
     /// in the fold's derived axes `(k÷div, k%div)` — a 2-D convolution's taps —
@@ -361,8 +396,8 @@ pub struct GpuRungs {
     /// addresses `cq·(k÷div) + cr·(k%div)`; and a weightless window over a
     /// device output (a box filter: a row fold with a split map index and
     /// split taps) is a device fold. Off: both stay the host's (`func/conv.rs`,
-    /// the host fold). Ships ON on all four measured parts (no `GPU_RUNGS_OFF`
-    /// row): off-window/ON iter, conv_2048_5 23.2 / 31.6 / 9.7 / 11.8 and
+    /// the host fold). On on every part (measured positive on the four rented
+    /// parts): off-window/ON iter, conv_2048_5 23.2 / 31.6 / 9.7 / 11.8 and
     /// ewconvew_2048_5 34.4 / 34.2 / 13.0 / 14.2 (4090 / 5090 / H100 / 3090,
     /// `benches/results/evidence/fusion-natural-forms/<part>/results-<part>.txt`).
     pub window: bool,
@@ -416,7 +451,7 @@ pub struct GpuRungs {
     /// so the host may rewrite it at once. A loop trip then waits for the
     /// device only where a host morphism reads a device value (a copy-out).
     /// Off: `cuMemcpyHtoD`, which waits for the device before each copy.
-    /// Ships OFF on the four measured parts (`GPU_RUNGS_OFF`: no win).
+    /// Off on every part (null on the four rented parts, `rules.rs`).
     pub async_h2d: bool,
     /// cpu-gpu-boundary `stage`: the runtime keeps a ring of page-locked
     /// staging slots (made with the context, before the clock); an async
@@ -460,9 +495,9 @@ pub struct GpuRungs {
     /// max/min, f32) and whose rows leave the part's resident threads idle is a
     /// warp a row — lane `l` takes every 32nd `k` from `l`, a butterfly of
     /// shuffles combines, lane 0 stores. Off: one thread a row, `k` in order.
-    /// Ships OFF on the rtx-4090 (a [`crate::profile::GPU_RUNGS_OFF`] row: its
-    /// one changed site reads a column-major operand, already coalesced one
-    /// thread a row); its emission equals OFF on the other measured parts.
+    /// Never over a column-major operand (`rowfold-layout`'s store): one
+    /// thread a row already coalesces there — the rtx-4090 measurement that
+    /// once kept it off on that part (`gpu::rowfold_lanes`).
     pub fold_lanes: bool,
     /// recurrence-precision `radix-tile`: a map/fold whose reads are affine
     /// per digit of the map and fold indices (`mapal_ir::RadixTile`, a
@@ -514,9 +549,9 @@ pub struct GpuRungs {
     /// 128-bit `a` fragments along `k` per `lanes` steps. Each cell's `k`
     /// order is unchanged. Only where one quarter-warp reads one panel row
     /// (`tx ≥ 8`, row-major store). Off: `a` transposed, 4-byte copies.
-    /// Ships OFF where the panel is register-staged (`GPU_RUNGS_OFF` rows:
-    /// rtx-4090 Filled, rtx-5090 / rtx-3090 / h100-pcie Any; stopgap, missing
-    /// fact: its register and bank cost on a staged copy).
+    /// On where the `cp.async` panel is (the `async` rule, `rules.rs`): it lost
+    /// on every register-staged copy measured (rtx-4090 filled, rtx-5090 /
+    /// rtx-3090 / h100-pcie) and won 21 W / 0 L on the async path.
     pub kmajor_a: bool,
     /// tile-efficiency T1: on a part with plan rates under `plan-cost`, a
     /// free-order split kernel (`S > 1`) keeps the full register tile and its
@@ -534,9 +569,8 @@ pub struct GpuRungs {
     /// `trow + i·ty`, its `a` panel takes the bank model's pad, `lsu` counts
     /// each class's bank excess, and the register rule (A4) takes the k-major
     /// panel only where its `bk` and blocks/SM are not worse than the
-    /// transposed panel's — under it the `kmajor-a` rows of
-    /// `GPU_RUNGS_OFF` do not apply. Off: the pre-sprint panels (row map, no
-    /// k-major pad, no rule) and those rows.
+    /// transposed panel's — under it `kmajor-a`'s rule does not apply. Off: the
+    /// pre-sprint panels (row map, no k-major pad, no rule) and that rule.
     pub bank_plan: bool,
     /// compile-time-graph A: a row-block group may form where
     /// [`GpuArms::row_block`] allows it and the plan model, over the part's
@@ -558,9 +592,9 @@ pub struct GpuRungs {
     /// the part has it and the `async` rung is on), in a bank-conflict-free
     /// layout, double-buffered where the shared memory allows — each choice
     /// priced by the plan model. Off (`--gpu-off=row-stage`): every operand
-    /// is read straight from memory, the emission before it. No
-    /// `GPU_RUNGS_OFF` row: it acts only inside a row-block unit, which every
-    /// part ships off; forced, the rtx-5080's pt_attn_1024_64 unit ran 0.908×
+    /// is read straight from memory, the emission before it. It acts only
+    /// inside a row-block unit, which the plan model forms on no suite
+    /// program yet; forced, the rtx-5080's pt_attn_1024_64 unit ran 0.908×
     /// its direct arm (ABBA, `local-rtx-5080/kernel-merging.md` Rows).
     pub row_stage: bool,
     /// kernel-merging `horizontal`: independent launches of one sequence

@@ -31,6 +31,9 @@ fn emission(ir: &CategoryIr, target: &'static str, off: &[&str], base: EmitOpts)
         site_cands: 1,
         ..GpuArms::default()
     };
+    // `linear` forced on (the rung rules ship it off: no measured gain);
+    // these tests are its proof of launches and values.
+    gpu.on.linear = true;
     for r in off.iter().chain(&["place", "pdl", "streams", "pinned"]) {
         *gpu.off.rung(r).expect("rung") = true;
     }

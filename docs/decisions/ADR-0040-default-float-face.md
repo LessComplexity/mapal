@@ -81,8 +81,9 @@ whole panels (`bounds_proof` covers every piece's reads), `f32`/`f64` (`red.glob
 instructions (the text fixes the arithmetic; LLVM may not re-bracket). On the host: only `reassoc` and `contract`
 flags, never `afn`, `arcp`, `ninf`, `nnan` or `nsz` — order may move, a step's rounding may not.
 
-**D5 — Per-part default = measured.** A rung ships OFF for `(part, fill, face)` only through a `GPU_RUNGS_OFF` row
-with a cite. The 3090 `splitk` rows (`Face::Exact`) govern only the fixed face on separate steps. Rows for
+**D5 — Per-part default = measured.** *Superseded (hardware-properties, 2026-11-21): no rung is decided per part;
+`rules.rs` reads physical properties and the former rows' measurements are replayed in `rung_replay.tsv`.* A rung
+shipped OFF for `(part, fill, face)` only through a `GPU_RUNGS_OFF` row with a cite. The 3090 `splitk` rows (`Face::Exact`) govern only the fixed face on separate steps. Rows for
 `splitk-atomic` and `streamk` come from `benches/results/gpu/s63/default-float/`.
 
 ## Alternatives rejected

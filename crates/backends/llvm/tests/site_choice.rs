@@ -383,14 +383,17 @@ fn every_candidate_answers_the_interpreter() {
     }
 }
 
-/// per-site-choice D1: candidate 0 is the pre-sprint emission — `--cands=1`
-/// at HEAD hashes (host + device IR less the `; mapal.` evidence lines) as
-/// 089f1a6 emitted each program of a fixed bench list on the four parts and
-/// three faces (`tests/golden/c0-089f1a6.tsv`): `bank-plan` OFF with the
-/// `kmajor-a` rows is the pre-sprint layout, byte for byte.
+/// per-site-choice D1: candidate 0 is the rules' plan, pinned — `--cands=1`
+/// hashes (host + device IR less the `; mapal.` evidence lines) as recorded
+/// for each program of a fixed bench list on the four parts and three faces
+/// (`tests/golden/c0-rules.tsv`). It pinned 089f1a6's (pre-sprint) emission
+/// until hardware-properties replaced the per-part rung rows by the rung
+/// rules, which moved candidate 0 where a part's properties decide otherwise
+/// than its row did; `MAPAL_REGOLD=1` rewrites the file.
 #[test]
 fn candidate_zero_is_the_pre_sprint_emission() {
-    let golden = include_str!("golden/c0-089f1a6.tsv");
+    let golden = include_str!("golden/c0-rules.tsv");
+    let mut regold = String::new();
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../benches/algorithms");
     let norm = |t: &str| -> String {
         t.split_inclusive('\n')
@@ -446,10 +449,21 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             norm(e.device.as_deref().unwrap_or(""))
         );
         let got = format!("{:016x}", fnv(body.as_bytes()));
+        regold += &format!("{prog}\t{part}\t{face}\t{got}\n");
         if got != want {
             bad.push(format!("{prog} {part} {face}: {got} != {want}"));
         }
         rows += 1;
+    }
+    if std::env::var_os("MAPAL_REGOLD").is_some() {
+        let head: String = golden
+            .lines()
+            .filter(|l| l.starts_with('#'))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/c0-rules.tsv");
+        std::fs::write(path, head + &regold).expect("golden written");
+        return;
     }
     assert!(rows >= 200, "{rows} golden rows");
     assert!(bad.is_empty(), "differs from 089f1a6:\n{}", bad.join("\n"));

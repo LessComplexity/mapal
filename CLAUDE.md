@@ -65,6 +65,7 @@ No keep/remove/gate decision stands on timing alone.
 | `residence_plan` (`bytes`, `working_set`, `at` → `Residence::{Chip, L2, Dram}`) | where a value's bytes live between producer and last reader: the peak live bytes (storage classes once, index domains none) over its interval against a cache's capacity (`TargetProfile` L2) — the rate a cost model prices that value's traffic at |
 | `whole_fold`, `fold_tree_step` (`CellSite::tree`) | a fold of the function itself over one affine read (a one-row row fold); a fold step regroupable as lane partials + tree where the order is free |
 | backend: `ResidentPlan`, `arena`, frame slots (`prepare_storage`), `TargetProfile` | device residency, lifetime-colored buffers, host slots/aliases, hardware facts |
+| backend: `Gpu` properties (`ffma_per_dram_byte_pm`, `regs_per_resident_thread`, `l2_bytes_per_sm`, `dram_bytes_per_us_per_sm`, `Caps`, `DeviceCost`), `wave_full`, `rules::rungs` | the physical properties a GPU decision reads (queried: `cuDeviceGetAttribute`; measured: `calib.cu`); a row-fitted grid's wave fill; each rung's value at a site's fill and face — the replay of every cited measurement (`rung_replay.tsv`) |
 
 New logic starts from this table; if a needed fact is missing, add it to `mapal-ir` (one query, tested) — never
 re-derive it inside a backend pass.
@@ -88,8 +89,11 @@ only a fact that is not there yet is computed (from its stored inputs). Never re
   geometry to the hardware's physical properties (SMs, threads/registers/smem per SM, L2 bytes, bandwidths, latencies,
   issue/launch/barrier costs, instruction rates) — measured or queried, stored as `TargetProfile` facts. No decision is
   switched on or off per architecture, part or version ("4090 on, 5080 off" is wrong): a rule that loses on some
-  hardware is missing the property that separates the cases. `GPU_RUNGS_OFF` (per-arch rung rows) is legacy being
-  removed — never add a row. OFF arms are measurement flags (A/B, debugging), never per-hardware defaults.
+  hardware is missing the property that separates the cases. The rung rules (`crates/backends/llvm/src/rules.rs`)
+  read properties only; every cited measurement is replayed against them (`rung_replay.tsv`, test
+  `rung_rules_replay`) — a new measurement is a replay line, never a per-part row. OFF arms are measurement flags
+  (A/B, debugging), never per-hardware defaults. The GPU `native-gpu` profile is the device query + the calibration
+  file (`benches/gpu/calib.cu`), never a name lookup.
   Capabilities are properties too, described by the geometry they execute, never by a version compare: matrix
   instructions as shapes (M×N×K per issuing group, operand types, where operands come from — registers, smem
   descriptors — and where the accumulator lives: registers or tensor memory, e.g. datacenter Blackwell `tcgen05` +

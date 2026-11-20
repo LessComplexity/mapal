@@ -9,7 +9,7 @@ geometry, stages, combine). A check is `(label, expression)` over the facts of o
   occ.*      blocks_per_sm warps_per_sm waves resident_warps_per_sm sms (occ.py, the part's limits)
   remarks.opt.* / remarks.llc.*  opt / llc optimization remarks for the kernel (full_unroll, insns, …)
   launch.*   the stem's `.launch` line (S, combine, reduce)   exec.*  the box's JIT image (regs local smem)
-  table.rungs_on  the part's GPU_RUNGS_OFF table at the kernel's fill and face, under the bundle arm
+  table.rungs_on  the rung rules' rungs on the part at the kernel's fill and face (`rungs.tsv`), under the bundle arm
 `rule=True`: the rung is a decision of the rules' plan — checked on candidate 0 and untabled kernels, not on a
 site table's alternatives (per-site-choice D2: `choice-axes` checks what an alternative realized instead).
 Host rungs (`host=True`) run once per stem over `host.*` (`; mapal.host`, `mapal_gpu_*` call counts,
@@ -60,7 +60,7 @@ INTENT = {
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
     'arch-rungs': dict(rule=True, applies=ANY, on=[
-        ("the kernel's rungs are the part's measured table at its fill and face", 'set(plan.rungs_on) == set(table.rungs_on)')],
+        ("the kernel's rungs are the rules' at its fill and face", 'set(plan.rungs_on) == set(table.rungs_on)')],
         off=[('every rung on', 'set(plan.rungs_on) == set(table.rungs_on)')]),
     # ---- FMA tile rungs ------------------------------------------------------------------------------
     'unroll': dict(applies=TILE + ' and plan.bk > 1', on=[
