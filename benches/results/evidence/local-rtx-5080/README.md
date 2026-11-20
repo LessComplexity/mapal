@@ -50,6 +50,10 @@ Rows step: `row-stage` stages a row-block unit's tile panels through shared memo
 chunks, one or two buffers, column passes, priced by the site model). attn_1024_64 forced as one unit: 32.9 → 28.4 us
 (model pick) / 25.7 us (best), against 30.8 us of split kernels; iteration ABBA 0.932 / 0.857 of the split. The plan
 model still ranks the unit above the split (missing facts listed), so row-block stays off by default.
+Horizontal step: independent launches of a trip (no `access_plan` edge) run as one grid dispatching on block index to
+each member's kernel as a device function, where no member loses a wave and their last waves share one — decode
+0.658×, causal 0.774×, gen 0.776×, prefill 0.782× (ABBA; the KV rows and the query side by side); decode now 0.62×
+hand CUDA.
 
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

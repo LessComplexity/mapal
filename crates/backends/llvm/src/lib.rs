@@ -562,6 +562,13 @@ pub struct GpuRungs {
     /// part ships off; forced, the rtx-5080's pt_attn_1024_64 unit ran 0.908×
     /// its direct arm (ABBA, `local-rtx-5080/kernel-merging.md` Rows).
     pub row_stage: bool,
+    /// kernel-merging `horizontal`: independent launches of one sequence
+    /// that the dependency fact (`access_plan`) leaves unordered run as one
+    /// grid, each block dispatching on its index to its launch's body, where
+    /// the merged grid's footprint costs no member a wave and their last
+    /// waves fit one (`func/horizontal.rs`). Off (`--gpu-off=horizontal`):
+    /// every launch its own, the emission before it.
+    pub horizontal: bool,
 }
 
 impl GpuRungs {
@@ -648,11 +655,12 @@ impl GpuRungs {
         row_block: true,
         zero_fold: true,
         row_stage: true,
+        horizontal: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 81] = [
+    pub const NAMES: [&'static str; 82] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -734,6 +742,7 @@ impl GpuRungs {
         "row-block",
         "zero-fold",
         "row-stage",
+        "horizontal",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -820,6 +829,7 @@ impl GpuRungs {
             "row-block" => &mut self.row_block,
             "zero-fold" => &mut self.zero_fold,
             "row-stage" => &mut self.row_stage,
+            "horizontal" => &mut self.horizontal,
             _ => return None,
         })
     }
@@ -892,6 +902,11 @@ pub struct GpuArms {
     /// this panel depth, buffers and column passes where they fit, the
     /// plan model's pick aside. `None` = derive.
     pub row_stage_force: Option<(u64, u64, u64)>,
+    /// Measurement override (`--hz=force`, the `--row-block` precedent): a
+    /// `horizontal` group takes every independent adjacent launch whose
+    /// arguments, block and shared memory one launch holds, the occupancy and
+    /// wave tests aside.
+    pub hz_force: bool,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -912,6 +927,7 @@ impl Default for GpuArms {
             row_block: true,
             row_block_b: 0,
             row_stage_force: None,
+            hz_force: false,
         }
     }
 }
@@ -1624,6 +1640,7 @@ fn emit_module(
                 &folds,
                 &units,
                 &crate::func::gpu::launched_kernels(&out),
+                &crate::func::horizontal::hz_specs(&out),
             )
         })
         .flatten();
@@ -1782,14 +1799,18 @@ mod place_tests {
     }
 
     /// The rules' plan (`--cands=1`): placement is what this checks (the
-    /// row-block arm off: its chain of 8×8 sites is `row_block.rs`'s).
+    /// row-block arm off: its chain of 8×8 sites is `row_block.rs`'s; the
+    /// `horizontal` arm off: the three independent 8³ sites would launch as
+    /// one, `horizontal.rs`'s).
     fn emit_on(ir: &CategoryIr, place: bool) -> Emission {
+        let mut gpu = GpuArms {
+            site_cands: 1,
+            row_block: false,
+            ..GpuArms::default()
+        };
+        *gpu.off.rung("horizontal").expect("a rung") = true;
         let opts = EmitOpts {
-            gpu: GpuArms {
-                site_cands: 1,
-                row_block: false,
-                ..GpuArms::default()
-            },
+            gpu,
             ..EmitOpts::exact()
         };
         emit_module(ir, &opts, synth(place)).expect("emits")
@@ -1831,12 +1852,14 @@ mod place_tests {
     #[test]
     fn without_costs_every_capable_site_is_placed() {
         let ir = mixed();
+        let mut gpu = GpuArms {
+            site_cands: 1,
+            row_block: false,
+            ..GpuArms::default()
+        };
+        *gpu.off.rung("horizontal").expect("a rung") = true;
         let opts = EmitOpts {
-            gpu: GpuArms {
-                site_cands: 1,
-                row_block: false,
-                ..GpuArms::default()
-            },
+            gpu,
             ..EmitOpts::exact()
         };
         let today = emit_module(&ir, &opts, &RTX_4090).expect("emits");

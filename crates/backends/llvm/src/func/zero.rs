@@ -24,7 +24,10 @@
 //! drops its zero. Not folded: a guarded (gated) step touching the bytes, a
 //! retained row (its range is the trip's), an epilogue group, a function on
 //! streams (its order is the events'), a part without plan rates or the
-//! measured fill and tail rates (`unpriced`). OFF: `--gpu-off=zero-fold`.
+//! measured fill and tail rates (`unpriced`), a `horizontal` member (its
+//! merged tuples are unsplit). A tail rides a group member only at its last
+//! (the group's launch), when no member touches the bytes and the merged
+//! launch's arguments take the tail's. OFF: `--gpu-off=zero-fold`.
 
 use super::resident::ResidentPlan;
 use super::*;
@@ -42,7 +45,7 @@ pub(crate) const SITE_ZEROED: u32 = 2;
 const ZERO_BYTES_PER_BLOCK_CLOCK: f64 = 256.0;
 
 /// One step of a sequence the rule walks.
-enum Step {
+pub(super) enum Step {
     /// A morphism emitted at this point.
     Op(MorphismId),
     /// A whole loop (the straight-line walk emits it at its `LoopEnter`).
@@ -121,7 +124,28 @@ impl<'a> FnEmit<'a> {
                         continue;
                     };
                     let jobs = plan.zero_by.get(e).map_or(0, Vec::len);
-                    if base + 1 + 2 * (jobs + 1) > gpu::LAUNCHV_MAX {
+                    // kernel-merging `horizontal`: a member's tail runs in
+                    // its group's launch, at the last member — only there,
+                    // when no member touches the bytes and the merged
+                    // launch's arguments take the tail's.
+                    let others = match plan.hz_of.get(e) {
+                        None => 0,
+                        Some(&(g, k)) => {
+                            let ms = &plan.hz[g].members;
+                            if k + 1 != ms.len()
+                                || ms.iter().any(|&x| touches(&self.hz_access(plan, &acc, x)))
+                            {
+                                continue;
+                            }
+                            ms[..k]
+                                .iter()
+                                .map(|&x| {
+                                    self.hz_shape(plan, x).map_or(gpu::LAUNCHV_MAX, |s| s.args)
+                                })
+                                .sum()
+                        }
+                    };
+                    if others + base + 1 + 2 * (jobs + 1) > gpu::LAUNCHV_MAX {
                         continue;
                     }
                     // The plan rates: the tail at the rate `E`'s blocks
@@ -186,8 +210,11 @@ impl<'a> FnEmit<'a> {
         };
         for (m, site) in tp.sites.iter() {
             let target = self.ir.morphism(m).expect("site").target;
+            // A `horizontal` member launches in its group's merged table,
+            // whose tuples hold no atomic candidate: nothing to zero.
             if !self.device.contains_key(m)
                 || plan.skip.contains_key(m)
+                || plan.hz_of.contains_key(m)
                 || plan.units.contains_key(m)
                 || self.groups.contains_key(m)
                 || self.retain.contains_key(target)
@@ -243,7 +270,7 @@ impl<'a> FnEmit<'a> {
 
     /// The sequences the rule walks: each canonical loop's advance cone,
     /// then the straight-line walk (a loop one step).
-    fn zero_sequences(&self) -> Vec<Vec<Step>> {
+    pub(super) fn zero_sequences(&self) -> Vec<Vec<Step>> {
         let mut out = Vec::new();
         let mut owned: SecondaryMap<MorphismId, ()> = SecondaryMap::new();
         let mut in_scc: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
@@ -294,7 +321,7 @@ impl<'a> FnEmit<'a> {
     /// (inputs it does not make, stored values), a site with its epilogue
     /// chain; nothing for a member that runs inside another's launch; else
     /// the morphism's own.
-    fn step_access(
+    pub(super) fn step_access(
         &self,
         plan: &ResidentPlan,
         acc: &AccessPlan,
@@ -331,7 +358,7 @@ impl<'a> FnEmit<'a> {
     }
 
     /// Every access of the loop at `merge`, as one step.
-    fn loop_access(
+    pub(super) fn loop_access(
         &self,
         plan: &ResidentPlan,
         acc: &AccessPlan,
@@ -354,7 +381,13 @@ impl<'a> FnEmit<'a> {
     /// May `x` and `y` share device bytes: one storage class
     /// (`access_plan`), one residency alias or carry buffer, or overlapping
     /// arena offsets?
-    fn zero_shares(&self, plan: &ResidentPlan, acc: &AccessPlan, x: ObjectId, y: ObjectId) -> bool {
+    pub(super) fn zero_shares(
+        &self,
+        plan: &ResidentPlan,
+        acc: &AccessPlan,
+        x: ObjectId,
+        y: ObjectId,
+    ) -> bool {
         if acc.shares(x, y) || plan.alias(x) == plan.alias(y) {
             return true;
         }

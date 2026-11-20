@@ -13,8 +13,19 @@ impl<'a> FnEmit<'a> {
         if self.resident.is_none() {
             return self.emit_op(m);
         }
+        // kernel-merging `horizontal`: a member's launch is captured; the
+        // group launches after its last member, before that one's frees.
+        let hz = self.resident.as_ref().and_then(|p| {
+            let (g, i) = *p.hz_of.get(m)?;
+            Some((g, i, i + 1 == p.hz[g].members.len()))
+        });
+        self.hz.cur = hz.map(|(g, i, _)| (g, i));
         if !self.resident_instead(m) {
             self.emit_op(m);
+        }
+        self.hz.cur = None;
+        if let Some((g, _, true)) = hz {
+            self.hz_launch(g);
         }
         self.resident_after(m);
     }

@@ -68,7 +68,9 @@ fn emission_keep(
     gpu.row_block = on;
     gpu.on.row_block = on;
     gpu.row_block_b = b;
-    for r in ["place", "async", "pdl", "streams", "pinned"]
+    // A unit's launches against its members' own: `horizontal` (its tests)
+    // would merge independent ones in either arm.
+    for r in ["place", "async", "pdl", "streams", "pinned", "horizontal"]
         .iter()
         .filter(|r| !keep.contains(r))
         .chain(off)

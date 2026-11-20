@@ -154,9 +154,20 @@ fn decode_and_attention_fold_where_the_dataflow_allows() {
         "{}",
         on.text
     );
-    assert_eq!(site_flags(&on), vec![1, 1, 1, 1, 3, 3]);
+    // The rows' four tables (the first trip's whole sites, the row passes
+    // when the merge does not run), the `horizontal` group's merged table,
+    // then `s` and `o` flagged.
+    assert_eq!(site_flags(&on), vec![1, 1, 1, 1, 1, 3, 3]);
     let dev = on.device.as_deref().unwrap();
-    assert_eq!(dev.matches("i64 %zt, ptr addrspace(1) %zp0").count(), 1);
+    // One kernel takes the tail (the merged kernel's copy is its device
+    // function's, `@hz.<kernel>`).
+    let kernels_with_tail = dev
+        .lines()
+        .filter(|l| {
+            l.starts_with("define ptx_kernel") && l.contains("i64 %zt, ptr addrspace(1) %zp0")
+        })
+        .count();
+    assert_eq!(kernels_with_tail, 1);
     let off = shipped(&ir, "rtx-5080", false);
     assert!(host_line(&off).is_empty() && !off.text.contains("; mapal.zero"));
     assert!(site_flags(&off).iter().all(|&f| f == 1));

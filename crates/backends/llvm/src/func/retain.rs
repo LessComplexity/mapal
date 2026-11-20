@@ -230,7 +230,10 @@ impl<'a> FnEmit<'a> {
         self.line(format!("br i1 {part}, label %{one}, label %{whole}"));
 
         self.label_line(&whole);
+        // kernel-merging `horizontal`: the whole site launches in place.
+        self.hz.standalone = true;
         self.emit_tiled_map_realize(source, target, site, packed.clone());
+        self.hz.standalone = false;
         self.line(format!("store i1 true, ptr {flag}"));
         self.line(format!("br label %{done}"));
 

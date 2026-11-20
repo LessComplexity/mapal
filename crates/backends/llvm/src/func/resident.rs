@@ -328,6 +328,12 @@ pub(crate) struct ResidentPlan {
     /// `trip-batch`: the loops entered at the last trip of a skippable first
     /// interval, each batched write made first by one cell launch.
     pub batch: Vec<Batch>,
+    /// kernel-merging `horizontal`: the merged launches, and each member's
+    /// `(group, index)`.
+    pub hz: Vec<super::horizontal::HzGroup>,
+    pub hz_of: SecondaryMap<MorphismId, (usize, usize)>,
+    /// The host intent line (`; mapal.hz.host …`).
+    pub hz_line: String,
 }
 
 /// recurrence-precision `trip-batch`: a loop whose first trip interval
@@ -2118,6 +2124,10 @@ impl<'a> FnEmit<'a> {
         self.chains(&sites, &mut plan);
         // `flow`: the placed folds and cells, grouped.
         self.flow_units(&mut plan);
+        // kernel-merging `horizontal`: independent launches in one grid —
+        // before the arena, which keeps every byte a deferred launch reads
+        // until its group launches.
+        self.horizontal(&mut plan);
         // ponytail: the arena reuses bytes by topo position, which concurrent
         // streams do not follow; a function that opens streams keeps its own
         // buffers. Color per stream when a part ships both on one program.
@@ -2380,6 +2390,23 @@ impl<'a> FnEmit<'a> {
         // own (later) map — else it could take the bytes of an operand that dies
         // at the site while the kernel still reads it (S54 integration:
         // px_bias_100's `d` took `a`'s offset and the checksum raced).
+        // kernel-merging `horizontal`: an operand of a deferred launch lives
+        // until its group launches (at the group's last member).
+        let acc = (!plan.hz.is_empty()).then(|| self.ir.access_plan(self.f));
+        let mut until: SecondaryMap<ObjectId, u32> = SecondaryMap::new();
+        for g in &plan.hz {
+            let at = g.members.last().and_then(|&m| self.lup.position(m));
+            let (Some(acc), Some(at)) = (&acc, at) else {
+                continue;
+            };
+            for &m in &g.members {
+                let (r, _) = self.step_access(plan, acc, m);
+                for o in r {
+                    let u = until.get(o).copied().unwrap_or(0).max(at);
+                    until.insert(o, u);
+                }
+            }
+        }
         let live: Vec<(u32, u32, u64)> = members
             .iter()
             .map(|&o| {
@@ -2392,7 +2419,9 @@ impl<'a> FnEmit<'a> {
                     .chain(plan.unit_writer(o))
                     .filter_map(|p| self.lup.position(p))
                     .min();
-                let death = self.death_of(o);
+                let death = self
+                    .death_of(o)
+                    .map(|d| d.max(until.get(o).copied().unwrap_or(0)));
                 let bytes = self.array_bytes(&self.obj_ty(o));
                 (
                     birth.expect("produced"),

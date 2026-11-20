@@ -81,6 +81,11 @@ pub fn host_device(dev: &str) -> String {
                 "call void @llvm.nvvm.barrier0()",
                 "call void @emu_barrier()",
             )
+            // kernel-merging `horizontal`: a member's barrier of its own threads.
+            .replace(
+                "call void @llvm.nvvm.barrier.sync.cnt(i32 0, ",
+                "call void @emu_barrier_n(",
+            )
             .replace(" syncscope(\"device\")", "");
         for (ty, bits, c) in [("i32", 32, "r"), ("i64", 64, "l")] {
             let asm = format!("call {ty} asm \"mov.b{bits} $0, $1;\", \"={c},{c}\"({ty} ");
@@ -139,7 +144,7 @@ pub fn host_device(dev: &str) -> String {
     out + lanes
         + "declare i32 @emu_tid_x()\ndeclare i32 @emu_ctaid_x()\ndeclare i32 @emu_ctaid_y()\n\
            declare i32 @emu_laneid()\ndeclare float @emu_shfl_bfly(float, i32)\n\
-           declare void @emu_barrier()\n@emu_smem = external global [0 x i8], align 16\n\
+           declare void @emu_barrier()\ndeclare void @emu_barrier_n(i32)\n@emu_smem = external global [0 x i8], align 16\n\
            declare void @emu_cp_async(ptr, ptr, i32)\ndeclare void @emu_cp_commit()\n\
            declare void @emu_cp_wait(i32)\n"
 }

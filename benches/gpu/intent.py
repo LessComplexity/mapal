@@ -274,6 +274,15 @@ INTENT = {
         ('one tail call a folding kernel', 'host.zero.tails == host.zero.kernels'),
         ('folded + kept = the atomic sites', 'host.zero.folded + host.zero.gated + host.zero.stopped + host.zero.none <= host.zero.sites')],
         applies_off='host.calls.launchv > 0', off=[('no tail', 'host.zero.tails == 0')]),
+    # kernel-merging `horizontal` (func/horizontal.rs): independent launches the dependency fact leaves unordered run
+    # as one grid; each merged kernel dispatches on its block index to its members' bodies (device functions).
+    'horizontal': dict(host=True, applies='host.hz.groups > 0', on=[
+        ('a merged launch a group (its table or its one kernel)', 'host.hz.calls >= host.hz.groups'),
+        ('every merged kernel the host names is in the device module', 'dev.hz == host.hz.specs')],
+        applies_off='host.calls.launchv > 0', off=[('no merged kernel', 'dev.hz == 0')]),
+    'horizontal-kernel': dict(applies="plan.kind == 'hz'", on=[
+        ("every member body inlined: no call left in PTX", 'ptx.call == 0'),
+        ('shared memory is the launch\'s (the largest member\'s), none static', 'ptxas.static_smem == 0')]),
     # generic-fusion `window` (design §4/§7): a site whose reads are affine in the fold's derived axes (k÷div, k%div:
     # a 2-D convolution's taps) is a device site; the naive kernel walks k in order with constant divisors. Only a
     # window site's plan line carries `taps=` (the kernel exists only with the rung on: `.off-window` keeps it host).

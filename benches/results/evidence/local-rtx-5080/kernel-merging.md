@@ -218,3 +218,109 @@ unmeasured and shipped off.
 3. Column passes come from the forced test only. The chain generator's extents stop at 255 cells.
 4. b = 16 keeps 64 of the 84 SMs busy. Attention at 1024 rows has no `b` that fills the part and keeps the K / V
    re-reads (16 MB each at b = 16) low.
+
+## Horizontal — independent launches side by side in one grid
+
+Two device launches of one sequence (a loop trip's advance cone, the straight-line walk) that the dependency fact
+(`access_plan`, with the backend's byte sharing) leaves unordered run as one launch: the grid is the concatenation of
+their block ranges, a block dispatches on its index to its member's body (each kernel a device function of its own
+block coordinates, inlined). The group launches at its last member; each earlier member's launch is deferred there.
+No runtime graph: the merged kernels, their tables and the dispatch are compile-time text.
+
+### What changed
+
+| | fact / rule | OFF arm |
+| --- | --- | --- |
+| 1 | **`horizontal`** (`func/horizontal.rs`, host rung). Per sequence, greedily in walk order, a launch joins the open group when it is independent of every member (no RAW / WAR / WAW in `access_plan` lifted with residency aliases and carries; `Pair` / `Proj` steps assemble host products and touch no device byte) and the merged grid fits: arguments ≤ `LAUNCHV_MAX`, the block the largest member's (every block a multiple of the warp), shared memory the largest, and at the merged footprint — the largest block and shared memory, each member's own residency re-expressed in blocks of the merged size — no member takes more waves than alone (`occupancy`) and the members' last waves fit one wave (`waves`: the S54 wave rule over `k` grids). Under both the merged grid is never longer than the members back to back, and issues one launch for `k`. Members: cells (not a range cell or a batched write), units, unsplit tile sites (a table's unsplit candidates make the merged table's tuples, rank-sum order, ≤ `--cands`), a retained site's row pass (merged when its trip's row arm ran — a flag the arm sets; otherwise each member launches alone at the group's point). | `--gpu-off=horizontal` |
+| 2 | Emission: a member's runtime launch line is captured (its pointer array and table, or its kernel and grid); the last member issues the merged table (`mapal_gpu_site`, `%mapal_cand` rows of merged kernels) or the one merged kernel (`launchv`); a launch the merge cannot take (a copy-out, a split's zero) issues the member's own launch in place. `; mapal.hz kernel= block= smem= members=` names each merged kernel; the device unit composes it: each member kernel once as `@hz.<kernel>(<params>, i32 %hz.bx, i32 %hz.by) alwaysinline` (its `ctaid` reads the arguments; a member of fewer threads than the block runs on its own warps, its `barrier0` counted: `barrier.sync 0, <its threads>`), the merged kernel a compare chain over the block ranges (`maxntid` the block, `minctasm` keeping each member's register cap). A member launched nowhere else leaves only its device function. | — |
+| 3 | Order of the plan: `horizontal` runs before the arena, which keeps every operand of a deferred launch alive until its group launches (an arena reuse would otherwise race inside the merged grid); `zero-fold` after it: a group member is no atomic site (its tuples are unsplit), a tail rides a group only at its last member when no member touches the bytes and the merged arguments take the tail's. | — |
+| 4 | Emulator: `barrier.sync 0, n` (`emu_barrier_n`, serial modes meet the block's first `n` threads) and `MAPAL_EMU_REVERSE=1` (a grid's blocks last to first: two blocks of one launch that share bytes race visibly). Measurement only: `--hz=force` (the occupancy and wave tests aside). | — |
+
+No new IR fact (independence is `access_plan`'s; occupancy facts are `TargetProfile`'s), so no CLAUDE.md row.
+
+Byte identity: with `--gpu-off=horizontal` the emission equals `66a10923` on all 5258 host / device modules (551
+programs: 191 `benches/algorithms` + 360 generated, × rtx-5080 / rtx-4090 / h100-pcie × default / exact face). With the
+rung on, 308 modules differ (groups, or a refusal's intent line); on the rtx-5080 suite, five programs form a group
+(decode, causal, gen, prefill, rt_mlp2_1024) and two more print refusals only (rt_mlp2_2048 occupancy + waves,
+mlp2_2048_tf32 waves).
+
+### Intended vs realized (rtx-5080; `ptxas -v`, `cuobjdump -sass`, CUPTI `ktrace.cpp`, one traced run an arm)
+
+| program | intended (fact + rule) | realized |
+| --- | --- | --- |
+| decode_1024_256 | trip: `x` (writes what the rows read) · **kk-row ∥ vv-row ∥ q** (both rows read only `x` and the weights, `q` only the counter; 1 + 1 + 1 blocks: one wave) · `s`, `o` (read them). Merged table: 4 tuples (each row's unsplit candidates 0 and 1 × `q`); `q`'s zero tail (s, o) stays on the group's last member | `; mapal.hz.host launches=3 groups=1 members=3 branchy=2 refused=0`; tuple 0 `mapal_tile_16bf…` 3 blocks × 256, **38 regs** (members 38 / 38 / 22), 0 barriers, SASS 513 insts = 2 × 222 + 93 less shared setup, FFMA 128 = 2 × 64, LDG 256 = 2 × 128, uniform dispatch `UISETP` + `BRA.U`, padded warps `@P0 EXIT`. Tuple 3 (32-thread row candidates): 255 regs, `BAR.SYNC 0x0, 0x20` × 4, 1376 B stack (the member alone: 1400). CUPTI: **4100 kernels a run (OFF 6146)**, the merged kernel 4.19 us where kk 4.16 + vv 4.16 + q 0.77 ran back to back; device busy 9.2 vs 14.2 ms |
+| causal / gen / prefill | the same three per trip | 7172 / 3596 / 3595 kernels (OFF 9218 / 4620 / 4617); the merged kernel 4.19–4.22 us |
+| rt_mlp2_1024 | trip: **a ∥ f** (4096 blocks each, last waves 64 + 64 ≤ 504); `d1 ∥ c2` refused (128-block GEMMs, a wave of 84 × 1: last waves 44 + 44 > 84 — no wave saved) | 54 → 46 kernels; a, f 3.84 + 3.81 us → 7.04 us (8192 blocks, 16 regs) |
+| indep_512 | no group: `d`'s store evaluates `g = c + d` (epilogue) so it reads `c` | unchanged |
+
+Evidence checker (`horizontal` / `horizontal-kernel` intents): 20 host and 44 kernel checks ok in the ON bundle. The ON
+and OFF bundles' mismatch sets differ by 4 vs 3 `choice` rows (tuning noise on identical modules, both ways) and two
+rt_mlp2_1024 rows (`module`, `uniform`): the merged cells' facts lines outlived their kernels — fixed (a member launched
+nowhere else takes its facts lines with it). The final build's bundle, its static evidence checked against run 1's
+results: those two rows gone, 20 + 44 `horizontal` checks ok, the mismatch set the OFF bundle's but for the `choice`
+rows. Its emission equals the measured ON bundle's but for those facts lines and the intent line's member kinds
+(re-emitted, compared); its own timed run was not taken (the box was in use: the gate held it).
+
+### Time (ms; suite ON / OFF / ON `LADDER=1 gpu_run.sh`; ABBA: 8 rounds = 16 processes an arm, same box)
+
+| workload | OFF | ON | best competitor | ABBA ON/OFF rules picks (null A / B) | tuned picks | explanation |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| decode_1024_256 | 14.91 | 10.92 / 9.60 | 15.6 hand CUDA (cache) | **0.658** (1.1 / 2.0 %) | **0.654** (1.9 / 2.7 %) | the two row passes (one block each, latency-bound) and `q` run side by side instead of back to back: −4.9 us device and −2 launches a trip. Mapal 0.62× the best competitor (was 0.95×) |
+| causal_1024_256 | 21.21 | 16.77 / 16.88 | 49.75 torch-compile | **0.774** (0.9 / 0.8 %) | **0.791** (1.4 / 0.9 %) | as decode |
+| gen_1024_512_256 | 10.68 | 9.29 / 8.53 | 25.06 torch-compile | **0.776** (1.3 / 2.0 %) | 0.735 (13.6 / 13.3 %) | as decode, half the trips at full length |
+| prefill_1024_512_256 | 11.02 | 8.89 / 8.90 | 25.42 torch-compile | **0.782** (0.9 / 0.9 %) | **0.807** (1.4 / 1.4 %) | as decode |
+| rt_mlp2_1024 | 2.580 | 2.572 / 2.575 | 2.542 torch-compile | 0.998 (0.6 / 0.9 %) | 0.997 (1.8 / 0.6 %) | a ∥ f saves 0.6 us a trip (8 trips): within null |
+| other 30 rows | — | ON/OFF 0.90–1.09 | — | — | — | identical modules; the ends are tuning state (fanout_2048 1.035: site `cf5ec6…` picks 5 ON vs 3 OFF; mlp_512 0.97: `3e77a9…` 4 vs 5; epi_4096 1.09 on one run only) |
+
+Tuned picks: each arm trialled once into its own wisdom, then ABBA on it. The OFF rows tune to their atomic split
+candidate (`ce70d…` pick 2, a zero pass a row), which the merged tuples do not hold; the merge still wins. A first
+tuned ABBA had disturbed phases (decode OFF spread 18 %, causal ON 18.8 ms vs 16.7 untuned); the repeat is the table's.
+Probe value gate: 0 programs failed in each of the three suite runs.
+
+Refusals, measured forced (`--hz=force`, rules picks):
+
+| program | group the rule refuses | forced ABBA / kernel time | reading |
+| --- | --- | --- | --- |
+| rt_mlp2_1024 | d1 ∥ c2 (`waves`) | 0.997 (1.1 / 2.3 %); merged 158.9 us vs 81.6 + 82.1 | the shared tail saves 3 % of the pair's kernel time, under the iteration's null |
+| rt_mlp2_2048 | (`occupancy`, `waves`) | 1.000 (0.2 / 0.1 %) | nothing to save |
+| indep_512, epilogue and splits off | c ∥ d (`waves` at the plan's 2 blocks / SM; 6 resident by registers) | 0.953 (43 % / 9 % spread); merged 30.3 us vs 2 × 16.0 | the GEMMs are throughput-bound co-resident: the plan's per-SM count is the right capacity |
+
+### Tests
+
+- `horizontal.rs` (3): decode's group (3 members, 2 retained rows, 4 tuples, the counted barrier, the OFF arm without
+  any of it) and rt_mlp2_1024's (`a ∥ f`, `waves:1`); an emulated decode (16 × 256, 3 trips): ON = OFF = interpreter
+  under 6 picks × free / `MAPAL_EMU_SERIAL=1` / `2` / `MAPAL_EMU_REVERSE=1`, two launches fewer a trip after the
+  first; 120 generated `hz_prog_strategy` programs (cells of the counter, GEMV sites over different cells, row sums,
+  the retained KV pattern; loop or straight-line) × 4 picks × free / serial 1 / 2 / reverse = interpreter and OFF, a
+  program without a group the OFF text. Coverage, each required > 0: 127 groups, 367 members (185 cells, 72 units, 44
+  tile sites, 66 retained rows), 64 programs with a group of three or more, 59 loop / 40 straight-line programs, 7
+  merged tables of several tuples, 31 members padded to a larger block, 364 runs with fewer launches.
+- Unit tests (`func/horizontal.rs`, 6): the rule (small grids, shared last waves, full last waves, occupancy, args),
+  merged residency, kernel → device function, the merged kernel's parameters / bounds / ranges, a member launched
+  nowhere else, the launch-line parser.
+- `zero_fold.rs`: decode's flags now include the merged table; one kernel takes the tail.
+- Tests of other rungs that count launches or pin a pre-sprint text (placement, devmap, epilogue, generic-fusion,
+  retain-delta, row-block, site-choice goldens, streams, tf32-tile) pin `horizontal` off, as they pin `zero-fold` and
+  row-block: their programs' independent sites would otherwise launch as one.
+- Suites: workspace, release, 112 binaries, 1377 passed, 0 failed.
+- Bugs put back: the dependency check off (members merged across a RAW) fails the decode decision and the generated
+  values; the arena not keeping a deferred launch's operands fails the generated values in reverse block order (a
+  later member's output takes an earlier member's dead operand; forward block order hides it — hence the reverse
+  mode); the barrier not counted deadlocks the serial emulator (decode and generated).
+
+### Open
+
+1. **indep_512 needs the vertical / horizontal trade**: `g = c + d` rides `d`'s store, which orders `d` after `c`.
+   Unsplit and without the epilogue the two sites run 0.773× the shipped plan (split-K atomic + epilogue; ABBA, A
+   spread 47 %), merged 0.953× of that again (noisy). The epilogue rule and split-K pricing do not see a sibling site
+   that could fill the part instead.
+2. Merged tuples hold no atomic candidate (a zero must precede every adding block); tuned OFF decode picks one for its
+   rows. A tuple with atomic members needs their zeros before the launch (a zero tail in `x`'s cell, or runtime
+   zeros a member).
+3. The rule's per-member capacity is the plan's (grid-capped) blocks per SM; the true register residency is a ptxas
+   fact. Forced merges where it refuses measured within null (above), so it stands.
+4. Groups form only among adjacent steps of the walk order; `c1 ∥ c2` in rt_mlp2 (d1 between, reading c1) would need
+   the walk reordered.
+5. Members are cells, units and tile sites; row folds, `devgen` generators and split launches are not (their launch
+   lines are not captured). Measured on the rtx-5080 only; the rule reads only `TargetProfile` occupancy facts, so it
+   ships on every part (no `GPU_RUNGS_OFF` row; the 4090 / 5090 / H100 are unmeasured).

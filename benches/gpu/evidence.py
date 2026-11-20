@@ -344,6 +344,18 @@ def host_facts(ll, asm):
                            if re.search(r'@mapal_gpu_launch\(.*; (splitk=\d+ atomic|streamk=)', x)
                            and not (i and '@mapal_gpu_zero(' in lines[i - 1]))
         f['zero'] = dict(zf)
+        # kernel-merging `horizontal`: every function's `; mapal.hz.host` line summed, the merged kernels the host
+        # names (`; mapal.hz kernel=`), and the launches of one (a merged table's or a single merged kernel's).
+        hz = Counter()
+        for m in re.finditer(r'; mapal\.hz\.host (.*)$', ll, re.M):
+            k = kv(m.group(1))
+            for x in ('launches', 'groups', 'members', 'cells', 'units', 'tiles', 'branchy'):
+                hz[x] += k.get(x, 0) if isinstance(k.get(x), int) else 0
+        merged = set(re.findall(r'; mapal\.hz kernel=mapal_tile_([0-9a-f]{16})', ll))
+        hz['specs'] = len(merged)
+        hz['calls'] = sum(1 for m in re.finditer(r'call void @mapal_gpu_(?:site|launchv)\(i64 (-?\d+)', ll)
+                          if f'{int(m.group(1)) & (2**64 - 1):016x}' in merged)
+        f['hz'] = dict(hz)
     if asm:
         ins = [x.split('\t')[-1].strip() for x in asm.splitlines() if re.match(r'^\s+[0-9a-f]+:\s', x)]
         f['obj'] = dict(insns=len(ins), ymm_ops=sum('%ymm' in x for x in ins),
@@ -964,7 +976,7 @@ def run_intent(it, state, ns):
     return out
 
 
-KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow')
+KINDS = ('tile', 'naive', 'mma', 'wgmma', 'reduce', 'rowfold', 'gen', 'cell', 'flow', 'hz')
 
 
 def check(d, results=None, out=sys.stdout):
@@ -990,7 +1002,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host') or (alt and it.get('rule')):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

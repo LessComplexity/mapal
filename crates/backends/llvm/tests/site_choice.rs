@@ -47,16 +47,21 @@ fn emission(
     off: &[&str],
 ) -> Emission {
     // The sites' own tables: a row-block unit (`row_block.rs`) launches none;
-    // each atomic recipe with its own zero (`zero-fold` is `zero_fold.rs`'s).
+    // each atomic recipe with its own zero (`zero-fold` is `zero_fold.rs`'s);
+    // each site its own table (`horizontal` is `horizontal.rs`'s).
     let mut gpu = GpuArms {
         site_cands: cands,
         row_block: false,
         ..GpuArms::default()
     };
-    for r in off
-        .iter()
-        .chain(&["place", "pdl", "streams", "pinned", "zero-fold"])
-    {
+    for r in off.iter().chain(&[
+        "place",
+        "pdl",
+        "streams",
+        "pinned",
+        "zero-fold",
+        "horizontal",
+    ]) {
         *gpu.off.rung(r).expect("rung") = true;
     }
     for r in on {
@@ -415,8 +420,9 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // fold-algebra changes the default / contract faces' arithmetic by
         // design (`step_algebra` pairs and regroups); with its two OFF arms the
         // emission is the pre-sprint one byte for byte, which is what this pins.
-        // compile-time-graph and kernel-merging likewise: row-block units and
-        // zero tails off, the emission is the one before them.
+        // compile-time-graph and kernel-merging likewise: row-block units,
+        // zero tails and merged launches off, the emission is the one before
+        // them.
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -425,6 +431,7 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--no-fold-regroup",
             "--no-row-block",
             "--gpu-off=zero-fold",
+            "--gpu-off=horizontal",
         ]
         .iter()
         .chain(face_flags)

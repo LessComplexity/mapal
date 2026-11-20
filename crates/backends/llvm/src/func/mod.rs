@@ -429,6 +429,8 @@ pub(crate) struct FnEmit<'a> {
     /// per-site-choice: this function's candidate tables, module globals
     /// placed after its text.
     cand_tables: String,
+    /// kernel-merging `horizontal`: the launches each group's members left.
+    hz: horizontal::HzEmit,
     /// S65 `by-ref` (`frame.rs` `plan_views`): each product's array positions
     /// (component paths) that hold a pointer to bytes elsewhere instead of
     /// the bytes — forwarding does not copy. A bare array view is
@@ -712,6 +714,7 @@ mod drive;
 pub(crate) mod flow;
 mod frame;
 pub(crate) mod gpu;
+pub(crate) mod horizontal;
 mod ops;
 mod packed;
 pub(crate) mod resident;

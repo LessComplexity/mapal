@@ -1432,7 +1432,7 @@ fn apart<T: Copy + PartialEq>(reads: &[T], writes: &[T], alias: impl Fn(T) -> T)
 }
 
 /// FNV-1a of `key`: the kernel ids' hash.
-fn fnv(key: &str) -> u64 {
+pub(crate) fn fnv(key: &str) -> u64 {
     key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
     })
@@ -1445,13 +1445,14 @@ fn launch_key(l: &Launch) -> String {
     for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
         *r.rung(n).expect("a kernel rung") = true;
     }
-    // The ids predate the host-only `row-block`, `zero-fold` and `row-stage` rungs (off
+    // The ids predate the host-only `row-block`, `zero-fold`, `row-stage` and `horizontal` rungs (off
     // here: no kernel rung): their fields are not part of a kernel's key, so
     // tuned picks and wisdom keep their ids.
     format!("{:?}", Launch { rungs: r, ..*l })
         .replace(", row_block: false", "")
         .replace(", zero_fold: false", "")
         .replace(", row_stage: false", "")
+        .replace(", horizontal: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -2647,7 +2648,17 @@ pub(crate) fn device_module(
     folds: &[RowFoldSite],
     units: &[super::flow::UnitKernel],
     live: &std::collections::BTreeSet<String>,
+    hz: &[super::horizontal::HzSpec],
 ) -> Option<String> {
+    // kernel-merging `horizontal`: a merged kernel's members are composed
+    // from their kernels' text (kept standalone only where `live` names them).
+    let launched = live;
+    let with_members: std::collections::BTreeSet<String> = live
+        .iter()
+        .cloned()
+        .chain(super::horizontal::hz_members(hz))
+        .collect();
+    let live = &with_members;
     let mut kernels = std::collections::BTreeMap::new();
     // per-site-choice: each candidate table's `; mapal.site` line.
     let mut site_lines = std::collections::BTreeSet::new();
@@ -2918,6 +2929,7 @@ pub(crate) fn device_module(
     }
     out.push('\n');
     out.push_str(&md);
+    let mut out = super::horizontal::compose(out, hz, launched);
     // A `wgmma` kernel's swizzle atoms start on 1024-byte boundaries.
     if out.contains("wgmma.mma_async") {
         out = out.replacen("[0 x i8], align 16", "[0 x i8], align 1024", 1);

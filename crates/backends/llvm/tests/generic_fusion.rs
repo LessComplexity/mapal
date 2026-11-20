@@ -44,9 +44,11 @@ fn emission_on(
     // The per-row units these tests pin; a tile site with the folds and
     // cells reading its rows is `row_block.rs`'s.
     gpu.row_block = false;
+    // Units' launches against the members' own: `horizontal` (its tests)
+    // would merge independent ones in either arm.
     for r in off
         .iter()
-        .chain(&["place", "async", "pdl", "streams", "pinned"])
+        .chain(&["place", "async", "pdl", "streams", "pinned", "horizontal"])
     {
         *gpu.off.rung(r).expect("rung") = true;
     }

@@ -50,6 +50,9 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
             };
             opts.gpu.row_stage_force = Some(f);
         }
+        // Measurement only: `horizontal` groups without the occupancy and
+        // wave tests.
+        "--hz=force" => opts.gpu.hz_force = true,
         _ if a.starts_with("--order=") => {
             opts.order = match &a["--order=".len()..] {
                 "sequential" => Order::Sequential,

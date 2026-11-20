@@ -24,6 +24,23 @@
 #include "mapal_choice.h"
 
 static int32_t ctaid_x, ctaid_y;
+/* MAPAL_EMU_REVERSE=1: a grid's blocks run last to first. A GPU runs a grid's
+ * blocks in any order, so two blocks of one launch that race (a merged
+ * launch's members sharing bytes: `horizontal`) show as a wrong value. */
+static int reverse_blocks(void) {
+  static int r = -1;
+  if (r < 0) {
+    const char *e = getenv("MAPAL_EMU_REVERSE");
+    r = e && atoi(e);
+  }
+  return r;
+}
+/* Block `i` of `n` (x fastest) in the run's order. */
+static void emu_block(uint32_t i, uint32_t gx, uint32_t n) {
+  uint32_t b = reverse_blocks() ? n - 1 - i : i;
+  ctaid_x = (int32_t)(b % gx);
+  ctaid_y = (int32_t)(b / gx);
+}
 /* One block's shared memory (blocks run one at a time). */
 unsigned char emu_smem[1 << 20];
 /* `barrier0` for the `b_n` threads of the running block (macOS has no
@@ -88,10 +105,13 @@ static void s_end(void) {
   s_pass(tid_x);
   pthread_mutex_unlock(&b_mu);
 }
-static void s_meet(int warp) {
+/* A meet of warp `warp`'s lanes, or (`warp` < 0) of threads [0, `n`) of the
+ * block — a barrier of the block's first `n` threads (`horizontal`: a merged
+ * grid's member of fewer threads than the block, whose other threads exited). */
+static void s_meet_n(int warp, unsigned n) {
   pthread_mutex_lock(&b_mu);
   int t = tid_x;
-  unsigned lo = warp < 0 ? 0 : (unsigned)warp * 32, hi = warp < 0 || lo + 32 > b_n ? b_n : lo + 32;
+  unsigned lo = warp < 0 ? 0 : (unsigned)warp * 32, hi = warp < 0 ? n : lo + 32 > b_n ? b_n : lo + 32;
   unsigned *c = warp < 0 ? &s_bar : &s_warp[warp];
   s_st[t] = warp < 0 ? S_BAR : S_WARP;
   if (++*c == hi - lo) {
@@ -103,6 +123,24 @@ static void s_meet(int warp) {
     s_pass(t);
   }
   s_wait();
+  pthread_mutex_unlock(&b_mu);
+}
+static void s_meet(int warp) { s_meet_n(warp, b_n); }
+/* `barrier.sync 0, n`: the block's first `n` threads meet. */
+void emu_barrier_n(int32_t n) {
+  if (serial()) {
+    s_meet_n(-1, (unsigned)n);
+    return;
+  }
+  pthread_mutex_lock(&b_mu);
+  unsigned g = b_gen;
+  if (++b_count == (unsigned)n) {
+    b_count = 0;
+    b_gen++;
+    pthread_cond_broadcast(&b_cv);
+  } else {
+    while (g == b_gen) pthread_cond_wait(&b_cv, &b_mu);
+  }
   pthread_mutex_unlock(&b_mu);
 }
 void emu_barrier(void) {
@@ -300,8 +338,8 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
     pthread_t *th = malloc(block * sizeof *th);
     struct emu_thread *xs = malloc(block * sizeof *xs);
     b_n = block;
-    for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
-      for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++) {
+    for (uint32_t blk = 0; blk < gx * gy; blk++) {
+        emu_block(blk, gx, gx * gy);
         if (serial()) s_start(block);
         for (uint32_t t = 0; t < block; t++) {
           xs[t] = (struct emu_thread){k, (void *)a, (void *)b, (void *)o, (int32_t)t};
@@ -317,9 +355,10 @@ void mapal_gpu_launch(uint64_t id, uint64_t a, uint64_t b, uint64_t o, uint32_t 
     n_launch++;
     return;
   }
-  for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
-    for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++)
-      for (tid_x = 0; tid_x < (int32_t)block; tid_x++) k((void *)a, (void *)b, (void *)o);
+  for (uint32_t blk = 0; blk < gx * gy; blk++) {
+    emu_block(blk, gx, gx * gy);
+    for (tid_x = 0; tid_x < (int32_t)block; tid_x++) k((void *)a, (void *)b, (void *)o);
+  }
   n_launch++;
 }
 /* An epilogue or chained launch (S54): the kernel takes `nptr` pointers.
@@ -399,8 +438,8 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
     pthread_t *th = malloc(block * sizeof *th);
     struct emu_vthread *xs = malloc(block * sizeof *xs);
     b_n = block;
-    for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
-      for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++) {
+    for (uint32_t blk = 0; blk < gx * gy; blk++) {
+        emu_block(blk, gx, gx * gy);
         if (serial()) s_start(block);
         for (uint32_t t = 0; t < block; t++) {
           xs[t] = (struct emu_vthread){k, nptr, p, (int32_t)t};
@@ -411,9 +450,10 @@ void mapal_gpu_launchv(uint64_t id, uint32_t stream, uint32_t nptr, const uint64
     free(th);
     free(xs);
   } else {
-    for (ctaid_y = 0; ctaid_y < (int32_t)gy; ctaid_y++)
-      for (ctaid_x = 0; ctaid_x < (int32_t)gx; ctaid_x++)
-        for (tid_x = 0; tid_x < (int32_t)block; tid_x++) call_v(k, nptr, p);
+    for (uint32_t blk = 0; blk < gx * gy; blk++) {
+      emu_block(blk, gx, gx * gy);
+      for (tid_x = 0; tid_x < (int32_t)block; tid_x++) call_v(k, nptr, p);
+    }
   }
   n_launch++;
 }

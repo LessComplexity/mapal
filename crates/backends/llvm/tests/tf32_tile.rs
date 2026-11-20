@@ -30,6 +30,8 @@ fn lower(src: &str) -> CategoryIr {
 fn device(ir: &CategoryIr, target: &'static str, on: bool) -> String {
     let mut gpu = GpuArms::default();
     *gpu.off.rung("place").expect("rung") = true;
+    // Each site its own kernel (`horizontal` is `horizontal.rs`'s).
+    *gpu.off.rung("horizontal").expect("rung") = true;
     *(if on {
         gpu.on.rung("tf32-tile")
     } else {

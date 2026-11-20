@@ -96,6 +96,7 @@ impl<'a> FnEmit<'a> {
             dallocs: Vec::new(),
             site_table: None,
             cand_tables: String::new(),
+            hz: horizontal::HzEmit::default(),
             views: SecondaryMap::new(),
             views_done: false,
             outside_memo: Default::default(),
@@ -198,6 +199,9 @@ impl<'a> FnEmit<'a> {
         if let Some(p) = self.resident.as_ref().filter(|p| !p.zero_line.is_empty()) {
             self.allocas.push_str(&format!("  {}", p.zero_line));
         }
+        if let Some(p) = self.resident.as_ref().filter(|p| !p.hz_line.is_empty()) {
+            self.allocas.push_str(&format!("  {}", p.hz_line));
+        }
         // A carried state's next lives in the buffer the back edge swaps with
         // the merge's: last iteration's rows are not in it, so it is not retained.
         if let Some(p) = &self.resident {
@@ -251,6 +255,10 @@ impl<'a> FnEmit<'a> {
 
     /// Append one indented body instruction line.
     pub(crate) fn line(&mut self, s: impl AsRef<str>) {
+        // kernel-merging `horizontal`: a group member's launch is deferred.
+        if self.hz.cur.is_some() && self.hz_take(s.as_ref()) {
+            return;
+        }
         self.body.push_str("  ");
         self.body.push_str(s.as_ref());
         self.body.push('\n');

@@ -3373,3 +3373,153 @@ pub fn zero_src(p: &ZeroProg) -> String {
         rc - 1
     )
 }
+
+/// kernel-merging `horizontal`: a program whose launches are independent
+/// side by side, in a loop trip or straight-line. `steps` is the sequence: a
+/// cell (`[0, salt, from]`: an elementwise map of the trip counter, reading
+/// the carried `o` when `salt` is odd and an earlier site's output when
+/// `from` names one — an edge that orders it after that site), a site (`[1,
+/// q, _]`: the GEMV-like fold of cell `q` against the weights `w`, or `w2`
+/// when `q` is odd), a row sum (`[2, y, _]`: each output row of site `y`
+/// folded) — so cells reading only the counter, sites over different cells
+/// and sums over different sites are unordered and adjacent. `kv` adds the
+/// retained pattern in a loop (a KV cache's `x·Wk`, `x·Wv` over a state
+/// written one row a trip, each site's row pass in its trip's branch).
+#[derive(Clone, Debug)]
+pub struct HzProg {
+    pub looped: bool,
+    pub trips: u8,
+    /// Output rows and columns (`rows · c` cells), the fold's length.
+    pub rows: u64,
+    pub c: u64,
+    pub k: u64,
+    pub kv: bool,
+    pub steps: Vec<[u8; 3]>,
+}
+
+pub fn hz_prog_strategy() -> impl Strategy<Value = HzProg> {
+    (
+        any::<bool>(),
+        2u8..4,
+        prop::sample::select(vec![4u64, 8]),
+        prop::sample::select(vec![8u64, 32, 64]),
+        prop::sample::select(vec![32u64, 64, 256]),
+        any::<bool>(),
+        prop::collection::vec(prop::array::uniform3(any::<u8>()), 2..8),
+    )
+        .prop_map(|(looped, trips, rows, c, k, kv, steps)| HzProg {
+            looped,
+            trips,
+            rows,
+            c,
+            k,
+            kv: kv && looped,
+            steps,
+        })
+}
+
+/// [`HzProg`]'s source text.
+pub fn hz_src(p: &HzProg) -> String {
+    let (r, c, k) = (p.rows, p.c, p.k);
+    let rc = r * c;
+    let mut s = format!(
+        "fn main() {{\n    {kc} -> iota -> tw;\n    tw -> map {{ t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 256.0 }} -> w;\n    tw -> map {{ t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 256.0 }} -> w2;\n    {k} -> iota -> kr;\n    {c} -> iota -> cr;\n    {r} -> iota -> rr;\n    {rc} -> iota -> oc;\n    {rk} -> iota -> qc;\n",
+        kc = k * c,
+        rk = r * k
+    );
+    let ind = if p.looped { "                " } else { "    " };
+    let mut body = String::new();
+    let (mut cells, mut sites, mut sums) = (0usize, 0usize, 0usize);
+    let t = "t";
+    let cell = |body: &mut String, cells: &mut usize, sites: usize, step: [u8; 3]| {
+        let mut e = format!(
+            "((({t} * {k} + e) * {}) + 3) % 97 - 48 -> widen_f32 -> v; v / 256.0",
+            5 + step[1] % 3
+        );
+        if step[1] % 2 == 1 {
+            e += &format!(" + o[e % {rc}]");
+        }
+        if sites > 0 && step[2] % 3 == 0 {
+            e += &format!(" + y{}[e % {rc}] / 64.0", step[2] as usize % sites);
+        }
+        body.push_str(&format!("{ind}qc -> map {{ e -> {e} }} -> q{};\n", *cells));
+        *cells += 1;
+    };
+    for &step in &p.steps {
+        match step[0] % 3 {
+            0 => cell(&mut body, &mut cells, sites, step),
+            1 => {
+                if cells == 0 {
+                    cell(&mut body, &mut cells, sites, [0, 0, 1]);
+                }
+                let q = step[1] as usize % cells;
+                let wt = if step[1] % 2 == 1 { "w2" } else { "w" };
+                body.push_str(&format!(
+                    "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q{q}[i * {k} + kk] * {wt}[kk * {c} + j] }} }} -> y{sites};\n"
+                ));
+                sites += 1;
+            }
+            _ if sites > 0 => {
+                let y = step[1] as usize % sites;
+                body.push_str(&format!(
+                    "{ind}rr -> map {{ i -> (0.0, cr) -> fold {{ acc, j -> acc + y{y}[i * {c} + j] }} }} -> s{sums};\n"
+                ));
+                sums += 1;
+            }
+            _ => cell(&mut body, &mut cells, sites, step),
+        }
+    }
+    if sites == 0 {
+        if cells == 0 {
+            cell(&mut body, &mut cells, sites, [0, 0, 1]);
+        }
+        body.push_str(&format!(
+            "{ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + q0[i * {k} + kk] * w[kk * {c} + j] }} }} -> y0;\n"
+        ));
+        sites = 1;
+    }
+    // The retained pattern: row `t` of `x` written this trip, both sites over
+    // all of `x` (their row passes the trip's), read at shifted cells.
+    let mut kv = String::new();
+    if p.kv {
+        kv = format!(
+            "{ind}qc -> map {{ e -> (e / {k} == t) -> {{ -true-> {{ (e * 7 + 13) % 101 - 50 -> widen_f32 -> f; f / 16.0 + o[e % {rc}] }} -false-> x[e]; }} }} -> x;\n\
+             {ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + x[i * {k} + kk] * w[kk * {c} + j] }} }} -> ka;\n\
+             {ind}oc -> map {{ e -> e / {c} -> i; e % {c} -> j; (0.0, kr) -> fold {{ acc, kk -> acc + x[i * {k} + kk] * w2[kk * {c} + j] }} }} -> va;\n"
+        );
+    }
+    // Every output reaches the result, each read at a shifted cell (no
+    // epilogue takes a site's store).
+    let mut sum = format!("y{}[e]", sites - 1);
+    for y in 0..sites - 1 {
+        sum += &format!(" + y{y}[(e + {}) % {rc}] / 8.0", y + 1);
+    }
+    for x in 0..sums {
+        sum += &format!(" + s{x}[(e + {}) % {r}] / 16.0", x + 1);
+    }
+    if p.kv {
+        sum += &format!(" + ka[(e + 3) % {rc}] / 32.0 + va[(e + 5) % {rc}] / 32.0");
+    }
+    if p.looped {
+        let xs = if p.kv {
+            format!(
+                "    (0.0, {rk}) -> fill -> x0;\n    mut x: [f32; {rk}] <- x0;\n",
+                rk = r * k
+            )
+        } else {
+            String::new()
+        };
+        s += &format!(
+            "    (0.0, {rc}) -> fill -> o0;\n{xs}    mut o: [f32; {rc}] <- o0;\n    mut t: i32 <- 0;\n    loop {{\n        (t < {}) -> {{\n            -true-> {{\n{kv}{body}{ind}oc -> map {{ e -> {sum} }} -> o;\n{ind}t + 1 -> t;\n{ind}-> loop;\n            }}\n            -false-> o -> out;\n        }}\n    }}\n",
+            p.trips
+        );
+    } else {
+        s += &format!(
+            "    (0.0, {rc}) -> fill -> o: [f32; {rc}];\n    (0, kr) -> fold {{ acc, v -> acc + v % 2 }} -> t;\n{body}    oc -> map {{ e -> {sum} }} -> out;\n"
+        );
+    }
+    s + &format!(
+        "    out[0] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n}}\n",
+        rc - 1
+    )
+}
