@@ -1147,6 +1147,267 @@ if "--ladder" in sys.argv:
                                     + "".join("\t".join(map(str, r)) + "\n" for r in lad))
 
 
+# --- model-scale: one Llama-3-8B / Qwen-7B-like layer (d_model 4096, 32 query heads x 128, 8 KV heads (GQA), SwiGLU
+# FFN 14336, RMSNorm, RoPE) at shapes that fit a 16 GB card, f32. `pt_llm_dec_b<B>_l<L>`: S decode steps of the
+# attention half (RMSNorm -> fused QKV -> RoPE -> KV-cache append -> GQA attention over the cache -> O -> residual),
+# B sequences, cache capacity L ([B][L][Hk][dh] for K and V; step t writes position L - S + t and attends to every
+# position up to it; the layer's output is the next step's input); `pt_llm_blkdec_*` the same with the FFN half
+# (RMSNorm -> gate, up -> SiLU(gate)·up -> down -> residual): one whole block per step. `pt_llm_pre_t<T>` /
+# `pt_llm_blkpre_t<T>`: causal prefill of T tokens. At T = 8192 the score arrays of all 32 heads (32·T² = 2³¹
+# cells: past i32, and 8 GiB each for the scores and their exponentials) do not fit, so that attention runs as a
+# loop over the 8 KV-head groups (4 query heads, T² scores each).
+# Not in the Core op set: exp (`llm_exp`: e^(z/256)'s degree-5 Taylor polynomial squared 8 times, ~5e-5 relative,
+# 0 below -80), sqrt (`llm_rms`: Heron's iteration, 16 steps from (1 + a)/2), sin / cos (the rotary tables are
+# inputs, as inference engines precompute them). Operand laws: OPS's values with `t % mod` taken first, so no
+# product leaves i32 at 2^28 cells (torch_bench.py `llm_*` builds the same tensors — change both or neither).
+# Printed: out[0], out[last], Σ out² over the last row (a cancellation-free checksum of the last token, which reads
+# every position), `iter ms`. `px_llm_*`: the same generators at a few-element scale, the interpreter their oracle.
+LLM = dict(D=4096, H=32, Hk=8, dh=128, F=14336)
+LLM_PX = dict(D=64, H=4, Hk=2, dh=16, F=96)
+
+
+def llm_law(name, length, key, body):
+    """`((t % mod)·mul + add) % mod − off` widened (OPS's values, i32-safe), then `body` of `v`."""
+    mul, add, mod, off, _ = OPS[key]
+    return (f"    {length} -> iota -> i_{name};\n"
+            f"    i_{name} -> map {{ t -> (t % {mod} * {mul} + {add}) % {mod} - {off} -> widen_f32 -> v; {body} }} -> {name};\n")
+
+
+def llm_div(k):
+    """A weight's divisor: the law's values have std ~29, so std(W) = 1/sqrt(k) over a k-long fold."""
+    return f"{29 * k ** 0.5:.1f}"
+
+
+def llm_exp(z, n):
+    """e^z for z <= 0 (`n` prefixes the names): 0 below -80 (e^-80 < 2e-35), else e^(z/256)'s degree-5 Taylor
+    polynomial raised to the 256th power by 8 squarings."""
+    return (f"{z} -> {n}z; ({n}z > -80.0) -> {{ -true-> {{ {n}z / 256.0 -> {n}y; "
+            f"1.0 + {n}y * (1.0 + {n}y * (0.5 + {n}y * (0.16666667 + {n}y * (0.041666668 + {n}y * 0.008333334)))) -> {n}p; "
+            f"8 -> iota -> {n}q; ({n}p, {n}q) -> fold {{ acc, k -> acc * acc }} }} -false-> 0.0; }}")
+
+
+def llm_silu(v):
+    """v·sigmoid(v) through e^-|v| (`llm_exp`'s domain)."""
+    return (f"{v} -> sv; (sv > 0.0) -> {{ -true-> {{ {llm_exp('0.0 - sv', 'n')} -> en; sv / (1.0 + en) }} "
+            f"-false-> {{ {llm_exp('sv', 'm')} -> em; sv * em / (1.0 + em) }} }}")
+
+
+def llm_rms(row, D):
+    """1 / sqrt(mean(row(i)²) + 1e-5) over i in rD: Heron's iteration, 16 steps from (1 + a) / 2 >= sqrt(a)."""
+    return (f"(0.0, rD) -> fold {{ acc, i -> {row} -> rv; acc + rv * rv }} -> ss; ss / {D}.0 + 0.00001 -> ra; "
+            f"0.5 + 0.5 * ra -> s0; (s0, r16) -> fold {{ acc, k -> 0.5 * (acc + ra / acc) }} -> sd; 1.0 / sd")
+
+
+def llm_rope(src, base, c, pos, dh):
+    """Llama's rotate_half RoPE of cell c of a head-concatenated vector at `src[base + c]`, position `pos`."""
+    h = dh // 2
+    return (f"{c} % {dh} -> ri; (ri < {h}) -> {{ "
+            f"-true-> {src}[{base} + {c}] * cs[{pos} * {h} + ri] - {src}[{base} + {c} + {h}] * sn[{pos} * {h} + ri]; "
+            f"-false-> {src}[{base} + {c}] * cs[{pos} * {h} + ri - {h}] + {src}[{base} + {c} - {h}] * sn[{pos} * {h} + ri - {h}]; }}")
+
+
+def llm_rope_pv(src, base, c, pos, dh, closed=False):
+    """`llm_rope` with every index provable (model-scale findings 2-3, the `_pv` diagnostics): the partner cell as
+    `(ri + dh/2) % dh` of its head, the sign by a guard on the value; `closed`: the rotary values as the tables'
+    closed form of (pos, ri % dh/2) — a decode's position is loop-carried, and no index on it is proven."""
+    h = dh // 2
+    s = (f"{c} / {dh} -> rh; {c} % {dh} -> ri; ri % {h} -> rj; (ri < {h}) -> {{ -true-> -1.0; -false-> 1.0; }} -> sg; "
+         f"{src}[{base} + rh * {dh} + ri] -> va; {src}[{base} + rh * {dh} + (ri + {h}) % {dh}] -> vb; ")
+    if closed:
+        mf, af, modf, offf, _ = OPS["f"]
+        mg, ag, modg, offg, _ = OPS["g"]
+        return s + (f"({pos} * {h} + rj) % {modf} * {mf} + {af} -> cq; (cq % {modf} - {offf}) -> widen_f32 -> cv; "
+                    f"({pos} * {h} + rj) % {modg} * {mg} + {ag} -> sq; (sq % {modg} - {offg}) -> widen_f32 -> sv; "
+                    f"va * (cv / 50.0) + sg * vb * (sv / 50.0)")
+    return s + f"va * cs[{pos} * {h} + rj] + sg * vb * sn[{pos} * {h} + rj]"
+
+
+def llm_ops(P, rows, positions, cache, ffn):
+    """The layer's inputs: (name, length, key, body of v)."""
+    D, H, Hk, dh, F = P["D"], P["H"], P["Hk"], P["dh"], P["F"]
+    NQ, half = (H + 2 * Hk) * dh, dh // 2
+    ops = [("x0", rows * D, "a", "v / 29.0"), ("g1", D, "e", "1.0 + v / 400.0"),
+           ("wqkv", D * NQ, "b", f"v / {llm_div(D)}"), ("wo", D * D, "e", f"v / {llm_div(D)}"),
+           ("cs", positions * half, "f", "v / 50.0"), ("sn", positions * half, "g", "v / 50.0")]
+    if cache:
+        ops += [("kc0", cache, "p", "v / 29.0"), ("vc0", cache, "a", "v / 29.0")]
+    if ffn:
+        ops += [("g2", D, "b", "1.0 + v / 400.0"), ("wg", D * F, "f", f"v / {llm_div(D)}"),
+                ("wu", D * F, "g", f"v / {llm_div(D)}"), ("wd", F * D, "p", f"v / {llm_div(F)}")]
+    return ops
+
+
+def llm_ffn(P, src, dst):
+    """`dst = src + down(SiLU(gate(n)) · up(n))`, n = RMSNorm(src)."""
+    D, F = P["D"], P["F"]
+    return (f"    rR -> map {{ b -> {llm_rms(f'{src}[b * {D} + i]', D)} }} -> rinv2;\n"
+            f"    rRD -> map {{ e -> {src}[e] * rinv2[e / {D}] * g2[e % {D}] }} -> hn;\n"
+            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> acc + hn[b * {D} + k] * wg[k * {F} + j] }} }} -> gt;\n"
+            f"    rRF -> map {{ e -> e / {F} -> b; e % {F} -> j; (0.0, rD) -> fold {{ acc, k -> acc + hn[b * {D} + k] * wu[k * {F} + j] }} }} -> up;\n"
+            f"    rRF -> map {{ e -> {llm_silu('gt[e]')} -> sg; sg * up[e] }} -> hh;\n"
+            f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rF) -> fold {{ acc, k -> acc + hh[b * {F} + k] * wd[k * {D} + j] }} -> y2; {src}[e] + y2 }} -> {dst};\n")
+
+
+def llm_head(P, rows, ffn, extra=""):
+    D, H, Hk, dh, F = P["D"], P["H"], P["Hk"], P["dh"], P["F"]
+    s = (f"    {rows} -> iota -> rR;\n    {D} -> iota -> rD;\n    {rows * D} -> iota -> rRD;\n"
+         f"    {rows * (H + 2 * Hk) * dh} -> iota -> rRQ;\n    {dh} -> iota -> rdh;\n    16 -> iota -> r16;\n")
+    if ffn:
+        s += f"    {F} -> iota -> rF;\n    {rows * F} -> iota -> rRF;\n"
+    return s + extra
+
+
+def llm_tail(P, rows, timed, name="out"):
+    """Four cells (the first, the last row's second, one mid, the last), then (untimed twins) Σ out² over the
+    whole output. A loop's exit value is not visible to a later map or fold body (L1101, model-scale finding 1):
+    every read here is a top-level index or a fold over the array itself."""
+    D = P["D"]
+    s = "    () -> time -> t1;\n" if timed else ""
+    for c in (0, (rows - 1) * D + 1, rows * D // 2 + 3, rows * D - 1):
+        s += f"    {name}[{c}] -> println;\n"
+    if timed:
+        s += '    "iter ms=" -> print;\n    t1 - t0 -> println;\n'
+    else:
+        s += f"    0.0 -> zero: f32;\n    (zero, {name}) -> fold {{ acc, v -> acc + v * v }} -> ssq;\n    ssq -> println;\n"
+    return s + "}\n"
+
+
+def llm_loop(cond, body, step, exit_):
+    body = "".join("            " + ln.lstrip() + "\n" for ln in body.splitlines())
+    return (f"    loop {{\n        ({cond}) -> {{\n            -true-> {{\n{body}"
+            f"                {step};\n                -> loop;\n            }}\n            -false-> {exit_};\n        }}\n    }}\n")
+
+
+def llm_decode(B, L, S, ffn, timed=True, P=LLM, pv=False):
+    """S decode steps of B sequences against a KV cache of capacity L."""
+    D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
+    G, KD, NQ, sq = H // Hk, Hk * dh, (H + 2 * Hk) * dh, f"{dh ** 0.5:.7f}"
+    C = B * L * KD
+    rope = (lambda *a: llm_rope_pv(*a, closed=True)) if pv else llm_rope
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, B, L, C, ffn))
+    s += llm_head(P, B, ffn, f"    {B * H} -> iota -> rBH;\n    {B * H * L} -> iota -> rBHL;\n"
+                             f"    {C} -> iota -> rC;\n    {L} -> iota -> rL;\n")
+    s += (f"    mut kc: [f32; {C}] <- kc0;\n    mut vc: [f32; {C}] <- vc0;\n    mut x: [f32; {B * D}] <- x0;\n"
+          f"    mut t: i32 <- 0;\n")
+    s += "    () -> time -> t0;\n" if timed else ""
+    body = (
+        f"    {L - S} + t -> p;\n"
+        f"    rR -> map {{ b -> {llm_rms(f'x[b * {D} + i]', D)} }} -> rinv;\n"
+        f"    rRD -> map {{ e -> x[e] * rinv[e / {D}] * g1[e % {D}] }} -> xn;\n"
+        f"    rRQ -> map {{ e -> e / {NQ} -> b; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> acc + xn[b * {D} + k] * wqkv[k * {NQ} + j] }} }} -> qkv;\n"
+        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; {rope('qkv', f'b * {NQ}', 'c', 'p', dh)} }} -> q;\n"
+        f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> {{ c % {KD} -> u; "
+        f"{rope('qkv', f'b * {NQ} + {D}', 'u', 'p', dh)} }} -false-> kc[c]; }} }} -> kc;\n"
+        f"    rC -> map {{ c -> c / {L * KD} -> b; c / {KD} % {L} -> r; (r == p) -> {{ -true-> qkv[b * {NQ} + {D + KD} + c % {KD}]; -false-> vc[c]; }} }} -> vc;\n"
+        f"    rBHL -> map {{ e -> e / {H * L} -> b; e / {L} % {H} -> h; e % {L} -> r; (r <= p) -> {{ -true-> {{ (0.0, rdh) -> fold {{ acc, i -> "
+        f"acc + q[b * {D} + h * {dh} + i] * kc[((b * {L} + r) * {Hk} + h / {G}) * {dh} + i] }} -> dt; dt / {sq} }} -false-> -1000000000.0; }} }} -> s;\n"
+        f"    rBH -> map {{ bh -> (-1000000000.0, rL) -> fold {{ acc, r -> s[bh * {L} + r] -> se; (se > acc) -> {{ -true-> se; -false-> acc; }} }} }} -> mx;\n"
+        f"    rBHL -> map {{ e -> {llm_exp(f's[e] - mx[e / {L}]', 'x')} }} -> pe;\n"
+        f"    rBH -> map {{ bh -> (0.0, rL) -> fold {{ acc, r -> acc + pe[bh * {L} + r] }} }} -> den;\n"
+        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> c; c / {dh} -> h; c % {dh} -> i; (0.0, rL) -> fold {{ acc, r -> "
+        f"acc + pe[(b * {H} + h) * {L} + r] * vc[((b * {L} + r) * {Hk} + h / {G}) * {dh} + i] }} -> av; av / den[b * {H} + h] }} -> att;\n"
+        f"    rRD -> map {{ e -> e / {D} -> b; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> acc + att[b * {D} + k] * wo[k * {D} + j] }} -> y; x[e] + y }} -> {'h1' if ffn else 'x'};\n")
+    if ffn:
+        body += llm_ffn(P, "h1", "x")
+    s += llm_loop(f"t < {S}", body, "t + 1 -> t", "x -> out")
+    return s + llm_tail(P, B, timed)
+
+
+def llm_prefill(T, ffn, groups=False, timed=True, P=LLM, pv=False):
+    """Causal prefill of T tokens; `groups`: the attention as a loop over the KV-head groups."""
+    D, H, Hk, dh = P["D"], P["H"], P["Hk"], P["dh"]
+    G, KD, NQ, sq = H // Hk, Hk * dh, (H + 2 * Hk) * dh, f"{dh ** 0.5:.7f}"
+    nh = G if groups else H  # query heads per score array
+    rope = llm_rope_pv if pv else llm_rope
+    s = "fn main() {\n" + "".join(llm_law(*o) for o in llm_ops(P, T, T, 0, ffn))
+    s += llm_head(P, T, ffn, f"    {T} -> iota -> rT;\n    {T * KD} -> iota -> rTK;\n"
+                             f"    {nh * T} -> iota -> rHT;\n    {nh * T * T} -> iota -> rHTT;\n")
+    if groups:
+        s += f"    {T * G * dh} -> iota -> rTG;\n    {G * dh} -> iota -> rGd;\n    mut y: [f32; {T * D}] <- x0;\n    mut g: i32 <- 0;\n"
+    s += "    () -> time -> t0;\n" if timed else ""
+    s += (f"    rR -> map {{ b -> {llm_rms(f'x0[b * {D} + i]', D)} }} -> rinv;\n"
+          f"    rRD -> map {{ e -> x0[e] * rinv[e / {D}] * g1[e % {D}] }} -> xn;\n"
+          f"    rRQ -> map {{ e -> e / {NQ} -> i; e % {NQ} -> j; (0.0, rD) -> fold {{ acc, k -> acc + xn[i * {D} + k] * wqkv[k * {NQ} + j] }} }} -> qkv;\n"
+          f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> c; {rope('qkv', f'i * {NQ}', 'c', 'i', dh)} }} -> q;\n"
+          f"    rTK -> map {{ e -> e / {KD} -> i; e % {KD} -> u; {rope('qkv', f'i * {NQ} + {D}', 'u', 'i', dh)} }} -> kr;\n")
+    hq = f"g * {G} + hh" if groups else "hh"  # a score array's head -> its query head, and that head's KV head
+    kvh = "g" if groups else f"hh / {G}"
+    attn = (
+        f"    rHTT -> map {{ e -> e / {T * T} -> hh; e / {T} % {T} -> i; e % {T} -> r; (r <= i) -> {{ -true-> {{ (0.0, rdh) -> fold {{ acc, u -> "
+        f"acc + q[i * {D} + ({hq}) * {dh} + u] * kr[r * {KD} + ({kvh}) * {dh} + u] }} -> dt; dt / {sq} }} -false-> -1000000000.0; }} }} -> s;\n"
+        f"    rHT -> map {{ hi -> (-1000000000.0, rT) -> fold {{ acc, r -> s[hi * {T} + r] -> se; (se > acc) -> {{ -true-> se; -false-> acc; }} }} }} -> mx;\n"
+        f"    rHTT -> map {{ e -> {llm_exp(f's[e] - mx[e / {T}]', 'x')} }} -> pe;\n"
+        f"    rHT -> map {{ hi -> (0.0, rT) -> fold {{ acc, r -> acc + pe[hi * {T} + r] }} }} -> den;\n")
+    pv = (f"(0.0, rT) -> fold {{ acc, r -> acc + pe[(hh * {T} + i) * {T} + r] * qkv[r * {NQ} + {D + KD} + ({kvh}) * {dh} + u] }} -> av; "
+          f"av / den[hh * {T} + i]")
+    if groups:
+        # A group's 4 heads, then their rows of the O projection accumulated into the residual stream (the O
+        # projection's sum split by head group: the exit value goes straight to the prints, finding 1).
+        GD = G * dh
+        attg = (f"    rTG -> map {{ e -> e / {GD} -> i; e % {GD} -> c; c / {dh} -> hh; c % {dh} -> u; {pv} }} -> attg;\n"
+                f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> j; (0.0, rGd) -> fold {{ acc, k -> acc + attg[i * {GD} + k] * "
+                f"wo[(g * {GD} + k) * {D} + j] }} -> yo; y[e] + yo }} -> y;\n")
+        s += llm_loop(f"g < {Hk}", attn + attg, "g + 1 -> g", "y -> out")
+        assert not ffn, "the grouped attention's output is the program's"
+        return s + llm_tail(P, T, timed)
+    s += attn + f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> c; c / {dh} -> hh; c % {dh} -> u; {pv} }} -> attf;\n"
+    s += (f"    rRD -> map {{ e -> e / {D} -> i; e % {D} -> j; (0.0, rD) -> fold {{ acc, k -> acc + attf[i * {D} + k] * wo[k * {D} + j] }} -> y; "
+          f"x0[e] + y }} -> {'h1' if ffn else 'out'};\n")
+    if ffn:
+        s += llm_ffn(P, "h1", "out")
+    return s + llm_tail(P, T, timed)
+
+
+def llm_kmax(P, ffn, L, steps, ssq=0):
+    """An upper bound on the rounded steps a printed value passes through (fold_chain's rule, by hand: the loops):
+    per step RMSNorm, QKV, scores, max, sum, P·V, O (+ the FFN), then (`ssq` cells) the untimed twins' Σ out²."""
+    D, dh, F = P["D"], P["dh"], P["F"]
+    return steps * (3 * D + 3 * L + dh + 80 + ((2 * D + F + 120) if ffn else 0)) + ssq
+
+
+LLM_STEPS = 16  # decode steps per timed run (ms per step = iter ms / 16)
+llm_progs = {}
+for pv in ("", "_pv"):
+    # `_pv`: the diagnostics of findings 2-3 — the same layer with the RoPE indices written provable
+    # (`llm_rope_pv`), so the attention can be placed on the device; not benchmarks of the natural form.
+    for B in (1, 8, 32):
+        for L in (2048, 8192):
+            llm_progs[f"pt_llm_dec_b{B}_l{L}{pv}"] = (llm_decode(B, L, LLM_STEPS, False, pv=bool(pv)),
+                                                     llm_kmax(LLM, False, L, LLM_STEPS))
+    llm_progs[f"pt_llm_blkdec_b1_l4096{pv}"] = (llm_decode(1, 4096, LLM_STEPS, True, pv=bool(pv)),
+                                               llm_kmax(LLM, True, 4096, LLM_STEPS))
+    llm_progs[f"pt_llm_pre_t2048{pv}"] = (llm_prefill(2048, False, pv=bool(pv)), llm_kmax(LLM, False, 2048, 1))
+    llm_progs[f"pt_llm_blkpre_t2048{pv}"] = (llm_prefill(2048, True, pv=bool(pv)), llm_kmax(LLM, True, 2048, 1))
+# (The grouped loop indexes by its counter, which no rewrite makes provable: no `_pv` twin.)
+llm_progs["pt_llm_pre_t8192"] = (llm_prefill(8192, False, groups=True), llm_kmax(LLM, False, 8192, 1))
+# The interpreter-sized twins (oracle: the interpreter; box_run.sh's differential, exact face and `_d`).
+for pv in ("", "_pv"):
+    llm_progs[f"px_llm_dec_b2_l16{pv}"] = (llm_decode(2, 16, 3, False, False, LLM_PX, bool(pv)),
+                                          llm_kmax(LLM_PX, False, 16, 3, 128))
+    llm_progs[f"px_llm_blkdec_b2_l16{pv}"] = (llm_decode(2, 16, 3, True, False, LLM_PX, bool(pv)),
+                                             llm_kmax(LLM_PX, True, 16, 3, 128))
+    llm_progs[f"px_llm_pre_t12{pv}"] = (llm_prefill(12, False, timed=False, P=LLM_PX, pv=bool(pv)),
+                                       llm_kmax(LLM_PX, False, 12, 1, 768))
+    llm_progs[f"px_llm_blkpre_t12{pv}"] = (llm_prefill(12, True, timed=False, P=LLM_PX, pv=bool(pv)),
+                                          llm_kmax(LLM_PX, True, 12, 1, 768))
+llm_progs["px_llm_preg_t12"] = (llm_prefill(12, False, groups=True, timed=False, P=LLM_PX),
+                                llm_kmax(LLM_PX, False, 12, 1, 768))
+# (d) the layer's projections alone: QKV (fused, N = 6144), O, gate/up (fused, N = 28672), down (K = 14336) —
+# `composed`'s projection (torch_bench.py `pt_pj`, gemm_lib.cu) at m = 1, 16, 128, 2048.
+for M in (1, 16, 128, 2048):
+    for N, K in ((6144, 4096), (4096, 4096), (28672, 4096), (4096, 14336)):
+        llm_progs[f"pt_pj_m{M}_n{N}_k{K}"] = (
+            composed([("a", M * K, 'a'), ("b", K * N, 'b')], gsite("c", "a", "b", M, N, K), [("c", M * N)]), K)
+# The TF32 face (ADR-0041: `: tf32 | f32` on every fold) where GEMM products dominate: the prefills, the prefill
+# block and the m >= 128 projections.
+for stem in [s for s in llm_progs if s.startswith(("pt_llm_pre_t2048", "pt_llm_blkpre", "pt_pj_m128_", "pt_pj_m2048_"))]:
+    src, k = llm_progs[stem]
+    llm_progs[f"{stem}_tf32"] = (tf32_folds(src), k)
+for stem, (src, k) in llm_progs.items():
+    (out / f"{stem}.mapal").write_text(src)
+    (out / f"{stem}.kmax").write_text(f"{k}\n")
+
+
 # --- the formatter owns the layout of generated source too (CLAUDE.md "Source formatting"): every program this
 # run wrote goes through `mapal fmt`, so benches/algorithms and the bundles hold formatted text. The CLI is $MAPAL,
 # else `mapal` on PATH, else `cargo run -p mapal-cli`. Formatting never changes the parsed program (emission is

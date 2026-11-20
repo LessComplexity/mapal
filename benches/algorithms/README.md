@@ -25,6 +25,11 @@ python3 benches/gpu/gen_tiles.py /tmp/algos && cp /tmp/algos/*.mapal benches/alg
 | attention (matmul → softmax → matmul) | `pt_attn_{1024,2048}_{64,128}.mapal`, `px_attn_64_16.mapal` |
 | ew → conv → ew | `pt_ewconvew_2048_5.mapal`, `px_ewconvew_32_5.mapal` |
 | MLP | `pt_smlp_4096_256_1024.mapal`, `px_smlp_64_32_64.mapal` |
+| model-scale: Llama-3-8B-like layer, decode (attention half, 16 steps, B sequences, KV capacity L) | `pt_llm_dec_b{1,8,32}_l{2048,8192}.mapal`, `px_llm_dec_b2_l16.mapal` |
+| model-scale: whole block, decode / prefill | `pt_llm_blkdec_b1_l4096.mapal`, `pt_llm_blkpre_t2048.mapal` (+ `_tf32`), `px_llm_blk{dec_b2_l16,pre_t12}.mapal` |
+| model-scale: prefill (attention half, causal) | `pt_llm_pre_t2048.mapal` (+ `_tf32`), `pt_llm_pre_t8192.mapal` (KV-group loop), `px_llm_pre{,g}_t12.mapal` |
+| model-scale: the layer's projections (QKV, O, gate/up, down) | `pt_pj_m{1,16,128,2048}_n{6144,4096,28672}_k4096.mapal`, `pt_pj_m*_n4096_k14336.mapal` (+ `_tf32` at m 128, 2048) |
+| model-scale diagnostics (not benchmarks): the layer with its RoPE indices written provable | `p{t,x}_llm_*_pv.mapal` (`benches/results/evidence/local-rtx-5080/model-scale.md`, findings 2-3) |
 
 Scale ladders (`ladder/`, per-site-choice): the sizes `gen_tiles.py --ladder` adds (only the size parameters of the
 generators above change) and `ladder.tsv` (stem, family, size, work units, gate). Regenerate:

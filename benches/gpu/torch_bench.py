@@ -8,7 +8,8 @@ bracketed by CUDA events; min / median / max ms. Values: every output's [0] and 
 print order, gated against Mapal's printed values (box_run.sh `vals/<stem>.txt`) as chain_bench does:
 |torch − mapal| ≤ 1e-3 · max(|mapal|, rms(torch output)).
 
-usage: torch_bench.py <reps> <vals dir> <stem>...
+usage: torch_bench.py <reps> <vals dir> <stem>...   (TORCH_MODES=<mode,...>: only those legs)
+model-scale (`pt_llm_*`, `pt_pj_*`): also `sdpa` and the bf16 reference legs, and per-mode tolerances (`llm_workload`).
 prints `torch prog=<stem> mode=eager|compile n= min_ms= med_ms= max_ms= within=yes|no|no-mapal maxdev=
 compile_s=` per leg, after one `torch version= cuda= cudnn= device=` line.
 """
@@ -54,12 +55,158 @@ def corners(*outs):
     return [t.reshape(-1) for t in outs]
 
 
-def workload(stem):
-    """-> (fn, args): fn(*args) returns the program's outputs in print order."""
+# model-scale (gen_tiles.py `llm_*`): the Llama-3-8B-like layer written the way a PyTorch user writes it — rsqrt,
+# rotate_half RoPE, softmax / SDPA with GQA, F.silu — on the same tensors (gen_tiles.py `llm_ops`: OPS's values,
+# `t % mod` first). Modes: `eager` / `compile` (matmul -> masked softmax -> matmul, the program's math; at 32·T²
+# scores past 4 GiB the prefill attention loops over the KV-head groups as the program does), `sdpa` (eager,
+# F.scaled_dot_product_attention: the efficient backend at f32; a decode step slices the cache to the attended
+# positions), `-tf32` twins, and `bf16` / `bf16-compile`: the layer in bfloat16 with SDPA (flash), the real-world
+# reference — gated loosely against Mapal's f32 values, reported apart. A decode `run` is S steps (one timed rep).
+LLM = dict(D=4096, H=32, Hk=8, dh=128, F=14336)
+LLM_PX = dict(D=64, H=4, Hk=2, dh=16, F=96)
+LLM_STEPS = 16
+
+
+def llm_law(length, key, body):
+    mul, add, mod, off, _ = OPS[key]
+    t = torch.arange(length, device=dev, dtype=torch.int64)
+    return body((((t % mod) * mul + add) % mod - off).to(torch.float32))
+
+
+def llm_div(k):
+    return float(f"{29 * k ** 0.5:.1f}")
+
+
+def llm_tensors(P, rows, positions, cache, ffn, dt):
+    D, H, Hk, dh, F = P['D'], P['H'], P['Hk'], P['dh'], P['F']
+    NQ, half = (H + 2 * Hk) * dh, dh // 2
+    w = dict(x0=llm_law(rows * D, 'a', lambda v: v / 29.0).view(rows, D),
+             g1=llm_law(D, 'e', lambda v: 1.0 + v / 400.0),
+             wqkv=llm_law(D * NQ, 'b', lambda v: v / llm_div(D)).view(D, NQ),
+             wo=llm_law(D * D, 'e', lambda v: v / llm_div(D)).view(D, D),
+             cs=llm_law(positions * half, 'f', lambda v: v / 50.0).view(positions, half),
+             sn=llm_law(positions * half, 'g', lambda v: v / 50.0).view(positions, half))
+    if cache:
+        w['kc0'] = llm_law(cache, 'p', lambda v: v / 29.0)
+        w['vc0'] = llm_law(cache, 'a', lambda v: v / 29.0)
+    if ffn:
+        w.update(g2=llm_law(D, 'b', lambda v: 1.0 + v / 400.0),
+                 wg=llm_law(D * F, 'f', lambda v: v / llm_div(D)).view(D, F),
+                 wu=llm_law(D * F, 'g', lambda v: v / llm_div(D)).view(D, F),
+                 wd=llm_law(F * D, 'p', lambda v: v / llm_div(F)).view(F, D))
+    return {k: v.to(dt) for k, v in w.items()}
+
+
+def llm_rms(x, g):
+    return x * torch.rsqrt(x.float().pow(2).mean(-1, keepdim=True) + 1e-5).to(x.dtype) * g
+
+
+def llm_rope(v, c, s):  # v [..., dh]; c, s broadcast to [..., dh / 2]
+    h = v.shape[-1] // 2
+    v1, v2 = v[..., :h], v[..., h:]
+    return torch.cat((v1 * c - v2 * s, v2 * c + v1 * s), -1)
+
+
+def llm_ffn(w, h1):
+    hn = llm_rms(h1, w['g2'])
+    return h1 + (torch.nn.functional.silu(hn @ w['wg']) * (hn @ w['wu'])) @ w['wd']
+
+
+LLM_CELLS = lambda rows, D: [0, (rows - 1) * D + 1, rows * D // 2 + 3, rows * D - 1]  # noqa: E731 — the printed cells
+
+
+def llm_workload(stem, mode):
+    """-> (fn, args); fn(*args) returns the layer's output [rows, D]. A decode workload is ('run', step)."""
+    P = LLM_PX if stem.startswith('px_') else LLM
+    D, H, Hk, dh = P['D'], P['H'], P['Hk'], P['dh']
+    G, KD, NQ = H // Hk, Hk * dh, (H + 2 * Hk) * dh
+    bf = mode.startswith('bf16')
+    dt = torch.bfloat16 if bf else torch.float32
+    sdpa = bf or mode.startswith('sdpa')
+    F_ = torch.nn.functional
+    m = re.fullmatch(r'p[tx]_llm_(dec|blkdec)_b(\d+)_l(\d+)', stem)
+    if m:
+        ffn, B, L = m.group(1) == 'blkdec', int(m.group(2)), int(m.group(3))
+        S = 3 if stem.startswith('px_') else LLM_STEPS
+        w = llm_tensors(P, B, L, B * L * KD, ffn, dt)
+        kc, vc = w['kc0'].view(B, L, Hk, dh), w['vc0'].view(B, L, Hk, dh)
+        pos = torch.arange(L, device=dev)
+
+        def step(t, x, ti=None):  # t: a 0-d tensor (one compiled graph for every step); the cache is updated in place
+            p = t + (L - S)
+            pv = p.view(1)
+            qkv = llm_rms(x, w['g1']) @ w['wqkv']
+            c, s = w['cs'].index_select(0, pv), w['sn'].index_select(0, pv)
+            q = llm_rope(qkv[:, :D].view(B, H, dh), c, s)
+            kc.index_copy_(1, pv, llm_rope(qkv[:, D:D + KD].view(B, Hk, dh), c, s).view(B, 1, Hk, dh))
+            vc.index_copy_(1, pv, qkv[:, D + KD:].view(B, 1, Hk, dh))
+            if sdpa and ti is not None:  # eager SDPA: the attended prefix of the cache (ti: the step, a host int)
+                n = ti + L - S + 1
+                o = F_.scaled_dot_product_attention(q.view(B, H, 1, dh), kc[:, :n].transpose(1, 2),
+                                                    vc[:, :n].transpose(1, 2), enable_gqa=True)
+            elif sdpa:  # compiled: the whole cache, masked (static shapes)
+                o = F_.scaled_dot_product_attention(q.view(B, H, 1, dh), kc.transpose(1, 2), vc.transpose(1, 2),
+                                                    attn_mask=(pos <= p).view(1, 1, 1, L), enable_gqa=True)
+            else:
+                sc = torch.einsum('bkgd,blkd->bkgl', q.view(B, Hk, G, dh), kc) / dh ** 0.5
+                pr = torch.softmax(sc.masked_fill(pos > p, float('-inf')), -1)
+                o = torch.einsum('bkgl,blkd->bkgd', pr, vc)
+            h1 = x + o.reshape(B, D) @ w['wo']
+            return llm_ffn(w, h1) if ffn else h1
+
+        def run(step):
+            x = w['x0']
+            for t in range(S):
+                x = step(torch.tensor(t, device=dev), x, t if sdpa and 'compile' not in mode else None)
+            return x
+        return run, ('step', step)
+    m = re.fullmatch(r'p[tx]_llm_(pre|preg|blkpre)_t(\d+)', stem)
+    if m:
+        ffn, T = m.group(1) == 'blkpre', int(m.group(2))
+        w = llm_tensors(P, T, T, 0, ffn, dt)
+        grouped = H * T * T * 4 > (4 << 30) or m.group(1) == 'preg'  # the program's own split (gen_tiles.py)
+
+        def layer(x0, w):
+            qkv = llm_rms(x0, w['g1']) @ w['wqkv']
+            c, s = w['cs'].view(T, 1, -1), w['sn'].view(T, 1, -1)
+            q = llm_rope(qkv[:, :D].view(T, H, dh), c, s).transpose(0, 1)          # [H, T, dh]
+            k = llm_rope(qkv[:, D:D + KD].view(T, Hk, dh), c, s).transpose(0, 1)  # [Hk, T, dh]
+            v = qkv[:, D + KD:].view(T, Hk, dh).transpose(0, 1)
+            if sdpa:
+                o = F_.scaled_dot_product_attention(q.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0), is_causal=True,
+                                                    enable_gqa=True)[0]
+            else:
+                mask = torch.ones(T, T, dtype=torch.bool, device=dev).triu(1)
+                parts = []
+                for g in (range(Hk) if grouped else [None]):
+                    qg = q.view(Hk, G, T, dh) if g is None else q.view(Hk, G, T, dh)[g:g + 1]
+                    kg, vg = (k, v) if g is None else (k[g:g + 1], v[g:g + 1])
+                    sc = (qg @ kg.unsqueeze(1).transpose(-1, -2)) / dh ** 0.5
+                    parts.append(torch.softmax(sc.masked_fill(mask, float('-inf')), -1) @ vg.unsqueeze(1))
+                o = torch.cat(parts).view(H, T, dh)
+            h1 = x0 + o.transpose(0, 1).reshape(T, D) @ w['wo']
+            return llm_ffn(w, h1) if ffn else h1
+        return layer, (w['x0'], w)
+    raise LookupError(f'no llm workload for {stem}')
+
+
+def llm_vals(stem, out):
+    D = (LLM_PX if stem.startswith('px_') else LLM)['D']
+    f = out.reshape(-1)
+    v = [f[i].item() for i in LLM_CELLS(out.shape[0], D)]
+    return v + ([float((f.double() ** 2).sum())] if stem.startswith('px_') else [])
+
+
+def workload(stem, mode='eager'):
+    """-> (fn, args): fn(*args) returns the program's outputs in print order. `mode` picks the dtype / attention
+    form of the model-scale workloads (`llm_workload`) and the projections' bf16 reference."""
+    if stem.startswith(('pt_llm_', 'px_llm_')):
+        return llm_workload(stem.removesuffix('_pv'), mode)
     pj = re.fullmatch(r'pt_pj_m(\d+)_n(\d+)_k(\d+)', stem)
     if pj:  # gen_tiles.py projection: M x K activations times a K x N weight
         M, N, K = map(int, pj.groups())
-        a, b = op('a', M * K).view(M, K), op('b', K * N).view(K, N)
+        dt = torch.bfloat16 if mode.startswith('bf16') else torch.float32
+        a, b = op('a', M * K).view(M, K).to(dt), op('b', K * N).view(K, N).to(dt)
         return (lambda a, b: corners(a @ b)), (a, b)
     m = re.fullmatch(r'pt_(\w+?)_(\d+)', stem)
     if stem.startswith('pt_rm_m'):
@@ -237,11 +384,16 @@ def ends(outs):
     return v
 
 
-def gate(stem, outs, vals_dir):
+def gate(stem, outs, vals_dir, tol=1e-3):
     p = os.path.join(vals_dir, f'{stem}.txt')
     if not os.path.exists(p):
         return 'no-mapal', float('nan')
     want = [float(x) for x in open(p).read().split() if re.fullmatch(r'-?[\d.]+(e-?\d+)?', x)]
+    if stem.startswith(('pt_llm_', 'px_llm_')):  # the printed cells (+ Σ out² for px), against the output's rms
+        got, r = llm_vals(stem, outs), math.sqrt(float((outs.double() ** 2).mean()))
+        dev_ = max((abs(g - w) / max(abs(w), r if i < 4 else abs(w), 1e-30) for i, (g, w) in enumerate(zip(got, want))),
+                   default=float('nan'))
+        return ('yes' if len(got) == len(want) > 0 and dev_ <= tol else 'no'), dev_
     got = ends(outs)
     loop = stem.startswith(('pt_decode_', 'pt_causal_', 'pt_prefill_', 'pt_gen_'))
     if loop:  # out[0], out[d-1], Σout (+ Σpo after a prefill)
@@ -251,7 +403,7 @@ def gate(stem, outs, vals_dir):
     if loop:
         rms_of = [rms[0], rms[0]] + [abs(g) for g in got[2:]]
     dev_ = max((abs(g - w) / max(abs(w), r, 1e-30) for g, w, r in zip(got, want, rms_of)), default=float('nan'))
-    ok = len(got) >= len(want) > 0 and dev_ <= 1e-3
+    ok = len(got) >= len(want) > 0 and dev_ <= tol
     return ('yes' if ok else 'no'), dev_
 
 
@@ -285,9 +437,12 @@ def main():
           f'device="{torch.cuda.get_device_name(0) if dev == "cuda" else "cpu"}"', flush=True)
     flush = torch.empty(64 << 20, device=dev) if dev == 'cuda' else None  # 256 MB
     for stem in stems:
+        # pt_gen is pt_prefill's math in one loop; `_tf32` programs are the same math under the program's `: tf32` face.
+        # (a model-scale `_pv` diagnostic computes its base stem's layer: `workload` maps it.)
+        base = re.sub(r'^pt_gen_', 'pt_prefill_', stem.removesuffix('_tf32'))
+        llm = base.startswith(('pt_llm_', 'px_llm_'))
         try:
-            # pt_gen is pt_prefill's math in one loop; `_tf32` programs are the same math under the program's `: tf32` face.
-            fn, args = workload(re.sub(r'^pt_gen_', 'pt_prefill_', stem.removesuffix('_tf32')))
+            fn, args = workload(base)
         except Exception as ex:  # noqa: BLE001 — a stem without a torch leg is a row, not the end of the run
             print(f'torch prog={stem} NOWORKLOAD {type(ex).__name__}: {str(ex)[:200]}', flush=True)
             continue
@@ -296,28 +451,45 @@ def main():
         modes = ['eager', 'compile']
         if 'tf32' in stem or 'convmc' in stem or '_mlp' in stem:
             modes += ['eager-tf32', 'compile-tf32']
+        # model-scale: SDPA legs; the bf16 reference (reported apart, gated loosely against Mapal's f32 values); a
+        # `_tf32` twin times only its TF32 legs (the f32 and bf16 ones are its base stem's).
+        scale = llm or base.startswith('pt_pj_')
+        if llm:
+            modes += ['sdpa'] + (['sdpa-tf32'] if 'tf32' in stem else [])
+        if scale:
+            modes = [m for m in modes if m.endswith('-tf32')] if 'tf32' in stem else modes + ['bf16', 'bf16-compile']
+        # TORCH_MODES=<mode,...> keeps only those legs (a CUPTI trace of one leg).
+        keep = [m for m in os.environ.get('TORCH_MODES', '').split(',') if m]
+        modes = [m for m in modes if not keep or m in keep]
         for mode in modes:
             tf = mode.endswith('-tf32')
             torch.backends.cuda.matmul.allow_tf32 = tf
             torch.backends.cudnn.allow_tf32 = tf
+            tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
             try:
+                fn, args = workload(base, mode) if scale else (fn, args)
                 t0 = time.perf_counter()
+                comp_mode = 'compile' in mode
                 if fn.__name__ == 'run':  # decode: the step is what compiles, the loop stays Python
-                    st = args[1] if mode.startswith('eager') else torch.compile(args[1], mode='max-autotune-no-cudagraphs')
+                    st = torch.compile(args[1], mode='max-autotune-no-cudagraphs') if comp_mode else args[1]
                     f, a = fn, (st,)
                 else:
-                    f = fn if mode.startswith('eager') else torch.compile(fn, mode='max-autotune-no-cudagraphs')
+                    f = torch.compile(fn, mode='max-autotune-no-cudagraphs') if comp_mode else fn
                     a = args
                 outs = f(*a)
                 comp = time.perf_counter() - t0
-                ok, dv = gate(stem, outs, vals_dir)
+                ok, dv = gate(stem, outs, vals_dir, tol)
                 ts = timed(f, a, reps, flush)
+                vals = llm_vals(base, outs) if llm else ends(outs)
                 print(f'torch prog={stem} mode={mode} n={len(ts)} min_ms={ts[0]:.4f} med_ms={ts[len(ts) // 2]:.4f} '
                       f'max_ms={ts[-1]:.4f} within={ok} maxdev={dv:.3e} compile_s={comp:.1f} '
-                      f'values={",".join(f"{v:.6g}" for v in ends(outs))}', flush=True)
+                      f'values={",".join(f"{v:.6g}" for v in vals)}', flush=True)
             except Exception as ex:  # noqa: BLE001 — one leg's failure is a row, not the session
                 print(f'torch prog={stem} mode={mode} FAILED {type(ex).__name__}: {str(ex)[:200]}', flush=True)
-
+            if scale:  # the next mode's tensors (GBs at this scale): drop this one's graphs and cached blocks
+                fn = args = f = a = outs = None
+                torch._dynamo.reset()
+                torch.cuda.empty_cache()
 
 if __name__ == '__main__':
     main()

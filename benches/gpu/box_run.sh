@@ -172,6 +172,11 @@ nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/inclu
 nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
     chain_bench.cu -lcublasLt -lcublas -o chain_bench 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
 [ -x chain_bench ] || say "CHAIN HARNESS BUILD FAILED"
+# model-scale: the projections' cuBLAS / cuBLASLt legs (gemm_lib.cu).
+if [ -f gemm_lib.cu ]; then
+    nvcc -O3 -std=c++17 -arch="${SM%a}" gemm_lib.cu -lcublasLt -lcublas -o gemm_lib 2>&1 | grep -v Wno | tail -5 | tee -a "$LOG"
+    [ -x gemm_lib ] || say "GEMM HARNESS BUILD FAILED"
+fi
 # S63: the residual MLP's kernels vs cuBLAS, cuBLASLt and CUTLASS (mlp_bench.cu).
 if [ -f mlp_bench.cu ]; then
     nvcc -O3 -std=c++17 -arch="${SM%a}" -Icutlass/include -Icutlass/tools/util/include \
@@ -454,6 +459,12 @@ for o in "$PROF"/pt_*.host.o; do
             done
         done ;;
     esac
+    # model-scale: a projection's cuBLAS / cuBLASLt legs (gemm_lib.cu; `_tf32`: the TF32 legs), gated on c[0], c[last].
+    if [[ $b =~ ^pt_pj_m([0-9]+)_n([0-9]+)_k([0-9]+)(_tf32)?$ ]] && [ -x gemm_lib ]; then
+        # shellcheck disable=SC2086  # the values are separate arguments
+        ./gemm_lib "$b" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "$REPS" \
+            ${BASH_REMATCH[4]:+--tf32} $vals 2>&1 | tee -a "$LOG"
+    fi
     # shellcheck disable=SC2086  # the values are separate arguments
     case $n in *[!0-9]*) continue ;; esac  # S62 `rmlp_<M>x<d>x<h>`: no library leg
     # S64: only the probes chain_bench.cu builds (the suite's fir / conv / loopmm / rt legs are torch_bench.py's;

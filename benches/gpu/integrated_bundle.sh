@@ -67,6 +67,15 @@ for p in $PROGS $SUITE; do
     fi
 done
 
+# model-scale: PX="<px stem>..." small differentials (gen_tiles.py `px_llm_*`): the interpreter is the oracle
+# (`.expect`); box_run.sh's differential compares the exact face bit for bit and the default face (`_d`) within
+# ADR-0040 D2's bound (`.kmax`), each also GPU-only (`.off-place`: at this size the shipped placement keeps
+# everything on the host, so the arm is what runs the device kernels of the full-scale program's shape).
+PX=${PX-""}
+for p in $PX; do
+    [ -s "$OUT/tiles/$p.expect" ] || "$ROOT/target/release/examples/run" "$OUT/tiles/$p.mapal" > "$OUT/tiles/$p.expect"
+done
+
 # ADR-0041 D7: the TF32 face is the program's — `<src>` with `: tf32 | f32` on every fold step, written
 # beside it; `--precision=tf32` is gone.
 tf32_src() { # <src> -> path of its TF32-admitting twin
@@ -192,6 +201,15 @@ for spec in "$@"; do
         chain "$f" "$b" "$prof" "$sm"
         echo "suite $prof $p $(cat "$b.launch" 2>/dev/null) cpu=$([ -f "$b.cpu.host.o" ] && echo y) gpu-only=$([ -f "$b.off-place.host.o" ] && echo arm || echo same)"
     done
+    # model-scale: the small differentials, exact face and default face, shipped and GPU-only.
+    for p in $PX; do
+        f="$OUT/tiles/$p.mapal"
+        emit_one "$f" "$d/$p" "$prof" "$sm" --exact
+        emit_one "$f" "$d/$p.off-place" "$prof" "$sm" --exact --gpu-off=place
+        emit_one "$f" "$d/${p}_d" "$prof" "$sm"
+        emit_one "$f" "$d/${p}_d.off-place" "$prof" "$sm" --gpu-off=place
+        echo "px $prof $p gpu-only kernels=$(grep -c '^define ptx_kernel' "$d/${p}_d.off-place.dev.ll" 2>/dev/null)"
+    done
     # S64 re-judge arms: `<stem><face>.<on|off>-<rung>` on this part.
     for a in $ARMS; do
         IFS=: read -r ap stem face rung dir <<< "$a"
@@ -238,7 +256,7 @@ for spec in "$@"; do
 done
 cp "$ROOT/target/x86_64-unknown-linux-gnu/release/libmapal_rt.a" "$OUT/"
 cp "$ROOT/crates/mapal-rt/gpu/mapal_gpu.c" "$ROOT/crates/mapal-rt/gpu/mapal_choice.h" "$ROOT/benches/gpu/tile_bench.cu" "$ROOT/benches/gpu/chain_bench.cu" \
-    "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/value_gate.py" \
+    "$ROOT/benches/gpu/mlp_bench.cu" "$ROOT/benches/gpu/gemm_lib.cu" "$ROOT/benches/gpu/value_gate.py" \
     "$ROOT/benches/gpu/box_run.sh" "$ROOT/benches/gpu/box_profile.sh" "$OUT/"
 # S64: the checker and its inputs, for the box's `exec` / `jit` checks; the torch legs.
 cp "$ROOT/benches/gpu/"{evidence.py,intent.py,sass_stats.py,occ.py,ptx_static.py,cudatool.sh,torch_bench.py} "$OUT/"
