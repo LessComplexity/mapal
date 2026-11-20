@@ -551,6 +551,17 @@ pub struct GpuRungs {
     /// (`zero_ns`). Off (`--gpu-off=zero-fold`): every zero pass is its own
     /// op, the emission before it.
     pub zero_fold: bool,
+    /// kernel-merging `row-stage`: a row-block unit's tile phase stages its
+    /// row-independent operand panels (and a row operand read from memory)
+    /// through shared memory as coalesced 16-byte copies (`cp.async` where
+    /// the part has it and the `async` rung is on), in a bank-conflict-free
+    /// layout, double-buffered where the shared memory allows — each choice
+    /// priced by the plan model. Off (`--gpu-off=row-stage`): every operand
+    /// is read straight from memory, the emission before it. No
+    /// `GPU_RUNGS_OFF` row: it acts only inside a row-block unit, which every
+    /// part ships off; forced, the rtx-5080's pt_attn_1024_64 unit ran 0.908×
+    /// its direct arm (ABBA, `local-rtx-5080/kernel-merging.md` Rows).
+    pub row_stage: bool,
 }
 
 impl GpuRungs {
@@ -636,11 +647,12 @@ impl GpuRungs {
         bank_plan: true,
         row_block: true,
         zero_fold: true,
+        row_stage: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 80] = [
+    pub const NAMES: [&'static str; 81] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -721,6 +733,7 @@ impl GpuRungs {
         "bank-plan",
         "row-block",
         "zero-fold",
+        "row-stage",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -806,6 +819,7 @@ impl GpuRungs {
             "bank-plan" => &mut self.bank_plan,
             "row-block" => &mut self.row_block,
             "zero-fold" => &mut self.zero_fold,
+            "row-stage" => &mut self.row_stage,
             _ => return None,
         })
     }
@@ -873,6 +887,11 @@ pub struct GpuArms {
     /// row-block group that fits takes `b` rows a unit, the rung table and
     /// the cost test aside. 0 = derive.
     pub row_block_b: u64,
+    /// Measurement override (`--row-stage=<kc>x<stages>p<passes>`, the
+    /// `--row-block` precedent): every staged tile of a row-block unit takes
+    /// this panel depth, buffers and column passes where they fit, the
+    /// plan model's pick aside. `None` = derive.
+    pub row_stage_force: Option<(u64, u64, u64)>,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -892,6 +911,7 @@ impl Default for GpuArms {
             regroup: true,
             row_block: true,
             row_block_b: 0,
+            row_stage_force: None,
         }
     }
 }

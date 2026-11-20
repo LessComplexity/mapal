@@ -1445,12 +1445,13 @@ fn launch_key(l: &Launch) -> String {
     for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
         *r.rung(n).expect("a kernel rung") = true;
     }
-    // The ids predate the host-only `row-block` and `zero-fold` rungs (off
+    // The ids predate the host-only `row-block`, `zero-fold` and `row-stage` rungs (off
     // here: no kernel rung): their fields are not part of a kernel's key, so
     // tuned picks and wisdom keep their ids.
     format!("{:?}", Launch { rungs: r, ..*l })
         .replace(", row_block: false", "")
         .replace(", zero_fold: false", "")
+        .replace(", row_stage: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a

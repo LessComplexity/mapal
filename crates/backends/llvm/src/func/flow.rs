@@ -105,6 +105,174 @@ pub(crate) struct Block {
     pub color: Vec<Option<usize>>,
     /// The cost model's fused and split times, ns (the intent line's).
     pub ns: (u64, u64),
+    /// kernel-merging `row-stage`: per member, how a tile stages its operand
+    /// panels through shared memory (`None`: read straight from memory).
+    pub stage: Vec<Option<Stage>>,
+}
+
+/// kernel-merging `row-stage`: a row-block tile's operand panels staged
+/// through shared memory. One panel trip folds `kc` of each k-slice's `k`;
+/// the column operand's panel holds those `kc` for every column (the tile's
+/// row-independent operand: each block reads it once a trip, as the separate
+/// tile kernel's panels do), a row operand read from memory its `b` rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Stage {
+    pub kc: u64,
+    /// Panel buffers: 1 = copy, barrier, fold; 2 = the next panel lands
+    /// (`cp.async`) while this one folds.
+    pub stages: u64,
+    /// The column operand runs along `k` (`ck = 1`): `[slice][column][kc]`,
+    /// its 16-byte chunks XOR-swizzled by row so 8 lanes' 16-byte reads of 8
+    /// consecutive columns hit 32 banks; else `[slice][kc][column]`
+    /// (consecutive lanes, consecutive words).
+    pub b_kmaj: bool,
+    /// 16-byte copies of the column operand (else one element a copy).
+    pub b_vec: bool,
+    /// The row operand is read from memory: staged `[slice][row][kc]`, by
+    /// 16-byte copies where its rows run along `k` aligned (`a_vec`).
+    pub a: bool,
+    pub a_vec: bool,
+    /// The copies are `cp.async` (else each thread loads and stores).
+    pub cp: bool,
+    /// Column passes: each folds all of `k` for `1 / passes` of a thread's
+    /// columns (a contiguous `c / passes` of the row), its panels that wide.
+    pub passes: u64,
+}
+
+impl Stage {
+    /// `(a panel bytes, one buffer's bytes)`, both 16-byte multiples.
+    pub fn bytes(&self, b: u64, c: u64, slices: u64, e: u64) -> (u64, u64) {
+        let a = match self.a {
+            true => (slices * b * self.kc * e).next_multiple_of(16),
+            false => 0,
+        };
+        (
+            a,
+            a + (slices * (c / self.passes) * self.kc * e).next_multiple_of(16),
+        )
+    }
+
+    /// Copies each thread issues a panel trip: `(a, b)`.
+    pub fn copies(&self, b: u64, c: u64, slices: u64, e: u64, lanes: u64) -> (u64, u64) {
+        let v = 16 / e;
+        let unit = |vec: bool| if vec { v } else { 1 };
+        let a = match self.a {
+            true => (slices * b * self.kc / unit(self.a_vec)).div_ceil(lanes),
+            false => 0,
+        };
+        (
+            a,
+            (slices * (c / self.passes) * self.kc / unit(self.b_vec)).div_ceil(lanes),
+        )
+    }
+
+    /// The intent field: `kc<kc>x<stages>[p<passes>]:<kmaj|krow>:<v|e>[:a<v|e>][:cp]`.
+    pub fn label(&self) -> String {
+        let ve = |x: bool| if x { "v" } else { "e" };
+        format!(
+            "kc{}x{}{}:{}:{}{}{}",
+            self.kc,
+            self.stages,
+            match self.passes {
+                1 => String::new(),
+                p => format!("p{p}"),
+            },
+            if self.b_kmaj { "kmaj" } else { "krow" },
+            ve(self.b_vec),
+            if self.a {
+                format!(":a{}", ve(self.a_vec))
+            } else {
+                String::new()
+            },
+            if self.cp { ":cp" } else { "" }
+        )
+    }
+}
+
+/// The most staging combinations a row-block `b` weighs.
+const STAGE_COMBOS: usize = 256;
+
+/// The most copies a thread issues for one panel (a panel wider than that
+/// keeps its operands read straight from memory).
+const STAGE_COPIES: u64 = 32;
+
+/// kernel-merging `row-stage`: tile `site`'s staging at a panel depth of at
+/// most `kc` (the largest power of two dividing the slice's `k`, at least
+/// one 16-byte chunk) in `stages` buffers, the row operand staged when it is
+/// read from memory (`a_gmem`). `None` for an element other than 4 or 8
+/// bytes, a slice shallower than one chunk, or more than [`STAGE_COPIES`]
+/// copies a thread.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn stage_of(
+    site: &TileSite,
+    lanes: u64,
+    free: bool,
+    b: u64,
+    a_gmem: bool,
+    kc: u64,
+    stages: u64,
+    passes: u64,
+    cp: bool,
+) -> Option<Stage> {
+    let e = crate::profile::elem_bytes(&site.elem);
+    if e != 4 && e != 8 {
+        return None;
+    }
+    let v = 16 / e;
+    let (nj, slices) = tile_split(site, lanes, free);
+    if nj % passes != 0 {
+        return None;
+    }
+    let kper = site.k / slices;
+    let mut kc = kc.min(kper);
+    while kc > 1 && !kper.is_multiple_of(kc) {
+        kc /= 2;
+    }
+    if kc < v || !kc.is_multiple_of(v) || !kper.is_multiple_of(kc) {
+        return None;
+    }
+    let b_kmaj = site.b.ck == 1;
+    let b_vec = match b_kmaj {
+        true => site.b.base.is_multiple_of(v) && site.b.clane.is_multiple_of(v),
+        false => {
+            site.b.clane == 1
+                && site.c.is_multiple_of(v)
+                && site.b.base.is_multiple_of(v)
+                && site.b.ck.is_multiple_of(v)
+        }
+    };
+    let a_vec =
+        a_gmem && site.a.ck == 1 && site.a.base.is_multiple_of(v) && site.a.ci.is_multiple_of(v);
+    let st = Stage {
+        kc,
+        stages,
+        b_kmaj,
+        b_vec,
+        a: a_gmem,
+        a_vec,
+        cp,
+        passes,
+    };
+    let (ca, cb) = st.copies(b, site.c, slices, e, lanes);
+    (ca + cb <= STAGE_COPIES).then_some(st)
+}
+
+/// kernel-merging `row-stage`: a tile's staging candidates — panel depth
+/// (one 32-byte sector a column row where it fits, deeper for more FMA a
+/// barrier) by buffers by column passes; the plan model picks.
+pub(crate) fn stage_cands(cp: bool) -> Vec<(u64, u64, u64)> {
+    let mut out = Vec::new();
+    for p in [1u64, 2, 4] {
+        for s in [2u64, 1] {
+            if s == 2 && !cp {
+                continue;
+            }
+            for kc in [16u64, 8, 4, 2] {
+                out.push((kc, s, p));
+            }
+        }
+    }
+    out
 }
 
 /// A unit's kernel for the device module: the function, its members (whose
@@ -149,6 +317,10 @@ pub(crate) struct Geo {
     /// on every other unit.
     pub xrow: Vec<Option<u64>>,
     pub part: Option<u64>,
+    /// kernel-merging `row-stage`: the staged tiles' panel buffers (the
+    /// region a split tile's partials share: they are written after its
+    /// last panel is read).
+    pub panel: Option<u64>,
 }
 
 /// A fold step the lanes may reassociate: `+`, `×`, or a running max/min.
@@ -191,6 +363,7 @@ pub(crate) fn unit_geo(
             kept: vec![None; n],
             xrow: Vec::new(),
             part: None,
+            panel: None,
         };
     }
     let lanes = extent.next_power_of_two().clamp(g.warp, 256);
@@ -232,6 +405,7 @@ pub(crate) fn unit_geo(
         kept,
         xrow: Vec::new(),
         part: None,
+        panel: None,
     }
 }
 
@@ -339,6 +513,11 @@ fn block_geo(
         .collect();
     let seg = segments(&u.members);
     let (mut tree, mut kept, mut xrow) = (vec![None; n], vec![None; n], vec![None; n]);
+    // Phase-local scratch — tree partials (a fold's phase), panels (a tile's
+    // k-loop), split partials (its tail) — shares one region once a tile is
+    // staged: no two of them are live in one phase.
+    let scratch = blk.stage.iter().any(Option::is_some);
+    let mut trees = 0u64;
     for (k, mb) in u.members.iter().enumerate() {
         if let Some(c) = blk.color[k]
             && !mb.per_row()
@@ -349,7 +528,16 @@ fn block_geo(
             && free
             && tree_step(&site.op)
         {
-            tree[k] = Some(take(lanes * bytes(mb)));
+            // kernel-merging `row-stage`: a staged unit's tree partials live
+            // in its phase-local scratch (below), at offsets from its start.
+            tree[k] = Some(match scratch {
+                true => {
+                    let off = trees.next_multiple_of(16);
+                    trees = off + lanes * bytes(mb);
+                    off
+                }
+                false => take(lanes * bytes(mb)),
+            });
         }
         let later = u.members.iter().enumerate().any(|(j, r)| {
             seg[j] != seg[k]
@@ -370,8 +558,31 @@ fn block_geo(
             }
             _ => None,
         })
-        .max()
-        .map(&mut take);
+        .max();
+    // kernel-merging `row-stage`: the panel buffers, one region with the
+    // split partials (each tile's partials follow its last panel).
+    let panels = u
+        .members
+        .iter()
+        .zip(&blk.stage)
+        .filter_map(|(mb, st)| match (&mb.kind, st) {
+            (UKind::Tile { site }, Some(st)) => {
+                let slices = tile_split(site, lanes, free).1;
+                Some(st.stages * st.bytes(b, site.c, slices, bytes(mb)).1)
+            }
+            _ => None,
+        })
+        .max();
+    let (part, panel) = match panels {
+        None => (part.map(&mut take), None),
+        Some(p) => {
+            let off = take(p.max(part.unwrap_or(0)).max(trees));
+            for x in tree.iter_mut().flatten() {
+                *x += off;
+            }
+            (part.map(|_| off), Some(off))
+        }
+    };
     Geo {
         lanes,
         gx: u.rows / b,
@@ -381,6 +592,7 @@ fn block_geo(
         kept,
         xrow,
         part,
+        panel,
     }
 }
 
@@ -976,64 +1188,144 @@ impl<'a> FnEmit<'a> {
             }
         }
         let mut why = "budget";
-        let mut best: Option<(u64, u64, u64)> = None;
+        let mut best: Option<(Block, u64)> = None;
         let forced = self.gpu_arms.row_block_b;
         self.block_priced.set(None);
+        // kernel-merging `row-stage`: each tile's panels staged through
+        // shared memory at every candidate depth × buffers that fits (the
+        // plan model picks); a `b` no staging fits reads them straight.
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        // `cp.async` where the part has it (sm_80+); `--gpu-off=async` copies
+        // through registers.
+        let cp = gpu.has_mma_sync() && !self.gpu_arms.off.cp_async;
         for sh in (0..=6).rev() {
             let b = 1u64 << sh;
-            if rows % b != 0 || (forced > 0 && b != forced) {
+            if !rows.is_multiple_of(b) || (forced > 0 && b != forced) {
                 continue;
             }
-            let probe = Unit {
-                id: 0,
-                rows,
-                members: members.to_vec(),
-                gmem: gmem.to_vec(),
-                block: Some(Block {
+            // Each tile's staged options; the combinations of them (each tile
+            // its own, the panel region their largest), then — when no
+            // combination fits — every tile read straight from memory.
+            let opts: Vec<Vec<Option<Stage>>> = members
+                .iter()
+                .map(|mb| match &mb.kind {
+                    UKind::Tile { site } if rungs.row_stage => {
+                        let mut o: Vec<Option<Stage>> = Vec::new();
+                        let cands = match self.gpu_arms.row_stage_force {
+                            Some(f) => vec![f],
+                            None => stage_cands(cp),
+                        };
+                        for (kc, st, p) in cands {
+                            let x = stage_of(
+                                site,
+                                lanes,
+                                free,
+                                b,
+                                matches!(mb.srcs[0], USrc::Gmem(_)),
+                                kc,
+                                st,
+                                p,
+                                cp,
+                            );
+                            if x.is_some() && !o.contains(&x) {
+                                o.push(x);
+                            }
+                        }
+                        if o.is_empty() {
+                            o.push(None);
+                        }
+                        o
+                    }
+                    _ => vec![None],
+                })
+                .collect();
+            let mut combos: Vec<Vec<Option<Stage>>> = vec![Vec::new()];
+            for o in &opts {
+                combos = combos
+                    .into_iter()
+                    .flat_map(|c| {
+                        o.iter().map(move |x| {
+                            let mut c = c.clone();
+                            c.push(*x);
+                            c
+                        })
+                    })
+                    .take(STAGE_COMBOS)
+                    .collect();
+            }
+            let direct = vec![None; members.len()];
+            if !combos.contains(&direct) {
+                combos.push(direct);
+            }
+            let mut staged_fit = false;
+            let mut first: Option<Block> = None;
+            for stage in combos {
+                let any = stage.iter().any(Option::is_some);
+                if !any && staged_fit {
+                    continue;
+                }
+                let blk = Block {
                     b,
                     color: color.clone(),
                     ns: (0, 0),
-                }),
-            };
-            let geo = self.geo(&probe);
-            let acc = members
-                .iter()
-                .filter_map(|mb| match &mb.kind {
-                    UKind::Tile { site } => Some(b * tile_split(site, lanes, free).0),
-                    _ => None,
-                })
-                .max()
-                .unwrap_or(0);
-            if geo.smem > gpu.smem_per_block
-                || acc + crate::profile::FMA_ADDR_REGS > gpu.regs_per_thread / 2
-            {
-                continue;
+                    stage,
+                };
+                let probe = Unit {
+                    id: 0,
+                    rows,
+                    members: members.to_vec(),
+                    gmem: gmem.to_vec(),
+                    block: Some(blk.clone()),
+                };
+                let geo = self.geo(&probe);
+                let acc = members
+                    .iter()
+                    .filter_map(|mb| match &mb.kind {
+                        UKind::Tile { site } => Some(b * tile_split(site, lanes, free).0),
+                        _ => None,
+                    })
+                    .max()
+                    .unwrap_or(0);
+                if geo.smem > gpu.smem_per_block
+                    || acc + crate::profile::FMA_ADDR_REGS > gpu.regs_per_thread / 2
+                {
+                    continue;
+                }
+                staged_fit |= any;
+                first.get_or_insert(blk.clone());
+                // The model's waves charge an unfilled grid its busiest SM.
+                match self.block_cost(&probe, &geo) {
+                    Some((fused, split)) => {
+                        why = "cost";
+                        if self.block_priced.get().is_none_or(|x| fused < x.1) {
+                            self.block_priced.set(Some((b, fused, split)));
+                        }
+                        if (fused <= split || forced > 0)
+                            && best.as_ref().is_none_or(|x| fused < x.1)
+                        {
+                            best = Some((
+                                Block {
+                                    ns: (fused, split),
+                                    ..blk
+                                },
+                                fused,
+                            ));
+                        }
+                    }
+                    None if why == "budget" => why = "unpriced",
+                    None => {}
+                }
             }
+            // A forced `b` takes its cheapest priced realization, else its
+            // first that fits.
             if forced > 0 {
-                best = Some((b, 0, 0));
+                if best.is_none() {
+                    best = first.map(|blk| (blk, 0));
+                }
                 break;
             }
-            // The model's waves charge an unfilled grid its busiest SM.
-            match self.block_cost(&probe, &geo) {
-                Some((fused, split)) => {
-                    why = "cost";
-                    if self.block_priced.get().is_none_or(|x| fused < x.1) {
-                        self.block_priced.set(Some((b, fused, split)));
-                    }
-                    if fused <= split && best.is_none_or(|x| fused < x.1) {
-                        best = Some((b, fused, split));
-                    }
-                }
-                None if why == "budget" => why = "unpriced",
-                None => {}
-            }
         }
-        let (b, fused, split) = best.ok_or(why)?;
-        Ok(Block {
-            b,
-            color,
-            ns: (fused, split),
-        })
+        best.map(|(blk, _)| blk).ok_or(why)
     }
 
     /// The plan model's reading of a row-block unit against the launches it
@@ -1101,7 +1393,7 @@ impl<'a> FnEmit<'a> {
                     // tile folding `k ÷ slices` (the same FFMA, each thread's
                     // own trips); 4-wide loads where `k` is contiguous.
                     let vec = |ck: u64| if ck == 1 && step % 4 == 0 { 4 } else { 1 };
-                    let shape = crate::profile::PlanShape {
+                    let mut shape = crate::profile::PlanShape {
                         rows,
                         c: site.c,
                         k: site.k,
@@ -1120,21 +1412,71 @@ impl<'a> FnEmit<'a> {
                         fly: 1,
                         lsu: b * step / vec(site.a.ck) + nj * step / vec(site.b.ck),
                     };
-                    fused += self.profile.site_ns(&shape)?.kernel_ns;
-                    // The column operand is read straight from `Gmem` (no
-                    // shared panel): a warp's lanes are `clane` elements apart,
-                    // so unless they are adjacent each lane's run along `k` (a
-                    // 4-wide load, else one element) fills part of each 32-byte
-                    // sector it touches. The unused bytes still cross from L2
-                    // (rtx-5080 attn_1024_64: the q·Kᵀ phase alone 20.2 us in the
-                    // unit against 9.4 us as its tile site, CUPTI).
-                    let run = vec(site.b.ck) * e;
-                    let eff = match site.b.clane {
-                        1 => 1.0,
-                        _ => (run as f64 / SECTOR_BYTES as f64).min(1.0),
-                    };
                     let col = (blocks * site.k * site.c * e) as f64;
-                    fused += (1.0 / eff - 1.0) * col / d.l2_bytes_per_ns.max(1) as f64;
+                    match blk.stage.get(k).copied().flatten() {
+                        // kernel-merging `row-stage`: the separate tile
+                        // kernel's terms — a panel trip of `kc`, `stages − 1`
+                        // panels in flight, its shared-memory reads (16-byte
+                        // chunks along `k`; one element a column across `k`)
+                        // and each thread's copies (`LDGSTS`, or `LDG` + `STS`).
+                        // A buffer copies, waits and folds in turn: its
+                        // latency chain adds to the trip instead of hiding.
+                        Some(st) => {
+                            let v = 16 / e;
+                            let (ca, cb) = st.copies(b, site.c, slices, e, lanes);
+                            let a_rd = match &mb.srcs[0] {
+                                USrc::Gmem(_) => b * st.kc / v,
+                                _ => b * st.kc / vec(site.a.ck),
+                            };
+                            let njp = nj / st.passes;
+                            let b_rd = match st.b_kmaj {
+                                true => njp * st.kc / v,
+                                false => njp * st.kc,
+                            };
+                            let copies = (ca + cb) * if st.cp { 1 } else { 2 };
+                            // Each column pass a `b × c / passes` tile of its
+                            // own (the row operand re-read a pass).
+                            shape.c = site.c / st.passes;
+                            shape.bn = site.c * slices / st.passes;
+                            shape.acc = b * njp;
+                            shape.bk = st.kc;
+                            shape.fly = (st.stages - 1).max(1);
+                            shape.lsu = a_rd + b_rd + copies;
+                            let pc = self.profile.site_ns(&shape)?;
+                            fused += st.passes as f64
+                                * match st.stages {
+                                    1 => (pc.f_ns.max(pc.l_ns) + pc.c_ns).max(pc.d_ns),
+                                    _ => pc.kernel_ns,
+                                };
+                            // Each column's run of a trip is `kc` elements:
+                            // under a 32-byte sector the rest crosses unused.
+                            let run = match (st.b_kmaj, st.b_vec || site.b.clane == 1) {
+                                (true, _) => st.kc * e,
+                                (false, true) => SECTOR_BYTES,
+                                (false, false) => e,
+                            };
+                            let eff = (run as f64 / SECTOR_BYTES as f64).min(1.0);
+                            fused += (1.0 / eff - 1.0) * col / d.l2_bytes_per_ns.max(1) as f64;
+                        }
+                        None => {
+                            fused += self.profile.site_ns(&shape)?.kernel_ns;
+                            // The column operand is read straight from `Gmem`
+                            // (no shared panel): a warp's lanes are `clane`
+                            // elements apart, so unless they are adjacent each
+                            // lane's run along `k` (a 4-wide load, else one
+                            // element) fills part of each 32-byte sector it
+                            // touches. The unused bytes still cross from L2
+                            // (rtx-5080 attn_1024_64: the q·Kᵀ phase alone
+                            // 20.2 us in the unit against 9.4 us as its tile
+                            // site, CUPTI).
+                            let run = vec(site.b.ck) * e;
+                            let eff = match site.b.clane {
+                                1 => 1.0,
+                                _ => (run as f64 / SECTOR_BYTES as f64).min(1.0),
+                            };
+                            fused += (1.0 / eff - 1.0) * col / d.l2_bytes_per_ns.max(1) as f64;
+                        }
+                    }
                     let l = gpu::launch(site, self.profile, self.contract, self.gpu_arms);
                     let order = if free {
                         crate::Order::Free
@@ -1438,6 +1780,7 @@ impl<'a> FnEmit<'a> {
             cur_seg: 0,
             xrow: geo.xrow.clone(),
             part: geo.part,
+            panel: geo.panel,
             free: self.order == crate::Order::Free,
             fma: self.contract && self.gpu_arms.pairs,
         };
@@ -1626,17 +1969,30 @@ impl<'a> FnEmit<'a> {
         let w = u.members.iter().map(|mb| mb.w).max().unwrap_or(1);
         let block = match &u.block {
             None => String::new(),
-            Some(blk) => format!(
-                " rows_per_unit={} tiles={} colors={} ns_fused={} ns_split={}",
-                blk.b,
-                u.members
+            Some(blk) => {
+                // kernel-merging `row-stage`: each staged tile's panels.
+                let stage: Vec<String> = blk
+                    .stage
                     .iter()
-                    .filter(|mb| matches!(mb.kind, UKind::Tile { .. }))
-                    .count(),
-                blk.color.iter().flatten().max().map_or(0, |c| c + 1),
-                blk.ns.0,
-                blk.ns.1
-            ),
+                    .enumerate()
+                    .filter_map(|(k, st)| st.map(|st| format!("T{k}:{}", st.label())))
+                    .collect();
+                format!(
+                    " rows_per_unit={} tiles={} colors={} ns_fused={} ns_split={}{}",
+                    blk.b,
+                    u.members
+                        .iter()
+                        .filter(|mb| matches!(mb.kind, UKind::Tile { .. }))
+                        .count(),
+                    blk.color.iter().flatten().max().map_or(0, |c| c + 1),
+                    blk.ns.0,
+                    blk.ns.1,
+                    match stage.is_empty() {
+                        true => String::new(),
+                        false => format!(" stage={}", stage.join(";")),
+                    }
+                )
+            }
         };
         let mut text = format!(
             "; mapal.flow kernel={name} unit=1x{w} rows={} root={} members={} keep={} store={} gmem={} law={} smem={} lanes={} tree={} onchip={}{block}\n",
@@ -1739,6 +2095,8 @@ struct UnitGen<'u> {
     /// [`Geo`]'s per-row values a later segment reads, and tile partials.
     xrow: Vec<Option<u64>>,
     part: Option<u64>,
+    /// [`Geo`]'s staged panel buffers.
+    panel: Option<u64>,
     /// The order is free (tile k-slices regroup); the face contracts.
     free: bool,
     fma: bool,
@@ -2199,6 +2557,9 @@ impl UnitGen<'_> {
     /// stored, to its buffer.
     fn tile_phase(&mut self, k: usize, b: u64) {
         let u = self.u;
+        if let Some(st) = u.block.as_ref().and_then(|bl| bl.stage[k]) {
+            return self.tile_phase_staged(k, b, st);
+        }
         let mb = &u.members[k];
         let UKind::Tile { site } = &mb.kind else {
             unreachable!("a tile phase runs a tile member")
@@ -2370,10 +2731,470 @@ impl UnitGen<'_> {
         self.line(format!("{fin} = icmp ult i64 {x}n, {k1}"));
         self.line(format!("br i1 {fin}, label %{lp}, label %{lp}e"));
         self.label(&format!("{lp}e"));
+        self.tile_tail(
+            k,
+            &site,
+            &t,
+            b,
+            (nj, slices),
+            &cols,
+            cur,
+            (active, &act_end),
+            &tag,
+            false,
+        );
+    }
+
+    /// kernel-merging `row-stage`: member `k`'s tile phase over panels staged
+    /// through shared memory ([`Stage`]). Every thread copies (a thread past
+    /// the row's columns × slices folds a working thread's cells, its reads
+    /// inside the panel, and stores nothing); each trip waits for its panel,
+    /// meets the block, and — with two buffers — issues the next panel into
+    /// the buffer the trip before read, then folds `kc` of `k` per slice from
+    /// shared memory in the order the direct phase does.
+    fn tile_phase_staged(&mut self, k: usize, b: u64, st: Stage) {
+        let u = self.u;
+        let mb = &u.members[k];
+        let UKind::Tile { site } = &mb.kind else {
+            unreachable!("a tile phase runs a tile member")
+        };
+        let site = site.clone();
+        let a_src = mb.srcs[0].clone();
+        let USrc::Gmem(bg) = mb.srcs[1] else {
+            unreachable!("a tile's column operand is Gmem")
+        };
+        let lanes = self.lanes;
+        let (nj, slices) = tile_split(&site, lanes, self.free);
+        let c = site.c;
+        let tag = format!("T{k}");
+        let active = c * slices < lanes;
+        // The thread's cells: its columns and slice.
+        let lc = match active {
+            true => self.op("urem", "%l", c * slices),
+            false => "%l".to_string(),
+        };
+        let (all, sl) = if c >= lanes {
+            let cols: Vec<String> = (0..nj).map(|q| self.op("add", &lc, q * lanes)).collect();
+            (cols, "0".to_string())
+        } else {
+            (vec![self.op("urem", &lc, c)], self.op("udiv", &lc, c))
+        };
+        // Column passes: pass `p` folds the thread's columns `p·njp …` — the
+        // row's contiguous `cw = c / passes` from `p·cw`.
+        let (njp, cw) = (nj / st.passes, c / st.passes);
+        for pass in 0..st.passes {
+            let cols: Vec<String> =
+                all[(pass * njp) as usize..((pass + 1) * njp) as usize].to_vec();
+            let tag = match st.passes {
+                1 => tag.clone(),
+                _ => format!("{tag}p{pass}"),
+            };
+            let j0 = pass * cw;
+            self.tile_pass_staged(
+                k,
+                b,
+                st,
+                (&site, &a_src, bg),
+                (&cols, &sl, &lc),
+                (njp, slices, cw, j0),
+                (&tag, active),
+            );
+        }
+    }
+
+    /// One column pass of [`Self::tile_phase_staged`]: `cols` (the thread's
+    /// columns of the pass), its panels `cw` columns wide from column `j0`.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn tile_pass_staged(
+        &mut self,
+        k: usize,
+        b: u64,
+        st: Stage,
+        (site, a_src, bg): (&TileSite, &USrc, usize),
+        (cols, sl, _lc): (&[String], &str, &str),
+        (nj, slices, cw, j0): (u64, u64, u64, u64),
+        (tag, active): (&str, bool),
+    ) {
+        let u = self.u;
+        let t = lower_ty(&site.elem).expect("tile elem");
+        let e = crate::profile::elem_bytes(&site.elem);
+        let v = 16 / e;
+        let lanes = self.lanes;
+        let (c, kc) = (site.c, st.kc);
+        let kper = site.k / slices;
+        let trips = kper / kc;
+        let base = self.panel.expect("a staged tile has panel buffers");
+        let (a_bytes, stage_bytes) = st.bytes(b, c, slices, e);
+        let (a_el, buf_el) = (a_bytes / e, stage_bytes / e);
+        let tag = tag.to_string();
+        // Per column: its panel row and that row's chunk swizzle.
+        let nch = kc / v;
+        let swz = |g: &mut Self, r: &str| -> String {
+            if nch == 1 {
+                return "0".to_string();
+            }
+            let sh = (8 / nch.min(8)).max(1).trailing_zeros();
+            let x = g.op("lshr", r, sh);
+            g.op("and", &x, nch.min(8) - 1)
+        };
+        let brow: Vec<(String, String)> = cols
+            .iter()
+            .map(|j| {
+                let x = self.op("mul", sl, cw);
+                let jl = self.op("sub", j, j0);
+                let r = self.op("add", &x, &jl);
+                let w = swz(self, &r);
+                (self.op("mul", &r, kc), w)
+            })
+            .collect();
+        let arow = self.op("mul", sl, b);
+        let ty_v = format!("<{v} x {t}>");
+        let s_ptr = |g: &mut Self, idx: &str| g.smem(base, &t, idx);
+        let g_ptr = |g: &mut Self, at: &str, idx: &str| {
+            let p = g.tmp();
+            g.line(format!(
+                "{p} = getelementptr inbounds {t}, ptr addrspace(1) %x{at}, i64 {idx}"
+            ));
+            p
+        };
+        // One panel's copies: trip `tr` into the buffer at element `bo`.
+        let issue = |g: &mut Self, tr: &str, bo: &str, n: &mut u32| {
+            let k0 = g.op("mul", tr, kc);
+            let mut one =
+                |g: &mut Self,
+                 total: u64,
+                 unit: u64,
+                 f: &mut dyn FnMut(&mut Self, &str) -> (String, String)| {
+                    let copies = total / unit;
+                    for m in 0..copies.div_ceil(lanes) {
+                        let x = g.op("add", "%l", m * lanes);
+                        let part = (m + 1) * lanes > copies;
+                        *n += 1;
+                        let (yes, end) = (format!("{tag}c{n}"), format!("{tag}c{n}e"));
+                        if part {
+                            let ok = g.tmp();
+                            g.line(format!("{ok} = icmp ult i64 {x}, {copies}"));
+                            g.line(format!("br i1 {ok}, label %{yes}, label %{end}"));
+                            g.label(&yes);
+                        }
+                        let el = g.op("mul", &x, unit);
+                        let (gp, sx) = f(g, &el);
+                        let sx = g.op("add", &sx, bo);
+                        let sp = s_ptr(g, &sx);
+                        let bytes = unit * e;
+                        if st.cp {
+                            let kind = if bytes == 16 { "cg" } else { "ca" };
+                            g.line(format!(
+                            "call void @llvm.nvvm.cp.async.{kind}.shared.global.{bytes}(ptr addrspace(3) {sp}, ptr addrspace(1) {gp})"
+                        ));
+                        } else {
+                            let (lt, al) = match unit {
+                                1 => (t.clone(), e),
+                                _ => (ty_v.clone(), 16),
+                            };
+                            let x = g.tmp();
+                            g.line(format!(
+                                "{x} = load {lt}, ptr addrspace(1) {gp}, align {al}"
+                            ));
+                            g.line(format!("store {lt} {x}, ptr addrspace(3) {sp}, align {al}"));
+                        }
+                        if part {
+                            g.line(format!("br label %{end}"));
+                            g.label(&end);
+                        }
+                    }
+                };
+            // The row operand: `[slice][row][kc]`.
+            if st.a {
+                let USrc::Gmem(ag) = a_src else {
+                    unreachable!("a staged row operand is Gmem")
+                };
+                let unit = if st.a_vec { v } else { 1 };
+                one(g, slices * b * kc, unit, &mut |g, el| {
+                    let r_ = g.op("udiv", el, kc);
+                    let kk = g.op("urem", el, kc);
+                    let s_ = g.op("udiv", &r_, b);
+                    let r = g.op("urem", &r_, b);
+                    let i = g.op("add", "%i", &r);
+                    let x = g.op("mul", &i, site.a.ci);
+                    let x = g.op("add", &x, site.a.base);
+                    let kx = g.op("mul", &s_, kper);
+                    let kx = g.op("add", &kx, &k0);
+                    let kx = g.op("add", &kx, &kk);
+                    let kx = g.op("mul", &kx, site.a.ck);
+                    let gi = g.op("add", &x, &kx);
+                    (g_ptr(g, &ag.to_string(), &gi), el.to_string())
+                });
+            }
+            // The column operand.
+            let unit = if st.b_vec { v } else { 1 };
+            one(g, slices * cw * kc, unit, &mut |g, el| {
+                let (s_, j, kk, sx) = if st.b_kmaj {
+                    let r = g.op("udiv", el, kc);
+                    let kk = g.op("urem", el, kc);
+                    let s_ = g.op("udiv", &r, cw);
+                    let j = g.op("urem", &r, cw);
+                    let w = swz(g, &r);
+                    let ch = g.op("udiv", &kk, v);
+                    let ch = g.op("xor", &ch, &w);
+                    let ch = g.op("mul", &ch, v);
+                    let lo = g.op("urem", &kk, v);
+                    let rb = g.op("mul", &r, kc);
+                    let x = g.op("add", &rb, &ch);
+                    let x = g.op("add", &x, &lo);
+                    (s_, j, kk, g.op("add", &x, a_el))
+                } else {
+                    let r = g.op("udiv", el, cw);
+                    let j = g.op("urem", el, cw);
+                    let s_ = g.op("udiv", &r, kc);
+                    let kk = g.op("urem", &r, kc);
+                    (s_, j, kk, g.op("add", el, a_el))
+                };
+                let j = g.op("add", &j, j0);
+                let x = g.op("mul", &j, site.b.clane);
+                let x = g.op("add", &x, site.b.base);
+                let kx = g.op("mul", &s_, kper);
+                let kx = g.op("add", &kx, &k0);
+                let kx = g.op("add", &kx, &kk);
+                let kx = g.op("mul", &kx, site.b.ck);
+                let gi = g.op("add", &x, &kx);
+                (g_ptr(g, &bg.to_string(), &gi), sx)
+            });
+        };
+        let mut ncopy = 0u32;
+        let init = if slices > 1 {
+            "-0.0".to_string()
+        } else {
+            const_literal(&site.seed)
+        };
+        if st.stages == 2 {
+            issue(self, "0", "0", &mut ncopy);
+            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+        }
+        let pre = self.cur.clone();
+        let (lp, latch) = (tag.clone(), format!("{tag}l"));
+        self.line(format!("br label %{lp}"));
+        self.label(&lp);
+        let x = format!("%{tag}x");
+        self.line(format!("{x} = phi i64 [0, %{pre}], [{x}n, %{latch}]"));
+        let acc_name = |r: u64, q: u64| format!("%{tag}a{r}_{q}");
+        for r in 0..b {
+            for q in 0..nj {
+                let a = acc_name(r, q);
+                self.line(format!("{a} = phi {t} [{init}, %{pre}], [{a}n, %{latch}]"));
+            }
+        }
+        let bo = if st.stages == 1 {
+            self.barrier();
+            issue(self, &x, "0", &mut ncopy);
+            if st.cp {
+                self.line("call void @llvm.nvvm.cp.async.commit.group()");
+                self.line("call void @llvm.nvvm.cp.async.wait.group(i32 0)");
+            }
+            self.barrier();
+            "0".to_string()
+        } else {
+            self.line("call void @llvm.nvvm.cp.async.wait.group(i32 0)");
+            self.barrier();
+            // The next panel (the last again on the last trip: in bounds,
+            // into the buffer no thread reads this trip).
+            let nx = self.op("add", &x, 1);
+            let fit = self.tmp();
+            self.line(format!("{fit} = icmp ult i64 {nx}, {trips}"));
+            let nt = self.tmp();
+            self.line(format!(
+                "{nt} = select i1 {fit}, i64 {nx}, i64 {}",
+                trips - 1
+            ));
+            let nb = self.op("and", &nx, 1);
+            let nbo = self.op("mul", &nb, buf_el);
+            issue(self, &nt, &nbo, &mut ncopy);
+            self.line("call void @llvm.nvvm.cp.async.commit.group()");
+            let cb = self.op("and", &x, 1);
+            self.op("mul", &cb, buf_el)
+        };
+        // The fold of this panel: per 16-byte chunk of `k`, each row's and
+        // each column's values, then every cell's steps in `k` order.
+        let k0 = self.op("mul", &x, kc);
+        let sk = self.op("mul", sl, kper);
+        let ka = self.op("add", &sk, &k0);
+        let mut cur: Vec<Vec<String>> = (0..b)
+            .map(|r| (0..nj).map(|q| acc_name(r, q)).collect())
+            .collect();
+        let vload = |g: &mut Self, idx: &str, n: u64| -> Vec<String> {
+            let p = s_ptr(g, idx);
+            if n == 1 {
+                let x = g.tmp();
+                g.line(format!("{x} = load {t}, ptr addrspace(3) {p}"));
+                return vec![x];
+            }
+            let vec = g.tmp();
+            g.line(format!(
+                "{vec} = load <{n} x {t}>, ptr addrspace(3) {p}, align 16"
+            ));
+            (0..n)
+                .map(|l| {
+                    let x = g.tmp();
+                    g.line(format!("{x} = extractelement <{n} x {t}> {vec}, i64 {l}"));
+                    x
+                })
+                .collect()
+        };
+        for ch in 0..nch {
+            let kk0 = ch * v;
+            let mut av: Vec<Vec<String>> = Vec::new();
+            for r in 0..b {
+                av.push(match &a_src {
+                    USrc::Gmem(_) => {
+                        let x = self.op("add", &arow, r);
+                        let x = self.op("mul", &x, kc);
+                        let x = self.op("add", &x, kk0);
+                        let x = self.op("add", &x, &bo);
+                        vload(self, &x, v)
+                    }
+                    USrc::Member { k: p, .. } => {
+                        let (off, wp) = (
+                            self.kept[*p].expect("a tile's row operand is on chip"),
+                            u.members[*p].w,
+                        );
+                        let ck = site.a.ck;
+                        let vec = ck == 1 && site.a.base % v == 0 && wp % v == 0 && off % 16 == 0;
+                        let kx = self.op("add", &ka, kk0);
+                        let x = self.op("mul", &kx, ck);
+                        let x = self.op("add", &x, r * wp + site.a.base);
+                        if vec {
+                            let p = self.smem(off, &t, &x);
+                            let vv = self.tmp();
+                            self.line(format!(
+                                "{vv} = load {ty_v}, ptr addrspace(3) {p}, align 16"
+                            ));
+                            (0..v)
+                                .map(|l| {
+                                    let y = self.tmp();
+                                    self.line(format!("{y} = extractelement {ty_v} {vv}, i64 {l}"));
+                                    y
+                                })
+                                .collect()
+                        } else {
+                            (0..v)
+                                .map(|l| {
+                                    let y = self.op("add", &x, l * ck);
+                                    let p = self.smem(off, &t, &y);
+                                    let z = self.tmp();
+                                    self.line(format!("{z} = load {t}, ptr addrspace(3) {p}"));
+                                    z
+                                })
+                                .collect()
+                        }
+                    }
+                    _ => unreachable!("a tile's row operand is a member or Gmem"),
+                });
+            }
+            let mut bv: Vec<Vec<String>> = Vec::new();
+            for (rb, w) in &brow {
+                bv.push(if st.b_kmaj {
+                    let c_ = self.op("xor", w, ch);
+                    let c_ = self.op("mul", &c_, v);
+                    let x = self.op("add", rb, &c_);
+                    let x = self.op("add", &x, a_el);
+                    let x = self.op("add", &x, &bo);
+                    vload(self, &x, v)
+                } else {
+                    Vec::new()
+                });
+            }
+            if !st.b_kmaj {
+                for (q, j) in cols.iter().enumerate() {
+                    for l in 0..v {
+                        let x = self.op("mul", sl, kc);
+                        let x = self.op("add", &x, kk0 + l);
+                        let x = self.op("mul", &x, cw);
+                        let jl = self.op("sub", j, j0);
+                        let x = self.op("add", &x, &jl);
+                        let x = self.op("add", &x, a_el);
+                        let x = self.op("add", &x, &bo);
+                        let y = vload(self, &x, 1);
+                        bv[q].extend(y);
+                    }
+                }
+            }
+            for l in 0..v as usize {
+                let last = ch + 1 == nch && l + 1 == v as usize;
+                for r in 0..b as usize {
+                    for q in 0..nj as usize {
+                        let out = if last {
+                            format!("{}n", acc_name(r as u64, q as u64))
+                        } else {
+                            self.tmp()
+                        };
+                        let (av_, bv_) = (av[r][l].clone(), bv[q][l].clone());
+                        let acc = cur[r][q].clone();
+                        self.tile_step(site, &t, &acc, &av_, &bv_, &out);
+                        cur[r][q] = out;
+                    }
+                }
+            }
+        }
+        self.line(format!("br label %{latch}"));
+        self.label(&latch);
+        self.line(format!("{x}n = add i64 {x}, 1"));
+        let fin = self.tmp();
+        self.line(format!("{fin} = icmp ult i64 {x}n, {trips}"));
+        self.line(format!("br i1 {fin}, label %{lp}, label %{lp}e"));
+        self.label(&format!("{lp}e"));
+        // The last trip's copy (the last panel again) lands before anything
+        // else takes the region: a split tile's partials, a later phase's
+        // trees or panels.
+        if st.stages == 2 {
+            self.line("call void @llvm.nvvm.cp.async.wait.group(i32 0)");
+        }
+        let (act, act_end) = (format!("{tag}act"), format!("{tag}acte"));
+        if active {
+            let a = self.tmp();
+            self.line(format!("{a} = icmp ult i64 %l, {}", c * slices));
+            self.line(format!("br i1 {a}, label %{act}, label %{act_end}"));
+            self.label(&act);
+        }
+        self.tile_tail(
+            k,
+            site,
+            &t,
+            b,
+            (nj, slices),
+            cols,
+            cur,
+            (active, &act_end),
+            &tag,
+            true,
+        );
+    }
+
+    /// A tile phase's end: the slices' partials combined (a split tile), each
+    /// row's cells kept on chip and / or stored, the phase's barrier.
+    #[allow(clippy::too_many_arguments)]
+    fn tile_tail(
+        &mut self,
+        k: usize,
+        site: &TileSite,
+        t: &str,
+        b: u64,
+        (nj, slices): (u64, u64),
+        cols: &[String],
+        cur: Vec<Vec<String>>,
+        (active, act_end): (bool, &str),
+        tag: &str,
+        staged: bool,
+    ) {
+        let c = site.c;
         // The results: one slice's accumulators, or the slices combined.
         let mut res: Vec<Vec<String>> = cur;
         let (comb, comb_end) = (format!("{tag}z"), format!("{tag}ze"));
         if slices > 1 {
+            // A staged tile's partials share its panels' region: every
+            // thread's last panel read comes first.
+            if staged {
+                self.barrier();
+            }
             let off = self.part.expect("a split tile has partials");
             let sl = self.op("udiv", "%l", c);
             for r in 0..b {
@@ -2381,7 +3202,7 @@ impl UnitGen<'_> {
                 let x = self.op("add", &x, r);
                 let x = self.op("mul", &x, c);
                 let idx = self.op("add", &x, &cols[0]);
-                let p = self.smem(off, &t, &idx);
+                let p = self.smem(off, t, &idx);
                 let v = res[r as usize][0].clone();
                 self.line(format!("store {t} {v}, ptr addrspace(3) {p}"));
             }
@@ -2395,7 +3216,7 @@ impl UnitGen<'_> {
                 let mut tot = seed.clone();
                 for s in 0..slices {
                     let idx = self.op("add", &cols[0], (s * b + r) * c);
-                    let p = self.smem(off, &t, &idx);
+                    let p = self.smem(off, t, &idx);
                     let v = self.tmp();
                     self.line(format!("{v} = load {t}, ptr addrspace(3) {p}"));
                     let n = self.tmp();
@@ -2416,7 +3237,7 @@ impl UnitGen<'_> {
                 let j = cols[q as usize].clone();
                 if let Some(off) = self.kept[k] {
                     let idx = self.op("add", &j, r * c);
-                    let p = self.smem(off, &t, &idx);
+                    let p = self.smem(off, t, &idx);
                     self.line(format!("store {t} {v}, ptr addrspace(3) {p}"));
                 }
                 if self.ys[k].is_some() {
@@ -2433,7 +3254,7 @@ impl UnitGen<'_> {
         }
         if active {
             self.line(format!("br label %{act_end}"));
-            self.label(&act_end);
+            self.label(act_end);
         }
         self.barrier();
     }

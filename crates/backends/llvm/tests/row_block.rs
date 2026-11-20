@@ -45,13 +45,32 @@ fn emission_off(
     b: u64,
     off: &[&str],
 ) -> Emission {
+    emission_keep(ir, target, base, on, b, off, &[], None)
+}
+
+/// [`emission_off`] with the emulator rungs `keep` left on (`async`: the
+/// emulator queues `cp.async` copies until their wait) and the row-stage
+/// measurement override `force`.
+#[allow(clippy::too_many_arguments)]
+fn emission_keep(
+    ir: &CategoryIr,
+    target: &'static str,
+    base: EmitOpts,
+    on: bool,
+    b: u64,
+    off: &[&str],
+    keep: &[&str],
+    force: Option<(u64, u64, u64)>,
+) -> Emission {
     let mut gpu = GpuArms::default();
+    gpu.row_stage_force = force;
     gpu.on.flow = true;
     gpu.row_block = on;
     gpu.on.row_block = on;
     gpu.row_block_b = b;
     for r in ["place", "async", "pdl", "streams", "pinned"]
         .iter()
+        .filter(|r| !keep.contains(r))
         .chain(off)
     {
         *gpu.off.rung(r).expect("rung") = true;
@@ -285,14 +304,38 @@ fn attention_row_block_values_and_launches() {
         let l_off = launches(&off.text);
         let got = emu::run_emulated(&clang, &off.text, off.device.as_deref().unwrap());
         assert_eq!(got, rr.output, "OFF");
-        for b in [1, 2, 4, 8] {
+        // kernel-merging `row-stage`: staged by register copies (the
+        // emulator's `async` off), staged by `cp.async`, and read straight
+        // from memory (the rung's OFF arm).
+        let arms: [(&str, &[&str], &[&str]); 3] = [
+            ("staged", &[], &[]),
+            ("cp", &[], &["async"]),
+            ("direct", &["row-stage"], &[]),
+        ];
+        for (b, (arm, off_r, keep)) in [1, 2, 4, 8]
+            .into_iter()
+            .flat_map(|b| arms.iter().map(move |a| (b, *a)))
+        {
             for (face, base) in [
                 ("exact", EmitOpts::exact()),
                 ("default", EmitOpts::default()),
             ] {
-                let on = emission(&ir, "rtx-5080", base, true, b);
+                let on = emission_keep(&ir, "rtx-5080", base, true, b, off_r, keep, None);
                 let lines = block_lines(&on);
-                assert_eq!(lines.len(), 1, "b={b} {face}: {}", on.text);
+                assert_eq!(lines.len(), 1, "b={b} {face} {arm}: {}", on.text);
+                let stage = field(&lines[0], "stage");
+                match arm {
+                    "direct" => assert_eq!(stage, "", "b={b} {face}"),
+                    _ => {
+                        // Both tiles staged: q·Kᵀ along `k` (its row
+                        // operand too), P·V across columns.
+                        assert!(stage.contains("T0:") && stage.contains(":kmaj:"), "{stage}");
+                        assert!(stage.contains(":krow:") && stage.contains(":av"), "{stage}");
+                        assert_eq!(stage.contains(":cp"), arm == "cp", "{stage}");
+                        let dev = on.device.as_deref().unwrap();
+                        assert_eq!(dev.contains("call void @llvm.nvvm.cp.async."), arm == "cp");
+                    }
+                }
                 assert_eq!(field(&lines[0], "rows_per_unit"), b.to_string());
                 assert_eq!(field(&lines[0], "tiles"), "2");
                 assert_eq!(launches(&on.text), 1, "b={b} {face}: one launch");
@@ -303,10 +346,12 @@ fn attention_row_block_values_and_launches() {
                 for mode in ["0", "1", "2"] {
                     let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
                     match face {
-                        "exact" => assert_eq!(got, rr.output, "b={b} exact serial={mode}"),
+                        "exact" => {
+                            assert_eq!(got, rr.output, "b={b} {arm} exact serial={mode}")
+                        }
                         _ => assert!(
                             within(&got, &rr.output),
-                            "b={b} serial={mode}: {got:?} vs {:?}",
+                            "b={b} {arm} serial={mode}: {got:?} vs {:?}",
                             rr.output
                         ),
                     }
@@ -339,12 +384,84 @@ fn shipped(ir: &CategoryIr, target: &'static str, rung: bool, b: u64) -> Emissio
     emit_detailed(ir, &opts).expect("emits")
 }
 
+/// kernel-merging `row-stage` column passes: a row of 512 cells holds two
+/// columns a thread (256 lanes), so its tile may fold them in passes of
+/// half-width panels (`--row-stage`, forced: the generated chains' rows stop
+/// at 255 cells). A `q·Kᵀ` tile read by a row sum and a row max (a tree
+/// fold in the panels' region) — every `b`, register copies and `cp.async`,
+/// one and two buffers, both faces — against the interpreter, free-running
+/// and serialized in thread order and in reverse.
+#[test]
+fn staged_column_passes_values() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    let src = "fn main() {
+    32 -> iota -> iq;
+    iq -> map { t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 } -> q;
+    4096 -> iota -> ik;
+    ik -> map { t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 } -> kk;
+    8 -> iota -> kd;
+    4 -> iota -> kr;
+    512 -> iota -> kt;
+    2048 -> iota -> ts;
+    ts -> map { e ->
+        e / 512 -> i;
+        e % 512 -> j;
+        (0.0, kd) -> fold { acc, k -> acc + q[i * 8 + k] * kk[j * 8 + k] }
+    } -> s;
+    kr -> map { i -> (0.0, kt) -> fold { acc, j -> acc + s[i * 512 + j] } } -> den;
+    kr -> map { i -> (-1000000000.0, kt) -> fold { acc, j -> s[i * 512 + j] -> e; (e > acc) -> { -true-> e; -false-> acc; } } } -> mx;
+    den[0] -> println;
+    den[3] -> println;
+    mx[1] -> println;
+    mx[2] -> println;
+}
+";
+    let ir = lower(src);
+    let rr = run(&ir, 400_000_000);
+    assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+    for b in [1, 2, 4] {
+        for (keep, force) in [
+            (&[][..], (8, 1, 2)),
+            (&[][..], (4, 2, 2)),
+            (&["async"][..], (8, 2, 2)),
+            (&["async"][..], (4, 1, 2)),
+        ] {
+            for (face, base) in [
+                ("exact", EmitOpts::exact()),
+                ("default", EmitOpts::default()),
+            ] {
+                let on = emission_keep(&ir, "rtx-5080", base, true, b, &[], keep, Some(force));
+                let lines = block_lines(&on);
+                assert_eq!(lines.len(), 1, "b={b} {face}: {}", on.text);
+                let stage = field(&lines[0], "stage").to_string();
+                assert!(stage.contains("p2:kmaj"), "b={b} {force:?}: {stage}");
+                let ex = emu::build_emulated(&clang, &on.text, on.device.as_deref().unwrap());
+                for mode in ["0", "1", "2"] {
+                    let (got, _) = ex.run(&[("MAPAL_EMU_SERIAL", mode)]);
+                    let ok = match face {
+                        "exact" => got == rr.output,
+                        _ => within(&got, &rr.output),
+                    };
+                    assert!(
+                        ok,
+                        "b={b} {face} {keep:?} {stage} serial={mode}: {got:?} vs {:?}",
+                        rr.output
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// The rule on the real shape, `pt_attn_1024_64` on the rtx-5080: the group
-/// fits (b = 16, 84 KB) but the plan model keeps the boundary — the unit reads
-/// Kᵀ straight from L2 at half a sector a lane, which the split's tile site
-/// stages (measured: the fused kernel 33.3 us against 31.7 us for the split
-/// kernels, `compile-time-graph.md`). Forced, it is one launch storing `o`
-/// alone. Shipped, the rung is off (the rtx-5090 row of its architecture).
+/// fits (b = 16) but the plan model keeps the boundary (`kernel-merging.md`
+/// Rows: the staged unit measures 26–28 us against 30.8 us of split kernels,
+/// the model ranks it the other way — open). Forced, it is one launch storing
+/// `o` alone, its panels staged; with `row-stage` off, the unit of
+/// `compile-time-graph.md` (84 KB, operands read from L2). Shipped, the rung
+/// is off (the rtx-5090 row of its architecture).
 #[test]
 fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     let ir = bench("pt_attn_1024_64");
@@ -359,7 +476,47 @@ fn attn_1024_on_rtx_5080_keeps_the_boundary_by_cost() {
     assert_eq!(lines.len(), 1, "{}", forced.text);
     assert_eq!(launches(&forced.text), 1);
     assert_eq!(field(&lines[0], "store"), "o");
+    // kernel-merging `row-stage`: q·Kᵀ's Kᵀ panels (one 32-byte sector a
+    // column) and its rows of q, P·V's V panels, by `cp.async` — the model's
+    // pick; the panels share one region with the trees and P·V's partials.
+    let stage = field(&lines[0], "stage");
+    assert!(
+        stage.starts_with("T0:kc8x") && stage.contains(":kmaj:v:av:cp"),
+        "{stage}"
+    );
+    assert!(stage.contains(";T5:kc16x2:krow:v:cp"), "{stage}");
+    let smem: u64 = field(&lines[0], "smem").parse().unwrap();
+    assert!(smem > 83968 && smem <= 101376, "{smem}");
+    let dev = forced.device.as_deref().unwrap();
+    assert!(dev.contains("call void @llvm.nvvm.cp.async.cg.shared.global.16"));
+    // The OFF arm: the unit as it was (operands straight from memory).
+    let gpu = GpuArms {
+        row_block_b: 16,
+        off: mapal_backend_llvm::GpuRungs {
+            row_stage: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let direct = emit_detailed(
+        &ir,
+        &EmitOpts {
+            target: "rtx-5080",
+            gpu,
+            ..EmitOpts::default()
+        },
+    )
+    .expect("emits");
+    let lines = block_lines(&direct);
     assert_eq!(field(&lines[0], "smem"), "83968");
+    assert_eq!(field(&lines[0], "stage"), "");
+    assert!(
+        !direct
+            .device
+            .as_deref()
+            .unwrap()
+            .contains("call void @llvm.nvvm.cp.async")
+    );
 }
 
 /// Every GPU part's shipped default forms no row-block unit (the rung's
@@ -423,6 +580,15 @@ fn attention_pricing_is_one_rule_across_parts() {
     for part in ["rtx-4090", "rtx-5090", "rtx-5080"] {
         for name in ["pt_attn_1024_64", "pt_attn_1024_128", "pt_attn_2048_64"] {
             let on = shipped(&bench(name), part, true, 0);
+            // kernel-merging `row-stage`: staged panels bring the 4090's
+            // (128 SMs) 1024 × 64 unit under its split in the model — an
+            // unmeasured part, shipped off.
+            if (part, name) == ("rtx-4090", "pt_attn_1024_64") {
+                let lines = block_lines(&on);
+                assert_eq!(lines.len(), 1, "{name} {part}");
+                assert!(!field(&lines[0], "stage").is_empty(), "{}", lines[0]);
+                continue;
+            }
             assert!(block_lines(&on).is_empty(), "{name} {part}");
             let why: Vec<&str> = on
                 .text
@@ -454,6 +620,17 @@ struct ChainCheck {
     split: usize,
     fma: usize,
     reuse: usize,
+    /// kernel-merging `row-stage`: staged tiles — along `k` / across columns,
+    /// by `cp.async`, double-buffered, in column passes, with a staged row
+    /// operand, split over `k` (partials in the panels' region).
+    staged: usize,
+    kmaj: usize,
+    krow: usize,
+    cp: usize,
+    double: usize,
+    passes: usize,
+    a_staged: usize,
+    staged_split: usize,
     findings: Vec<String>,
 }
 
@@ -522,11 +699,21 @@ fn check_chain(clang: &str, z: usize, src: &str) -> ChainCheck {
     // The epilogue rung off: a tile with per-cell readers is the group's.
     let off_rungs = ["epilogue"];
     let mut runs: Vec<(String, Emission, bool)> = Vec::new();
+    // kernel-merging `row-stage`: at the largest `b` also staged by
+    // `cp.async` (the emulator's queue) and read straight from memory.
+    let mut arms: Vec<(u64, &str, Vec<&str>, Vec<&str>)> = bs
+        .iter()
+        .map(|&b| (b, "", off_rungs.to_vec(), vec![]))
+        .collect();
+    let bl = *bs.last().unwrap();
+    arms.push((bl, " cp", off_rungs.to_vec(), vec!["async"]));
+    arms.push((bl, " direct", vec!["epilogue", "row-stage"], vec![]));
     for (face, base) in &faces {
         let off = emission_off(&ir, "rtx-5080", *base, false, 0, &off_rungs);
         let l_off = launches(&off.text);
-        for (n, &b) in bs.iter().enumerate() {
-            let on = emission_off(&ir, "rtx-5080", *base, true, b, &off_rungs);
+        for (n, (b, arm, off_r, keep)) in arms.iter().enumerate() {
+            let b = *b;
+            let on = emission_keep(&ir, "rtx-5080", *base, true, b, off_r, keep, None);
             let lines = block_lines(&on);
             if *face == "exact" && n == 0 {
                 for l in on.text.lines().filter(|l| l.contains("mapal.flow.host")) {
@@ -558,6 +745,19 @@ fn check_chain(clang: &str, z: usize, src: &str) -> ChainCheck {
                 if *face == "default" && field(l, "tree") != "0" {
                     ck.tree += 1;
                 }
+                for st in field(l, "stage").split(';').filter(|x| !x.is_empty()) {
+                    ck.staged += 1;
+                    ck.kmaj += usize::from(st.contains(":kmaj:"));
+                    ck.krow += usize::from(st.contains(":krow:"));
+                    ck.cp += usize::from(st.ends_with(":cp"));
+                    ck.double += usize::from(st.contains("x2"));
+                    ck.passes += usize::from(st.contains("x2p") || st.contains("x1p"));
+                    ck.a_staged += usize::from(st.contains(":a"));
+                }
+                if *arm == " direct" && !field(l, "stage").is_empty() {
+                    ck.findings
+                        .push(format!("chain#{z} {face}: row-stage off still stages\n{l}"));
+                }
             }
             let (l_on, l_off) = (launches(&on.text), l_off);
             if l_on > l_off {
@@ -567,11 +767,13 @@ fn check_chain(clang: &str, z: usize, src: &str) -> ChainCheck {
             }
             for t in unit_texts(&on) {
                 ck.wide += usize::from(row_group_lanes(&t).iter().any(|&l| l > 32));
-                ck.split += usize::from(t.lines().any(|l| l.starts_with('T') && l.ends_with("z:")));
+                let split = t.lines().any(|l| l.starts_with('T') && l.ends_with("z:"));
+                ck.split += usize::from(split);
+                ck.staged_split += usize::from(split && t.contains(" stage="));
                 ck.fma += usize::from(t.contains("@llvm.fma."));
             }
             ck.reuse = usize::from(reused);
-            runs.push((format!("{face} b={b}"), on, *face == "exact"));
+            runs.push((format!("{face} b={b}{arm}"), on, *face == "exact"));
         }
         if !runs.is_empty() {
             runs.push((format!("{face} off"), off, *face == "exact"));
@@ -670,6 +872,18 @@ fn row_block_on_generated_chains() {
         sum(|c| c.fma),
         sum(|c| c.reuse),
     );
+    // Column passes need a row of 512 cells (`staged_column_passes_values`):
+    // counted, not required.
+    let passes = sum(|c| c.passes);
+    let staged = [
+        (sum(|c| c.staged), "a staged tile"),
+        (sum(|c| c.kmaj), "a panel along k"),
+        (sum(|c| c.krow), "a panel across columns"),
+        (sum(|c| c.cp), "cp.async copies"),
+        (sum(|c| c.double), "two panel buffers"),
+        (sum(|c| c.a_staged), "a staged row operand"),
+        (sum(|c| c.staged_split), "a staged split tile"),
+    ];
     let mut why: std::collections::BTreeMap<String, usize> = Default::default();
     for c in &checks {
         for (k, v) in &c.why {
@@ -679,7 +893,8 @@ fn row_block_on_generated_chains() {
     let findings: Vec<&String> = checks.iter().flat_map(|c| &c.findings).collect();
     eprintln!(
         "row_block_on_generated_chains: {} programs, {groups} groups, {formed} formed, refused {why:?}; \
-         units over several warps {wide}, tree folds {tree}, split tiles {split}, FMA {fma}; programs reusing a freed row buffer {reuse}",
+         units over several warps {wide}, tree folds {tree}, split tiles {split}, FMA {fma}; programs reusing a freed row buffer {reuse}; \
+         row-stage {staged:?}, column passes {passes}",
         srcs.len()
     );
     assert!(
@@ -698,7 +913,10 @@ fn row_block_on_generated_chains() {
         (split, "a split tile"),
         (fma, "an FMA step"),
         (reuse, "a freed row buffer reused"),
-    ] {
+    ]
+    .into_iter()
+    .chain(staged)
+    {
         assert!(n > 0, "no generated unit took {what}");
     }
 }

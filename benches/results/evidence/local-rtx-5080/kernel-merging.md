@@ -110,3 +110,111 @@ Probe value gate: 0 programs failed in each of the three runs.
    `bytes_per_ns`. `px_attn_64_16` (formed by row-block on all three parts) is untimed.
 6. Not in this step: the Calls (vertical) and Horizontal placement itself — they start from `access_plan` and
    `residence_plan`.
+
+## Rows — staged panels in row-block units
+
+Code: the commit beside this section. Raw: `.claude/raw-evidence/local-rtx-5080/kernel-merging/rows/` (CUPTI traces,
+ABBA, SASS, `ptxas -v`, emitted modules, the scripts).
+
+### What changed
+
+| # | change | OFF arm |
+| --- | --- | --- |
+| 1 | **`row-stage` rung** (`func/flow.rs` `Stage`, `stage_of`, `tile_phase_staged`): a row-block unit's tile phase stages its column operand's panels through shared memory, as the separate tile kernels do. A trip folds `kc` of each k-slice's `k`. Kᵀ-like operands (`ck = 1`) are laid out `[slice][column][kc]`, with their 16-byte chunks XOR-swizzled by row so the 16-byte reads of 8 lanes hit 32 banks. V-like operands are laid out `[slice][kc][column]` (consecutive lanes read consecutive words). A row operand read from memory (q) is staged `[slice][row][kc]` and read as a broadcast. The copies are 16 bytes wide (`cp.async.cg` on sm_80+, else `ld` + `st`), with one or two buffers; with two, the next panel lands while this one folds. Column passes fold `1/p` of a thread's columns a pass with panels that much narrower. | `--gpu-off=row-stage`: the unit reads straight from memory, the emission before (byte-identical, below) |
+| 2 | **Scratch sharing** (`block_geo`): once a tile is staged, the panels, the split tile's partials and the tree folds' partials share one region. They are never live in the same phase. A split tile meets a barrier before its partials overwrite its last panel, and a double-buffered phase waits for its last copy. | with nothing staged, the layout before |
+| 3 | **Pricing** (`block_cost`): a staged tile is priced by the same `site_ns` terms as the separate tile kernels: `bk = kc`, `fly = stages − 1`, per-trip LSU = its LDS reads plus copies (doubled without `cp.async`), and each column pass a `b × c/p` tile of its own. One buffer adds its latency chain to the trip instead of hiding it. The sector term reads the panel's run along `k` (`kc·e` against 32 B). `block_choice` weighs every combination of the tiles' options (at most 256) per `b`, and falls back to reading every tile straight from memory only when no staged combination fits. | the direct pricing, unchanged |
+| 4 | `--row-stage=<kc>x<stages>[p<passes>]` measurement override (the `--row-block` precedent) | — |
+
+Byte identity: the new emitter with `row-stage` off equals `f18bd484` on **2292 modules**: 191 programs ×
+rtx-5080/4090/h100-pcie × both faces × {default, `--gpu-on=row-block`}. A forced `--row-block=<b>` now prints the
+model's `ns_fused`/`ns_split`, where before it printed 0/0.
+
+### Intended vs realized: pt_attn_1024_64, b = 16 (`--gpu-on=row-block --row-block=16`)
+
+| | intended | realized (SASS / `ptxas` / CUPTI) |
+| --- | --- | --- |
+| q·Kᵀ | Kᵀ and q panels staged by `cp.async`, Kᵀ rows of `kc·4 = 32 B` (one full sector per column per trip), conflict-free 16-B LDS | model pick `T0:kc8x1:kmaj:v:av:cp`; 17 LDGSTS, **0 LDG** in the unit (direct arm: 96 LDG, 0 LDGSTS); 104 LDS.128; adjacent lane pairs copy a column's 32 B (16 full sectors per warp copy) |
+| P·V | V panels across columns, two buffers | `T5:kc16x2:krow:v:cp`; 5 `LDGDEPBAR`/`DEPBAR` waits |
+| geometry | 1 launch, 64 CTAs × 256, ≤ 99 KB smem | 100 864 B smem (direct 83 968), 147 regs (direct 220), 0 spill, 27 BAR (direct 18) |
+| kernel time | model: fused 18.6 us vs split 15.9 us (refused) | **28.4 us** staged (model pick) / **25.7 us** best forced (q·Kᵀ `8x2p2`, P·V direct) / 32.9 us direct / split 12.6 (P·V) + 10.6 (q·Kᵀ) + 7.6 (softmax) + small = 30.8 us |
+| phases (best, isolated by a temporary emitter hook, not committed) | — | q·Kᵀ ≈ 10.4 us (direct: ~18), row segments (mx, ex, den, p) ≈ 5.8 us, P·V ≈ 13.2 us |
+
+Per-tile variants (CUPTI, one traced process each): q·Kᵀ staged and P·V direct 27.8 us (`8x1`) / 25.7 (`8x2p2`);
+q·Kᵀ direct and P·V staged 33.6; both one buffer of `8` 34.6; q·Kᵀ `4x2` (half-sector) 33.0; at 512 threads a block
+24.4. Staging pays on q·Kᵀ (sectors and latency). On P·V it is null to slightly negative (+0.6 us): V is read coalesced
+either way, and the phase is bound by LDS issue (16 broadcast LDS.128 of P per 4 k for 16 FFMA a column).
+
+### Time (ABBA, 8 rounds = 16 processes an arm, iteration ms; `abba.out`)
+
+| A | B | A med | B med | B/A med | B/A min | spread A / B |
+| --- | --- | --- | --- | --- | --- | --- |
+| OFF (split, shipped) | forced unit, staged (model pick) | 0.0434 | 0.0404 | **0.932** | 0.945 | 32 % / 10 % |
+| OFF | forced unit, best staged | 0.0427 | 0.0366 | **0.857** | 0.848 | 11 % / 28 % |
+| forced unit, direct (row-stage OFF) | forced unit, staged | 0.0437 | 0.0397 | **0.908** | 0.899 | 19 % / 19 % |
+
+torch.compile on this shape: 0.0297 ms (`gpu-analysis.md`). Value gates: every arm prints the OFF values (exact
+digits as printed).
+
+### Decision: row-block stays off; `row-stage` ships on (it acts only inside a unit)
+
+When forced, the staged unit beats the split on this part: kernel time 25.7 to 28.4 us against 30.8 us, and
+iteration time 0.86 to 0.93 of the split's. The rule does not form it, because the plan model ranks it the other way
+(fused 18.6 us against split 15.9 us). With `--gpu-on=row-block`, the rtx-5080 forms no unit on the timed default face
+of any suite program (`survey.sh`). The exact face forms decode at b = 1, staged, as at HEAD. Turning the rung on would
+therefore change no timed program, so no win can be cited and the `row-block` rows stay. The model's errors here,
+measured against model:
+
+| term | model | measured | ratio |
+| --- | --- | --- | --- |
+| split q·Kᵀ site (cand 0) | 5.56 us | 10.6 | 1.9 |
+| split P·V site + zero | 7.26 | 13.4 | 1.85 |
+| split softmax segment + launch | 3.06 | 7.6 | 2.5 |
+| unit q·Kᵀ staged (`8x1`) | 7.7 | ~10–12 | 1.4 |
+| unit P·V | 9.4 | 13.2 | 1.4 |
+| unit row segments (mx, ex, den, p) | 0.1 | 5.8 | ~58 |
+
+The site model is about 1.9× optimistic on this part's split sites: `eff_max_pm` / `eff_half` are the rtx-5090 fit,
+never refit here. It is only about 1.4× optimistic on the unit's tiles. It prices the unit's row segments at peak
+FLOPs, but they are bound by latency and barriers: two warps per scheduler, tree steps, and dependent shared-memory
+walks. The model also ranks the staged options wrongly. `8x1` (28.4 us) is priced below `8x2p2` (25.7 us) because
+the chain term charges every trip the DRAM latency (`lat_ns` 573 ns), while the panels are L2-resident (L2 latency
+328 ns, calib B). These are missing facts, and they are open (below).
+
+`row-stage` has no `GPU_RUNGS_OFF` row. It changes nothing outside a row-block unit, and every part ships row-block
+off. Where a unit is forced, it measured positive on the one part timed (ABBA 0.908 against direct).
+
+With the rung on, the 4090's model now forms pt_attn_1024_64 (staged `8x2p2`; 15.5 us against 17.0). The 4090 is
+unmeasured and shipped off.
+
+### Tests
+
+- `row_block.rs`, 11 tests:
+  - `attention_row_block_values_and_launches`: b = 1, 2, 4, 8 × {staged by register copies, by `cp.async`, direct} ×
+    both faces × `MAPAL_EMU_SERIAL` = 0, 1, 2. The stage labels and the `cp.async` calls are asserted per arm.
+  - `staged_column_passes_values` (new): a 512-cell row, forced `8x1p2`, `4x2p2`, `8x2p2` and `4x1p2`, by register
+    copies and by `cp.async`, × b = 1, 2, 4 × both faces × serial 0, 1, 2.
+  - `attn_1024_on_rtx_5080…`: the model's staged pick, a smem bound of 99 KB, and the `row-stage` OFF arm being the
+    unit as before (83 968 B, no `cp.async`).
+  - `attention_pricing_is_one_rule_across_parts`: the 4090's staged 1024 × 64 unit.
+- `row_block_on_generated_chains`, 1000 generated chains (unchanged generators). New arms at the largest b: staged by
+  `cp.async`, and `row-stage` off. Every unit was run under serial = 1 and 2. Counters, each required > 0: 608 staged
+  tiles, 43 panels along `k`, 565 across columns, 249 by `cp.async`, 249 double-buffered, 501 with a staged row
+  operand, 73 staged split tiles. Column passes need 512-cell rows, which the chain generator (u8 extents) does not
+  produce, so they are counted (0) but not required.
+- Bugs put back:
+  - A double-buffered phase not waiting for its last copy fails chains #488 and #837 (`cp`, serial 1 and 2).
+  - The one-buffer trip's write-after-read barrier removed fails `staged_column_passes_values`.
+
+### Open
+
+1. **The plan model mis-ranks the unit** (table above). It needs three facts: the rtx-5080's own site efficiency fit
+   (sites measure 1.9× the model), the row segments' latency in a unit and in a split kernel (barrier and tree steps
+   at the block's warps per scheduler), and the chain at the panels' residence (L2 latency, a `DeviceCost` fact
+   beside `lat_ns`). Until then, row-block ships off, and the measured win is reachable only forced.
+2. **The unit's tile phases are LDS-bound.** Each thread holds all `b` rows by `nj` columns, so a broadcast row load
+   feeds only `nj` FFMA. P·V (`nj = 1`) issues 16 LDS.128 per 16 FFMA a column. A thread tile over rows as well as
+   columns (the tile kernels' `tm × tn`) would cut LDS by 2.5× on P·V. The row segments (5.8 us) run at 8 warps per
+   SM with 16-lane rows 1024 words apart, a 2-way bank conflict.
+3. Column passes come from the forced test only. The chain generator's extents stop at 255 cells.
+4. b = 16 keeps 64 of the 84 SMs busy. Attention at 1024 rows has no `b` that fills the part and keeps the K / V
+   re-reads (16 MB each at b = 16) low.

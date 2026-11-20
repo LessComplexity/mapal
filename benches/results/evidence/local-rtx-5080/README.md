@@ -46,6 +46,10 @@ graph launch costs as much as its eager ops on this driver). Intended vs realize
 and `residence_plan` (where a value's bytes live) in mapal-ir; the row-block model prices attention by one rule on the
 4090 / 5090 / 5080; `zero-fold` puts an atomic site's zero pass into an earlier kernel the dependency fact allows —
 decode_1024_256 0.878× (ABBA), now 0.95× hand CUDA. Intended vs realized, CUPTI, ABBA, open items there.
+Rows step: `row-stage` stages a row-block unit's tile panels through shared memory (`cp.async`, swizzled 16-B
+chunks, one or two buffers, column passes, priced by the site model). attn_1024_64 forced as one unit: 32.9 → 28.4 us
+(model pick) / 25.7 us (best), against 30.8 us of split kernels; iteration ABBA 0.932 / 0.857 of the split. The plan
+model still ranks the unit above the split (missing facts listed), so row-block stays off by default.
 
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).

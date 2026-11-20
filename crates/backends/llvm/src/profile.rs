@@ -2082,6 +2082,10 @@ pub const GPU_RUNGS_OFF: &[RungOff] = &[
     // 4090 / 5090 only through the split softmax's byte rate (`bytes_per_ns` 490 / 494, a DRAM placement rate,
     // prices 12.6 MB of L2-resident rows at 25.5 us; the 5080's 2553 at 4.9; measured there 7.5) — the missing
     // fact is where a split segment's bytes live. Parts without plan rates refuse every group (`unpriced`).
+    // kernel-merging Rows (`row-stage`, `local-rtx-5080/kernel-merging.md`): staged panels make the forced
+    // rtx-5080 unit pay (CUPTI 25.7–28.4 vs 30.8 us split, iteration ABBA 0.857–0.932), but the plan model ranks
+    // it above the split (18.6 vs 15.9 us: split sites 1.9× optimistic on the 5090 fit, the unit's row segments
+    // priced at peak) — with the rung on, no timed rtx-5080 program forms a unit, so the rows stay (open).
     RungOff {
         profile: "rtx-4090",
         rung: "row-block",

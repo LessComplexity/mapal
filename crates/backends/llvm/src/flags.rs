@@ -37,6 +37,19 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
             opts.contract = false;
             opts.order = Order::Sequential;
         }
+        _ if a.starts_with("--row-stage=") => {
+            let v = &a["--row-stage=".len()..];
+            let parsed = v.split_once('x').and_then(|(kc, rest)| {
+                let (s, p) = rest.split_once('p').unwrap_or((rest, "1"));
+                Some((kc.parse().ok()?, s.parse().ok()?, p.parse().ok()?))
+            });
+            let Some(f) = parsed else {
+                return Err(format!(
+                    "--row-stage expects <kc>x<stages>[p<passes>], got `{a}`"
+                ));
+            };
+            opts.gpu.row_stage_force = Some(f);
+        }
         _ if a.starts_with("--order=") => {
             opts.order = match &a["--order=".len()..] {
                 "sequential" => Order::Sequential,
