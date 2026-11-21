@@ -256,6 +256,9 @@ with the `min-blocks` losses above.
 
 ## Open items (missing facts)
 
+Items 1, 4, 5 and 6 are addressed in `rules.md` (properties, replay, the 5080's runs); 2 and 3 remain
+open there with what the round separates.
+
 1. `row-split`: the split's added launches per trip against the pass it splits (H100 SXM 4 / 4 lose, explained).
 2. `min-blocks` on the 32-register parts: the H100 SXM and the A100 lose where the H100 PCIe won; and the under-filled
    `SMEM_PER_SM_MANY_BLOCKS` branch (block decode 0.70).

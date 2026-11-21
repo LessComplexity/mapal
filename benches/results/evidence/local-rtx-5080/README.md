@@ -113,3 +113,13 @@ the measured `Caps::ex2` against the 2⁻²¹ bound); `fold_combine`'s rescale l
 beside its max (lsm_1_131072: 3 → 2 phases, flow kernel 7.94 → 5.89 us). The softmax / attention / model-scale
 programs use `-> exp`; torch legs (incl. SDPA) now value-gate within 10⁻⁶. Suite ON vs OFF: lsm_4_32768 0.950 (ABBA),
 the rest null; flash-style attention and the walk-cost fact (lsm_4_32768 vs the polynomial program) are open.
+
+**cross-arch rules** (`../cross-arch/rules.md`): the rules the four-part round (`../cross-arch/README.md`) showed wrong,
+each as a property, replayed against its ON/OFF arms — `wide-fma` / `async` / `kmajor-a` read DRAM bytes per µs per SM
+(clock-free: the 250 W 4090's 17 / 3 / 10 wins kept at its measured 1.96 GHz); `pdl` only where a module's launches
+repeat in a loop, the dependent triggered at the producer's exit (`pdl-early` arm; H100 geomean vs plain 1.005 →
+0.992); `row-split` priced at the site (one SM's `sm_bytes_per_ns` against the launches it adds: the H100's 4 losses
+off); the tune trial settles to steady state and its head-to-head pairs decide (5 / 16 steady-state-slower picks
+reverted); `calib.cu` gains the sustained clock, the PDL chain head and the one-SM rate; the rented parts' profiles
+carry their measured costs. `min-blocks`, `warp-fill` and the 3090's `grid-share` convmc site stay open. RTX 5080:
+decode 0.981, short programs 0.989–0.990 (inside null), loopmm 1.003.
