@@ -169,6 +169,25 @@ INTENT = {
         ('one wave of blocks', 'plan.ctas <= occ.blocks_per_sm * occ.sms'),
         ('pieces combine by atomic add', 'ptx.atom_add + ptx.red_add > 0'),
         ('the launch is stream-K', "launch.combine == 'streamk'")]),
+    # large-gemm `streamk-fill`: stream-K walks a launched tile grid that gives the part its fill target at its own
+    # geometry (`resident` warps a scheduler: 8 an SM); a grid short of it takes the `fill-wave` split (16 x 2048 x
+    # 7168: 16 one-warp tiles). The stream-K of `k-fill` (an under-filled site's full tile, `wps < 2`) is its own.
+    'streamk-fill': dict(rule=True, applies_on="plan.kind == 'tile' and plan.combine == 'streamk' and plan.wps >= 2", on=[
+        ('the tile grid fills the part at its own geometry (8 warps an SM)',
+         'plan.gx * plan.gy * ((plan.block + 31) // 32) >= 8 * occ.sms')]),
+    # large-gemm `k-fill`: an under-filled site (`wps < 2`, where `warp-fill` shrinks the tile) keeps the full S52
+    # tile (8 x 8 accumulators, 256 threads) and fills the part along k by stream-K over every slot the tile holds
+    # at its own registers and threads (not grid-share's one block an SM), each CTA folding >= 32 panels.
+    # `.off-k-fill`: the shrunk tile (`4 x 4` / `8 x 4`) and the fill-wave split or none.
+    'k-fill': dict(rule=True, applies_on="plan.kind == 'tile' and plan.combine == 'streamk' and plan.wps < 2", on=[
+        ('the full register tile: >= 64 accumulators, >= 256 threads', 'plan.tm * plan.tn >= 64 and plan.block >= 256'),
+        ('stream-K CTAs fill the resident slots at ptxas registers + smem (one wave, >= 90 %)',
+         'plan.ctas <= occ.blocks_per_sm * occ.sms and 10 * plan.ctas >= 9 * occ.blocks_per_sm * occ.sms'),
+        ('each CTA folds >= 32 panels (K_FILL_PANELS)', 'plan.iters >= 32'),
+        ('the derived 2 blocks an SM are resident', 'occ.blocks_per_sm >= plan.blocks_per_sm'),
+        # At two 256-thread blocks an SM a thread has 128 registers; ptxas may spill a few words of the stream-K
+        # piece setup (24 B on 128 x 4096 x 4096), never in the panel loop.
+        ('no local-memory traffic in the hot loop', 'sass.hot.stl + sass.hot.ldl == 0')]),
     # ---- tensor-core kernels ---------------------------------------------------------------------------
     'mma': dict(applies="plan.kind == 'mma'", on=[
         ('mma.sync in PTX', 'ptx.mma > 0'), ('HMMA in SASS', 'sass.hmma > 0')]),

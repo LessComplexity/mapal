@@ -697,6 +697,22 @@ pub struct GpuRungs {
     /// Off (`--gpu-off=exp-rescale`, `--no-exp-rescale`): such a value is a
     /// phase.
     pub exp_rescale: bool,
+    /// large-gemm `streamk-fill`: stream-K walks the site's tiles over the
+    /// slots its own launched grid fills — a grid whose blocks at their own
+    /// geometry give the part fewer warps than [`profile::Gpu::fill_warps`]
+    /// (a skinny site: 16 one-warp tiles) is no stream-K site; it takes the
+    /// `fill-wave` split, which reaches that target. Off
+    /// (`--gpu-off=streamk-fill`): stream-K wherever the fill class of the
+    /// site's base grid allows it, at one block an SM.
+    pub streamk_fill: bool,
+    /// large-gemm `k-fill`: an under-filled site (no warp per scheduler at
+    /// the base grid) whose free-order fold the `fill-wave` split can cut
+    /// into enough partitions keeps the full register tile and its threads
+    /// and fills the part along `k`, instead of shrinking the tile
+    /// (`warp-fill`) or its threads — a tile below `8 × 8` issues a shared
+    /// load per fewer than 16 FFMA. Off (`--gpu-off=k-fill`): the shrunk
+    /// tile.
+    pub k_fill: bool,
 }
 
 impl GpuRungs {
@@ -796,11 +812,13 @@ impl GpuRungs {
         head_group: true,
         exp_hw: true,
         exp_rescale: true,
+        streamk_fill: true,
+        k_fill: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 94] = [
+    pub const NAMES: [&'static str; 96] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -895,6 +913,8 @@ impl GpuRungs {
         "head-group",
         "exp-hw",
         "exp-rescale",
+        "streamk-fill",
+        "k-fill",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -994,6 +1014,8 @@ impl GpuRungs {
             "head-group" => &mut self.head_group,
             "exp-hw" => &mut self.exp_hw,
             "exp-rescale" => &mut self.exp_rescale,
+            "streamk-fill" => &mut self.streamk_fill,
+            "k-fill" => &mut self.k_fill,
             _ => return None,
         })
     }

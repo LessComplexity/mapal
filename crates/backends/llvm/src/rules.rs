@@ -148,7 +148,14 @@ pub fn rungs(g: &Gpu, wps: u64, face: Face) -> GpuRungs {
         // and loses on a register-staged copy (3090 / H100 / 5090, the
         // 4090 filled) — the panel the async rule picks.
         kmajor_a: cp_async,
-        wide_fma: scarce,
+        // large-gemm: the whole-file `8 × 16` tile where each SM's DRAM share
+        // is scarce, or — on a contract face — where the part issues more
+        // FFMA per DRAM byte than [`FILL_BALANCE_PM`] (compute-rich: the
+        // 128-accumulator thread's lower shared-load issue per FFMA, 6
+        // `LDS.128` per 128 FFMA against 4 per 64, is what bounds the tile).
+        // The rtx-5080 (54.9) won it filled (mm_4096: 3.76 vs 4.10 ms); the
+        // 3090 (38.0, exact), H100 PCIe (25.1) and A100 (12.5) lost it.
+        wide_fma: scarce || (contract && fill_balance),
         min_blocks: match (tf32, filled) {
             (true, false) => false,
             (_, true) => !regs_tight,
@@ -422,7 +429,7 @@ mod tests {
         }
         assert_eq!(open, OPEN.to_vec(), "measurements the rules do not pick");
         // The counts the evidence file reports.
-        assert_eq!((picked, null, mixed, open.len()), (102, 67, 9, 16));
+        assert_eq!((picked, null, mixed, open.len()), (105, 67, 9, 16));
     }
 
     /// No rule reads a name, an architecture string or a version: a part

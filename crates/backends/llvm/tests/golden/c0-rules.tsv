@@ -113,8 +113,8 @@ pt_rq_mlp2_512	h100-pcie	exact	3eb00f82cda6e491
 pt_smlp_4096_256_1024	rtx-4090	default	d23bc3bf0c67b336
 pt_smlp_4096_256_1024	rtx-4090	contract	d23bc3bf0c67b336
 pt_smlp_4096_256_1024	rtx-4090	exact	a004547be89702f3
-pt_smlp_4096_256_1024	rtx-5090	default	ab888aac31580456
-pt_smlp_4096_256_1024	rtx-5090	contract	ab888aac31580456
+pt_smlp_4096_256_1024	rtx-5090	default	d849800af3729865
+pt_smlp_4096_256_1024	rtx-5090	contract	d849800af3729865
 pt_smlp_4096_256_1024	rtx-5090	exact	a7bdfcf9c85ad42f
 pt_smlp_4096_256_1024	rtx-3090	default	6a7ffa8d6924ccca
 pt_smlp_4096_256_1024	rtx-3090	contract	f6ab67a88b103492
@@ -161,8 +161,8 @@ decode_1024_256	h100-pcie	exact	36ecc9c6d90382af
 mm_4096x4096x4096	rtx-4090	default	5b017c8d5dbac941
 mm_4096x4096x4096	rtx-4090	contract	5b017c8d5dbac941
 mm_4096x4096x4096	rtx-4090	exact	9893d90d7b5a7d36
-mm_4096x4096x4096	rtx-5090	default	d3514183ecc06942
-mm_4096x4096x4096	rtx-5090	contract	c33a2c530aaaac42
+mm_4096x4096x4096	rtx-5090	default	4e97babc051f8fec
+mm_4096x4096x4096	rtx-5090	contract	8ff23422031c2dbe
 mm_4096x4096x4096	rtx-5090	exact	3d2ca8ac6213948b
 mm_4096x4096x4096	rtx-3090	default	bfa465ed9b69d87d
 mm_4096x4096x4096	rtx-3090	contract	1d9dec556aa8a5bd
@@ -173,8 +173,8 @@ mm_4096x4096x4096	h100-pcie	exact	82fc307f80232da6
 pt_epi_2048	rtx-4090	default	444c820ba1251c8c
 pt_epi_2048	rtx-4090	contract	444c820ba1251c8c
 pt_epi_2048	rtx-4090	exact	47b6ce65da2e8f1e
-pt_epi_2048	rtx-5090	default	a1d85d58cda37418
-pt_epi_2048	rtx-5090	contract	a1d85d58cda37418
+pt_epi_2048	rtx-5090	default	8f72f8ace4a8e4a3
+pt_epi_2048	rtx-5090	contract	8f72f8ace4a8e4a3
 pt_epi_2048	rtx-5090	exact	a70a2a45cd102e24
 pt_epi_2048	rtx-3090	default	5f2bddf4fca4b4c8
 pt_epi_2048	rtx-3090	contract	5f2bddf4fca4b4c8
@@ -186,7 +186,7 @@ pt_mlp_2048_tf32	rtx-4090	default	7739bf737b0ff72f
 pt_mlp_2048_tf32	rtx-4090	contract	2b8f1b853be60979
 pt_mlp_2048_tf32	rtx-4090	exact	0c7a0eecc079db24
 pt_mlp_2048_tf32	rtx-5090	default	5b47d20f0cce6d0f
-pt_mlp_2048_tf32	rtx-5090	contract	0f44052a2ea0deca
+pt_mlp_2048_tf32	rtx-5090	contract	e23070b937a02647
 pt_mlp_2048_tf32	rtx-5090	exact	ead56baf6c2c370d
 pt_mlp_2048_tf32	rtx-3090	default	9e81f58b1546f2dc
 pt_mlp_2048_tf32	rtx-3090	contract	3609a0de77c6e327

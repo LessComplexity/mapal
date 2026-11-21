@@ -2875,7 +2875,19 @@ impl TargetProfile {
         // SM a block at its full grid keeps the S52 tile, which step 3 then
         // fills (S53: halving the wide grid at 1024² measured 0.70× on Ada and
         // Blackwell — half the warps per block over the same tiles).
-        if wide && ((rows / (ty * tm)) * (c / (tx * tn)) * parts < g.sms || under_warps(tm, tn)) {
+        // large-gemm `streamk-fill`: nor one whose grid, at the tile's own
+        // threads, gives the part fewer warps than its fill target — half
+        // the S52 tile's warps a block, it neither streams nor splits there
+        // (256 × 6144 × 8192: 96 whole-file blocks of 4 warps, 0.57 of a
+        // wave; the S52 tile's 96 blocks of 8 warps stream-K over the part).
+        let wide_short = r.streamk_fill
+            && !fill_k
+            && (rows / (ty * tm)) * (c / (tx * tn)) * threads.div_ceil(g.warp) < g.fill_warps();
+        if wide
+            && ((rows / (ty * tm)) * (c / (tx * tn)) * parts < g.sms
+                || under_warps(tm, tn)
+                || wide_short)
+        {
             return self.gpu_tile_split(rows, c, k, elem, false, r, split);
         }
         // site-geometry `fit-first` (R1): a grid short only because its thread
@@ -2969,6 +2981,13 @@ impl TargetProfile {
             blocks_per_sm,
             ..geom(best?)
         })
+    }
+
+    /// large-gemm `k-fill`: the side of the S52 square register tile
+    /// ([`Self::gpu_tile`] step 1) at `elem` — the full tile an under-filled
+    /// site keeps; `None` off a GPU.
+    pub fn fma_tile_side(&self, elem: &Ty) -> Option<u64> {
+        Some(square_register_tile(self.gpu()?, elem_bytes(elem)).0)
     }
 
     /// **The blocks of tile `g` one SM can hold** at its registers and
@@ -3919,6 +3938,11 @@ pub struct Geom {
     /// (`n`) and warpgroups per block (T1: the grid's last wave); 0 = derived.
     pub wg_n: u64,
     pub wg_groups: u64,
+    /// large-gemm `k-fill`: the fewest panels a stream-K CTA of the full
+    /// tile folds before an under-filled site takes it; 0 = derived
+    /// (`func::gpu::K_FILL_PANELS`). A measurement knob: the emulator's
+    /// value tests reach the rule at extents it runs.
+    pub kfill: u64,
 }
 
 /// The seed row: every part's table before a search wrote one.
@@ -3932,6 +3956,7 @@ pub const GEOM: Geom = Geom {
     stages: 0,
     wg_n: 0,
     wg_groups: 0,
+    kfill: 0,
 };
 
 /// A `--geom=` override per knob, in [`Geom::NAMES`] order (`None` = the
@@ -3939,7 +3964,7 @@ pub const GEOM: Geom = Geom {
 pub type GeomOver = [Option<u64>; Geom::NAMES.len()];
 
 impl Geom {
-    pub const NAMES: [&'static str; 9] = [
+    pub const NAMES: [&'static str; 10] = [
         "resident",
         "split",
         "tm",
@@ -3949,6 +3974,7 @@ impl Geom {
         "stages",
         "wg_n",
         "wg_groups",
+        "kfill",
     ];
 
     /// The knob called `name`, `None` for an unknown name.
@@ -3963,6 +3989,7 @@ impl Geom {
             "stages" => &mut self.stages,
             "wg_n" => &mut self.wg_n,
             "wg_groups" => &mut self.wg_groups,
+            "kfill" => &mut self.kfill,
             _ => return None,
         })
     }
@@ -5973,9 +6000,12 @@ mod tests {
                         .collect();
                     for (wide, fill) in [(false, false), (false, true), (true, false), (true, true)]
                     {
+                        // (large-gemm's `streamk-fill` off: it moves the
+                        // whole-file tile, asserted below.)
                         let r = crate::GpuRungs {
                             fill,
                             kmajor_a: false,
+                            streamk_fill: false,
                             ..without(&names)
                         };
                         let got = p.gpu_tile_with(n, n, n, &f32, wide, r);
@@ -5989,6 +6019,23 @@ mod tests {
                     }
                 }
             }
+        }
+        // large-gemm `streamk-fill`: the whole-file tile only where its grid
+        // gives the part its fill target — at 2048² its 256 blocks of four
+        // warps fill the 5080 (672) and the 4090 (1024), not the 5090
+        // (1360), which takes the S52 tile; at 4096² every part fills.
+        let sk = crate::GpuRungs {
+            streamk_fill: true,
+            ..crate::GpuRungs::default()
+        };
+        for (p, n, held) in [
+            (&RTX_5080, 2048, true),
+            (&RTX_4090, 2048, true),
+            (&RTX_5090, 2048, false),
+            (&RTX_5090, 4096, true),
+        ] {
+            let t = p.gpu_tile_with(n, n, n, &f32, true, sk).expect("tile");
+            assert_eq!(t.held > 0, held, "{} {n}", p.name);
         }
     }
 

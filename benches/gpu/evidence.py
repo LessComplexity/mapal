@@ -42,12 +42,13 @@ PARTS = {
     'rtx-5090': dict(sm='sm_120', sms=170, threads=1536, blocks=24, smem=102400),
     'h100-pcie': dict(sm='sm_90a', sms=114, threads=2048, blocks=32, smem=233472),
     'rtx-3090': dict(sm='sm_86', sms=82, threads=1536, blocks=16, smem=102400),
+    'rtx-5080': dict(sm='sm_120', sms=84, threads=1536, blocks=24, smem=102400),
 }
 # The rungs a kernel's text reads (func/gpu.rs KERNEL_RUNGS); the rest are host rungs.
 KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async wide ldmatrix warp-fill idx32 affine '
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
-                'async-depth bank-plan').split()
+                'async-depth bank-plan streamk-fill k-fill').split()
 GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
             'zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')

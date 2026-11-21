@@ -4438,3 +4438,122 @@ pub fn exp_src(p: &ExpProg) -> String {
     s += "    0.0 -> y0: f32;\n    (y0, y) -> fold { acc, v -> acc + v / 1000000.0 } -> ys;\n    ys -> println;\n}\n";
     s
 }
+
+// --- large-gemm: GEMM shapes from decode GEMVs to model-scale projections ----
+
+/// One `m × k · k × n` product (`y[i·n + j] = Σ_k a[i·k + k'] · b[k'·n + j]`,
+/// `b` row-major, or transposed under `bt`) with small integer operands in
+/// `-2 ..= 2`, so every partial sum is exact in f32 up to `k` of 2²² and any
+/// cut or order of the fold prints the same bits. `scale` picks the extents:
+///
+/// - 0 skinny: `m` 1–32 (odd 3, 24), `n` 1024–4096, `k` 512–4096 — decode
+///   projections, whose one-warp tile grid leaves the part short of warps;
+/// - 1 under-filled deep: `m` 64–256 (odd 96, 192), `n` 1024–8192, `k`
+///   4096–16384 (odd 6144, 12288) — a prefill chunk's projections;
+/// - 2 filled: `m` 1024–4096, `n` 1024–8192, `k` 1024–8192 (odd 3072);
+/// - 3 odd: extents a register tile need not divide (`m` 100, 136, 200; `n`
+///   1000, 1500, 2040; `k` 1000, 4100, 8000).
+///
+/// Large extents are for plans only (emitted, never run); [`gemm_run_src`]
+/// gives the sizes an emulator runs.
+#[derive(Clone, Debug)]
+pub struct GemmProg {
+    pub scale: u8,
+    pub dims: [u8; 3],
+    pub bt: bool,
+    pub law: [u8; 2],
+}
+
+pub fn gemm_prog_strategy() -> impl Strategy<Value = GemmProg> {
+    (
+        0u8..4,
+        prop::array::uniform3(any::<u8>()),
+        prop::bool::weighted(0.2),
+        prop::array::uniform2(any::<u8>()),
+    )
+        .prop_map(|(scale, dims, bt, law)| GemmProg {
+            scale,
+            dims,
+            bt,
+            law,
+        })
+}
+
+/// [`GemmProg`]'s `(m, n, k)`.
+pub fn gemm_dims(p: &GemmProg) -> (u64, u64, u64) {
+    let pick = |d: u8, v: &[u64]| v[usize::from(d) % v.len()];
+    let [dm, dn, dk] = p.dims;
+    match p.scale {
+        0 => (
+            pick(dm, &[1, 3, 8, 16, 24, 32]),
+            pick(dn, &[1024, 2048, 3072, 4096]),
+            pick(dk, &[512, 1024, 4096]),
+        ),
+        1 => (
+            pick(dm, &[64, 96, 128, 192, 256]),
+            pick(dn, &[1024, 2048, 4096, 6144, 8192]),
+            pick(dk, &[4096, 6144, 8192, 12288, 16384]),
+        ),
+        2 => (
+            pick(dm, &[1024, 2048, 4096]),
+            pick(dn, &[1024, 4096, 8192]),
+            pick(dk, &[1024, 3072, 8192]),
+        ),
+        _ => (
+            pick(dm, &[100, 136, 200]),
+            pick(dn, &[1000, 1500, 2040]),
+            pick(dk, &[1000, 4100, 8000]),
+        ),
+    }
+}
+
+/// The source of a [`GemmProg`] at `(m, n, k)`: the operands from a law in
+/// `-2 ..= 2`, the product as a map over the output's cells folding `k`, and
+/// five cells printed (the first, the last, the last row's first, a middle
+/// one, the second row's last).
+pub fn gemm_src_at(p: &GemmProg, m: u64, n: u64, k: u64) -> String {
+    let (a1, a2) = (
+        3 + 2 * u64::from(p.law[0] % 7),
+        5 + 2 * u64::from(p.law[1] % 5),
+    );
+    let bi = match p.bt {
+        true => format!("b[j * {k} + k]"),
+        false => format!("b[k * {n} + j]"),
+    };
+    let mut s = format!(
+        "fn main() {{
+    {mk} -> iota -> ia;
+    ia -> map {{
+        t -> (t * {a1} + 13) % 5 - 2 -> widen_f32
+    }} -> a;
+    {kn} -> iota -> ib;
+    ib -> map {{
+        t -> (t * {a2} + 7) % 5 - 2 -> widen_f32
+    }} -> b;
+    {k} -> iota -> kr;
+    {mn} -> iota -> ic;
+    ic -> map {{
+        t ->
+        t / {n} -> i;
+        t % {n} -> j;
+        (0.0, kr) -> fold {{
+            acc, k -> acc + a[i * {k} + k] * {bi}
+        }}
+    }} -> y;
+",
+        mk = m * k,
+        kn = k * n,
+        mn = m * n
+    );
+    let last = m * n - 1;
+    for c in [0, last, (m - 1) * n, (m * n) / 2 + n / 3, 2 * n - 1] {
+        s += &format!("    y[{}] -> println;\n", c.min(last));
+    }
+    s + "}\n"
+}
+
+/// [`GemmProg`]'s source at its own extents ([`gemm_dims`]).
+pub fn gemm_src(p: &GemmProg) -> (String, (u64, u64, u64)) {
+    let (m, n, k) = gemm_dims(p);
+    (gemm_src_at(p, m, n, k), (m, n, k))
+}

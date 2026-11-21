@@ -205,3 +205,6 @@ warp-fill	h100	A	C	mixed	-	cross-arch on-warp-fill: pj_m16_n6144 0.712, pj_m16_n
 grid-share	rtx-3090	F	C	off	-	cross-arch on-grid-share: pj_m16_n4096_k14336 2.195, pj_m16_n6144 1.654, pj_m16_n2048 1.448, pj_m16_n4096 1.353, pj_m16_n18432 1.221 (the rule's off won); 12 W / 35 null / 6 L
 grid-share	rtx-3090	U	C	mixed	-	cross-arch on-grid-share at the 1024 x 256 x 256 site (wps 0, 128 blocks): gen 1.290, causal 1.299 won by off, decode 0.864 (null 11 %) lost; convmc (wps 2) 0.909 / 0.869 lost
 panel-regs	rtx-3090	A	C	mixed	-	cross-arch on-panel-regs: 1 W / 47 null / 3 L (indep_512 0.940, pj_m16_n2048 0.957, pj_m1_n2048 0.967; pj_m1_n6144 1.028)
+wide-fma	rtx-5080	F	C	on	-	large-gemm mm_4096 cell (one tile_bench process, 30 reps a leg): rules 3.912 vs OFF 4.398 ms, cuBLAS 3.791; the site table's +wide-fma candidate 3.76 vs candidate 0 4.10 (exp run-on2) — 54.9 FFMA per DRAM byte
+k-fill	rtx-5080	U	C	on	-	large-gemm cells ON / OFF: 128x4096x4096 0.1475 / 0.2212, 128x6144x4096 0.2048 / 0.3256, 128x4096x14336 0.4322 / 0.7657, 128x2048x7168 0.1372 / 0.2458 ms; 1024^3 (24 panels a CTA, below K_FILL_PANELS) keeps the shrunk tile: 0.088 vs full stream-K 0.098
+streamk-fill	rtx-5080	F	C	on	-	large-gemm cells ON / OFF: 16x2048x7168 0.0881 / 0.1126, 16x18432x7168 0.6144 / 0.6348 ms (cuBLAS 0.0799, 0.6185)

@@ -426,7 +426,10 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // emission is the pre-sprint one byte for byte, which is what this pins.
         // compile-time-graph and kernel-merging likewise: row-block units,
         // zero tails and merged launches off, the emission is the one before
-        // them.
+        // them. large-gemm's site rules (`k-fill`, `streamk-fill`) too; its
+        // `wide-fma` property rule moved candidate 0 where a part issues more
+        // FFMA per DRAM byte than `FILL_BALANCE_PM` on a contract face (the
+        // rtx-5090's default-face rows, regolded).
         for f in [
             target.as_str(),
             "--host=x86-64-v3",
@@ -436,6 +439,7 @@ fn candidate_zero_is_the_pre_sprint_emission() {
             "--no-row-block",
             "--gpu-off=zero-fold",
             "--gpu-off=horizontal",
+            "--gpu-off=k-fill,streamk-fill",
         ]
         .iter()
         .chain(face_flags)

@@ -1178,7 +1178,7 @@ fn plan_line(
 }
 
 /// The rungs a kernel's text reads ([`plan_line`]); the rest are host rungs.
-const KERNEL_RUNGS: [&str; 37] = [
+const KERNEL_RUNGS: [&str; 39] = [
     "arch-rungs",
     "interleave",
     "unroll",
@@ -1216,6 +1216,8 @@ const KERNEL_RUNGS: [&str; 37] = [
     "full-tile",
     "async-depth",
     "bank-plan",
+    "streamk-fill",
+    "k-fill",
 ];
 
 /// [`launch`] with the fold's realization chosen under `order` (ADR-0040 D4).
@@ -1233,12 +1235,115 @@ pub(crate) fn launch_in(
     };
     let c = match cands.first() {
         Some(pick) => pick.combine,
-        None => combine(&l, site, profile, order, arms),
+        None => combine(&l, site, profile, contract, order, arms),
     };
     let mut l = resized(site, profile, contract, arms, l, c);
     l.combine = c;
     l
 }
+
+/// **large-gemm `k-fill`: an under-filled site keeps the full register tile
+/// and fills the part along `k` with stream-K over the slots the tile
+/// holds.** Where the rules' launch `l` shrank the tile or its threads to
+/// fill the part (`warp-fill`, the fill rule's halving: fewer accumulators
+/// a thread or fewer threads than the full S52 tile,
+/// [`TargetProfile::gpu_tile_split`] under `full-tile`), the full tile's
+/// grid is walked by stream-K at `sms × residency` CTAs — the residency at
+/// the tile's own registers and threads ([`TargetProfile::tile_capacity`]),
+/// not `grid-share`'s one block an SM, which leaves an SM's second slot
+/// empty (128 × 6144 × 4096: 84 CTAs 0.231 ms, 167 CTAs 0.205) — where each
+/// CTA folds at least [`K_FILL_PANELS`] panels. A shrunk tile issues more
+/// shared loads per FFMA (`4 × 4`: 2 `LDS.128` per 16 FFMA, against 4 per
+/// 64 at `8 × 8`), which bounds it at the part's shared-load rate; a CTA's
+/// stream-K fixup (the atomic adds of at most two tile pieces) is the cost
+/// on the other side, paid back over a long enough run (rtx-5080: 128 × 4096
+/// × 4096 0.148 ms against 0.219 shrunk, 128 × 6144 × 4096 0.205 against
+/// 0.324; 1024³ at 24 panels a CTA 0.098 against 0.088 shrunk — the shrunk
+/// tile stays). Free order only (the fixup adds). The combine and the launch
+/// its kernel runs ([`combine`] takes the first, [`resized`] the second).
+fn k_fill(
+    l: &Launch,
+    site: &TileSite,
+    profile: &TargetProfile,
+    contract: bool,
+    arms: crate::GpuArms,
+) -> Option<(Combine, Launch)> {
+    let r = l.rungs;
+    let gpu = profile.gpu()?;
+    let g = l.tiled?;
+    let e = elem_bytes_of(&site.elem);
+    let atomic = e == 4 || gpu.caps.red_f64;
+    // (A whole-file tile is no shrunk one: it is taken only where its own
+    // grid fills the part, `streamk-fill` in [`TargetProfile::gpu_tile_split`].)
+    if !r.k_fill
+        || !r.streamk_fill
+        || !atomic
+        || g.held > 0
+        || arms.splitk > 0
+        || gpu.geom.split > 0
+    {
+        return None;
+    }
+    // The full S52 tile (its `bm`, `bn`, threads), not the whole-file
+    // `wide-fma` tile, which halves a block's warps where the grid is short
+    // of them (128 × 4096 × 4096: `8 × 16` at `S = 8` 0.174 ms against
+    // `8 × 8` at `S = 4` 0.162).
+    let mut a = arms;
+    *a.off.rung("wide-fma")? = true;
+    let fg = launch_split(site, profile, contract, a, 2, true).tiled?;
+    let side = profile.fma_tile_side(&site.elem)?;
+    let full_side = fg.tm == side && fg.tn == side;
+    if !full_side || fg.tm * fg.tn <= g.tm * g.tn && fg.threads() <= g.threads() || fg.stages >= 2 {
+        return None;
+    }
+    let tiles = (site.rows / fg.bm()) * (site.c / fg.bn());
+    let cap = gpu.sms * profile.tile_capacity(&fg, &site.elem);
+    if tiles >= cap {
+        return None;
+    }
+    // Sized for `cap` blocks: the panel share of the residency it runs at.
+    let full = launch_split(site, profile, contract, a, cap.div_ceil(tiles), true);
+    let t = full.tiled?;
+    let panels = site.k / t.bk;
+    let wave = gpu.sms * t.blocks_per_sm;
+    let iters = (tiles * panels).div_ceil(wave);
+    let floor = match gpu.geom.kfill {
+        0 => K_FILL_PANELS,
+        f => f,
+    };
+    if t.tm * t.tn != fg.tm * fg.tn || t.stages >= 2 || iters < floor || panels < 2 {
+        return None;
+    }
+    let c = Combine::StreamK {
+        ctas: (tiles * panels).div_ceil(iters),
+        iters,
+    };
+    // The launch fills the part: the filled class's index width (`idx32`,
+    // `contract && filled`) — the walk over a tile count that is no power of
+    // two divides in `i32` (128 × 6144 × 4096 spilled 24 B at `i64`).
+    let idx32 = rungs_at(profile, GPU_RESIDENT_BLOCKS, Face::of(contract, None), arms).idx32;
+    let rungs = crate::GpuRungs {
+        idx32,
+        ..full.rungs
+    };
+    Some((
+        c,
+        Launch {
+            combine: c,
+            rungs,
+            ..full
+        },
+    ))
+}
+
+/// large-gemm `k-fill`: the fewest panels a stream-K CTA of the full tile
+/// folds. Between the rtx-5080's measured loser (1024³: 24.4 panels a CTA,
+/// 0.098 ms against the shrunk tile's 0.088) and winners (128 × 4096 ×
+/// 4096: 48.8, 0.148 against 0.219; 128 × 6144 × 4096: 73.6, 0.205
+/// against 0.324): a CTA's fixup — the atomic adds of its two tile pieces,
+/// `2 · bm · bn` at the part's per-SM atomic rate — costs about two and a
+/// half panels of its FFMA time there, so the run must be long against it.
+pub(crate) const K_FILL_PANELS: u64 = 32;
 
 /// One candidate plan of a site's chooser: its fold realization, the launch
 /// it emits and the cost model's reading of both (plan-cost §2).
@@ -1305,7 +1410,10 @@ pub(crate) fn plan_cands(
     // A forced count (`--splitk=S`, the part's `Geom::split`) is the only
     // plan: the ordered kernel and the rules' pick are not candidates.
     let mut combos = match forced {
-        0 => vec![Combine::None, combine(l, site, profile, order, arms)],
+        0 => vec![
+            Combine::None,
+            combine(l, site, profile, contract, order, arms),
+        ],
         _ => Vec::new(),
     };
     for s in (2..=panels.min(64)).filter(|&s| panels.is_multiple_of(s)) {
@@ -1518,6 +1626,14 @@ fn resized(
 ) -> Launch {
     let s = combine.splits();
     let whole = |r: &Launch| r.tiled.is_some_and(|g| (site.k / s).is_multiple_of(g.bk));
+    // large-gemm `k-fill`: the stream-K [`combine`] took over the full tile
+    // runs that tile.
+    if let Combine::StreamK { .. } = combine
+        && let Some((c, full)) = k_fill(&l, site, profile, contract, arms)
+        && c == combine
+    {
+        return full;
+    }
     let rule = match l.rungs.fill_wave && s > 1 {
         true => Some(launch_split(site, profile, contract, arms, s, false))
             .filter(whole)
@@ -2015,6 +2131,7 @@ fn combine(
     l: &Launch,
     site: &TileSite,
     profile: &TargetProfile,
+    contract: bool,
     order: Order,
     arms: crate::GpuArms,
 ) -> Combine {
@@ -2062,6 +2179,15 @@ fn combine(
             s => Combine::Workspace { s },
         };
     }
+    // large-gemm `k-fill`: an under-filled site's full tile, stream-K over
+    // the slots it holds ([`k_fill`]); [`resized`] gives its kernel that tile.
+    // (Its own rung: the table's `streamk` is the filled class's; an arm
+    // forcing stream-K off turns it off too.)
+    if !arms.off.get("streamk")
+        && let Some((c, _)) = k_fill(l, site, profile, contract, arms)
+    {
+        return c;
+    }
     // `red.global.add.f32` exists from sm_20, `.f64` from sm_60.
     let atomic = e == 4 || gpu.caps.red_f64;
     let s_at = count(false);
@@ -2074,7 +2200,16 @@ fn combine(
     // ponytail: stream-K runs the register-staged tile (its panel loop takes
     // a runtime trip count); the cp.async pipeline's prologue is unrolled over
     // a constant one — add a predicated prologue when a streamed tile needs it.
+    // large-gemm `streamk-fill`: stream-K spreads the tiles over the slots
+    // the launched grid holds (`wave`); a grid that does not give the part
+    // `fill_warps` at its own geometry holds one block an SM there (its
+    // `grid-share` residency) — 84 one-warp blocks for 16 × 2048 × 7168,
+    // 1.41× cuBLAS — so it takes the `fill-wave` split instead.
+    // (With `fill-wave` off there is no fill split to take: stream-K as before.)
+    let filled_grid =
+        !(rungs.streamk_fill && rungs.fill_wave) || blocks * warps >= gpu.fill_warps();
     let streamk = rungs.streamk
+        && filled_grid
         && atomic
         && l.tiled.is_some_and(|g| g.stages < 2)
         && panels >= 2
@@ -7739,17 +7874,23 @@ mod tests {
         }
         // The one-wave clamp (G6): the 3090 at 16 × 18432 × 7168 holds 984
         // blocks of the 1152-block grid; no split fits one wave. Stream-K
-        // would take the tail; its measured row (Filled) ships the grid.
+        // would take the tail; its measured row (Filled) ships the grid —
+        // where the grid fills the part. large-gemm `streamk-fill`: its 144
+        // one-warp tiles give the part fewer than its 656 fill warps, so the
+        // `fill-wave` split fills it (S = 7, 1008 blocks); the arm off, the
+        // one-wave stream-K.
         let r3090 = &crate::profile::RTX_3090;
         let s = site(16, 18432, 7168, true, true, Ty::f32());
         let l = launch_in(&s, r3090, true, arms, None, Order::Free);
+        assert_eq!(l.combine, Combine::Atomic { s: 7 }, "{:?}", l.combine);
+        let l = launch_in(&s, r3090, true, off(&["streamk-fill"]), None, Order::Free);
         assert_eq!(l.combine.splits(), 1, "{:?}", l.combine);
         let s16 = site(16, 2048, 7168, true, true, Ty::f32());
         // S63 the shipped default per part (`GPU_RUNGS_OFF`, measured,
         // `benches/results/gpu/s63/default-float/`): each is a session arm
         // (site-geometry `fill-wave` off: the S63 chooser; its own arm is
         // `site_geometry.rs`'s).
-        let s63 = off(&["fill-wave"]);
+        let s63 = off(&["fill-wave", "k-fill", "streamk-fill"]);
         let shipped = |p, (m, n, k)| {
             let c = launch_in(
                 &site(m, n, k, true, true, Ty::f32()),
