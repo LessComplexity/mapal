@@ -88,7 +88,14 @@ static void bw_run() {
         for (int s : {1, std::max(1, sms / 16), std::max(1, sms / 8), std::max(1, sms / 4), std::max(1, sms / 2), sms})
             for (int wps : {1, 2, 4, 8, 16, 32})
                 for (int L : {1, 2, 4, 8}) {
-                    bw<<<s, wps * 32>>>(d, bytes / 16, L, 1, sink); CK(cudaDeviceSynchronize()); // warm
+                    bw<<<s, wps * 32>>>(d, bytes / 16, L, 1, sink); // warm
+                    // A block the registers cannot hold (1024 threads at L = 8 on sm_86 / sm_89) never runs: its
+                    // events would time an empty stream (cross-arch: 2^20 GB/s points). Say so instead.
+                    if (cudaError_t e = cudaGetLastError(); e != cudaSuccess) {
+                        printf("bw level=%s sms=%d wps=%d L=%d launch_failed=%s\n", nm, s, wps, L, cudaGetErrorName(e));
+                        continue;
+                    }
+                    CK(cudaDeviceSynchronize());
                     cudaEventRecord(a); bw<<<s, wps * 32>>>(d, bytes / 16, L, rounds, sink); cudaEventRecord(b); CK(cudaEventSynchronize(b));
                     float ms; cudaEventElapsedTime(&ms, a, b);
                     double bytes_read = (double)bytes * rounds; // a tail of < L*nt elements per round is skipped: scale

@@ -231,6 +231,8 @@ if compgen -G "$PROF/mm_*x*x*_r.launch" > /dev/null; then
         cells_of "$ref" > "prog_${cell}_x.out"
         for l2 in "$PROF/$cell".launch "$PROF/$cell".off-*.launch "$PROF/${cell}"_c.launch "$PROF/${cell}"_r.launch "$PROF/${cell}"_rc.launch; do
             [ -f "$l2" ] || continue
+            # cross-arch: an arm's `.pick<i>.launch` is a tile_bench leg (no program of its own).
+            case $l2 in *.pick*.launch) continue ;; esac
             s=$(basename "$l2" .launch)
             [ -f "$PROF/$s.host.o" ] && link "$PROF/$s.host.o" "prog_$s"
             on=$(MAPAL_PTX="$PROF/$s.ptx" "./prog_$s" 2>&1 | tr '\n' ' '); rc=$?
