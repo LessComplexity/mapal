@@ -136,6 +136,10 @@ fn ir_err(e: IrError, span: syn::SourceLoc) -> syn::Diagnostic {
             LCode::InvalidExp,
             "`exp` takes an `f32` or `f64`".to_string(),
         ),
+        IrError::InvalidNarrow => (
+            LCode::InvalidNarrow,
+            "`to_bf16` / `to_f16` take an `f32`".to_string(),
+        ),
         other => (
             LCode::Internal,
             format!("internal lowering error: {other:?}"),
@@ -1150,6 +1154,13 @@ impl Emitter<'_> {
                         "iota" => self.emit_iota_stage(fb, wire, dest, e.span)?,
                         "fill" => self.emit_fill_stage(fb, wire, dest, e.span)?,
                         "exp" => self.emit_exp(fb, wire, dest, e.span)?,
+                        t if crate::narrow_target(t).is_some() => self.emit_narrow(
+                            fb,
+                            wire,
+                            crate::narrow_target(t).expect("narrow builtin"),
+                            dest,
+                            e.span,
+                        )?,
                         _ => self.emit_widen(
                             fb,
                             wire,
@@ -2615,13 +2626,14 @@ impl Emitter<'_> {
                     signed: true
                 } | Ty::Float { bits: 32 | 64 }
             ) | (Ty::Float { bits: 32 }, Ty::Float { bits: 64 })
+                | (Ty::Narrow(_), Ty::Float { bits: 32 | 64 })
         );
         if !legal {
             return Err(diag(
                 LCode::InvalidWiden,
                 sp,
                 format!(
-                    "cannot widen `{}` to `{}`; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64",
+                    "cannot widen `{}` to `{}`; legal lattice: i32→i64, i32→f32, i32→f64, f32→f64, bf16|f16→f32|f64",
                     ty_name(&source),
                     ty_name(&target)
                 ),
@@ -2632,6 +2644,36 @@ impl Emitter<'_> {
             .map_err(|e| ir_err(e, sp))?;
         self.prop(o, &[wire]);
         Ok(self.record(o, target))
+    }
+
+    /// `x -> to_bf16` / `x -> to_f16` (ADR-0043): an `f32` rounded once to a
+    /// narrow storage format. Owns L1616.
+    fn emit_narrow(
+        &mut self,
+        fb: &mut FnBuilder,
+        wire: ObjectId,
+        fmt: mapal_ir::NarrowFloat,
+        dest: Dest,
+        sp: syn::SourceLoc,
+    ) -> ER<ObjectId> {
+        let source = self.ty_of(fb, wire);
+        if source != Ty::f32() {
+            return Err(diag(
+                LCode::InvalidNarrow,
+                sp,
+                format!(
+                    "`to_{}` takes an `f32`, got `{}`; widen an integer first (`x -> widen_f32 -> to_{}`)",
+                    fmt.name(),
+                    ty_name(&source),
+                    fmt.name()
+                ),
+            ));
+        }
+        let o = fb
+            .narrow(wire, fmt, dest, ir_loc(sp))
+            .map_err(|e| ir_err(e, sp))?;
+        self.prop(o, &[wire]);
+        Ok(self.record(o, Ty::Narrow(fmt)))
     }
 
     /// `x -> exp` (ADR-0042): `eˣ` of a float scalar, its width kept. Owns

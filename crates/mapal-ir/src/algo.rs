@@ -265,7 +265,7 @@ pub struct TilePlan {
 }
 
 /// One affine array read in a tiled map/fold site.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TileRead {
     pub slot: u32,
     pub base: u64,
@@ -276,6 +276,50 @@ pub struct TileRead {
     /// the fold's derived axes instead of raw `k` (`ck == 0` then). `None` on
     /// plain affine reads.
     pub ksplit: Option<TileKSplit>,
+    /// ADR-0043: the operand array stores a narrow format and the product
+    /// reads its exact widening to the site's `elem` (`w[k] -> widen_f32`);
+    /// `None`: the array's elements are `elem` itself. Only
+    /// [`CategoryIr::tile_plan_narrow`]'s sites carry one.
+    pub narrow: Option<crate::ty::NarrowFloat>,
+}
+
+/// The derived `Debug`'s text, `narrow` printed only where it is a format:
+/// the backends key kernel ids on this text (`site_key`, row-fold and unit
+/// ids), so a read over the product's own elements keys as it always did.
+impl std::fmt::Debug for TileRead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("TileRead");
+        d.field("slot", &self.slot)
+            .field("base", &self.base)
+            .field("ci", &self.ci)
+            .field("ck", &self.ck)
+            .field("clane", &self.clane)
+            .field("ksplit", &self.ksplit);
+        if let Some(n) = self.narrow {
+            d.field("narrow", &n);
+        }
+        d.finish()
+    }
+}
+
+impl TileRead {
+    /// Bytes one element of the operand array occupies (its storage, not the
+    /// product's width).
+    pub fn elem_bytes(&self, elem: &Ty) -> u64 {
+        match self.narrow {
+            Some(n) => n.bytes(),
+            None => elem.scalar_bytes().unwrap_or(4),
+        }
+    }
+}
+
+/// How [`CategoryIr::tile_site`] reads a fold: lanes at a stride other than
+/// 1 admitted (`strided`), operands through an exact widening of narrow
+/// storage admitted (`narrow`, ADR-0043).
+#[derive(Clone, Copy, Debug, Default)]
+struct TileForm {
+    strided: bool,
+    narrow: bool,
 }
 
 /// The `k = kq·div + kr` decomposition of a fold's counted axis: the read's
@@ -1328,8 +1372,12 @@ impl CategoryIr {
         let Some(fd) = self.func(f) else {
             return TilePlan { sites };
         };
+        let form = TileForm {
+            strided,
+            narrow: false,
+        };
         for &m in &fd.morphisms {
-            if let Some(site) = self.tile_site(m, strided).filter(|s| s.post.is_none()) {
+            if let Some(site) = self.tile_site(m, form).filter(|s| s.post.is_none()) {
                 sites.insert(m, site);
             }
         }
@@ -1349,8 +1397,46 @@ impl CategoryIr {
             |s| &s.tile_plan_post,
             || {
                 let mut sites = SecondaryMap::new();
+                let form = TileForm {
+                    strided: true,
+                    narrow: false,
+                };
                 for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
-                    if let Some(site) = self.tile_site(m, true).filter(|s| s.post.is_some()) {
+                    if let Some(site) = self.tile_site(m, form).filter(|s| s.post.is_some()) {
+                        sites.insert(m, site);
+                    }
+                }
+                TilePlan { sites }
+            },
+        )
+    }
+
+    /// **Tile sites over narrow storage** (ADR-0043): a sum of products whose
+    /// operand (one or both) is the exact widening of an element of a `bf16`
+    /// / `f16` array — `acc + x[i·k + k'] · (w[k'·n + j] -> widen_f32)` —
+    /// with the strided lanes and epilogues of [`Self::tile_plan_strided`]
+    /// and [`Self::tile_plan_post`] (`post` tells them apart). Each such read
+    /// carries its format ([`TileRead::narrow`]); the product is the widened
+    /// values' (`elem`), exact operands, so the site's bound is the f32
+    /// site's. Disjoint from every other tile plan (they need the product to
+    /// read the array's own elements), so their consumers read what they
+    /// always read; a realization that loads the narrow format asks for
+    /// these.
+    pub fn tile_plan_narrow(&self, f: FuncId) -> TilePlan {
+        self.fact(
+            f,
+            |s| &s.tile_plan_narrow,
+            || {
+                let mut sites = SecondaryMap::new();
+                let form = TileForm {
+                    strided: true,
+                    narrow: true,
+                };
+                for &m in self.func(f).map(|d| d.morphisms.as_slice()).unwrap_or(&[]) {
+                    if let Some(site) = self
+                        .tile_site(m, form)
+                        .filter(|s| s.a.narrow.is_some() || s.b.narrow.is_some())
+                    {
                         sites.insert(m, site);
                     }
                 }
@@ -1925,6 +2011,7 @@ impl CategoryIr {
                 ck: aff.ck,
                 clane: 0,
                 ksplit: None,
+                narrow: None,
             },
             w: 1,
             op,
@@ -2070,6 +2157,7 @@ impl CategoryIr {
                 ck: aff.ck,
                 clane: aff.clane,
                 ksplit,
+                narrow: None,
             },
             w,
             op,
@@ -2964,7 +3052,7 @@ impl CategoryIr {
         Some((slot, aff.base))
     }
 
-    fn tile_site(&self, site: MorphismId, strided: bool) -> Option<TileSite> {
+    fn tile_site(&self, site: MorphismId, form: TileForm) -> Option<TileSite> {
         let map = self.morphisms.get(site)?;
         let Operation::Map {
             body,
@@ -3098,7 +3186,7 @@ impl CategoryIr {
                     c,
                     depth,
                     seed.clone(),
-                    strided,
+                    form,
                 ) else {
                     continue;
                 };
@@ -3128,7 +3216,7 @@ impl CategoryIr {
             mapped_size,
             depth,
             seed,
-            strided,
+            form,
         )
         .and_then(with_post)
     }
@@ -3235,8 +3323,9 @@ impl CategoryIr {
         c: u64,
         k: u64,
         seed: Value,
-        strided: bool,
+        form: TileForm,
     ) -> Option<TileSite> {
+        let strided = form.strided;
         let Operation::Fold {
             body,
             captures: fold_captures,
@@ -3275,6 +3364,15 @@ impl CategoryIr {
         let load0 = self.pair_slot_source(mul.source, 0)?;
         let load1 = self.pair_slot_source(mul.source, 1)?;
         let index_parts = |value: ObjectId| -> Option<(TileRead, Ty)> {
+            // ADR-0043 (`form.narrow`): the product reads the exact widening
+            // of a narrow array's element — the read is the element's.
+            let (value, narrow) = match self.tile_definer(value, Operation::Widen) {
+                Some(w) if form.narrow => match self.objects.get(w.source)?.ty {
+                    Ty::Narrow(n) => (w.source, Some((n, self.objects.get(value)?.ty.clone()))),
+                    _ => return None,
+                },
+                _ => (value, None),
+            };
             let index = self.tile_definer(value, Operation::Index)?;
             let array = self.pair_slot_source(index.source, 0)?;
             let address = self.pair_slot_source(index.source, 1)?;
@@ -3322,8 +3420,10 @@ impl CategoryIr {
                     ck: aff.ck,
                     clane: aff.clane,
                     ksplit,
+                    narrow: narrow.as_ref().map(|(n, _)| *n),
                 },
-                (**elem).clone(),
+                // the product's operand type: the widening's target
+                narrow.map_or_else(|| (**elem).clone(), |(_, t)| t),
             ))
         };
         let (read0, elem0) = index_parts(load0)?;

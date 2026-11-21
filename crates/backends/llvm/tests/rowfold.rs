@@ -70,7 +70,8 @@ fn row_fold_recognizes_a_row_sum() {
             ci: N,
             ck: 1,
             clane: 0,
-            ksplit: None
+            ksplit: None,
+            narrow: None,
         }
     );
     assert_eq!(

@@ -112,8 +112,15 @@ def llm_ffn(w, h1):
 LLM_CELLS = lambda rows, D: [0, (rows - 1) * D + 1, rows * D // 2 + 3, rows * D - 1]  # noqa: E731 — the printed cells
 
 
+LLM_WEIGHTS = ('wqkv', 'wo', 'wg', 'wu', 'wd')  # gen_tiles.py: `_bf16w` stores these as bf16 (ADR-0043)
+
+
 def llm_workload(stem, mode):
-    """-> (fn, args); fn(*args) returns the layer's output [rows, D]. A decode workload is ('run', step)."""
+    """-> (fn, args); fn(*args) returns the layer's output [rows, D]. A decode workload is ('run', step).
+    `_bf16w` (half-precision, ADR-0043): the weights rounded once to bf16 — the f32 legs compute on those values
+    (the program's own semantics), the bf16 legs are bf16 throughout."""
+    w16 = stem.endswith('_bf16w')
+    stem = stem.removesuffix('_bf16w')
     P = LLM_PX if stem.startswith('px_') else LLM
     D, H, Hk, dh = P['D'], P['H'], P['Hk'], P['dh']
     G, KD, NQ = H // Hk, Hk * dh, (H + 2 * Hk) * dh
@@ -126,6 +133,8 @@ def llm_workload(stem, mode):
         ffn, B, L = m.group(1) == 'blkdec', int(m.group(2)), int(m.group(3))
         S = 3 if stem.startswith('px_') else LLM_STEPS
         w = llm_tensors(P, B, L, B * L * KD, ffn, dt)
+        if w16:
+            w.update({k: v.to(torch.bfloat16).to(dt) for k, v in w.items() if k in LLM_WEIGHTS})
         kc, vc = w['kc0'].view(B, L, Hk, dh), w['vc0'].view(B, L, Hk, dh)
         pos = torch.arange(L, device=dev)
 
@@ -198,7 +207,7 @@ def workload(stem, mode='eager'):
     """-> (fn, args): fn(*args) returns the program's outputs in print order. `mode` picks the dtype / attention
     form of the model-scale workloads (`llm_workload`) and the projections' bf16 reference."""
     if stem.startswith(('pt_llm_', 'px_llm_')):
-        return llm_workload(stem.removesuffix('_pv'), mode)
+        return llm_workload(stem.replace('_pv', ''), mode)
     pj = re.fullmatch(r'pt_pj_m(\d+)_n(\d+)_k(\d+)', stem)
     if pj:  # gen_tiles.py projection: M x K activations times a K x N weight
         M, N, K = map(int, pj.groups())

@@ -227,6 +227,21 @@ fn try_fold_object(
                 plan.constify.insert(o, v);
             }
         }
+        // ADR-0043: a constant rounds as the interpreter rounds it.
+        Narrow => {
+            if let Some(a) = const_val(ir, src)
+                && let mapal_ir::Ty::Narrow(n) = ir.object(o).expect("Narrow target").ty
+            {
+                let x = match a {
+                    Value::F32(x) => Some(f64::from(*x)),
+                    _ => None,
+                };
+                if let Some(x) = x {
+                    plan.constify
+                        .insert(o, Value::Narrow(n, mapal_ir::narrow::round(n, x)));
+                }
+            }
+        }
         Proj { index } => {
             // proj∘pack: source is a pack-built product ⇒ forward its slot feeder.
             if is_pack(ir, src)
@@ -468,6 +483,12 @@ fn fold_widen(a: &Value, target: &mapal_ir::Ty) -> Option<Value> {
         (Value::I32(x), t) if *t == mapal_ir::Ty::f32() => Some(Value::F32(*x as f32)),
         (Value::I32(x), t) if *t == mapal_ir::Ty::f64() => Some(Value::F64(*x as f64)),
         (Value::F32(x), t) if *t == mapal_ir::Ty::f64() => Some(Value::F64(*x as f64)),
+        (Value::Narrow(n, b), t) if *t == mapal_ir::Ty::f32() => {
+            Some(Value::F32(mapal_ir::narrow::widen(*n, *b)))
+        }
+        (Value::Narrow(n, b), t) if *t == mapal_ir::Ty::f64() => {
+            Some(Value::F64(f64::from(mapal_ir::narrow::widen(*n, *b))))
+        }
         _ => None,
     }
 }

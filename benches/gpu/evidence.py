@@ -248,6 +248,9 @@ def sass_facts(body):
             ffma_per_lsu=round(mac / (lc['LDS'] + lc['STS'] + lc['LDG'] + lc['LDGSTS']), 2)
             if lc['LDS'] + lc['STS'] + lc['LDG'] + lc['LDGSTS'] else 0,
             imad_wide=sum(o.startswith('IMAD.WIDE') for o in ops), mac=mac, acc=acc,
+            # half-precision (ADR-0043): 2-byte global loads (a narrow operand read in its format)
+            ldg16=sum(o.startswith('LDG') and ('.U16' in o or '.S16' in o) for o in ops),
+            ldg64=sum(o.startswith('LDG') and '64' in o.split('.') for o in ops),
             ksteps=round(mac / acc, 2) if acc else 0,
             span=round(len(loop) / (mac / acc), 2) if acc and mac else 0,
             ffma_per_lds=round(mac / lc['LDS'], 2) if lc['LDS'] else 0,
@@ -1012,7 +1015,7 @@ def check(d, results=None, out=sys.stdout):
             for rung, it in INTENT.items():
                 if it.get('host') or (alt and it.get('rule')):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

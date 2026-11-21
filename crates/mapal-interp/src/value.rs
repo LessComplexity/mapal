@@ -94,6 +94,8 @@ pub fn render(v: &Value) -> String {
         Value::U8(n) => n.to_string(),
         Value::F32(x) => format!("{x}"),
         Value::F64(x) => format!("{x}"),
+        // ADR-0043: not printable (lower rejects it); its widened value.
+        Value::Narrow(n, b) => format!("{}", mapal_ir::narrow::widen(*n, *b)),
         Value::Bool(b) => b.to_string(),
         Value::Str(s) => s.clone(),
     }

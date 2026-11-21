@@ -568,6 +568,14 @@ fn emit_op(
             fb.widen(feed(plan, remap, src), out_ty, dest, loc)
                 .expect("replay: widen")
         }
+        Narrow => {
+            let mapal_ir::Ty::Narrow(n) = ir.object(target).expect("replay: Narrow target").ty
+            else {
+                unreachable!("replay: Narrow into a non-narrow ty")
+            };
+            fb.narrow(feed(plan, remap, src), n, dest, loc)
+                .expect("replay: narrow")
+        }
         Proj { index } => fb
             .proj(feed(plan, remap, src), index, dest, loc)
             .expect("replay: proj"),

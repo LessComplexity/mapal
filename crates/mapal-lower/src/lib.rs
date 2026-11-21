@@ -156,7 +156,19 @@ pub(crate) fn is_print_builtin(name: &str) -> bool {
 /// Pure bare-stage builtins (ADR-0018/ADR-0029). Resolved by name like
 /// `print`/`println`, but token-free and legal in parallel fanout.
 pub(crate) fn is_pure_builtin(name: &str) -> bool {
-    matches!(name, "zip" | "enumerate" | "iota" | "fill" | "exp") || widen_target(name).is_some()
+    matches!(name, "zip" | "enumerate" | "iota" | "fill" | "exp")
+        || widen_target(name).is_some()
+        || narrow_target(name).is_some()
+}
+
+/// ADR-0043: the narrow format a rounding builtin (`to_bf16`, `to_f16`)
+/// produces.
+pub(crate) fn narrow_target(name: &str) -> Option<mapal_ir::NarrowFloat> {
+    match name {
+        "to_bf16" => Some(mapal_ir::NarrowFloat::Bf16),
+        "to_f16" => Some(mapal_ir::NarrowFloat::F16),
+        _ => None,
+    }
 }
 
 /// The `time` stage builtin (plan-time-builtin): effectful like `print` (it
@@ -182,5 +194,8 @@ fn is_reserved(name: &str) -> bool {
     is_print_builtin(name)
         || is_pure_builtin(name)
         || is_time_builtin(name)
-        || matches!(name, "i32" | "i64" | "u8" | "f32" | "f64" | "bool")
+        || matches!(
+            name,
+            "i32" | "i64" | "u8" | "f32" | "f64" | "bf16" | "f16" | "bool"
+        )
 }

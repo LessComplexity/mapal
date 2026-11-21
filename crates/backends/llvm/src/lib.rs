@@ -22,6 +22,7 @@ pub mod flags;
 mod func;
 mod loops;
 mod module;
+mod narrow;
 mod profile;
 mod reuse;
 mod rules;
@@ -697,6 +698,12 @@ pub struct GpuRungs {
     /// Off (`--gpu-off=exp-rescale`, `--no-exp-rescale`): such a value is a
     /// phase.
     pub exp_rescale: bool,
+    /// half-precision (ADR-0043): a sum of products whose operand is the exact
+    /// widening of a `bf16` / `f16` array element (`tile_plan_narrow`) is a
+    /// device tile site whose kernel loads the 2-byte format and widens it.
+    /// Off (`--gpu-off=narrow-tile`): such a map is a per-cell kernel (or the
+    /// host's loop).
+    pub narrow_tile: bool,
     /// large-gemm `streamk-fill`: stream-K walks the site's tiles over the
     /// slots its own launched grid fills — a grid whose blocks at their own
     /// geometry give the part fewer warps than [`profile::Gpu::fill_warps`]
@@ -812,13 +819,14 @@ impl GpuRungs {
         head_group: true,
         exp_hw: true,
         exp_rescale: true,
+        narrow_tile: true,
         streamk_fill: true,
         k_fill: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 96] = [
+    pub const NAMES: [&'static str; 97] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -913,6 +921,7 @@ impl GpuRungs {
         "head-group",
         "exp-hw",
         "exp-rescale",
+        "narrow-tile",
         "streamk-fill",
         "k-fill",
     ];
@@ -1014,6 +1023,7 @@ impl GpuRungs {
             "head-group" => &mut self.head_group,
             "exp-hw" => &mut self.exp_hw,
             "exp-rescale" => &mut self.exp_rescale,
+            "narrow-tile" => &mut self.narrow_tile,
             "streamk-fill" => &mut self.streamk_fill,
             "k-fill" => &mut self.k_fill,
             _ => return None,
@@ -1701,6 +1711,8 @@ fn emit_module(
         let real = crate::exp::choose(free, opts.contract, hw, None);
         out.push_str(&crate::exp::defs(&funcs, real));
     }
+    // ADR-0043: the host's narrow roundings, for the formats a body rounds to.
+    out.push_str(&crate::narrow::defs(&funcs, false));
     // Same rule for the SME leg: the emitted call IS the requirement, so the
     // three intrinsic declarations and the one streaming panel kernel appear
     // exactly when some tile site took the SME rung. A module without one is

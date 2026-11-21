@@ -42,6 +42,20 @@ use crate::ty::{lower_ty, prod_shape};
 /// round-to-nearest intrinsic, so `-fmad=true` cannot contract it and the
 /// device's bits are the interpreter's. Emitted after the prelude when the
 /// program has an `Exp`.
+/// ADR-0043: the headers a program with narrow storage includes.
+pub(crate) fn narrow_headers() -> &'static str {
+    "\n#include <cuda_bf16.h>\n#include <cuda_fp16.h>\n"
+}
+
+/// ADR-0043: the rounding conversion into a narrow ty (round to nearest even).
+pub(crate) fn narrow_fn(ty: &mapal_ir::Ty) -> &'static str {
+    match ty {
+        mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::Bf16) => "__float2bfloat16_rn",
+        mapal_ir::Ty::Narrow(mapal_ir::NarrowFloat::F16) => "__float2half_rn",
+        _ => unreachable!("Narrow into a non-narrow ty passed validation"),
+    }
+}
+
 pub(crate) fn exp_helpers() -> String {
     let mut s = String::from(
         "\n#include <cstring>\n\

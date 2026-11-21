@@ -114,6 +114,7 @@ fn value_label(v: &Value) -> String {
         Value::U8(x) => x.to_string(),
         Value::F32(x) => format!("{x:?}"),
         Value::F64(x) => format!("{x:?}"),
+        Value::Narrow(n, b) => format!("{:?}{}", crate::narrow::widen(*n, *b), n.name()),
         Value::Bool(x) => x.to_string(),
         Value::Str(s) => {
             let mut shown: String = s.chars().take(20).collect();
@@ -166,6 +167,7 @@ fn edge_label(op: &Operation) -> String {
         Operation::LoopExit => "LoopExit".into(),
         Operation::Output => "Output".into(),
         Operation::Widen => "Widen".into(),
+        Operation::Narrow => "Narrow".into(),
         Operation::Exp => "Exp".into(),
     }
 }

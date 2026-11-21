@@ -171,6 +171,10 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
     {
         out.push_str(&module::exp_helpers());
     }
+    // ADR-0043: narrow storage types, where the program has one.
+    if ir.objects().any(|(_, o)| ty_has_narrow(&o.ty)) {
+        out.push_str(module::narrow_headers());
+    }
 
     let sg = emit_str_globals(&strings);
     if !sg.is_empty() {
@@ -279,4 +283,17 @@ pub fn emit_with_opts(ir: &CategoryIr, opts: &EmitOpts) -> Result<String, EmitEr
 
     out.push_str(&emit_main_wrapper(ir));
     Ok(out)
+}
+
+/// ADR-0043: whether `ty` holds a narrow float anywhere (depth-bounded: a
+/// sealed graph's tys passed `ty_depth_ok`).
+fn ty_has_narrow(ty: &mapal_ir::Ty) -> bool {
+    use mapal_ir::Ty;
+    match ty {
+        Ty::Narrow(_) => true,
+        Ty::Array { elem, .. } => ty_has_narrow(elem),
+        Ty::Tuple(ts) => ts.iter().any(ty_has_narrow),
+        Ty::Struct { fields, .. } => fields.iter().any(|(_, t)| ty_has_narrow(t)),
+        _ => false,
+    }
 }

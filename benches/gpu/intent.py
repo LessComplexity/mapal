@@ -57,6 +57,18 @@ INTENT = {
     'choice': dict(applies='mod.cand == 1', on=[
         ('a table candidate has its plan line', 'len(plan) > 0'),
         ('a table candidate is in the module (PTX)', 'len(ptx) > 0')]),
+    # half-precision (ADR-0043 D6/D8): a sum of products over a narrow (`bf16` / `f16`) operand — a
+    # `tile_plan_narrow` site — loads that operand in its 2-byte format and widens it in registers (a shift for
+    # bf16), its FFMA chain the f32 site's. OFF (`--gpu-off=narrow-tile`): no such site (a per-cell map): the arm's
+    # diff.
+    'narrow-tile': dict(applies="'narrow' in plan", on=[
+        ('the narrow operand is loaded in its format in the hot loop: one element (LDG.U16, one thread a cell) or '
+         'a 4-element vector (LDG.64, the register-staged tile, never LDG.128)',
+         "sass.hot.ldg16 > 0 if plan.kind == 'naive' else sass.hot.ldg64 > 0"),
+        ('a narrow panel is register-staged: no cp.async (LDGSTS)', "plan.kind == 'naive' or sass.hot.ldgsts == 0"),
+        ('the products are f32 (FFMA, or FMUL + FADD on a separate-step face): the widened values exact',
+         'sass.hot.ffma + sass.hot.fmul > 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
     'module': dict(applies="plan.kind != 'gen'", on=[
         ('every kernel in the device module is launched by the host', 'mod.launched > 0')]),
     'arch-rungs': dict(rule=True, applies=ANY, on=[

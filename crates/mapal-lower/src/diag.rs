@@ -76,6 +76,7 @@ pub enum LCode {
     FillArgs,              // L1613
     InvalidWiden,          // L1614
     InvalidExp,            // L1615
+    InvalidNarrow,         // L1616
     Internal,              // L1901
 }
 
@@ -146,6 +147,7 @@ impl LCode {
             LCode::FillArgs => "L1613",
             LCode::InvalidWiden => "L1614",
             LCode::InvalidExp => "L1615",
+            LCode::InvalidNarrow => "L1616",
             LCode::Internal => "L1901",
         }
     }

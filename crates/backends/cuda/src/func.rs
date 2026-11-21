@@ -871,6 +871,12 @@ impl<'a> FnEmit<'a> {
                 let target_ct = lower_ty(&self.obj_ty(target)).expect("widen target");
                 self.store_obj(target, &format!("({target_ct})({val})"));
             }
+            Operation::Narrow => {
+                // ADR-0043: one rounding to nearest even (`cvt.rn`).
+                let (_, val) = self.load_whole(source).expect("narrow operand");
+                let f = crate::module::narrow_fn(&self.obj_ty(target));
+                self.store_obj(target, &format!("{f}({val})"));
+            }
             Operation::Phi => {
                 if let Some(site) = self.gsites.get(m).cloned() {
                     // plan-s39: the condition picks the arm and only that
@@ -2006,6 +2012,13 @@ pub(crate) fn const_literal(v: &Value) -> String {
         Value::I64(n) => n.to_string(),
         Value::U8(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
+        // ADR-0043: the format's bit pattern.
+        Value::Narrow(mapal_ir::NarrowFloat::Bf16, b) => {
+            format!("__ushort_as_bfloat16((unsigned short){b:#06x})")
+        }
+        Value::Narrow(mapal_ir::NarrowFloat::F16, b) => {
+            format!("__ushort_as_half((unsigned short){b:#06x})")
+        }
         Value::F32(x) => float_literal(
             x.is_nan(),
             x.is_sign_negative(),

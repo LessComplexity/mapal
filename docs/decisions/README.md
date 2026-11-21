@@ -90,10 +90,11 @@ ADR-NNNN-short-slug-candidate.md    while the decision is still open
 | [0035](ADR-0035-co-execution-multi-backend-candidate.md) | Co-execution — one source, several backends at once; `Trm` as cross-backend transmission | 2026-07-25 | **candidate**, unscheduled |
 | [0036](ADR-0036-scan-core-op-candidate.md) | `scan` — the loop/fold middle class as a first-class Core op | 2026-07-25 | **candidate** |
 | [0037](ADR-0037-project-name-mapal.md) | The language is named **Mapal**; source files are `.mapal` | 2026-07-26 | accepted |
-| [0039](ADR-0039-reduced-precision-formats-candidate.md) | Reduced-precision formats — storage types and conversion morphisms (TF32 part replaced by 0041) | 2026-10-20 | **candidate** |
+| [0039](ADR-0039-reduced-precision-formats-candidate.md) | Reduced-precision formats — storage types and conversion morphisms (TF32 part replaced by 0041; storage part amended by 0043) | 2026-10-20 | **candidate** |
 | [0040](ADR-0040-default-float-face.md) | The default float face — full precision, bounded, order-unspecified, fastest per environment | 2026-10-23 | accepted |
 | [0041](ADR-0041-compute-precision-permission-candidate.md) | Compute precision as a permission on compute nodes — `tf32 \| f32` | 2026-10-25 | accepted-for-implementation |
 | [0042](ADR-0042-exp-builtin.md) | `exp` — a pipeline builtin, the oracle's algorithm, a bounded default face, the rescale law | 2026-11-21 | accepted-for-implementation |
+| [0043](ADR-0043-narrow-float-storage.md) | Narrow float storage — `bf16`, `f16`, `f8e4m3`, `f8e5m2`: one rounding in, exact widening out, f32 compute | 2026-11-21 | accepted-for-implementation (slice 1 implemented) |
 
 Errata **E1–E5** predate the ADR numbering; ADR-0002 … ADR-0006 encode them one-for-one. The
 historical ledger — including which errata were patched back into the spec text — is the

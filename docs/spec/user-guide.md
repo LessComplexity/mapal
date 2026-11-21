@@ -236,6 +236,18 @@ bit for bit (the interpreter's); on the default face the compiler may take the f
 (`|got − eˣ| ≤ 2⁻²¹·eˣ` for `f32`) — MUFU.EX2 on an NVIDIA GPU, a vectorized polynomial on the CPU. `x > 88.72`
 gives `inf`, `x < −103.97` gives `0`, `NaN` stays `NaN` (f32; f64: 709.78 / −745.13). There is no `exp(x)` form.
 
+**Narrow storage: `bf16`, `f16`** (ADR-0043). A model's weights can be stored in two bytes. A narrow value takes no
+arithmetic: round an `f32` into it with **`x -> to_bf16`** / **`x -> to_f16`** (once, to nearest even; `f16` overflows
+to `inf` past 65504) and widen it back, exactly, with `widen_f32` / `widen_f64` where you compute:
+
+```flow
+t -> map { e -> law(e) / 1856.0 -> to_bf16 } -> w;                     // [bf16; n]: half the bytes
+rows -> map { j -> (0.0, kr) -> fold { acc, k -> w[k * n + j] -> widen_f32 -> b; acc + x[k] * b } } -> y;
+```
+
+The products and sums are `f32` (the widened values are exact), so the result's bound is an `f32` program's; a
+narrow value prints only after `widen_f32`. On a GPU the weights are read in their 2-byte format.
+
 **Explicit intermediates — useful for debugging or to make pipeline stages visible in hardware generation.**
 
 ```flow

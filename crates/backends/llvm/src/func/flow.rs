@@ -1829,6 +1829,8 @@ impl<'a> FnEmit<'a> {
                         c: site.c,
                         k: site.k,
                         e,
+                        ea: site.a.elem_bytes(&site.elem),
+                        eb: site.b.elem_bytes(&site.elem),
                         bm: b,
                         bn: site.c * slices,
                         threads: lanes,

@@ -153,8 +153,14 @@ pub enum Operation {
     /// The only identity-shaped morphism (D6): bare `x -> ret` / `x -> ret.k`.
     Output,
     /// Explicit numeric widening (ADR-0029): one of `i32→i64`, `i32→f32`,
-    /// `i32→f64`, or `f32→f64`. Pure — no token; trap-free.
+    /// `i32→f64`, or `f32→f64`; ADR-0043: `bf16|f16 → f32|f64` (exact).
+    /// Pure — no token; trap-free.
     Widen,
+    /// ADR-0043: `f32 → Narrow(fmt)` — the operand rounded once to
+    /// the target's narrow format, to nearest with ties to even
+    /// ([`crate::narrow::round`]): the `to_bf16` / `to_f16` builtins. Pure —
+    /// no token; total and trap-free.
+    Narrow,
     /// `eˣ` on a float scalar, `Float{b} → Float{b}` (ADR-0042): the
     /// `x -> exp` pipeline builtin. Pure — no token; total and trap-free. Its
     /// value is [`crate::exp`]'s algorithm on the exact faces and within that

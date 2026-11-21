@@ -680,6 +680,7 @@ pub(crate) const MAX_LOCAL_ARRAY_BYTES: u64 = 16384;
 fn nominal_sizeof(ty: &Ty) -> Option<u64> {
     match ty {
         Ty::Int { bits, .. } | Ty::Float { bits } => Some(*bits as u64 / 8),
+        Ty::Narrow(n) => Some(n.bytes()),
         Ty::Bool => Some(1),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { .. } => Some(8), // a handle field
@@ -723,6 +724,7 @@ pub(crate) fn align_up(x: u64, a: u64) -> u64 {
 pub(crate) fn abi_sizeof(ty: &Ty) -> Option<u64> {
     match ty {
         Ty::Int { bits, .. } | Ty::Float { bits } => Some(*bits as u64 / 8),
+        Ty::Narrow(n) => Some(n.bytes()),
         Ty::Bool => Some(1),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { .. } => Some(8), // a handle field
@@ -759,6 +761,7 @@ pub(crate) fn abi_sizeof(ty: &Ty) -> Option<u64> {
 fn abi_alignof(ty: &Ty) -> Option<u64> {
     match ty {
         Ty::Int { bits, .. } | Ty::Float { bits } => Some(*bits as u64 / 8),
+        Ty::Narrow(n) => Some(n.bytes()),
         Ty::Bool => Some(1),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { .. } => Some(8),
@@ -2281,6 +2284,12 @@ impl<'a> DevEmit<'a> {
                 let (_, val) = self.load_whole(source).expect("widen operand");
                 let target_ct = lower_ty(&self.obj_ty(target)).expect("widen target");
                 self.store_obj(target, &format!("({target_ct})({val})"));
+            }
+            Operation::Narrow => {
+                // ADR-0043: one rounding to nearest even (`cvt.rn`).
+                let (_, val) = self.load_whole(source).expect("narrow operand");
+                let f = crate::module::narrow_fn(&self.obj_ty(target));
+                self.store_obj(target, &format!("{f}({val})"));
             }
             Operation::Phi => {
                 // plan-s39: strict select, and MEASURED UNREACHABLE. A guard

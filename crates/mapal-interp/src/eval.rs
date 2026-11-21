@@ -249,8 +249,28 @@ pub(crate) fn eval_morphism(
                 (RValue::Scalar(Value::I32(x)), Ty::Float { bits: 32 }) => Value::F32(*x as f32),
                 (RValue::Scalar(Value::I32(x)), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
                 (RValue::Scalar(Value::F32(x)), Ty::Float { bits: 64 }) => Value::F64(*x as f64),
+                // ADR-0043: a narrow value widens exactly.
+                (RValue::Scalar(Value::Narrow(n, b)), Ty::Float { bits: 32 }) => {
+                    Value::F32(mapal_ir::narrow::widen(*n, *b))
+                }
+                (RValue::Scalar(Value::Narrow(n, b)), Ty::Float { bits: 64 }) => {
+                    Value::F64(f64::from(mapal_ir::narrow::widen(*n, *b)))
+                }
                 _ => unreachable!("invalid Widen pair passed validation"),
             };
+            write(ctx, target, RValue::Scalar(v));
+            Ok(())
+        }
+        Operation::Narrow => {
+            // ADR-0043: one rounding to nearest even, from the operand's value.
+            let Ty::Narrow(n) = *ctx.ty_of(target) else {
+                unreachable!("Narrow into a non-narrow ty passed validation")
+            };
+            let x = match read(ctx, source) {
+                RValue::Scalar(Value::F32(x)) => f64::from(*x),
+                _ => unreachable!("Narrow of a non-f32 passed validation"),
+            };
+            let v = Value::Narrow(n, mapal_ir::narrow::round(n, x));
             write(ctx, target, RValue::Scalar(v));
             Ok(())
         }
@@ -582,7 +602,9 @@ fn neg(x: &RValue) -> RValue {
             Value::U8(n) => Value::U8(n.wrapping_neg()),
             Value::F32(x) => Value::F32(-x),
             Value::F64(x) => Value::F64(-x),
-            Value::Bool(_) | Value::Str(_) => unreachable!("Neg on non-numeric"),
+            Value::Bool(_) | Value::Str(_) | Value::Narrow(..) => {
+                unreachable!("Neg on non-numeric")
+            }
         }),
         _ => unreachable!("Neg on non-scalar"),
     }

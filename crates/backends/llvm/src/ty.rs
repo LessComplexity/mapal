@@ -26,6 +26,7 @@ pub(crate) fn lower_ty(ty: &Ty) -> Option<String> {
         Ty::Float { bits: 32 } => Some("float".into()),
         Ty::Float { bits: 64 } => Some("double".into()),
         Ty::Float { .. } => None, // non-Core width; unreachable for sealed IR
+        Ty::Narrow(n) => Some(crate::narrow::llvm_ty(*n).into()),
         Ty::Bool => Some("i1".into()),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { elem, size } => {

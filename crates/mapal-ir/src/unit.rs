@@ -182,6 +182,7 @@ impl CategoryIr {
         let elem = |o: ObjectId| match self.object(o).map(|x| &x.ty) {
             Some(Ty::Array { elem, .. }) => match **elem {
                 Ty::Float { bits } | Ty::Int { bits, .. } => u64::from(bits) / 8,
+                Ty::Narrow(n) => n.bytes(),
                 _ => 0,
             },
             _ => 0,

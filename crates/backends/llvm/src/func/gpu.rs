@@ -180,7 +180,7 @@ fn site_rungs(
     site: &TileSite,
 ) -> crate::GpuRungs {
     let r = rungs_at(profile, wps, face, arms);
-    let bytes = site.k * site.c * elem_bytes_of(&site.elem);
+    let bytes = site.k * site.c * site.b.elem_bytes(&site.elem);
     let priced = arms.on.row_split
         || profile
             .gpu()
@@ -334,7 +334,7 @@ pub(crate) fn placement(
             .saturating_mul(site.rows)
             .saturating_mul(site.c)
             .saturating_mul(site.k);
-        let bytes = crate::profile::tile_bytes(site.rows, site.c, site.k, &site.elem);
+        let bytes = crate::profile::site_bytes(site);
         if fed || profile.device_pays(flops, bytes) {
             dev.insert(m, ());
         }
@@ -473,6 +473,19 @@ pub(crate) fn tile_plan(
     for (m, s) in post_sites(ir, f, profile, contract, arms) {
         plan.sites.insert(m, s);
     }
+    // ADR-0043: a sum of products over narrow storage (`tile_plan_narrow`),
+    // where the device loads the format (the epilogue ones in `post_sites`).
+    if rungs.narrow_tile {
+        for (m, s) in ir.tile_plan_narrow(f).sites.iter() {
+            let strided = s.a.clane > 1 || s.b.clane > 1;
+            if s.post.is_none()
+                && (rungs.lane_stride || !strided)
+                && gpu_site(s, profile, rungs.window)
+            {
+                plan.sites.insert(m, s.clone());
+            }
+        }
+    }
     // S62: an extra is a site only where it is placed on the device.
     let dev = placement(ir, f, &plan, profile, rungs.window, rungs.carry_made);
     let extra: Vec<MorphismId> = plan
@@ -569,7 +582,20 @@ pub(crate) fn post_sites(
     };
     let posts = ir.tile_plan_post(f);
     let whole = ir.whole_fold(f);
-    for (m, s) in posts.sites.iter().chain(radix.iter().map(|(m, s)| (*m, s))) {
+    // ADR-0043: the narrow-operand sums of products with an epilogue.
+    let narrow = match rungs.narrow_tile {
+        true => ir.tile_plan_narrow(f),
+        false => TilePlan {
+            sites: SecondaryMap::new(),
+        },
+    };
+    let narrow_posts = narrow.sites.iter().filter(|(_, s)| s.post.is_some());
+    for (m, s) in posts
+        .sites
+        .iter()
+        .chain(radix.iter().map(|(m, s)| (*m, s)))
+        .chain(narrow_posts)
+    {
         let Some(p) = &s.post else { continue };
         let morph = ir.morphism(m).expect("site resolves");
         let Operation::Map { body, captures } = morph.op else {
@@ -782,6 +808,12 @@ pub(crate) fn launch_split(
 ) -> Launch {
     let e = elem_bytes_of(&site.elem);
     let gpu = profile.gpu().expect("a GPU site has a GPU profile");
+    // ADR-0043: a narrow operand is widened as its panel is copied through
+    // registers (the register-staged tile, the one-thread-per-cell kernel);
+    // a `cp.async` copy moves bytes unconverted and the tensor-core kernels
+    // stage `elem`-wide fragments, so those refuse it (open: 16-bit panels
+    // and `mma.m16n8k16`, ADR-0043 slice 2).
+    let narrow = site.a.narrow.is_some() || site.b.narrow.is_some();
     let shaped = site.a.clane == 0 && site.b.ci == 0;
     // `head-group`: a block's rows within one batch (its `b` panel's rows):
     // the tile is chosen over one batch's rows.
@@ -813,6 +845,7 @@ pub(crate) fn launch_split(
     if site_reduced(site) == Some(Reduced::Tf32)
         && site.elem == Ty::f32()
         && shaped
+        && !narrow
         && (vector_a(site) || rx.is_some_and(|x| x.a.is_some()))
         && (vector_b(site) || rx.is_some_and(|x| x.b.is_some()))
     {
@@ -910,7 +943,7 @@ pub(crate) fn launch_split(
             let stream = match gpu.geom.stages {
                 0 => rungs.cp_async,
                 s => s >= 2,
-            };
+            } && !narrow;
             let streamed = stream
                 .then(|| profile.gpu_tile_async(g, site.k, &site.elem))
                 .flatten()
@@ -965,7 +998,7 @@ pub(crate) fn launch_split(
         .map(|g| {
             let blocks = (site.rows / g.bm()) * (site.c / g.bn()) * split;
             // per-site-choice D2: `async` forced off is register staging.
-            (rungs.async_stage && gpu.geom.stages == 0 && !arms.off.cp_async)
+            (rungs.async_stage && gpu.geom.stages == 0 && !arms.off.cp_async && !narrow)
                 .then(|| profile.gpu_tile_stages(g, blocks, site.k, &site.elem))
                 .flatten()
                 .unwrap_or(g)
@@ -1078,6 +1111,15 @@ fn plan_line(
         l.smem,
         l.raster
     );
+    // half-precision (ADR-0043): the operands loaded in a narrow format (intent.py `narrow-tile`).
+    let narrow: String = [("a", site.a.narrow), ("b", site.b.narrow)]
+        .iter()
+        .filter_map(|(o, n)| n.map(|n| format!("{o}:{}", n.name())))
+        .collect::<Vec<_>>()
+        .join("+");
+    if !narrow.is_empty() {
+        f += &format!(" narrow={narrow}");
+    }
     if let Some(g) = l.tiled {
         f += &format!(
             " tm={} tn={} tx={} ty={} bk={} stages={} pad_a={} held={} blocks_per_sm={} lsu={} \
@@ -1494,6 +1536,8 @@ pub(crate) fn plan_shape(site: &TileSite, l: &Launch, c: Combine, gpu: &Gpu) -> 
         c: site.c,
         k: site.k,
         e: elem_bytes_of(&site.elem),
+        ea: site.a.elem_bytes(&site.elem),
+        eb: site.b.elem_bytes(&site.elem),
         bm,
         bn,
         threads: l.block,
@@ -1897,8 +1941,8 @@ fn launch_key(l: &Launch) -> String {
     for n in KERNEL_RUNGS.iter().filter(|n| l.rungs.get(n)) {
         *r.rung(n).expect("a kernel rung") = true;
     }
-    // The ids predate the host-only `row-block`, `zero-fold`, `row-stage`, `horizontal` and `calls`
-    // rungs (off here: no kernel rung): their fields are not part of a kernel's key, so
+    // The ids predate the host-only `row-block`, `zero-fold`, `row-stage`, `horizontal`, `calls` and
+    // `narrow-tile` rungs (off here: no kernel rung): their fields are not part of a kernel's key, so
     // tuned picks and wisdom keep their ids.
     format!("{:?}", Launch { rungs: r, ..*l })
         .replace(", row_block: false", "")
@@ -1906,6 +1950,8 @@ fn launch_key(l: &Launch) -> String {
         .replace(", row_stage: false", "")
         .replace(", horizontal: false", "")
         .replace(", calls: false", "")
+        // half-precision: `narrow-tile` decides which sites exist (no kernel text).
+        .replace(", narrow_tile: false", "")
 }
 
 /// A candidate's kernel ids `(main, reduce)`, `reduce` 0 without a
@@ -3500,6 +3546,11 @@ pub(crate) fn device_module(
         let defs = crate::exp::defs(&out, real);
         out.push_str(&defs);
     }
+    // ADR-0043: the device's narrow roundings (`cvt.rn`).
+    {
+        let defs = crate::narrow::defs(&out, true);
+        out.push_str(&defs);
+    }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
     // launch, so every kernel waits for its producer's grid before it reads.
     if pdl(ir, profile, contract, arms) {
@@ -4716,11 +4767,15 @@ impl Kernel<'_> {
             _ => (format!("%a{t}"), format!("%b{t}")),
         };
         let (a0, b0) = ab(0);
+        // ADR-0043: a narrow operand's pointer is aligned to its format.
+        let narrow_align =
+            |r: &mapal_ir::TileRead| r.narrow.map_or(align, |n| align.min(n.bytes()));
+        let (aa, ab_) = (narrow_align(&self.site.a), narrow_align(&self.site.b));
         let mut more = String::new();
         for t in 1..self.terms {
             let (a, b) = ab(t);
             more += &format!(
-                ", ptr addrspace(1) readonly align {align} {a}, ptr addrspace(1) readonly align {align} {b}"
+                ", ptr addrspace(1) readonly align {aa} {a}, ptr addrspace(1) readonly align {ab_} {b}"
             );
         }
         let ro = if self.terms < 2 {
@@ -4730,8 +4785,8 @@ impl Kernel<'_> {
         };
         self.out.push_str(&format!(
             "define ptx_kernel void @{name}(\
-             ptr addrspace(1) {ro} align {align} {a0}, \
-             ptr addrspace(1) {ro} align {align} {b0}, \
+             ptr addrspace(1) {ro} align {aa} {a0}, \
+             ptr addrspace(1) {ro} align {ab_} {b0}, \
              ptr addrspace(1) noalias align {align} %o{}{more}) \"nvvm.maxntid\"=\"{threads}\"{min_blocks} {{\n\
              entry:\n",
             self.epi_params(align)
@@ -4851,6 +4906,18 @@ impl Kernel<'_> {
                 None => k.op("mul", &kv, r.ck),
             };
             let idx = k.op("add", base, &off);
+            // ADR-0043: a narrow operand loads its format and widens (exact).
+            if let Some(n) = r.narrow {
+                let nt = crate::narrow::llvm_ty(n);
+                let p = k.gep_ty(1, nt, arr, &idx);
+                let (w, v) = (k.tmp(), k.tmp());
+                k.line(format!(
+                    "{w} = load {nt}, ptr addrspace(1) {p}, align {}",
+                    n.bytes()
+                ));
+                k.line(format!("{v} = fpext {nt} {w} to {t}"));
+                return v;
+            }
             let p = k.gep(1, arr, &idx);
             let v = k.tmp();
             k.line(format!("{v} = load {t}, ptr addrspace(1) {p}, align {e}"));
@@ -5646,6 +5713,11 @@ impl Kernel<'_> {
         let col0 = self.op("mul", &bx, bn);
         let smem = "@mapal_smem";
         let streamed = g.stages >= 2;
+        // ADR-0043: a `cp.async` copy cannot widen (`launch_split` refuses it).
+        assert!(
+            !(streamed && (s.a.narrow.is_some() || s.b.narrow.is_some())),
+            "a narrow operand's panel is register-staged"
+        );
         let kmaj = g.kmajor && !self.col;
         let sa = panel_sa(&g, kmaj);
         let bs_off = g.a_elems();
@@ -5778,27 +5850,49 @@ impl Kernel<'_> {
             let gi = k.op("add", gsrc, kd);
             k.plus(gi, goff)
         };
+        // ADR-0043: a narrow operand's copy loads its format (the same
+        // element count: a vector is `lanes` narrow elements) and widens it
+        // in registers — the panel in shared memory is `elem`, so every
+        // fragment read and step after it is the f32 tile's.
+        let load_op = |k: &mut Self,
+                       arr: &str,
+                       gi: &str,
+                       vec: bool,
+                       ty: &str,
+                       al: u64,
+                       r: &mapal_ir::TileRead| {
+            let Some(n) = r.narrow else {
+                let gp = k.gep(1, arr, gi);
+                let v = k.tmp();
+                k.line(format!(
+                    "{v} = load {ty}, ptr addrspace(1) {gp}, align {al}"
+                ));
+                return v;
+            };
+            let nt = crate::narrow::llvm_ty(n);
+            let (nty, nal) = match vec {
+                true => (format!("<{lanes} x {nt}>"), lanes * n.bytes()),
+                false => (nt.to_string(), n.bytes()),
+            };
+            let gp = k.gep_ty(1, nt, arr, gi);
+            let (w, v) = (k.tmp(), k.tmp());
+            k.line(format!(
+                "{w} = load {nty}, ptr addrspace(1) {gp}, align {nal}"
+            ));
+            k.line(format!("{v} = fpext {nty} {w} to {ty}"));
+            v
+        };
         let load_panels = |k: &mut Self, k0: &str| -> Vec<String> {
             let ka = k.op("mul", k0, s.a.ck);
             let kb = k.op("mul", k0, s.b.ck);
             let mut vals = Vec::new();
             for (p, (gsrc, goff, _, _)) in a_src.iter().enumerate() {
                 let gi = gidx(k, ra, &a_kc, p, gsrc, *goff, k0, &ka);
-                let gp = k.gep(1, "%a", &gi);
-                let v = k.tmp();
-                k.line(format!(
-                    "{v} = load {a_ty}, ptr addrspace(1) {gp}, align {a_al}"
-                ));
-                vals.push(v);
+                vals.push(load_op(k, "%a", &gi, a_vec, &a_ty, a_al, &s.a));
             }
             for (p, (gsrc, goff, _, _)) in b_src.iter().enumerate() {
                 let gi = gidx(k, rb, &b_kc, p, gsrc, *goff, k0, &kb);
-                let gp = k.gep(1, "%b", &gi);
-                let v = k.tmp();
-                k.line(format!(
-                    "{v} = load {b_ty}, ptr addrspace(1) {gp}, align {b_al}"
-                ));
-                vals.push(v);
+                vals.push(load_op(k, "%b", &gi, b_vec, &b_ty, b_al, &s.b));
             }
             vals
         };
@@ -7067,6 +7161,7 @@ mod tests {
             ck,
             clane,
             ksplit: None,
+            narrow: None,
         };
         let a = if a_rm {
             read(0, k, 1, 0)

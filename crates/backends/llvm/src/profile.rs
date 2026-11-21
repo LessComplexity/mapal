@@ -645,8 +645,12 @@ pub struct PlanShape {
     pub rows: u64,
     pub c: u64,
     pub k: u64,
-    /// Element bytes.
+    /// Element bytes (the product's and the output's).
     pub e: u64,
+    /// ADR-0043: bytes one element of operand `a` / `b` occupies in memory —
+    /// `e`, or a narrow format's 2 (the operand panels' traffic).
+    pub ea: u64,
+    pub eb: u64,
     /// One block's output tile.
     pub bm: u64,
     pub bn: u64,
@@ -1446,6 +1450,21 @@ pub(crate) fn tile_bytes(rows: u64, c: u64, k: u64, elem: &Ty) -> u64 {
         .saturating_mul(elem_bytes(elem))
 }
 
+/// [`tile_bytes`] at each operand's storage width (ADR-0043: a narrow
+/// operand moves 2 bytes an element, the output the product's width).
+pub(crate) fn site_bytes(site: &mapal_ir::TileSite) -> u64 {
+    let (ea, eb, e) = (
+        site.a.elem_bytes(&site.elem),
+        site.b.elem_bytes(&site.elem),
+        elem_bytes(&site.elem),
+    );
+    site.rows
+        .saturating_mul(site.k)
+        .saturating_mul(ea)
+        .saturating_add(site.k.saturating_mul(site.c).saturating_mul(eb))
+        .saturating_add(site.rows.saturating_mul(site.c).saturating_mul(e))
+}
+
 /// One target's machine facts, plus the two policy ratios that are honestly
 /// search space rather than facts (see the field docs).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1521,6 +1540,7 @@ pub struct TargetProfile {
 pub(crate) fn elem_bytes(elem: &Ty) -> u64 {
     match elem {
         Ty::Int { bits, .. } | Ty::Float { bits } => u64::from(*bits).div_ceil(8).max(1),
+        Ty::Narrow(n) => n.bytes(),
         _ => 4,
     }
 }
@@ -1899,7 +1919,7 @@ impl TargetProfile {
                 true => busy * 2.0 * tile * kb / (peak * eff),
                 false => bw * 2.0 * tile * kb / (used * peak * eff),
             };
-            let lf = bw * f(p.bm + p.bn) * kb * e / l2;
+            let lf = bw * (f(p.bm) * f(p.ea) + f(p.bn) * f(p.eb)) * kb / l2;
             // tile-efficiency T4: the busiest SM issues `warps · trips · lsu`
             // LSU warp-instructions at `lsu_ipc` a clock; the FFMA pipe waits
             // on them when the tile's FFMA per LSU is below `4 / lsu_ipc`.
@@ -1935,7 +1955,7 @@ impl TargetProfile {
         } else {
             1.0
         };
-        let d_ns = ((rows * k + k * c) * e + out * ws) / dram;
+        let d_ns = (rows * k * f(p.ea) + k * c * f(p.eb) + out * ws) / dram;
         let kernel_ns = (full * ff.max(lf).max(chain) + ft.max(lt).max(chain)).max(d_ns);
         let atomics = match p.comb {
             PlanComb::Atomic => f(p.s) * rows * c,
@@ -6306,6 +6326,8 @@ mod tests {
             c: 512,
             k: 512,
             e: 4,
+            ea: 4,
+            eb: 4,
             bm: 32,
             bn: 32,
             threads: 128,

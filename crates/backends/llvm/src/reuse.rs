@@ -103,6 +103,7 @@ mod tests {
             ck,
             clane,
             ksplit,
+            narrow: None,
         }
     }
 

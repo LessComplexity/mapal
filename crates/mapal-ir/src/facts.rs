@@ -28,6 +28,7 @@ pub(crate) struct FuncFacts {
     pub(crate) tile_plan: OnceLock<TilePlan>,
     pub(crate) tile_plan_strided: OnceLock<TilePlan>,
     pub(crate) tile_plan_post: OnceLock<TilePlan>,
+    pub(crate) tile_plan_narrow: OnceLock<TilePlan>,
     pub(crate) radix_plan: OnceLock<SecondaryMap<ObjectId, RadixForm>>,
     pub(crate) tile_plan_radix: OnceLock<SecondaryMap<MorphismId, TileSite>>,
     pub(crate) precision_plan: OnceLock<PrecisionPlan>,

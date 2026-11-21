@@ -808,7 +808,7 @@ impl<'a> FnEmit<'a> {
         (*lb == body
             && **inner == ElemSrc::Index
             && self.obj_ty(fd.input) == Ty::i32()
-            && is_float(array_elem(&self.obj_ty(morph.target)))
+            && float_cell(array_elem(&self.obj_ty(morph.target)))
             && self.device_leaf(body))
         .then_some(body)
     }
@@ -1421,7 +1421,9 @@ impl<'a> FnEmit<'a> {
         let Operation::Map { body, captures } = morph.op else {
             return None;
         };
-        let number = |t: &Ty| matches!(t, Ty::Float { .. } | Ty::Int { .. });
+        // ADR-0043: a narrow element is stored like a number (no arithmetic
+        // reaches it but a widening or a rounding).
+        let number = |t: &Ty| matches!(t, Ty::Float { .. } | Ty::Int { .. } | Ty::Narrow(_));
         let Ty::Array { elem, .. } = self.obj_ty(morph.target) else {
             return None;
         };
@@ -1458,7 +1460,7 @@ impl<'a> FnEmit<'a> {
             || self.gen_law(m).is_some()
             || !self.attrs.clean(body)
             || !self.device_leaf(body)
-            || !is_float(&elem)
+            || !float_cell(&elem)
         {
             return None;
         }
@@ -2719,7 +2721,7 @@ impl<'a> FnEmit<'a> {
     /// one-element device buffer).
     pub(super) fn array_bytes(&self, ty: &Ty) -> u64 {
         match ty {
-            Ty::Float { .. } | Ty::Int { .. } => crate::profile::elem_bytes(ty),
+            Ty::Float { .. } | Ty::Int { .. } | Ty::Narrow(_) => crate::profile::elem_bytes(ty),
             _ => array_len(ty) * crate::profile::elem_bytes(array_elem(ty)),
         }
     }
@@ -3969,4 +3971,10 @@ mod tests {
         assert!(waves_merge((128, 256), (32, 64)));
         assert!(!waves_merge((128, 256), (33, 64)));
     }
+}
+
+/// A cell's or a generated producer's element: a float, or (ADR-0043) a
+/// narrow float the body rounds into — stored by the kernel's own `store`.
+fn float_cell(ty: &Ty) -> bool {
+    is_float(ty) || matches!(ty, Ty::Narrow(_))
 }

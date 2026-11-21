@@ -218,6 +218,19 @@ Cody–Waite reduction and the host a vectorizable contracted polynomial. `fold_
 (`exp(a − m₁) = exp(a − m)·exp(m − m₁)`), so a row-sliced softmax folds its sum beside its max. The benchmark
 programs (`benches/algorithms`, `gen_tiles.py`) use `-> exp`; editors highlight it.
 
+### 9.2 `bf16` / `f16` storage types (ADR-0043, 2026-11-21)
+
+**Before.** The language had `f32` / `f64` values and the `: tf32 | f32` compute permission (ADR-0041); a model's
+16-bit weights could only be held as `f32`, twice the bytes a bandwidth-bound decode step moves.
+
+**After.** `bf16` and `f16` are storage types (`[bf16; n]`, bindings, loop state, guards, updates) with no arithmetic,
+comparison or print: `x -> to_bf16` / `x -> to_f16` round an `f32` once (ties to even, subnormals kept, `±inf` past
+the threshold; L1616 otherwise) and `w -> widen_f32` / `widen_f64` widen exactly. IR `Ty::Narrow`, `Value::Narrow`,
+`Operation::Narrow`. Every backend computes the interpreter's bits on every face (host: an integer sequence for
+`bf16`, F16C for `f16`; device: `cvt.rn`). A sum of products over a widened narrow operand is a `tile_plan_narrow`
+site: the device's one-thread-per-cell kernel loads the 2-byte format, the register-staged tile widens its panels as
+it copies them; the cost model prices operand bytes per format. fp8 and 16-bit tensor-core products are decided in ADR-0043 and open.
+
 ---
 
 **Version:** 0.2 · **Status:** Design specification.

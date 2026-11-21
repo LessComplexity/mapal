@@ -1675,6 +1675,7 @@ fn tile_matmul_site_recognized() {
                 ck: 1,
                 clane: 0,
                 ksplit: None,
+                narrow: None,
             },
             b: TileRead {
                 slot: 2,
@@ -1683,6 +1684,7 @@ fn tile_matmul_site_recognized() {
                 ck: 512,
                 clane: 1,
                 ksplit: None,
+                narrow: None,
             },
             seed: Value::F64(0.0),
             elem: Ty::f64(),
@@ -1869,6 +1871,7 @@ fn tile_fir_site_recognized() {
                 ck: 1,
                 clane: 0,
                 ksplit: None,
+                narrow: None,
             },
             b: TileRead {
                 slot: 1,
@@ -1877,6 +1880,7 @@ fn tile_fir_site_recognized() {
                 ck: 1,
                 clane: 1,
                 ksplit: None,
+                narrow: None,
             },
             seed: Value::F32(0.0),
             elem: Ty::f32(),
@@ -2174,6 +2178,7 @@ fn tile_conv2d_site_recognized() {
                 ck: 1,
                 clane: 0,
                 ksplit: None,
+                narrow: None,
             },
             b: TileRead {
                 slot: 2,
@@ -2186,6 +2191,7 @@ fn tile_conv2d_site_recognized() {
                     cq: 18,
                     cr: 1,
                 }),
+                narrow: None,
             },
             seed: Value::F32(0.0),
             elem: Ty::f32(),

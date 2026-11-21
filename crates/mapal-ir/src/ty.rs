@@ -30,6 +30,12 @@ pub enum Ty {
     Float {
         bits: u8,
     },
+    /// ADR-0043: a narrow float **storage** format (`bf16`, `f16`). No
+    /// arithmetic, comparison or print takes one: a value is widened exactly
+    /// (`widen_f32` / `widen_f64`) to compute and rounded once, to nearest
+    /// even, into the format (`to_bf16` / `to_f16`). Not numeric
+    /// ([`Ty::is_numeric`]), so every arithmetic rule rejects it.
+    Narrow(NarrowFloat),
     Bool,
     /// Terminal object `1`; the ty of main's input and of unwritten returns.
     Unit,
@@ -87,6 +93,26 @@ impl Ty {
     }
     pub fn f64() -> Ty {
         Ty::Float { bits: 64 }
+    }
+    /// ADR-0043: the `bf16` storage type.
+    pub fn bf16() -> Ty {
+        Ty::Narrow(NarrowFloat::Bf16)
+    }
+    /// ADR-0043: the `f16` storage type.
+    pub fn f16() -> Ty {
+        Ty::Narrow(NarrowFloat::F16)
+    }
+
+    /// Bytes one scalar of this ty occupies in memory (`Int`/`Float`:
+    /// `bits / 8`, at least 1; a narrow float its format's; `Bool` 1), else
+    /// `None` (a product, an array, an erased ty).
+    pub fn scalar_bytes(&self) -> Option<u64> {
+        match self {
+            Ty::Int { bits, .. } | Ty::Float { bits } => Some(u64::from(*bits).div_ceil(8).max(1)),
+            Ty::Narrow(n) => Some(n.bytes()),
+            Ty::Bool => Some(1),
+            _ => None,
+        }
     }
 
     /// Core numeric scalar `N` (DESIGN §5.1): `i32`/`i64`/`u8`/`f32`/`f64`.
@@ -152,6 +178,32 @@ impl Ty {
     }
 }
 
+/// ADR-0043 D1: the narrow float storage formats. Each is a set of binary32
+/// values (every one widens exactly to `f32`), stored in [`Self::bytes`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum NarrowFloat {
+    /// bfloat16: 1 sign, 8 exponent, 7 fraction bits — `f32`'s range, 8
+    /// significand bits.
+    Bf16,
+    /// IEEE-754 binary16: 1 sign, 5 exponent, 10 fraction bits — 11
+    /// significand bits, largest finite 65504.
+    F16,
+}
+
+impl NarrowFloat {
+    /// Bytes one element occupies in memory.
+    pub fn bytes(self) -> u64 {
+        2
+    }
+    /// The surface name (`bf16`, `f16`).
+    pub fn name(self) -> &'static str {
+        match self {
+            NarrowFloat::Bf16 => "bf16",
+            NarrowFloat::F16 => "f16",
+        }
+    }
+}
+
 /// Runtime values for `Constant` objects (DESIGN §3). `PartialEq` only — floats.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -160,6 +212,8 @@ pub enum Value {
     U8(u8),
     F32(f32),
     F64(f64),
+    /// ADR-0043: a narrow float's bit pattern in its format.
+    Narrow(NarrowFloat, u16),
     Bool(bool),
     Str(String),
 }
@@ -173,6 +227,7 @@ impl Value {
             Value::U8(_) => Ty::u8(),
             Value::F32(_) => Ty::f32(),
             Value::F64(_) => Ty::f64(),
+            Value::Narrow(n, _) => Ty::Narrow(*n),
             Value::Bool(_) => Ty::Bool,
             Value::Str(_) => Ty::Str,
         }
@@ -257,7 +312,7 @@ pub fn ty_residual_empty(ty: &Ty) -> bool {
             return false;
         }
         match t {
-            Ty::Int { .. } | Ty::Float { .. } | Ty::Bool => return false,
+            Ty::Int { .. } | Ty::Float { .. } | Ty::Narrow(_) | Ty::Bool => return false,
             Ty::Unit | Ty::Str | Ty::IoToken => {}
             Ty::Array { elem, .. } => stack.push((elem, depth + 1)),
             Ty::Tuple(ts) => {
@@ -335,6 +390,7 @@ fn ty_label_into(ty: &Ty, depth: usize, out: &mut String) {
             out.push('f');
             out.push_str(&bits.to_string());
         }
+        Ty::Narrow(n) => out.push_str(n.name()),
         Ty::Bool => out.push_str("bool"),
         Ty::Unit => out.push_str("()"),
         Ty::Str => out.push_str("str"),

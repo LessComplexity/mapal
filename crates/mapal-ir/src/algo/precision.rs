@@ -29,6 +29,11 @@ pub struct PrecisionPlan {
     /// oracle's constants and the default face's a-priori bound
     /// (`|got − eˣ| ≤ rel·eˣ + abs` on `[lo, hi]`).
     pub exp: SecondaryMap<MorphismId, crate::exp::ExpForm>,
+    /// ADR-0043 D3: each `Narrow` (`to_bf16` / `to_f16`) of the function with
+    /// its format's form — the rounding is exact on every face (IEEE
+    /// `convertFormat`); a default-face gate adds `u·|x| + abs` per rounding
+    /// whose operand carries that face's error (a flip across a tie).
+    pub narrow: SecondaryMap<MorphismId, crate::narrow::NarrowForm>,
 }
 
 /// `γ_n(u) = n·u / (1 − n·u)`.
@@ -71,6 +76,11 @@ impl CategoryIr {
             {
                 plan.exp.insert(m, form);
             }
+            if mm.op == Operation::Narrow
+                && let Some(Ty::Narrow(n)) = self.objects.get(mm.target).map(|o| &o.ty)
+            {
+                plan.narrow.insert(m, crate::narrow::NarrowForm::of(*n));
+            }
         }
         // A value's readers: through the product a binary op takes (`Pair`
         // into its source tuple), the op; any other consumer as itself.
@@ -100,11 +110,15 @@ impl CategoryIr {
         let strided = self.tile_plan_strided(f);
         let radix = self.tile_plan_radix(f);
         let post = self.tile_plan_post(f);
+        // ADR-0043: a narrow site's products read exact widenings — the f32
+        // site's bound.
+        let narrow = self.tile_plan_narrow(f);
         for (m, s) in strided
             .sites
             .iter()
             .chain(radix.iter())
             .chain(post.sites.iter())
+            .chain(narrow.sites.iter())
         {
             plan.bound.insert(m, bound_coef(s.k, s.tf32));
         }

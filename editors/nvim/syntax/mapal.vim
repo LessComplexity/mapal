@@ -55,7 +55,7 @@ syn keyword flowKeyword fn type loop seq mut void
 "   time               clock read (plan-time-builtin); no CUDA seam
 "   print/println      the two effects (ADR-0015 — println appends a newline)
 syn keyword flowBuiltin map fold print println zip enumerate iota fill
-syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp time
+syn keyword flowBuiltin widen_i64 widen_f32 widen_f64 exp to_bf16 to_f16 time
 
 " Boolean literals.
 syn keyword flowBoolean true false
@@ -69,7 +69,7 @@ syn keyword flowRet ret
 " Primitive and named types
 " ---------------------------------------------------------------------------
 " Mapal-Core primitives (HANDOFF §4.1).
-syn keyword flowPrimType i32 i64 u8 f32 f64 bool
+syn keyword flowPrimType i32 i64 u8 f32 f64 bf16 f16 bool
 
 " ---------------------------------------------------------------------------
 " Functions appearing in flows (CHANGE 2)

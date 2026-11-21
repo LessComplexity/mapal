@@ -48,6 +48,9 @@ pub(crate) fn lower_ty(ty: &Ty) -> Option<String> {
         Ty::Float { bits: 32 } => Some("float".into()),
         Ty::Float { bits: 64 } => Some("double".into()),
         Ty::Float { .. } => None, // non-Core width; unreachable for sealed IR
+        // ADR-0043: `cuda_bf16.h` / `cuda_fp16.h` (included where used).
+        Ty::Narrow(mapal_ir::NarrowFloat::Bf16) => Some("__nv_bfloat16".into()),
+        Ty::Narrow(mapal_ir::NarrowFloat::F16) => Some("__half".into()),
         Ty::Bool => Some("bool".into()),
         Ty::Unit | Ty::Str | Ty::IoToken => None,
         Ty::Array { .. } => {

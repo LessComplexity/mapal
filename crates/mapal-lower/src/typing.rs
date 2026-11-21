@@ -490,6 +490,13 @@ impl Walk<'_> {
                     } else if let Some(target) = crate::widen_target(text) {
                         // emit owns L1614; typing only synthesizes the target.
                         WTy::Known(target)
+                    } else if let Some(fmt) = crate::narrow_target(text) {
+                        // ADR-0043: emit owns L1616; the target is the format.
+                        // A literal flowing in is an `f32` (the one source).
+                        if matches!(cur, WTy::Var(_)) {
+                            self.unify_known(&cur, &Ty::f32(), e.span);
+                        }
+                        WTy::Known(Ty::Narrow(fmt))
                     } else if text == "exp" {
                         // ADR-0042: `x -> exp` keeps the float width — a
                         // literal's variable flows through, so the width is

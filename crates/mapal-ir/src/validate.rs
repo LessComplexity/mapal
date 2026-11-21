@@ -294,7 +294,10 @@ fn edge_type_ok(ir: &CategoryIr, m: &crate::graph::Morphism, sty: &Ty, tty: &Ty)
                     signed: true
                 } | Ty::Float { bits: 32 | 64 }
             ) | (Ty::Float { bits: 32 }, Ty::Float { bits: 64 })
+                | (Ty::Narrow(_), Ty::Float { bits: 32 | 64 })
         ),
+        // ADR-0043: one rounding from a float into a narrow format.
+        Operation::Narrow => *sty == Ty::f32() && matches!(tty, Ty::Narrow(_)),
         Operation::Phi => match sty {
             Ty::Tuple(ts) if ts.len() == 3 => {
                 ts[0] == ts[1]
@@ -1041,7 +1044,7 @@ fn ty_is_core(ty: &Ty) -> bool {
                     return false;
                 }
             }
-            Ty::Bool | Ty::Unit | Ty::Str | Ty::IoToken => {}
+            Ty::Bool | Ty::Unit | Ty::Str | Ty::IoToken | Ty::Narrow(_) => {}
             Ty::Tuple(ts) => {
                 if ts.len() < 2 {
                     return false;

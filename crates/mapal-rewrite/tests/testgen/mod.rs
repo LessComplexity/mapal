@@ -4557,3 +4557,157 @@ pub fn gemm_src(p: &GemmProg) -> (String, (u64, u64, u64)) {
     let (m, n, k) = gemm_dims(p);
     (gemm_src_at(p, m, n, k), (m, n, k))
 }
+
+// --- half-precision (ADR-0043): narrow float storage --------------------------
+
+/// A program over `bf16` / `f16` storage: an `f32` activation `a`
+/// (`rows × k`), a narrow weight `w` (`k × cols`, or `cols × k` read
+/// transposed — strided lanes) rounded once from an `f32` law at a scale that
+/// reaches the format's normal range, its overflow (`f16` past 65504, `bf16`
+/// past `f32`'s max) and its subnormals; a sum of products reading `w`'s
+/// exact widening (a [`mapal_ir::CategoryIr::tile_plan_narrow`] site — with an
+/// epilogue under `post`, both operands narrow under `both`); then cells that
+/// round the products into the format, a guard selecting narrow values, a
+/// loop carrying a narrow array through a map and an element update, and a
+/// whole fold over widened narrow values.
+#[derive(Clone, Debug)]
+pub struct NarrowProg {
+    pub rows: u64,
+    pub cols: u64,
+    pub k: u64,
+    /// `true`: `f16`; else `bf16`.
+    pub f16: bool,
+    /// The weight law's scale: 0 a model weight (`1/1856`), 1 `1/8`, 2 past
+    /// the format's overflow, 3 into its subnormals.
+    pub scale: u8,
+    pub mul: u64,
+    pub add: u64,
+    pub both: bool,
+    pub strided: bool,
+    pub post: bool,
+    pub guard: bool,
+    pub looped: bool,
+}
+
+pub fn narrow_prog_strategy() -> impl Strategy<Value = NarrowProg> {
+    (
+        (
+            prop::sample::select(vec![1u64, 2, 4, 8, 32]),
+            prop::sample::select(vec![64u64, 96, 256]),
+            prop::sample::select(vec![8u64, 16, 64]),
+            any::<bool>(),
+            prop::sample::select(vec![0u8, 0, 1, 2, 3]),
+            prop::sample::select(vec![3u64, 7, 11, 13]),
+            0u64..32,
+        ),
+        (
+            any::<bool>(),
+            prop::bool::weighted(0.3),
+            any::<bool>(),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+    )
+        .prop_map(
+            |((rows, cols, k, f16, scale, mul, add), (both, strided, post, guard, looped))| {
+                NarrowProg {
+                    rows,
+                    cols,
+                    k,
+                    f16,
+                    scale,
+                    mul,
+                    add,
+                    both,
+                    strided,
+                    post,
+                    guard,
+                    looped,
+                }
+            },
+        )
+}
+
+/// [`NarrowProg`]'s source and the count of its leading printed lines that are
+/// `f32` sums of exact operands (ADR-0040 D2's bound on the default face); the
+/// later lines pass through a rounding into the format (ADR-0043 D3: a flip
+/// across a tie per rounding).
+pub fn narrow_src(p: &NarrowProg) -> (String, usize) {
+    let fmt = if p.f16 { "f16" } else { "bf16" };
+    let (rows, cols, k) = (p.rows, p.cols, p.k);
+    let n = rows * cols;
+    let scale = match (p.scale, p.f16) {
+        (0, _) => "/ 1856.0".to_string(),
+        (1, _) => "/ 8.0".to_string(),
+        (2, true) => "* 2000.0".to_string(),
+        (2, false) => "* 10000000000000000000000000000000000000.0".to_string(),
+        (_, true) => "* 0.0000001".to_string(),
+        (_, false) => "* 0.000000000000000000000000000000000000001".to_string(),
+    };
+    let mut s = format!(
+        "fn main() {{\n    {n} -> iota -> t;\n    {k} -> iota -> kk;\n    {rk} -> iota -> ta;\n    \
+         {kc} -> iota -> tw;\n    \
+         ta -> map {{ e -> (e * {mul} + {add}) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> a;\n    \
+         tw -> map {{ e -> (e * 7 + 13) % 103 - 51 -> widen_f32 -> v; v {scale} -> to_{fmt} }} -> w;\n",
+        rk = rows * k,
+        kc = k * cols,
+        mul = p.mul,
+        add = p.add,
+    );
+    // `a` itself narrow: both operands widened.
+    let (abind, aval) = if p.both {
+        s += &format!("    ta -> map {{ e -> a[e] -> to_{fmt} }} -> an;\n");
+        (
+            "an[i * K + q] -> widen_f32 -> x; ".replace('K', &k.to_string()),
+            "x".to_string(),
+        )
+    } else {
+        (String::new(), format!("a[i * {k} + q]"))
+    };
+    let wi = if p.strided {
+        format!("w[j * {k} + q]")
+    } else {
+        format!("w[q * {cols} + j]")
+    };
+    let tail = if p.post {
+        format!(" -> u; u * 0.5 + a[i * {k}]")
+    } else {
+        String::new()
+    };
+    s += &format!(
+        "    t -> map {{ e -> e / {cols} -> i; e % {cols} -> j; (0.0, kk) -> fold {{ acc, q -> {abind}{wi} -> widen_f32 -> b; acc + {aval} * b }}{tail} }} -> y;\n"
+    );
+    let mut tight = 0;
+    for c in [0, n / 3, n - 1] {
+        s += &format!("    y[{c}] -> println;\n");
+        tight += 1;
+    }
+    // Cells rounding into the format; a guard selecting narrow values.
+    if p.guard {
+        s += &format!(
+            "    t -> map {{ e -> (e % 3 == 0) -> {{ -true-> y[e] -> to_{fmt}; -false-> w[e % {kc}]; }} }} -> z;\n",
+            kc = k * cols
+        );
+    } else {
+        s += &format!("    t -> map {{ e -> y[e] -> to_{fmt} }} -> z;\n");
+    }
+    // A loop carrying a narrow array: a map over it and an element update.
+    let fin = if p.looped {
+        s += &format!(
+            "    mut st: [{fmt}; {n}] <- z;\n    mut it: i32 <- 0;\n    loop {{\n        (it < 3) -> {{\n            -true-> {{\n                \
+             t -> map {{ e -> st[e] -> widen_f32 -> v; v * 1.5 + 0.25 -> to_{fmt} }} -> st;\n                \
+             it * 5 % {n} -> c;\n                st[c] -> widen_f32 -> sv;\n                sv + 1.0 -> to_{fmt} -> sn;\n                \
+             st[c] <- sn;\n                it + 1 -> it;\n                -> loop;\n            }}\n            -false-> st -> fin;\n        }}\n    }}\n"
+        );
+        "fin"
+    } else {
+        "z"
+    };
+    for c in [0, 1, n / 2 + 1, n - 1] {
+        s += &format!("    {fin}[{c}] -> widen_f32 -> println;\n");
+    }
+    s += &format!(
+        "    0.0 -> zero: f32;\n    (zero, {fin}) -> fold {{ acc, v -> v -> widen_f32 -> x; acc + x }} -> sum;\n    sum -> println;\n}}\n"
+    );
+    (s, tight)
+}

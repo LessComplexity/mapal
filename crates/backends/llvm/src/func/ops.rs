@@ -145,6 +145,21 @@ impl<'a> FnEmit<'a> {
                 ));
                 self.store_obj(target, &llt, &r);
             }
+            Operation::Narrow => {
+                // ADR-0043: one call; the module defines it per side
+                // (`crate::narrow`).
+                let Ty::Narrow(n) = self.obj_ty(target) else {
+                    unreachable!("Narrow into a non-narrow ty passed validation")
+                };
+                let (_, val) = self.load_whole(source).expect("narrow operand");
+                let t = crate::narrow::llvm_ty(n);
+                let r = self.tmp();
+                self.line(format!(
+                    "{r} = call {t} {}(float {val})",
+                    crate::narrow::symbol(n)
+                ));
+                self.store_obj(target, t, &r);
+            }
             Operation::Widen => {
                 let (sllt, val) = self.load_whole(source).expect("widen operand");
                 let tllt = lower_ty(&self.obj_ty(target)).expect("widen target");
@@ -152,6 +167,8 @@ impl<'a> FnEmit<'a> {
                     (Ty::Int { bits: 32, .. }, Ty::Int { bits: 64, .. }) => "sext",
                     (Ty::Int { bits: 32, .. }, Ty::Float { .. }) => "sitofp",
                     (Ty::Float { bits: 32 }, Ty::Float { bits: 64 }) => "fpext",
+                    // ADR-0043: exact.
+                    (Ty::Narrow(_), Ty::Float { .. }) => "fpext",
                     _ => unreachable!("invalid Widen pair passed validation"),
                 };
                 let r = self.tmp();

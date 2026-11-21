@@ -82,6 +82,8 @@ pub enum IrError {
     InvalidWiden,
     /// ADR-0042: `exp` of a non-float source.
     InvalidExp,
+    /// ADR-0043: `to_bf16` / `to_f16` of anything but an `f32`.
+    InvalidNarrow,
     /// `pack`/`pack_array` of zero components.
     EmptyProduct,
     /// `pack` of exactly one component (no 1-tuples).
@@ -371,7 +373,7 @@ impl IrBuilder {
                         return Err(IrError::NonCoreType);
                     }
                 }
-                Ty::Bool | Ty::Unit | Ty::Str | Ty::IoToken => {}
+                Ty::Bool | Ty::Unit | Ty::Str | Ty::IoToken | Ty::Narrow(_) => {}
                 Ty::Tuple(ts) => {
                     if ts.len() < 2 {
                         return Err(IrError::NonCoreType);
@@ -1681,12 +1683,32 @@ impl FnBuilder<'_> {
                     signed: true
                 } | Ty::Float { bits: 32 | 64 }
             ) | (Ty::Float { bits: 32 }, Ty::Float { bits: 64 })
+                | (Ty::Narrow(_), Ty::Float { bits: 32 | 64 })
         ) {
             return Err(IrError::InvalidWiden);
         }
         self.b.intake_ty(&target)?;
         let plan = self.dest_target(&dest, &target, loc)?;
         Ok(self.emit_to_dest(plan, src, Operation::Widen, loc))
+    }
+
+    /// `Narrow` (ADR-0043): an `f32` rounded once to `fmt` (ties to even).
+    /// Rejects any other source type (`InvalidNarrow`; an `f64` source needs
+    /// a single-rounding realization — ADR-0043 open item).
+    pub fn narrow(
+        &mut self,
+        src: ObjectId,
+        fmt: crate::ty::NarrowFloat,
+        dest: Dest,
+        loc: SourceLoc,
+    ) -> Result<ObjectId, IrError> {
+        self.check_obj(src)?;
+        if self.ty_of(src) != Ty::f32() {
+            return Err(IrError::InvalidNarrow);
+        }
+        let target = Ty::Narrow(fmt);
+        let plan = self.dest_target(&dest, &target, loc)?;
+        Ok(self.emit_to_dest(plan, src, Operation::Narrow, loc))
     }
 
     /// `Exp` (ADR-0042): `eˣ` of a float scalar, the same width out. Rejects

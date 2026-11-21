@@ -905,6 +905,7 @@ fn const_literal(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::F32(x) => format!("0x{:016X}", (*x as f64).to_bits()),
         Value::F64(x) => format!("0x{:016X}", x.to_bits()),
+        Value::Narrow(n, b) => crate::narrow::literal(*n, *b),
         Value::Str(_) => unreachable!("Str is not a scalar operand"),
     }
 }

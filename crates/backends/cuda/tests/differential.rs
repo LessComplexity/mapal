@@ -1024,3 +1024,30 @@ fn differential_exp_programs_raw_and_rewritten() {
         assert_parity(&nvcc, &rw, &rr, &format!("exp{i}/rewritten"));
     }
 }
+
+/// ADR-0043: `bf16` / `f16` storage on the CUDA backend — `__nv_bfloat16` /
+/// `__half` elements, `__float2bfloat16_rn` / `__float2half_rn` roundings,
+/// exact widening casts — generated narrow programs (overflow, subnormals,
+/// guards, loops, element updates, sums of widened products), raw and
+/// rewritten, byte for byte with the interpreter.
+#[test]
+fn differential_narrow_programs_raw_and_rewritten() {
+    let Some(nvcc) = nvcc() else {
+        eprintln!("SKIP: {SKIP_REASON}");
+        return;
+    };
+    let mut runner = TestRunner::deterministic();
+    for i in 0..6 {
+        let p = testgen::narrow_prog_strategy()
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+        let (src, _) = testgen::narrow_src(&p);
+        let ir = lower_src(&src);
+        let rr = run(&ir, 2_000_000_000);
+        assert_parity(&nvcc, &ir, &rr, &format!("narrow{i}/raw"));
+        let rw = rewrite(lower_src(&src)).ir;
+        let rr = run(&rw, 2_000_000_000);
+        assert_parity(&nvcc, &rw, &rr, &format!("narrow{i}/rewritten"));
+    }
+}

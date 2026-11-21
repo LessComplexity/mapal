@@ -210,7 +210,7 @@
         {
           "comment": "Kept in sync with the lowerer's builtin dispatch. A name missing here does not merely lose its colour \u2014 it falls through to #call-position and gets mis-scoped as a user function.",
           "name": "support.function.builtin.mapal",
-          "match": "\\b(map|fold|print|println|zip|enumerate|iota|fill|widen_i64|widen_f32|widen_f64|exp|time)\\b"
+          "match": "\\b(map|fold|print|println|zip|enumerate|iota|fill|widen_i64|widen_f32|widen_f64|exp|to_bf16|to_f16|time)\\b"
         },
         {
           "name": "constant.language.boolean.mapal",
@@ -218,13 +218,13 @@
         },
         {
           "name": "support.type.primitive.mapal",
-          "match": "\\b(i32|i64|u8|f32|f64|bool)\\b"
+          "match": "\\b(i32|i64|u8|f32|f64|bf16|f16|bool)\\b"
         }
       ]
     },
     "call-position": {
       "comment": "An identifier between two arrows is applied: `data -> f -> g -> ret;`. A binding/call rule written as `(?<=->)\\s*(ident)` starts its match at the WHITESPACE after the arrow \u2014 one column earlier than the keyword rule that matches the identifier itself. TextMate picks the earliest match, so without this exclusion the rule wins on position no matter how patterns are ordered, and `-> println;` scopes println as a variable. Keep this list in sync with #keywords; editors/vscode/test/scope_test.py asserts it.",
-      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|enumerate|iota|fill|fold|map|zip|time|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*->)",
+      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|to_bf16|to_f16|enumerate|iota|fill|fold|map|zip|time|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*->)",
       "captures": {
         "1": {
           "name": "entity.name.function.call.mapal"
@@ -233,7 +233,7 @@
     },
     "binding": {
       "comment": "A terminal arrow into a snake_case name BINDS it: `5 -> a;` introduces `a`. Unlike the Vim file this cannot special-case a terminal call to a declared fn (`-> myfn;`) \u2014 TextMate cannot know what has been declared, so those read as bindings here; the real answer for both editors is LSP semantic tokens (ADR-0008). A binding/call rule written as `(?<=->)\\s*(ident)` starts its match at the WHITESPACE after the arrow \u2014 one column earlier than the keyword rule that matches the identifier itself. TextMate picks the earliest match, so without this exclusion the rule wins on position no matter how patterns are ordered, and `-> println;` scopes println as a variable. Keep this list in sync with #keywords; editors/vscode/test/scope_test.py asserts it.",
-      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|enumerate|iota|fill|fold|map|zip|time|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*;)",
+      "match": "(?<=->)\\s*(?!(?:println|print|widen_i64|widen_f32|widen_f64|exp|to_bf16|to_f16|enumerate|iota|fill|fold|map|zip|time|ret|loop|seq|mut|void|type|fn|true|false)\\b)([a-z_]\\w*)(?=\\s*;)",
       "captures": {
         "1": {
           "name": "variable.other.definition.mapal"
