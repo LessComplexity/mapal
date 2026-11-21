@@ -667,6 +667,19 @@ impl<'a> FnEmit<'a> {
                         if !site_out(next) || self.pair_source(plan.init, k).is_none() {
                             continue;
                         }
+                        // The back edge swaps the carry's buffer with
+                        // `next`'s: right only when every trip writes `next`
+                        // again. A next state made outside the trip (one that
+                        // reads neither the state nor the counter, hoisted)
+                        // is written once — the second swap would hand the
+                        // state its first buffer back. Such a state is the
+                        // one object after any trip: its pointer forwards.
+                        let made = self.ir.in_edges(next).iter().any(|m| {
+                            plan.decide_order.contains(m) || plan.advance_order.contains(m)
+                        });
+                        if !made {
+                            continue;
+                        }
                         let views: Vec<ObjectId> = self
                             .ir
                             .out_edges(merge)

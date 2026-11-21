@@ -348,3 +348,96 @@ fn rescale_folds_the_sum_beside_the_max() {
         assert_eq!(got, rr.output, "exact face bytes");
     }
 }
+
+/// `−1e39`: an `f32` literal past the range, `−∞`.
+const NEG_INF: &str = "-1000000000000000000000000000000000000000.0";
+
+/// A softmax whose scores are masked to `−∞` past a per-row cut (`j + 100 i
+/// < cut`): row 0 keeps `cut` scores, row 1 `cut − 100`, row 2 none; the
+/// running max seeded at `seed` (a finite floor, or `−∞` itself).
+fn masked_softmax(len: u64, cut: u64, seed: &str) -> String {
+    let n = 3 * len;
+    format!(
+        "fn main() {{
+    {n} -> iota -> t;
+    3 -> iota -> rr;
+    {len} -> iota -> kl;
+    8 -> iota -> kd;
+    24 -> iota -> tq;
+    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 4.0 }} -> q;
+    {lw} -> iota -> tw;
+    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 16.0 }} -> w;
+    t -> map {{ e -> e / {len} -> i; e % {len} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {len} + j] }} }} -> x;
+    t -> map {{ e -> e / {len} -> i; e % {len} -> j; (j + i * 100 < {cut}) -> {{ -true-> x[e]; -false-> {NEG_INF}; }} }} -> xm;
+    rr -> map {{ i -> ({seed}, kl) -> fold {{ acc, j -> xm[i * {len} + j] -> e; (e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;
+    t -> map {{ e -> (xm[e] - mx[e / {len}]) / 8.0 -> exp }} -> ex;
+    rr -> map {{ i -> (0.0, kl) -> fold {{ acc, j -> acc + ex[i * {len} + j] }} }} -> den;
+    t -> map {{ e -> ex[e] / den[e / {len}] }} -> y;
+    den[0] -> println;
+    den[1] -> println;
+    den[2] -> println;
+    y[0] -> println;
+    y[{c1}] -> println;
+    y[{cut}] -> println;
+    y[{r1}] -> println;
+    y[{r2}] -> println;
+    0.0 -> zero: f32;
+    (zero, kl) -> fold {{ acc, j -> acc + y[j] }} -> total;
+    total -> println;
+}}
+",
+        lw = len * 8,
+        c1 = cut - 1,
+        r1 = len + 5,
+        r2 = 2 * len + 7,
+    )
+}
+
+/// The rescale law over slices whose every score is `−∞` (a mask): the
+/// slice's own max is the step's identity, so its terms take the stand-in
+/// shift `0` (each `exp(−∞) = 0`) and the combine rescales by the true
+/// shift's `exp(a(−∞, m))` — `0` beside a finite row max, `NaN` where the
+/// row max is `−∞` too, as the sequential fold. Interpreter = every emulator
+/// mode, at 2 / 4 / 8 slices a row (slices wholly masked, one straddling the
+/// cut, a row wholly masked), the max seeded finite and at `−∞`. Without the
+/// stand-in every row with a masked slice prints `NaN`.
+#[test]
+fn rescale_over_masked_slices() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    for seed in ["-1000000000.0", NEG_INF] {
+        let src = masked_softmax(512, 150, seed);
+        let ir = lower(&src);
+        let rr = run(&ir, 2_000_000_000);
+        assert!(matches!(rr.outcome, Outcome::Done(_)), "{src}");
+        // Row 2 is wholly masked: 0 / 0 under the finite seed, NaN through
+        // `−∞ − (−∞)` under the infinite one; rows 0 and 1 finite.
+        let rows: Vec<&str> = rr.output.lines().collect();
+        assert!(rows[0].parse::<f64>().is_ok_and(f64::is_normal), "{rows:?}");
+        assert!(rows[1].parse::<f64>().is_ok_and(f64::is_normal), "{rows:?}");
+        assert_eq!(
+            rows[2],
+            if seed == NEG_INF { "NaN" } else { "0" },
+            "{rows:?}"
+        );
+        for s in [2u64, 4, 8] {
+            let on = emission(&ir, "rtx-5080", EmitOpts::default(), s, &[]);
+            let lines = slice_lines(&on);
+            let unit = lines.iter().find(|l| l.contains(" root=mx "));
+            let unit = unit.unwrap_or_else(|| panic!("s={s}: {lines:#?}"));
+            assert_eq!(field(unit, "phases"), "2", "s={s}");
+            assert_eq!(field(unit, "laws"), "rescale", "s={s}");
+            let dev = on.device.as_deref().unwrap();
+            let ex = emu::build_emulated(&clang, &on.text, dev);
+            for mode in MODES {
+                let (got, _) = ex.run(&mode);
+                assert!(
+                    within(&got, &rr.output, 1e-4),
+                    "seed={seed} s={s} {mode:?}: {got:?} vs {:?}",
+                    rr.output
+                );
+            }
+        }
+    }
+}

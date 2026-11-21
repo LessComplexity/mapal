@@ -3565,6 +3565,20 @@ pub struct LongRow {
     pub len: u64,
     pub looped: bool,
     pub nodes: Vec<[u8; 4]>,
+    /// A hash of `nodes` (no draw of its own: the other programs stay the
+    /// stream's); a third of the programs (`mask % 3 == 0`) open with a
+    /// masked softmax ([`LongRow::masked`]).
+    pub mask: u8,
+}
+
+impl LongRow {
+    /// The program opens with a softmax over `a0` masked to `−∞` past a
+    /// per-row cut (rows wholly masked among them): the row max, `exp` of
+    /// the shifted scaled score, its row sum (printed), before any loop. The
+    /// other nodes are the unmasked program's.
+    pub fn masked(&self) -> bool {
+        self.mask % 3 == 0
+    }
 }
 
 pub fn long_row_strategy() -> impl Strategy<Value = LongRow> {
@@ -3578,6 +3592,9 @@ pub fn long_row_strategy() -> impl Strategy<Value = LongRow> {
             rows,
             len,
             looped,
+            mask: nodes.iter().fold(7u8, |h, n| {
+                h.wrapping_mul(31).wrapping_add(n[0] ^ n[3].rotate_left(3))
+            }),
             nodes,
         })
 }
@@ -3608,6 +3625,15 @@ pub fn long_row_src(p: &LongRow) -> String {
         rows_[0] = "x".into();
     }
     let (mut na, mut nv) = (0usize, 0usize);
+    if p.masked() {
+        // Row `i` keeps `cut − i · step` scores (`f32` `−1e39` is `−∞`):
+        // slices wholly masked, one across the cut, rows with none.
+        let cut = l * (1 + u64::from(p.mask / 3) % 3) / 4;
+        let step = l / (1 + u64::from(p.mask / 9) % 4);
+        s += &format!(
+            "    t -> map {{ e -> e / {l} -> i; e % {l} -> j; (j + i * {step} < {cut}) -> {{ -true-> a0[e]; -false-> -1000000000000000000000000000000000000000.0; }} }} -> m0;\n    rr -> map {{ i -> (-1000000.0, kl) -> fold {{ acc, j -> m0[i * {l} + j] -> w; (w > acc) -> {{ -true-> w; -false-> acc; }} }} }} -> vm;\n    t -> map {{ e -> (m0[e] - vm[e / {l}]) / 4.0 -> exp }} -> am;\n    rr -> map {{ i -> (0.0, kl) -> fold {{ acc, j -> acc + am[i * {l} + j] }} }} -> sm;\n"
+        );
+    }
     let pick = |v: &[String], b: u8| v[b as usize % v.len()].clone();
     for (i, nd) in p.nodes.iter().enumerate() {
         let kind = if vals.is_empty() && nd[0] % 4 != 0 {
@@ -3715,11 +3741,14 @@ pub fn long_row_src(p: &LongRow) -> String {
         let _ = i;
     }
     let last = rows_.last().unwrap().clone();
-    let tail = format!(
+    let mut tail = format!(
         "    out[0] -> println;\n    out[{}] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n",
         n / 2 + 3,
         n - 1
     );
+    if p.masked() {
+        tail += &format!("    sm[0] -> println;\n    sm[{}] -> println;\n", r - 1);
+    }
     let prints: String = prints
         .iter()
         .map(|x| format!("    {x} -> println;\n"))
@@ -3779,6 +3808,17 @@ pub struct OntoProg {
     pub inloop_guard: bool,
     /// A second loop's exit counter (`K`) indexes a later body.
     pub exit_k: i64,
+}
+
+impl OntoProg {
+    /// A second loop carries an array whose next value reads neither the
+    /// state nor the counter (`z <- out / 2 + a` each trip, `out` the first
+    /// loop's device-carried exit: made once on the device, hoisted out of
+    /// the trip), its exit printed. Derived from the drawn fields (no
+    /// draw of its own: the other programs stay the stream's).
+    pub fn hoisted(&self) -> bool {
+        (self.t0 + self.base + self.exit_k + self.trips) % 2 == 0
+    }
 }
 
 pub fn onto_prog_strategy() -> impl Strategy<Value = OntoProg> {
@@ -3882,6 +3922,7 @@ pub fn onto_src(p: &OntoProg) -> String {
             -false-> x -> out;
         }}
     }}
+{zloop}
     mut u: i32 <- 0;
     loop {{
         (u < {k}) -> {{
@@ -3903,6 +3944,15 @@ pub fn onto_src(p: &OntoProg) -> String {
 }}
 ",
         base = p.base,
+        zloop = if p.hoisted() {
+            format!(
+                "    mut z: [f32; {n}] <- a;\n    mut v: i32 <- 0;\n    loop {{\n        (v < {}) -> {{\n            -true-> {{\n                r -> map {{ i -> out[i] / 2.0 + a[i] }} -> z;\n                v + 1 -> v;\n                -> loop;\n            }}\n            -false-> z -> zo;\n        }}\n    }}\n    zo[{}] -> println;\n",
+                p.trips + 1,
+                n / 2 + 1
+            )
+        } else {
+            String::new()
+        },
         nk = n as i64 - k,
         last = n as i64 - k - 1,
         mid = n / 2 + 1,

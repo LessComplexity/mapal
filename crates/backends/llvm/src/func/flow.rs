@@ -3127,9 +3127,7 @@ impl UnitGen<'_> {
                 DepLaw::Shift { sub: false } => "-0.0".to_string(),
                 DepLaw::Shift { sub: true } | DepLaw::Phase => "0.0".to_string(),
                 // The value's own partial over this slice: every term ≤ 1.
-                DepLaw::Rescale => self.parts[v]
-                    .clone()
-                    .expect("a rescale's shift is folded first in the item"),
+                DepLaw::Rescale => self.rescale_shift(v),
             };
             self.subst.push((c.expect("a law reads a cell"), slot, lit));
         }
@@ -3157,6 +3155,33 @@ impl UnitGen<'_> {
             let at = g.ws_at(k, sl, &t, &row, q);
             g.line(format!("store {t} {tot}, ptr addrspace(1) {at}"));
         });
+    }
+
+    /// The shift a rescale law's terms take over one slice: the value `v`'s
+    /// own partial over the slice, or `0` where that partial is `v`'s step
+    /// identity. A slice whose every `x` is the identity (scores masked to
+    /// `−∞`) would compute `exp(κ(−∞ − (−∞))) = NaN` terms, and the combine's
+    /// `NaN · exp(a(s_r, v)) = NaN` would poison the row. With the stand-in
+    /// its terms are `exp(κ(−∞ − 0)) = 0`, and the combine still rescales by
+    /// the slice's true shift: `0 · exp(a(−∞, v))` is `0` where `v` is finite
+    /// and `NaN` where `v` is the identity too — the sequential fold's value
+    /// (`exp(κ(−∞ − v))` a term) either way.
+    fn rescale_shift(&mut self, v: usize) -> String {
+        let UKind::Fold { site, .. } = &self.u.members[v].kind else {
+            unreachable!("a rescale's value is a fold")
+        };
+        let (vt, id) = (
+            lower_ty(&site.elem).expect("float elem lowers"),
+            step_identity(&site.op),
+        );
+        let m = self.parts[v]
+            .clone()
+            .expect("a rescale's shift is folded first in the item");
+        let c = self.tmp();
+        self.line(format!("{c} = fcmp oeq {vt} {m}, {id}"));
+        let s = self.tmp();
+        self.line(format!("{s} = select i1 {c}, {vt} 0.0, {vt} {m}"));
+        s
     }
 
     /// Fold member `k`'s value in its row: the row's `s` partials combined

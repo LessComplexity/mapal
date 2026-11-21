@@ -409,6 +409,14 @@ pub struct DeviceCost {
     /// H100 SXM 147, A100 81, RTX 4090 77, RTX 3090 62, RTX 5080 94). 0 = not
     /// measured: the split is not priced (the property rule alone).
     pub sm_bytes_per_ns: u64,
+    /// kernel-merging `calls`: the most a persistent chain was measured to
+    /// cost a trip beyond the priced boundaries (`coop_launch_ns`, the grid
+    /// barriers, the dependent launches it replaces), in ns — its member
+    /// bodies' change inside one kernel, which no term models: the forced
+    /// suite chains (`--calls=force`) against the shipped build, ABBA per
+    /// trip less the price difference, per chain (`review-fixes.md`). 0 =
+    /// not measured: a chain's bodies are unpriced and none forms.
+    pub coop_body_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -439,6 +447,7 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     row_iter_ns: 0,
     coop_first_ns: 0,
     sm_bytes_per_ns: 0,
+    coop_body_ns: 0,
 };
 
 impl DeviceCost {
@@ -447,7 +456,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 35] = [
+    pub const NAMES: [&'static str; 36] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -473,6 +482,7 @@ impl DeviceCost {
         "row_iter_ns",
         "coop_first_ns",
         "sm_bytes_per_ns",
+        "coop_body_ns",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -530,7 +540,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 25;
+    const NAMES_COST: usize = 26;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -564,6 +574,7 @@ impl Gpu {
                 "row_iter_ns" => &mut d.row_iter_ns,
                 "coop_first_ns" => &mut d.coop_first_ns,
                 "sm_bytes_per_ns" => &mut d.sm_bytes_per_ns,
+                "coop_body_ns" => &mut d.coop_body_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -612,6 +623,7 @@ impl Gpu {
             "row_iter_ns" => d.row_iter_ns,
             "coop_first_ns" => d.coop_first_ns,
             "sm_bytes_per_ns" => d.sm_bytes_per_ns,
+            "coop_body_ns" => d.coop_body_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -3565,6 +3577,7 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             row_iter_ns: 0,
             coop_first_ns: 0,
             sm_bytes_per_ns: 77,
+            coop_body_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load. The
         // cross-arch box (power limit 250 W of the part's 450) sustained
@@ -3719,6 +3732,7 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             row_iter_ns: 0,
             coop_first_ns: 0,
             sm_bytes_per_ns: 0,
+            coop_body_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -3823,6 +3837,15 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // cross-arch `row-split`: one SM alone streams 94 B/ns from L2
             // (`calib.cu bw`, the best `sms=1` point, 2026-11-21).
             sm_bytes_per_ns: 94,
+            // kernel-merging `calls`: the forced chains against the shipped
+            // build (ABBA, 2026-11-22), a trip's cost beyond the priced
+            // boundaries, per chain: rt_mlp2_1024 2510 ns (its GEMM pairs at
+            // 127-128 registers against 95-96: 165.3 / 166.5 us against
+            // 161.0 / 163.7 us of their kernels), decode_1024_256 1970 ns (the
+            // rows level 5.0 us against 4.2 alone; not the barrier spin, not
+            // the non-coherent path); causal / gen / prefill -660..-810 ns
+            // (bodies faster). The largest.
+            coop_body_ns: 2500,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.

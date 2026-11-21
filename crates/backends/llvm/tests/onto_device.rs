@@ -381,6 +381,19 @@ fn check_onto(clang: &str, i: usize, p: &testgen::OntoProg) -> Vec<(&'static str
         let (got, _) = ex.run(&mode);
         assert_eq!(got, want, "{mode:?}\n{src}");
     }
+    // A state whose next value is made once (hoisted out of the trip): no
+    // device carry (the swap would hand back its first buffer), its pointer
+    // forwards — nothing crosses a trip.
+    if p.hoisted() {
+        let one = format!("carried=0:{}:one h2d=0 d2h=0", p.n * 4);
+        assert!(
+            em.text
+                .lines()
+                .any(|l| l.starts_with("; mapal.move loop=") && l.contains(&one)),
+            "{one}\n{src}"
+        );
+        c.push(("hoisted-next", 1));
+    }
     let cpu = emu::run_emulated(
         clang,
         &emit_detailed(&ir, &EmitOpts::default()).unwrap().text,
@@ -445,6 +458,7 @@ fn onto_device_on_generated_programs() {
         "checked-kept",
         "device-kernels",
         "device-carried",
+        "hoisted-next",
         "off-arm-runs",
     ] {
         assert!(c.get(key).copied().unwrap_or(0) > 0, "{key}: {c:?}");
@@ -695,4 +709,143 @@ fn host_par_on_generated_programs() {
     }
     eprintln!("host-par generated: {c:?}");
     assert!(c.get("split-maps").copied().unwrap_or(0) > 0, "{c:?}");
+}
+
+/// A loop whose carried array's next value reads neither the state nor the
+/// counter (`x <- b0 / 2 + a0` every trip): the rewrite hoists the map out of
+/// the loop, so the next state is made once, before the first trip.
+const HOISTED_NEXT: &str = r#"fn main() {
+    1024 -> iota -> t;
+    8 -> iota -> kd;
+    8 -> iota -> tq;
+    tq -> map {
+        e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v;
+        v / 16.0
+    } -> q;
+    8192 -> iota -> tw;
+    tw -> map {
+        e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 64.0
+    } -> w;
+    t -> map {
+        e -> e / 1024 -> i;
+        e % 1024 -> j;
+        (0.0, kd) -> fold {
+            acc, d -> acc + q[i * 8 + d] * w[d * 1024 + j]
+        }
+    } -> a0;
+    t -> map {
+        e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 64.0
+    } -> b0;
+    mut x: [f32; 1024] <- b0;
+    mut it: i32 <- 0;
+    loop {
+        (it < 2) -> {
+            -true-> {
+                t -> map {
+                    e -> b0[e] / 2.0 + a0[e]
+                } -> x;
+                it + 1 -> it;
+                -> loop;
+            }
+            -false-> x -> out;
+        }
+    }
+    out[0] -> println;
+    out[515] -> println;
+    out[1023] -> println;
+    0.0 -> zero: f32;
+    (zero, out) -> fold {
+        acc, v -> acc + v
+    } -> total;
+    total -> println;
+}
+"#;
+
+/// The same next state beside a device-read state (`y` reads `x` each trip).
+const HOISTED_NEXT_READ: &str = r#"fn main() {
+    1024 -> iota -> t;
+    8 -> iota -> kd;
+    8 -> iota -> tq;
+    tq -> map {
+        e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v;
+        v / 16.0
+    } -> q;
+    8192 -> iota -> tw;
+    tw -> map {
+        e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 64.0
+    } -> w;
+    t -> map {
+        e -> (0.0, kd) -> fold {
+            acc, d -> acc + q[d] * w[d * 1024 + e]
+        }
+    } -> a0;
+    t -> map {
+        e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 64.0
+    } -> b0;
+    mut x: [f32; 1024] <- b0;
+    mut y: [f32; 1024] <- a0;
+    mut it: i32 <- 0;
+    loop {
+        (it < 3) -> {
+            -true-> {
+                t -> map {
+                    e -> y[e] * 0.5 + x[e]
+                } -> y;
+                t -> map {
+                    e -> b0[e] / 2.0 + a0[e]
+                } -> x;
+                it + 1 -> it;
+                -> loop;
+            }
+            -false-> (x, y) -> out;
+        }
+    }
+    out.0[515] -> println;
+    out.1[0] -> println;
+    out.1[515] -> println;
+    out.1[1023] -> println;
+}
+"#;
+
+/// A next state made outside the trip is no device carry: the back edge's
+/// buffer swap assumes every trip writes the next state again, and with the
+/// value written once the second trip's swap handed the state its initial
+/// buffer back (the device printed `b0`). The state forwards the one
+/// object's pointer (`carried=0:4096:one`, nothing crosses a trip); values =
+/// the interpreter in every emulator mode (exact sums: every term a small
+/// multiple of 2⁻¹⁰), every capable site on the device, default and exact
+/// faces.
+#[test]
+fn hoisted_next_state_is_no_device_carry() {
+    let Some(clang) = emu::clang() else {
+        return;
+    };
+    for src in [HOISTED_NEXT, HOISTED_NEXT_READ] {
+        let ir = lower(src);
+        let want = interp(&ir);
+        for base in [EmitOpts::default(), EmitOpts::exact()] {
+            let em = device_emission(&ir, base, &[]);
+            let dev = em.device.as_deref().unwrap_or("");
+            assert!(dev.contains("define ptx_kernel"), "a device site\n{src}");
+            let ex = emu::build_emulated(&clang, &em.text, dev);
+            for mode in MODES {
+                let (got, _) = ex.run(&mode);
+                assert_eq!(got, want, "{mode:?}\n{src}");
+            }
+            let mv: Vec<&str> = em
+                .text
+                .lines()
+                .filter(|l| l.starts_with("; mapal.move"))
+                .collect();
+            assert_eq!(mv.len(), 1, "{mv:?}");
+            assert!(
+                mv[0].contains("carried=0:4096:one") && mv[0].contains("h2d=0 d2h=0"),
+                "{mv:?}"
+            );
+        }
+    }
 }

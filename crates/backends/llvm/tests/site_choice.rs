@@ -429,7 +429,10 @@ fn candidate_zero_is_the_pre_sprint_emission() {
         // them. large-gemm's site rules (`k-fill`, `streamk-fill`) too; its
         // `wide-fma` property rule moved candidate 0 where a part issues more
         // FFMA per DRAM byte than `FILL_BALANCE_PM` on a contract face (the
-        // rtx-5090's default-face rows, regolded).
+        // rtx-5090's default-face rows, regolded). review-fixes: `calls` needs
+        // the bodies' measured price (`coop_body_ns`), so the rtx-4090 / 3090
+        // chains the cross-arch costs alone formed are gone (21 rows regolded:
+        // decode, mlp_2048_tf32, rq_mlp2_512, smlp, px_mlp2_64_f64).
         for f in [
             target.as_str(),
             "--host=x86-64-v3",

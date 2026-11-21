@@ -49,8 +49,8 @@ KERNEL_RUNGS = ('arch-rungs interleave unroll min-blocks warp prefetch mma async
                 'pad wide-fma wgmma-hopper raster l2-gate pdl row-fit wave-gate grid-share panel-regs fill-rows '
                 'cell-fill asyncstage splitk splitk-atomic streamk row-split fill-wave fit-first tf32-radix kmajor-a full-tile '
                 'async-depth bank-plan streamk-fill k-fill').split()
-GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch pin sync tile unpin '
-            'zero').split()
+GPU_SYMS = ('alloc arena d2h_on d2h event free gen h2d h2d_async h2d_on init launch_l2 launchv launch launch_coop pin '
+            'sync tile unpin zero').split()
 PROFILE_RS = os.path.join(HERE, '..', '..', 'crates', 'backends', 'llvm', 'src', 'profile.rs')
 
 
@@ -103,7 +103,9 @@ EXTRA = [('atom_add', r'^atom\.(?:\w+\.)*?add\.f'), ('red_add', r'^red\.(?:\w+\.
          ('ldmatrix', r'^ldmatrix'), ('wgmma', r'^wgmma\.mma_async'), ('wait_n', r'^cp\.async\.wait_group'),
          ('div_rem', r'^(div|rem)\.[us]\d+'), ('call', r'^call'),  # integer only (a float `div.rn` is the program's)
          # kernel-merging `calls`: a grid barrier's release arrival; a non-coherent (read-only path) load.
-         ('gsync_arrive', r'^atom\.add\.release\.gpu'), ('ld_nc', r'^ld\.global\.nc')]
+         ('gsync_arrive', r'^atom\.add\.release\.gpu'), ('ld_nc', r'^ld\.global\.nc'),
+         # exp (ADR-0042) `exp-hw`: the hardware form's `ex2.approx.ftz.f32`.
+         ('ex2', r'^ex2\.approx')]
 
 
 PTX_KEYS = [k.replace('.', '_') for k, _ in CLS] + [k for k, _ in EXTRA] + ['i64_arith']
@@ -194,6 +196,8 @@ def sass_facts(body):
     f.update({k.lower(): v for k, v in c.items()})
     f.update({k.lower().replace('.', '_'): v for k, v in w.items()})
     f['insns'] = len(body)
+    # exp (ADR-0042) `exp-hw`: the SFU's `ex2` (the hardware form's MUFU.EX2).
+    f['mufu_ex2'] = sum(1 for _, ins in body if split(ins)[1].startswith('MUFU.EX2'))
     addr = [a for a, _ in body]
     best = None
     for i, (a, ins) in enumerate(body):
@@ -763,6 +767,30 @@ def launch_facts(path):
     return f
 
 
+def exp_calls(dev):
+    """exp (ADR-0042): {kernel: calls of `@mapal.exp.f32` in its body or the internal functions it reaches} — the
+    device unit's call graph (a member body is a function the kernel calls; the exp definition is inlined later)."""
+    fns = {}
+    for chunk in dev.split('\ndefine ')[1:]:
+        m = re.match(r'[^@]*@([\w.$]+)\(', chunk)
+        if m:
+            fns[m.group(1)] = chunk.split('\n}\n', 1)[0]
+    out = {}
+    for k, body in fns.items():
+        if not body.startswith('ptx_kernel'):
+            continue
+        seen, todo, n = {k}, [k], 0
+        while todo:
+            b = fns[todo.pop()]
+            n += len(re.findall(r'call float @mapal\.exp\.f32\(', b))
+            for c in re.findall(r'call [^@\n]*@([\w.$]+)\(', b):
+                if c in fns and c not in seen and c != 'mapal.exp.f32':
+                    seen.add(c)
+                    todo.append(c)
+        out[k] = n
+    return out
+
+
 def flow_facts(f, dev):
     """A unit kernel's `; mapal.flow` line (func/flow.rs): how many members it holds, keeps (no store, no
     pointer), stores and reads from Gmem, and its `define`'s pointer parameters in the device unit."""
@@ -778,6 +806,10 @@ def flow_facts(f, dev):
                 zero_params=(1 + 2 * d.group(1).count('%zp')) if d and '%zp' in d.group(1) else 0,
                 # compile-time-graph A: a row-block unit's rows per block, tiles, colors (0 on a per-row unit).
                 rows_per_unit=f.get('rows_per_unit', 0), tiles=f.get('tiles', 0), colors=f.get('colors', 0),
+                # long-rows `row-slices`: blocks a row, the phases its laws leave (grid barriers between), and the
+                # rescale laws (ADR-0042 D7: a sum folded beside its shift).
+                slices=f.get('slices', 1) or 1, phases=f.get('phases', 1) or 1,
+                n_rescale=str(f.get('laws', '')).split(',').count('rescale'),
                 members=str(f.get('members', '')),
                 keep=[x.split(':')[0] for x in str(f.get('keep', '')).split(';') if x],
                 store=[x for x in str(f.get('store', '')).split(';') if x])
@@ -853,6 +885,8 @@ def facts(d, sm):
             for k, ax in zip(ids.split(','), axes.split(',')):
                 flips[f'mapal_tile_{k}'] = re.findall(rf'([+-])({names})(?![a-z])', ax)
         flows = {f['kernel']: flow_facts(f, dev) for f in (kv(m) for m in re.findall(r'^; mapal\.flow (.*)$', dev, re.M))}
+        exps = exp_calls(dev)
+        hw_exp = int('@llvm.nvvm.ex2.approx.ftz.f(' in dev)
         devm = re.search(r'^; mapal\.device (.*)$', dev, re.M)
         ptx = read(os.path.join(d, src + '.ptx'))
         pf = ptx_facts(ptx) if ptx else {}
@@ -893,7 +927,8 @@ def facts(d, sm):
                               else r in ron)
             axes = [[sg, r, real(r)] for sg, r in flips.get(k, [])]
             kf = dict(plan=p, flow=flows.get(k, {}), ptx=pf.get(k, {}), ptxas=pa.get(k, {}),
-                      mod=dict(launched=launched(k, hll), cand=int(k in cands), alt=int(bool(axes)), axes=axes),
+                      mod=dict(launched=launched(k, hll), cand=int(k in cands), alt=int(bool(axes)), axes=axes,
+                               exp32=exps.get(k, 0), hw_exp=hw_exp),
                       launch=la,
                       sass=sass_facts(sf[k]) if k in sf else {},
                       remarks=dict(opt=remark_facts(rem_opt, k), llc=remark_facts(rem_llc, k)))
@@ -1009,13 +1044,17 @@ def check(d, results=None, out=sys.stdout):
                       launch=D(kf.get('launch') or (e['launch'] if e['launch'].get('kernel') == k else {})),
                       exec=D(ex.get((stem, k), {})), arch=prof, sm=e['sm'],
                       # fold-algebra: the stem's face contracts (default, `_c`, `_rc`), not `_x` / `_r`.
-                      contract=not re.search(r'_(x|r)$', stem.split('.')[0]))
+                      contract=not re.search(r'_(x|r)$', stem.split('.')[0]),
+                      # exp (ADR-0042): the order-free faces (default, `_tf`) — where `exp` may take the hardware form.
+                      free=not re.search(r'_(x|c|r|rc)$', stem.split('.')[0]))
             kon = set(kf.get('plan', {}).get('rungs_on', [])) | on
             alt = kf.get('mod', {}).get('alt', 0)
             for rung, it in INTENT.items():
                 if it.get('host') or (alt and it.get('rule')):
                     continue
-                state = 'off' if rung in off else 'on' if rung in kon or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
+                # exp-hw: a face whose order is not free takes the oracle's steps (its OFF realization).
+                state = 'off' if rung in off or (rung == 'exp-hw' and not ns['free']) else 'on' if rung in kon or rung in (
+                    'row-slices', 'exp-hw', 'exp-rescale') or rung.startswith(('face', 'exec', 'module', 'window', 'radix-tile', 'tf32-tile', 'plan-cost', 'linear', 'choice', 'fma-pairs', 'horizontal-', 'calls-', 'narrow-tile')) else 'off'  # plan-cost / linear: gated by the plan line itself (`applies`), not rungs_on
                 rows += [(prof, stem, k, f'{rung}:{state}', *r) for r in run_intent(it, state, ns)]
         # host rungs: one row per stem (kernel `-`)
         if not e['host'].get('calls'):

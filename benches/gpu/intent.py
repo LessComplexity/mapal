@@ -297,6 +297,35 @@ INTENT = {
         ('every intermediate on chip: the launch smem is the plan\'s, none static', 'ptxas.static_smem == 0 and flow.smem > 0'),
         ('rows and tiles synchronize the block', 'sass.bar > 0'),
         ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')]),
+    # long-rows `row-slices` (func/flow.rs): a flow unit's few long rows over several blocks — `slices=` blocks a
+    # row, each fold's slice partials combined by `fold_combine`'s law from a workspace, the phases the laws leave
+    # (`phases=`) separated by grid barriers of one cooperative launch. OFF (`--gpu-off=row-slices`): one block a row.
+    'row-slices': dict(applies="plan.kind == 'flow' and flow.slices > 1", on=[
+        ('one grid-barrier arrival a phase boundary (release arrival, PTX)', 'ptx.gsync_arrive == flow.phases - 1'),
+        ('the sliced unit launches cooperatively (every block of its rows co-resident)', 'host.calls.launch_coop >= 1'),
+        ('a block walks its slice and stores its partials: st.global', 'ptx.st_global > 0'),
+        ('every member body inlined: no call left in PTX', 'ptx.call == 0'),
+        ('no spill', 'ptxas.spill_st == 0 and ptxas.spill_ld == 0')],
+        applies_off="plan.kind == 'flow'", off=[
+        ('one block a row: no unit sliced, no grid barrier', 'flow.slices == 1 and ptx.gsync_arrive == 0')]),
+    # exp (ADR-0042 D7) `exp-rescale` (a `fold_combine` fact arm): a sum whose term is `exp` of a difference with a
+    # running max (min) of the same row folds beside it — each slice's partial against its slice's own max, rescaled
+    # by `exp(m_r − m)` when combined. OFF (`--gpu-off=exp-rescale`): no rescale law, the sum a phase after its max.
+    'exp-rescale': dict(applies_on="plan.kind == 'flow' and flow.slices > 1 and flow.n_rescale > 0", on=[
+        ('the combine rescales the partials through exp: an exp in the kernel', 'mod.exp32 > 0')],
+        applies_off="plan.kind == 'flow' and flow.slices > 1", off=[
+        ('no rescale law: the sum a phase after its shift', 'flow.n_rescale == 0')],
+        note='phases: diff the `.off-exp-rescale` arm (a softmax unit 2 phases ON, 3 OFF)'),
+    # exp (ADR-0042) `exp-hw`: on an order-free face an `f32` `exp` on the device is the hardware form — the
+    # reduction as two FMAs, `2^(r·log2e)` by `ex2.approx.ftz.f32` (MUFU.EX2), the oracle's scaling and special
+    # values — where the part's measured `ex2` error meets the bound (`Caps::ex2`). The exact / contract / fixed faces
+    # and `--gpu-off=exp-hw`: the oracle's steps (no `ex2`).
+    'exp-hw': dict(applies_on='mod.exp32 > 0', on=[
+        ("the module defines the hardware form (the part's ex2 error meets the bound)", 'mod.hw_exp == 1'),
+        ('ex2.approx in the kernel\'s PTX', 'ptx.ex2 > 0'),
+        ('MUFU.EX2 in SASS', 'sass.mufu_ex2 > 0')],
+        applies_off='mod.exp32 > 0', off=[
+        ("the oracle's steps: no ex2.approx, no MUFU.EX2", 'ptx.ex2 == 0 and sass.mufu_ex2 == 0')]),
     # kernel-merging `zero-fold` (func/zero.rs): an atomic site's zero pass is the grid-stride tail of an earlier kernel
     # the dependency fact orders after the output's last earlier access; the site launches flagged ZEROED.
     'zero-fold': dict(host=True, applies='host.zero.folded > 0', on=[

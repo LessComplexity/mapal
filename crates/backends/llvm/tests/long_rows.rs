@@ -299,8 +299,10 @@ fn laws_drop_phases() {
 /// Generated programs (the change was not designed on them): few rows of a
 /// long axis and a chain of row folds, cells of a row and a per-row value
 /// by every law, per-row cells (`testgen::long_row_strategy`), straight-line
-/// or in a loop. Every unit the slicing admits runs at two slice counts
-/// under every emulator mode against the interpreter and the OFF arm.
+/// or in a loop; a third open with a softmax over scores masked to `−∞`
+/// (slices and rows wholly masked: the rescale law's identity shift). Every
+/// unit the slicing admits runs at two slice counts under every emulator
+/// mode against the interpreter and the OFF arm.
 #[test]
 fn row_slices_on_generated_long_rows() {
     let Some(clang) = emu::clang() else {
@@ -347,6 +349,7 @@ fn row_slices_on_generated_long_rows() {
         "law:factor",
         "law:shift",
         "law:rescale",
+        "law:rescale masked",
         "stored fold",
         "stored row cell",
         "per-row cell",
@@ -388,6 +391,9 @@ fn check_long_row(clang: &str, p: &testgen::LongRow) -> Vec<(&'static str, u64)>
             out.push(("phases>2", u64::from(phases > 2)));
             for law in field(l, "laws").split(',').filter(|x| !x.is_empty()) {
                 out.push(("law", 1));
+                if law == "rescale" && p.masked() {
+                    out.push(("law:rescale masked", 1));
+                }
                 out.push((
                     match law {
                         "mul" | "div" => "law:factor",

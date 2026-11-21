@@ -34,14 +34,19 @@
 //!
 //! **The rule, from measured properties** (`DeviceCost::gsync_ns`,
 //! `gsync_block_ps`, `dep_launch_ns`, `dep_launch_block_ps`, `pdl_launch_ns`,
-//! `coop_launch_ns`; `benches/gpu/calib.cu gsync`): a chain of `k` units over
-//! `L` levels forms when one cooperative launch of the persistent grid plus
-//! `L − 1` grid barriers costs the device no more than the `k` dependent launches it
-//! replaces (each its own grid, programmatic where the runtime launches them
-//! so), and no launch takes more rounds of the persistent grid than it
+//! `coop_launch_ns`; `benches/gpu/calib.cu gsync`; `coop_first_ns`,
+//! `coop_body_ns`): a chain of `k` units over `L` levels forms when one
+//! cooperative launch of the persistent grid plus `L − 1` grid barriers, the
+//! bodies' measured change inside one kernel (`coop_body_ns`) and, for a chain
+//! outside every loop, the process's first cooperative launch
+//! (`coop_first_ns`) cost the device no more than the `k` dependent launches
+//! it replaces (each its own grid, programmatic where the runtime launches
+//! them so), and no launch takes more rounds of the persistent grid than it
 //! took waves alone (`occupancy`), and the members of a level fit one round
 //! together (`waves`). The host then issues one launch instead of `k`. A part
-//! without the measured barrier and launch costs forms no chain (`unpriced`).
+//! without the measured barrier, launch and body costs forms no chain
+//! (`unpriced`): the boundaries alone under-priced every forced chain of the
+//! rtx-5080 that lost by more than they say (`review-fixes.md`).
 //! OFF: `--gpu-off=calls`.
 
 use super::horizontal::{HzGroup, Refuse, Shape, merged_per_sm};
@@ -101,24 +106,39 @@ pub(crate) fn persistent_fit(levels: &[Vec<Shape>], gpu: &Gpu) -> Result<u64, Re
 
 /// **The rule's prices** (module doc), ns of device time: `(persistent,
 /// separate)` — one cooperative dependent launch of `grid` blocks
-/// (`coop_launch_ns`) plus `barriers` grid barriers, against one dependent
-/// launch per unit of `units` blocks each, as the runtime issues them
-/// (`pdl`: programmatic dependent launches, where the part has them).
-/// `None` on a part without the measured barrier and launch costs.
+/// (`coop_launch_ns`), `barriers` grid barriers, the bodies' measured change
+/// inside one kernel (`coop_body_ns`) and, outside every loop (`looped`
+/// false: the chain runs once), the process's first cooperative launch
+/// (`coop_first_ns`), against one dependent launch per unit of `units` blocks
+/// each, as the runtime issues them (`pdl`: programmatic dependent launches,
+/// where the part has them). `None` on a part without the measured barrier
+/// and launch costs; the body term is 0 where `coop_body_ns` is not measured
+/// (the caller refuses such a chain: [`body_priced`]).
 pub(crate) fn chain_ns(
     units: &[u64],
     grid: u64,
     barriers: u64,
     gpu: &Gpu,
     pdl: bool,
+    looped: bool,
 ) -> Option<(f64, f64)> {
     let d = gpu.cost.as_ref()?;
     let sep = units
         .iter()
         .map(|&b| d.launch_at(b, gpu.sms, pdl))
         .sum::<Option<f64>>()?;
-    let per = d.coop_launch_at(grid, gpu.sms)? + barriers as f64 * d.gsync_at(grid, gpu.sms)?;
+    let first = if looped { 0 } else { d.coop_first_ns };
+    let per = d.coop_launch_at(grid, gpu.sms)?
+        + barriers as f64 * d.gsync_at(grid, gpu.sms)?
+        + (d.coop_body_ns + first) as f64;
     Some((per, sep))
+}
+
+/// The part measured what a persistent kernel's bodies cost against their own
+/// launches (`coop_body_ns`): without it the boundaries are the whole price,
+/// which the rtx-5080's forced chains showed is not enough to decide.
+pub(crate) fn body_priced(gpu: &Gpu) -> bool {
+    gpu.cost.as_ref().is_some_and(|d| d.coop_body_ns > 0)
 }
 
 /// The chains the rule considered in one function, for the intent line.
@@ -430,13 +450,27 @@ impl FnEmit<'_> {
             .collect();
         let barriers = u64::from(levels - 1);
         let pdl = gpu::pdl(self.ir, self.profile, self.contract, self.gpu_arms);
-        let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu, pdl) else {
+        // A chain inside a loop shares the process's first cooperative
+        // launch with its other trips.
+        let region = self.regions();
+        let looped = c.members.iter().any(|&(i, ..)| match seq[i] {
+            Step::Op(m) => region.get(m).is_some_and(|r| r.0.is_some()),
+            Step::Loop(_) => true,
+        });
+        let Some((per, sep)) = chain_ns(&unit_blocks, grid, barriers, gpu, pdl, looped) else {
             return;
         };
-        // `--calls=force` (measurement): the cost test aside.
-        if per > sep && !self.gpu_arms.calls_force {
-            *stats.refused.entry("cost").or_default() += 1;
-            return;
+        // `--calls=force` (measurement — how `coop_body_ns` is measured): the
+        // cost test and the body price aside.
+        if !self.gpu_arms.calls_force {
+            if !body_priced(gpu) {
+                *stats.refused.entry("unpriced").or_default() += 1;
+                return;
+            }
+            if per > sep {
+                *stats.refused.entry("cost").or_default() += 1;
+                return;
+            }
         }
         stats.formed += 1;
         stats.units += c.units.len();
@@ -810,40 +844,89 @@ mod tests {
     fn the_rule_prices_barriers_against_launches() {
         let g = gpu();
         let d = g.cost.as_ref().expect("measured");
-        // Decode's chain: a cooperative launch (2044 ns) and two barriers
-        // (553 + 44 · 1.89 ns at 128 blocks) against three plain dependent
-        // launches (650 ns): the persistent kernel costs more.
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false).expect("priced");
+        // Decode's chain in its loop: a cooperative launch (2044 ns), two
+        // barriers (553 + 44 · 1.89 ns at 128 blocks) and the bodies'
+        // measured change (2500 ns) against three plain dependent launches
+        // (650 ns): the persistent kernel costs more.
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, g, false, true).expect("priced");
         let at128 = 553.0 + 44.0 * 1.89;
         assert!(
-            (per - (2044.0 + 2.0 * at128)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
+            (per - (2044.0 + 2.0 * at128 + 2500.0)).abs() < 0.5 && (sep - 1950.0).abs() < 0.5,
             "{per} {sep}"
         );
         assert!(per > sep);
+        // Outside every loop it also pays the process's first cooperative
+        // launch (38 us).
+        let (once, _) = chain_ns(&[3, 128, 128], 128, 2, g, false, false).expect("priced");
+        assert!((once - per - 38_000.0).abs() < 0.5, "{once} {per}");
         // Programmatic dependent launches (486 ns each): further apart.
-        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true).expect("priced");
+        let (_, sep) = chain_ns(&[3, 128, 128], 128, 2, g, true, true).expect("priced");
         assert!((sep - 1458.0).abs() < 0.5, "{sep}");
         // A long chain of one-block launches: twelve barriers of one block
         // (553 ns priced) against twelve more plain launches — still not
         // enough to pay the cooperative launch back here.
-        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false).expect("priced");
+        let (per, sep) = chain_ns(&[1; 13], 1, 12, g, false, true).expect("priced");
         assert!(per > sep, "{per} {sep}");
-        // Without the cooperative launch's own price, the barriers alone win.
+        // Without the cooperative launch's or the bodies' price, the barriers
+        // alone win.
         let mut cheap = *d;
         cheap.coop_launch_ns = 0;
+        cheap.coop_body_ns = 0;
         let g2 = Gpu {
             cost: Some(cheap),
             ..*g
         };
-        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g2, false).expect("priced");
+        let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g2, false, true).expect("priced");
         assert!(per <= sep, "{per} {sep}");
         assert!((d.gsync_at(504, g.sms).unwrap() - (553.0 + 420.0 * 1.89)).abs() < 0.5);
         // A part without the measured costs is unpriced (the 5090: no
-        // barrier or launch measured; the cross-arch parts have theirs).
+        // barrier or launch measured).
         let p5090 = crate::profile::TargetProfile::named("rtx-5090")
             .and_then(|p| p.gpu())
             .unwrap();
-        assert!(chain_ns(&[1, 1], 1, 1, p5090, true).is_none());
+        assert!(chain_ns(&[1, 1], 1, 1, p5090, true, true).is_none());
+        assert!(body_priced(g) && !body_priced(p5090));
+    }
+
+    /// The parts whose barrier and launch costs `calib.cu` measured but whose
+    /// persistent bodies nobody timed (rtx-4090, rtx-3090, a100): the
+    /// boundaries alone priced decode's chain 656 / 522 ns faster than its
+    /// launches — inside the 1970 ns the rtx-5080's decode chain lost beyond
+    /// its boundaries — so the bodies' price is required, and without it no
+    /// chain is priced. With the rtx-5080's measured body change, decode's
+    /// chain loses on both, and causal's six-launch chain (5 barriers against
+    /// 6 launches of 1440 / 1472 ns) still pays.
+    #[test]
+    fn the_bodies_price_decides_where_the_boundaries_alone_did_not() {
+        let part = |n: &str| {
+            *crate::profile::TargetProfile::named(n)
+                .and_then(|p| p.gpu())
+                .unwrap()
+        };
+        let body = gpu().cost.as_ref().expect("measured").coop_body_ns;
+        for (n, dec_save) in [("rtx-4090", 656.0), ("rtx-3090", 522.0)] {
+            let g = part(n);
+            assert!(!body_priced(&g), "{n}");
+            let d = g.cost.expect("calibrated");
+            assert!(
+                d.gsync_ns > 0 && d.dep_launch_ns > 0 && d.coop_body_ns == 0,
+                "{n}"
+            );
+            let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &g, false, true).expect("priced");
+            assert!((sep - per - dec_save).abs() < 1.0, "{n}: {per} {sep}");
+            let with = Gpu {
+                cost: Some(crate::profile::DeviceCost {
+                    coop_body_ns: body,
+                    ..d
+                }),
+                ..g
+            };
+            let (per, sep) = chain_ns(&[3, 128, 128], 128, 2, &with, false, true).unwrap();
+            assert!(per > sep, "{n} decode: {per} {sep}");
+            let (per, sep) = chain_ns(&[3, 128, 1, 4, 1, 32], 128, 5, &with, false, true).unwrap();
+            assert!(per < sep, "{n} causal: {per} {sep}");
+        }
+        assert!(!body_priced(&part("a100")));
     }
 
     #[test]

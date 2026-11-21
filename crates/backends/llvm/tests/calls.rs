@@ -217,6 +217,59 @@ fn decode_runs_its_trip_as_one_persistent_kernel() {
     assert!(host_line(&p5090).is_empty() && specs(&p5090).is_empty());
 }
 
+/// The parts whose barrier and launch costs were measured but whose
+/// persistent bodies nobody timed (rtx-4090, rtx-3090, a100) form no chain
+/// in a shipped build: the boundaries alone priced decode, causal, gen,
+/// prefill and rt_mlp2's chains as wins there, while on the rtx-5080 every
+/// forced chain lost by more than its boundaries say (decode 1970 ns a trip,
+/// rt_mlp2 2510 ns a chain) — the bodies' price (`coop_body_ns`) is required
+/// (`refused=unpriced`). Forced (`--calls=force`, the arm that measures it),
+/// they still form; the rtx-5080 refuses by cost as before.
+#[test]
+fn unmeasured_bodies_form_no_chain() {
+    let progs = [
+        "pt_decode_1024_256",
+        "pt_causal_1024_256",
+        "pt_gen_1024_512_256",
+        "pt_rt_mlp2_1024",
+    ];
+    let irs: Vec<CategoryIr> = progs.iter().map(|p| bench(p)).collect();
+    let emit = |ir: &CategoryIr, target: &'static str, force: bool| {
+        let mut gpu = GpuArms::default();
+        gpu.calls_force = force;
+        emit_detailed(
+            ir,
+            &EmitOpts {
+                target,
+                gpu,
+                ..EmitOpts::default()
+            },
+        )
+        .expect("emits")
+    };
+    for target in ["rtx-4090", "rtx-3090", "a100"] {
+        let mut forced = 0;
+        for (p, ir) in progs.iter().zip(&irs) {
+            let h = host_line(&emit(ir, target, false));
+            assert!(
+                h.is_empty() || field(&h, "formed") == "0",
+                "{target} {p}: {h}"
+            );
+            if !h.is_empty() && field(&h, "refused").contains("unpriced") {
+                forced += usize::from(field(&host_line(&emit(ir, target, true)), "formed") != "0");
+            }
+        }
+        assert!(forced >= 2, "{target}: forced chains {forced}");
+    }
+    for (p, ir) in progs.iter().zip(&irs) {
+        let h = host_line(&emit(ir, "rtx-5080", false));
+        assert!(
+            field(&h, "formed") == "0" && !field(&h, "refused").contains("unpriced"),
+            "rtx-5080 {p}: {h}"
+        );
+    }
+}
+
 /// A decode step small enough to emulate (16 rows of 256, 3 trips): values
 /// equal the interpreter and the OFF arm under four picks, at persistent grids
 /// of 1, 2 and 3 blocks, free-running, serialized and in reverse; the first
