@@ -142,6 +142,8 @@ Where the time goes, ranked by the gap it explains:
 
 ## Open findings (compiler; not fixed here) — minimal repros
 
+(Findings 1–5 and 10 are fixed in [Onto device](#onto-device-2026-11-21) below; 6–9 stay open.)
+
 Each repro is run with `target/release/examples/emit <f> - --rewrite --target=rtx-5080 --host=x86-64-v3
 --device-out=<f>.dev.ll` (placement: the `; mapal.move` / `; mapal.host` lines; kernels: `; mapal.plan`) or the
 interpreter (`examples/run`).
@@ -257,3 +259,69 @@ python3 benches/local/model_scale_report.py <results>/results-rtx-5080.txt ...
 Raw output (results, box.out, CUPTI traces, conditions, the bundles' `bundle.log`):
 `.claude/raw-evidence/local-rtx-5080/model-scale/` (local, not in git; not yet uploaded with
 `benches/gpu/archive_raw.sh`).
+
+## Onto device (2026-11-21)
+
+Branch `local-rtx-5080` @ `7942e6d7`; same machine and protocol as above (bench lock, CPUs 0–7 idle and pinned,
+Tctl 34–47 C, load 1.0–1.2 at start and end, no game). The natural programs (no `_pv` twins) now compile to a device
+form. Fixed generically, each with an OFF arm (a measurement flag), unit tests and generated-program tests
+(`crates/backends/llvm/tests/onto_device.rs`, generators `testgen::{OntoProg, BoundsFuzz, HostParProg}`):
+
+| finding | fix (fact / rule) | OFF arm |
+|---|---|---|
+| 1 exit value invisible in a later body | lower: the typing pass binds a routing guard's exit in the loop's enclosing scope (`ScopeStack::push_loop` / `bind_loop_exit`), as emission does | — (a frontend bug) |
+| 2 guard conditions ignored | `bounds_proof` (`mapal-ir/src/algo/bounds.rs`): signed ranges narrowed by the conditions holding where a value is used — a guard arm's condition on its exclusive work (`guard_structure`, stored), a `Phi`'s per arm — run back through `+ − ·k ÷k %k`, widen, projections (`c % 128 < 64` narrows `c`); an index proven only under an arm gates that arm (`GuardArm::cond_reads`) | `--gpu-off=cond-bounds` (`FactArms`: facts rebuilt under plain intervals) |
+| 3 loop-carried scalars unranged | `bounds_proof`: a canonical loop's int slot from `loop_plan` — init, affine next `t + c`, the continue condition's bound (`t ≤ U` ⇒ `[I.lo, max(I.hi, U + c)]`, unranged when `U + c` wraps); the continue condition holds on the advance cone, the exit condition on the exit value | same |
+| 5 decode RMSNorm / O on the host | `place` `carry-made`: a loop view is device-made when the next state replacing it is (an exit value when its payload is) — `device_made` sees through the back edge | `--gpu-off=carry-made` |
+| 10 no 8192 device form | the KV-group loop's counter is ranged (3); index width from the extents: `Ty::index_ty` (an `iota` past 2³¹ cells has `i64` elements; count, fill and index literals type `i64` there; ADR-0031 amended) | — |
+| 4 serial host part | `host-par` (`func/hostpar.rs`): a GPU build's straight-line host map with the CPU build's split shape (clean body, static extent, no device-only operand) runs as one split task on the pool where the host's measured `DispatchCost` says it pays | `--gpu-off=host-par` |
+
+**Intent → realized (emitted modules, `emit --target=rtx-5080 --host=x86-64-v3`).** Natural decode B1 L2048: trap
+calls 0 (OFF `cond-bounds`: 9), `; mapal.move carried=0:…:device,1:…:device,2:16384:device h2d=0 d2h=0` (OFF
+`carry-made`: `2:16384:two h2d=16384 d2h=16384`; OFF `cond-bounds`: caches `two` too); prefill / block prefill / 8192
+prefill: 0 traps (OFF 9 / 9 / 13), the 8192 loop's `y` device-carried, `h2d=d2h=0`. The device kernels are the
+`_pv` GPU-only arm's (the same kernel ids at decode: O + residual `7b483c3e`, P·V `5ff9d6f8`, RMSNorm `44b61687`);
+the guarded RoPE / cache row sits in the horizontal group (`acf60273`, 142 vs 22 us, overlapped: the step is 10.75 ms
+either way). `host-par` dispatches nothing in the ON builds of these programs except one straight-line map of the
+8192 prefill (OFF arm = ON within 0.1 %); in the `cond-bounds`-OFF builds it splits 7–15 host maps a program.
+Bundle `evidence.py`: 8326 checks, 509 mismatches (the part's standing items, as above).
+
+**Values.** 121 value gates pass (every arm, default face within D2 of the exact-face device oracle, XREF); the five
+`px_llm_*` natural twins match the interpreter (32 differentials). The 8192 prefill prints −1.3648784, −1.6895329,
+0.65508735, 0.8966407 — torch's −1.36488, −1.68953, 0.655087, 0.896641.
+
+**Tests.** Workspace 1407 pass, 0 fail (`--no-fail-fast`). Generated: 96 onto-device programs (seven guard forms,
+four continue forms up / down, guarded table reads, exit state and exit counter in later bodies) × emulator
+`MAPAL_EMU_SERIAL=0/1/2`, `MAPAL_EMU_REVERSE=1` + the CPU build: 913 indexes, 857 proven, 342 only by conditions,
+192 gated arms, 77 device-carried, 231 kernels, 51 trap-free / 45 checked programs, OFF arm on 24; bounds soundness
+fuzz (240 programs, offsets / thresholds / steps drawn freely, native build traps exactly where the interpreter
+does): 82 finish, 158 trap, 838 of 1198 reads proven; `host-par`: 12 generated host chains, 39 split maps, values at
+1 / 3 lanes and OFF.
+
+| workload | OFF: natural form before (`cf40019b`, run above) / this run's OFF arms | ON | best competitor (f32 / TF32) | ratio | torch bf16 | explanation (CUPTI, ON) |
+|---|---:|---:|---|---:|---:|---|
+| (a) decode B1 L2048, ms/step | 217.8 / cond-bounds 191.2, carry-made 150.5 | **0.668** | 0.258 (torch-compile) | 2.60 | 0.149 | 326× from OFF; O + residual cell kernel 296 us (16 CTAs, finding 6), QKV 120, P·V 99.5, RMSNorm 78 (1 CTA, finding 9) |
+| (a) decode B1 L8192 | 345.3 / carry-made 150.2 | **1.365** | 0.344 (torch-compile) | 3.96 | 0.189 | + QKᵀ / P·V cells grow with L (finding 7) |
+| (a) decode B8 L2048 | 1131 / cond-bounds 1068, carry-made 802.8 | **1.205** | 0.678 (torch-compile) | 1.78 | 0.218 | as B1 |
+| (a) decode B8 L8192 | 2196 / carry-made 806.5 | **3.594** | 2.466 (torch-compile) | 1.46 | 0.485 | as B32 |
+| (a) decode B32 L2048 | 4676 / carry-made 3009 | **3.691** | 2.277 (torch-compile) | 1.62 | 0.462 | as B32 |
+| (a) decode B32 L8192 | 8624 / carry-made 2974 | **12.54** | 9.523 (torch-compile) | 1.32 | 1.473 | QKᵀ 7.43 ms (K read per query head, finding 7), whole-cache update 2.68 (finding 8), P·V 1.65, O 0.63 |
+| (c) block decode B1 L4096 | 718.2 / carry-made 613.5 | **2.299** | 1.074 (torch-compile) | 2.14 | 0.559 | down + SiLU + residual cell 1.08 ms (finding 6), gate / up 0.53 / 0.27, O 0.30, P·V 0.20 |
+| (b) prefill T2048, ms | 280 017 | **86.74** | 8.322 (torch-compile) | 10.4 | 1.925 | QKᵀ cell 38.7 ms (0.9 TFLOPS), O + residual cell 29.6, P·V cell 14.1 (findings 6–7), QKV tile 2.59, softmax flow 1.30 |
+| (b) prefill T2048 TF32 | — | **86.04** | 6.068 (torch-compile-tf32) | 14.2 | 1.925 | the cell kernels have no TF32 path |
+| (b) prefill T8192 | no device form | **1010** | 83.71 (torch-compile) | 12.1 | 11.32 | 8 KV groups: QKᵀ cells 622 ms (77.7 each, 0.88 TFLOPS), O + residual cells 226, P·V cells 119, softmax flow 21.4, QKV tile 10.8, `y` upload 4.9 |
+| (c) block prefill T2048 | 934 279 | **224.5** | 27.93 (torch-compile) | 8.04 | 8.028 | as prefill + down + SiLU + residual cell (finding 6); 3.5 % over the `_pv` GPU-only 217.0 of the run above: open (not traced; that kernel's variance was already open) |
+| (c) block prefill T2048 TF32 | — | **221.1** | 18.53 (torch-compile-tf32) | 11.9 | 8.028 | as above |
+
+Mapal ON: the program's `iter ms`, median of 3 processes (decode: the 16-step run / 16); null 0.0–0.2 %. Competitor
+legs: the run above (same box, same day; `TORCH=0` here). The ON rows equal the `_pv` GPU-only arm of the run above
+within 0.3 % except the block prefill. What remains is findings 6–9: GEMM + residual as a per-cell kernel, attention
+as per-cell kernels with K re-read per query head, the whole-cache update map, one-thread-per-row RMSNorm.
+
+**Open (this step).** A device cell over an `i64` iota stays on the host (the cell kernel forms its element as
+`i32`); `host-par` splits straight-line maps only (a loop body's host maps and host folds stay serial — none remain in
+these programs' ON builds); a down-counting counter with a step that does not divide its bound is ranged one step
+loose (intervals carry no stride).
+
+Raw (local, not in git): `.claude/raw-evidence/local-rtx-5080/onto-device/` (`resE/` results, box.out, conditions;
+`trace/` CUPTI summaries; `commands.txt`; `ws_tests2.log`).

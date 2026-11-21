@@ -80,6 +80,12 @@ written provable (`_pv` diagnostics) the device path is 1.32–3.96× (decode) a
 from per-cell kernels for GEMM + residual and for attention, a whole-cache update map per step and one-thread
 RMSNorm. Ten open findings with minimal repros there.
 
+**onto-device** (`model-scale.md` [Onto device](model-scale.md#onto-device-2026-11-21)): the natural layer programs on
+the device — `bounds_proof` ranges indices by the conditions where they run and by loop counters (`cond-bounds`), loop
+exit values readable in later bodies, `carry-made` placement, `host-par`, i64 extents. Decode 217.8 → 0.668 ms/step
+(B1 L2048; 1.32–3.96× torch-compile f32 over the suite), prefill 2048 280 s → 86.7 ms (10.4×), the 8192 prefill 1.01 s
+(12.1×; no device form before); the gaps are findings 6–9.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).
 
