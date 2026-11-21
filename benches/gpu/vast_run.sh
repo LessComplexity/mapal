@@ -27,11 +27,24 @@ log "instance $id from offer $OFFER"
 echo "$id" > "$RES/instance-$PROF"
 # LABEL=<topic>: names the rental (CLAUDE.md: never touch an instance you did not create).
 if [ -n "${LABEL:-}" ]; then vastai label instance "$id" "$LABEL" >/dev/null 2>&1 || log "label failed"; fi
+live() { # <id>: exit 0 while the account still lists it
+    vastai show instances --raw 2>/dev/null | python3 -c 'import json,sys
+sys.exit(0 if any(str(i.get("id")) == sys.argv[1] for i in json.load(sys.stdin)) else 1)' "$1"
+}
 cleanup() {
     if [ "${KEEP:-0}" = 1 ]; then log "KEEP=1: instance $id still billing"; return; fi
-    vastai destroy instance "$id" -y >/dev/null 2>&1; if vastai show instances --raw 2>/dev/null | grep -q "\"id\": $id,"; then log "DESTROY FAILED — $id STILL BILLING"; else log "destroyed $id"; fi
+    vastai destroy instance "$id" -y >/dev/null 2>&1
+    sleep 5; live "$id" && { vastai destroy instance "$id" -y >/dev/null 2>&1; sleep 10; }
+    if live "$id"; then log "DESTROY FAILED — $id STILL BILLING"; else log "destroyed $id"; fi
 }
 trap cleanup EXIT
+# SSH_KEY=<private key file>: its public half is attached to this instance alone (an account without
+# registered keys), and ssh offers only it.
+SSH_ID=()
+if [ -n "${SSH_KEY:-}" ]; then
+    vastai attach ssh "$id" "$(cat "$SSH_KEY.pub")" >/dev/null 2>&1 || log "attach ssh failed"
+    SSH_ID=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
+fi
 
 # START_TRIES x 10 s for the container to start (default 20 min; a slow image pull needs more).
 for _ in $(seq "${START_TRIES:-120}"); do
@@ -45,8 +58,9 @@ done
 [ "$st" = running ] || { log "never reached running (last: $st)"; exit 1; }
 url=$(vastai ssh-url "$id")            # ssh://root@host:port
 hp=${url#ssh://root@}; host=${hp%:*}; port=${hp##*:}
-SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=30 -p "$port" "root@$host")
-for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && break; sleep 10; done
+SSH=(ssh ${SSH_ID[@]+"${SSH_ID[@]}"} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=30 -p "$port" "root@$host")
+up=0; for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && { up=1; break; }; sleep 10; done
+[ "$up" = 1 ] || { log "ssh $host:$port never answered"; exit 1; }
 log "ssh $host:$port up"
 # WAIT_FILE=<path>: rent while the bundle is still being built; upload once the path exists.
 while [ -n "${WAIT_FILE:-}" ] && [ ! -e "$WAIT_FILE" ]; do sleep 10; done
