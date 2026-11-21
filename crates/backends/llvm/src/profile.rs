@@ -373,6 +373,17 @@ pub struct DeviceCost {
     /// and its link, not the GPU: the rental boxes measured 350–1000. 0 = not
     /// measured: nothing is page-locked.
     pub pageable_pm: u64,
+    /// long-rows `row-slices`: the device time one element a lane adds to a
+    /// block walking a row (a flow unit's fold or stored cell, `256` lanes,
+    /// latency-bound: the block's loads in flight over their latency), in
+    /// ns — the slope of a one-block-a-row unit's kernel time over its row
+    /// length (`long-rows.md`). 0 = not measured: no row is sliced.
+    pub row_iter_ns: u64,
+    /// long-rows `row-slices`: the host time a process's first cooperative
+    /// launch takes beyond a plain launch's (the driver's one-time setup;
+    /// later ones cost a plain launch), in ns. A cooperative launch the
+    /// program issues once pays all of it. 0 = not measured: not priced.
+    pub coop_first_ns: u64,
 }
 
 /// A [`DeviceCost`] without the plan-cost rates: the parts that keep the
@@ -400,6 +411,8 @@ pub const NO_PLAN: DeviceCost = DeviceCost {
     pdl_launch_ns: 0,
     coop_launch_ns: 0,
     pageable_pm: 0,
+    row_iter_ns: 0,
+    coop_first_ns: 0,
 };
 
 impl DeviceCost {
@@ -408,7 +421,7 @@ impl DeviceCost {
     /// overrides by name ([`Gpu::fp32_lanes`], [`Gpu::clock_khz`], and the
     /// hardware-properties the rung rules read: SMs, L2, shared memory,
     /// threads, registers and blocks per SM, the DRAM interface).
-    pub const NAMES: [&'static str; 32] = [
+    pub const NAMES: [&'static str; 34] = [
         "flops_per_ns",
         "bytes_per_ns",
         "launch_ns",
@@ -431,6 +444,8 @@ impl DeviceCost {
         "pdl_launch_ns",
         "coop_launch_ns",
         "pageable_pm",
+        "row_iter_ns",
+        "coop_first_ns",
         "fp32_lanes",
         "clock_khz",
         "sms",
@@ -488,7 +503,7 @@ pub type CostOver = [Option<u64>; DeviceCost::NAMES.len()];
 impl Gpu {
     /// [`DeviceCost::NAMES`] that name a [`DeviceCost`] field (those before
     /// `fp32_lanes`).
-    const NAMES_COST: usize = 22;
+    const NAMES_COST: usize = 24;
 
     /// This part with the overrides in `over` applied (a part without a
     /// [`DeviceCost`] takes one from [`NO_PLAN`]).
@@ -519,6 +534,8 @@ impl Gpu {
                 "pdl_launch_ns" => &mut d.pdl_launch_ns,
                 "coop_launch_ns" => &mut d.coop_launch_ns,
                 "pageable_pm" => &mut d.pageable_pm,
+                "row_iter_ns" => &mut d.row_iter_ns,
+                "coop_first_ns" => &mut d.coop_first_ns,
                 "fp32_lanes" => &mut self.fp32_lanes,
                 "clock_khz" => &mut self.clock_khz,
                 "sms" => &mut self.sms,
@@ -564,6 +581,8 @@ impl Gpu {
             "pdl_launch_ns" => d.pdl_launch_ns,
             "coop_launch_ns" => d.coop_launch_ns,
             "pageable_pm" => d.pageable_pm,
+            "row_iter_ns" => d.row_iter_ns,
+            "coop_first_ns" => d.coop_first_ns,
             "fp32_lanes" => self.fp32_lanes,
             "clock_khz" => self.clock_khz,
             "sms" => self.sms,
@@ -3407,6 +3426,8 @@ pub const RTX_4090: TargetProfile = TargetProfile {
             pdl_launch_ns: 0,
             coop_launch_ns: 0,
             pageable_pm: 0,
+            row_iter_ns: 0,
+            coop_first_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_89), 2.52 GHz under load.
         fp32_lanes: 128,
@@ -3537,6 +3558,8 @@ pub const RTX_5090: TargetProfile = TargetProfile {
             pdl_launch_ns: 0,
             coop_launch_ns: 0,
             pageable_pm: 0,
+            row_iter_ns: 0,
+            coop_first_ns: 0,
         }),
         // E1 header: 128 FP32 lanes per SM (sm_120), 2.41 GHz under load.
         fp32_lanes: 128,
@@ -3628,6 +3651,16 @@ pub const RTX_5080: TargetProfile = TargetProfile {
             // `local-rtx-5080/hardware-properties.md`): pageable H2D 27–37
             // GB/s against page-locked 40–48 at 4–256 MiB, median ratio 695.
             pageable_pm: 695,
+            // long-rows `row-slices` (CUPTI, one block a row of a softmax
+            // unit, 256 lanes, rows L2-resident, `long-rows.md`): 131.6 us
+            // for 1 x 131072 (3 walks of 512 lane-iterations: 85.7 ns
+            // each), 34.3 us for 4 x 32768 (3 x 128: 89.3 ns).
+            row_iter_ns: 87,
+            // long-rows (CUPTI driver-API trace, 7 one-iteration processes of
+            // the sliced pt_lsm_4_32768): the first `cuLaunchCooperativeKernel`
+            // 44.8 us median [39.4-52.7] against `cuLaunchKernelEx` 6.7 us;
+            // the next ones of a process 3-7 us (a looped program).
+            coop_first_ns: 38_000,
         }),
         // 128 FP32 lanes per SM (sm_120); E1 peak FFMA median 52.7 Tflop/s
         // [50.3–57.6] / (84 SMs · 128 · 2) = 2.45 GHz under load.
@@ -6107,7 +6140,7 @@ mod tests {
             prev = c.ns;
         }
         let over_ipc = |pm| {
-            let mut over = CostOver::default();
+            let mut over = [None; DeviceCost::NAMES.len()];
             let i = DeviceCost::NAMES.iter().position(|n| *n == "lsu_ipc_pm");
             over[i.unwrap()] = Some(pm);
             TargetProfile {
@@ -6161,7 +6194,7 @@ mod tests {
         }
         // A `--cost=` arm on an uncalibrated part leaves it uncalibrated
         // until every rate is given.
-        let mut over = CostOver::default();
+        let mut over = [None; DeviceCost::NAMES.len()];
         over[4] = Some(500);
         let g = RTX_3090.gpu().unwrap().with_cost(&over);
         assert_eq!(g.cost.unwrap().gap_ns, 500);
@@ -6291,7 +6324,7 @@ mod tests {
             assert!(c.c_ns < prev && c.c_ns > 0.0, "S={s}");
             prev = c.c_ns;
         }
-        let mut over = CostOver::default();
+        let mut over = [None; DeviceCost::NAMES.len()];
         let lat = DeviceCost::NAMES
             .iter()
             .position(|n| *n == "lat_ns")

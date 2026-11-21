@@ -38,12 +38,12 @@ mod validate;
 
 pub use access::{AccessPlan, Hazard};
 pub use algo::{
-    Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, Digit, Edge, ElemPlan,
-    ElemSrc, EmissionClass, EmissionPlan, FmaPair, Footprint, FootprintPlan, GuardArm, GuardSite,
-    LastUsePlan, LinearSite, LoopPlan, LoopScc, MovePlan, MoveSite, Outside, PathPlan,
-    PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach, Regroup, RowFoldOp, RowFoldSite,
-    StepAlgebra, StepFlags, Tap, Task, TaskId, TaskKind, TileKSplit, TilePlan, TileRead, TileSite,
-    TripPhase, TripSplit, WaitEntry, bound_coef, gamma,
+    Affine, AxisDigit, BoundsProof, CellRead, CellSite, Checkpoint, Delta, DepLaw, Digit, Edge,
+    ElemPlan, ElemSrc, EmissionClass, EmissionPlan, FmaPair, FoldCombine, FoldCombinePlan,
+    Footprint, FootprintPlan, GuardArm, GuardSite, LastUsePlan, LinearSite, LoopPlan, LoopScc,
+    MovePlan, MoveSite, Outside, PathPlan, PrecisionPlan, RadixAddr, RadixForm, RadixTile, Reach,
+    Regroup, RowDep, RowFoldOp, RowFoldSite, StepAlgebra, StepFlags, Tap, Task, TaskId, TaskKind,
+    TileKSplit, TilePlan, TileRead, TileSite, TripPhase, TripSplit, WaitEntry, bound_coef, gamma,
 };
 pub use builder::{Dest, FnBuilder, IrBuilder, IrError, LoopHandle};
 pub use graph::{

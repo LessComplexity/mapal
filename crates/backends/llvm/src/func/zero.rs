@@ -268,6 +268,11 @@ impl<'a> FnEmit<'a> {
             return Some((blocks, base));
         }
         let u = plan.units.get(e)?;
+        // long-rows `row-slices`: no tail rides a sliced unit (its blocks
+        // stride over their items).
+        if u.slices.is_some() {
+            return None;
+        }
         let base = u.members.iter().filter(|mb| mb.store).count() + u.gmem.len();
         Some((self.geo(u).gx, base))
     }

@@ -5,10 +5,18 @@
 //! fold axis is recorded for the layout a consumer picks, never for admission.
 //! One fact, stored on the graph; the host emitter and the device kernels read
 //! it, so both realize the same arithmetic.
+//!
+//! **`fold_combine`** (long-rows): how a fold's state over a row splits into
+//! blocks of its axis — partial states combined by the step's own `⊕` — and
+//! which values constant along the axis (one per row: another fold's result)
+//! its term reads, each by the law the term's dataflow gives it: a factor
+//! applied once after the combine, a shift of a max/min applied once after
+//! it, or a phase (the partials need that value combined first). Read off the
+//! fold's step and the cell map its term reads; never a pattern name.
 
 use slotmap::SecondaryMap;
 
-use crate::algo::RowFoldOp;
+use crate::algo::{Footprint, RowFoldOp, TileRead};
 use crate::graph::{CategoryIr, FuncId, MorphismId, ObjectId, Operation};
 use crate::ty::Ty;
 
@@ -242,5 +250,354 @@ impl CategoryIr {
     fn whole_site_of(&self, fold: MorphismId) -> Option<crate::algo::RowFoldSite> {
         let owner = self.try_owner(self.morphisms.get(fold)?.target)?;
         self.whole_fold(owner).get(fold).cloned()
+    }
+}
+
+/// How a value constant along a fold's axis enters its term
+/// ([`FoldCombine::deps`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DepLaw {
+    /// The term is `x · v` (`div`: `x ÷ v`) through products and quotients
+    /// only, and `⊕ = +`: the fold is `(Σ x) · v` (`÷ v`) — distributivity, a
+    /// regrouping where the order is free (ADR-0040 D2). `x` is the term with
+    /// every read of `v` replaced by `1`, bit for bit (`y · 1 = y`, `y ÷ 1 =
+    /// y`): the partials never read `v`, which is applied once after the
+    /// combine.
+    Factor { div: bool },
+    /// The term is `x + v` or `x − v` (`sub`) at its top, and `⊕` a running
+    /// max / min: the fold is `(⊕ x) ± v` — rounding is monotone, so the
+    /// extreme of the shifted values is the shifted extreme. `x` is the term
+    /// with `v` read as the add's identity (`−0`, `+0` under a subtract).
+    Shift { sub: bool },
+    /// Any other dependence (a softmax's `exp(s − m)` written as a polynomial:
+    /// no operation of the IR is an exponential, so no rescaling law): the
+    /// partials need `v`'s final value — a phase after `v`'s own fold.
+    Phase,
+}
+
+/// One value constant along a fold's axis that its term reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowDep {
+    /// The per-cell map whose output the fold reads, and which reads `value`.
+    pub via: MorphismId,
+    /// `via`'s source slot of `value`.
+    pub slot: u32,
+    /// One element per row of the fold (or one number): another fold's
+    /// result, a per-row cell, an input.
+    pub value: ObjectId,
+    pub law: DepLaw,
+}
+
+/// **The fold-state combine of one fold site** ([`CategoryIr::fold_combine`]):
+/// `out[i] = seed ⊕ (⊕_{j<k} t_i(j))` computed as partial states over
+/// disjoint blocks of `j`, combined by the step's own `⊕` (associative and
+/// commutative: `+`, `×`, a running max / min), each partial with the
+/// per-block transform `deps` give it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FoldCombine {
+    pub op: RowFoldOp,
+    /// Regrouping keeps the bits (an integer step). A float `+` / `×` is a
+    /// regrouping admitted where the order is free.
+    pub exact: bool,
+    pub rows: u64,
+    pub k: u64,
+    /// The array the term reads (a tile site's row operand `a`).
+    pub term: ObjectId,
+    /// The values constant along `j` that the term reads through `term`'s
+    /// cell map (and, as [`DepLaw::Phase`], through the cells that map reads
+    /// at its own cell).
+    pub deps: Vec<RowDep>,
+}
+
+/// [`CategoryIr::fold_combine`]: every fold site of one function.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FoldCombinePlan {
+    /// Keyed by the site: a row fold's or tile site's `Map`, a whole fold's
+    /// `Fold`.
+    pub sites: SecondaryMap<MorphismId, FoldCombine>,
+}
+
+impl FoldCombinePlan {
+    /// The folds `site`'s partials need combined first: its
+    /// [`DepLaw::Phase`] values.
+    pub fn phase_values(&self, site: MorphismId) -> Vec<ObjectId> {
+        self.sites.get(site).map_or(Vec::new(), |c| {
+            c.deps
+                .iter()
+                .filter(|d| d.law == DepLaw::Phase)
+                .map(|d| d.value)
+                .collect()
+        })
+    }
+}
+
+/// Cells followed through same-cell reads when collecting a term's deps.
+const COMBINE_DEPTH: u32 = 4;
+
+impl CategoryIr {
+    /// **The fold-state combine** of every fold site of `f` (module doc):
+    /// built from `row_fold`, `whole_fold`, `tile_plan_strided` and
+    /// `cell_plan`. Stored on the graph.
+    pub fn fold_combine(&self, f: FuncId) -> FoldCombinePlan {
+        self.fact(f, |s| &s.fold_combine, || self.fold_combine_compute(f))
+    }
+
+    fn fold_combine_compute(&self, f: FuncId) -> FoldCombinePlan {
+        let mut plan = FoldCombinePlan::default();
+        let Some(fd) = self.func(f) else {
+            return plan;
+        };
+        let folds = self.row_fold(f);
+        let whole = self.whole_fold(f);
+        let tiles = self.tile_plan_strided(f);
+        for &m in &fd.morphisms {
+            let Some(morph) = self.morphisms.get(m) else {
+                continue;
+            };
+            let (site_op, read, rows, k, w, elem, src) = if let Some(s) = folds.get(m) {
+                (s.op, s.a.clone(), s.rows, s.k, s.w, &s.elem, morph.source)
+            } else if let Some(s) = whole.get(m) {
+                (s.op, s.a.clone(), s.rows, s.k, s.w, &s.elem, morph.source)
+            } else if let Some(s) = tiles.sites.get(m) {
+                let op = RowFoldOp::Arith {
+                    op: Operation::Add,
+                    acc_first: s.add_acc_first,
+                };
+                (op, s.a.clone(), s.rows, s.k, 1, &s.elem, morph.source)
+            } else {
+                continue;
+            };
+            let tile = tiles.sites.contains_key(m);
+            let Some(term) = self.pair_slot_source(src, read.slot) else {
+                continue;
+            };
+            let exact = !matches!(elem, Ty::Float { .. });
+            // Per row `i` the term reads `term[base + ci·i + ck·j]`, `j < k`:
+            // a same-row read of a cell `t` is constant along `j` where it is
+            // `x[t ÷ c]` with `c` the row's stride and the row inside it.
+            let aligned = w == 1
+                && read.clane == 0
+                && read.ksplit.is_none()
+                && read.base + read.ck * k.saturating_sub(1) < read.ci.max(1)
+                || rows == 1 && read.ksplit.is_none();
+            let mut deps = Vec::new();
+            if aligned {
+                self.term_deps(f, &read, rows, k, term, site_op, tile, 0, &mut deps);
+            }
+            plan.sites.insert(
+                m,
+                FoldCombine {
+                    op: site_op,
+                    exact,
+                    rows,
+                    k,
+                    term,
+                    deps,
+                },
+            );
+        }
+        plan
+    }
+
+    /// The deps of a term reading `term` (module doc): its cell map's reads
+    /// constant along the fold's axis, each with its law; at `depth > 0` (a
+    /// cell the term reads through another at its own cell) every one a phase.
+    #[allow(clippy::too_many_arguments)]
+    fn term_deps(
+        &self,
+        f: FuncId,
+        read: &TileRead,
+        rows: u64,
+        k: u64,
+        term: ObjectId,
+        op: RowFoldOp,
+        tile: bool,
+        depth: u32,
+        deps: &mut Vec<RowDep>,
+    ) {
+        let cells = self.cell_plan(f);
+        let &[c] = self.in_edges(term) else {
+            return;
+        };
+        let (Some(site), Some(cm)) = (cells.get(c), self.morphisms.get(c)) else {
+            return;
+        };
+        let Operation::Map { body, captures } = cm.op else {
+            return;
+        };
+        let len = |o: ObjectId| match self.objects.get(o).map(|x| &x.ty) {
+            Some(Ty::Array { size, .. }) => *size,
+            _ => 0,
+        };
+        // The row's last cell the term reads, from the row's first.
+        let span = read.base + read.ck * k.saturating_sub(1);
+        let constant = |foot: Footprint, v: ObjectId| match foot {
+            Footprint::Row { c } if rows > 1 => c == read.ci && span < c && len(v) == rows,
+            Footprint::Row { c } => span < c,
+            Footprint::Const(_) => true,
+            _ => false,
+        };
+        let mut seen: Vec<u32> = Vec::new();
+        for r in &site.reads {
+            let slot = if captures > 0 { Some(r.slot) } else { None };
+            let Some(v) = slot.map_or(Some(cm.source), |s| self.pair_slot_source(cm.source, s))
+            else {
+                continue;
+            };
+            if r.foot == Footprint::Same && depth < COMBINE_DEPTH && v != term {
+                let before = deps.len();
+                self.term_deps(f, read, rows, k, v, op, tile, depth + 1, deps);
+                for d in &mut deps[before..] {
+                    d.law = DepLaw::Phase;
+                }
+                continue;
+            }
+            if !constant(r.foot, v) || seen.contains(&r.slot) {
+                continue;
+            }
+            seen.push(r.slot);
+            let law = match depth {
+                0 => self.dep_law(body, captures, r.slot, op, tile),
+                _ => DepLaw::Phase,
+            };
+            deps.push(RowDep {
+                via: c,
+                slot: r.slot,
+                value: v,
+                law,
+            });
+        }
+        for &u in &site.uniform {
+            let Some(v) = self.pair_slot_source(cm.source, u) else {
+                continue;
+            };
+            let law = match depth {
+                0 => self.dep_law(body, captures, u, op, tile),
+                _ => DepLaw::Phase,
+            };
+            deps.push(RowDep {
+                via: c,
+                slot: u,
+                value: v,
+                law,
+            });
+        }
+    }
+
+    /// The objects of cell body `b` that read its source slot `s`: the
+    /// `Index` results on capture `s`, or the capture itself (a number).
+    fn slot_reads(&self, b: FuncId, s: u32) -> Vec<ObjectId> {
+        let Some(bd) = self.func(b) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for &p in self.out_edges(bd.input) {
+            let pm = &self.morphisms[p];
+            if pm.op != (Operation::Proj { index: s }) {
+                continue;
+            }
+            let cap = pm.target;
+            if !matches!(self.objects.get(cap).map(|o| &o.ty), Some(Ty::Array { .. })) {
+                out.push(cap);
+                continue;
+            }
+            for &g in &bd.morphisms {
+                let x = &self.morphisms[g];
+                if x.op == Operation::Index && self.pair_slot_source(x.source, 0) == Some(cap) {
+                    out.push(x.target);
+                }
+            }
+        }
+        out
+    }
+
+    /// [`DepLaw`] of body `b`'s output in its slot `s` (module doc).
+    fn dep_law(&self, b: FuncId, captures: u32, s: u32, op: RowFoldOp, tile: bool) -> DepLaw {
+        let Some(bd) = self.func(b) else {
+            return DepLaw::Phase;
+        };
+        if captures == 0 {
+            return DepLaw::Phase;
+        }
+        let reads = self.slot_reads(b, s);
+        if reads.is_empty() {
+            return DepLaw::Phase;
+        }
+        // Everything the reads reach inside the body (a product holding one
+        // holds it whole: an over-approximation, so a law is never claimed
+        // where the value leaks).
+        let mut tainted: SecondaryMap<ObjectId, ()> = SecondaryMap::new();
+        let mut stack = reads.clone();
+        while let Some(o) = stack.pop() {
+            if tainted.insert(o, ()).is_some() {
+                continue;
+            }
+            for &m in self.out_edges(o) {
+                stack.push(self.morphisms[m].target);
+            }
+        }
+        let is_read = |o: ObjectId| reads.contains(&o);
+        let free = |o: ObjectId| !tainted.contains_key(o);
+        let add = matches!(
+            op,
+            RowFoldOp::Arith {
+                op: Operation::Add,
+                ..
+            }
+        );
+        if add && let Some(div) = self.factor_path(bd.output, &is_read, &free) {
+            return DepLaw::Factor { div };
+        }
+        // A tile's step is `acc + a·b`: a shift of `a` is no shift of the term.
+        if !tile && matches!(op, RowFoldOp::Select { .. }) {
+            let [m] = self.in_edges(bd.output) else {
+                return DepLaw::Phase;
+            };
+            let sm = &self.morphisms[*m];
+            let (Some(x), Some(y)) = (
+                self.pair_slot_source(sm.source, 0),
+                self.pair_slot_source(sm.source, 1),
+            ) else {
+                return DepLaw::Phase;
+            };
+            match sm.op {
+                Operation::Add if is_read(y) && free(x) || is_read(x) && free(y) => {
+                    return DepLaw::Shift { sub: false };
+                }
+                Operation::Sub if is_read(y) && free(x) => return DepLaw::Shift { sub: true },
+                _ => {}
+            }
+        }
+        DepLaw::Phase
+    }
+
+    /// `o` is `x · v` (`Some(false)`) or `x ÷ v` (`Some(true)`) with `v` a
+    /// read of the slot reached only through products and quotients whose
+    /// other operand never reads it.
+    fn factor_path(
+        &self,
+        o: ObjectId,
+        is_read: &dyn Fn(ObjectId) -> bool,
+        free: &dyn Fn(ObjectId) -> bool,
+    ) -> Option<bool> {
+        if is_read(o) {
+            return Some(false);
+        }
+        let &[m] = self.in_edges(o) else {
+            return None;
+        };
+        let mm = self.morphisms.get(m)?;
+        if !matches!(self.objects.get(o).map(|x| &x.ty), Some(Ty::Float { .. })) {
+            return None;
+        }
+        let x = self.pair_slot_source(mm.source, 0)?;
+        let y = self.pair_slot_source(mm.source, 1)?;
+        match mm.op {
+            Operation::Mul if free(y) => self.factor_path(x, is_read, free),
+            Operation::Mul if free(x) => self.factor_path(y, is_read, free),
+            Operation::Div if free(y) => self.factor_path(x, is_read, free),
+            Operation::Div if free(x) => self.factor_path(y, is_read, free).map(|d| !d),
+            _ => None,
+        }
     }
 }

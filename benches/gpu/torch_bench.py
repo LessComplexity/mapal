@@ -239,7 +239,24 @@ def workload(stem, mode='eager'):
             s = q @ kk.T
             ex = expo((s - s.max(dim=1, keepdim=True).values) / sd)
             return corners((ex / ex.sum(dim=1, keepdim=True)) @ vv)
+        if mode.startswith('sdpa'):  # long-rows: the library's fused attention (exact exp: a time reference,
+            # its values differ from the program's `expo` by the approximation, so it never gates)
+            def sdpa(q, kk, vv):
+                o = torch.nn.functional.scaled_dot_product_attention(q[None], kk[None], vv[None], scale=1.0 / sd)
+                return corners(o[0])
+            return sdpa, (q, kk, vv)
         return attn, (q, kk, vv)
+    if stem.startswith('pt_lsm_'):  # gen_tiles.py `long_softmax`: few long rows of q·W scores
+        R, L = map(int, stem.split('_')[2:])
+        q, w = op('a', R * 16).view(R, 16), op('b', 16 * L).view(16, L)
+
+        def lsm(q, w):
+            s = q @ w
+            ex = expo((s - s.max(dim=1, keepdim=True).values) / 4.0)
+            return corners(ex / ex.sum(dim=1, keepdim=True))
+        if mode.startswith('sdpa'):  # the library softmax (exact exp: a time reference, never gates)
+            return (lambda q, w: corners(torch.softmax((q @ w) / 4.0, dim=1))), (q, w)
+        return lsm, (q, w)
     if stem.startswith('pt_smlp_'):
         M, d, h = map(int, stem.split('_')[2:])
         x, w1, w2 = op('a', M * d).view(M, d), op('b', d * h).view(d, h), op('e', h * d).view(h, d)
@@ -456,6 +473,10 @@ def main():
         scale = llm or base.startswith('pt_pj_')
         if llm:
             modes += ['sdpa'] + (['sdpa-tf32'] if 'tf32' in stem else [])
+        # long-rows: the attention rows against SDPA, the long softmax rows against torch.softmax (both exact exp).
+        sdpa_ref = base.startswith(('pt_attn_', 'pt_lsm_'))
+        if sdpa_ref:
+            modes += ['sdpa', 'sdpa-compile']
         if scale:
             modes = [m for m in modes if m.endswith('-tf32')] if 'tf32' in stem else modes + ['bf16', 'bf16-compile']
         # TORCH_MODES=<mode,...> keeps only those legs (a CUPTI trace of one leg).
@@ -467,7 +488,7 @@ def main():
             torch.backends.cudnn.allow_tf32 = tf
             tol = 5e-2 if mode.startswith('bf16') else 1e-2 if scale and tf else 1e-3
             try:
-                fn, args = workload(base, mode) if scale else (fn, args)
+                fn, args = workload(base, mode) if scale or sdpa_ref else (fn, args)
                 t0 = time.perf_counter()
                 comp_mode = 'compile' in mode
                 if fn.__name__ == 'run':  # decode: the step is what compiles, the loop stays Python

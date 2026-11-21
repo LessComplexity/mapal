@@ -54,6 +54,14 @@ pub fn apply(opts: &mut EmitOpts, a: &str) -> Result<bool, String> {
         // wave tests.
         "--hz=force" => opts.gpu.hz_force = true,
         "--calls=force" => opts.gpu.calls_force = true,
+        // Measurement only: `s` blocks a row of a flow unit the slicing
+        // admits (`row-slices`), the prices aside.
+        _ if a.starts_with("--row-slices=") => {
+            let Ok(s) = a["--row-slices=".len()..].parse::<u64>() else {
+                return Err(format!("--row-slices expects a block count, got `{a}`"));
+            };
+            opts.gpu.row_slices_s = s;
+        }
         _ if a.starts_with("--order=") => {
             opts.order = match &a["--order=".len()..] {
                 "sequential" => Order::Sequential,

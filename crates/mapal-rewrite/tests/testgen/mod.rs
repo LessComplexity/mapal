@@ -3550,3 +3550,163 @@ pub fn hz_src(p: &HzProg) -> String {
         rc - 1
     )
 }
+
+/// long-rows: few rows of a long axis (`rows × len` cells) and a chain over
+/// them — row folds (sum, max, min), per-cell maps of a row array and a
+/// per-row value by every law `fold_combine` tells apart (`x · v`, `x ÷ v`,
+/// `x ± v`, a polynomial of `x − v`, `v ÷ x`), per-row cells — the shapes a
+/// long softmax, a norm or a logsumexp take. `nodes[n] = [kind, a, b, c]`
+/// picks the operands among the arrays made so far; every fold and the last
+/// cell print. `looped`: the chain runs in a two-trip loop over a carried
+/// row array (its next value the chain's last cell).
+#[derive(Clone, Debug)]
+pub struct LongRow {
+    pub rows: u64,
+    pub len: u64,
+    pub looped: bool,
+    pub nodes: Vec<[u8; 4]>,
+}
+
+pub fn long_row_strategy() -> impl Strategy<Value = LongRow> {
+    (
+        prop::sample::select(vec![1u64, 2, 3, 4, 8]),
+        prop::sample::select(vec![256u64, 512, 1024, 2048, 4096]),
+        any::<bool>(),
+        prop::collection::vec(prop::array::uniform4(any::<u8>()), 2..9),
+    )
+        .prop_map(|(rows, len, looped, nodes)| LongRow {
+            rows,
+            len,
+            looped,
+            nodes,
+        })
+}
+
+/// [`LongRow`]'s source text.
+pub fn long_row_src(p: &LongRow) -> String {
+    let (r, l) = (p.rows, p.len);
+    let n = r * l;
+    let ind = if p.looped { "                " } else { "    " };
+    // `a0` is a tile site's output (`q · W`, `d = 8`): the rows start on the
+    // device, where the folds over them run.
+    let mut s = format!(
+        "fn main() {{\n    {n} -> iota -> t;\n    {r} -> iota -> rr;\n    {l} -> iota -> kl;\n    8 -> iota -> kd;\n    {rq} -> iota -> tq;\n    tq -> map {{ e -> (e * 5 + 3) % 31 - 15 -> widen_f32 -> v; v / 16.0 }} -> q;\n    {lw} -> iota -> tw;\n    tw -> map {{ e -> (e * 7 + 13) % 101 - 50 -> widen_f32 -> v; v / 64.0 }} -> w;\n    t -> map {{ e -> e / {l} -> i; e % {l} -> j; (0.0, kd) -> fold {{ acc, d -> acc + q[i * 8 + d] * w[d * {l} + j] }} }} -> a0;\n    t -> map {{ e -> (e * 11 + 57) % 103 - 51 -> widen_f32 -> v; v / 64.0 }} -> b0;\n",
+        rq = r * 8,
+        lw = l * 8
+    );
+    // Row arrays (`a*`, all `n` cells, |x| ≲ 2) and per-row values (`v*`, one
+    // a row; positive ones `p*`, ≥ 1).
+    let mut rows_: Vec<String> = vec!["a0".into(), "b0".into()];
+    let mut vals: Vec<String> = Vec::new();
+    let mut pos: Vec<String> = Vec::new();
+    let mut prints: Vec<String> = Vec::new();
+    let mut body = String::new();
+    if p.looped {
+        rows_[0] = "x".into();
+    }
+    let (mut na, mut nv) = (0usize, 0usize);
+    let pick = |v: &[String], b: u8| v[b as usize % v.len()].clone();
+    for (i, nd) in p.nodes.iter().enumerate() {
+        let kind = if vals.is_empty() && nd[0] % 4 != 0 {
+            0
+        } else {
+            nd[0] % 4
+        };
+        match kind {
+            // A row fold: sum (scaled by the row), max or min.
+            0 => {
+                // Half the folds read the newest row array (the chain's tip).
+                let a = match nd[1] % 2 {
+                    0 => rows_.last().unwrap().clone(),
+                    _ => pick(&rows_, nd[1] / 2),
+                };
+                let name = format!("v{nv}");
+                nv += 1;
+                let fold = match nd[2] % 4 {
+                    0 | 3 => format!("(0.0, kl) -> fold {{ acc, j -> acc + {a}[i * {l} + j] }}"),
+                    1 => format!(
+                        "(-1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w > acc) -> {{ -true-> w; -false-> acc; }} }}"
+                    ),
+                    _ => format!(
+                        "(1000000.0, kl) -> fold {{ acc, j -> {a}[i * {l} + j] -> w; (w < acc) -> {{ -true-> w; -false-> acc; }} }}"
+                    ),
+                };
+                body += &format!("{ind}rr -> map {{ i -> {fold} }} -> {name};\n");
+                prints.push(format!("{name}[{}]", nd[3] as u64 % r));
+                vals.push(name);
+            }
+            // A per-cell map of a row array and a per-row value.
+            1 | 2 => {
+                let a = pick(&rows_, nd[1]);
+                let v = pick(&vals, nd[2]);
+                let at = format!("{v}[e / {l}]");
+                // Mostly the law forms; a quarter of the cells relu or multiply rows.
+                let form = match nd[3] {
+                    0..192 => nd[3] % 6,
+                    _ => 6 + nd[3] % 2,
+                };
+                let e = match form {
+                    0 => format!("{a}[e] * {at} / 64.0"),
+                    1 if !pos.is_empty() => format!("{a}[e] / {}[e / {l}]", pick(&pos, nd[2])),
+                    2 => format!("{a}[e] - {at}"),
+                    3 => format!("{a}[e] + {at}"),
+                    4 => format!(
+                        "({a}[e] - {at}) / 64.0 -> z; (z > -8.0) -> {{ -true-> 1.0 + z * (1.0 + z * 0.5); -false-> 0.0; }}"
+                    ),
+                    5 if !pos.is_empty() => {
+                        format!("{}[e / {l}] / ({a}[e] * {a}[e] + 1.0)", pick(&pos, nd[2]))
+                    }
+                    6 => format!(
+                        "({a}[e] > 0.0) -> {{ -true-> {a}[e]; -false-> 0.0 - {a}[e] / 4.0; }}"
+                    ),
+                    _ => format!("{a}[e] * {}[e] / 2.0", pick(&rows_, nd[2])),
+                };
+                // The law forms stay as written (a squash would hide the
+                // law); a product of rows is squashed to stay bounded.
+                let e = match form {
+                    6 | 7 => format!("{e} -> y; y / (y * y / 64.0 + 1.0)"),
+                    _ => e,
+                };
+                let name = format!("a{}", na + 1);
+                na += 1;
+                body += &format!("{ind}t -> map {{ e -> {e} }} -> {name};\n");
+                rows_.push(name);
+            }
+            // A per-row cell: a positive scale from a value.
+            _ => {
+                let v = pick(&vals, nd[1]);
+                let name = format!("p{}", pos.len());
+                body += &format!(
+                    "{ind}rr -> map {{ i -> 1.0 + {v}[i] * {v}[i] / 4096.0 }} -> {name};\n"
+                );
+                pos.push(name.clone());
+                vals.push(name);
+            }
+        }
+        let _ = i;
+    }
+    let last = rows_.last().unwrap().clone();
+    let tail = format!(
+        "    out[0] -> println;\n    out[{}] -> println;\n    out[{}] -> println;\n    0.0 -> zero: f32;\n    (zero, out) -> fold {{ acc, v -> acc + v }} -> total;\n    total -> println;\n",
+        n / 2 + 3,
+        n - 1
+    );
+    let prints: String = prints
+        .iter()
+        .map(|x| format!("    {x} -> println;\n"))
+        .collect();
+    if p.looped {
+        // The next state reads the state (a carried array whose next value
+        // reads nothing of it is another program: `long-rows.md` open item).
+        let nexts =
+            format!("{ind}t -> map {{ e -> x[e] / 4.0 + {last}[e] / 2.0 + a0[e] }} -> x;\n");
+        s += &format!(
+            "    mut x: [f32; {n}] <- b0;\n    mut it: i32 <- 0;\n    loop {{\n        (it < 2) -> {{\n            -true-> {{\n{body}{nexts}{ind}it + 1 -> it;\n{ind}-> loop;\n            }}\n            -false-> x -> out;\n        }}\n    }}\n"
+        );
+        s + &tail + "}\n"
+    } else {
+        s += &body;
+        s += &format!("    {last} -> out;\n");
+        s + &prints + &tail + "}\n"
+    }
+}

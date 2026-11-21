@@ -613,6 +613,15 @@ pub struct GpuRungs {
     /// launches they replace (`func/calls.rs`). Off (`--gpu-off=calls`):
     /// every chain its launches, the emission before it.
     pub calls: bool,
+    /// long-rows `row-slices`: a flow unit whose few rows leave the part's
+    /// SMs idle runs each row over several blocks — every fold's partial
+    /// state per block, combined by `fold_combine`'s law (its own `⊕`, a
+    /// factor or shift applied after the combine), the phases its laws leave
+    /// separated by grid barriers in one cooperative launch — where the
+    /// part's measured stream, barrier and launch costs price it below one
+    /// block a row (`func/flow.rs` `row_slices`). A part without them slices
+    /// nothing. Off (`--gpu-off=row-slices`): one block a row.
+    pub row_slices: bool,
 }
 
 impl GpuRungs {
@@ -701,11 +710,12 @@ impl GpuRungs {
         row_stage: true,
         horizontal: true,
         calls: true,
+        row_slices: true,
     };
 
     /// The rung names `emit --gpu-off=` / `--gpu-on=` and the profile's rung
     /// table use.
-    pub const NAMES: [&'static str; 83] = [
+    pub const NAMES: [&'static str; 84] = [
         "arch-rungs",
         "interleave",
         "unroll",
@@ -789,6 +799,7 @@ impl GpuRungs {
         "row-stage",
         "horizontal",
         "calls",
+        "row-slices",
     ];
 
     /// The rung called `name`, `None` for an unknown name.
@@ -877,6 +888,7 @@ impl GpuRungs {
             "row-stage" => &mut self.row_stage,
             "horizontal" => &mut self.horizontal,
             "calls" => &mut self.calls,
+            "row-slices" => &mut self.row_slices,
             _ => return None,
         })
     }
@@ -957,6 +969,10 @@ pub struct GpuArms {
     /// Measurement override (`--calls=force`, the `--hz=force` precedent): a
     /// `calls` chain forms whatever its prices (the fit tests stay).
     pub calls_force: bool,
+    /// Measurement override (`--row-slices=<s>`, the `--row-block`
+    /// precedent): a flow unit the slicing admits takes `s` blocks a row,
+    /// the prices aside. 0 = derive; 1 = one block a row.
+    pub row_slices_s: u64,
 }
 
 /// [`GpuArms::site_cands`]'s default (design B1).
@@ -979,6 +995,7 @@ impl Default for GpuArms {
             row_stage_force: None,
             hz_force: false,
             calls_force: false,
+            row_slices_s: 0,
         }
     }
 }
@@ -1150,7 +1167,7 @@ impl Default for EmitOpts {
             host: "native",
             gpu: GpuArms::default(),
             geom: Default::default(),
-            cost: Default::default(),
+            cost: [None; profile::DeviceCost::NAMES.len()],
         }
     }
 }

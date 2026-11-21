@@ -31,6 +31,7 @@ pub(crate) struct FuncFacts {
     pub(crate) tile_plan_radix: OnceLock<SecondaryMap<MorphismId, TileSite>>,
     pub(crate) precision_plan: OnceLock<PrecisionPlan>,
     pub(crate) step_algebra: OnceLock<StepAlgebra>,
+    pub(crate) fold_combine: OnceLock<crate::algo::FoldCombinePlan>,
     pub(crate) move_plan: OnceLock<MovePlan>,
     pub(crate) row_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,
     pub(crate) whole_fold: OnceLock<SecondaryMap<MorphismId, RowFoldSite>>,

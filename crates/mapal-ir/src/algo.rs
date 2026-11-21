@@ -17,7 +17,9 @@ mod algebra;
 mod linear;
 mod precision;
 mod radix;
-pub use algebra::{FmaPair, Regroup, StepAlgebra, StepFlags};
+pub use algebra::{
+    DepLaw, FmaPair, FoldCombine, FoldCombinePlan, Regroup, RowDep, StepAlgebra, StepFlags,
+};
 pub use linear::LinearSite;
 pub use precision::{PrecisionPlan, bound_coef, gamma};
 pub use radix::{AxisDigit, Digit, RadixAddr, RadixForm, RadixTile};

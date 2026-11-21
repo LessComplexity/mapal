@@ -478,6 +478,11 @@ impl FnEmit<'_> {
             });
         }
         if let Some(u) = plan.units.get(m) {
+            // long-rows `row-slices`: a sliced unit strides over its items
+            // and may meet its grid: a launch of its own.
+            if u.slices.is_some() {
+                return None;
+            }
             let g = self.geo(u);
             let stored = u.members.iter().filter(|mb| mb.store).count();
             return Some(Shape {

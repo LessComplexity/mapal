@@ -28,7 +28,7 @@
 
 use super::resident::{Cell, ResidentPlan, array_len};
 use super::*;
-use mapal_ir::{Reach, RowFoldOp, RowFoldSite, TileSite, UnitGroup, UnitKind};
+use mapal_ir::{DepLaw, Reach, RowFoldOp, RowFoldSite, TileSite, UnitGroup, UnitKind};
 
 /// Where one input of a unit member comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +94,40 @@ pub(crate) struct Unit {
     /// compile-time-graph A: a row-block unit (a tile member): `b` rows a
     /// block. `None`: one row a block or thread, as before.
     pub block: Option<Block>,
+    /// long-rows `row-slices`: each row over `s` blocks. `None`: one block
+    /// (or thread) a row.
+    pub slices: Option<Slices>,
+}
+
+/// long-rows `row-slices`: a unit whose rows each run over `s` blocks
+/// ([`FnEmit::row_slices`]). A fold's partial state per block goes to a
+/// workspace; a later phase combines a row's `s` partials in block order
+/// (every block of the row alike), applies the laws `fold_combine` gave its
+/// term (a factor or shift read once per row), then the seed. Members run in
+/// the phase their sources are complete in; consecutive phases meet at a
+/// grid barrier of one cooperative launch.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Slices {
+    pub s: u64,
+    /// Per member: the phase it runs in (a fold's partials, a cell's cells).
+    pub phase: Vec<u32>,
+    /// Per member: the first phase its value is complete in (a fold's
+    /// combine; a cell's own phase).
+    pub avail: Vec<u32>,
+    pub phases: u32,
+    /// Per fold member: `(per-row member, its slot in the fold's term cell,
+    /// law)` — the reads its partials take as the law's identity, applied
+    /// after the combine.
+    pub laws: Vec<Vec<(usize, u32, DepLaw)>>,
+    /// The model's `(sliced, one block a row)` ns; `(0, 0)` when forced.
+    pub ns: (u64, u64),
+}
+
+impl Slices {
+    /// Grid barriers between the phases: a cooperative launch.
+    pub fn coop(&self) -> bool {
+        self.phases > 1
+    }
 }
 
 /// A row-block unit's layout (`unit_plan` + the profile's choice of `b`).
@@ -341,6 +375,9 @@ pub(crate) fn unit_geo(
     if let Some(blk) = &u.block {
         return block_geo(u, blk, g, free, bytes);
     }
+    if let Some(sl) = &u.slices {
+        return slice_geo(u, sl, g, bytes);
+    }
     let n = u.members.len();
     let extent = u
         .members
@@ -406,6 +443,76 @@ pub(crate) fn unit_geo(
         xrow: Vec::new(),
         part: None,
         panel: None,
+    }
+}
+
+/// long-rows `row-slices`: a sliced unit's geometry — `rows · s` blocks of
+/// the widest slice's lanes (to a power of two in `[warp, 256]`), each fold's
+/// tree partials in shared memory; no row kept on chip (a block walks one
+/// row's slice an item, a later phase recomputes a cell at its read).
+fn slice_geo(
+    u: &Unit,
+    sl: &Slices,
+    g: &crate::profile::Gpu,
+    bytes: impl Fn(&UMember) -> u64,
+) -> Geo {
+    let n = u.members.len();
+    let lanes = u
+        .members
+        .iter()
+        .map(|mb| match &mb.kind {
+            UKind::Fold { site, .. } => site.k / sl.s,
+            UKind::Cell { .. } if !mb.per_row() && mb.store => mb.w / sl.s,
+            _ => 1,
+        })
+        .max()
+        .unwrap_or(1)
+        .next_power_of_two()
+        .clamp(g.warp, 256);
+    let mut smem = 0u64;
+    let mut tree = vec![None; n];
+    for (k, mb) in u.members.iter().enumerate() {
+        if matches!(mb.kind, UKind::Fold { .. }) {
+            let off = smem.next_multiple_of(16);
+            smem = off + lanes * bytes(mb);
+            tree[k] = Some(off);
+        }
+    }
+    Geo {
+        lanes,
+        gx: u.rows * sl.s,
+        block: lanes,
+        smem,
+        tree,
+        kept: vec![None; n],
+        xrow: Vec::new(),
+        part: None,
+        panel: None,
+    }
+}
+
+/// The value a lane's partial of `op` starts from: `+`'s `−0`, `×`'s `1`, a
+/// running max's `−∞` and min's `+∞` (the seed joins once, after the
+/// combine).
+fn step_identity(op: &RowFoldOp) -> String {
+    match *op {
+        RowFoldOp::Arith {
+            op: Operation::Mul, ..
+        } => "1.0".into(),
+        RowFoldOp::Arith { .. } => "-0.0".into(),
+        RowFoldOp::Select {
+            cmp,
+            acc_lhs,
+            acc_if_true,
+        } => {
+            // `e` wins when it is the greater: the comparison reads `e > acc`
+            // (`>`/`≥` with `e` first, `<`/`≤` with `acc` first) and picks `e`.
+            let e_gt = matches!(cmp, Operation::Gt | Operation::Ge) != acc_lhs;
+            match e_gt != acc_if_true {
+                true => "0xFFF0000000000000".into(),
+                false => "0x7FF0000000000000".into(),
+            }
+        }
     }
 }
 
@@ -1100,6 +1207,7 @@ impl<'a> FnEmit<'a> {
                 members,
                 gmem,
                 block: Some(blk),
+                slices: None,
             });
         }
         let elem =
@@ -1139,7 +1247,15 @@ impl<'a> FnEmit<'a> {
                 return Err("cost");
             }
         }
-        let key = format!("unit|{members:?}|{rows}|{}", self.profile.name);
+        // long-rows `row-slices`: few long rows over several blocks each.
+        let slices = self.row_slices(&members, rows, &gmem, rs.0.is_some());
+        let key = match &slices {
+            None => format!("unit|{members:?}|{rows}|{}", self.profile.name),
+            Some(sl) => format!(
+                "unit|{members:?}|{rows}|{}|slices{}",
+                self.profile.name, sl.s
+            ),
+        };
         let id = key.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
             (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
         });
@@ -1149,7 +1265,267 @@ impl<'a> FnEmit<'a> {
             members,
             gmem,
             block: None,
+            slices,
         })
+    }
+
+    /// **long-rows `row-slices`: how many blocks a row of a unit takes.**
+    /// Where the order is free and every fold of the unit regroups (a tree
+    /// step over `f32`), a row's folds and stored cells split into `s`
+    /// slices of their axis, one block each; [`Self::slice_phases`] orders
+    /// the members by `fold_combine`'s laws. The rule prices one block a row
+    /// against `s` blocks a row with the part's measured properties: a
+    /// block's walk of `n` elements a lane at `row_iter_ns` each (rounds of
+    /// the co-resident blocks), floored by the unit's bytes at the rate of
+    /// where they live (`residence_plan`), plus the launch — programmatic
+    /// for one phase, cooperative and `phases − 1` grid barriers for more,
+    /// and outside a loop the process's first cooperative launch
+    /// (`coop_first_ns`, the driver's one-time setup).
+    /// The cheapest `s` wins where it beats one block a row; a part without
+    /// `row_iter_ns`, `gsync_ns` or `coop_launch_ns` slices nothing.
+    pub(crate) fn row_slices(
+        &self,
+        members: &[UMember],
+        rows: u64,
+        gmem: &[ObjectId],
+        looped: bool,
+    ) -> Option<Slices> {
+        let rungs = gpu::host_rungs(self.profile, self.contract, self.gpu_arms);
+        let force = self.gpu_arms.row_slices_s;
+        if !rungs.row_slices || self.order != crate::Order::Free || force == 1 {
+            return None;
+        }
+        let gpu = self.profile.gpu()?;
+        let f32_tree = |site: &RowFoldSite| {
+            tree_step(&site.op) && site.elem == mapal_ir::Ty::f32() && site.a.ksplit.is_none()
+        };
+        // The extents a row's work splits along: each fold's `k`, each
+        // stored row cell's `w`.
+        let mut exts = Vec::new();
+        for mb in members {
+            match &mb.kind {
+                UKind::Fold { site, colmajor } if f32_tree(site) && colmajor.is_none() => {
+                    exts.push(site.k)
+                }
+                UKind::Fold { .. } | UKind::Tile { .. } => return None,
+                UKind::Cell { .. } if !mb.per_row() && mb.store => exts.push(mb.w),
+                UKind::Cell { .. } => {}
+            }
+        }
+        if exts.is_empty() {
+            return None;
+        }
+        let (phase, avail, phases, laws) = self.slice_phases(members);
+        // A sliced block's threads ([`slice_geo`]); a row's partials combine
+        // one a lane, so `s` stays within them.
+        let lanes_of = |s: u64| {
+            exts.iter()
+                .map(|&e| (e / s).next_power_of_two().clamp(gpu.warp, 256))
+                .max()
+                .unwrap_or(gpu.warp)
+        };
+        let fits = |s: u64| exts.iter().all(|&e| e % s == 0) && s <= lanes_of(s);
+        let slices = |s: u64, ns: (u64, u64)| Slices {
+            s,
+            phase: phase.clone(),
+            avail: avail.clone(),
+            phases,
+            laws: laws.clone(),
+            ns,
+        };
+        if force > 1 {
+            return fits(force).then(|| slices(force, (0, 0)));
+        }
+        let d = gpu.cost?;
+        if d.row_iter_ns == 0 || d.gsync_ns == 0 || d.coop_launch_ns == 0 {
+            return None;
+        }
+        // The unit's bytes: each fold's walk reads its row's operand cells
+        // (a recomputed cell reads its own), each stored cell is written.
+        let elem =
+            |o: ObjectId| crate::profile::elem_bytes(super::resident::array_elem(&self.obj_ty(o)));
+        let reads = |mb: &UMember| {
+            mb.srcs
+                .iter()
+                .filter(|s| matches!(s, USrc::Gmem(_) | USrc::Member { row: false, .. }))
+                .count() as u64
+        };
+        let bytes: u64 = members
+            .iter()
+            .map(|mb| match &mb.kind {
+                UKind::Fold { site, .. } => rows * site.k * 4 * reads(mb).max(1),
+                UKind::Cell { .. } if mb.store => rows * mb.w * elem(mb.out) * (reads(mb) + 1),
+                _ => 0,
+            })
+            .sum();
+        let res = self.ir.residence_plan(self.f);
+        let dram = gmem
+            .iter()
+            .any(|&o| res.at(o, gpu.l2_bytes) == mapal_ir::Residence::Dram);
+        let rate = match dram {
+            true => d.dram_bytes_per_ns,
+            false => d.l2_bytes_per_ns,
+        }
+        .max(1) as f64;
+        // One block a row keeps a row two members read on chip (`unit_geo`):
+        // a walk that reads only kept rows and per-row values reads no
+        // memory. A sliced block keeps none.
+        let kept = unit_geo(
+            &Unit {
+                id: 0,
+                rows,
+                members: members.to_vec(),
+                gmem: gmem.to_vec(),
+                block: None,
+                slices: None,
+            },
+            self.profile,
+            true,
+            |mb| match &mb.kind {
+                UKind::Fold { site, .. } => crate::profile::elem_bytes(&site.elem),
+                _ => elem(mb.out),
+            },
+        )
+        .kept;
+        fn from_memory(members: &[UMember], kept: &[Option<u64>], k: usize) -> bool {
+            members[k].srcs.iter().any(|s| match s {
+                USrc::Gmem(_) => true,
+                USrc::Member { k: p, .. } if !members[*p].per_row() => {
+                    kept[*p].is_none() && from_memory(members, kept, *p)
+                }
+                _ => false,
+            })
+        }
+        // Fold combines a sliced block reads: one partial a lane, one load
+        // latency each.
+        let restores: u64 = (0..phases)
+            .map(|p| {
+                members
+                    .iter()
+                    .enumerate()
+                    .filter(|&(k, mb)| {
+                        matches!(mb.kind, UKind::Fold { .. }) && avail[k] <= p && phase[k] < p
+                    })
+                    .count() as u64
+            })
+            .sum();
+        // The walks: each fold and each stored or kept row cell, `n ÷ s`
+        // elements over `lanes` threads, in rounds of the resident blocks.
+        let time = |s: u64| {
+            let lanes = lanes_of(s);
+            let per_sm = (gpu.max_threads_per_sm / lanes).clamp(1, gpu.max_blocks_per_sm);
+            let items = rows * s;
+            let grid = items.min(gpu.sms * per_sm);
+            let rounds = items.div_ceil(grid) as f64;
+            let none = vec![None; members.len()];
+            let kept = if s > 1 { &none } else { &kept };
+            let walk: u64 = (0..members.len())
+                .filter(|&k| from_memory(members, kept, k))
+                .map(|k| match &members[k].kind {
+                    UKind::Fold { site, .. } => (site.k / s).div_ceil(lanes),
+                    UKind::Cell { .. }
+                        if !members[k].per_row() && (members[k].store || kept[k].is_some()) =>
+                    {
+                        (members[k].w / s).div_ceil(lanes)
+                    }
+                    _ => 0,
+                })
+                .sum();
+            let restore = if s > 1 { restores * d.lat_ns } else { 0 };
+            let work = (rounds * (walk * d.row_iter_ns + restore) as f64).max(bytes as f64 / rate);
+            // A unit outside every loop launches once: its cooperative launch
+            // may be the process's first (`coop_first_ns`); a loop's trips
+            // share that cost.
+            let first = if looped { 0 } else { d.coop_first_ns };
+            let launch = match s > 1 && phases > 1 {
+                true => {
+                    d.coop_launch_at(grid, gpu.sms)?
+                        + f64::from(phases - 1) * d.gsync_at(grid, gpu.sms)?
+                        + first as f64
+                }
+                false => d.launch_at(grid, gpu.sms, rungs.pdl)?,
+            };
+            Some(launch + work)
+        };
+        let one = time(1)?;
+        let best = (1..=6)
+            .map(|e| 1u64 << e)
+            // A slice of at least a warp of cells.
+            .filter(|&s| fits(s) && exts.iter().all(|&e| e / s >= gpu.warp))
+            .filter_map(|s| Some((s, time(s)?)))
+            .min_by(|a, b| a.1.total_cmp(&b.1))?;
+        (best.1 < one).then(|| slices(best.0, (best.1.round() as u64, one.round() as u64)))
+    }
+
+    /// **The phases of a sliced unit** (`fold_combine`): a fold's partials
+    /// run in the phase its term's sources are complete in — a per-row value
+    /// its term reads by a factor or shift law excepted: that read takes the
+    /// law's identity and the value is applied after the combine. A fold is
+    /// complete one phase after its partials (and once its laws' values
+    /// are); a cell in the phase its sources are complete in. Returns per
+    /// member the phase and the completion phase, the phase count, and each
+    /// fold's laws.
+    #[allow(clippy::type_complexity)]
+    fn slice_phases(
+        &self,
+        members: &[UMember],
+    ) -> (Vec<u32>, Vec<u32>, u32, Vec<Vec<(usize, u32, DepLaw)>>) {
+        let fc = self.ir.fold_combine(self.f);
+        let n = members.len();
+        let (mut ph, mut avail) = (vec![0u32; n], vec![0u32; n]);
+        let mut laws: Vec<Vec<(usize, u32, DepLaw)>> = vec![Vec::new(); n];
+        let src_phase = |srcs: &[USrc], skip: &[usize], avail: &[u32]| {
+            srcs.iter()
+                .filter_map(|s| match s {
+                    USrc::Member { k, .. } if !skip.contains(k) => Some(avail[*k]),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0)
+        };
+        for k in 0..n {
+            let mb = &members[k];
+            match &mb.kind {
+                UKind::Fold { .. } => {
+                    let mut skip = Vec::new();
+                    if let Some(&USrc::Member { k: c, .. }) = mb.srcs.first() {
+                        for d in fc.sites.get(mb.m).map_or(&[][..], |x| &x.deps[..]) {
+                            if d.law == DepLaw::Phase || d.via != members[c].m {
+                                continue;
+                            }
+                            let Some(&USrc::Member {
+                                k: v, row: true, ..
+                            }) = members[c].srcs.get(d.slot as usize)
+                            else {
+                                continue;
+                            };
+                            if members[v].out == d.value && members[v].per_row() {
+                                skip.push(v);
+                                laws[k].push((v, d.slot, d.law));
+                            }
+                        }
+                        ph[k] = src_phase(&members[c].srcs, &skip, &avail);
+                    }
+                    avail[k] = laws[k]
+                        .iter()
+                        .map(|&(v, _, _)| avail[v])
+                        .fold(ph[k] + 1, u32::max);
+                }
+                UKind::Cell { .. } => {
+                    ph[k] = src_phase(&mb.srcs, &[], &avail);
+                    avail[k] = ph[k];
+                }
+                UKind::Tile { .. } => unreachable!("a sliced unit holds no tile"),
+            }
+        }
+        let phases = (0..n)
+            .map(|k| match members[k].kind {
+                UKind::Fold { .. } => avail[k] + 1,
+                _ => ph[k] + 1,
+            })
+            .max()
+            .unwrap_or(1);
+        (ph, avail, phases, laws)
     }
 
     /// **compile-time-graph A: how many rows a row-block unit holds.** The
@@ -1276,6 +1652,7 @@ impl<'a> FnEmit<'a> {
                     members: members.to_vec(),
                     gmem: gmem.to_vec(),
                     block: Some(blk.clone()),
+                    slices: None,
                 };
                 let geo = self.geo(&probe);
                 let acc = members
@@ -1668,8 +2045,15 @@ impl<'a> FnEmit<'a> {
             ));
             self.line(format!("store i64 {p}, ptr {g}"));
         }
+        // long-rows `row-slices`: phases meet at grid barriers — every block
+        // co-resident (the runtime caps the grid at its occupancy; the items
+        // loop strides).
+        let entry = match u.slices.as_ref().is_some_and(Slices::coop) {
+            true => "launch_coop",
+            false => "launchv",
+        };
         self.line(format!(
-            "call void @mapal_gpu_launchv(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
+            "call void @mapal_gpu_{entry}(i64 {}, i32 0, i32 {np}, ptr {args}, i32 {gx}, i32 1, i32 {block}, i32 {smem}) ; unit",
             u.id as i64
         ));
         for t in temps {
@@ -1783,6 +2167,8 @@ impl<'a> FnEmit<'a> {
             panel: geo.panel,
             free: self.order == crate::Order::Free,
             fma: self.contract && self.gpu_arms.pairs,
+            name: name.clone(),
+            subst: Vec::new(),
         };
         // Each member's callee, argument type, result type and buffer types.
         let mut y = 0;
@@ -1889,6 +2275,9 @@ impl<'a> FnEmit<'a> {
         // The phases: one row (or one thread's row) as before; a row-block
         // unit's tiles over all its rows, the members between them row by row.
         match &u.block {
+            None if u.slices.is_some() => {
+                g.sliced(u.slices.as_ref().expect("sliced"));
+            }
             None => {
                 for k in 0..u.members.len() {
                     g.phase(k);
@@ -1968,7 +2357,28 @@ impl<'a> FnEmit<'a> {
             .unwrap_or(&u.members[0]);
         let w = u.members.iter().map(|mb| mb.w).max().unwrap_or(1);
         let block = match &u.block {
-            None => String::new(),
+            None => match &u.slices {
+                None => String::new(),
+                Some(sl) => format!(
+                    " slices={} phases={} laws={} ns_sliced={} ns_row={}",
+                    sl.s,
+                    sl.phases,
+                    sl.laws
+                        .iter()
+                        .flatten()
+                        .map(|(_, _, l)| match l {
+                            DepLaw::Factor { div: false } => "mul",
+                            DepLaw::Factor { div: true } => "div",
+                            DepLaw::Shift { sub: false } => "add",
+                            DepLaw::Shift { sub: true } => "sub",
+                            DepLaw::Phase => "phase",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    sl.ns.0,
+                    sl.ns.1
+                ),
+            },
             Some(blk) => {
                 // kernel-merging `row-stage`: each staged tile's panels.
                 let stage: Vec<String> = blk
@@ -2012,8 +2422,30 @@ impl<'a> FnEmit<'a> {
             "; mapal.plan kernel={name} kind=flow rows={} gx={blocks} block={threads} members={} rungs_on=flow{}\n",
             u.rows,
             u.members.len(),
-            if u.block.is_some() { ",row-block" } else { "" }
+            if u.block.is_some() {
+                ",row-block"
+            } else if u.slices.is_some() {
+                ",row-slices"
+            } else {
+                ""
+            }
         );
+        // long-rows `row-slices`: each fold's partials (a row's `s`) and the
+        // grid barrier's counter.
+        if let Some(sl) = &u.slices {
+            for (k, mb) in u.members.iter().enumerate() {
+                if let UKind::Fold { site, .. } = &mb.kind {
+                    let t = lower_ty(&site.elem).expect("float elem lowers");
+                    text += &format!(
+                        "@{name}.ws{k} = internal addrspace(1) global [{} x {t}] zeroinitializer, align 16\n",
+                        u.rows * sl.s
+                    );
+                }
+            }
+            if sl.coop() {
+                text += &format!("@{name}.gsync = internal addrspace(1) global i32 0, align 4\n");
+            }
+        }
         text += &format!(
             "define ptx_kernel void @{name}({}) \"nvvm.maxntid\"=\"{threads}\" {{\n\
              entry:\n{}\
@@ -2035,6 +2467,10 @@ impl<'a> FnEmit<'a> {
             // row-block unit's first row.
             if let Some(blk) = &u.block {
                 format!("  %i = mul i64 %b64, {}\n  %l = add i64 %t64, 0\n", blk.b)
+            } else if u.slices.is_some() {
+                // Every block reaches every grid barrier: the items loop
+                // decides what a block does.
+                "  %i = add i64 0, 0\n  %l = add i64 %t64, 0\n".to_string()
             } else if geo.lanes > 1 {
                 "  %i = add i64 %b64, 0\n  %l = add i64 %t64, 0\n".to_string()
             } else {
@@ -2100,6 +2536,11 @@ struct UnitGen<'u> {
     /// The order is free (tile k-slices regroup); the face contracts.
     free: bool,
     fma: bool,
+    /// long-rows `row-slices`: the kernel's name (its workspaces and grid
+    /// barrier counter), and `(member, slot, literal)`: a cell's read a fold's
+    /// partials take as its law's identity.
+    name: String,
+    subst: Vec<(usize, u32, String)>,
 }
 
 impl UnitGen<'_> {
@@ -2228,8 +2669,14 @@ impl UnitGen<'_> {
         let mut fields: Vec<(String, String)> = Vec::new();
         for (s, src) in mb.srcs.iter().enumerate() {
             let s32 = s as u32;
+            let sub = self
+                .subst
+                .iter()
+                .find(|&&(m, sl, _)| m == k && sl == s32)
+                .map(|x| x.2.clone());
             if s32 < captures {
                 let v = match src {
+                    _ if sub.is_some() => sub.clone().expect("a substituted read"),
                     USrc::Gmem(g) => {
                         fields.push(("ptr".into(), format!("%xg{g}")));
                         continue;
@@ -2428,43 +2875,7 @@ impl UnitGen<'_> {
                         walk,
                         Some((&t, &init)),
                         &mut |g, kv, acc| {
-                            // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
-                            let taps: Vec<String> = match site.a.ksplit {
-                                Some(ks) => {
-                                    vec![g.op("udiv", kv, ks.div), g.op("urem", kv, ks.div)]
-                                }
-                                None => vec![kv.to_string()],
-                            };
-                            let v = match &src0 {
-                                USrc::Gmem(gm) => {
-                                    // The site's own addressing (re-addressed when its
-                                    // producer stores column-major).
-                                    let ri = if site.w > 1 {
-                                        let q = g.op("udiv", &row, site.w);
-                                        let l = g.op("urem", &row, site.w);
-                                        let a = g.op("mul", &q, site.a.ci);
-                                        let b = g.op("mul", &l, site.a.clane);
-                                        g.op("add", &a, &b)
-                                    } else {
-                                        g.op("mul", &row, site.a.ci)
-                                    };
-                                    let rk = match site.a.ksplit {
-                                        Some(ks) => {
-                                            let a = g.op("mul", &taps[0], ks.cq);
-                                            let b = g.op("mul", &taps[1], ks.cr);
-                                            g.op("add", &a, &b)
-                                        }
-                                        None => g.op("mul", kv, site.a.ck),
-                                    };
-                                    let x = g.op("add", &ri, &rk);
-                                    let x = g.op("add", &x, site.a.base);
-                                    g.load(*gm, &x)
-                                }
-                                src => {
-                                    let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
-                                    g.read(src, &row, &taps)
-                                }
-                            };
+                            let v = g.fold_read(&site, &src0, &row, kv);
                             g.step(&op, &tt, acc, &v, &format!("{acc}n"));
                         },
                     )
@@ -2472,34 +2883,9 @@ impl UnitGen<'_> {
                 let res = match tree {
                     None => p,
                     Some(off) => {
-                        // The lanes' partials in shared memory, halved per
-                        // step, then the seed once: every lane reads one total.
-                        let mine = self.smem(off, &t, "%l");
-                        self.line(format!("store {t} {p}, ptr addrspace(3) {mine}"));
-                        self.barrier();
-                        let mut s = lanes / 2;
-                        while s >= 1 {
-                            let c = self.tmp();
-                            self.line(format!("{c} = icmp ult i64 {}, {s}", self.lane));
-                            let (yes, end) = (format!("r{k}_{s}"), format!("r{k}_{s}e"));
-                            self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
-                            self.label(&yes);
-                            let o = self.op("add", "%l", s);
-                            let po = self.smem(off, &t, &o);
-                            let (x, y, z) = (self.tmp(), self.tmp(), self.tmp());
-                            self.line(format!("{x} = load {t}, ptr addrspace(3) {mine}"));
-                            self.line(format!("{y} = load {t}, ptr addrspace(3) {po}"));
-                            self.step(&op, &t, &x, &y, &z);
-                            self.line(format!("store {t} {z}, ptr addrspace(3) {mine}"));
-                            self.line(format!("br label %{end}"));
-                            self.label(&end);
-                            self.barrier();
-                            s /= 2;
-                        }
-                        let base = self.lane_base.clone();
-                        let p0 = self.smem(off, &t, &base);
-                        let (tot, r) = (self.tmp(), self.tmp());
-                        self.line(format!("{tot} = load {t}, ptr addrspace(3) {p0}"));
+                        // The lanes' partials, then the seed once.
+                        let tot = self.tree_total(&format!("r{k}"), off, &t, &p, op);
+                        let r = self.tmp();
                         self.step(&op, &t, &seed, &tot, &r);
                         r
                     }
@@ -2544,6 +2930,290 @@ impl UnitGen<'_> {
             UKind::Cell { .. } => {}
             UKind::Tile { .. } => unreachable!("a tile runs as its own phase"),
         }
+    }
+
+    /// long-rows `row-slices`: the sliced unit's body ([`Slices`]). Per
+    /// phase, every block strides over the items `(row, slice)` of the
+    /// `rows · s`: in member order a fold of the phase walks its slice into
+    /// a partial (its law reads at their identity) stored to its workspace, a
+    /// fold complete by now combines its row's partials in slice order (laws,
+    /// then the seed; stored once a row), a per-row cell is computed (stored
+    /// once a row in its own phase), a stored row cell writes its slice. The
+    /// block meets after each item (the tree partials' shared memory), the
+    /// grid after each phase but the last.
+    fn sliced(&mut self, sl: &Slices) {
+        let u = self.u;
+        let n = u.members.len();
+        let items = u.rows * sl.s;
+        self.line("%nct = call i32 @llvm.nvvm.read.ptx.sreg.nctaid.x()");
+        self.line("%g64 = zext i32 %nct to i64");
+        for p in 0..sl.phases {
+            let (head, body, latch, exit) = (
+                format!("ph{p}"),
+                format!("ph{p}b"),
+                format!("ph{p}l"),
+                format!("ph{p}x"),
+            );
+            let pre = self.cur.clone();
+            self.line(format!("br label %{head}"));
+            self.label(&head);
+            let it = format!("%it{p}");
+            self.line(format!("{it} = phi i64 [%b64, %{pre}], [{it}n, %{latch}]"));
+            let c = self.tmp();
+            self.line(format!("{c} = icmp ult i64 {it}, {items}"));
+            self.line(format!("br i1 {c}, label %{body}, label %{exit}"));
+            self.label(&body);
+            let (row, q) = (format!("%ri{p}"), format!("%rq{p}"));
+            self.line(format!("{row} = udiv i64 {it}, {}", sl.s));
+            self.line(format!("{q} = urem i64 {it}, {}", sl.s));
+            self.row = row.clone();
+            self.vals = vec![None; n];
+            for k in 0..n {
+                let mb = &u.members[k];
+                let (ph, av) = (sl.phase[k], sl.avail[k]);
+                match &mb.kind {
+                    UKind::Fold { .. } if ph == p => self.slice_fold(k, sl, &q),
+                    UKind::Fold { .. } if av <= p => {
+                        self.slice_combine(k, sl, &q, p == av && mb.store, p);
+                    }
+                    UKind::Cell { .. } if mb.per_row() && ph <= p => {
+                        let v = self.cell(k, &row);
+                        if ph == p && mb.store {
+                            self.slice_first(&format!("c{k}"), &q, |g| g.store(k, &v, &row));
+                        }
+                        self.vals[k] = Some(v);
+                    }
+                    UKind::Cell { .. } if !mb.per_row() && mb.store && ph == p => {
+                        let (w, lanes, lane) = (mb.w, self.lanes, self.lane.clone());
+                        let wq = w / sl.s;
+                        let base = self.op("mul", &q, wq);
+                        let r0 = self.op("mul", &row, w);
+                        self.counted(
+                            &format!("s{k}"),
+                            (&lane, lanes, wq),
+                            None,
+                            &mut |g, x, _| {
+                                let j = g.op("add", &base, x);
+                                let t = g.op("add", &r0, &j);
+                                let v = g.cell(k, &t);
+                                g.store(k, &v, &t);
+                            },
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            // The next item reuses the tree partials' shared memory.
+            self.barrier();
+            self.line(format!("br label %{latch}"));
+            self.label(&latch);
+            self.line(format!("{it}n = add i64 {it}, %g64"));
+            self.line(format!("br label %{head}"));
+            self.label(&exit);
+            if p + 1 < sl.phases {
+                self.line(format!(
+                    "call void @mapal_gsync(ptr addrspace(1) @{}.gsync)",
+                    self.name
+                ));
+            }
+        }
+    }
+
+    /// `body` once a row: by lane 0 of the row's first slice.
+    fn slice_first(&mut self, tag: &str, q: &str, body: impl FnOnce(&mut Self)) {
+        let c = self.tmp();
+        self.line(format!("{c} = icmp eq i64 {q}, 0"));
+        let (yes, end) = (format!("{tag}q"), format!("{tag}qe"));
+        self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
+        self.label(&yes);
+        self.lane0(tag, body);
+        self.line(format!("br label %{end}"));
+        self.label(&end);
+    }
+
+    /// Fold member `k`'s workspace element of row `row`, slice `slot`.
+    fn ws_at(&mut self, k: usize, sl: &Slices, t: &str, row: &str, slot: &str) -> String {
+        let r = self.op("mul", row, sl.s);
+        let i = self.op("add", &r, slot);
+        let p = self.tmp();
+        self.line(format!(
+            "{p} = getelementptr inbounds [{} x {t}], ptr addrspace(1) @{}.ws{k}, i64 0, i64 {i}",
+            self.u.rows * sl.s,
+            self.name
+        ));
+        p
+    }
+
+    /// Fold member `k`'s partial over slice `q` of its row: its lanes from
+    /// the step's identity (a running max / min from the infinity it never
+    /// keeps), its law reads at their identity, the tree; stored by lane 0.
+    fn slice_fold(&mut self, k: usize, sl: &Slices, q: &str) {
+        let mb = &self.u.members[k];
+        let UKind::Fold { site, .. } = &mb.kind else {
+            unreachable!("a fold member")
+        };
+        let (site, src0, op) = (site.clone(), mb.srcs[0].clone(), site.op);
+        let t = lower_ty(&site.elem).expect("float elem lowers");
+        let init = step_identity(&op);
+        let c = match &src0 {
+            USrc::Member { k: c, .. } => Some(*c),
+            _ => None,
+        };
+        for &(_, slot, law) in &sl.laws[k] {
+            let lit = match law {
+                DepLaw::Factor { .. } => "1.0",
+                DepLaw::Shift { sub: false } => "-0.0",
+                DepLaw::Shift { sub: true } | DepLaw::Phase => "0.0",
+            };
+            self.subst
+                .push((c.expect("a law reads a cell"), slot, lit.to_string()));
+        }
+        let kq = site.k / sl.s;
+        let base = self.op("mul", q, kq);
+        let (row, lane, lanes) = (self.row.clone(), self.lane.clone(), self.lanes);
+        let tt = t.clone();
+        let p = self
+            .counted(
+                &format!("f{k}"),
+                (&lane, lanes, kq),
+                Some((&t, &init)),
+                &mut |g, x, acc| {
+                    let kv = g.op("add", &base, x);
+                    let v = g.fold_read(&site, &src0, &row, &kv);
+                    g.step(&op, &tt, acc, &v, &format!("{acc}n"));
+                },
+            )
+            .expect("a fold carries");
+        self.subst.clear();
+        let off = self.tree[k].expect("a sliced fold's tree");
+        let tot = self.tree_total(&format!("r{k}"), off, &t, &p, op);
+        self.lane0(&format!("f{k}w"), |g| {
+            let at = g.ws_at(k, sl, &t, &row, q);
+            g.line(format!("store {t} {tot}, ptr addrspace(1) {at}"));
+        });
+    }
+
+    /// Fold member `k`'s value in its row: the row's `s` partials combined
+    /// as the lanes' tree, each law's per-row value, then the seed; stored
+    /// once a row where `store`.
+    fn slice_combine(&mut self, k: usize, sl: &Slices, q: &str, store: bool, phase: u32) {
+        let mb = &self.u.members[k];
+        let UKind::Fold { site, .. } = &mb.kind else {
+            unreachable!("a fold member")
+        };
+        let (op, seed) = (site.op, const_literal(&site.seed));
+        let t = lower_ty(&site.elem).expect("float elem lowers");
+        let row = self.row.clone();
+        // Lane `r < s` loads partial `r` (the others the step's identity):
+        // one load latency, then the lanes' tree — a fixed order, so every
+        // block of the row combines the same bits.
+        let lane = self.lane.clone();
+        let c = self.tmp();
+        self.line(format!("{c} = icmp ult i64 {lane}, {}", sl.s));
+        let r = self.tmp();
+        self.line(format!("{r} = select i1 {c}, i64 {lane}, i64 0"));
+        let at = self.ws_at(k, sl, &t, &row, &r);
+        let x = self.tmp();
+        self.line(format!("{x} = load {t}, ptr addrspace(1) {at}"));
+        let p = self.tmp();
+        self.line(format!(
+            "{p} = select i1 {c}, {t} {x}, {t} {}",
+            step_identity(&op)
+        ));
+        let off = self.tree[k].expect("a sliced fold's tree");
+        let mut tot = self.tree_total(&format!("p{phase}r{k}"), off, &t, &p, op);
+        for &(v, _, law) in &sl.laws[k] {
+            let val = self.vals[v]
+                .clone()
+                .expect("a law's value precedes its fold");
+            let code = match law {
+                DepLaw::Factor { div: false } => "fmul",
+                DepLaw::Factor { div: true } => "fdiv",
+                DepLaw::Shift { sub: false } => "fadd",
+                DepLaw::Shift { sub: true } | DepLaw::Phase => "fsub",
+            };
+            let z = self.tmp();
+            self.line(format!("{z} = {code} {t} {tot}, {val}"));
+            tot = z;
+        }
+        let res = self.tmp();
+        self.step(&op, &t, &seed, &tot, &res);
+        if store {
+            self.slice_first(&format!("f{k}s"), q, |g| g.store(k, &res, &row));
+        }
+        self.vals[k] = Some(res);
+    }
+
+    /// A fold's read at step `kv` of row `row`: its operand in `Gmem` at the
+    /// site's own address (re-addressed when its producer stores
+    /// column-major), or an earlier member at its reach.
+    fn fold_read(&mut self, site: &RowFoldSite, src0: &USrc, row: &str, kv: &str) -> String {
+        // The fold's axes: `k`, or a window's `(k÷div, k%div)`.
+        let taps: Vec<String> = match site.a.ksplit {
+            Some(ks) => vec![self.op("udiv", kv, ks.div), self.op("urem", kv, ks.div)],
+            None => vec![kv.to_string()],
+        };
+        match src0 {
+            USrc::Gmem(gm) => {
+                let ri = if site.w > 1 {
+                    let q = self.op("udiv", row, site.w);
+                    let l = self.op("urem", row, site.w);
+                    let a = self.op("mul", &q, site.a.ci);
+                    let b = self.op("mul", &l, site.a.clane);
+                    self.op("add", &a, &b)
+                } else {
+                    self.op("mul", row, site.a.ci)
+                };
+                let rk = match site.a.ksplit {
+                    Some(ks) => {
+                        let a = self.op("mul", &taps[0], ks.cq);
+                        let b = self.op("mul", &taps[1], ks.cr);
+                        self.op("add", &a, &b)
+                    }
+                    None => self.op("mul", kv, site.a.ck),
+                };
+                let x = self.op("add", &ri, &rk);
+                let x = self.op("add", &x, site.a.base);
+                self.load(*gm, &x)
+            }
+            src => {
+                let taps: Vec<&str> = taps.iter().map(String::as_str).collect();
+                self.read(src, row, &taps)
+            }
+        }
+    }
+
+    /// The lanes' partials `p` in shared memory at `off`, halved per step
+    /// (labels `<tag>_<step>`): the total every lane reads (no seed).
+    fn tree_total(&mut self, tag: &str, off: u64, t: &str, p: &str, op: RowFoldOp) -> String {
+        let lanes = self.lanes;
+        let mine = self.smem(off, t, "%l");
+        self.line(format!("store {t} {p}, ptr addrspace(3) {mine}"));
+        self.barrier();
+        let mut s = lanes / 2;
+        while s >= 1 {
+            let c = self.tmp();
+            self.line(format!("{c} = icmp ult i64 {}, {s}", self.lane));
+            let (yes, end) = (format!("{tag}_{s}"), format!("{tag}_{s}e"));
+            self.line(format!("br i1 {c}, label %{yes}, label %{end}"));
+            self.label(&yes);
+            let o = self.op("add", "%l", s);
+            let po = self.smem(off, t, &o);
+            let (x, y, z) = (self.tmp(), self.tmp(), self.tmp());
+            self.line(format!("{x} = load {t}, ptr addrspace(3) {mine}"));
+            self.line(format!("{y} = load {t}, ptr addrspace(3) {po}"));
+            self.step(&op, t, &x, &y, &z);
+            self.line(format!("store {t} {z}, ptr addrspace(3) {mine}"));
+            self.line(format!("br label %{end}"));
+            self.label(&end);
+            self.barrier();
+            s /= 2;
+        }
+        let base = self.lane_base.clone();
+        let p0 = self.smem(off, t, &base);
+        let tot = self.tmp();
+        self.line(format!("{tot} = load {t}, ptr addrspace(3) {p0}"));
+        tot
     }
 
     /// compile-time-graph A: tile member `k` over the block's `b` rows. A

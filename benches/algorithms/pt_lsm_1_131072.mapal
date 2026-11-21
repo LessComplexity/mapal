@@ -1,0 +1,59 @@
+fn main() {
+    16 -> iota -> i_q;
+    i_q -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    } -> q;
+    2097152 -> iota -> i_w;
+    i_w -> map {
+        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0
+    } -> w;
+    () -> time -> t0;
+    131072 -> iota -> o_s;
+    16 -> iota -> k_d;
+    1 -> iota -> r_i;
+    131072 -> iota -> k_t;
+    o_s -> map {
+        e ->
+        e / 131072 -> i;
+        e % 131072 -> j;
+        (0.0, k_d) -> fold {
+            acc, k -> acc + q[i * 16 + k] * w[k * 131072 + j]
+        }
+    } -> s;
+    r_i -> map {
+        i -> (-1000000000.0, k_t) -> fold {
+            acc, j -> s[i * 131072 + j] -> e;
+            (e > acc) -> {
+                -true-> e;
+                -false-> acc;
+            }
+        }
+    } -> mx;
+    o_s -> map {
+        t -> (s[t] - mx[t / 131072]) / 4.0 -> x;
+        x / 256.0 + 1.0 -> u;
+        (u > 0.0) -> {
+            -true-> u;
+            -false-> 0.0;
+        } -> v0;
+        8 -> iota -> sq;
+        (v0, sq) -> fold {
+            acc, k -> acc * acc
+        }
+    } -> ex;
+    r_i -> map {
+        i -> (0.0, k_t) -> fold {
+            acc, j -> acc + ex[i * 131072 + j]
+        }
+    } -> den;
+    o_s -> map {
+        t -> ex[t] / den[t / 131072]
+    } -> y;
+    () -> time -> t1;
+    y[0] -> println;
+    y[131071] -> println;
+    "iter ms=" -> print;
+    t1 - t0 -> println;
+}

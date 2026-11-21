@@ -839,7 +839,7 @@ fn full_tile_counted_and_valued_on_unseen_programs() {
             for r in off.iter().chain(&["pdl", "streams", "place"]) {
                 *gpu.off.rung(r).expect("rung") = true;
             }
-            let mut cost = mapal_backend_llvm::CostOver::default();
+            let mut cost = [None; mapal_backend_llvm::DeviceCost::NAMES.len()];
             let i = mapal_backend_llvm::DeviceCost::NAMES
                 .iter()
                 .position(|n| *n == "lsu_ipc_pm");

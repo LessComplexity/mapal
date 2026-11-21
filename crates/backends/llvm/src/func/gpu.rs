@@ -2952,6 +2952,16 @@ pub(crate) fn device_module(
     out.push('\n');
     out.push_str(&md);
     let mut out = super::horizontal::compose(out, hz, launched);
+    // long-rows `row-slices`: a sliced unit's grid barrier, where no
+    // persistent kernel brought it.
+    if out.contains("call void @mapal_gsync(")
+        && !out.contains("define internal void @mapal_gsync(")
+    {
+        let decls = super::calls::missing_decls(&out);
+        out.push('\n');
+        out.push_str(&decls);
+        out.push_str(super::calls::GSYNC);
+    }
     // `pdl`: the runtime launches every kernel behind a kernel as a dependent
     // launch, so every kernel waits for its producer's grid before it reads.
     if pdl(profile, contract, arms) {
@@ -7425,7 +7435,7 @@ mod tests {
                 {
                     let v = g.rate(name);
                     for f in [0.9, 1.1] {
-                        let mut over = crate::profile::CostOver::default();
+                        let mut over = [None; crate::profile::DeviceCost::NAMES.len()];
                         over[i] = Some(((v as f64) * f).round() as u64);
                         let q = TargetProfile {
                             machine: crate::profile::Machine::Gpu(g.with_cost(&over)),

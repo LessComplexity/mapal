@@ -1,0 +1,60 @@
+fn main() {
+    32 -> iota -> i_q;
+    i_q -> map {
+        t -> (t * 7 + 13) % 101 - 50 -> widen_f32 -> v;
+        v / 7.0
+    } -> q;
+    8192 -> iota -> i_w;
+    i_w -> map {
+        t -> (t * 11 + 57) % 103 - 51 -> widen_f32 -> v;
+        v / 9.0
+    } -> w;
+    1024 -> iota -> o_s;
+    16 -> iota -> k_d;
+    2 -> iota -> r_i;
+    512 -> iota -> k_t;
+    o_s -> map {
+        e ->
+        e / 512 -> i;
+        e % 512 -> j;
+        (0.0, k_d) -> fold {
+            acc, k -> acc + q[i * 16 + k] * w[k * 512 + j]
+        }
+    } -> s;
+    r_i -> map {
+        i -> (-1000000000.0, k_t) -> fold {
+            acc, j -> s[i * 512 + j] -> e;
+            (e > acc) -> {
+                -true-> e;
+                -false-> acc;
+            }
+        }
+    } -> mx;
+    o_s -> map {
+        t -> (s[t] - mx[t / 512]) / 4.0 -> x;
+        x / 256.0 + 1.0 -> u;
+        (u > 0.0) -> {
+            -true-> u;
+            -false-> 0.0;
+        } -> v0;
+        8 -> iota -> sq;
+        (v0, sq) -> fold {
+            acc, k -> acc * acc
+        }
+    } -> ex;
+    r_i -> map {
+        i -> (0.0, k_t) -> fold {
+            acc, j -> acc + ex[i * 512 + j]
+        }
+    } -> den;
+    o_s -> map {
+        t -> ex[t] / den[t / 512]
+    } -> y;
+    0.0 -> zero: f32;
+    (zero, y) -> fold {
+        acc, v -> acc + v
+    } -> s_y;
+    s_y -> println;
+    y[0] -> println;
+    y[1023] -> println;
+}

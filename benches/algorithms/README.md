@@ -25,6 +25,7 @@ python3 benches/gpu/gen_tiles.py /tmp/algos && cp /tmp/algos/*.mapal benches/alg
 | attention (matmul → softmax → matmul) | `pt_attn_{1024,2048}_{64,128}.mapal`, `px_attn_64_16.mapal` |
 | ew → conv → ew | `pt_ewconvew_2048_5.mapal`, `px_ewconvew_32_5.mapal` |
 | MLP | `pt_smlp_4096_256_1024.mapal`, `px_smlp_64_32_64.mapal` |
+| long rows (q·W scores → softmax over few long rows) | `pt_lsm_{1_131072,4_32768,32_8192}.mapal`, `px_lsm_2_512.mapal` |
 | model-scale: Llama-3-8B-like layer, decode (attention half, 16 steps, B sequences, KV capacity L) | `pt_llm_dec_b{1,8,32}_l{2048,8192}.mapal`, `px_llm_dec_b2_l16.mapal` |
 | model-scale: whole block, decode / prefill | `pt_llm_blkdec_b1_l4096.mapal`, `pt_llm_blkpre_t2048.mapal` (+ `_tf32`), `px_llm_blk{dec_b2_l16,pre_t12}.mapal` |
 | model-scale: prefill (attention half, causal) | `pt_llm_pre_t2048.mapal` (+ `_tf32`), `pt_llm_pre_t8192.mapal` (KV-group loop), `px_llm_pre{,g}_t12.mapal` |

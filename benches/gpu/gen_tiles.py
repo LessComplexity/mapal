@@ -951,6 +951,20 @@ def attention(T, d, timed=True):
     return chain_program(ops, body, [("o", T * d)], timed)
 
 
+def long_softmax(R, L, timed=True):
+    """long-rows: scores q·W (d = 16, a tile site: the rows start on the device) -> softmax over few long rows:
+    a row max, exp of the difference, a row sum, the quotient — a vocabulary's logits, a long cache's scores."""
+    body = (f"    {R * L} -> iota -> o_s;\n    16 -> iota -> k_d;\n    {R} -> iota -> r_i;\n    {L} -> iota -> k_t;\n"
+            f"    o_s -> map {{ e ->\n        e / {L} -> i;\n        e % {L} -> j;\n"
+            f"        (0.0, k_d) -> fold {{ acc, k -> acc + q[i * 16 + k] * w[k * {L} + j] }}\n    }} -> s;\n"
+            f"    r_i -> map {{ i -> (-1000000000.0, k_t) -> fold {{ acc, j -> s[i * {L} + j] -> e; "
+            f"(e > acc) -> {{ -true-> e; -false-> acc; }} }} }} -> mx;\n"
+            f"    o_s -> map {{ t -> {expo(f'(s[t] - mx[t / {L}]) / 4.0')} }} -> ex;\n"
+            f"    r_i -> map {{ i -> (0.0, k_t) -> fold {{ acc, j -> acc + ex[i * {L} + j] }} }} -> den;\n"
+            f"    o_s -> map {{ t -> ex[t] / den[t / {L}] }} -> y;\n")
+    return chain_program([("q", R * 16, 'a'), ("w", 16 * L, 'b')], body, [("y", R * L)], timed)
+
+
 def ewconvew(n, kk, timed=True):
     """ew -> conv -> ew: an activation of the image, a kk×kk convolution (k÷kk, k%kk taps), an activation."""
     w = n + kk - 1
@@ -981,10 +995,14 @@ CHAINS = {
     "pt_attn_2048_128": (attention(2048, 128), 128 + 2 * 2048),
     "pt_ewconvew_2048_5": (ewconvew(2048, 5), 25),
     "pt_smlp_4096_256_1024": (smlp(4096, 256, 1024), 256 + 1024),
+    "pt_lsm_1_131072": (long_softmax(1, 131072), 16 + 2 * 131072),
+    "pt_lsm_4_32768": (long_softmax(4, 32768), 16 + 2 * 32768),
+    "pt_lsm_32_8192": (long_softmax(32, 8192), 16 + 2 * 8192),
     "px_firew_rowsum_32x32_16": (firew_rowsum(32, 32, 16, False), 16 + 32),
     "px_attn_64_16": (attention(64, 16, False), 16 + 2 * 64),
     "px_ewconvew_32_5": (ewconvew(32, 5, False), 25),
     "px_smlp_64_32_64": (smlp(64, 32, 64, False), 32 + 64),
+    "px_lsm_2_512": (long_softmax(2, 512, False), 16 + 2 * 512),
 }
 for stem, (src, kmax) in CHAINS.items():
     (out / f"{stem}.mapal").write_text(src)

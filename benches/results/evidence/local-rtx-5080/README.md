@@ -82,3 +82,11 @@ RMSNorm. Ten open findings with minimal repros there.
 
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).
+
+**long-rows** (`long-rows.md`): `fold_combine` in mapal-ir — how a fold's state combines across blocks of its axis and
+the law (factor, shift, or phase) each per-row value its term reads gets from the dataflow; the `row-slices` rung runs a
+flow unit's few long rows over several blocks (partials + an in-order tree combine, phases at grid barriers of one
+cooperative launch), priced by two new measured properties (`row_iter_ns` 87 ns, `coop_first_ns` 38 us).
+pt_lsm_1_131072 (softmax over one 131072-long row): flow kernel 182 → 7.6 us, iteration ABBA 0.290; every other
+program's emission unchanged. No exponential law in the IR: attention's `den` is a phase, so flash-style attention
+stays open (reasons and the model-scale rows there).
