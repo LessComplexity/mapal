@@ -205,10 +205,15 @@ __global__ void empty_k(unsigned long long* t, int i) {
     if (blockIdx.x == 0 && threadIdx.x == 0) { unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); t[i] = g; }
 }
 // the same, as a programmatic dependent launch: it may start while the one before drains, and waits for it here
+// (sm_90+ only: below, `griddepcontrol` does not exist and the leg is an ordinary launch, printed pdl_ns=0)
 __global__ void pdl_k(unsigned long long* t, int i) {
+#if __CUDA_ARCH__ >= 900
     asm volatile("griddepcontrol.wait;" ::: "memory");
+#endif
     if (blockIdx.x == 0 && threadIdx.x == 0) { unsigned long long g; asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(g)); t[i] = g; }
+#if __CUDA_ARCH__ >= 900
     asm volatile("griddepcontrol.launch_dependents;");
+#endif
 }
 __global__ void spin_k(long long cycles) { long long s = clock64(); while (clock64() - s < cycles) {} }
 // device-side launch, a comparison only: each kernel stamps its start and tail-launches the next of the same grid
@@ -219,6 +224,8 @@ __global__ void tail_k(unsigned long long* t, int i, int n) {
     }
 }
 static void gsync_run() {
+    int major = 0; CK(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, 0));
+    const int pdl_ok = major >= 9;  // programmatic dependent launch: sm_90+
     unsigned* ctr; unsigned long long* t; CK(cudaMalloc(&ctr, 4)); CK(cudaMemset(ctr, 0, 4));
     const int nk = 512; CK(cudaMalloc(&t, (nk + 1) * 8));
     for (int block : {128, 256, 512}) {
@@ -245,7 +252,7 @@ static void gsync_run() {
             }
             std::sort(w.begin(), w.end());
             std::vector<double> q;
-            for (int rep = 0; rep < 5; rep++) {
+            for (int rep = 0; rep < 5 * pdl_ok; rep++) {
                 spin_k<<<1, 32>>>((long long)clk_khz * 2);
                 for (int i = 0; i <= nk; i++) {
                     cudaLaunchAttribute at[1];
@@ -259,6 +266,7 @@ static void gsync_run() {
                 std::vector<unsigned long long> h(nk + 1); CK(cudaMemcpy(h.data(), t, (nk + 1) * 8, cudaMemcpyDeviceToHost));
                 q.push_back((double)(h[nk] - h[0]) / nk);
             }
+            if (q.empty()) q.assign(5, 0.0);
             std::sort(q.begin(), q.end());
             std::vector<double> c;
             for (int rep = 0; rep < 5; rep++) {
