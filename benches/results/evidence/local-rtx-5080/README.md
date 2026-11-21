@@ -95,6 +95,15 @@ torch-compile over B 1–32 × L 2048–8192; block decode 1.00×; prefill 2048 
 276.6 → 32.4 ms (1.16×); the 8192 prefill unchanged (open). Main suite: prefill_1024_512_256 0.966 (ABBA), 34
 programs byte-identical; the first version's loss on decode-shaped loops (1.05–1.08) is the k-major lone-row rule.
 
+**large-gemm** (`large-gemm.md`): what cuBLAS / CUTLASS run on the large multiplies (captured: the 128-accumulator
+256 × 128 SIMT tile, split-K 3 / 5 / 8 / 9 to fill 84 SMs, 3–6 `cp.async` stages) as rules over properties —
+`wide-fma` where the part issues ≥ 45 FFMA per DRAM byte (and its grid fills the part), `streamk-fill` (stream-K
+only over a grid that fills the part at its own geometry; a skinny grid takes the fill split), `k-fill` (an
+under-filled site keeps the full tile and streams `k` over every slot the tile holds). Cells vs cuBLAS: 4096³
+1.14 → 1.01–1.04, 16 × 2048 × 7168 1.41 → 1.10, 128 × 4096 × 4096 1.53 → 1.06; model-scale m 128 projections 1.07–1.16
+(were 1.07–1.41), prefill 2048 8.82 → 8.63 ms, block prefill 32.4 → 27.4 ms; suite 2048/4096 GEMMs 4–10 % faster.
+Open: the 6-wave epilogue tile's wide-tile loss (2.5 %), TF32 split / depth, a cp.async pipeline with stream-K.
+
 Raw output (results txt, box.out, CPU logs) is kept locally in `.claude/raw-evidence/local-rtx-5080/`; not yet
 uploaded with `benches/gpu/archive_raw.sh` (that publishes a GitHub release).
 
